@@ -34,8 +34,7 @@ Logs & trade data — Auto-saved logs for transparency
 
 ---
 
-
-![Week 2 Performance](6-30%20-%207-9.png)
+![Week 2 Performance](6-30%207-9%20Results.png)
 
 ---
 

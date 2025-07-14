@@ -216,7 +216,7 @@ def daily_results(chatgpt_portfolio):
         print(f"{ticker} closing price: {price:.2f}")
         print(f"{ticker} volume for today: ${volume}")
         print(f"percent change from the day before: {percent_change:.2f}%")
-    chatgpt_df = pd.read_csv("chatgpt_portfolio_update.csv")
+    chatgpt_df = pd.read_csv("ChatGPT-Micro-Cap-Experiment/chatgpt_portfolio_update.csv")
 
     # Filter TOTAL rows and get latest equity
     chatgpt_totals = chatgpt_df[chatgpt_df['Ticker'] == 'TOTAL'].copy() 
@@ -245,6 +245,7 @@ def daily_results(chatgpt_portfolio):
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')
 chatgpt_cash = 2.32
+
 # remove the # to save results
 # chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
 

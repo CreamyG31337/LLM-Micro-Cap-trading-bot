@@ -190,7 +190,7 @@ def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_po
         "Reason": f"MANUAL SELL - {reason}"
     }
 
-    file = "chatgpt_trade_log.csv"
+    file = "ChatGPT-Micro-Cap-Experiment/chatgpt_portfolio_update.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
@@ -245,7 +245,7 @@ def daily_results(chatgpt_portfolio):
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')
 chatgpt_cash = 2.32
-
-chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
+# remove the # to save results
+# chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
 
 daily_results(chatgpt_portfolio)

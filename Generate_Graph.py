@@ -34,9 +34,7 @@ if isinstance(russell.columns, pd.MultiIndex):
 russell = russell[["Date", "Close"]].rename(columns={"Close": "Russell_Close"})
 russell["Date"] = pd.to_datetime(russell["Date"])
 
-# Insert fake June 27 baseline row for Russell
 pre_june_30_price = 2172.53  # Real price for normalization
-
 
 # Normalize Russell to $100 baseline
 scaling_factor = 100 / pre_june_30_price

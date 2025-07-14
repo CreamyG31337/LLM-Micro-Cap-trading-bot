@@ -246,8 +246,6 @@ def daily_results(chatgpt_portfolio):
 today = datetime.today().strftime('%Y-%m-%d')
 chatgpt_cash = 2.32
 
-#chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
-
-#print(chatgpt_df)
+chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
 
 daily_results(chatgpt_portfolio)

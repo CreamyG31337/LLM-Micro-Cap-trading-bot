@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 
 # === Load and prepare ChatGPT portfolio ===
-chatgpt_df = pd.read_csv("ChatGPT-Micro-Cap-Experiment/chatgpt_portfolio_update.csv")
+chatgpt_df = pd.read_csv("chatgpt_portfolio_update.csv")
 chatgpt_totals = chatgpt_df[chatgpt_df['Ticker'] == 'TOTAL'].copy()
 chatgpt_totals['Date'] = pd.to_datetime(chatgpt_totals['Date'])
 

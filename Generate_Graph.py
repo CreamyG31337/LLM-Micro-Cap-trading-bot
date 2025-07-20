@@ -34,10 +34,10 @@ if isinstance(russell.columns, pd.MultiIndex):
 russell = russell[["Date", "Close"]].rename(columns={"Close": "Russell_Close"})
 russell["Date"] = pd.to_datetime(russell["Date"])
 
-pre_june_30_price = 2172.53  # Real price for normalization
+russell_27_price = 2172.53  # Real price for normalization
 
 # Normalize Russell to $100 baseline
-scaling_factor = 100 / pre_june_30_price
+scaling_factor = 100 / russell_27_price
 russell["Russell Value ($100 Invested)"] = russell["Russell_Close"] * scaling_factor
 
 # === Plot ===

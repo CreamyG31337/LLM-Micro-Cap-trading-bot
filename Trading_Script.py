@@ -4,33 +4,13 @@ from datetime import datetime
 import os
 import numpy as np 
 
-# === PORTFOLIOS ===
-chatgpt_portfolio = [
-    {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "cost_basis": 5.77},
-    {"ticker": "CADL", "shares": 5, "stop_loss": 4.03, "cost_basis": 5.04},
-    {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "cost_basis": 0.25},
-    {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "cost_basis": 1.5},
-]
-
-# === Get last cash from portfolio file ===
-def get_latest_cash(filename):
-    if os.path.isfile(filename):
-        try:
-            df = pd.read_csv(filename)
-            latest = df[df["Ticker"] == "TOTAL"].sort_values("Date").iloc[-1]
-            return float(latest["Cash Balance"])
-        except:
-            return 0.0
-    return 0.0
-
 # === Process one AI's portfolio ===
 def process_portfolio(portfolio, label, starting_cash):
     results = []
     total_value = 0
     total_pnl = 0
     cash = starting_cash
-
-    for stock in portfolio:
+    for _, stock in portfolio.iterrows():
         ticker = stock["ticker"]
         shares = int(stock["shares"])
         cost = stock["cost_basis"]
@@ -137,7 +117,7 @@ def log_manual_buy(buy_price, shares, ticker, cash):
     check = input(f"""You are currently trying to buy {ticker}.
                    If this a mistake enter 1.""")
     if check == "1":
-        SystemError("Please remove this function call.")
+        raise SystemExit("Please remove this function call.")
 
     data = yf.download(ticker, period="1d")
     if data.empty:
@@ -170,18 +150,17 @@ def log_manual_buy(buy_price, shares, ticker, cash):
 #work in progress currently
 
 def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_portfolio):
-    chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
-    if not(ticker == np.any(chatgpt_portfolio['Ticker'])):
+    if ticker not in chatgpt_portfolio["ticker"].values:
         print(f"error, could not find ticker {ticker}")
     
     reason = input("""Why are you selling? 
-                      If this is a mistake, enter 1.""")
+If this is a mistake, enter 1. """)
 
     if reason == "1": 
-        SystemError("Delete this function call from the program.")
+        raise SystemExit("Delete this function call from the program.")
 
     log = {
-        "Date": today,
+        "Date": datetime.date.now(),
         "Ticker": ticker,
         "Shares Bought": shares,
         "Buy Price": buy_price,
@@ -189,7 +168,7 @@ def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_po
         "PnL": pnl,
         "Reason": f"MANUAL SELL - {reason}"
     }
-
+    chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["Ticker"] != ticker]
     file = "ChatGPT-Micro-Cap-Experiment/chatgpt_portfolio_update.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
@@ -197,7 +176,7 @@ def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_po
     else:
         df = pd.DataFrame([log])
     df.to_csv(file, index=False)
-    return cash - shares * sell_price
+    return cash + shares * sell_price, chatgpt_portfolio
 
 # This is where chatGPT gets daily updates from
 # I give it data on its portfolio and also other tickers if requested
@@ -205,6 +184,7 @@ def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_po
 
 def daily_results(chatgpt_portfolio):
     today = datetime.today().strftime('%Y-%m-%d')
+    chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
     print(f"prices and updates for {today}")
     for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock['ticker']
@@ -214,7 +194,7 @@ def daily_results(chatgpt_portfolio):
         percent_change = ((price - last_price) / last_price) * 100
         volume = float(data['Volume'].iloc[-1].item())
         print(f"{ticker} closing price: {price:.2f}")
-        print(f"{ticker} volume for today: ${volume}")
+        print(f"{ticker} volume for today: ${volume:,}")
         print(f"percent change from the day before: {percent_change:.2f}%")
     chatgpt_df = pd.read_csv("chatgpt_portfolio_update.csv")
 
@@ -244,9 +224,17 @@ def daily_results(chatgpt_portfolio):
 
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')
-chatgpt_cash = 2.32
+cash = 2.32
 
-# remove the # to save results
-# chatgpt_file, chatgpt_df = process_portfolio(chatgpt_portfolio, "ChatGPT", chatgpt_cash)
+chatgpt_portfolio = [
+    {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "cost_basis": 5.77},
+    {"ticker": "CADL", "shares": 5, "stop_loss": 4.03, "cost_basis": 5.04},
+    {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "cost_basis": 0.25},
+    {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "cost_basis": 1.5},
+]
 
-daily_results(chatgpt_portfolio)
+portfolio = pd.DataFrame(chatgpt_portfolio)
+
+chatgpt_file, chatgpt_df = process_portfolio(portfolio, "ChatGPT", cash)
+
+daily_results(portfolio)

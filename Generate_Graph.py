@@ -48,9 +48,13 @@ plt.plot(russell['Date'], russell["Russell Value ($100 Invested)"], label="Russe
 final_date = chatgpt_totals['Date'].iloc[-1]
 final_chatgpt = chatgpt_totals["ChatGPT ($100 Invested)"].iloc[-1]
 final_russell = russell["Russell Value ($100 Invested)"].iloc[-1]
+
 plt.text(final_date, final_chatgpt + 0.3, f"+{final_chatgpt - 100:.1f}%", color="blue", fontsize=9)
 plt.text(final_date, final_russell + 0.3, f"+{final_russell - 100:.1f}%", color="red", fontsize=9)
 
+drawdown_date = pd.Timestamp("2025-07-11")
+drawdown_value = 102.46
+plt.text(drawdown_date, drawdown_value - 1, "-7% Drawdown", color="red", fontsize=9)
 plt.title("ChatGPT vs. Russell 2000")
 plt.xlabel("Date")
 plt.ylabel("Value of $100 Investment")

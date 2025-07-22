@@ -89,7 +89,7 @@ def process_portfolio(portfolio, label, starting_cash):
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(file, index=False)
-    return file, df
+    return file
 
 # === Trade Logger (purely for stoplosses)===
 def log_sell(label, ticker, shares, price, cost, pnl):
@@ -189,7 +189,10 @@ If this is a mistake, enter 1. """)
 # Right now it additionally wants "^RUT", "IWO", and "XBI"
 
 def daily_results(chatgpt_portfolio):
-    chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
+    if isinstance(chatgpt_portfolio, pd.DataFrame):
+            chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
+    print(chatgpt_portfolio)
+    print(type(chatgpt_portfolio))
     print(f"prices and updates for {today}")
     for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock['ticker']
@@ -230,18 +233,13 @@ def daily_results(chatgpt_portfolio):
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')
 cash = 2.32
-
 chatgpt_portfolio = [
     {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "cost_basis": 5.77},
-    {"ticker": "CADL", "shares": 5, "stop_loss": 4.03, "cost_basis": 5.04},
     {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "cost_basis": 0.25},
     {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "cost_basis": 1.5},
+    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "cost_basis": 7.5},
 ]
+chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
+chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)
 
-portfolio = pd.DataFrame(chatgpt_portfolio)
-cash, chatgpt_portfolio = log_manual_sell(5.04, 6.59, 8.5, 5, "CADL", cash, chatgpt_portfolio)
-cash, chatgpt_portfolio = log_manual_buy(5.75, 6, "ACTU", cash, 4.89, chatgpt_portfolio)
-portfolio = pd.DataFrame(chatgpt_portfolio)
-chatgpt_file, chatgpt_df = process_portfolio(portfolio, "ChatGPT", cash)
-
-daily_results(portfolio)
+daily_results(chatgpt_portfolio)

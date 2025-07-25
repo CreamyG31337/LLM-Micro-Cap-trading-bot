@@ -237,7 +237,7 @@ chatgpt_portfolio = [
     {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "cost_basis": 5.77},
     {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "cost_basis": 0.25},
     {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "cost_basis": 1.5},
-    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "cost_basis": 7.5},
+    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "cost_basis": 5.75},
 ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)

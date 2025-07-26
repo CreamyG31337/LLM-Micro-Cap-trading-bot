@@ -240,6 +240,6 @@ chatgpt_portfolio = [
     {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "cost_basis": 5.75},
 ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
-chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)
+#chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)
 
 daily_results(chatgpt_portfolio)

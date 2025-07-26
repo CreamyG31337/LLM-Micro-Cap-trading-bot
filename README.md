@@ -2,12 +2,12 @@
 Welcome to the repo behind my 6-month live trading experiment where ChatGPT manages a real-money micro-cap portfolio.
 
 # The Concept
-Everyday, I kept seeing the same ad about having an some A.I. pick undervalued stocks. 
+Everyday, I kept seeing the same ad about having an some A.I. pick undervalued stocks. It was obvious it was trying to get me to subscribe to some garbage, so I just rolled my eyes. 
 Then I started wondering, "How well would that actually work?".
 
 So, starting with just $100, I wanted to answer a simple but powerful question:
 
-Can large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?
+Can powerful large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?
 
 ## Each trading day:
 
@@ -17,7 +17,7 @@ Can large language models like ChatGPT actually generate alpha (or at least make
 
 - Everyweek I allow it to use deep research to reevaluate it's account.
 
-- I track and publish both portfolios and performance data weekly on my blog. (https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
+- I track and publish performance data weekly on my blog. (https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
 
 # Performance Example (6/30 – 7/9)
 
@@ -40,7 +40,7 @@ Visualization tools — Matplotlib graphs comparing ChatGPT vs Index
 Logs & trade data — Auto-saved logs for transparency
 
 # Why This Matters
-AI is being hyped across every industry, but can it really manage money effectively?
+AI is being hyped across every industry, but can it really manage money without guidance?
 
 This project is an attempt to find out, with transparency, data, and a real budget.
 

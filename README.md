@@ -19,6 +19,11 @@ Can powerful large language models like ChatGPT actually generate alpha (or at l
 
 - I track and publish performance data weekly on my blog. (https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
 
+  ## Research & Documentation
+
+- 📂 [Weekly Deep Research Reports (PDF)](link-to-weekly-pdfs-folder)  
+- 📂 [Markdown Research Summaries](link-to-md-folder)  
+
 # Performance Example (6/30 – 7/9)
 
 ---

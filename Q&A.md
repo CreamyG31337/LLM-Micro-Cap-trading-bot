@@ -10,11 +10,11 @@ Yes. I wish I didn’t have to, but after ~2 weeks the performance slows down to
 I’d make sure prompts are 100% consistent from the beginning and confirm the simulation engine was airtight before logging trades.
 
 ### What strengths or weaknesses have you noticed in the model?
-**Strengths**: it’s incredible at finding overlooked data in obscure filings—especially biotech reports nobody reads. It’s also great at capitalizing on short-term momentum.  
-**Weaknesses**: it often struggles with patience. It’s unclear if it can hold through the full timeline of a catalyst. And switching chats can cause it to lose conviction and restructure prematurely.
+**Strengths**: It’s incredible at finding overlooked data in obscure filings, especially biotech reports nobody reads. It also seems to great at capitalizing on short-term momentum.
+**Weaknesses**: It often struggles with patience. It’s unclear if it can hold through the full timeline of a catalyst. And switching chats can cause it to lose conviction and restructure prematurely.
 
 ### Any plans after the 6 months?
-If I can keep up during school, I might extend this idea into a full-year version—maybe refine the setup even more.
+If I can keep up during school, I might extend this idea into a full-year version.
 
 ### What return are you expecting by the end?
 Originally, I expected 5–10%. But with the kind of asymmetric moves it’s hit so far, I think 25–30% isn’t out of the question, if it can manage risk well.

@@ -28,7 +28,7 @@ Can powerful large language models like ChatGPT actually generate alpha (or at l
 
 ---
 
-![Week 2 Performance](%286-30%20-%207-9%29%20Results.png)
+![Week 4 Performance](%286-30%20-%207-25%29%20Results.png)
 
 ---
 - Currently stomping on the Russell 2K.

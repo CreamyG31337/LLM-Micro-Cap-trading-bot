@@ -24,7 +24,7 @@ Can powerful large language models like ChatGPT actually generate alpha (or at l
 - [Weekly Deep Research Reports (PDF)](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/tree/main/Weekly%20Deep%20Research%20(PDF))  
 - [Markdown Research Summaries (MD)](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/tree/main/Weekly%20Deep%20Research%20(MD))  
 
-# Performance Example (6/30 – 7/9)
+# Performance Example (6/30 – 7/25)
 
 ---
 

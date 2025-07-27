@@ -1,5 +1,7 @@
 ## Deep Research Index
 
+*Note: Reports are written after each trading week and are used to guide the next week’s decisions. So the Week 3 report was written after Week 2 ended, and its insights apply to Week 3.*
+
 | Week              | Date Range        | PDF Report | Markdown Summary |
 |-------------------|-------------------|-------------|------------------|
 | Starting Research | Pre-Launch        | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Starting%20Research.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/Starting%20Research%20Summary.md) |

@@ -68,6 +68,7 @@ plt.text(drawdown_date, drawdown_value - 1, "-7% Drawdown", color="red", fontsiz
 plt.title("ChatGPT vs. Russell 2000 vs. XBI")
 plt.xlabel("Date")
 plt.ylabel("Value of $100 Investment")
+plt.xticks(rotation=15)
 plt.legend()
 plt.grid(True)
 plt.tight_layout()

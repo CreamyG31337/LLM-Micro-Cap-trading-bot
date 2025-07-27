@@ -7,7 +7,7 @@ Then I started wondering, "How well would that actually work?".
 
 So, starting with just $100, I wanted to answer a simple but powerful question:
 
-Can powerful large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?
+#### **Can powerful large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?**
 
 ## Each trading day:
 
@@ -68,4 +68,5 @@ Updates are posted weekly on my blog — more coming soon!
 
 One final shameless plug: (https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
 
-Gmail: nathanbsmith.business@gmail.com
+Find a mistake in the logs or have advice?
+Please Reach out here: nathanbsmith.business@gmail.com

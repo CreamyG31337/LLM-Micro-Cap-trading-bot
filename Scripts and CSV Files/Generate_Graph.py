@@ -12,12 +12,9 @@ baseline_date = pd.Timestamp("2025-06-27")
 baseline_equity = 100  # Starting value
 baseline_chatgpt_row = pd.DataFrame({
     "Date": [baseline_date],
-    "Total Equity": [baseline_equity]
-})
+    "Total Equity": [baseline_equity]   
+    })
 chatgpt_totals = pd.concat([baseline_chatgpt_row, chatgpt_totals], ignore_index=True).sort_values("Date")
-
-# Normalize ChatGPT portfolio to $100 baseline
-chatgpt_totals["ChatGPT ($100 Invested)"] = chatgpt_totals["Total Equity"] * (100 / baseline_equity)
 
 # === Download and prepare Russell 2000 ===
 start_date = baseline_date
@@ -49,12 +46,12 @@ russell["Russell Value ($100 Invested)"] = russell["Close"] * russell_scaling_fa
 # === Plot ===
 plt.figure(figsize=(10, 6))
 plt.style.use("seaborn-v0_8-whitegrid")
-plt.plot(chatgpt_totals['Date'], chatgpt_totals["ChatGPT ($100 Invested)"], label="ChatGPT ($100 Invested)", marker="o", color="blue", linewidth=2)
+plt.plot(chatgpt_totals['Date'], chatgpt_totals["Total Equity"], label="ChatGPT ($100 Invested)", marker="o", color="blue", linewidth=2)
 plt.plot(russell['Date'], russell["Russell Value ($100 Invested)"], label="Russell 2000 ($100 Invested)", marker="o", color="orange", linestyle='--', linewidth=2)
 plt.plot(xbi['Date'], xbi["XBI Value ($100 Invested)"], label="XBI ($100 Invested)", marker="o", color="green", linestyle='--', linewidth=2)
 
 final_date = chatgpt_totals['Date'].iloc[-1]
-final_chatgpt = chatgpt_totals["ChatGPT ($100 Invested)"].iloc[-1]
+final_chatgpt = chatgpt_totals["Total Equity"].iloc[-1]
 final_russell = russell["Russell Value ($100 Invested)"].iloc[-1]
 final_xbi = xbi["XBI Value ($100 Invested)"].iloc[-1]
 

@@ -2,7 +2,7 @@
 
 | Week              | Date Range        | PDF Report | Markdown Summary |
 |-------------------|-------------------|-------------|------------------|
-| Starting Research | Pre-Launch        | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Starting%20Research.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/starting_research.md) |
+| Starting Research | Pre-Launch        | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Starting%20Research.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/Starting%20Research%20Summary.md) |
 | Week 1            | June 30 – July 3  | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Week%201.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/Week%201%20Summary.md) |
 | Week 2            | July 7 – July 11  | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Week%202.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/Week%202%20Summary.md) |
 | Week 3            | July 14 – July 18 | [PDF](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(PDF)/Week%203.pdf) | [MD](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Weekly%20Deep%20Research%20(MD)/Week%203%20Summary.md) |

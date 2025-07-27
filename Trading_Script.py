@@ -5,7 +5,7 @@ import os
 import numpy as np 
 
 # === Process one AI's portfolio ===
-def process_portfolio(portfolio, label, starting_cash):
+def process_portfolio(portfolio, starting_cash):
     results = []
     total_value = 0
     total_pnl = 0
@@ -13,13 +13,12 @@ def process_portfolio(portfolio, label, starting_cash):
     for _, stock in portfolio.iterrows():
         ticker = stock["ticker"]
         shares = int(stock["shares"])
-        cost = stock["cost_basis"]
+        cost = stock["buy_price"]
         stop = stock["stop_loss"]
-
         data = yf.Ticker(ticker).history(period="1d")
 
         if data.empty:
-            print(f"[{label}] No data for {ticker}")
+            print(f"[ChatGPT] No data for {ticker}")
             row = {
                 "Date": today,
                 "Ticker": ticker,
@@ -41,7 +40,7 @@ def process_portfolio(portfolio, label, starting_cash):
             if price <= stop:
                 action = "SELL - Stop Loss Triggered"
                 cash += value
-                log_sell(label, ticker, shares, price, cost, pnl, action)
+                log_sell( ticker, shares, price, cost, pnl, action)
             else:
                 action = "HOLD"
                 total_value += value
@@ -80,7 +79,7 @@ def process_portfolio(portfolio, label, starting_cash):
     results.append(total_row)
 
     # === Save to CSV ===
-    file = f"{label.lower()}_portfolio_update.csv"
+    file = f"chatgpt_portfolio_update.csv"
     df = pd.DataFrame(results)
 
     if os.path.exists(file):
@@ -92,7 +91,7 @@ def process_portfolio(portfolio, label, starting_cash):
     return file
 
 # === Trade Logger (purely for stoplosses)===
-def log_sell(label, ticker, shares, price, cost, pnl):
+def log_sell( ticker, shares, price, cost, pnl):
     log = {
         "Date": today,
         "Ticker": ticker,
@@ -103,7 +102,7 @@ def log_sell(label, ticker, shares, price, cost, pnl):
         "Reason": "AUTOMATED SELL - STOPLOSS TRIGGERED"
     }
 
-    file = f"{label.lower()}_trade_log.csv"
+    file = f"chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
@@ -143,35 +142,46 @@ def log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio)
     else:
         df = pd.DataFrame([log])
     df.to_csv(file, index=False)
-    new_trade = {"ticker": ticker, "shares": shares, "stop_loss": stoploss, "cost_basis": buy_price}
+    new_trade = {"ticker": ticker, "shares": shares, "stop_loss": stoploss,
+                "buy_price": buy_price, "cost_basis": buy_price * shares}
     new_trade = pd.DataFrame([new_trade])
     chatgpt_portfolio = pd.concat([chatgpt_portfolio, new_trade], ignore_index=True)
-    return cash - shares * buy_price, chatgpt_portfolio
+    cash = cash - shares * buy_price
+    return cash, chatgpt_portfolio
 
 
 #work in progress currently
 
-def log_manual_sell(buy_price, sell_price, pnl, shares, ticker, cash, chatgpt_portfolio):
+def log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio):
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:
-        print(f"error, could not find ticker {ticker}")
+        raise KeyError(f"error, could not find {ticker} in portfolio")
+    ticker_row = chatgpt_portfolio[chatgpt_portfolio['ticker'] == ticker]
+
+    total_shares = ticker_row['shares']
+    if shares_sold > total_shares:
+        raise ValueError(f"You are trying to sell {shares_sold} but only own {total_shares}.")
+    
+    buy_price = ticker_row['buy_price']
     
     reason = input("""Why are you selling? 
 If this is a mistake, enter 1. """)
 
     if reason == "1": 
         raise SystemExit("Delete this function call from the program.")
-
+    cost_basis = buy_price * shares_sold
+    PnL = sell_price * shares_sold - cost_basis
+    # leave buy fields empty
     log = {
         "Date": today,
         "Ticker": ticker,
-        "Shares Bought": "",  # leave buy fields empty
+        "Shares Bought": "",
         "Buy Price": "",
-        "Cost Basis": buy_price * shares,  # original invested amount
-        "PnL": pnl,
+        "Cost Basis": cost_basis,
+        "PnL": PnL,
         "Reason": f"MANUAL SELL - {reason}",
-        "Shares Sold": shares,
+        "Shares Sold": shares_sold,
         "Sell Price": sell_price
     }
     file = "chatgpt_trade_log.csv"
@@ -180,9 +190,14 @@ If this is a mistake, enter 1. """)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
-    df.to_csv(file, index=False)
-    chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
-    return cash + shares * sell_price, chatgpt_portfolio
+    df.to_csv(file, index=False) #check if ticker shares sold = total shares, if yes delete that row
+    if total_shares == shares_sold:
+        chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
+    else:
+        ticker_row['shares'] = total_shares - shares_sold
+        #return updated cash and updated portfolio
+    cash = cash + shares_sold * sell_price
+    return cash, chatgpt_portfolio
 
 # This is where chatGPT gets daily updates from
 # I give it data on its portfolio and also other tickers if requested
@@ -191,16 +206,17 @@ If this is a mistake, enter 1. """)
 def daily_results(chatgpt_portfolio):
     if isinstance(chatgpt_portfolio, pd.DataFrame):
             chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
-    print(chatgpt_portfolio)
-    print(type(chatgpt_portfolio))
     print(f"prices and updates for {today}")
     for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock['ticker']
-        data = yf.download(ticker, period="2d")
-        price = float(data['Close'].iloc[-1].item())
-        last_price = float(data['Close'].iloc[-2].item())
-        percent_change = ((price - last_price) / last_price) * 100
-        volume = float(data['Volume'].iloc[-1].item())
+        try:
+            data = yf.download(ticker, period="2d")
+            price = float(data['Close'].iloc[-1].item())
+            last_price = float(data['Close'].iloc[-2].item())
+            percent_change = ((price - last_price) / last_price) * 100
+            volume = float(data['Volume'].iloc[-1].item())
+        except Exception as e:
+            raise KeyError(f"Download for {ticker} failed. Try checking internet connection.")
         print(f"{ticker} closing price: {price:.2f}")
         print(f"{ticker} volume for today: ${volume:,}")
         print(f"percent change from the day before: {percent_change:.2f}%")
@@ -218,12 +234,12 @@ def daily_results(chatgpt_portfolio):
 
 # Get Russell 2000 data
     russell = yf.download("^RUT", start="2025-06-27", end=final_date + pd.Timedelta(days=1))
-    russell = russell.reset_index()[["Date", "Close"]].rename(columns={"Close": "Russell_Close"})
+    russell = russell.reset_index()[["Date", "Close"]]
 
 
 # Normalize to $100
-    initial_price = russell["Russell_Close"].iloc[0].item()
-    price_now = russell["Russell_Close"].iloc[-1].item()
+    initial_price = russell["Close"].iloc[0].item()
+    price_now = russell["Close"].iloc[-1].item()
     scaling_factor = 100 / initial_price
     russell_value = price_now * scaling_factor
     print(f"$100 Invested in the Russell 2000 Index: ${russell_value:.2f}")
@@ -234,12 +250,13 @@ def daily_results(chatgpt_portfolio):
 today = datetime.today().strftime('%Y-%m-%d')
 cash = 2.32
 chatgpt_portfolio = [
-    {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "cost_basis": 5.77},
-    {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "cost_basis": 0.25},
-    {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "cost_basis": 1.5},
-    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "cost_basis": 5.75},
+    {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "buy_price": 5.77, "cost_basis": 34.62},
+    {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "buy_price": 0.25, "cost_basis": 13.75},
+    {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 30},
+    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
 ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 #chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)
-
+# === TODO ===
+# fix costbasis in portfolio and trade_log
 daily_results(chatgpt_portfolio)

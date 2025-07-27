@@ -35,12 +35,14 @@ if isinstance(russell.columns, pd.MultiIndex):
 
 # Now clean and rename
 russell["Date"] = pd.to_datetime(russell["Date"])
+# Real close prices on June 27 (pulled from YF)
 xbi_27_price = 83.68000030517578
-russell_27_price = 2172.110107421875  # Real price for normalization
+russell_27_price = 2172.110107421875
 
-# Normalize Russell to $100 baseline
+# Normalize to $100 baseline
 russell_scaling_factor = 100 / russell_27_price
 xbi_scaling_factor = 100 / xbi_27_price
+# create adjusted close col
 xbi["XBI Value ($100 Invested)"] = xbi["Close"] * xbi_scaling_factor
 russell["Russell Value ($100 Invested)"] = russell["Close"] * russell_scaling_factor
 
@@ -50,6 +52,7 @@ plt.style.use("seaborn-v0_8-whitegrid")
 plt.plot(chatgpt_totals['Date'], chatgpt_totals["ChatGPT ($100 Invested)"], label="ChatGPT ($100 Invested)", marker="o", color="blue", linewidth=2)
 plt.plot(russell['Date'], russell["Russell Value ($100 Invested)"], label="Russell 2000 ($100 Invested)", marker="o", color="orange", linestyle='--', linewidth=2)
 plt.plot(xbi['Date'], xbi["XBI Value ($100 Invested)"], label="XBI ($100 Invested)", marker="o", color="green", linestyle='--', linewidth=2)
+
 final_date = chatgpt_totals['Date'].iloc[-1]
 final_chatgpt = chatgpt_totals["ChatGPT ($100 Invested)"].iloc[-1]
 final_russell = russell["Russell Value ($100 Invested)"].iloc[-1]

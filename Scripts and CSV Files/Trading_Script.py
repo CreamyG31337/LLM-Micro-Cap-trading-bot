@@ -258,7 +258,7 @@ chatgpt_portfolio = [
 ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 # === TODO ===
-cash = 22.825
+cash = 0.33
 
 # chatgpt_file = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio)

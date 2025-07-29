@@ -244,6 +244,7 @@ def daily_results(chatgpt_portfolio):
     scaling_factor = 100 / initial_price
     russell_value = price_now * scaling_factor
     print(f"$100 Invested in the Russell 2000 Index: ${russell_value:.2f}")
+    print(f"today's portfolio: {chatgpt_portfolio}")
 
     
 

@@ -159,11 +159,11 @@ def log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio):
         raise KeyError(f"error, could not find {ticker} in portfolio")
     ticker_row = chatgpt_portfolio[chatgpt_portfolio['ticker'] == ticker]
 
-    total_shares = ticker_row['shares']
+    total_shares = int(ticker_row['shares'].item())
     if shares_sold > total_shares:
         raise ValueError(f"You are trying to sell {shares_sold} but only own {total_shares}.")
     
-    buy_price = ticker_row['buy_price']
+    buy_price = float(ticker_row['buy_price'].item())
     
     reason = input("""Why are you selling? 
 If this is a mistake, enter 1. """)
@@ -195,6 +195,7 @@ If this is a mistake, enter 1. """)
         chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
     else:
         ticker_row['shares'] = total_shares - shares_sold
+        ticker_row['cost_basis'] = ticker_row['shares'] * ticker_row['buy_price']
         #return updated cash and updated portfolio
     cash = cash + shares_sold * sell_price
     return cash, chatgpt_portfolio
@@ -251,12 +252,13 @@ today = datetime.today().strftime('%Y-%m-%d')
 cash = 2.32
 chatgpt_portfolio = [
     {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "buy_price": 5.77, "cost_basis": 34.62},
-    {"ticker": "AZTR", "shares": 55, "stop_loss": 0.18, "buy_price": 0.25, "cost_basis": 13.75},
-    {"ticker": "IINN", "shares": 20, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 30},
+    {"ticker": "IINN", "shares": 14, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 21},
     {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
+    {"ticker": "ESPR", "shares": 15, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 22.5},
 ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
-#chatgpt_file = process_portfolio(chatgpt_portfolio, "ChatGPT", cash)
 # === TODO ===
-# fix costbasis in portfolio and trade_log
+cash = 22.825
+
+# chatgpt_file = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio)

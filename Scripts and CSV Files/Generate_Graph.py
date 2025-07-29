@@ -20,10 +20,10 @@ chatgpt_totals = pd.concat([baseline_chatgpt_row, chatgpt_totals], ignore_index=
 start_date = baseline_date
 end_date = chatgpt_totals['Date'].max()
 
-russell = yf.download("^RUT", start=start_date, end=end_date + pd.Timedelta(days=1))
+russell = yf.download("^RUT", start=start_date, end=end_date + pd.Timedelta(days=1), progress=False)
 russell = russell.reset_index()
 
-xbi = yf.download("XBI", start=start_date, end=end_date + pd.Timedelta(days=1))
+xbi = yf.download("XBI", start=start_date, end=end_date + pd.Timedelta(days=1), progress=False)
 xbi = xbi.reset_index()
 
 # Fix columns if downloaded with MultiIndex

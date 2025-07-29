@@ -221,7 +221,7 @@ def daily_results(chatgpt_portfolio):
         print(f"{ticker} closing price: {price:.2f}")
         print(f"{ticker} volume for today: ${volume:,}")
         print(f"percent change from the day before: {percent_change:.2f}%")
-    chatgpt_df = pd.read_csv("chatgpt_portfolio_update.csv")
+    chatgpt_df = pd.read_csv("Scripts and CSV Files/chatgpt_portfolio_update.csv")
 
     # Filter TOTAL rows and get latest equity
     chatgpt_totals = chatgpt_df[chatgpt_df['Ticker'] == 'TOTAL'].copy() 

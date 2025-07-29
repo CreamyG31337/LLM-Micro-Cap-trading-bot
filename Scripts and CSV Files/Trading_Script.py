@@ -211,7 +211,7 @@ def daily_results(chatgpt_portfolio):
     for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock['ticker']
         try:
-            data = yf.download(ticker, period="2d")
+            data = yf.download(ticker, period="2d", progress=False)
             price = float(data['Close'].iloc[-1].item())
             last_price = float(data['Close'].iloc[-2].item())
             percent_change = ((price - last_price) / last_price) * 100
@@ -234,7 +234,7 @@ def daily_results(chatgpt_portfolio):
 # Define start and end date for Russell 2000
 
 # Get Russell 2000 data
-    russell = yf.download("^RUT", start="2025-06-27", end=final_date + pd.Timedelta(days=1))
+    russell = yf.download("^RUT", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
     russell = russell.reset_index()[["Date", "Close"]]
 
 

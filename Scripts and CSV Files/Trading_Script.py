@@ -102,7 +102,7 @@ def log_sell( ticker, shares, price, cost, pnl):
         "Reason": "AUTOMATED SELL - STOPLOSS TRIGGERED"
     }
 
-    file = f"chatgpt_trade_log.csv"
+    file = f"Scripts and CSV Files/chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)

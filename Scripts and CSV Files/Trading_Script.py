@@ -79,7 +79,7 @@ def process_portfolio(portfolio, starting_cash):
     results.append(total_row)
 
     # === Save to CSV ===
-    file = f"chatgpt_portfolio_update.csv"
+    file = f"Scripts and CSV Files/chatgpt_portfolio_update.csv"
     df = pd.DataFrame(results)
 
     if os.path.exists(file):
@@ -135,7 +135,7 @@ def log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio)
             "Reason": "MANUAL BUY - New position"
             }
 
-    file = "chatgpt_trade_log.csv"
+    file = "Scripts and CSV Files/chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
@@ -184,7 +184,7 @@ If this is a mistake, enter 1. """)
         "Shares Sold": shares_sold,
         "Sell Price": sell_price
     }
-    file = "chatgpt_trade_log.csv"
+    file = "Scripts and CSV Files/chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)

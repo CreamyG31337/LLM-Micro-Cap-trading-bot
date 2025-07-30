@@ -250,12 +250,12 @@ def daily_results(chatgpt_portfolio, cash):
     negative_std = negative_pct.std()
 # Period Sharpe Ratio
     sharpe_total = (total_return - rf_period) / (std_daily * np.sqrt(n_days))
-
+# 
     sortino_total = (total_return - rf_period) / (negative_std * np.sqrt(n_days))
 
 # Output
-    print(f"Total Period Sharpe Ratio: {sharpe_total:.4f}")
-    print(f"Total Period Sortino Ratio: {sortino_total:.4f}")
+    print(f"Total Sharpe Ratio over {n_days} days: {sharpe_total:.4f}")
+    print(f"Total Sortino Ratio over {n_days} days: {sortino_total:.4f}")
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
 # Get S&P 500 data
     spx = yf.download("^SPX", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)

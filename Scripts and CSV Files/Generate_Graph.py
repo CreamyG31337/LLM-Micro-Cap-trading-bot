@@ -58,7 +58,7 @@ plt.plot(russell['Date'], russell["Russell Value ($100 Invested)"], label="Russe
 plt.plot(xbi['Date'], xbi["XBI Value ($100 Invested)"], label="XBI ($100 Invested)", marker="o", color="purple", linestyle='--', linewidth=2)
 
 final_date = chatgpt_totals['Date'].iloc[-1]
-final_chatgpt = chatgpt_totals["Total Equity"].iloc[-1]
+final_chatgpt = float(chatgpt_totals["Total Equity"].iloc[-1])
 final_russell = russell["Russell Value ($100 Invested)"].iloc[-1]
 final_xbi = xbi["XBI Value ($100 Invested)"].iloc[-1]
 

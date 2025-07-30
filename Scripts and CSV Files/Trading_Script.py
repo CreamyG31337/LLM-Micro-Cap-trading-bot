@@ -256,14 +256,10 @@ def daily_results(chatgpt_portfolio, cash):
 # Output
     print(f"Total Period Sharpe Ratio: {sharpe_total:.4f}")
     print(f"Total Period Sortino Ratio: {sortino_total:.4f}")
-# Define start and end date for 
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
-    print("""Here are is your update for today. You can make any changes you see fit (if necessary),
-          but you may not use deep research.
-            You can however use the Internet and check current prices for potenial buys.""")
-# Get Russell 2000 data
+# Get S&P 500 data
     spx = yf.download("^SPX", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
-    spx = spx.reset_index()[["Date", "Close"]]
+    spx = spx.reset_index()
 
 
 # Normalize to $100
@@ -275,7 +271,9 @@ def daily_results(chatgpt_portfolio, cash):
     print(f"today's portfolio: {chatgpt_portfolio}")
     print(f"cash balance: {cash}")
 
-    
+    print("""Here are is your update for today. You can make any changes you see fit (if necessary),
+but you may not use deep research.
+You can however use the Internet and check current prices for potenial buys.""")
 
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')

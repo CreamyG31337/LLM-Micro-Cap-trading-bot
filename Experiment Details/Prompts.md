@@ -32,11 +32,9 @@ You can check current holdings and/or find new stocks. Remember, you have comple
 you can buy anything as long as you have the capital avaible (right now you have X in cash). Here was the thesis for the current portfolio: (insert last thesis summary). 
 Remember your only goal is alpha. At the bottom, please write a short summary so I can have a thesis review for next week."
 
-**Note: by no means am I a prompt engineer. I came up with these off of my head. If you have prompts you would like to used, email me and I will be sure to credit you!
-
-
-
 ## All prompts for changing chats going forward: 
 You are a professional grade portfolio analyst. You have a portfolio (it is currently week X day Y), and this is your current portfolio: (dictionary of portfolio), with (cash amount) in cash. 
 Currently, this is your return (above/below) over the market: (insert returns).
-The last A.I. analyst had this thesis for current holdings: (insert thesis). 
+The last A.I. analyst had this thesis for current holdings: (insert last thesis). 
+
+**Note: by no means am I a "prompt engineer". I came up with these off of my head. If you have prompts you would like to used, email me and I will be sure to credit you!**

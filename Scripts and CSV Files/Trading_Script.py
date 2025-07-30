@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import numpy as np 
 
-# === Process one AI's portfolio ===
+# === update logs for portfolio ===
 def process_portfolio(portfolio, starting_cash):
     results = []
     total_value = 0
@@ -18,7 +18,7 @@ def process_portfolio(portfolio, starting_cash):
         data = yf.Ticker(ticker).history(period="1d")
 
         if data.empty:
-            print(f"[ChatGPT] No data for {ticker}")
+            print(f"No data for {ticker}")
             row = {
                 "Date": today,
                 "Ticker": ticker,
@@ -142,15 +142,13 @@ def log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio)
     else:
         df = pd.DataFrame([log])
     df.to_csv(file, index=False)
+    # append new portfolio row and update cash
     new_trade = {"ticker": ticker, "shares": shares, "stop_loss": stoploss,
                 "buy_price": buy_price, "cost_basis": buy_price * shares}
     new_trade = pd.DataFrame([new_trade])
     chatgpt_portfolio = pd.concat([chatgpt_portfolio, new_trade], ignore_index=True)
     cash = cash - shares * buy_price
     return cash, chatgpt_portfolio
-
-
-#work in progress currently
 
 def log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio):
     if isinstance(chatgpt_portfolio, list):
@@ -190,9 +188,11 @@ If this is a mistake, enter 1. """)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
-    df.to_csv(file, index=False) #check if ticker shares sold = total shares, if yes delete that row
+    df.to_csv(file, index=False)
+    #check if ticker shares sold = total shares, if yes delete the row with that ticker
     if total_shares == shares_sold:
         chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
+    # if not, just update the cost_basis and share count
     else:
         ticker_row['shares'] = total_shares - shares_sold
         ticker_row['cost_basis'] = ticker_row['shares'] * ticker_row['buy_price']
@@ -234,13 +234,13 @@ def daily_results(chatgpt_portfolio, cash):
 # Daily returns
     daily_pct = equity_series.pct_change().dropna()
 
-# Total return (decimal)
+
     total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
 
-# Number of return observations
+# Number of total trading days
     n_days = len(daily_pct)
 
-# Risk-free return over same period
+# Risk-free return over total trading period (assuming 4.5% risk-free rate)
     rf_annual = 0.045
     rf_period = (1 + rf_annual) ** (n_days / 252) - 1
 
@@ -248,9 +248,9 @@ def daily_results(chatgpt_portfolio, cash):
     std_daily = daily_pct.std()
     negative_pct = daily_pct[daily_pct < 0]
     negative_std = negative_pct.std()
-# Period Sharpe Ratio
+# Sharpe Ratio
     sharpe_total = (total_return - rf_period) / (std_daily * np.sqrt(n_days))
-# 
+# Sortino Ratio
     sortino_total = (total_return - rf_period) / (negative_std * np.sqrt(n_days))
 
 # Output

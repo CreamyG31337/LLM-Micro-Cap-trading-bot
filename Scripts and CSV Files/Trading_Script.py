@@ -217,7 +217,7 @@ def daily_results(chatgpt_portfolio, cash):
             percent_change = ((price - last_price) / last_price) * 100
             volume = float(data['Volume'].iloc[-1].item())
         except Exception as e:
-            raise KeyError(f"Download for {ticker} failed. Try checking internet connection.")
+            raise Exception(f"Download for {ticker} failed. {e} Try checking internet connection.")
         print(f"{ticker} closing price: {price:.2f}")
         print(f"{ticker} volume for today: ${volume:,}")
         print(f"percent change from the day before: {percent_change:.2f}%")
@@ -229,22 +229,43 @@ def daily_results(chatgpt_portfolio, cash):
     final_date = chatgpt_totals['Date'].max()
     final_value = chatgpt_totals[chatgpt_totals['Date'] == final_date]
     final_equity = float(final_value['Total Equity'].values[0])
-    print(final_equity)
+    equity_series = chatgpt_totals['Total Equity'].astype(float).reset_index(drop=True)
+
+# Daily returns
+    daily_returns = equity_series.pct_change().dropna()
+
+# Total return (decimal)
+    total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
+
+# Number of return observations
+    n_days = len(daily_returns)
+
+# Risk-free return over same period
+    rf_annual = 0.045
+    rf_period = (1 + rf_annual) ** (n_days / 252) - 1
+
+# Standard deviation of daily returns
+    std_daily = daily_returns.std()
+
+# Period Sharpe Ratio
+    sharpe_total = (total_return - rf_period) / (std_daily * np.sqrt(n_days))
+
+# Output
+    print(f"Total Period Sharpe Ratio: {sharpe_total:.4f}")
+
+# Define start and end date for 
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
-
-# Define start and end date for Russell 2000
-
 # Get Russell 2000 data
-    russell = yf.download("^RUT", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
-    russell = russell.reset_index()[["Date", "Close"]]
+    spx = yf.download("^SPX", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
+    spx = spx.reset_index()[["Date", "Close"]]
 
 
 # Normalize to $100
-    initial_price = russell["Close"].iloc[0].item()
-    price_now = russell["Close"].iloc[-1].item()
+    initial_price = spx["Close"].iloc[0].item()
+    price_now = spx["Close"].iloc[-1].item()
     scaling_factor = 100 / initial_price
-    russell_value = price_now * scaling_factor
-    print(f"$100 Invested in the Russell 2000 Index: ${russell_value:.2f}")
+    spx_value = price_now * scaling_factor
+    print(f"$100 Invested in the S&P 500: ${spx_value:.2f}")
     print(f"today's portfolio: {chatgpt_portfolio}")
     print(f"cash balance: {cash}")
 
@@ -257,8 +278,11 @@ chatgpt_portfolio = [{'ticker': 'ABEO', 'shares': 6, 'stop_loss': 4.9, 'buy_pric
                     {'ticker': 'ACTU', 'shares': 6, 'stop_loss': 4.89, 'buy_price': 5.75, 'cost_basis': 34.5},
                     ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
-# === TODO ===
-#nothing
-
 cash = 22.32
+# === DETAILS ===
+# always put daily results last for updated df, and process_portfolio goes right before
+# Function calls in order:
+# 1. buying or selling
+# 2. process_portfolio
+# 3. daily_results
 daily_results(chatgpt_portfolio, cash)

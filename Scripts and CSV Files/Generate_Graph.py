@@ -26,7 +26,7 @@ sp500 = sp500.reset_index()
 # Fix columns if downloaded with MultiIndex
 if isinstance(sp500.columns, pd.MultiIndex):
     sp500.columns = sp500.columns.get_level_values(0)
-# Real close prices on June 27 (pulled from YF)
+# Real close price on June 27 (pulled from YF)
 sp500_27_price = 6173.07
 
 # Normalize to $100 baseline

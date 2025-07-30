@@ -88,7 +88,7 @@ def process_portfolio(portfolio, starting_cash):
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(file, index=False)
-    return file
+    return chatgpt_portfolio
 
 # === Trade Logger (purely for stoplosses)===
 def log_sell( ticker, shares, price, cost, pnl):
@@ -160,9 +160,9 @@ def log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio):
     ticker_row = chatgpt_portfolio[chatgpt_portfolio['ticker'] == ticker]
 
     total_shares = int(ticker_row['shares'].item())
+    print(total_shares)
     if shares_sold > total_shares:
         raise ValueError(f"You are trying to sell {shares_sold} but only own {total_shares}.")
-    
     buy_price = float(ticker_row['buy_price'].item())
     
     reason = input("""Why are you selling? 
@@ -204,7 +204,7 @@ If this is a mistake, enter 1. """)
 # I give it data on its portfolio and also other tickers if requested
 # Right now it additionally wants "^RUT", "IWO", and "XBI"
 
-def daily_results(chatgpt_portfolio):
+def daily_results(chatgpt_portfolio, cash):
     if isinstance(chatgpt_portfolio, pd.DataFrame):
             chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
     print(f"prices and updates for {today}")
@@ -228,7 +228,8 @@ def daily_results(chatgpt_portfolio):
     chatgpt_totals['Date'] = pd.to_datetime(chatgpt_totals['Date'])
     final_date = chatgpt_totals['Date'].max()
     final_value = chatgpt_totals[chatgpt_totals['Date'] == final_date]
-    final_equity = final_value['Total Equity'].values[0]
+    final_equity = float(final_value['Total Equity'].values[0])
+    print(final_equity)
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
 
 # Define start and end date for Russell 2000
@@ -245,21 +246,19 @@ def daily_results(chatgpt_portfolio):
     russell_value = price_now * scaling_factor
     print(f"$100 Invested in the Russell 2000 Index: ${russell_value:.2f}")
     print(f"today's portfolio: {chatgpt_portfolio}")
+    print(f"cash balance: {cash}")
 
     
 
 # === Run Portfolio ===
 today = datetime.today().strftime('%Y-%m-%d')
-cash = 2.32
-chatgpt_portfolio = [
-    {"ticker": "ABEO", "shares": 6, "stop_loss": 4.90, "buy_price": 5.77, "cost_basis": 34.62},
-    {"ticker": "IINN", "shares": 14, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 21},
-    {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
-    {"ticker": "ESPR", "shares": 15, "stop_loss": 1.10, "buy_price": 1.5, "cost_basis": 22.5},
-]
+chatgpt_portfolio = [{'ticker': 'ABEO', 'shares': 6, 'stop_loss': 4.9, 'buy_price': 5.77, 'cost_basis': 34.62},
+                    {'ticker': 'IINN', 'shares': 14, 'stop_loss': 1.1, 'buy_price': 1.5, 'cost_basis': 21.0}, 
+                    {'ticker': 'ACTU', 'shares': 6, 'stop_loss': 4.89, 'buy_price': 5.75, 'cost_basis': 34.5},
+                    ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 # === TODO ===
-cash = 0.33
+#nothing
 
-# chatgpt_file = process_portfolio(chatgpt_portfolio, cash)
-daily_results(chatgpt_portfolio)
+cash = 22.32
+daily_results(chatgpt_portfolio, cash)

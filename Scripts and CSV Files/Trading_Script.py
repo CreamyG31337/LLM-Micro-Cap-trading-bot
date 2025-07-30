@@ -232,27 +232,30 @@ def daily_results(chatgpt_portfolio, cash):
     equity_series = chatgpt_totals['Total Equity'].astype(float).reset_index(drop=True)
 
 # Daily returns
-    daily_returns = equity_series.pct_change().dropna()
+    daily_pct = equity_series.pct_change().dropna()
 
 # Total return (decimal)
     total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
 
 # Number of return observations
-    n_days = len(daily_returns)
+    n_days = len(daily_pct)
 
 # Risk-free return over same period
     rf_annual = 0.045
     rf_period = (1 + rf_annual) ** (n_days / 252) - 1
 
 # Standard deviation of daily returns
-    std_daily = daily_returns.std()
-
+    std_daily = daily_pct.std()
+    negative_pct = daily_pct[daily_pct < 0]
+    negative_std = negative_pct.std()
 # Period Sharpe Ratio
     sharpe_total = (total_return - rf_period) / (std_daily * np.sqrt(n_days))
 
+    sortino_total = (total_return - rf_period) / (negative_std * np.sqrt(n_days))
+
 # Output
     print(f"Total Period Sharpe Ratio: {sharpe_total:.4f}")
-
+    print(f"Total Period Sortino Ratio: {sortino_total:.4f}")
 # Define start and end date for 
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
 # Get Russell 2000 data

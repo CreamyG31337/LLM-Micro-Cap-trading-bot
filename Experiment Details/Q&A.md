@@ -27,6 +27,9 @@ To be honest, I didn't think about it and just used the defult model. I may swit
 ### How do you ensure the limit orders get filled?
 I mirror the trades in a real Vanguard brokerage account. If it executes there, I log the fill in the simulation.
 
+### Can I create my own portfolio with the given code?
+If you know Python decently well, you can do it. However you will have to delete existing data from the CSV files and edit to portfolio dictionary to change tickers. Sadly, for non coders there's not a way to do it with out editting or deleting code. However, there may be a massive update soon that could change that! So stay tuned.
+
 ### Could this actually be a real investing strategy?
 It has serious potential. Most retail traders chase SPY predictions with random forests and fail. Real alpha hides in footnotes, obscure filings, and early-stage clinical data, files an LLM can parse in seconds. If combined with human oversight, this could potentially be a viable hybrid strategy. Of course, much more rigorous testing is needed. 
 

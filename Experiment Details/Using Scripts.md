@@ -81,3 +81,7 @@ chatgpt_portfolio = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)
 ```
 Of course, if no manual buys or sells were made, don't add those function calls.
+
+### Starting Your Own Portfolio
+
+Unfortunely theres not an easy way to create your portfolio with the current code (at least for non coders). However, there may be a massive update soon to make that possible, so stay tuned!

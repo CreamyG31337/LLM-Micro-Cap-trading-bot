@@ -40,7 +40,7 @@ def process_portfolio(portfolio, starting_cash):
             if price <= stop:
                 action = "SELL - Stop Loss Triggered"
                 cash += value
-                chatgpt_portfolio = log_sell( ticker, shares, price, cost, pnl, action)
+                portfolio = log_sell( ticker, shares, price, cost, pnl, portfolio)
             else:
                 action = "HOLD"
                 total_value += value
@@ -91,7 +91,7 @@ def process_portfolio(portfolio, starting_cash):
     return chatgpt_portfolio
 
 # === Trade Logger (purely for stoplosses)===
-def log_sell( ticker, shares, price, cost, pnl):
+def log_sell(ticker, shares, price, cost, pnl, portfolio):
     log = {
         "Date": today,
         "Ticker": ticker,
@@ -101,7 +101,8 @@ def log_sell( ticker, shares, price, cost, pnl):
         "PnL": pnl,
         "Reason": "AUTOMATED SELL - STOPLOSS TRIGGERED"
     }
-    chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio['ticker'] != ticker]
+    # ensure ticker is removed
+    portfolio = portfolio[portfolio['ticker'] != ticker]
     file = f"Scripts and CSV Files/chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)

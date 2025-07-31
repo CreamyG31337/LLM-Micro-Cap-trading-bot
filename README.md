@@ -7,7 +7,7 @@ Then I started wondering, "How well would that actually work?".
 
 So, starting with just $100, I wanted to answer a simple but powerful question:
 
-#### **Can powerful large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?**
+**Can powerful large language models like ChatGPT actually generate alpha (or at least make smart trading decisions) using real-time data?**
 
 ## Each trading day:
 
@@ -17,7 +17,7 @@ So, starting with just $100, I wanted to answer a simple but powerful question:
 
 - Everyweek I allow it to use deep research to reevaluate it's account.
 
-- I track and publish performance data weekly on my blog. (https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
+- I track and publish performance data weekly on my blog. [SubStack Link](https://substack.com/@nathanbsmith?utm_source=edit-profile-page)
 
   ## Research & Documentation
 

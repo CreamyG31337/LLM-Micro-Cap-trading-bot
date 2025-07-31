@@ -289,5 +289,7 @@ cash = 22.32
 # 1. buying or selling
 # 2. process_portfolio
 # 3. daily_results
-#Also, it prints your portfolio and cash in the terminal. So be sure to update is either changes
+#Also, it prints your portfolio and cash in the terminal. So be sure to update if either changes
+
+chatgpt_portfolio = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)

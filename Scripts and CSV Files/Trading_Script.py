@@ -212,8 +212,12 @@ def daily_results(chatgpt_portfolio, cash):
         ticker = stock['ticker']
         try:
             data = yf.download(ticker, period="2d", progress=False)
+            if data.empty or len(data) < 2:
+                print(f"Data for {ticker} was empty or incomplete.")
+                continue
             price = float(data['Close'].iloc[-1].item())
             last_price = float(data['Close'].iloc[-2].item())
+
             percent_change = ((price - last_price) / last_price) * 100
             volume = float(data['Volume'].iloc[-1].item())
         except Exception as e:
@@ -284,6 +288,6 @@ chatgpt_portfolio = [{'ticker': 'ABEO', 'shares': 6, 'stop_loss': 4.9, 'buy_pric
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 cash = 22.32
 
+# See Using Scripts.md file for details
 
-chatgpt_portfolio = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)

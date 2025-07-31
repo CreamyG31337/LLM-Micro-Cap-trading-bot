@@ -19,11 +19,14 @@ If I can keep up during school, I might extend this idea into a full-year versio
 ### What return are you expecting by the end?
 Originally, I expected 5–10%. But with the kind of asymmetric moves it’s hit so far, I think 25–30% isn’t out of the question, if it can manage risk well.
 
+### Why are you using 4o? Doesn't ChatGPT have better models?
+To be honest, I didn't think about it and just used the defult model. I may switch over to a more advanced one, but I will explictly state when and what model. 
+
 ### How do you ensure the limit orders get filled?
 I mirror the trades in a real Vanguard brokerage account. If it executes there, I log the fill in the simulation.
 
 ### Could this actually be a real investing strategy?
-It has serious potential. Most retail traders chase SPY predictions with random forests and fail. Real alpha hides in footnotes, obscure filings, and early-stage clinical data, files an LLM can parse in seconds. If combined with human oversight, this could absolutely be a viable hybrid strategy.
+It has serious potential. Most retail traders chase SPY predictions with random forests and fail. Real alpha hides in footnotes, obscure filings, and early-stage clinical data, files an LLM can parse in seconds. If combined with human oversight, this could potentially be a viable hybrid strategy. Of course, much more rigorous testing is needed. 
 
 Want to submit a question? 
 

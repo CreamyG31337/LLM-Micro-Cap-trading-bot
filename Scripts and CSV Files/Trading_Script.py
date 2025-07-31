@@ -283,13 +283,7 @@ chatgpt_portfolio = [{'ticker': 'ABEO', 'shares': 6, 'stop_loss': 4.9, 'buy_pric
                     ]
 chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 cash = 22.32
-# === DETAILS ===
-# always put daily results last for updated df, and process_portfolio goes right before
-# Function calls in order:
-# 1. buying or selling
-# 2. process_portfolio
-# 3. daily_results
-#Also, it prints your portfolio and cash in the terminal. So be sure to update if either changes
+
 
 chatgpt_portfolio = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)

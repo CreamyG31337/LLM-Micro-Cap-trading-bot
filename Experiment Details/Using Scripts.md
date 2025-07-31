@@ -73,7 +73,7 @@ log_manual_sell(23.00, 3, "PFE", cash, chatgpt_portfolio)
 3. Daily Results
 
 How would all this look?
-
+At the very bottom, put:
 ```python
 log_manual_sell(23.00, 3, "PFE", cash, chatgpt_portfolio)
 log_manual_buy(12.00, 10, "F", cash, 9.00, chatgpt_portfolio)

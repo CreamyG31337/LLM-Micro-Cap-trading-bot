@@ -40,7 +40,7 @@ def process_portfolio(portfolio, starting_cash):
             if price <= stop:
                 action = "SELL - Stop Loss Triggered"
                 cash += value
-                log_sell( ticker, shares, price, cost, pnl, action)
+                chatgpt_portfolio = log_sell( ticker, shares, price, cost, pnl, action)
             else:
                 action = "HOLD"
                 total_value += value
@@ -101,7 +101,7 @@ def log_sell( ticker, shares, price, cost, pnl):
         "PnL": pnl,
         "Reason": "AUTOMATED SELL - STOPLOSS TRIGGERED"
     }
-
+    chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio['ticker'] != ticker]
     file = f"Scripts and CSV Files/chatgpt_trade_log.csv"
     if os.path.exists(file):
         df = pd.read_csv(file)
@@ -109,6 +109,7 @@ def log_sell( ticker, shares, price, cost, pnl):
     else:
         df = pd.DataFrame([log])
     df.to_csv(file, index=False)
+    return chatgpt_portfolio
 
 # === Manual Buy Logger ===
 
@@ -276,7 +277,7 @@ def daily_results(chatgpt_portfolio, cash):
     print(f"cash balance: {cash}")
 
     print("""Here are is your update for today. You can make any changes you see fit (if necessary),
-but you may not use deep research.
+but you may not use deep research. You do have to ask premissons for any changes, as you have full control.
 You can however use the Internet and check current prices for potenial buys.""")
 
 # === Run Portfolio ===
@@ -290,4 +291,5 @@ cash = 22.32
 
 # See Using Scripts.md file for details
 
+process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)

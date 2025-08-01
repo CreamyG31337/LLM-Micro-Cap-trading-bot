@@ -11,6 +11,7 @@ import os
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from typing import cast
 
 # Shared file locations
 DATA_DIR = "Scripts and CSV Files"
@@ -195,6 +196,7 @@ def log_manual_buy(
         raise SystemExit("Please remove this function call.")
 
     data = yf.download(ticker, period="1d")
+    data = cast(pd.DataFrame, data)
     if data.empty:
         SystemExit(f"error, could not find ticker {ticker}")
     if buy_price * shares > cash:
@@ -298,12 +300,13 @@ def log_manual_sell(
 def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     """Print daily price updates and performance metrics."""
     if isinstance(chatgpt_portfolio, pd.DataFrame):
-        chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
+        portfolio_dict = chatgpt_portfolio.to_dict(orient="records")
     print(f"prices and updates for {today}")
-    for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
+    for stock in portfolio_dict + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock["ticker"]
         try:
             data = yf.download(ticker, period="2d", progress=False)
+            data = cast(pd.DataFrame, data)
             if data.empty or len(data) < 2:
                 print(f"Data for {ticker} was empty or incomplete.")
                 continue
@@ -354,6 +357,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
     # Get S&P 500 data
     spx = yf.download("^SPX", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
+    spx = cast(pd.DataFrame, spx)
     spx = spx.reset_index()
 
     # Normalize to $100

@@ -41,4 +41,6 @@ This script draws a graph of your portfolio versus the S&P 500.
 3. **View the chart**
    - A window opens showing your portfolio value and a $100 investment in the S&P 500.
 
+**Note: All prompting is manual currently.**
+
 Both scripts are designed for beginners—feel free to experiment and modify them as you learn.

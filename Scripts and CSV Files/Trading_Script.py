@@ -2,8 +2,9 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 import os
-import numpy as np 
-
+import numpy as np
+ 
+today = datetime.today().strftime('%Y-%m-%d')
 # === update logs for portfolio ===
 def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataFrame:
     results = []
@@ -115,7 +116,7 @@ def log_sell(ticker: str, shares: float, price:float, cost:float, pnl:float, por
 
 # === Manual Buy Logger ===
 
-def log_manual_buy(buy_price: float, shares: float, ticker: str, cash: float, stoploss: float, chatgpt_portfolio: pd.DataFrame) -> tuple[float, pd.DataFrame]: 
+def log_manual_buy(buy_price: float, shares: float, ticker: str, stoploss: float, cash: float, chatgpt_portfolio: pd.DataFrame) -> tuple[float, pd.DataFrame]: 
     check = input(f"""You are currently trying to buy {ticker}.
                    If this a mistake enter 1.""")
     if check == "1":
@@ -151,9 +152,17 @@ def log_manual_buy(buy_price: float, shares: float, ticker: str, cash: float, st
     new_trade = pd.DataFrame([new_trade])
     chatgpt_portfolio = pd.concat([chatgpt_portfolio, new_trade], ignore_index=True)
     cash = cash - shares * buy_price
+    print(f"Manual buy for {ticker} complete!")
     return cash, chatgpt_portfolio
 
 def log_manual_sell(sell_price: float, shares_sold: float, ticker: str, cash: float, chatgpt_portfolio: dict) -> tuple[float, pd.DataFrame]:
+
+    reason = input(f"""You are currently trying to buy {ticker}. 
+If this is a mistake, enter 1. """)
+
+    if reason == "1": 
+        raise SystemExit("Delete this function call from the program.")
+
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:
@@ -166,11 +175,6 @@ def log_manual_sell(sell_price: float, shares_sold: float, ticker: str, cash: fl
         raise ValueError(f"You are trying to sell {shares_sold} but only own {total_shares}.")
     buy_price = float(ticker_row['buy_price'].item())
     
-    reason = input("""Why are you selling? 
-If this is a mistake, enter 1. """)
-
-    if reason == "1": 
-        raise SystemExit("Delete this function call from the program.")
     cost_basis = buy_price * shares_sold
     PnL = sell_price * shares_sold - cost_basis
     # leave buy fields empty
@@ -201,6 +205,7 @@ If this is a mistake, enter 1. """)
         ticker_row['cost_basis'] = ticker_row['shares'] * ticker_row['buy_price']
         #return updated cash and updated portfolio
     cash = cash + shares_sold * sell_price
+    print(f"manual sell for {ticker} complete!")
     return cash, chatgpt_portfolio
 
 # This is where chatGPT gets daily updates from
@@ -208,6 +213,7 @@ If this is a mistake, enter 1. """)
 # Right now it additionally wants "^RUT", "IWO", and "XBI"
 
 def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
+
     if isinstance(chatgpt_portfolio, pd.DataFrame):
             chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
     print(f"prices and updates for {today}")
@@ -283,7 +289,7 @@ but you may not use deep research. You do have to ask premissons for any changes
 You can however use the Internet and check current prices for potenial buys.""")
 
 # === Run Portfolio ===
-today = datetime.today().strftime('%Y-%m-%d')
+
 chatgpt_portfolio = [{'ticker': 'ABEO', 'shares': 6, 'stop_loss': 4.9, 'buy_price': 5.77, 'cost_basis': 34.62},
                     {'ticker': 'IINN', 'shares': 14, 'stop_loss': 1.1, 'buy_price': 1.5, 'cost_basis': 21.0}, 
                     {'ticker': 'ACTU', 'shares': 6, 'stop_loss': 4.89, 'buy_price': 5.75, 'cost_basis': 34.5},

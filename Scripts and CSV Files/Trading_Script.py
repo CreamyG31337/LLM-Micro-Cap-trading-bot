@@ -5,7 +5,7 @@ import os
 import numpy as np 
 
 # === update logs for portfolio ===
-def process_portfolio(portfolio, starting_cash):
+def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataFrame:
     results = []
     total_value = 0
     total_pnl = 0
@@ -91,7 +91,7 @@ def process_portfolio(portfolio, starting_cash):
     return chatgpt_portfolio
 
 # === Trade Logger (purely for stoplosses)===
-def log_sell(ticker, shares, price, cost, pnl, portfolio):
+def log_sell(ticker: str, shares: float, price:float, cost:float, pnl:float, portfolio:pd.DataFrame) -> pd.DataFrame:
     log = {
         "Date": today,
         "Ticker": ticker,
@@ -114,7 +114,7 @@ def log_sell(ticker, shares, price, cost, pnl, portfolio):
 
 # === Manual Buy Logger ===
 
-def log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio):
+def log_manual_buy(buy_price: float, shares: float, ticker: str, cash: float, stoploss: float, chatgpt_portfolio: pd.DataFrame) -> tuple[float, pd.DataFrame]: 
     check = input(f"""You are currently trying to buy {ticker}.
                    If this a mistake enter 1.""")
     if check == "1":
@@ -152,7 +152,7 @@ def log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio)
     cash = cash - shares * buy_price
     return cash, chatgpt_portfolio
 
-def log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio):
+def log_manual_sell(sell_price: float, shares_sold: float, ticker: str, cash: float, chatgpt_portfolio: dict) -> tuple[float, pd.DataFrame]:
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:
@@ -206,7 +206,7 @@ If this is a mistake, enter 1. """)
 # I give it data on its portfolio and also other tickers if requested
 # Right now it additionally wants "^RUT", "IWO", and "XBI"
 
-def daily_results(chatgpt_portfolio, cash):
+def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     if isinstance(chatgpt_portfolio, pd.DataFrame):
             chatgpt_portfolio = chatgpt_portfolio.to_dict(orient="records")
     print(f"prices and updates for {today}")
@@ -244,7 +244,7 @@ def daily_results(chatgpt_portfolio, cash):
     total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
 
 # Number of total trading days
-    n_days = len(daily_pct)
+    n_days = len(chatgpt_totals)
 
 # Risk-free return over total trading period (assuming 4.5% risk-free rate)
     rf_annual = 0.045

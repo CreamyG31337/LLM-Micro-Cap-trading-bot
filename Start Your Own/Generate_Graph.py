@@ -6,13 +6,25 @@ is simply reorganised and commented for clarity.
 """
 
 import argparse
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
 from typing import cast
 
-DATA_DIR = "Start Your Own"
-PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
+DATA_DIR = Path(__file__).resolve().parent
+PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
+
+
+def parse_date(date_str: str, label: str) -> pd.Timestamp:
+    """Safely parse a ``YYYY-MM-DD`` string into a timestamp."""
+
+    try:
+        return pd.to_datetime(date_str)
+    except ValueError as exc:  # pragma: no cover - user input validation
+        msg = f"Invalid {label} '{date_str}'. Use the YYYY-MM-DD format."
+        raise SystemExit(msg) from exc
 
 
 def load_portfolio_details(
@@ -29,6 +41,13 @@ def load_portfolio_details(
         portfolio date is used. When the CSV has no data the baseline date is
         set to ``pd.Timestamp.today()``.
     """
+
+    if not PORTFOLIO_CSV.exists():
+        msg = (
+            f"Portfolio file '{PORTFOLIO_CSV}' not found. Run Trading_Script.py "
+            "to generate it."
+        )
+        raise SystemExit(msg)
 
     chatgpt_df = pd.read_csv(PORTFOLIO_CSV)
     chatgpt_totals = chatgpt_df[chatgpt_df["Ticker"] == "TOTAL"].copy()
@@ -63,12 +82,33 @@ def main(
     baseline_equity: float, start_date: pd.Timestamp | None, end_date: pd.Timestamp | None
 ) -> None:
     """Generate and display the comparison graph."""
+    if baseline_equity <= 0:
+        raise SystemExit("Baseline equity must be positive.")
+
     chatgpt_totals = load_portfolio_details(baseline_equity, start_date)
 
+    min_portfolio = chatgpt_totals["Date"].min()
+    max_portfolio = chatgpt_totals["Date"].max()
+
     if start_date is None:
-        start_date = chatgpt_totals["Date"].min()
+        start_date = min_portfolio
     if end_date is None:
-        end_date = chatgpt_totals["Date"].max()
+        end_date = max_portfolio
+
+    if start_date < min_portfolio:
+        print(
+            "Start date before portfolio history; using",
+            min_portfolio.date(),
+        )
+        start_date = min_portfolio
+    if end_date > max_portfolio:
+        print(
+            "End date after portfolio history; using",
+            max_portfolio.date(),
+        )
+        end_date = max_portfolio
+    if start_date > end_date:
+        raise SystemExit("Start date must be on or before end date.")
 
     sp500 = download_sp500(start_date, end_date)
 
@@ -132,8 +172,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    start = pd.to_datetime(args.start_date) if args.start_date else None
-    end = pd.to_datetime(args.end_date) if args.end_date else None
+    start = parse_date(args.start_date, "start date") if args.start_date else None
+    end = parse_date(args.end_date, "end date") if args.end_date else None
 
     main(args.baseline_equity, start, end)
 

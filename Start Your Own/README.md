@@ -43,6 +43,6 @@ This script draws a graph of your portfolio versus the S&P 500.
 
 **Note: All prompting is manual currently.**
 
-Starting your own account is still VERY NEW, so there is likely bugs. Please reach out if you find an issue or have a question.
+All of this is still VERY NEW, so there is likely bugs. Please reach out if you find an issue or have a question.
 
 Both scripts are designed for beginners, feel free to experiment and modify them as you learn.

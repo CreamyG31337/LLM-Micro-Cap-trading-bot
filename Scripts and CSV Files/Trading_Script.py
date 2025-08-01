@@ -221,17 +221,28 @@ def log_manual_buy(
     else:
         df = pd.DataFrame([log])
     df.to_csv(TRADE_LOG_CSV, index=False)
-
-    new_trade = {
+    existing_row = chatgpt_portfolio[chatgpt_portfolio['ticker'] == ticker]
+    # if the portfolio doesn't already contain ticker, create a new row.
+    if existing_row.empty:
+        new_trade = {
         "ticker": ticker,
         "shares": shares,
         "stop_loss": stoploss,
         "buy_price": buy_price,
         "cost_basis": buy_price * shares,
     }
-    chatgpt_portfolio = pd.concat(
-        [chatgpt_portfolio, pd.DataFrame([new_trade])], ignore_index=True
+        existing_row = pd.DataFrame(existing_row)
+        chatgpt_portfolio = pd.concat(
+            [chatgpt_portfolio, pd.DataFrame([new_trade])], ignore_index=True
     )
+    # if the portfolio contains ticker already, update the row.
+    else:
+        existing_row['shares'] = existing_row["shares"] + shares
+        old_shares_cost_basis = existing_row['cost_basis']
+        new_shares_cost_basis = shares * buy_price
+        existing_row['cost_basis'] = old_shares_cost_basis + new_shares_cost_basis
+    # update all stoploss for all shares
+        existing_row['stop_loss'] = stoploss
     cash = cash - shares * buy_price
     print(f"Manual buy for {ticker} complete!")
     return cash, chatgpt_portfolio

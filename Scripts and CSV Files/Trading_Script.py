@@ -25,45 +25,49 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
     """Update daily price information, log stop-loss sells, and prompt for trades.
 
     The function iterates through each position, retrieves the latest close
-    price and appends a summary row. Before processing, the user may record a
-    manual buy or sell which is then applied to the portfolio. Results are
-    appended to ``PORTFOLIO_CSV``.
+    price and appends a summary row. Before processing, the user may record
+    one or more manual buys or sells which are then applied to the portfolio.
+    Results are appended to ``PORTFOLIO_CSV``.
     """
     results: list[dict[str, object]] = []
     total_value = 0.0
     total_pnl = 0.0
     cash = starting_cash
 
-    action = input(
-        "Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to skip: "
-    ).strip().lower()
-    if action == "b":
-        try:
-            ticker = input("Enter ticker symbol: ").strip().upper()
-            shares = float(input("Enter number of shares: "))
-            buy_price = float(input("Enter buy price: "))
-            stop_loss = float(input("Enter stop loss: "))
-            if shares <= 0 or buy_price <= 0 or stop_loss <= 0:
-                raise ValueError
-        except ValueError:
-            print("Invalid input. Manual buy cancelled.")
-        else:
-            cash, portfolio = log_manual_buy(
-                buy_price, shares, ticker, stop_loss, cash, portfolio
-            )
-    elif action == "s":
-        try:
-            ticker = input("Enter ticker symbol: ").strip().upper()
-            shares = float(input("Enter number of shares to sell: "))
-            sell_price = float(input("Enter sell price: "))
-            if shares <= 0 or sell_price <= 0:
-                raise ValueError
-        except ValueError:
-            print("Invalid input. Manual sell cancelled.")
-        else:
-            cash, portfolio = log_manual_sell(
-                sell_price, shares, ticker, cash, portfolio
-            )
+    while True:
+        action = input(
+            "Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to continue: "
+        ).strip().lower()
+        if action == "b":
+            try:
+                ticker = input("Enter ticker symbol: ").strip().upper()
+                shares = float(input("Enter number of shares: "))
+                buy_price = float(input("Enter buy price: "))
+                stop_loss = float(input("Enter stop loss: "))
+                if shares <= 0 or buy_price <= 0 or stop_loss <= 0:
+                    raise ValueError
+            except ValueError:
+                print("Invalid input. Manual buy cancelled.")
+            else:
+                cash, portfolio = log_manual_buy(
+                    buy_price, shares, ticker, stop_loss, cash, portfolio
+                )
+            continue
+        if action == "s":
+            try:
+                ticker = input("Enter ticker symbol: ").strip().upper()
+                shares = float(input("Enter number of shares to sell: "))
+                sell_price = float(input("Enter sell price: "))
+                if shares <= 0 or sell_price <= 0:
+                    raise ValueError
+            except ValueError:
+                print("Invalid input. Manual sell cancelled.")
+            else:
+                cash, portfolio = log_manual_sell(
+                    sell_price, shares, ticker, cash, portfolio
+                )
+            continue
+        break
 
     for _, stock in portfolio.iterrows():
         ticker = stock["ticker"]

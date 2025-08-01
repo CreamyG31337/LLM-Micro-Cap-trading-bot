@@ -8,8 +8,9 @@ is simply reorganised and commented for clarity.
 import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
+from typing import cast
 
-DATA_DIR = "Scripts and CSV Files"
+DATA_DIR = "Start Your Own"
 PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
 
 
@@ -28,6 +29,7 @@ def load_portfolio_totals() -> pd.DataFrame:
 def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
     """Download S&P 500 prices and normalise to a $100 baseline."""
     sp500 = yf.download("^SPX", start=start_date, end=end_date + pd.Timedelta(days=1), progress=False)
+    sp500 = cast(pd.DataFrame, sp500)
     sp500 = sp500.reset_index()
     if isinstance(sp500.columns, pd.MultiIndex):
         sp500.columns = sp500.columns.get_level_values(0)
@@ -71,10 +73,8 @@ def main() -> None:
 
     plt.text(final_date, final_chatgpt + 0.3, f"+{final_chatgpt - 100:.1f}%", color="blue", fontsize=9)
     plt.text(final_date, final_spx + 0.9, f"+{final_spx - 100:.1f}%", color="orange", fontsize=9)
-
-    drawdown_date = pd.Timestamp("2025-07-11")
-    drawdown_value = 102.46
-    plt.text(drawdown_date + pd.Timedelta(days=0.5), drawdown_value - 0.5, "-7% Drawdown", color="red", fontsize=9)
+ 
+    plt.text(drawdown_date, drawdown_value, "-7% Drawdown", color="red", fontsize=9) # type: ignore
     plt.title("ChatGPT's Micro Cap Portfolio vs. S&P 500")
     plt.xlabel("Date")
     plt.ylabel("Value of $100 Investment")

@@ -84,7 +84,8 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
 
     if os.path.exists(file):
         existing = pd.read_csv(file)
-        existing = existing[existing["Date"] != today]  # Remove today's rows
+        existing = existing[existing["Date"] != today] # Remove today's rows
+        print("rows for today already logged, not saving results to CSV...")
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(file, index=False)

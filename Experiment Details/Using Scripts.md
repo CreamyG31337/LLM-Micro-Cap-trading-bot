@@ -41,8 +41,9 @@ Way simplier, automatically handles stoplosses and updating the `'chatgpt_portfo
 ### Manual Buy/Sell
 
 Both require parameters. Here is manual_buy:
-
+```python
 log_manual_buy(buy_price, shares, ticker, cash, stoploss, chatgpt_portfolio)
+```
 
 Say I wanted to buy "F" (Ford), with a limit order of 12.00, share count of 10, and a stoploss of 9.00.
 
@@ -52,11 +53,10 @@ log_manual_buy(12.00, 10, "F", cash, 9.00, chatgpt_portfolio)
 ```
 Cash and chatgpt_portfolio are already vars, so leave as is.
 
-**NOTE: THIS WILL EXECUTE THE ORDER NO MATTER WHAT. BE SURE TO CHECK VALIDITY.
-
 Now, for manual_sell:
-
+```python
 log_manual_sell(sell_price, shares_sold, ticker, cash, chatgpt_portfolio)
+```
 
 If I wanted to sell 3 shares of PFE (Pfizer), with a limit order of 23.00:
 
@@ -81,7 +81,3 @@ chatgpt_portfolio = process_portfolio(chatgpt_portfolio, cash)
 daily_results(chatgpt_portfolio, cash)
 ```
 Of course, if no manual buys or sells were made, don't add those function calls.
-
-### Starting Your Own Portfolio
-
-Unfortunely theres not an easy way to create your portfolio with the current code (at least for non coders). However, there may be a massive update soon to make that possible, so stay tuned!

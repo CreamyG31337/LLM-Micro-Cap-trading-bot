@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from typing import cast
+import os
 
 # Shared file locations
 DATA_DIR = Path(__file__).resolve().parent
@@ -37,7 +38,8 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd
 
     while True:
         action = input(
-            "Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to continue: "
+            f""" You have {cash} in cash.
+Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to continue: """
         ).strip().lower()
         if action == "b":
             try:
@@ -189,18 +191,18 @@ def log_manual_buy(
 ) -> tuple[float, pd.DataFrame]:
     """Log a manual purchase and append to the portfolio."""
     check = input(
-        f"You are currently trying to buy {ticker}."
-        " If this a mistake enter 1."
+        f"You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}."
+        " If this a mistake, type 1."
     )
     if check == "1":
-        raise SystemExit("Please remove this function call.")
+        raise SystemError("Please remove this function call.")
 
     data = yf.download(ticker, period="1d")
     data = cast(pd.DataFrame, data)
     if data.empty:
-        SystemExit(f"error, could not find ticker {ticker}")
+        raise SystemError(f"error, could not find ticker {ticker}")
     if buy_price * shares > cash:
-        SystemExit(
+        raise SystemError(
             f"error, you have {cash} but are trying to spend {buy_price * shares}. Are you sure you can do this?"
         )
     pnl = 0.0
@@ -215,23 +217,35 @@ def log_manual_buy(
         "Reason": "MANUAL BUY - New position",
     }
 
-    if TRADE_LOG_CSV.exists():
+    if os.path.exists(TRADE_LOG_CSV):
         df = pd.read_csv(TRADE_LOG_CSV)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
     df.to_csv(TRADE_LOG_CSV, index=False)
+    # if the portfolio doesn't already contain ticker, create a new row.
+    
+    mask = chatgpt_portfolio["ticker"] == ticker
 
-    new_trade = {
+    if not mask.any():
+        new_trade = {
         "ticker": ticker,
         "shares": shares,
         "stop_loss": stoploss,
         "buy_price": buy_price,
         "cost_basis": buy_price * shares,
     }
-    chatgpt_portfolio = pd.concat(
-        [chatgpt_portfolio, pd.DataFrame([new_trade])], ignore_index=True
+        chatgpt_portfolio = pd.concat(
+            [chatgpt_portfolio, pd.DataFrame([new_trade])], ignore_index=True
     )
+    # if the portfolio contains ticker already, update the row.
+    else:
+        row_index = chatgpt_portfolio[mask].index[0]
+        chatgpt_portfolio.loc[row_index, 'shares'] = chatgpt_portfolio.loc[row_index, "shares"] + shares # type: ignore
+        current_cost_basis =  float(chatgpt_portfolio.loc[row_index, 'cost_basis'].item()) # type: ignore
+        chatgpt_portfolio.loc[row_index, 'cost_basis'] = shares * buy_price + current_cost_basis
+    # update all stoploss for all shares
+        chatgpt_portfolio.loc[row_index, 'stop_loss'] = stoploss
     cash = cash - shares * buy_price
     print(f"Manual buy for {ticker} complete!")
     return cash, chatgpt_portfolio
@@ -250,8 +264,7 @@ def log_manual_sell(
     )
 
     if reason == "1":
-        raise SystemExit("Delete this function call from the program.")
-
+        raise SystemError("Delete this function call from the program.")
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:
@@ -259,13 +272,11 @@ def log_manual_sell(
     ticker_row = chatgpt_portfolio[chatgpt_portfolio["ticker"] == ticker]
 
     total_shares = int(ticker_row["shares"].item())
-    print(total_shares)
     if shares_sold > total_shares:
         raise ValueError(
             f"You are trying to sell {shares_sold} but only own {total_shares}."
         )
     buy_price = float(ticker_row["buy_price"].item())
-
     cost_basis = buy_price * shares_sold
     pnl = sell_price * shares_sold - cost_basis
     log = {
@@ -279,7 +290,7 @@ def log_manual_sell(
         "Shares Sold": shares_sold,
         "Sell Price": sell_price,
     }
-    if TRADE_LOG_CSV.exists():
+    if os.path.exists(TRADE_LOG_CSV):
         df = pd.read_csv(TRADE_LOG_CSV)
         df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
@@ -289,8 +300,9 @@ def log_manual_sell(
     if total_shares == shares_sold:
         chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
     else:
-        ticker_row["shares"] = total_shares - shares_sold
-        ticker_row["cost_basis"] = ticker_row["shares"] * ticker_row["buy_price"]
+        row_index = ticker_row.index[0]
+        chatgpt_portfolio.loc[row_index, "shares"] = total_shares - shares_sold
+        chatgpt_portfolio.loc[row_index, "cost_basis"] = chatgpt_portfolio.loc[row_index, "shares"] * chatgpt_portfolio.loc[row_index, "buy_price"]
 
     cash = cash + shares_sold * sell_price
     print(f"manual sell for {ticker} complete!")
@@ -376,26 +388,25 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     )
 
 
-def main() -> None:
+def main(chatgpt_portfolio, cash) -> None:
     """Example execution using the default portfolio.
         Be sure to fill in starting capital.
         Edit rows with your portfolio
         Note: Cost Basis = Shares X Buying Price"""
     
-    starting_capital = 1_000
-    cash = starting_capital
+    chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
+
+
+    chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
+    daily_results(chatgpt_portfolio, cash)
+
+
+if __name__ == "__main__":
+    cash = 100 # insert real cash
     chatgpt_portfolio = [
         {"ticker": "ABEO", "shares": 6, "stop_loss": 4.9, "buy_price": 5.77, "cost_basis": 34.62},
         {"ticker": "IINN", "shares": 14, "stop_loss": 1.1, "buy_price": 1.5, "cost_basis": 21.0},
         {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
     ]
-    chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
-
-
-    process_portfolio(chatgpt_portfolio, cash)
-    daily_results(chatgpt_portfolio, cash)
-
-
-if __name__ == "__main__":
-    main()
+    main(chatgpt_portfolio, cash)
 

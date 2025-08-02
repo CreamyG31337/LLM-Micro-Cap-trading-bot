@@ -22,7 +22,7 @@ TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
 today = datetime.today().strftime("%Y-%m-%d")
 
 
-def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataFrame:
+def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd.DataFrame, float]:
     """Update daily price information, log stop-loss sells, and prompt for trades.
 
     The function iterates through each position, retrieves the latest close
@@ -146,7 +146,7 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(PORTFOLIO_CSV, index=False)
-    return portfolio
+    return portfolio, cash
 
 
 def log_sell(

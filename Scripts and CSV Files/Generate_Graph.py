@@ -83,7 +83,7 @@ def main(
 ) -> None:
     """Generate and display the comparison graph."""
     if baseline_equity <= 0:
-        raise SystemExit("Baseline equity must be positive.")
+        raise SystemError("Baseline equity must be positive.")
 
     chatgpt_totals = load_portfolio_details(baseline_equity, start_date)
 

@@ -15,6 +15,7 @@ from typing import cast
 
 # Shared file locations
 DATA_DIR = "Scripts and CSV Files"
+os.makedirs(DATA_DIR, exist_ok=True)
 PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
 TRADE_LOG_CSV = f"{DATA_DIR}/chatgpt_trade_log.csv"
 
@@ -22,7 +23,7 @@ TRADE_LOG_CSV = f"{DATA_DIR}/chatgpt_trade_log.csv"
 today = datetime.today().strftime("%Y-%m-%d")
 
 
-def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataFrame:
+def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd.DataFrame, float]:
     """Update daily price information, log stop-loss sells, and prompt for trades.
 
     The function iterates through each position, retrieves the latest close
@@ -146,7 +147,7 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(PORTFOLIO_CSV, index=False)
-    return portfolio
+    return portfolio, cash
 
 
 def log_sell(
@@ -189,18 +190,18 @@ def log_manual_buy(
 ) -> tuple[float, pd.DataFrame]:
     """Log a manual purchase and append to the portfolio."""
     check = input(
-        f"You are currently trying to buy {ticker}."
-        " If this a mistake enter 1."
+        f"You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}."
+        " If this a mistake, type 1."
     )
     if check == "1":
-        raise SystemExit("Please remove this function call.")
+        raise SystemError("Please remove this function call.")
 
     data = yf.download(ticker, period="1d")
     data = cast(pd.DataFrame, data)
     if data.empty:
-        SystemExit(f"error, could not find ticker {ticker}")
+        raise SystemError(f"error, could not find ticker {ticker}")
     if buy_price * shares > cash:
-        SystemExit(
+        raise SystemError(
             f"error, you have {cash} but are trying to spend {buy_price * shares}. Are you sure you can do this?"
         )
     pnl = 0.0
@@ -221,9 +222,11 @@ def log_manual_buy(
     else:
         df = pd.DataFrame([log])
     df.to_csv(TRADE_LOG_CSV, index=False)
-    existing_row = chatgpt_portfolio[chatgpt_portfolio['ticker'] == ticker]
     # if the portfolio doesn't already contain ticker, create a new row.
-    if existing_row.empty:
+    
+    mask = chatgpt_portfolio["ticker"] == ticker
+
+    if not mask.any():
         new_trade = {
         "ticker": ticker,
         "shares": shares,
@@ -231,18 +234,17 @@ def log_manual_buy(
         "buy_price": buy_price,
         "cost_basis": buy_price * shares,
     }
-        existing_row = pd.DataFrame(existing_row)
         chatgpt_portfolio = pd.concat(
             [chatgpt_portfolio, pd.DataFrame([new_trade])], ignore_index=True
     )
     # if the portfolio contains ticker already, update the row.
     else:
-        existing_row['shares'] = existing_row["shares"] + shares
-        old_shares_cost_basis = existing_row['cost_basis']
-        new_shares_cost_basis = shares * buy_price
-        existing_row['cost_basis'] = old_shares_cost_basis + new_shares_cost_basis
+        row_index = chatgpt_portfolio[mask].index[0]
+        chatgpt_portfolio.loc[row_index, 'shares'] = chatgpt_portfolio.loc[row_index, "shares"] + shares # type: ignore
+        current_cost_basis =  float(chatgpt_portfolio.loc[row_index, 'cost_basis'].item()) # type: ignore
+        chatgpt_portfolio.loc[row_index, 'cost_basis'] = shares * buy_price + current_cost_basis
     # update all stoploss for all shares
-        existing_row['stop_loss'] = stoploss
+        chatgpt_portfolio.loc[row_index, 'stop_loss'] = stoploss
     cash = cash - shares * buy_price
     print(f"Manual buy for {ticker} complete!")
     return cash, chatgpt_portfolio
@@ -261,8 +263,7 @@ def log_manual_sell(
     )
 
     if reason == "1":
-        raise SystemExit("Delete this function call from the program.")
-
+        raise SystemError("Delete this function call from the program.")
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:
@@ -270,13 +271,11 @@ def log_manual_sell(
     ticker_row = chatgpt_portfolio[chatgpt_portfolio["ticker"] == ticker]
 
     total_shares = int(ticker_row["shares"].item())
-    print(total_shares)
     if shares_sold > total_shares:
         raise ValueError(
             f"You are trying to sell {shares_sold} but only own {total_shares}."
         )
     buy_price = float(ticker_row["buy_price"].item())
-
     cost_basis = buy_price * shares_sold
     pnl = sell_price * shares_sold - cost_basis
     log = {
@@ -300,8 +299,9 @@ def log_manual_sell(
     if total_shares == shares_sold:
         chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
     else:
-        ticker_row["shares"] = total_shares - shares_sold
-        ticker_row["cost_basis"] = ticker_row["shares"] * ticker_row["buy_price"]
+        row_index = ticker_row.index[0]
+        chatgpt_portfolio.loc[row_index, "shares"] = total_shares - shares_sold
+        chatgpt_portfolio.loc[row_index, "cost_basis"] = chatgpt_portfolio.loc[row_index, "shares"] * chatgpt_portfolio.loc[row_index, "buy_price"]
 
     cash = cash + shares_sold * sell_price
     print(f"manual sell for {ticker} complete!")
@@ -382,7 +382,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
 
     print(
         "Here are is your update for today. You can make any changes you see fit (if necessary),\n"
-        "but you may not use deep research. You do have to ask premissons for any changes, as you have full control.\n"
+        "but you may not use deep research. You do not have to ask premissons for any changes, as you have full control.\n"
         "You can however use the Internet and check current prices for potenial buys."
     )
 
@@ -397,10 +397,9 @@ def main() -> None:
     chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     cash = 22.32
 
-    process_portfolio(chatgpt_portfolio, cash)
+    chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
     daily_results(chatgpt_portfolio, cash)
 
 
 if __name__ == "__main__":
     main()
-

@@ -390,7 +390,6 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
 def main() -> None:
     """Example execution using the default portfolio."""
     chatgpt_portfolio = [
-        portfolio = [
     {"ticker": "ABEO", "shares": 4, "stop_loss": 4.90, "buy_price": 5.77, "cost_basis": 23.08},
     {"ticker": "IINN", "shares": 16, "stop_loss": 1.10, "buy_price": 1.50, "cost_basis": 24.48},
     {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.50},

@@ -66,7 +66,7 @@ Pandas + yFinance for data & logic
 
 Matplotlib for visualizations
 
-ChatGPT 4o for decision-making
+ChatGPT for decision-making
 
 # Follow Along
 The experiment runs June 2025 to December 2025.

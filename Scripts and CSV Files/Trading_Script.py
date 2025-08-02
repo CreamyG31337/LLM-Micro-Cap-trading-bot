@@ -21,6 +21,8 @@ TRADE_LOG_CSV = f"{DATA_DIR}/chatgpt_trade_log.csv"
 
 # Today's date reused across logs
 today = datetime.today().strftime("%Y-%m-%d")
+now = datetime.now()
+day = now.weekday()
 
 
 def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd.DataFrame, float]:
@@ -35,6 +37,13 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd
     total_value = 0.0
     total_pnl = 0.0
     cash = starting_cash
+
+    if day == 6 or day == 5:
+        check = input("""Today is currently a weekend, so markets were never open. 
+    This will cause the program to calculate data from the last day (usually Friday), and save it as today.
+    Are you sure you want to do this? To exit, enter 1. """)
+    if check == "1":
+        raise SystemError("Exitting program.")
 
     while True:
         action = input(

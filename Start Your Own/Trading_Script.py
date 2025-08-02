@@ -21,6 +21,9 @@ TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
 
 # Today's date reused across logs
 today = datetime.today().strftime("%Y-%m-%d")
+now = datetime.now()
+day = now.weekday()
+
 
 
 def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd.DataFrame, float]:
@@ -35,6 +38,13 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd
     total_value = 0.0
     total_pnl = 0.0
     cash = starting_cash
+
+    if day == 6 or day == 5:
+        check = input("""Today is currently a weekend, so markets were never open. 
+    This will cause the program to calculate data from the last day (usually Friday), and save it as today.
+    Are you sure you want to do this? To exit, enter 1.""")
+    if check == "1":
+        raise SystemError("Exitting program.")
 
     while True:
         action = input(
@@ -388,21 +398,22 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     )
 
 
-def main(chatgpt_portfolio, cash) -> None:
-    """Example execution using the default portfolio.
-        Be sure to fill in starting capital.
-        Edit rows with your portfolio
-        Note: Cost Basis = Shares X Buying Price"""
-    
-    chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
+def main(chatgpt_portfolio: dict, cash: float) -> None:
+    if not isinstance(chatgpt_portfolio, pd.DataFrame or dict):
+        raise KeyError("The format for portfolio wasn't a dict or DataFrame.")
+    if isinstance(chatgpt_portfolio, dict):
+        chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
 
 
     chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
     daily_results(chatgpt_portfolio, cash)
 
-
 if __name__ == "__main__":
-    cash = 100 # insert real cash
+    """Example execution using the default portfolio.
+        Edit rows with your portfolio and insert real cash.
+        Note: Cost Basis = Shares X Buying Price"""
+
+    cash = 100
     chatgpt_portfolio = [
         {"ticker": "ABEO", "shares": 6, "stop_loss": 4.9, "buy_price": 5.77, "cost_basis": 34.62},
         {"ticker": "IINN", "shares": 14, "stop_loss": 1.1, "buy_price": 1.5, "cost_basis": 21.0},

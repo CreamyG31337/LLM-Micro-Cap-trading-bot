@@ -415,16 +415,33 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     )
 
 
-def main(chatgpt_portfolio: dict, cash: float, data_dir: Path | None = None) -> None:
-    """Run the trading script using ``data_dir`` for CSV storage."""
+def main(
+    chatgpt_portfolio: list[dict[str, object]] | dict | pd.DataFrame,
+    cash: float,
+    data_dir: Path | None = None,
+) -> None:
+    """Run the trading script.
+
+    Parameters
+    ----------
+    chatgpt_portfolio:
+        Portfolio positions provided as a DataFrame, a mapping of column
+        names to lists, or a list of row dictionaries.
+    cash:
+        Starting cash balance.
+    data_dir:
+        Directory where trade and portfolio CSVs will be stored.
+    """
 
     if data_dir is not None:
         set_data_dir(data_dir)
 
-    if not isinstance(chatgpt_portfolio, (pd.DataFrame, dict)):
-        raise KeyError("The format for portfolio wasn't a dict or DataFrame.")
-    if isinstance(chatgpt_portfolio, dict):
+    if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
+    elif isinstance(chatgpt_portfolio, dict):
+        chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
+    elif not isinstance(chatgpt_portfolio, pd.DataFrame):
+        raise KeyError("The format for portfolio wasn't a dict, list, or DataFrame.")
 
     chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
     daily_results(chatgpt_portfolio, cash)

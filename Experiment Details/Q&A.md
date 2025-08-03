@@ -45,4 +45,4 @@ It has serious potential. Most retail traders chase SPY predictions with random 
 
 Want to submit a question? 
 
-Please do so here: nathanbsmith729@gmail.com
+Please do so here: nathanbsmith.business@gmail.com

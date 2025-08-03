@@ -249,11 +249,20 @@ def log_manual_buy(
     data = yf.download(ticker, period="1d")
     data = cast(pd.DataFrame, data)
     if data.empty:
-        raise SystemError(f"error, could not find ticker {ticker}")
-    if buy_price * shares > cash:
-        raise SystemError(
-            f"error, you have {cash} but are trying to spend {buy_price * shares}. Are you sure you can do this?"
+        print(f"Manual buy for {ticker} failed: no market data available.")
+        return cash, chatgpt_portfolio
+    day_high = float(data["High"].iloc[-1])
+    day_low = float(data["Low"].iloc[-1])
+    if not (day_low <= buy_price <= day_high):
+        print(
+            f"Manual buy for {ticker} at {buy_price} failed: price outside today's range {day_low}-{day_high}."
         )
+        return cash, chatgpt_portfolio
+    if buy_price * shares > cash:
+        print(
+            f"Manual buy for {ticker} failed: cost {buy_price * shares} exceeds cash balance {cash}."
+        )
+        return cash, chatgpt_portfolio
     pnl = 0.0
 
     log = {
@@ -317,14 +326,28 @@ NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY."""
         print("Returning...")
         return cash, chatgpt_portfolio
     if ticker not in chatgpt_portfolio["ticker"].values:
-        raise KeyError(f"error, could not find {ticker} in portfolio")
+        print(f"Manual sell for {ticker} failed: ticker not in portfolio.")
+        return cash, chatgpt_portfolio
     ticker_row = chatgpt_portfolio[chatgpt_portfolio["ticker"] == ticker]
 
     total_shares = int(ticker_row["shares"].item())
     if shares_sold > total_shares:
-        raise ValueError(
-            f"You are trying to sell {shares_sold} but only own {total_shares}."
+        print(
+            f"Manual sell for {ticker} failed: trying to sell {shares_sold} shares but only own {total_shares}."
         )
+        return cash, chatgpt_portfolio
+    data = yf.download(ticker, period="1d")
+    data = cast(pd.DataFrame, data)
+    if data.empty:
+        print(f"Manual sell for {ticker} failed: no market data available.")
+        return cash, chatgpt_portfolio
+    day_high = float(data["High"].iloc[-1])
+    day_low = float(data["Low"].iloc[-1])
+    if not (day_low <= sell_price <= day_high):
+        print(
+            f"Manual sell for {ticker} at {sell_price} failed: price outside today's range {day_low}-{day_high}."
+        )
+        return cash, chatgpt_portfolio
     buy_price = float(ticker_row["buy_price"].item())
     cost_basis = buy_price * shares_sold
     pnl = sell_price * shares_sold - cost_basis

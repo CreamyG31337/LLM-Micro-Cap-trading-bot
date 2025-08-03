@@ -218,8 +218,9 @@ def log_manual_buy(
 ) -> tuple[float, pd.DataFrame]:
     """Log a manual purchase and append to the portfolio."""
     check = input(
-        f"You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}."
-        " If this a mistake, type 1."
+        f"""You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}.
+        If this a mistake, type "1". 
+        NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY"""
     )
     if check == "1":
         raise SystemError("Please remove this function call.")
@@ -287,7 +288,9 @@ def log_manual_sell(
 ) -> tuple[float, pd.DataFrame]:
     """Log a manual sale and update the portfolio."""
     reason = input(
-        f"You are currently trying to sell {ticker}.\nIf this is a mistake, enter 1. "
+        f"""You are currently trying to sell {shares_sold} shares of {ticker} at a price of {sell_price}.
+If this is a mistake, enter 1. 
+NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY."""
     )
 
     if reason == "1":

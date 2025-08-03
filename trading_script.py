@@ -43,7 +43,7 @@ day = now.weekday()
 
 
 
-def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd.DataFrame, float]:
+def process_portfolio(portfolio: pd.DataFrame | dict, cash: float) -> tuple[pd.DataFrame, float]:
     """Update daily price information, log stop-loss sells, and prompt for trades.
 
     The function iterates through each position, retrieves the latest close
@@ -51,17 +51,17 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd
     one or more manual buys or sells which are then applied to the portfolio.
     Results are appended to ``PORTFOLIO_CSV``.
     """
+
     results: list[dict[str, object]] = []
     total_value = 0.0
     total_pnl = 0.0
-    cash = starting_cash
 
     if day == 6 or day == 5:
         check = input("""Today is currently a weekend, so markets were never open. 
 This will cause the program to calculate data from the last day (usually Friday), and save it as today.
 Are you sure you want to do this? To exit, enter 1. """)
-    if check == "1":
-        raise SystemError("Exitting program...")
+        if check == "1":
+            raise SystemError("Exitting program...")
 
     while True:
         action = input(
@@ -420,11 +420,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     )
 
 
-def main(
-    chatgpt_portfolio: list[dict[str, object]] | dict | pd.DataFrame,
-    cash: float,
-    data_dir: Path | None = None,
-) -> None:
+def main(file: str, data_dir: Path | None = None) -> None:
     """Run the trading script.
 
     Parameters
@@ -437,7 +433,7 @@ def main(
     data_dir:
         Directory where trade and portfolio CSVs will be stored.
     """
-
+    chatgpt_portfolio, cash = load_latest_portfolio_state(file)
     if data_dir is not None:
         set_data_dir(data_dir)
 
@@ -451,17 +447,35 @@ def main(
     chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
     daily_results(chatgpt_portfolio, cash)
 
+def load_latest_portfolio_state(file: str)  -> tuple[pd.DataFrame, float]:
+    df = pd.read_csv(file)
+    if df.empty:
+        portfolio = pd.DataFrame([])
+        print("Portfolio CSV is empty. Returning set amount of cash for creating portfolio.")
+        try:
+            cash = float(input("What would you like your starting cash amount to be? "))
+        except ValueError:
+            raise ValueError("Cash could not be converted to float datatype. Please enter a valid number.")
+        return portfolio, cash
+    non_total = df[df["Ticker"] != "TOTAL"].copy()
+    non_total["Date"] = pd.to_datetime(non_total["Date"])
+
+    latest_date = non_total["Date"].max()
+
+    # Get all tickers from the latest date
+    latest_tickers = non_total[non_total["Date"] == latest_date].copy()
+    latest_tickers.drop(columns=["Date", "Cash Balance", "Total Equity", "Action", "Current Price", "PnL", "Total Value"], inplace=True)
+    latest_tickers.rename(columns={"Cost Basis": "buy_price", "Shares": "shares"}, inplace=True)
+    latest_tickers['cost_basis'] = latest_tickers['shares'] * latest_tickers['buy_price']
+    latest_tickers = latest_tickers.reset_index(drop=True).to_dict(orient='records')
+    df = df[df["Ticker"] == "TOTAL"]  # Only the total summary rows
+    df["Date"] = pd.to_datetime(df["Date"])
+    latest = df.sort_values("Date").iloc[-1]
+    cash = float(latest["Cash Balance"])
+    return latest_tickers, cash
 
 if __name__ == "__main__":
-    """Example execution using the default portfolio.
-        Edit rows with your portfolio and insert real cash.
-        Note: Cost Basis = Shares X Buying Price"""
-
-    cash = 100
-    chatgpt_portfolio = [
-        {"ticker": "ABEO", "shares": 6, "stop_loss": 4.9, "buy_price": 5.77, "cost_basis": 34.62},
-        {"ticker": "IINN", "shares": 14, "stop_loss": 1.1, "buy_price": 1.5, "cost_basis": 21.0},
-        {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
-    ]
-    main(chatgpt_portfolio, cash, Path.cwd())
+    
+    main("Scripts and CSV Files/chatgpt_portfolio_update.csv", Path.cwd())
+    
 

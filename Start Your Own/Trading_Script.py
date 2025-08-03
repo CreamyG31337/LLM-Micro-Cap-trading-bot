@@ -10,13 +10,7 @@ from trading_script import main
 
 
 if __name__ == "__main__":
-    cash = 100
-    chatgpt_portfolio = [
-        {"ticker": "ABEO", "shares": 6, "stop_loss": 4.9, "buy_price": 5.77, "cost_basis": 34.62},
-        {"ticker": "IINN", "shares": 14, "stop_loss": 1.1, "buy_price": 1.5, "cost_basis": 21.0},
-        {"ticker": "ACTU", "shares": 6, "stop_loss": 4.89, "buy_price": 5.75, "cost_basis": 34.5},
-    ]
 
     data_dir = Path(__file__).resolve().parent
-    main(chatgpt_portfolio, cash, data_dir)
+    main("Start Your Own/chatgpt_portfolio_update.csv", Path.cwd())
 

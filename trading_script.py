@@ -244,8 +244,7 @@ def log_manual_buy(
     """Log a manual purchase and append to the portfolio."""
     check = input(
         f"""You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}.
-        If this a mistake, type "1". 
-        NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY. """
+        If this a mistake, type "1". """
     )
     if check == "1":
         print("Returning...")
@@ -256,11 +255,11 @@ def log_manual_buy(
     if data.empty:
         print(f"Manual buy for {ticker} failed: no market data available.")
         return cash, chatgpt_portfolio
-    day_high = float(data["High"].iloc[-1])
-    day_low = float(data["Low"].iloc[-1])
+    day_high = float(data["High"].iloc[-1].item())
+    day_low = float(data["Low"].iloc[-1].item())
     if not (day_low <= buy_price <= day_high):
         print(
-            f"Manual buy for {ticker} at {buy_price} failed: price outside today's range {day_low}-{day_high}."
+            f"Manual buy for {ticker} at {buy_price} failed: price outside today's range {round(day_low, 2)}-{round(day_high, 2)}."
         )
         return cash, chatgpt_portfolio
     if buy_price * shares > cash:
@@ -323,8 +322,7 @@ def log_manual_sell(
     """Log a manual sale and update the portfolio."""
     reason = input(
         f"""You are currently trying to sell {shares_sold} shares of {ticker} at a price of {sell_price}.
-If this is a mistake, enter 1. 
-NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY."""
+If this is a mistake, enter 1. """
     )
 
     if reason == "1":
@@ -350,7 +348,7 @@ NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY."""
     day_low = float(data["Low"].iloc[-1])
     if not (day_low <= sell_price <= day_high):
         print(
-            f"Manual sell for {ticker} at {sell_price} failed: price outside today's range {day_low}-{day_high}."
+            f"Manual sell for {ticker} at {sell_price} failed: price outside today's range {round(day_low, 2)}-{round(day_high, 2)}."
         )
         return cash, chatgpt_portfolio
     buy_price = float(ticker_row["buy_price"].item())

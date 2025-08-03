@@ -58,10 +58,10 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> tuple[pd
 
     if day == 6 or day == 5:
         check = input("""Today is currently a weekend, so markets were never open. 
-    This will cause the program to calculate data from the last day (usually Friday), and save it as today.
-    Are you sure you want to do this? To exit, enter 1.""")
+This will cause the program to calculate data from the last day (usually Friday), and save it as today.
+Are you sure you want to do this? To exit, enter 1. """)
     if check == "1":
-        raise SystemError("Exitting program.")
+        raise SystemError("Exitting program...")
 
     while True:
         action = input(
@@ -220,10 +220,11 @@ def log_manual_buy(
     check = input(
         f"""You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}.
         If this a mistake, type "1". 
-        NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY"""
+        NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY. """
     )
     if check == "1":
-        raise SystemError("Please remove this function call.")
+        print("Returning...")
+        return cash, chatgpt_portfolio
 
     data = yf.download(ticker, period="1d")
     data = cast(pd.DataFrame, data)
@@ -294,7 +295,8 @@ NOTE: THIS ORDER WILL EXECUTE NO MATTER WHAT. BE SURE TO CHECK VALIDITY."""
     )
 
     if reason == "1":
-        raise SystemError("Delete this function call from the program.")
+        print("Returning...")
+        return cash, chatgpt_portfolio
     if isinstance(chatgpt_portfolio, list):
         chatgpt_portfolio = pd.DataFrame(chatgpt_portfolio)
     if ticker not in chatgpt_portfolio["ticker"].values:

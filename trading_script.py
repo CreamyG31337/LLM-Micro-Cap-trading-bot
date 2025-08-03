@@ -142,15 +142,20 @@ Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press 
                 "Total Equity": "",
             }
         else:
-            price = round(data["Close"].iloc[-1], 2)
-            value = round(price * shares, 2)
-            pnl = round((price - cost) * shares, 2)
+            low_price = round(float(data["Low"].iloc[-1]), 2)
+            close_price = round(float(data["Close"].iloc[-1]), 2)
 
-            if price <= stop:
+            if low_price <= stop:
+                price = stop
+                value = round(price * shares, 2)
+                pnl = round((price - cost) * shares, 2)
                 action = "SELL - Stop Loss Triggered"
                 cash += value
                 portfolio_df = log_sell(ticker, shares, price, cost, pnl, portfolio_df)
             else:
+                price = close_price
+                value = round(price * shares, 2)
+                pnl = round((price - cost) * shares, 2)
                 action = "HOLD"
                 total_value += value
                 total_pnl += pnl

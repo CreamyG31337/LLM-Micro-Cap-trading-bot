@@ -13,9 +13,11 @@ import pandas as pd
 import yfinance as yf
 from typing import Any, cast
 import os
+import time
 
 # Shared file locations
-DATA_DIR = Path("Scripts and CSV Files")
+SCRIPT_DIR = Path(__file__).resolve().parent
+DATA_DIR = SCRIPT_DIR  # Save files in the same folder as this script
 PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
 
@@ -197,6 +199,7 @@ Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press 
         existing = pd.read_csv(PORTFOLIO_CSV)
         existing = existing[existing["Date"] != today]
         print("rows for today already logged, not saving results to CSV...")
+        time.sleep(1)
         df = pd.concat([existing, df], ignore_index=True)
 
     df.to_csv(PORTFOLIO_CSV, index=False)
@@ -392,6 +395,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     portfolio_dict: list[dict[str, object]] = chatgpt_portfolio.to_dict(orient="records")
 
     print(f"prices and updates for {today}")
+    time.sleep(1)
     for stock in portfolio_dict + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
         ticker = stock["ticker"]
         try:
@@ -424,17 +428,14 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     daily_pct = equity_series.pct_change().dropna()
 
     total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0] 
-    print(total_return)
 
     # Number of total trading days
     n_days = len(chatgpt_totals)
-    print(n_days)
     # Risk-free return over total trading period (assuming 4.5% risk-free rate)
     rf_annual = 0.045
     rf_period = (1 + rf_annual) ** (n_days / 252) - 1
     # Standard deviation of daily returns
     std_daily = daily_pct.std()
-    print(std_daily)
     negative_pct = daily_pct[daily_pct < 0]
     negative_std = negative_pct.std()
     # Sharpe Ratio
@@ -531,9 +532,4 @@ def load_latest_portfolio_state(
     latest = df.sort_values("Date").iloc[-1]
     cash = float(latest["Cash Balance"])
     return latest_tickers, cash
-
-if __name__ == "__main__":
-    
-    main("Scripts and CSV Files/chatgpt_portfolio_update.csv", Path.cwd())
-    
 

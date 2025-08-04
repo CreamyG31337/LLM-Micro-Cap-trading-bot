@@ -68,6 +68,13 @@ Matplotlib for visualizations
 
 ChatGPT for decision-making
 
+# Installation
+To run the scripts locally, install the Python dependencies:
+
+```
+pip install -r requirements.txt
+```
+
 # Follow Along
 The experiment runs June 2025 to December 2025.
 Every trading day I will update the portfolio CSV file.

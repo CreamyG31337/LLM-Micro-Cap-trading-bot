@@ -15,7 +15,7 @@ from typing import Any, cast
 import os
 
 # Shared file locations
-DATA_DIR = Path(".")
+DATA_DIR = Path("Scripts and CSV Files")
 PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
 
@@ -64,7 +64,7 @@ def process_portfolio(
     tuple[pd.DataFrame, float]
         Updated portfolio and cash balance.
     """
-
+    print(portfolio)
     if isinstance(portfolio, pd.DataFrame):
         portfolio_df = portfolio.copy()
     elif isinstance(portfolio, (dict, list)):
@@ -423,17 +423,18 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     # Daily returns
     daily_pct = equity_series.pct_change().dropna()
 
-    total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
+    total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0] 
+    print(total_return)
 
     # Number of total trading days
     n_days = len(chatgpt_totals)
-
+    print(n_days)
     # Risk-free return over total trading period (assuming 4.5% risk-free rate)
     rf_annual = 0.045
     rf_period = (1 + rf_annual) ** (n_days / 252) - 1
-
     # Standard deviation of daily returns
     std_daily = daily_pct.std()
+    print(std_daily)
     negative_pct = daily_pct[daily_pct < 0]
     negative_std = negative_pct.std()
     # Sharpe Ratio
@@ -456,7 +457,8 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     scaling_factor = 100 / initial_price
     spx_value = price_now * scaling_factor
     print(f"$100 Invested in the S&P 500: ${spx_value:.2f}")
-    print(f"today's portfolio: {chatgpt_portfolio}")
+    print("today's portfolio:")
+    print(chatgpt_portfolio)
     print(f"cash balance: {cash}")
 
     print(
@@ -521,7 +523,7 @@ def load_latest_portfolio_state(
     # Get all tickers from the latest date
     latest_tickers = non_total[non_total["Date"] == latest_date].copy()
     latest_tickers.drop(columns=["Date", "Cash Balance", "Total Equity", "Action", "Current Price", "PnL", "Total Value"], inplace=True)
-    latest_tickers.rename(columns={"Cost Basis": "buy_price", "Shares": "shares"}, inplace=True)
+    latest_tickers.rename(columns={"Cost Basis": "buy_price", "Shares": "shares", "Ticker": "ticker", "Stop Loss": "stop_loss"}, inplace=True)
     latest_tickers['cost_basis'] = latest_tickers['shares'] * latest_tickers['buy_price']
     latest_tickers = latest_tickers.reset_index(drop=True).to_dict(orient='records')
     df = df[df["Ticker"] == "TOTAL"]  # Only the total summary rows

@@ -75,6 +75,12 @@ To run the scripts locally, install the Python dependencies:
 pip install -r requirements.txt
 ```
 
+Then launch the Streamlit interface:
+
+```
+streamlit run streamlit_app.py
+```
+
 # Follow Along
 The experiment runs June 2025 to December 2025.
 Every trading day I will update the portfolio CSV file.

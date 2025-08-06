@@ -198,7 +198,7 @@ Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press 
     if PORTFOLIO_CSV.exists():
         existing = pd.read_csv(PORTFOLIO_CSV)
         existing = existing[existing["Date"] != today]
-        print("rows for today already logged, not saving results to CSV...")
+        print("Saving results to CSV...")
         time.sleep(1)
         df = pd.concat([existing, df], ignore_index=True)
 
@@ -466,6 +466,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
         "Here are is your update for today. You can make any changes you see fit (if necessary),\n"
         "but you may not use deep research. You do have to ask premissons for any changes, as you have full control.\n"
         "You can however use the Internet and check current prices for potenial buys."
+        "*"
     )
 
 

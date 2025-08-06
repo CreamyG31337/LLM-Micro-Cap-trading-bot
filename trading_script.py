@@ -48,6 +48,7 @@ day = now.weekday()
 def process_portfolio(
     portfolio: pd.DataFrame | dict[str, list[object]] | list[dict[str, object]],
     cash: float,
+    interactive: bool = True,
 ) -> tuple[pd.DataFrame, float]:
     """Update daily price information, log stop-loss sells, and prompt for trades.
 
@@ -60,6 +61,10 @@ def process_portfolio(
         with a single type.
     cash:
         Cash balance available for trading.
+    interactive:
+        When ``True`` (default) the function prompts for manual trades via
+        ``input``. Set to ``False`` to skip all interactive prompts – useful
+        when the function is driven by a user interface or automated tests.
 
     Returns
     -------
@@ -78,48 +83,60 @@ def process_portfolio(
     total_value = 0.0
     total_pnl = 0.0
 
-    if day == 6 or day == 5:
-        check = input("""Today is currently a weekend, so markets were never open. 
+    if day == 6 or day == 5 and interactive:
+        check = input(
+            """Today is currently a weekend, so markets were never open.
 This will cause the program to calculate data from the last day (usually Friday), and save it as today.
-Are you sure you want to do this? To exit, enter 1. """)
+Are you sure you want to do this? To exit, enter 1. """
+        )
         if check == "1":
             raise SystemError("Exitting program...")
 
-    while True:
-        action = input(
-            f""" You have {cash} in cash.
+    if interactive:
+        while True:
+            action = input(
+                f""" You have {cash} in cash.
 Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to continue: """
-        ).strip().lower()
-        if action == "b":
-            try:
-                ticker = input("Enter ticker symbol: ").strip().upper()
-                shares = float(input("Enter number of shares: "))
-                buy_price = float(input("Enter buy price: "))
-                stop_loss = float(input("Enter stop loss: "))
-                if shares <= 0 or buy_price <= 0 or stop_loss <= 0:
-                    raise ValueError
-            except ValueError:
-                print("Invalid input. Manual buy cancelled.")
-            else:
-                cash, portfolio_df = log_manual_buy(
-                    buy_price, shares, ticker, stop_loss, cash, portfolio_df
-                )
-            continue
-        if action == "s":
-            try:
-                ticker = input("Enter ticker symbol: ").strip().upper()
-                shares = float(input("Enter number of shares to sell: "))
-                sell_price = float(input("Enter sell price: "))
-                if shares <= 0 or sell_price <= 0:
-                    raise ValueError
-            except ValueError:
-                print("Invalid input. Manual sell cancelled.")
-            else:
-                cash, portfolio_df = log_manual_sell(
-                    sell_price, shares, ticker, cash, portfolio_df
-                )
-            continue
-        break
+            ).strip().lower()
+            if action == "b":
+                try:
+                    ticker = input("Enter ticker symbol: ").strip().upper()
+                    shares = float(input("Enter number of shares: "))
+                    buy_price = float(input("Enter buy price: "))
+                    stop_loss = float(input("Enter stop loss: "))
+                    if shares <= 0 or buy_price <= 0 or stop_loss <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid input. Manual buy cancelled.")
+                else:
+                    cash, portfolio_df = log_manual_buy(
+                        buy_price,
+                        shares,
+                        ticker,
+                        stop_loss,
+                        cash,
+                        portfolio_df,
+                    )
+                continue
+            if action == "s":
+                try:
+                    ticker = input("Enter ticker symbol: ").strip().upper()
+                    shares = float(input("Enter number of shares to sell: "))
+                    sell_price = float(input("Enter sell price: "))
+                    if shares <= 0 or sell_price <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid input. Manual sell cancelled.")
+                else:
+                    cash, portfolio_df = log_manual_sell(
+                        sell_price,
+                        shares,
+                        ticker,
+                        cash,
+                        portfolio_df,
+                    )
+                continue
+            break
 
     for _, stock in portfolio_df.iterrows():
         ticker = stock["ticker"]
@@ -243,15 +260,24 @@ def log_manual_buy(
     stoploss: float,
     cash: float,
     chatgpt_portfolio: pd.DataFrame,
+    interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    """Log a manual purchase and append to the portfolio."""
-    check = input(
-        f"""You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}.
+    """Log a manual purchase and append to the portfolio.
+
+    Parameters
+    ----------
+    interactive:
+        When ``False`` the confirmation prompt is skipped. Useful for driving
+        the function from a graphical user interface.
+    """
+    if interactive:
+        check = input(
+            f"""You are currently trying to buy {shares} shares of {ticker} with a price of {buy_price} and a stoploss of {stoploss}.
         If this a mistake, type "1". """
-    )
-    if check == "1":
-        print("Returning...")
-        return cash, chatgpt_portfolio
+        )
+        if check == "1":
+            print("Returning...")
+            return cash, chatgpt_portfolio
 
     data = yf.download(ticker, period="1d")
     data = cast(pd.DataFrame, data)
@@ -321,16 +347,30 @@ def log_manual_sell(
     ticker: str,
     cash: float,
     chatgpt_portfolio: pd.DataFrame,
+    reason: str | None = None,
+    interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    """Log a manual sale and update the portfolio."""
-    reason = input(
-        f"""You are currently trying to sell {shares_sold} shares of {ticker} at a price of {sell_price}.
-If this is a mistake, enter 1. """
-    )
+    """Log a manual sale and update the portfolio.
 
-    if reason == "1":
-        print("Returning...")
-        return cash, chatgpt_portfolio
+    Parameters
+    ----------
+    reason:
+        Description of why the position is being sold. Ignored when
+        ``interactive`` is ``True``.
+    interactive:
+        When ``False`` no interactive confirmation is requested.
+    """
+    if interactive:
+        reason = input(
+            f"""You are currently trying to sell {shares_sold} shares of {ticker} at a price of {sell_price}.
+If this is a mistake, enter 1. """
+        )
+
+        if reason == "1":
+            print("Returning...")
+            return cash, chatgpt_portfolio
+    elif reason is None:
+        reason = ""
     if ticker not in chatgpt_portfolio["ticker"].values:
         print(f"Manual sell for {ticker} failed: ticker not in portfolio.")
         return cash, chatgpt_portfolio

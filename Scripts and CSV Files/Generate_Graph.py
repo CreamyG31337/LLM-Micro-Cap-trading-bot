@@ -1,9 +1,13 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
+from pathlib import Path  # NEW
 
 DATA_DIR = "Scripts and CSV Files"
 PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
+
+# Save path in project root
+RESULTS_PATH = Path("Results.png")  # NEW
 
 
 def load_portfolio_totals() -> pd.DataFrame:
@@ -75,6 +79,11 @@ def main() -> None:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
+
+    # --- Auto-save to project root ---
+    plt.savefig(RESULTS_PATH, dpi=300, bbox_inches="tight")
+    print(f"Saved chart to: {RESULTS_PATH.resolve()}")
+
     plt.show()
 
 

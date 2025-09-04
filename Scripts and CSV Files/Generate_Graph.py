@@ -11,6 +11,9 @@ def load_portfolio_totals() -> pd.DataFrame:
     chatgpt_df = pd.read_csv(PORTFOLIO_CSV)
     chatgpt_totals = chatgpt_df[chatgpt_df["Ticker"] == "TOTAL"].copy()
     chatgpt_totals["Date"] = pd.to_datetime(chatgpt_totals["Date"])
+    chatgpt_totals["Total Equity"] = pd.to_numeric(
+        chatgpt_totals["Total Equity"], errors="coerce"
+    )
 
     baseline_date = pd.Timestamp("2025-06-27")
     baseline_equity = 100
@@ -30,13 +33,23 @@ def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataF
     return sp500
 
 
-def main() -> None:
+def main() -> tuple[pd.Timestamp, float, float]:
     """Generate and display the comparison graph."""
     chatgpt_totals = load_portfolio_totals()
 
     start_date = pd.Timestamp("2025-06-27")
     end_date = chatgpt_totals["Date"].max()
     sp500 = download_sp500(start_date, end_date)
+
+    # Calculate running max and drawdown
+    chatgpt_totals["Running Max"] = chatgpt_totals["Total Equity"].cummax()
+    chatgpt_totals["Drawdown %"] = (
+        chatgpt_totals["Total Equity"] / chatgpt_totals["Running Max"] - 1
+    ) * 100
+    drawdown_row = chatgpt_totals.loc[chatgpt_totals["Drawdown %"].idxmin()]
+    drawdown_date = drawdown_row["Date"]
+    drawdown_value = float(drawdown_row["Total Equity"])
+    drawdown_pct = float(drawdown_row["Drawdown %"])
 
     plt.figure(figsize=(10, 6))
     plt.style.use("seaborn-v0_8-whitegrid")
@@ -65,9 +78,13 @@ def main() -> None:
     plt.text(final_date, final_chatgpt + 0.3, f"+{final_chatgpt - 100:.1f}%", color="blue", fontsize=9)
     plt.text(final_date, final_spx + 0.9, f"+{final_spx - 100:.1f}%", color="orange", fontsize=9)
 
-    drawdown_date = pd.Timestamp("2025-07-11")
-    drawdown_value = 102.46
-    plt.text(drawdown_date + pd.Timedelta(days=0.5), drawdown_value - 0.5, "-7% Drawdown", color="red", fontsize=9)
+    plt.text(
+        drawdown_date + pd.Timedelta(days=0.5),
+        drawdown_value - 0.5,
+        f"{drawdown_pct:.1f}%",
+        color="red",
+        fontsize=9,
+    )
     plt.title("ChatGPT's Micro Cap Portfolio vs. S&P 500")
     plt.xlabel("Date")
     plt.ylabel("Value of $100 Investment")
@@ -76,6 +93,8 @@ def main() -> None:
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+    return drawdown_date, drawdown_value, drawdown_pct
 
 
 if __name__ == "__main__":

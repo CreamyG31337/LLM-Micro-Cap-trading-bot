@@ -43,7 +43,7 @@ So, starting with just $100, I wanted to answer a simple but powerful question:
      2. Update the dates and description below
      3. Update the "Last Updated" date -->
 
-**Last Updated:** August 29th, 2025
+**Current Portfolio Results**
 
 ![Latest Performance Results](Results.png)
 
@@ -57,6 +57,17 @@ So, starting with just $100, I wanted to answer a simple but powerful question:
 - Performance tracking — CSVs with daily PnL, total equity, and trade history  
 - Visualization tools — Matplotlib graphs comparing ChatGPT vs. Index  
 - Logs & trade data — auto-saved logs for transparency  
+
+## Want to Contribute?
+
+Contributions are very welcome! This project is community-oriented, and your help is invaluable.  
+
+- **Issues:** If you notice a bug or have an idea for improvement, please.  
+- **Pull Requests:** Feel free to submit a PR — I usually review within a few days.  
+- **Collaboration:** High-value contributors may be invited as maintainers/admins to help shape the project’s future.  
+
+Whether it’s fixing a typo, adding features, or discussing new ideas, all contributions are appreciated!
+
 
 # Why This Matters
 AI is being hyped across every industry, but can it really manage money without guidance?

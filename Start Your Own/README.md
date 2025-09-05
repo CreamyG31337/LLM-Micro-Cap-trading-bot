@@ -16,9 +16,9 @@ save their CSV data inside this folder.
    pip install -r requirements.txt
    ```
 
-**Run Trading Script:**
+**Processing Portfolio:**
    ```bash
-   # always include a CSV file of history
+   # ALWAYS include a CSV file of history
    python trading_script.py --file "Start Your Own/chatgpt_portfolio_update.csv"
    ```
 
@@ -44,7 +44,7 @@ save their CSV data inside this folder.
 | `--baseline-file`   | str    | —       | Path to a text file containing a single number for baseline                 |
 | `--output`          | str    | —       | Optional path to save the chart (`.png` / `.jpg` / `.pdf`)                  |
 
-## Trading_Script.py
+## ProcessPortfolio.py
 
 This script updates your portfolio and logs trades.
 
@@ -66,7 +66,7 @@ This script draws a graph of your portfolio versus the S&P 500.
 **Program will ALWAYS use 'Start Your Own/chatgpt_portfolio_update.csv' for data.**
 
 1. **Ensure you have portfolio data**
-   - Run `Trading_Script.py` at least once so `chatgpt_portfolio_update.csv` has data.
+   - Run `ProcessPortfolio.py` at least once so `chatgpt_portfolio_update.csv` has data.
 2. **Run the graph script**
    ```bash
    python "Start Your Own/Generate_Graph.py" --baseline-equity 100

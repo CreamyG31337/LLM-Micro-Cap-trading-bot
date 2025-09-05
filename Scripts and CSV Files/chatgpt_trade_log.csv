@@ -17,3 +17,4 @@ Date,Ticker,Shares Bought,Buy Price,Cost Basis,PnL,Reason,Shares Sold,Sell Price
 2025-08-18,AXGN,2.0,14.96,29.92,0.0,MANUAL BUY - New position,,
 2025-09-02,IINN,,,12.5,-0.9000000000000004,MANUAL SELL LIMIT - ,10.0,1.16
 2025-09-02,ATYR,4.0,5.44,21.76,0.0,MANUAL BUY LIMIT - Filled,,
+2025-09-04,FBIO,1.0,2.85,2.85,0.0,MANUAL BUY LIMIT - Filled,,

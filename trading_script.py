@@ -29,6 +29,17 @@ import yfinance as yf
 import json
 import logging
 
+# Import dual currency support
+try:
+    from dual_currency import (
+        CashBalances, load_cash_balances, save_cash_balances, 
+        prompt_for_dual_currency_cash, format_cash_display,
+        get_ticker_currency, get_trade_currency_info
+    )
+    _HAS_DUAL_CURRENCY = True
+except ImportError:
+    _HAS_DUAL_CURRENCY = False
+
 # Optional pandas-datareader import for Stooq access
 try:
     import pandas_datareader.data as pdr
@@ -1091,19 +1102,32 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
 
 def load_latest_portfolio_state(
     file: str,
-) -> tuple[pd.DataFrame | list[dict[str, Any]], float]:
-    """Load the most recent portfolio snapshot and cash balance."""
+) -> tuple[pd.DataFrame | list[dict[str, Any]], float | CashBalances]:
+    """Load the most recent portfolio snapshot and cash balance (dual currency if available)."""
     df = pd.read_csv(file)
     if df.empty:
         portfolio = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
-        print("Portfolio CSV is empty. Returning set amount of cash for creating portfolio.")
-        try:
-            cash = float(input("What would you like your starting cash amount to be? "))
-        except ValueError:
-            raise ValueError(
-                "Cash could not be converted to float datatype. Please enter a valid number."
-            )
-        return portfolio, cash
+        print("Portfolio CSV is empty. Setting up initial cash balances.")
+        
+        if _HAS_DUAL_CURRENCY:
+            # Try to load existing dual currency balances
+            cash_balances = load_cash_balances(DATA_DIR)
+            if cash_balances.cad == 0.0 and cash_balances.usd == 0.0:
+                # No existing balances, prompt for initial setup
+                cash_balances = prompt_for_dual_currency_cash()
+                save_cash_balances(cash_balances, DATA_DIR)
+            else:
+                print(f"Using existing cash balances: {format_cash_display(cash_balances)}")
+            return portfolio, cash_balances
+        else:
+            # Fallback to single currency
+            try:
+                cash = float(input("What would you like your starting cash amount to be? "))
+            except ValueError:
+                raise ValueError(
+                    "Cash could not be converted to float datatype. Please enter a valid number."
+                )
+            return portfolio, cash
 
     non_total = df[df["Ticker"] != "TOTAL"].copy()
     non_total["Date"] = pd.to_datetime(non_total["Date"], format="mixed", errors="coerce")
@@ -1137,22 +1161,56 @@ def load_latest_portfolio_state(
     )
     latest_tickers = latest_tickers.reset_index(drop=True).to_dict(orient="records")
 
-    df_total = df[df["Ticker"] == "TOTAL"].copy()
-    df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
-    latest = df_total.sort_values("Date").iloc[-1]
-    cash = float(latest["Cash Balance"])
-    return latest_tickers, cash
+    # Load cash balances
+    if _HAS_DUAL_CURRENCY:
+        # Use dual currency system
+        cash_balances = load_cash_balances(DATA_DIR)
+        if cash_balances.cad == 0.0 and cash_balances.usd == 0.0:
+            # No dual currency data, try to migrate from CSV
+            df_total = df[df["Ticker"] == "TOTAL"].copy()
+            if not df_total.empty:
+                df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
+                latest = df_total.sort_values("Date").iloc[-1]
+                legacy_cash = float(latest["Cash Balance"])
+                print(f"Migrating from single currency (${legacy_cash}) to dual currency system.")
+                cash_balances = prompt_for_dual_currency_cash()
+                save_cash_balances(cash_balances, DATA_DIR)
+            else:
+                cash_balances = prompt_for_dual_currency_cash()
+                save_cash_balances(cash_balances, DATA_DIR)
+        return latest_tickers, cash_balances
+    else:
+        # Fallback to single currency from CSV
+        df_total = df[df["Ticker"] == "TOTAL"].copy()
+        df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
+        latest = df_total.sort_values("Date").iloc[-1]
+        cash = float(latest["Cash Balance"])
+        return latest_tickers, cash
 
 
 def main(file: str, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
-    llm_portfolio, cash = load_latest_portfolio_state(file)
+    llm_portfolio, cash_or_balances = load_latest_portfolio_state(file)
     print(file)
     if data_dir is not None:
         set_data_dir(data_dir)
 
-    llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
-    daily_results(llm_portfolio, cash)
+    if _HAS_DUAL_CURRENCY and isinstance(cash_or_balances, CashBalances):
+        # For now, use total CAD equivalent for compatibility with existing functions
+        # TODO: Update process_portfolio and daily_results to handle dual currency properly
+        cash_equiv = cash_or_balances.total_cad_equivalent()
+        print(f"\nDual Currency Mode: {format_cash_display(cash_or_balances)}")
+        print(f"Total (CAD equivalent): ${cash_equiv:,.2f}")
+        llm_portfolio, _ = process_portfolio(llm_portfolio, cash_equiv)
+        daily_results(llm_portfolio, cash_equiv)
+        
+        # Show dual currency info in results
+        print(f"\n💰 Actual Cash Balances: {format_cash_display(cash_or_balances)}")
+    else:
+        # Single currency mode
+        cash = float(cash_or_balances)
+        llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
+        daily_results(llm_portfolio, cash)
 
 
 if __name__ == "__main__":

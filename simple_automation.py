@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Dict, List, Any
 import pandas as pd
 
+# Import market configuration
+try:
+    from market_config import get_automation_rules, get_market_info, print_active_config
+    _HAS_MARKET_CONFIG = True
+except ImportError:
+    _HAS_MARKET_CONFIG = False
+    print("Warning: market_config.py not found. Using default settings.")
+
 # Import existing trading functions
 from trading_script import (
     process_portfolio, daily_results, load_latest_portfolio_state,
@@ -28,6 +36,25 @@ try:
 except ImportError:
     HAS_OPENAI = False
 
+
+def _get_trading_rules(cash: float) -> str:
+    """Get trading rules based on active market configuration"""
+    if _HAS_MARKET_CONFIG:
+        try:
+            rules_template = get_automation_rules()
+            return rules_template.format(cash=cash)
+        except Exception as e:
+            print(f"Warning: Failed to get rules from market_config: {e}")
+    
+    # Fallback rules (current Canadian default)
+    return f"""Rules:
+- You have ${cash:,.2f} in cash available for new positions
+- Focus on Canadian small-cap stocks (CAD 50M - CAD 500M market cap) on TSX/TSXV
+- Full shares only, no options or derivatives
+- All positions trade in CAD
+- Use stop-losses for risk management
+- Consider Canadian market liquidity and trading volumes
+- Be conservative with position sizing"""
 
 def generate_trading_prompt(portfolio_df: pd.DataFrame, cash: float, total_equity: float) -> str:
     """Generate a trading prompt with current portfolio data"""
@@ -50,12 +77,7 @@ def generate_trading_prompt(portfolio_df: pd.DataFrame, cash: float, total_equit
 Cash Balance: ${cash:,.2f}
 Total Equity: ${total_equity:,.2f}
 
-Rules:
-- You have ${cash:,.2f} in cash available for new positions
-- Prefer U.S. micro-cap stocks (<$300M market cap)
-- Full shares only, no options or derivatives
-- Use stop-losses for risk management
-- Be conservative with position sizing
+{_get_trading_rules(cash)}
 
 Analyze the current market conditions and provide specific trading recommendations.
 

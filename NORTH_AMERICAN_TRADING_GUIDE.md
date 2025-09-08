@@ -88,23 +88,6 @@ Your LLM now receives instructions to consider:
 - **US strengths**: Technology, consumer goods, financial services
 - **Overlap opportunities**: Cross-listed companies, similar sectors
 
-## 🔄 **Quick Market Switching**
-
-You can still switch to single-market focus anytime:
-
-```bash
-# Both markets (current setup)
-python switch_market.py north_american
-
-# Canadian only
-python switch_market.py canadian
-
-# US only  
-python switch_market.py us
-
-# Check current setting
-python switch_market.py status
-```
 
 ## 📝 **Example LLM Interactions**
 
@@ -181,25 +164,12 @@ Currency allocation: ~60% CAD exposure, 40% USD exposure
 
 ## 🎉 **Getting Started**
 
-1. **Verify current setup:**
-   ```bash
-   python switch_market.py status
-   ```
-
-2. **Should show:**
-   ```
-   Active Market: NORTH_AMERICAN
-   Currency: CAD/USD
-   Market Cap Range: CAD 50M - CAD 500M or USD 40M - USD 400M
-   Exchanges: TSX/TSXV/US Exchanges
-   ```
-
-3. **Start trading:**
+1. **Start trading:**
    ```bash
    python trading_script.py --file "my trading/llm_portfolio_update.csv"
    ```
 
-4. **Let the AI decide** between Canadian and US opportunities!
+2. **Let the AI decide** between Canadian and US opportunities!
 
 ## 🌟 **Why This Approach Rocks**
 

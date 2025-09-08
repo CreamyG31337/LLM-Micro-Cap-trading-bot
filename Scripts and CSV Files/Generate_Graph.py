@@ -1,10 +1,13 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
-from pathlib import Path  # NEW
+from pathlib import Path
 
-DATA_DIR = "Scripts and CSV Files"
-PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
+# Default to parent directory's 'my trading' folder, fallback to local directory
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_DATA_DIR = SCRIPT_DIR.parent / "my trading"
+DATA_DIR = str(DEFAULT_DATA_DIR) if DEFAULT_DATA_DIR.exists() else "Scripts and CSV Files"
+PORTFOLIO_CSV = f"{DATA_DIR}/llm_portfolio_update.csv" if "my trading" in DATA_DIR else f"{DATA_DIR}/chatgpt_portfolio_update.csv"
 
 # Save path in project root
 RESULTS_PATH = Path("Results.png")  # NEW

@@ -264,7 +264,7 @@ def main():
     parser = argparse.ArgumentParser(description="Simple Automated Trading")
     parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)")
     parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
-    parser.add_argument("--data-dir", default="Start Your Own", help="Data directory")
+    parser.add_argument("--data-dir", default="my trading", help="Data directory (default: my trading)")
     parser.add_argument("--dry-run", action="store_true", help="Don't execute trades, just show recommendations")
     
     args = parser.parse_args()

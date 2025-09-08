@@ -532,21 +532,25 @@ def process_portfolio(
                             currency = get_ticker_currency(ticker)
                             if currency == 'USD':
                                 if not cash_balances.can_afford_usd(notional):
-                                    print(f"❌ Insufficient USD cash. Need ${notional:.2f}, have ${cash_balances.usd:.2f}")
-                                    continue
+                                    if not handle_insufficient_funds(notional, 'USD', cash_balances.usd, ticker, DATA_DIR):
+                                        continue
+                                    # Reload balances after potential update
+                                    cash_balances = load_cash_balances(DATA_DIR)
                             else:  # CAD
                                 if not cash_balances.can_afford_cad(notional):
-                                    print(f"❌ Insufficient CAD cash. Need ${notional:.2f}, have ${cash_balances.cad:.2f}")
-                                    continue
+                                    if not handle_insufficient_funds(notional, 'CAD', cash_balances.cad, ticker, DATA_DIR):
+                                        continue
+                                    # Reload balances after potential update
+                                    cash_balances = load_cash_balances(DATA_DIR)
                         except Exception as e:
                             print(f"Warning: Could not check dual currency balances: {e}")
                             if notional > cash:
-                                print(f"❌ Insufficient cash. Need ${notional:.2f}, have ${cash:.2f}")
-                                continue
+                                if not handle_insufficient_funds(notional, 'CASH', cash, ticker, DATA_DIR):
+                                    continue
                     else:
                         if notional > cash:
-                            print(f"❌ Insufficient cash. Need ${notional:.2f}, have ${cash:.2f}")
-                            continue
+                            if not handle_insufficient_funds(notional, 'CASH', cash, ticker, DATA_DIR):
+                                continue
 
                     # Update portfolio
                     rows = portfolio_df.loc[portfolio_df["ticker"].astype(str).str.upper() == ticker.upper()]
@@ -902,21 +906,25 @@ def log_manual_buy(
             currency = get_ticker_currency(ticker)
             if currency == 'USD':
                 if not cash_balances.can_afford_usd(cost_amt):
-                    print(f"Manual buy for {ticker} failed: cost ${cost_amt:.2f} exceeds USD cash balance ${cash_balances.usd:.2f}.")
-                    return cash, llm_portfolio
+                    if not handle_insufficient_funds(cost_amt, 'USD', cash_balances.usd, ticker, DATA_DIR):
+                        return cash, llm_portfolio
+                    # Reload balances after potential update
+                    cash_balances = load_cash_balances(DATA_DIR)
             else:  # CAD
                 if not cash_balances.can_afford_cad(cost_amt):
-                    print(f"Manual buy for {ticker} failed: cost ${cost_amt:.2f} exceeds CAD cash balance ${cash_balances.cad:.2f}.")
-                    return cash, llm_portfolio
+                    if not handle_insufficient_funds(cost_amt, 'CAD', cash_balances.cad, ticker, DATA_DIR):
+                        return cash, llm_portfolio
+                    # Reload balances after potential update
+                    cash_balances = load_cash_balances(DATA_DIR)
         except Exception as e:
             print(f"Warning: Could not check dual currency balances: {e}")
             if cost_amt > cash:
-                print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
-                return cash, llm_portfolio
+                if not handle_insufficient_funds(cost_amt, 'CASH', cash, ticker, DATA_DIR):
+                    return cash, llm_portfolio
     else:
         if cost_amt > cash:
-            print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
-            return cash, llm_portfolio
+            if not handle_insufficient_funds(cost_amt, 'CASH', cash, ticker, DATA_DIR):
+                return cash, llm_portfolio
 
     log = {
         "Date": today,
@@ -976,11 +984,13 @@ def log_manual_buy(
             currency = get_ticker_currency(ticker)
             if currency == 'USD':
                 if not cash_balances.spend_usd(cost_amt):
-                    print(f"❌ Insufficient USD cash. Need ${cost_amt:.2f}, have ${cash_balances.usd:.2f}")
+                    # This should not happen since we checked above, but just in case
+                    print(f"❌ Unexpected error: Insufficient USD cash after balance check")
                     return cash, llm_portfolio
             else:  # CAD
                 if not cash_balances.spend_cad(cost_amt):
-                    print(f"❌ Insufficient CAD cash. Need ${cost_amt:.2f}, have ${cash_balances.cad:.2f}")
+                    # This should not happen since we checked above, but just in case
+                    print(f"❌ Unexpected error: Insufficient CAD cash after balance check")
                     return cash, llm_portfolio
             save_cash_balances(cash_balances, DATA_DIR)
             cash = cash_balances.total_cad_equivalent()
@@ -1366,6 +1376,100 @@ def load_latest_portfolio_state(
         cash = 1000.0
     
     return latest_tickers, cash
+
+
+def handle_insufficient_funds(needed_amount: float, currency: str, current_balance: float, ticker: str, data_dir: Path = None) -> bool:
+    """
+    Handle insufficient funds by offering to update cash balances.
+    Returns True if user updated balance and there are now sufficient funds, False otherwise.
+    """
+    if data_dir is None:
+        data_dir = DATA_DIR
+    
+    if not (_HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY):
+        # Single currency mode - offer simple cash update
+        print(f"\n💰 Insufficient Funds for {ticker}")
+        print(f"   Need: ${needed_amount:,.2f}")
+        print(f"   Have: ${current_balance:,.2f}")
+        print(f"   Short: ${needed_amount - current_balance:,.2f}")
+        
+        response = input(f"\nWould you like to add more cash to complete this purchase? (y/n): ").strip().lower()
+        if response == 'y':
+            try:
+                additional_cash = float(input(f"Enter additional cash amount: $"))
+                if additional_cash <= 0:
+                    print("❌ Amount must be positive")
+                    return False
+                # Note: In single currency mode, we don't actually update the balance
+                # This is more of a "promise" that the user will fund the account
+                print(f"✅ Proceeding with purchase assuming ${additional_cash:,.2f} additional funding")
+                return True
+            except ValueError:
+                print("❌ Invalid amount entered")
+                return False
+        return False
+    
+    # Dual currency mode - offer specific currency update
+    print(f"\n💰 Insufficient {currency} Funds for {ticker}")
+    print(f"   Need: ${needed_amount:,.2f} {currency}")
+    print(f"   Have: ${current_balance:,.2f} {currency}")
+    print(f"   Short: ${needed_amount - current_balance:,.2f} {currency}")
+    
+    response = input(f"\nWould you like to add more {currency} to complete this purchase? (y/n): ").strip().lower()
+    if response != 'y':
+        return False
+    
+    try:
+        # Load current balances
+        cash_balances = load_cash_balances(data_dir)
+        
+        # Show current balances
+        print(f"\n💰 Current Cash Balances:")
+        print(f"   CAD: ${cash_balances.cad:,.2f}")
+        print(f"   USD: ${cash_balances.usd:,.2f}")
+        
+        # Ask for the amount to add
+        amount_needed = needed_amount - current_balance
+        suggested_amount = max(amount_needed, amount_needed * 1.1)  # Suggest 10% buffer
+        
+        amount_input = input(f"Enter {currency} amount to add (suggested: ${suggested_amount:,.2f}): $").strip()
+        if amount_input == "":
+            amount_to_add = suggested_amount
+        else:
+            amount_to_add = float(amount_input)
+            
+        if amount_to_add <= 0:
+            print("❌ Amount must be positive")
+            return False
+        
+        # Add the funds
+        if currency == 'USD':
+            cash_balances.add_usd(amount_to_add)
+            new_balance = cash_balances.usd
+        else:  # CAD
+            cash_balances.add_cad(amount_to_add)
+            new_balance = cash_balances.cad
+        
+        # Save the updated balances
+        save_cash_balances(cash_balances, data_dir)
+        
+        print(f"✅ Added ${amount_to_add:,.2f} {currency}")
+        print(f"   New {currency} balance: ${new_balance:,.2f}")
+        
+        # Check if we now have sufficient funds
+        if new_balance >= needed_amount:
+            print(f"✅ Sufficient funds available for {ticker} purchase!")
+            return True
+        else:
+            print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
+            return False
+            
+    except ValueError:
+        print("❌ Invalid amount entered")
+        return False
+    except Exception as e:
+        print(f"❌ Error updating cash balances: {e}")
+        return False
 
 
 def update_cash_balances_manual(data_dir: Path = None) -> None:

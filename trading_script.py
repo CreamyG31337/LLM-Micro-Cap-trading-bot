@@ -84,7 +84,9 @@ def _effective_now() -> datetime:
 # Globals / file locations
 # ------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR  # Save files alongside this script by default
+# Default to 'my trading' folder for private data (gitignored)
+DEFAULT_DATA_DIR = SCRIPT_DIR / "my trading"
+DATA_DIR = DEFAULT_DATA_DIR
 PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
 # Default benchmarks (fallback if market_config not available)
@@ -409,6 +411,7 @@ def download_price_data(ticker: str, **kwargs: Any) -> FetchResult:
 # ------------------------------
 
 def set_data_dir(data_dir: Path) -> None:
+    """Set the data directory and update file paths. Creates directory if it doesn't exist."""
     global DATA_DIR, PORTFOLIO_CSV, TRADE_LOG_CSV
     DATA_DIR = Path(data_dir)
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -1372,20 +1375,26 @@ def load_latest_portfolio_state(
     return latest_tickers, cash
 
 
-def main(file: str, data_dir: Path | None = None) -> None:
+def main(file: str | None = None, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
-    llm_portfolio, cash = load_latest_portfolio_state(file)
-    print(file)
-    
-    # If data_dir not specified, use the directory containing the CSV file
+    # Set up data directory first
     if data_dir is not None:
         set_data_dir(data_dir)
     else:
-        # Automatically use the directory containing the portfolio CSV file
-        csv_file_path = Path(file)
-        if csv_file_path.parent != Path("."):  # If file is in a subfolder
-            set_data_dir(csv_file_path.parent)
-
+        # Use default 'my trading' directory
+        set_data_dir(DEFAULT_DATA_DIR)
+    
+    # Determine portfolio file path
+    if file is not None:
+        portfolio_file = file
+    else:
+        # Use the default portfolio file in the data directory
+        portfolio_file = str(PORTFOLIO_CSV)
+    
+    print(f"Using portfolio file: {portfolio_file}")
+    print(f"Using data directory: {DATA_DIR}")
+    
+    llm_portfolio, cash = load_latest_portfolio_state(portfolio_file)
     llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
     daily_results(llm_portfolio, cash)
 
@@ -1393,22 +1402,23 @@ def main(file: str, data_dir: Path | None = None) -> None:
 if __name__ == "__main__":
     import argparse
 
-    # Default CSV path resolution (keep your existing logic)
-    csv_path = PORTFOLIO_CSV if PORTFOLIO_CSV.exists() else (SCRIPT_DIR / "llm_portfolio_update.csv")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default=str(csv_path), help="Path to llm_portfolio_update.csv")
-    parser.add_argument("--data-dir", default=None, help="Optional data directory")
-    parser.add_argument("--asof", default=None, help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
+    parser = argparse.ArgumentParser(
+        description="LLM Micro-Cap Trading Bot - Portfolio Management",
+        epilog="By default, uses 'my trading' folder for private data storage."
+    )
+    parser.add_argument("--file", default=None, 
+                       help="Path to portfolio CSV (default: my trading/llm_portfolio_update.csv)")
+    parser.add_argument("--data-dir", default=None, 
+                       help="Data directory (default: my trading)")
+    parser.add_argument("--asof", default=None, 
+                       help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
     args = parser.parse_args()
 
     if args.asof:
         set_asof(args.asof)
 
-    if not Path(args.file).exists():
-        print("No portfolio CSV found. Create one or run main() with your file path.")
-    else:
-        main(args.file, Path(args.data_dir) if args.data_dir else None)
+    # Use the new main function with better defaults
+    main(args.file, Path(args.data_dir) if args.data_dir else None)
 
 
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:

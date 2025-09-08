@@ -1,5 +1,5 @@
 """
-Simple Automation Script for ChatGPT Micro-Cap Trading
+Simple Automation Script for LLM Micro-Cap Trading
 
 This script integrates with the existing trading_script.py to provide
 automated LLM-based trading decisions.
@@ -197,7 +197,7 @@ def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "m
     set_data_dir(data_path)
     
     # Load current portfolio
-    portfolio_file = data_path / "chatgpt_portfolio_update.csv"
+    portfolio_file = data_path / "llm_portfolio_update.csv"
     if portfolio_file.exists():
         portfolio_df, cash = load_latest_portfolio_state(str(portfolio_file))
     else:

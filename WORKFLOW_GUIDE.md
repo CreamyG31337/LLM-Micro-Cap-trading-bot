@@ -6,7 +6,7 @@ You only need to run **ONE script** each day. Here's the complete workflow:
 
 ### **Step 1: Run the Trading Script**
 ```bash
-python trading_script.py --file "my trading/chatgpt_portfolio_update.csv"
+python trading_script.py --file "my trading/llm_portfolio_update.csv"
 ```
 *Note: The script now defaults to using the "my trading" folder for private CSV files.*
 
@@ -74,7 +74,7 @@ You are encouraged to research both Canadian and US small-cap opportunities and 
 
 ### **Step 4: Paste into Your LLM**
 1. **Copy everything** from "Daily Results" to the end
-2. **Paste into ChatGPT, Claude, Gemini, or your preferred LLM**
+2. **Paste into your preferred LLM (ChatGPT, Claude, Gemini, etc.)**
 3. **Add context if needed:**
    ```
    You are a North American small-cap specialist. Analyze this portfolio data and recommend trades.
@@ -84,7 +84,7 @@ You are encouraged to research both Canadian and US small-cap opportunities and 
 When your LLM responds with trade recommendations:
 1. **Run the script again:**
    ```bash
-   python trading_script.py --file "my trading/chatgpt_portfolio_update.csv"
+   python trading_script.py --file "my trading/llm_portfolio_update.csv"
    ```
 2. **Choose 'b' for buy or 's' for sell**
 3. **Enter the recommended trades**
@@ -119,7 +119,7 @@ python switch_market.py us              # US only
 The confusion might be because the terminal sometimes cuts off long outputs. The `show_prompt.py` script I created will show you exactly what to copy/paste if the main script output gets truncated.
 
 ## 🎯 **Your Daily Workflow**
-1. `python trading_script.py --file "my trading/chatgpt_portfolio_update.csv"`
+1. `python trading_script.py --file "my trading/llm_portfolio_update.csv"`
 2. Copy the complete output (from "Daily Results" onwards)
 3. Paste into your preferred LLM
 4. Execute the LLM's trade recommendations by running the script again

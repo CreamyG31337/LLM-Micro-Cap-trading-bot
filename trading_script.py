@@ -63,7 +63,7 @@ def _effective_now() -> datetime:
 # Globals / file locations
 # ------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR  # Save files alongside this script by default
+DATA_DIR = SCRIPT_DIR / "my trading"  # Default location for private CSV files
 PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
 DEFAULT_BENCHMARKS = ["IWO", "XBI", "SPY", "IWM"]
@@ -1169,6 +1169,9 @@ if __name__ == "__main__":
 
     if args.asof:
         set_asof(args.asof)
+
+    # Ensure the default "my trading" directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
 
     if not Path(args.file).exists():
         print("No portfolio CSV found. Create one or run main() with your file path.")

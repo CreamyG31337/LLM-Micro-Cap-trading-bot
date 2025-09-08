@@ -98,17 +98,6 @@ When your LLM responds with trade recommendations:
 python show_prompt.py
 ```
 
-### **If you want to see current configuration:**
-```bash
-python switch_market.py status
-```
-
-### **If you want to change market focus:**
-```bash
-python switch_market.py north_american  # Both US + Canada (recommended)
-python switch_market.py canadian        # Canadian only
-python switch_market.py us              # US only
-```
 
 ## 📋 **Summary**
 - **One script**: `trading_script.py` does everything

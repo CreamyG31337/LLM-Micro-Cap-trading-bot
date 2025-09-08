@@ -50,7 +50,7 @@ def _get_trading_rules(cash: float) -> str:
     return f"""Rules:
 - You have ${cash:,.2f} in cash available for new positions
 - Focus on Canadian small-cap stocks (CAD 50M - CAD 500M market cap) on TSX/TSXV
-- Full shares only, no options or derivatives
+- Fractional shares supported (Wealthsimple), no options or derivatives
 - All positions trade in CAD
 - Use stop-losses for risk management
 - Consider Canadian market liquidity and trading volumes
@@ -88,7 +88,7 @@ Respond with ONLY a JSON object in this exact format:
         {{
             "action": "buy",
             "ticker": "SYMBOL",
-            "shares": 100,
+            "shares": 100.5,
             "price": 25.50,
             "stop_loss": 20.00,
             "reason": "Brief rationale"

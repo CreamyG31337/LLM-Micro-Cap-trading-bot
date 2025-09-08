@@ -28,17 +28,27 @@ import pandas as pd
 import yfinance as yf
 import json
 import logging
+from collections import defaultdict
+
+# Import market configuration
+try:
+    from market_config import get_benchmarks, get_daily_instructions, get_market_info, print_active_config
+    _HAS_MARKET_CONFIG = True
+except ImportError:
+    _HAS_MARKET_CONFIG = False
+    print("Warning: market_config.py not found. Using default settings.")
 
 # Import dual currency support
 try:
     from dual_currency import (
-        CashBalances, load_cash_balances, save_cash_balances, 
-        prompt_for_dual_currency_cash, format_cash_display,
-        get_ticker_currency, get_trade_currency_info
+        CashBalances, prompt_for_dual_currency_cash, save_cash_balances, 
+        load_cash_balances, format_cash_display, get_ticker_currency, 
+        get_trade_currency_info, is_canadian_ticker, is_us_ticker
     )
     _HAS_DUAL_CURRENCY = True
 except ImportError:
     _HAS_DUAL_CURRENCY = False
+    print("Warning: dual_currency.py not found. Using single currency mode.")
 
 # Optional pandas-datareader import for Stooq access
 try:
@@ -74,10 +84,11 @@ def _effective_now() -> datetime:
 # Globals / file locations
 # ------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR / "my trading"  # Default location for private CSV files
+DATA_DIR = SCRIPT_DIR  # Save files alongside this script by default
 PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
-DEFAULT_BENCHMARKS = ["IWO", "XBI", "SPY", "IWM"]
+# Default benchmarks (fallback if market_config not available)
+DEFAULT_BENCHMARKS = ["SPY", "QQQ", "IWM", "^GSPTSE"]  # North American benchmarks
 
 # ------------------------------
 # Configuration helpers — benchmark tickers (tickers.json)
@@ -109,6 +120,11 @@ def _read_json_file(path: Path) -> Optional[Dict]:
 def load_benchmarks(script_dir: Path | None = None) -> List[str]:
     """Return a list of benchmark tickers.
 
+    Priority order:
+    1. market_config.py (if available)
+    2. tickers.json file
+    3. DEFAULT_BENCHMARKS fallback
+
     Looks for a `tickers.json` file in either:
       - script_dir (if provided) OR the module SCRIPT_DIR, and then
       - script_dir.parent (project root candidate).
@@ -117,10 +133,18 @@ def load_benchmarks(script_dir: Path | None = None) -> List[str]:
       {"benchmarks": ["IWO", "XBI", "SPY", "IWM"]}
 
     Behavior:
+    - If market_config available -> use get_benchmarks()
     - If file missing or malformed -> return DEFAULT_BENCHMARKS copy.
     - If 'benchmarks' key missing or not a list -> log warning and return defaults.
     - Normalizes tickers (strip, upper) and preserves order while removing duplicates.
     """
+    
+    # First try market_config.py
+    if _HAS_MARKET_CONFIG:
+        try:
+            return get_benchmarks()
+        except Exception as e:
+            logger.warning("Failed to get benchmarks from market_config: %s", e)
     base = Path(script_dir) if script_dir else SCRIPT_DIR
     candidates = [base, base.parent]
 
@@ -419,9 +443,20 @@ def process_portfolio(
     if interactive:
         while True:
             print(portfolio_df)
+            # Show cash balance - dual currency if in North American mode
+            if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                try:
+                    cash_balances = load_cash_balances(DATA_DIR)
+                    cash_info = f"CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}"
+                except Exception:
+                    cash_info = f"${cash:,.2f}"
+            else:
+                cash_info = f"${cash:,.2f}"
+            
             action = input(
-                f""" You have {cash} in cash.
-Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press Enter to continue: """
+                f""" You have {cash_info} in cash.
+        Would you like to log a manual trade or fund activity? 
+        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, or press Enter to continue: """
             ).strip().lower()
 
             if action == "b":
@@ -542,13 +577,76 @@ Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press 
                 )
                 continue
 
+            if action == "c":
+                try:
+                    contributor = input("Enter contributor name: ").strip()
+                    amount = float(input("Enter contribution amount: $"))
+                    notes = input("Enter notes (optional): ").strip()
+                    if amount <= 0:
+                        raise ValueError("Amount must be positive")
+                except ValueError as e:
+                    print(f"Invalid input: {e}. Contribution cancelled.")
+                    continue
+
+                new_total = save_fund_contribution(DATA_DIR, contributor, amount, "CONTRIBUTION", notes)
+                print(f"✅ Contribution logged: {contributor} contributed ${amount:,.2f}")
+                print(f"   Total fund contributions: ${new_total:,.2f}")
+                
+                # Show updated ownership
+                ownership = calculate_ownership_percentages(DATA_DIR)
+                print("\n📊 Updated Ownership:")
+                for name, percentage in ownership.items():
+                    print(f"   {name}: {percentage:.1f}%")
+                continue
+
+            if action == "w":
+                try:
+                    contributor = input("Enter contributor name: ").strip()
+                    amount = float(input("Enter withdrawal amount: $"))
+                    if amount <= 0:
+                        raise ValueError("Amount must be positive")
+                except ValueError as e:
+                    print(f"Invalid input: {e}. Withdrawal cancelled.")
+                    continue
+
+                # Get current equity for liquidation calculation
+                current_equity = float(cash)  # This will be updated with portfolio value later
+                if not portfolio_df.empty:
+                    current_equity += portfolio_df['Total Value'].sum()
+
+                liquidation_info = calculate_liquidation_amount(DATA_DIR, contributor, amount, current_equity)
+                
+                if "error" in liquidation_info:
+                    print(f"❌ {liquidation_info['error']}")
+                    continue
+
+                print(f"\n💰 Withdrawal Analysis:")
+                print(f"   {contributor}'s equity: ${liquidation_info['contributor_equity']:,.2f}")
+                print(f"   Withdrawal amount: ${liquidation_info['withdrawal_amount']:,.2f}")
+                print(f"   Portfolio liquidation needed: {liquidation_info['liquidation_percentage']:.1f}%")
+                print(f"   Remaining equity: ${liquidation_info['remaining_equity']:,.2f}")
+                
+                confirm = input("\nProceed with withdrawal? (y/n): ").strip().lower()
+                if confirm == "y":
+                    new_total = save_fund_contribution(DATA_DIR, contributor, -amount, "WITHDRAWAL", f"Withdrawal of ${amount:,.2f}")
+                    print(f"✅ Withdrawal logged: {contributor} withdrew ${amount:,.2f}")
+                    
+                    # Show updated ownership
+                    ownership = calculate_ownership_percentages(DATA_DIR)
+                    print("\n📊 Updated Ownership:")
+                    for name, percentage in ownership.items():
+                        print(f"   {name}: {percentage:.1f}%")
+                else:
+                    print("Withdrawal cancelled.")
+                continue
+
             break  # proceed to pricing
 
     # ------- Daily pricing + stop-loss execution -------
     s, e = trading_day_window()
     for _, stock in portfolio_df.iterrows():
         ticker = str(stock["ticker"]).upper()
-        shares = float(stock["shares"]) if not pd.isna(stock["shares"]) else 0.0
+        shares = int(stock["shares"]) if not pd.isna(stock["shares"]) else 0
         cost = float(stock["buy_price"]) if not pd.isna(stock["buy_price"]) else 0.0
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
@@ -666,7 +764,7 @@ def log_manual_buy(
     ticker: str,
     stoploss: float,
     cash: float,
-    chatgpt_portfolio: pd.DataFrame,
+    llm_portfolio: pd.DataFrame,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
     today = check_weekend()
@@ -771,7 +869,7 @@ def log_manual_sell(
     shares_sold: float,
     ticker: str,
     cash: float,
-    chatgpt_portfolio: pd.DataFrame,
+    llm_portfolio: pd.DataFrame,
     reason: str | None = None,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
@@ -792,7 +890,7 @@ If this is a mistake, enter 1. """
         return cash, llm_portfolio
 
     ticker_row = llm_portfolio[llm_portfolio["ticker"] == ticker]
-    total_shares = float(ticker_row["shares"].item())
+    total_shares = int(ticker_row["shares"].item())
     if shares_sold > total_shares:
         print(f"Manual sell for {ticker} failed: trying to sell {shares_sold} shares but only own {total_shares}.")
         return cash, llm_portfolio
@@ -897,9 +995,11 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
     # Use only TOTAL rows, sorted by date
     totals = llm_df[llm_df["Ticker"] == "TOTAL"].copy()
     if totals.empty:
-        print("\n" + "=" * 64)
+        print("\n" + "=" * 80)
+        print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
+        print("=" * 80)
         print(f"Daily Results — {today}")
-        print("=" * 64)
+        print("=" * 80)
         print("\n[ Price & Volume ]")
         colw = [10, 12, 9, 15]
         print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
@@ -907,8 +1007,56 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
         for r in rows:
             print(f"{str(r[0]):<{colw[0]}} {str(r[1]):>{colw[1]}} {str(r[2]):>{colw[2]}} {str(r[3]):>{colw[3]}}")
         print("\n[ Portfolio Snapshot ]")
-        print(llm_portfolio)
-        print(f"Cash balance: ${cash:,.2f}")
+        if llm_portfolio.empty:
+            print("No current holdings")
+        else:
+            print(llm_portfolio)
+        
+        # Display cash balance - show dual currency if in North American mode
+        if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+            try:
+                cash_balances = load_cash_balances(DATA_DIR)
+                cash_display = format_cash_display(cash_balances)
+                print(f"Cash Balances: {cash_display}")
+                print(f"Latest LLM Equity: ${cash:,.2f}")
+                print("Maximum Drawdown: 0.00% (new portfolio)")
+            except Exception:
+                print(f"Cash balance: ${cash:,.2f}")
+                print(f"Latest LLM Equity: ${cash:,.2f}")
+                print("Maximum Drawdown: 0.00% (new portfolio)")
+        else:
+            print(f"Cash balance: ${cash:,.2f}")
+            print(f"Latest LLM Equity: ${cash:,.2f}")
+            print("Maximum Drawdown: 0.00% (new portfolio)")
+
+        print("\n[ Holdings ]")
+        if llm_portfolio.empty:
+            print("No current holdings")
+        else:
+            print(llm_portfolio)
+
+        # Display fund ownership if there are contributions
+        contributions_df = load_fund_contributions(DATA_DIR)
+        if not contributions_df.empty:
+            ownership = calculate_ownership_percentages(DATA_DIR)
+            if ownership:
+                print("\n[ Fund Ownership ]")
+                for contributor, percentage in ownership.items():
+                    print(f"{contributor}: {percentage:.1f}%")
+
+        print("\n[ Your Instructions ]")
+        
+        # Use market-specific instructions if available, otherwise use default
+        if _HAS_MARKET_CONFIG:
+            try:
+                instructions = get_daily_instructions()
+                print(instructions)
+            except Exception as e:
+                print(f"Warning: Failed to get instructions from market_config: {e}")
+                print(_get_default_instructions())
+        else:
+            print(_get_default_instructions())
+        
         return
 
     totals["Date"] = pd.to_datetime(totals["Date"], format="mixed", errors="coerce")  # tolerate ISO strings
@@ -937,7 +1085,10 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
         for rrow in rows:
             print(f"{str(rrow[0]):<{colw[0]}} {str(rrow[1]):>{colw[1]}} {str(rrow[2]):>{colw[2]}} {str(rrow[3]):>{colw[3]}}")
         print("\n[ Portfolio Snapshot ]")
-        print(llm_portfolio)
+        if llm_portfolio.empty:
+            print("No current holdings")
+        else:
+            print(llm_portfolio)
         print(f"Cash balance: ${cash:,.2f}")
         print(f"Latest LLM Equity: ${final_equity:,.2f}")
         if hasattr(mdd_date, "date") and not isinstance(mdd_date, (str, int)):
@@ -1028,15 +1179,23 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
         initial_price = float(spx_norm["Close"].iloc[0])
         price_now = float(spx_norm["Close"].iloc[-1])
         try:
-            starting_equity = float(input("what was your starting equity? "))
+            print(f"\nFor S&P 500 comparison, what was your starting equity? (or press Enter to skip): ", end="")
+            user_input = input().strip()
+            if user_input:
+                starting_equity = float(user_input)
+            else:
+                starting_equity = np.nan
         except Exception:
             print("Invalid input for starting equity. Defaulting to NaN.")
+            starting_equity = np.nan
         spx_value = (starting_equity / initial_price) * price_now if not np.isnan(starting_equity) else np.nan
 
     # -------- Pretty Printing --------
-    print("\n" + "=" * 64)
+    print("\n" + "=" * 80)
+    print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
+    print("=" * 80)
     print(f"Daily Results — {today}")
-    print("=" * 64)
+    print("=" * 80)
 
     # Price & Volume table
     print("\n[ Price & Volume ]")
@@ -1080,19 +1239,68 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
             print(f"{f'${starting_equity} in S&P 500 (same window):':32} ${spx_value:>14,.2f}")
         except Exception:
             pass
-    print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
+    # Display cash balance - show dual currency if in North American mode
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            cash_balances = load_cash_balances(DATA_DIR)
+            cash_display = format_cash_display(cash_balances)
+            print(f"{'Cash Balances:':32} {cash_display}")
+            print(f"{'Total (CAD equiv):':32} ${cash:>14,.2f}")
+        except Exception:
+            print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
+    else:
+        print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
 
     print("\n[ Holdings ]")
     print(llm_portfolio)
 
+    # Display fund ownership if there are contributions
+    contributions_df = load_fund_contributions(DATA_DIR)
+    if not contributions_df.empty:
+        ownership = calculate_ownership_percentages(DATA_DIR)
+        if ownership:
+            print("\n[ Fund Ownership ]")
+            for contributor, percentage in ownership.items():
+                print(f"{contributor}: {percentage:.1f}%")
+
     print("\n[ Your Instructions ]")
-    print(
-        "Use this info to make decisions regarding your portfolio. You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
+    
+    # Use market-specific instructions if available, otherwise use default
+    if _HAS_MARKET_CONFIG:
+        try:
+            instructions = get_daily_instructions()
+            print(instructions)
+        except Exception as e:
+            print(f"Warning: Failed to get instructions from market_config: {e}")
+            print(_get_default_instructions())
+    else:
+        print(_get_default_instructions())
+
+def _get_default_instructions() -> str:
+    """Fallback instructions if market_config not available"""
+    # Original US instructions (commented but preserved)
+    # return (
+    #     "Use this info to make decisions regarding your portfolio. You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
+    #     "Deep research is not permitted. Act at your discretion to achieve the best outcome.\n"
+    #     "If you do not make a clear indication to change positions IMMEDIATELY after this message, the portfolio remains unchanged for tomorrow.\n"
+    #     "You are encouraged to use the internet to check current prices (and related up-to-date info) for potential buys.\n"
+    #     "\n"
+    #     "*Paste everything above into ChatGPT*"
+    # )
+    
+    # Current default (Canadian-focused)
+    return (
+        "Use this info to make decisions regarding your Canadian small-cap portfolio. You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
+        "\n"
+        "Focus on Canadian small-caps (CAD 50M - CAD 500M market cap) listed on TSX or TSX Venture Exchange.\n"
+        "Consider Canadian market dynamics, regulatory environment, and sector-specific catalysts.\n"
+        "All positions trade in CAD. Account for TSX/TSXV trading hours and liquidity.\n"
+        "\n"
         "Deep research is not permitted. Act at your discretion to achieve the best outcome.\n"
         "If you do not make a clear indication to change positions IMMEDIATELY after this message, the portfolio remains unchanged for tomorrow.\n"
-        "You are encouraged to use the internet to check current prices (and related up-to-date info) for potential buys.\n"
+        "You are encouraged to use the internet to check current Canadian market conditions and company-specific info for potential buys.\n"
         "\n"
-        "*Paste everything above into your LLM (ChatGPT, Claude, Gemini, etc.)*"
+        "*Paste everything above into your preferred LLM (ChatGPT, Claude, Gemini, etc.)*"
     )
 
 
@@ -1102,32 +1310,28 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
 
 def load_latest_portfolio_state(
     file: str,
-) -> tuple[pd.DataFrame | list[dict[str, Any]], float | CashBalances]:
-    """Load the most recent portfolio snapshot and cash balance (dual currency if available)."""
+) -> tuple[pd.DataFrame | list[dict[str, Any]], float]:
+    """Load the most recent portfolio snapshot and cash balance."""
     df = pd.read_csv(file)
     if df.empty:
         portfolio = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
-        print("Portfolio CSV is empty. Setting up initial cash balances.")
+        print("Portfolio CSV is empty. Returning set amount of cash for creating portfolio.")
         
-        if _HAS_DUAL_CURRENCY:
-            # Try to load existing dual currency balances
-            cash_balances = load_cash_balances(DATA_DIR)
-            if cash_balances.cad == 0.0 and cash_balances.usd == 0.0:
-                # No existing balances, prompt for initial setup
-                cash_balances = prompt_for_dual_currency_cash()
-                save_cash_balances(cash_balances, DATA_DIR)
-            else:
-                print(f"Using existing cash balances: {format_cash_display(cash_balances)}")
-            return portfolio, cash_balances
+        # Check if we're in North American mode and should use dual currency
+        if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+            cash_balances = prompt_for_dual_currency_cash()
+            save_cash_balances(cash_balances, DATA_DIR)
+            # Return total CAD equivalent for compatibility with existing code
+            cash = cash_balances.total_cad_equivalent()
+            print(f"Using dual currency mode. Total equivalent: ${cash:,.2f} CAD")
         else:
-            # Fallback to single currency
             try:
                 cash = float(input("What would you like your starting cash amount to be? "))
             except ValueError:
                 raise ValueError(
                     "Cash could not be converted to float datatype. Please enter a valid number."
                 )
-            return portfolio, cash
+        return portfolio, cash
 
     non_total = df[df["Ticker"] != "TOTAL"].copy()
     non_total["Date"] = pd.to_datetime(non_total["Date"], format="mixed", errors="coerce")
@@ -1161,56 +1365,29 @@ def load_latest_portfolio_state(
     )
     latest_tickers = latest_tickers.reset_index(drop=True).to_dict(orient="records")
 
-    # Load cash balances
-    if _HAS_DUAL_CURRENCY:
-        # Use dual currency system
-        cash_balances = load_cash_balances(DATA_DIR)
-        if cash_balances.cad == 0.0 and cash_balances.usd == 0.0:
-            # No dual currency data, try to migrate from CSV
-            df_total = df[df["Ticker"] == "TOTAL"].copy()
-            if not df_total.empty:
-                df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
-                latest = df_total.sort_values("Date").iloc[-1]
-                legacy_cash = float(latest["Cash Balance"])
-                print(f"Migrating from single currency (${legacy_cash}) to dual currency system.")
-                cash_balances = prompt_for_dual_currency_cash()
-                save_cash_balances(cash_balances, DATA_DIR)
-            else:
-                cash_balances = prompt_for_dual_currency_cash()
-                save_cash_balances(cash_balances, DATA_DIR)
-        return latest_tickers, cash_balances
-    else:
-        # Fallback to single currency from CSV
-        df_total = df[df["Ticker"] == "TOTAL"].copy()
-        df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
-        latest = df_total.sort_values("Date").iloc[-1]
-        cash = float(latest["Cash Balance"])
-        return latest_tickers, cash
+    df_total = df[df["Ticker"] == "TOTAL"].copy()
+    df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
+    latest = df_total.sort_values("Date").iloc[-1]
+    cash = float(latest["Cash Balance"])
+    return latest_tickers, cash
 
 
 def main(file: str, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
-    llm_portfolio, cash_or_balances = load_latest_portfolio_state(file)
+    llm_portfolio, cash = load_latest_portfolio_state(file)
     print(file)
+    
+    # If data_dir not specified, use the directory containing the CSV file
     if data_dir is not None:
         set_data_dir(data_dir)
-
-    if _HAS_DUAL_CURRENCY and isinstance(cash_or_balances, CashBalances):
-        # For now, use total CAD equivalent for compatibility with existing functions
-        # TODO: Update process_portfolio and daily_results to handle dual currency properly
-        cash_equiv = cash_or_balances.total_cad_equivalent()
-        print(f"\nDual Currency Mode: {format_cash_display(cash_or_balances)}")
-        print(f"Total (CAD equivalent): ${cash_equiv:,.2f}")
-        llm_portfolio, _ = process_portfolio(llm_portfolio, cash_equiv)
-        daily_results(llm_portfolio, cash_equiv)
-        
-        # Show dual currency info in results
-        print(f"\n💰 Actual Cash Balances: {format_cash_display(cash_or_balances)}")
     else:
-        # Single currency mode
-        cash = float(cash_or_balances)
-        llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
-        daily_results(llm_portfolio, cash)
+        # Automatically use the directory containing the portfolio CSV file
+        csv_file_path = Path(file)
+        if csv_file_path.parent != Path("."):  # If file is in a subfolder
+            set_data_dir(csv_file_path.parent)
+
+    llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
+    daily_results(llm_portfolio, cash)
 
 
 if __name__ == "__main__":
@@ -1228,10 +1405,106 @@ if __name__ == "__main__":
     if args.asof:
         set_asof(args.asof)
 
-    # Ensure the default "my trading" directory exists
-    os.makedirs(DATA_DIR, exist_ok=True)
-
     if not Path(args.file).exists():
         print("No portfolio CSV found. Create one or run main() with your file path.")
     else:
         main(args.file, Path(args.data_dir) if args.data_dir else None)
+
+
+def load_fund_contributions(data_dir: str) -> pd.DataFrame:
+    """Load fund contributions from CSV."""
+    contributions_file = os.path.join(data_dir, "fund_contributions.csv")
+    if os.path.exists(contributions_file):
+        return pd.read_csv(contributions_file)
+    else:
+        # Create empty DataFrame with expected columns
+        return pd.DataFrame(columns=["Date", "Contributor", "Amount", "Type", "Running_Total", "Notes"])
+
+
+def save_fund_contribution(data_dir: str, contributor: str, amount: float, contribution_type: str = "CONTRIBUTION", notes: str = ""):
+    """Save a new fund contribution."""
+    contributions_file = os.path.join(data_dir, "fund_contributions.csv")
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Load existing contributions
+    df = load_fund_contributions(data_dir)
+    
+    # Calculate new running total
+    if len(df) > 0:
+        last_total = df["Running_Total"].iloc[-1]
+    else:
+        last_total = 0.0
+    
+    new_total = last_total + amount
+    
+    # Create new row
+    new_row = {
+        "Date": today,
+        "Contributor": contributor,
+        "Amount": amount,
+        "Type": contribution_type,
+        "Running_Total": new_total,
+        "Notes": notes
+    }
+    
+    # Add to DataFrame and save
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    df.to_csv(contributions_file, index=False)
+    
+    return new_total
+
+
+def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
+    """Calculate current ownership percentages for each contributor."""
+    df = load_fund_contributions(data_dir)
+    
+    if len(df) == 0:
+        return {}
+    
+    # Sum contributions by contributor
+    contributions = defaultdict(float)
+    for _, row in df.iterrows():
+        amount = row["Amount"]
+        if row["Type"] == "WITHDRAWAL":
+            amount = -amount  # Withdrawals are negative
+        contributions[row["Contributor"]] += amount
+    
+    # Calculate total fund value
+    total_contributions = sum(contributions.values())
+    
+    if total_contributions <= 0:
+        return {}
+    
+    # Calculate percentages
+    percentages = {}
+    for contributor, amount in contributions.items():
+        if amount > 0:  # Only show contributors with positive balance
+            percentages[contributor] = (amount / total_contributions) * 100
+    
+    return percentages
+
+
+def calculate_liquidation_amount(data_dir: str, contributor: str, withdrawal_amount: float, current_equity: float) -> Dict[str, float]:
+    """Calculate how much needs to be liquidated for a withdrawal."""
+    ownership = calculate_ownership_percentages(data_dir)
+    
+    if contributor not in ownership:
+        return {"error": f"Contributor {contributor} not found"}
+    
+    contributor_percentage = ownership[contributor] / 100
+    contributor_equity = current_equity * contributor_percentage
+    
+    if withdrawal_amount > contributor_equity:
+        return {
+            "error": f"Withdrawal amount ${withdrawal_amount:,.2f} exceeds {contributor}'s equity of ${contributor_equity:,.2f}"
+        }
+    
+    # Calculate what percentage of total portfolio needs to be liquidated
+    liquidation_percentage = withdrawal_amount / current_equity
+    
+    return {
+        "withdrawal_amount": withdrawal_amount,
+        "contributor_equity": contributor_equity,
+        "liquidation_percentage": liquidation_percentage * 100,
+        "remaining_equity": contributor_equity - withdrawal_amount
+    }

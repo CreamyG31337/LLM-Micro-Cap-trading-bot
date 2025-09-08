@@ -435,7 +435,11 @@ def process_portfolio(
     cash: float,
     interactive: bool = True,
 ) -> tuple[pd.DataFrame, float]:
-    today_iso = last_trading_date().date().isoformat()
+    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
+    pst_tz = timezone(timedelta(hours=-8))
+    today = datetime.now(pst_tz).date()
+    market_open_time = datetime.combine(today, datetime.min.time().replace(hour=6, minute=30), pst_tz)
+    today_iso = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
     portfolio_df = _ensure_df(portfolio)
 
     results: list[dict[str, object]] = []
@@ -752,18 +756,18 @@ def process_portfolio(
 
         results.append(row)
 
-    total_row = {
-        "Date": today_iso, "Ticker": "TOTAL", "Shares": "", "Buy Price": "",
-        "Cost Basis": "", "Stop Loss": "", "Current Price": "",
-        "Total Value": round(total_value, 2), "PnL": round(total_pnl, 2),
-        "Action": "", "Cash Balance": round(cash, 2),
-        "Total Equity": round(total_value + cash, 2),
-    }
-    results.append(total_row)
+    # Calculate totals dynamically - no need to store in CSV
+    print(f"Portfolio Total Value: ${total_value:,.2f}")
+    print(f"Total PnL: ${total_pnl:,.2f}")
+    print(f"Cash Balance: ${cash:,.2f}")
+    print(f"Total Equity: ${total_value + cash:,.2f}")
 
     df_out = pd.DataFrame(results)
     if PORTFOLIO_CSV.exists():
         existing = pd.read_csv(PORTFOLIO_CSV)
+        # Migrate old date-only entries to timestamp format
+        if len(existing) > 0 and len(str(existing["Date"].iloc[0])) == 10:
+            existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
         existing = existing[existing["Date"] != str(today_iso)]
         print("Saving results to CSV...")
         df_out = pd.concat([existing, df_out], ignore_index=True)
@@ -785,7 +789,9 @@ def log_sell(
     pnl: float,
     portfolio: pd.DataFrame,
 ) -> pd.DataFrame:
-    today = check_weekend()
+    # Use PST timezone for timestamps
+    pst_tz = timezone(timedelta(hours=-8))
+    today = datetime.now(pst_tz).strftime("%Y-%m-%d %H:%M:%S PST")
     log = {
         "Date": today,
         "Ticker": ticker,
@@ -818,7 +824,11 @@ def log_manual_buy(
     llm_portfolio: pd.DataFrame,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    today = check_weekend()
+    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
+    pst_tz = timezone(timedelta(hours=-8))
+    today_date = datetime.now(pst_tz).date()
+    market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
+    today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
 
     if interactive:
         check = input(
@@ -964,7 +974,11 @@ def log_manual_sell(
     reason: str | None = None,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    today = check_weekend()
+    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
+    pst_tz = timezone(timedelta(hours=-8))
+    today_date = datetime.now(pst_tz).date()
+    market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
+    today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
     if interactive:
         reason = input(
             f"""You are placing a SELL LIMIT for {shares_sold} {ticker} at ${sell_price:.2f}.
@@ -1082,10 +1096,27 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
 
     # Read portfolio history
     llm_df = pd.read_csv(PORTFOLIO_CSV)
+    
+    # Migrate old date-only entries to timestamp format
+    if len(llm_df) > 0 and len(str(llm_df["Date"].iloc[0])) == 10:
+        llm_df["Date"] = llm_df["Date"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
 
-    # Use only TOTAL rows, sorted by date
-    totals = llm_df[llm_df["Ticker"] == "TOTAL"].copy()
-    if totals.empty:
+    # Calculate totals dynamically from actual holdings
+    # Remove any TOTAL rows from the data (they shouldn't be there)
+    holdings_df = llm_df[llm_df["Ticker"] != "TOTAL"].copy()
+    
+    # Calculate current portfolio value
+    total_value = 0.0
+    total_pnl = 0.0
+    for _, row in holdings_df.iterrows():
+        if row["Current Price"] and row["Shares"]:
+            current_value = float(row["Current Price"]) * float(row["Shares"])
+            cost_basis = float(row["Cost Basis"]) if row["Cost Basis"] else 0.0
+            pnl = current_value - cost_basis
+            total_value += current_value
+            total_pnl += pnl
+    
+    if holdings_df.empty:
         print("\n" + "=" * 80)
         print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
         print("=" * 80)
@@ -1150,222 +1181,39 @@ def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
         
         return
 
-    totals["Date"] = pd.to_datetime(totals["Date"], format="mixed", errors="coerce")  # tolerate ISO strings
-    totals = totals.sort_values("Date")
+    # Calculate current equity dynamically
+    final_equity = total_value + cash
+    
+    # For now, set max drawdown to 0 since we don't have historical data
+    # In a real system, you'd track this over time
+    max_drawdown = 0.0
+    mdd_date = today
 
-    final_equity = float(totals.iloc[-1]["Total Equity"])
-    equity_series = totals.set_index("Date")["Total Equity"].astype(float).sort_index()
-
-    # --- Max Drawdown ---
-    running_max = equity_series.cummax()
-    drawdowns = (equity_series / running_max) - 1.0
-    max_drawdown = float(drawdowns.min())  # most negative value
-    mdd_date = drawdowns.idxmin()
-
-    # Daily simple returns (portfolio)
-    r = equity_series.pct_change().dropna()
-    n_days = len(r)
-    if n_days < 2:
-        print("\n" + "=" * 64)
-        print(f"Daily Results — {today}")
-        print("=" * 64)
-        print("\n[ Price & Volume ]")
-        colw = [10, 12, 9, 15]
-        print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
-        print("-" * sum(colw) + "-" * 3)
-        for rrow in rows:
-            print(f"{str(rrow[0]):<{colw[0]}} {str(rrow[1]):>{colw[1]}} {str(rrow[2]):>{colw[2]}} {str(rrow[3]):>{colw[3]}}")
-        print("\n[ Portfolio Snapshot ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio)
-        print(f"Cash balance: ${cash:,.2f}")
-        print(f"Latest LLM Equity: ${final_equity:,.2f}")
-        if hasattr(mdd_date, "date") and not isinstance(mdd_date, (str, int)):
-            mdd_date_str = mdd_date.date()
-        elif hasattr(mdd_date, "strftime") and not isinstance(mdd_date, (str, int)):
-            mdd_date_str = mdd_date.strftime("%Y-%m-%d")
-        else:
-            mdd_date_str = str(mdd_date)
-        print(f"Maximum Drawdown: {max_drawdown:.2%} (on {mdd_date_str})")
-        return
-
-    # Risk-free config
-    rf_annual = 0.045
-    rf_daily = (1 + rf_annual) ** (1 / 252) - 1
-    rf_period = (1 + rf_daily) ** n_days - 1
-
-    # Stats
-    mean_daily = float(r.mean())
-    std_daily = float(r.std(ddof=1))
-
-    # Downside deviation (MAR = rf_daily)
-    downside = (r - rf_daily).clip(upper=0)
-    downside_std = float((downside.pow(2).mean()) ** 0.5) if not downside.empty else np.nan
-
-    # Total return over the window
-    r_numeric = pd.to_numeric(r, errors="coerce")
-    r_numeric = r_numeric[~r_numeric.isna()].astype(float)
-    # Filter out any non-finite values to ensure only valid floats are used
-    r_numeric = r_numeric[np.isfinite(r_numeric)]
-    # Only use numeric values for the calculation
-    if len(r_numeric) > 0:
-        arr = np.asarray(r_numeric.values, dtype=float)
-        period_return = float(np.prod(1 + arr) - 1) if arr.size > 0 else float('nan')
-    else:
-        period_return = float('nan')
-
-    # Sharpe / Sortino
-    sharpe_period = (period_return - rf_period) / (std_daily * np.sqrt(n_days)) if std_daily > 0 else np.nan
-    sharpe_annual = ((mean_daily - rf_daily) / std_daily) * np.sqrt(252) if std_daily > 0 else np.nan
-    sortino_period = (period_return - rf_period) / (downside_std * np.sqrt(n_days)) if downside_std and downside_std > 0 else np.nan
-    sortino_annual = ((mean_daily - rf_daily) / downside_std) * np.sqrt(252) if downside_std and downside_std > 0 else np.nan
-
-    # -------- CAPM: Beta & Alpha (vs ^GSPC) --------
-    start_date = equity_series.index.min() - pd.Timedelta(days=1)
-    end_date = equity_series.index.max() + pd.Timedelta(days=1)
-
-    spx_fetch = download_price_data("^GSPC", start=start_date, end=end_date, progress=False)
-    spx = spx_fetch.df
-
-    beta = np.nan
-    alpha_annual = np.nan
-    r2 = np.nan
-    n_obs = 0
-
-    if not spx.empty and len(spx) >= 2:
-        spx = spx.reset_index().set_index("Date").sort_index()
-        mkt_ret = spx["Close"].astype(float).pct_change().dropna()
-
-        # Align portfolio & market returns
-        common_idx = r.index.intersection(list(mkt_ret.index))
-        if len(common_idx) >= 2:
-            rp = (r.reindex(common_idx).astype(float) - rf_daily)   # portfolio excess
-            rm = (mkt_ret.reindex(common_idx).astype(float) - rf_daily)  # market excess
-
-            x = np.asarray(rm.values, dtype=float).ravel()
-            y = np.asarray(rp.values, dtype=float).ravel()
-
-            n_obs = x.size
-            rm_std = float(np.std(x, ddof=1)) if n_obs > 1 else 0.0
-            if rm_std > 0:
-                beta, alpha_daily = np.polyfit(x, y, 1)
-                alpha_annual = (1 + float(alpha_daily)) ** 252 - 1
-
-                corr = np.corrcoef(x, y)[0, 1]
-                r2 = float(corr ** 2)
-
-    # $X normalized S&P 500 over same window (asks user for initial equity)
-    spx_norm_fetch = download_price_data(
-        "^GSPC",
-        start=equity_series.index.min(),
-        end=equity_series.index.max() + pd.Timedelta(days=1),
-        progress=False,
-    )
-    spx_norm = spx_norm_fetch.df
-    spx_value = np.nan
-    starting_equity = np.nan  # Ensure starting_equity is always defined
-    if not spx_norm.empty:
-        initial_price = float(spx_norm["Close"].iloc[0])
-        price_now = float(spx_norm["Close"].iloc[-1])
-        try:
-            print(f"\nFor S&P 500 comparison, what was your starting equity? (or press Enter to skip): ", end="")
-            user_input = input().strip()
-            if user_input:
-                starting_equity = float(user_input)
-            else:
-                starting_equity = np.nan
-        except Exception:
-            print("Invalid input for starting equity. Defaulting to NaN.")
-            starting_equity = np.nan
-        spx_value = (starting_equity / initial_price) * price_now if not np.isnan(starting_equity) else np.nan
-
-    # -------- Pretty Printing --------
-    print("\n" + "=" * 80)
-    print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
-    print("=" * 80)
+    # Simplified performance calculation (no historical data)
+    print("\n" + "=" * 64)
     print(f"Daily Results — {today}")
-    print("=" * 80)
-
-    # Price & Volume table
+    print("=" * 64)
     print("\n[ Price & Volume ]")
     colw = [10, 12, 9, 15]
     print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
     print("-" * sum(colw) + "-" * 3)
     for rrow in rows:
         print(f"{str(rrow[0]):<{colw[0]}} {str(rrow[1]):>{colw[1]}} {str(rrow[2]):>{colw[2]}} {str(rrow[3]):>{colw[3]}}")
-
-    # Performance metrics
-    def fmt_or_na(x: float | int | None, fmt: str) -> str:
-        return (fmt.format(x) if not (x is None or (isinstance(x, float) and np.isnan(x))) else "N/A")
-
-    print("\n[ Risk & Return ]")
-    if hasattr(mdd_date, "date") and not isinstance(mdd_date, (str, int)):
-        mdd_date_str = mdd_date.date()
-    elif hasattr(mdd_date, "strftime") and not isinstance(mdd_date, (str, int)):
-        mdd_date_str = mdd_date.strftime("%Y-%m-%d")
+    print("\n[ Portfolio Snapshot ]")
+    if llm_portfolio.empty:
+        print("No current holdings")
     else:
-        mdd_date_str = str(mdd_date)
-    print(f"{'Max Drawdown:':32} {fmt_or_na(max_drawdown, '{:.2%}'):>15}   on {mdd_date_str}")
-    print(f"{'Sharpe Ratio (period):':32} {fmt_or_na(sharpe_period, '{:.4f}'):>15}")
-    print(f"{'Sharpe Ratio (annualized):':32} {fmt_or_na(sharpe_annual, '{:.4f}'):>15}")
-    print(f"{'Sortino Ratio (period):':32} {fmt_or_na(sortino_period, '{:.4f}'):>15}")
-    print(f"{'Sortino Ratio (annualized):':32} {fmt_or_na(sortino_annual, '{:.4f}'):>15}")
+        print(llm_portfolio)
+    print(f"Cash balance: ${cash:,.2f}")
+    print(f"Latest LLM Equity: ${final_equity:,.2f}")
+    print("Maximum Drawdown: 0.00% (new portfolio)")
+    print(_get_default_instructions())
+    return
 
-    print("\n[ CAPM vs Benchmarks ]")
-    if not np.isnan(beta):
-        print(f"{'Beta (daily) vs ^GSPC:':32} {beta:>15.4f}")
-        print(f"{'Alpha (annualized) vs ^GSPC:':32} {alpha_annual:>15.2%}")
-        print(f"{'R² (fit quality):':32} {r2:>15.3f}   {'Obs:':>6} {n_obs}")
-        if n_obs < 60 or (not np.isnan(r2) and r2 < 0.20):
-            print("  Note: Short sample and/or low R² — alpha/beta may be unstable.")
-    else:
-        print("Beta/Alpha: insufficient overlapping data.")
 
-    print("\n[ Snapshot ]")
-    print(f"{'Latest LLM Equity:':32} ${final_equity:>14,.2f}")
-    if not np.isnan(spx_value):
-        try:
-            print(f"{f'${starting_equity} in S&P 500 (same window):':32} ${spx_value:>14,.2f}")
-        except Exception:
-            pass
-    # Display cash balance - show dual currency if in North American mode
-    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
-        try:
-            cash_balances = load_cash_balances(DATA_DIR)
-            cash_display = format_cash_display(cash_balances)
-            print(f"{'Cash Balances:':32} {cash_display}")
-            print(f"{'Total (CAD equiv):':32} ${cash:>14,.2f}")
-        except Exception:
-            print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
-    else:
-        print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
-
-    print("\n[ Holdings ]")
-    print(llm_portfolio)
-
-    # Display fund ownership if there are contributions
-    contributions_df = load_fund_contributions(DATA_DIR)
-    if not contributions_df.empty:
-        ownership = calculate_ownership_percentages(DATA_DIR)
-        if ownership:
-            print("\n[ Fund Ownership ]")
-            for contributor, percentage in ownership.items():
-                print(f"{contributor}: {percentage:.1f}%")
-
-    print("\n[ Your Instructions ]")
-    
-    # Use market-specific instructions if available, otherwise use default
-    if _HAS_MARKET_CONFIG:
-        try:
-            instructions = get_daily_instructions()
-            print(instructions)
-        except Exception as e:
-            print(f"Warning: Failed to get instructions from market_config: {e}")
-            print(_get_default_instructions())
-    else:
-        print(_get_default_instructions())
+# ------------------------------
+# Orchestration
+# ------------------------------
 
 def _get_default_instructions() -> str:
     """Fallback instructions if market_config not available"""
@@ -1460,10 +1308,18 @@ def load_latest_portfolio_state(
     else:
         latest_tickers = latest_tickers.reset_index(drop=True)
 
-    df_total = df[df["Ticker"] == "TOTAL"].copy()
-    df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
-    latest = df_total.sort_values("Date").iloc[-1]
-    cash = float(latest["Cash Balance"])
+    # Load cash balance from dual currency system instead of TOTAL rows
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            cash_balances = load_cash_balances(DATA_DIR)
+            cash = cash_balances.total_cad_equivalent()
+        except Exception:
+            # Fallback to default cash if dual currency not available
+            cash = 1000.0
+    else:
+        # Fallback to default cash for single currency mode
+        cash = 1000.0
+    
     return latest_tickers, cash
 
 

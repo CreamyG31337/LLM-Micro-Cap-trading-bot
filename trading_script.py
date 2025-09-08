@@ -1128,189 +1128,8 @@ If this is a mistake, enter 1. """
 # Reporting / Metrics
 # ------------------------------
 
-def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
-    """Print daily price updates and performance metrics (incl. CAPM)."""
-    portfolio_dict: list[dict[Any, Any]] = llm_portfolio.to_dict(orient="records")
-    today = check_weekend()
-
-    rows: list[list[str]] = []
-    header = ["Ticker", "Close", "% Chg", "Volume"]
-
-    end_d = last_trading_date()                           # Fri on weekends
-    start_d = (end_d - pd.Timedelta(days=4)).normalize()  # go back enough to capture 2 sessions even around holidays
-    
-    benchmarks = load_benchmarks()  # reads tickers.json or returns defaults
-    benchmark_entries = [{"ticker": t} for t in benchmarks]
-
-    for stock in portfolio_dict + benchmark_entries:
-        ticker = str(stock["ticker"]).upper()
-        try:
-            fetch = download_price_data(ticker, start=start_d, end=(end_d + pd.Timedelta(days=1)), progress=False)
-            data = fetch.df
-            if data.empty or len(data) < 2:
-                rows.append([ticker, "—", "—", "—"])
-                continue
-
-            price = float(data["Close"].iloc[-1])
-            last_price = float(data["Close"].iloc[-2])
-            volume = float(data["Volume"].iloc[-1])
-
-            percent_change = ((price - last_price) / last_price) * 100
-            rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", f"{int(volume):,}"])
-        except Exception as e:
-            raise Exception(f"Download for {ticker} failed. {e} Try checking internet connection.")
-
-    # Read portfolio history
-    llm_df = pd.read_csv(PORTFOLIO_CSV)
-    
-    # Migrate old date-only entries to timestamp format
-    if len(llm_df) > 0 and len(str(llm_df["Date"].iloc[0])) == 10:
-        llm_df["Date"] = llm_df["Date"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
-
-    # Calculate totals dynamically from actual holdings
-    # Remove any TOTAL rows from the data (they shouldn't be there)
-    holdings_df = llm_df[llm_df["Ticker"] != "TOTAL"].copy()
-    
-    # Calculate current portfolio value
-    total_value = 0.0
-    total_pnl = 0.0
-    for _, row in holdings_df.iterrows():
-        if row["Current Price"] and row["Shares"]:
-            current_value = float(row["Current Price"]) * float(row["Shares"])
-            cost_basis = float(row["Cost Basis"]) if row["Cost Basis"] else 0.0
-            pnl = current_value - cost_basis
-            total_value += current_value
-            total_pnl += pnl
-    
-    if holdings_df.empty:
-        print("\n" + "=" * 80)
-        print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
-        print("=" * 80)
-        print(f"Daily Results — {today}")
-        print("=" * 80)
-        print("\n[ Price & Volume ]")
-        colw = [10, 12, 9, 15]
-        print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
-        print("-" * sum(colw) + "-" * 3)
-        for r in rows:
-            print(f"{str(r[0]):<{colw[0]}} {str(r[1]):>{colw[1]}} {str(r[2]):>{colw[2]}} {str(r[3]):>{colw[3]}}")
-        print("\n[ Portfolio Snapshot ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio)
-        
-        # Display cash balance - show dual currency if in North American mode
-        if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
-            try:
-                cash_balances = load_cash_balances(DATA_DIR)
-                cash_display = format_cash_display(cash_balances)
-                print(f"Cash Balances: {cash_display}")
-                print(f"Latest LLM Equity: ${cash:,.2f}")
-                print("Maximum Drawdown: 0.00% (new portfolio)")
-            except Exception:
-                print(f"Cash balance: ${cash:,.2f}")
-                print(f"Latest LLM Equity: ${cash:,.2f}")
-                print("Maximum Drawdown: 0.00% (new portfolio)")
-        else:
-            print(f"Cash balance: ${cash:,.2f}")
-            print(f"Latest LLM Equity: ${cash:,.2f}")
-            print("Maximum Drawdown: 0.00% (new portfolio)")
-
-        print("\n[ Holdings ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio)
-
-        # Display fund ownership if there are contributions
-        contributions_df = load_fund_contributions(DATA_DIR)
-        if not contributions_df.empty:
-            ownership = calculate_ownership_percentages(DATA_DIR)
-            if ownership:
-                print("\n[ Fund Ownership ]")
-                for contributor, percentage in ownership.items():
-                    print(f"{contributor}: {percentage:.1f}%")
-
-        print("\n[ Your Instructions ]")
-        
-        # Use market-specific instructions if available, otherwise use default
-        if _HAS_MARKET_CONFIG:
-            try:
-                instructions = get_daily_instructions()
-                print(instructions)
-            except Exception as e:
-                print(f"Warning: Failed to get instructions from market_config: {e}")
-                print(_get_default_instructions())
-        else:
-            print(_get_default_instructions())
-        
-        return
-
-    # Calculate current equity dynamically
-    final_equity = total_value + cash
-    
-    # For now, set max drawdown to 0 since we don't have historical data
-    # In a real system, you'd track this over time
-    max_drawdown = 0.0
-    mdd_date = today
-
-    # Simplified performance calculation (no historical data)
-    print("\n" + "=" * 64)
-    print(f"Daily Results — {today}")
-    print("=" * 64)
-    print("\n[ Price & Volume ]")
-    colw = [10, 12, 9, 15]
-    print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
-    print("-" * sum(colw) + "-" * 3)
-    for rrow in rows:
-        print(f"{str(rrow[0]):<{colw[0]}} {str(rrow[1]):>{colw[1]}} {str(rrow[2]):>{colw[2]}} {str(rrow[3]):>{colw[3]}}")
-    print("\n[ Portfolio Snapshot ]")
-    if llm_portfolio.empty:
-        print("No current holdings")
-    else:
-        print(llm_portfolio)
-    print(f"Cash balance: ${cash:,.2f}")
-    print(f"Latest LLM Equity: ${final_equity:,.2f}")
-    print("Maximum Drawdown: 0.00% (new portfolio)")
-    print(_get_default_instructions())
-    return
-
-
 # ------------------------------
-# Orchestration
-# ------------------------------
-
-def _get_default_instructions() -> str:
-    """Fallback instructions if market_config not available"""
-    # Original US instructions (commented but preserved)
-    # return (
-    #     "Use this info to make decisions regarding your portfolio. You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
-    #     "Deep research is not permitted. Act at your discretion to achieve the best outcome.\n"
-    #     "If you do not make a clear indication to change positions IMMEDIATELY after this message, the portfolio remains unchanged for tomorrow.\n"
-    #     "You are encouraged to use the internet to check current prices (and related up-to-date info) for potential buys.\n"
-    #     "\n"
-    #     "*Paste everything above into ChatGPT*"
-    # )
-    
-    # Current default (Canadian-focused)
-    return (
-        "Use this info to make decisions regarding your Canadian small-cap portfolio. You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
-        "\n"
-        "Focus on Canadian small-caps (CAD 50M - CAD 500M market cap) listed on TSX or TSX Venture Exchange.\n"
-        "Consider Canadian market dynamics, regulatory environment, and sector-specific catalysts.\n"
-        "All positions trade in CAD. Account for TSX/TSXV trading hours and liquidity.\n"
-        "\n"
-        "Deep research is not permitted. Act at your discretion to achieve the best outcome.\n"
-        "If you do not make a clear indication to change positions IMMEDIATELY after this message, the portfolio remains unchanged for tomorrow.\n"
-        "You are encouraged to use the internet to check current Canadian market conditions and company-specific info for potential buys.\n"
-        "\n"
-        "*Paste everything above into your preferred LLM (ChatGPT, Claude, Gemini, etc.)*"
-    )
-
-
-# ------------------------------
-# Orchestration
+# Portfolio State Management
 # ------------------------------
 
 def load_latest_portfolio_state(
@@ -1591,7 +1410,14 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     
     llm_portfolio, cash = load_latest_portfolio_state(portfolio_file)
     llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
-    daily_results(llm_portfolio, cash)
+    
+    print(f"\n✅ Portfolio processing complete!")
+    print(f"💰 Cash balance: ${cash:,.2f}")
+    if not llm_portfolio.empty:
+        print(f"📊 Holdings: {len(llm_portfolio)} positions")
+    print(f"\n💡 To generate prompts, use the menu options:")
+    print(f"   'd' for daily trading prompt")
+    print(f"   'w' for weekly deep research prompt")
 
 
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:

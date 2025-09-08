@@ -17,7 +17,7 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast,Dict, List, Optional
 import os
@@ -1366,7 +1366,11 @@ def load_latest_portfolio_state(
         },
         inplace=True,
     )
-    latest_tickers = latest_tickers.reset_index(drop=True).to_dict(orient="records")
+    # Ensure we always return a DataFrame, even if empty
+    if latest_tickers.empty:
+        latest_tickers = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
+    else:
+        latest_tickers = latest_tickers.reset_index(drop=True)
 
     df_total = df[df["Ticker"] == "TOTAL"].copy()
     df_total["Date"] = pd.to_datetime(df_total["Date"], format="mixed", errors="coerce")
@@ -1403,16 +1407,32 @@ def load_fund_contributions(data_dir: str) -> pd.DataFrame:
     """Load fund contributions from CSV."""
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
     if os.path.exists(contributions_file):
-        return pd.read_csv(contributions_file)
+        df = pd.read_csv(contributions_file)
+        # Migrate old "Date" column to "Timestamp" if needed
+        if "Date" in df.columns and "Timestamp" not in df.columns:
+            df = df.rename(columns={"Date": "Timestamp"})
+            # Convert date-only timestamps to full timestamps with PST (assume 00:00:00 for old entries)
+            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
+            # Save the updated format
+            df.to_csv(contributions_file, index=False)
+        # Also migrate old timestamps without timezone to PST format
+        elif "Timestamp" in df.columns and not df["Timestamp"].astype(str).str.contains("PST|UTC|GMT").any():
+            # Convert old timestamps without timezone to PST format
+            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} PST" if "PST" not in str(x) and "UTC" not in str(x) and "GMT" not in str(x) else x)
+            # Save the updated format
+            df.to_csv(contributions_file, index=False)
+        return df
     else:
         # Create empty DataFrame with expected columns
-        return pd.DataFrame(columns=["Date", "Contributor", "Amount", "Type", "Running_Total", "Notes"])
+        return pd.DataFrame(columns=["Timestamp", "Contributor", "Amount", "Type", "Running_Total", "Notes"])
 
 
 def save_fund_contribution(data_dir: str, contributor: str, amount: float, contribution_type: str = "CONTRIBUTION", notes: str = ""):
     """Save a new fund contribution."""
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
-    today = datetime.now().strftime("%Y-%m-%d")
+    # Use PST timezone (GMT-8)
+    pst_tz = timezone(timedelta(hours=-8))
+    timestamp = datetime.now(pst_tz).strftime("%Y-%m-%d %H:%M:%S PST")
     
     # Load existing contributions
     df = load_fund_contributions(data_dir)
@@ -1427,7 +1447,7 @@ def save_fund_contribution(data_dir: str, contributor: str, amount: float, contr
     
     # Create new row
     new_row = {
-        "Date": today,
+        "Timestamp": timestamp,
         "Contributor": contributor,
         "Amount": amount,
         "Type": contribution_type,

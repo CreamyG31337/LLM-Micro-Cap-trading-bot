@@ -91,6 +91,7 @@ This folder contains your **private trading data** and is excluded from version 
 1. **First Time Setup**: The folder is created automatically when you run the trading script
 2. **Default Usage**: Simply run the master script and choose your options
 3. **Your Data**: All CSV files will be saved here automatically
+4. **Cash Management**: Use option 'u' from the main menu to update your cash balances
 
 ---
 
@@ -173,6 +174,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Display the current LLM prompt template", 
          []),
         
+        ("u", "💰 Update Cash Balances", 
+         "Manually update your CAD/USD cash balances (deposits, withdrawals, corrections)", 
+         []),
+        
         ("c", "⚙️  Configure", 
          "Configuration options and setup", 
          []),
@@ -243,6 +248,7 @@ def handle_configuration() -> None:
         print_colored(f"  📄 Portfolio: {'✅' if portfolio_file.exists() else '❌'} {portfolio_file.name}", Colors.ENDC)
         print_colored(f"  📄 Trade Log: {'✅' if trade_log_file.exists() else '❌'} {trade_log_file.name}", Colors.ENDC)
         print_colored(f"  📄 Cash Balances: {'✅' if cash_file.exists() else '❌'} {cash_file.name}", Colors.ENDC)
+        print_colored(f"\n💡 Tip: Use option 'u' from the main menu to update cash balances!", Colors.YELLOW)
     
     input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
 
@@ -257,7 +263,8 @@ def get_script_path(option: str) -> Optional[Path]:
         "6": START_YOUR_OWN_DIR / "ProcessPortfolio.py",
         "7": START_YOUR_OWN_DIR / "Generate_Graph.py",
         "8": PROJECT_ROOT / "debug_instructions.py",
-        "9": PROJECT_ROOT / "show_prompt.py"
+        "9": PROJECT_ROOT / "show_prompt.py",
+        "u": PROJECT_ROOT / "update_cash.py"
     }
     
     return script_map.get(option)

@@ -1399,28 +1399,6 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     daily_results(llm_portfolio, cash)
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="LLM Micro-Cap Trading Bot - Portfolio Management",
-        epilog="By default, uses 'my trading' folder for private data storage."
-    )
-    parser.add_argument("--file", default=None, 
-                       help="Path to portfolio CSV (default: my trading/llm_portfolio_update.csv)")
-    parser.add_argument("--data-dir", default=None, 
-                       help="Data directory (default: my trading)")
-    parser.add_argument("--asof", default=None, 
-                       help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
-    args = parser.parse_args()
-
-    if args.asof:
-        set_asof(args.asof)
-
-    # Use the new main function with better defaults
-    main(args.file, Path(args.data_dir) if args.data_dir else None)
-
-
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:
     """Load fund contributions from CSV."""
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
@@ -1518,3 +1496,25 @@ def calculate_liquidation_amount(data_dir: str, contributor: str, withdrawal_amo
         "liquidation_percentage": liquidation_percentage * 100,
         "remaining_equity": contributor_equity - withdrawal_amount
     }
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="LLM Micro-Cap Trading Bot - Portfolio Management",
+        epilog="By default, uses 'my trading' folder for private data storage."
+    )
+    parser.add_argument("--file", default=None, 
+                       help="Path to portfolio CSV (default: my trading/llm_portfolio_update.csv)")
+    parser.add_argument("--data-dir", default=None, 
+                       help="Data directory (default: my trading)")
+    parser.add_argument("--asof", default=None, 
+                       help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
+    args = parser.parse_args()
+
+    if args.asof:
+        set_asof(args.asof)
+
+    # Use the new main function with better defaults
+    main(args.file, Path(args.data_dir) if args.data_dir else None)

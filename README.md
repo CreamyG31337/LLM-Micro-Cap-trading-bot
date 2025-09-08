@@ -6,6 +6,8 @@ Welcome to the repo behind my 6-month live trading experiment where ChatGPT mana
 ## Repository Structure
 
 - **`trading_script.py`** - Main trading engine with portfolio management and stop-loss automation
+- **`my trading/`** - **Production data folder** (gitignored) - Your real trading data
+- **`test_data/`** - **Test environment** - Safe copies for development and testing
 - **`Scripts and CSV Files/`** - My personal portfolio (updates every trading day)
 - **`Start Your Own/`** - Template files and guide for starting your own experiment  
 - **`Weekly Deep Research (MD|PDF)/`** - Research summaries and performance reports

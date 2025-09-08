@@ -174,6 +174,14 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Display the current LLM prompt template", 
          []),
         
+        ("d", "📋 Generate Daily Trading Prompt", 
+         "Generate daily trading prompt with current portfolio data", 
+         ["--data-dir", str(MY_TRADING_DIR)]),
+        
+        ("w", "🔬 Generate Weekly Deep Research Prompt", 
+         "Generate weekly deep research prompt for comprehensive portfolio analysis", 
+         ["--data-dir", str(MY_TRADING_DIR)]),
+        
         ("u", "💰 Update Cash Balances", 
          "Manually update your CAD/USD cash balances (deposits, withdrawals, corrections)", 
          []),
@@ -264,6 +272,8 @@ def get_script_path(option: str) -> Optional[Path]:
         "7": START_YOUR_OWN_DIR / "Generate_Graph.py",
         "8": PROJECT_ROOT / "debug_instructions.py",
         "9": PROJECT_ROOT / "show_prompt.py",
+        "d": PROJECT_ROOT / "prompt_generator.py",
+        "w": PROJECT_ROOT / "prompt_generator.py",
         "u": PROJECT_ROOT / "update_cash.py"
     }
     
@@ -315,6 +325,12 @@ def main() -> None:
                     dry_run = input(f"{Colors.YELLOW}Run in dry-run mode? (y/N): {Colors.ENDC}").strip().lower()
                     if dry_run == "y":
                         args.append("--dry-run")
+                
+                # Special handling for prompt generator
+                elif choice == "d":
+                    args.extend(["--type", "daily"])
+                elif choice == "w":
+                    args.extend(["--type", "weekly"])
                 
                 # Run the script
                 return_code = run_with_venv(script_path, args)

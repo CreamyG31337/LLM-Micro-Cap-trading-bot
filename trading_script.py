@@ -476,7 +476,11 @@ def process_portfolio(
 
                 if order_type == "m":
                     try:
-                        stop_loss = float(input("Enter stop loss (or 0 to skip): "))
+                        stop_loss_input = input("Enter stop loss (or 0 to skip): ").strip()
+                        if stop_loss_input == "":
+                            stop_loss = 0.0
+                        else:
+                            stop_loss = float(stop_loss_input)
                         if stop_loss < 0:
                             raise ValueError
                     except ValueError:
@@ -517,6 +521,30 @@ def process_portfolio(
                         df_log = pd.DataFrame([log])
                     df_log.to_csv(TRADE_LOG_CSV, index=False)
 
+                    # Check cash availability BEFORE updating portfolio
+                    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                        try:
+                            cash_balances = load_cash_balances(DATA_DIR)
+                            currency = get_ticker_currency(ticker)
+                            if currency == 'USD':
+                                if not cash_balances.can_afford_usd(notional):
+                                    print(f"❌ Insufficient USD cash. Need ${notional:.2f}, have ${cash_balances.usd:.2f}")
+                                    continue
+                            else:  # CAD
+                                if not cash_balances.can_afford_cad(notional):
+                                    print(f"❌ Insufficient CAD cash. Need ${notional:.2f}, have ${cash_balances.cad:.2f}")
+                                    continue
+                        except Exception as e:
+                            print(f"Warning: Could not check dual currency balances: {e}")
+                            if notional > cash:
+                                print(f"❌ Insufficient cash. Need ${notional:.2f}, have ${cash:.2f}")
+                                continue
+                    else:
+                        if notional > cash:
+                            print(f"❌ Insufficient cash. Need ${notional:.2f}, have ${cash:.2f}")
+                            continue
+
+                    # Update portfolio
                     rows = portfolio_df.loc[portfolio_df["ticker"].astype(str).str.upper() == ticker.upper()]
                     if rows.empty:
                         new_trade = {
@@ -542,14 +570,34 @@ def process_portfolio(
                         portfolio_df.at[idx, "buy_price"] = avg_price
                         portfolio_df.at[idx, "stop_loss"] = float(stop_loss)
 
-                    cash -= notional
+                    # Update cash balances after successful portfolio update
+                    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                        try:
+                            cash_balances = load_cash_balances(DATA_DIR)
+                            currency = get_ticker_currency(ticker)
+                            if currency == 'USD':
+                                cash_balances.spend_usd(notional)
+                            else:  # CAD
+                                cash_balances.spend_cad(notional)
+                            save_cash_balances(cash_balances, DATA_DIR)
+                            cash = cash_balances.total_cad_equivalent()
+                        except Exception as e:
+                            print(f"Warning: Could not update dual currency balances: {e}")
+                            cash -= notional
+                    else:
+                        cash -= notional
+                    
                     print(f"Manual BUY MOO for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
                     continue
 
                 elif order_type == "l":
                     try:
                         buy_price = float(input("Enter buy LIMIT price: "))
-                        stop_loss = float(input("Enter stop loss (or 0 to skip): "))
+                        stop_loss_input = input("Enter stop loss (or 0 to skip): ").strip()
+                        if stop_loss_input == "":
+                            stop_loss = 0.0
+                        else:
+                            stop_loss = float(stop_loss_input)
                         if buy_price <= 0 or stop_loss < 0:
                             raise ValueError
                     except ValueError:
@@ -808,9 +856,29 @@ def log_manual_buy(
         return cash, llm_portfolio
 
     cost_amt = exec_price * shares
-    if cost_amt > cash:
-        print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
-        return cash, llm_portfolio
+    
+    # Check cash availability using dual currency if available
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            cash_balances = load_cash_balances(DATA_DIR)
+            currency = get_ticker_currency(ticker)
+            if currency == 'USD':
+                if not cash_balances.can_afford_usd(cost_amt):
+                    print(f"Manual buy for {ticker} failed: cost ${cost_amt:.2f} exceeds USD cash balance ${cash_balances.usd:.2f}.")
+                    return cash, llm_portfolio
+            else:  # CAD
+                if not cash_balances.can_afford_cad(cost_amt):
+                    print(f"Manual buy for {ticker} failed: cost ${cost_amt:.2f} exceeds CAD cash balance ${cash_balances.cad:.2f}.")
+                    return cash, llm_portfolio
+        except Exception as e:
+            print(f"Warning: Could not check dual currency balances: {e}")
+            if cost_amt > cash:
+                print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
+                return cash, llm_portfolio
+    else:
+        if cost_amt > cash:
+            print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
+            return cash, llm_portfolio
 
     log = {
         "Date": today,
@@ -863,7 +931,27 @@ def log_manual_buy(
         llm_portfolio.at[idx, "buy_price"] = new_cost / new_shares if new_shares else 0.0
         llm_portfolio.at[idx, "stop_loss"] = float(stoploss)
 
-    cash -= cost_amt
+    # Update cash balances based on currency
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            cash_balances = load_cash_balances(DATA_DIR)
+            currency = get_ticker_currency(ticker)
+            if currency == 'USD':
+                if not cash_balances.spend_usd(cost_amt):
+                    print(f"❌ Insufficient USD cash. Need ${cost_amt:.2f}, have ${cash_balances.usd:.2f}")
+                    return cash, llm_portfolio
+            else:  # CAD
+                if not cash_balances.spend_cad(cost_amt):
+                    print(f"❌ Insufficient CAD cash. Need ${cost_amt:.2f}, have ${cash_balances.cad:.2f}")
+                    return cash, llm_portfolio
+            save_cash_balances(cash_balances, DATA_DIR)
+            cash = cash_balances.total_cad_equivalent()
+        except Exception as e:
+            print(f"Warning: Could not update dual currency balances: {e}")
+            cash -= cost_amt
+    else:
+        cash -= cost_amt
+    
     print(f"Manual BUY LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
     return cash, llm_portfolio
 

@@ -463,7 +463,7 @@ def process_portfolio(
             action = input(
                 f""" You have {cash_info} in cash.
         Would you like to log a manual trade or fund activity? 
-        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, 'u' for update cash balances, or press Enter to continue: """
+        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, 'u' for update cash balances, 'sync' to sync fund contributions to CAD balance, or press Enter to continue: """
             ).strip().lower()
 
             if action == "b":
@@ -708,6 +708,17 @@ def process_portfolio(
                         cash = cash_balances.total_cad_equivalent()
                     except Exception:
                         pass
+                continue
+
+            if action == "sync":
+                if sync_fund_contributions_to_cad_balance(DATA_DIR):
+                    # Reload cash balances after sync
+                    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                        try:
+                            cash_balances = load_cash_balances(DATA_DIR)
+                            cash = cash_balances.total_cad_equivalent()
+                        except Exception:
+                            pass
                 continue
 
             break  # proceed to pricing
@@ -1608,7 +1619,7 @@ def load_fund_contributions(data_dir: str) -> pd.DataFrame:
 
 
 def save_fund_contribution(data_dir: str, contributor: str, amount: float, contribution_type: str = "CONTRIBUTION", notes: str = ""):
-    """Save a new fund contribution."""
+    """Save a new fund contribution and update CAD balance automatically."""
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
     # Use PST timezone (GMT-8)
     pst_tz = timezone(timedelta(hours=-8))
@@ -1639,7 +1650,97 @@ def save_fund_contribution(data_dir: str, contributor: str, amount: float, contr
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     df.to_csv(contributions_file, index=False)
     
+    # Optionally update CAD balance if dual currency is enabled
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            data_path = Path(data_dir)
+            cash_balances = load_cash_balances(data_path)
+            
+            # Ask user if they want to update CAD balance
+            if contribution_type == "CONTRIBUTION":
+                update_prompt = f"Update CAD balance by adding ${amount:,.2f}? (y/n): "
+                balance_change_msg = f"💰 Added ${amount:,.2f} CAD to cash balance"
+            elif contribution_type == "WITHDRAWAL":
+                update_prompt = f"Update CAD balance by removing ${abs(amount):,.2f}? (y/n): "
+                balance_change_msg = f"💰 Removed ${abs(amount):,.2f} CAD from cash balance"
+            else:
+                # For other types, skip the balance update
+                return new_total
+            
+            print(f"\n💰 Current CAD balance: ${cash_balances.cad:,.2f}")
+            response = input(update_prompt).strip().lower()
+            
+            if response == 'y':
+                if contribution_type == "CONTRIBUTION":
+                    cash_balances.add_cad(amount)
+                elif contribution_type == "WITHDRAWAL":
+                    cash_balances.add_cad(amount)  # amount is negative for withdrawals
+                
+                save_cash_balances(cash_balances, data_path)
+                print(balance_change_msg)
+                print(f"💰 New CAD balance: ${cash_balances.cad:,.2f}")
+            else:
+                print("💰 CAD balance left unchanged")
+            
+        except Exception as e:
+            print(f"⚠️  Warning: Could not update CAD balance: {e}")
+            print("   Fund contribution recorded but cash balance not updated.")
+    
     return new_total
+
+
+def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
+    """
+    Sync existing fund contributions to CAD balance.
+    This reconciles the fund_contributions.csv total with cash_balances.json CAD amount.
+    """
+    if not (_HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY):
+        print("⚠️  Dual currency mode not enabled. Sync not available.")
+        return False
+    
+    try:
+        data_path = Path(data_dir)
+        
+        # Load current contributions and calculate total
+        df = load_fund_contributions(data_dir)
+        if len(df) == 0:
+            print("📊 No fund contributions found. Nothing to sync.")
+            return True
+        
+        # Calculate net contributions (contributions minus withdrawals)
+        total_contributions = 0.0
+        for _, row in df.iterrows():
+            amount = row["Amount"]
+            if row["Type"] == "WITHDRAWAL":
+                amount = -abs(amount)  # Ensure withdrawals are negative
+            total_contributions += amount
+        
+        # Load current cash balances
+        cash_balances = load_cash_balances(data_path)
+        current_cad = cash_balances.cad
+        
+        print(f"📊 Fund Contribution Sync Analysis:")
+        print(f"   Net fund contributions: ${total_contributions:,.2f} CAD")
+        print(f"   Current CAD balance: ${current_cad:,.2f} CAD")
+        print(f"   Difference: ${current_cad - total_contributions:,.2f} CAD")
+        
+        if abs(current_cad - total_contributions) < 0.01:  # Within 1 cent
+            print("✅ CAD balance is already in sync with fund contributions!")
+            return True
+        
+        response = input(f"\nSet CAD balance to match fund contributions (${total_contributions:,.2f})? (y/n): ").strip().lower()
+        if response == 'y':
+            cash_balances.cad = total_contributions
+            save_cash_balances(cash_balances, data_path)
+            print(f"✅ CAD balance updated to ${cash_balances.cad:,.2f}")
+            return True
+        else:
+            print("Sync cancelled.")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error during sync: {e}")
+        return False
 
 
 def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:

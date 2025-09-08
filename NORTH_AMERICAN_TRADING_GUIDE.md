@@ -21,7 +21,7 @@ Your system is now configured for **North American small-cap trading** - giving 
 ### **Daily Trading Process:**
 1. **Run the script:**
    ```bash
-   python trading_script.py --file "my trading/chatgpt_portfolio_update.csv"
+   python trading_script.py --file "my trading/llm_portfolio_update.csv"
    ```
 
 2. **System provides North American context:**
@@ -196,7 +196,7 @@ Currency allocation: ~60% CAD exposure, 40% USD exposure
 
 3. **Start trading:**
    ```bash
-   python trading_script.py --file "my trading/chatgpt_portfolio_update.csv"
+   python trading_script.py --file "my trading/llm_portfolio_update.csv"
    ```
 
 4. **Let the AI decide** between Canadian and US opportunities!

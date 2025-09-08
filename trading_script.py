@@ -1,4 +1,4 @@
-"""Utilities for maintaining the ChatGPT micro-cap portfolio.
+"""Utilities for maintaining the LLM micro-cap portfolio.
 
 This module rewrites the original script to:
 - Centralize market data fetching with a robust Yahoo->Stooq fallback
@@ -64,8 +64,8 @@ def _effective_now() -> datetime:
 # ------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "my trading"  # Default location for private CSV files
-PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
-TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
+PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
+TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
 DEFAULT_BENCHMARKS = ["IWO", "XBI", "SPY", "IWM"]
 
 # ------------------------------
@@ -377,8 +377,8 @@ def set_data_dir(data_dir: Path) -> None:
     global DATA_DIR, PORTFOLIO_CSV, TRADE_LOG_CSV
     DATA_DIR = Path(data_dir)
     os.makedirs(DATA_DIR, exist_ok=True)
-    PORTFOLIO_CSV = DATA_DIR / "chatgpt_portfolio_update.csv"
-    TRADE_LOG_CSV = DATA_DIR / "chatgpt_trade_log.csv"
+    PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
+    TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
 
 
 # ------------------------------
@@ -667,10 +667,10 @@ def log_manual_buy(
         )
         if check == "1":
             print("Returning...")
-            return cash, chatgpt_portfolio
+            return cash, llm_portfolio
 
-    if not isinstance(chatgpt_portfolio, pd.DataFrame) or chatgpt_portfolio.empty:
-        chatgpt_portfolio = pd.DataFrame(
+    if not isinstance(llm_portfolio, pd.DataFrame) or llm_portfolio.empty:
+        llm_portfolio = pd.DataFrame(
             columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"]
         )
 
@@ -679,7 +679,7 @@ def log_manual_buy(
     data = fetch.df
     if data.empty:
         print(f"Manual buy for {ticker} failed: no market data available (source={fetch.source}).")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     o = float(data.get("Open", [np.nan])[-1])
     h = float(data["High"].iloc[-1])
@@ -693,12 +693,12 @@ def log_manual_buy(
         exec_price = buy_price
     else:
         print(f"Buy limit ${buy_price:.2f} for {ticker} not reached today (range {l:.2f}-{h:.2f}). Order not filled.")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     cost_amt = exec_price * shares
     if cost_amt > cash:
         print(f"Manual buy for {ticker} failed: cost {cost_amt:.2f} exceeds cash balance {cash:.2f}.")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     log = {
         "Date": today,
@@ -719,10 +719,10 @@ def log_manual_buy(
         df = pd.DataFrame([log])
     df.to_csv(TRADE_LOG_CSV, index=False)
 
-    rows = chatgpt_portfolio.loc[chatgpt_portfolio["ticker"].str.upper() == ticker.upper()]
+    rows = llm_portfolio.loc[llm_portfolio["ticker"].str.upper() == ticker.upper()]
     if rows.empty:
-        if chatgpt_portfolio.empty:
-            chatgpt_portfolio = pd.DataFrame([{
+        if llm_portfolio.empty:
+            llm_portfolio = pd.DataFrame([{
                 "ticker": ticker,
                 "shares": float(shares),
                 "stop_loss": float(stoploss),
@@ -730,8 +730,8 @@ def log_manual_buy(
                 "cost_basis": float(cost_amt),
             }])
         else:
-            chatgpt_portfolio = pd.concat(
-                [chatgpt_portfolio, pd.DataFrame([{
+            llm_portfolio = pd.concat(
+                [llm_portfolio, pd.DataFrame([{
                     "ticker": ticker,
                     "shares": float(shares),
                     "stop_loss": float(stoploss),
@@ -742,18 +742,18 @@ def log_manual_buy(
             )
     else:
         idx = rows.index[0]
-        cur_shares = float(chatgpt_portfolio.at[idx, "shares"])
-        cur_cost = float(chatgpt_portfolio.at[idx, "cost_basis"])
+        cur_shares = float(llm_portfolio.at[idx, "shares"])
+        cur_cost = float(llm_portfolio.at[idx, "cost_basis"])
         new_shares = cur_shares + float(shares)
         new_cost = cur_cost + float(cost_amt)
-        chatgpt_portfolio.at[idx, "shares"] = new_shares
-        chatgpt_portfolio.at[idx, "cost_basis"] = new_cost
-        chatgpt_portfolio.at[idx, "buy_price"] = new_cost / new_shares if new_shares else 0.0
-        chatgpt_portfolio.at[idx, "stop_loss"] = float(stoploss)
+        llm_portfolio.at[idx, "shares"] = new_shares
+        llm_portfolio.at[idx, "cost_basis"] = new_cost
+        llm_portfolio.at[idx, "buy_price"] = new_cost / new_shares if new_shares else 0.0
+        llm_portfolio.at[idx, "stop_loss"] = float(stoploss)
 
     cash -= cost_amt
     print(f"Manual BUY LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
-    return cash, chatgpt_portfolio
+    return cash, llm_portfolio
 
 def log_manual_sell(
     sell_price: float,
@@ -772,26 +772,26 @@ If this is a mistake, enter 1. """
         )
     if reason == "1":
         print("Returning...")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
     elif reason is None:
         reason = ""
 
-    if ticker not in chatgpt_portfolio["ticker"].values:
+    if ticker not in llm_portfolio["ticker"].values:
         print(f"Manual sell for {ticker} failed: ticker not in portfolio.")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
-    ticker_row = chatgpt_portfolio[chatgpt_portfolio["ticker"] == ticker]
+    ticker_row = llm_portfolio[llm_portfolio["ticker"] == ticker]
     total_shares = float(ticker_row["shares"].item())
     if shares_sold > total_shares:
         print(f"Manual sell for {ticker} failed: trying to sell {shares_sold} shares but only own {total_shares}.")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     s, e = trading_day_window()
     fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
     data = fetch.df
     if data.empty:
         print(f"Manual sell for {ticker} failed: no market data available (source={fetch.source}).")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     o = float(data["Open"].iloc[-1]) if "Open" in data else np.nan
     h = float(data["High"].iloc[-1])
@@ -805,7 +805,7 @@ If this is a mistake, enter 1. """
         exec_price = sell_price
     else:
         print(f"Sell limit ${sell_price:.2f} for {ticker} not reached today (range {l:.2f}-{h:.2f}). Order not filled.")
-        return cash, chatgpt_portfolio
+        return cash, llm_portfolio
 
     buy_price = float(ticker_row["buy_price"].item())
     cost_basis = buy_price * shares_sold
@@ -830,17 +830,17 @@ If this is a mistake, enter 1. """
 
 
     if total_shares == shares_sold:
-        chatgpt_portfolio = chatgpt_portfolio[chatgpt_portfolio["ticker"] != ticker]
+        llm_portfolio = llm_portfolio[llm_portfolio["ticker"] != ticker]
     else:
         row_index = ticker_row.index[0]
-        chatgpt_portfolio.at[row_index, "shares"] = total_shares - shares_sold
-        chatgpt_portfolio.at[row_index, "cost_basis"] = (
-            chatgpt_portfolio.at[row_index, "shares"] * chatgpt_portfolio.at[row_index, "buy_price"]
+        llm_portfolio.at[row_index, "shares"] = total_shares - shares_sold
+        llm_portfolio.at[row_index, "cost_basis"] = (
+            llm_portfolio.at[row_index, "shares"] * llm_portfolio.at[row_index, "buy_price"]
         )
 
     cash += shares_sold * exec_price
     print(f"Manual SELL LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
-    return cash, chatgpt_portfolio
+    return cash, llm_portfolio
 
 
 
@@ -848,9 +848,9 @@ If this is a mistake, enter 1. """
 # Reporting / Metrics
 # ------------------------------
 
-def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
+def daily_results(llm_portfolio: pd.DataFrame, cash: float) -> None:
     """Print daily price updates and performance metrics (incl. CAPM)."""
-    portfolio_dict: list[dict[Any, Any]] = chatgpt_portfolio.to_dict(orient="records")
+    portfolio_dict: list[dict[Any, Any]] = llm_portfolio.to_dict(orient="records")
     today = check_weekend()
 
     rows: list[list[str]] = []
@@ -881,10 +881,10 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
             raise Exception(f"Download for {ticker} failed. {e} Try checking internet connection.")
 
     # Read portfolio history
-    chatgpt_df = pd.read_csv(PORTFOLIO_CSV)
+    llm_df = pd.read_csv(PORTFOLIO_CSV)
 
     # Use only TOTAL rows, sorted by date
-    totals = chatgpt_df[chatgpt_df["Ticker"] == "TOTAL"].copy()
+    totals = llm_df[llm_df["Ticker"] == "TOTAL"].copy()
     if totals.empty:
         print("\n" + "=" * 64)
         print(f"Daily Results — {today}")
@@ -896,7 +896,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
         for r in rows:
             print(f"{str(r[0]):<{colw[0]}} {str(r[1]):>{colw[1]}} {str(r[2]):>{colw[2]}} {str(r[3]):>{colw[3]}}")
         print("\n[ Portfolio Snapshot ]")
-        print(chatgpt_portfolio)
+        print(llm_portfolio)
         print(f"Cash balance: ${cash:,.2f}")
         return
 
@@ -926,9 +926,9 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
         for rrow in rows:
             print(f"{str(rrow[0]):<{colw[0]}} {str(rrow[1]):>{colw[1]}} {str(rrow[2]):>{colw[2]}} {str(rrow[3]):>{colw[3]}}")
         print("\n[ Portfolio Snapshot ]")
-        print(chatgpt_portfolio)
+        print(llm_portfolio)
         print(f"Cash balance: ${cash:,.2f}")
-        print(f"Latest ChatGPT Equity: ${final_equity:,.2f}")
+        print(f"Latest LLM Equity: ${final_equity:,.2f}")
         if hasattr(mdd_date, "date") and not isinstance(mdd_date, (str, int)):
             mdd_date_str = mdd_date.date()
         elif hasattr(mdd_date, "strftime") and not isinstance(mdd_date, (str, int)):
@@ -1063,7 +1063,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
         print("Beta/Alpha: insufficient overlapping data.")
 
     print("\n[ Snapshot ]")
-    print(f"{'Latest ChatGPT Equity:':32} ${final_equity:>14,.2f}")
+    print(f"{'Latest LLM Equity:':32} ${final_equity:>14,.2f}")
     if not np.isnan(spx_value):
         try:
             print(f"{f'${starting_equity} in S&P 500 (same window):':32} ${spx_value:>14,.2f}")
@@ -1072,7 +1072,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     print(f"{'Cash Balance:':32} ${cash:>14,.2f}")
 
     print("\n[ Holdings ]")
-    print(chatgpt_portfolio)
+    print(llm_portfolio)
 
     print("\n[ Your Instructions ]")
     print(
@@ -1081,7 +1081,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
         "If you do not make a clear indication to change positions IMMEDIATELY after this message, the portfolio remains unchanged for tomorrow.\n"
         "You are encouraged to use the internet to check current prices (and related up-to-date info) for potential buys.\n"
         "\n"
-        "*Paste everything above into ChatGPT*"
+        "*Paste everything above into your LLM (ChatGPT, Claude, Gemini, etc.)*"
     )
 
 
@@ -1146,23 +1146,23 @@ def load_latest_portfolio_state(
 
 def main(file: str, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
-    chatgpt_portfolio, cash = load_latest_portfolio_state(file)
+    llm_portfolio, cash = load_latest_portfolio_state(file)
     print(file)
     if data_dir is not None:
         set_data_dir(data_dir)
 
-    chatgpt_portfolio, cash = process_portfolio(chatgpt_portfolio, cash)
-    daily_results(chatgpt_portfolio, cash)
+    llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
+    daily_results(llm_portfolio, cash)
 
 
 if __name__ == "__main__":
     import argparse
 
     # Default CSV path resolution (keep your existing logic)
-    csv_path = PORTFOLIO_CSV if PORTFOLIO_CSV.exists() else (SCRIPT_DIR / "chatgpt_portfolio_update.csv")
+    csv_path = PORTFOLIO_CSV if PORTFOLIO_CSV.exists() else (SCRIPT_DIR / "llm_portfolio_update.csv")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default=str(csv_path), help="Path to chatgpt_portfolio_update.csv")
+    parser.add_argument("--file", default=str(csv_path), help="Path to llm_portfolio_update.csv")
     parser.add_argument("--data-dir", default=None, help="Optional data directory")
     parser.add_argument("--asof", default=None, help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
     args = parser.parse_args()

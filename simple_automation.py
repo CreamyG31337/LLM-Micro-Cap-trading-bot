@@ -187,7 +187,7 @@ def execute_automated_trades(trades: List[Dict[str, Any]], portfolio_df: pd.Data
     return portfolio_df, cash
 
 
-def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "Start Your Own", dry_run: bool = False):
+def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "my trading", dry_run: bool = False):
     """Run the automated trading process"""
     
     print("=== Automated Trading System ===")

@@ -463,7 +463,7 @@ def process_portfolio(
             action = input(
                 f""" You have {cash_info} in cash.
         Would you like to log a manual trade or fund activity? 
-        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, or press Enter to continue: """
+        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, 'u' for update cash balances, or press Enter to continue: """
             ).strip().lower()
 
             if action == "b":
@@ -695,6 +695,17 @@ def process_portfolio(
                     print("Withdrawal cancelled.")
                 continue
 
+            if action == "u":
+                update_cash_balances_manual(DATA_DIR)
+                # Reload cash balances after update
+                if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                    try:
+                        cash_balances = load_cash_balances(DATA_DIR)
+                        cash = cash_balances.total_cad_equivalent()
+                    except Exception:
+                        pass
+                continue
+
             break  # proceed to pricing
 
     # ------- Daily pricing + stop-loss execution -------
@@ -732,7 +743,24 @@ def process_portfolio(
             value = round(exec_price * shares, 2)
             pnl = round((exec_price - cost) * shares, 2)
             action = "SELL - Stop Loss Triggered"
-            cash += value
+            
+            # Update cash balances based on currency
+            if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                try:
+                    cash_balances = load_cash_balances(DATA_DIR)
+                    currency = get_ticker_currency(ticker)
+                    if currency == 'USD':
+                        cash_balances.add_usd(value)
+                    else:  # CAD
+                        cash_balances.add_cad(value)
+                    save_cash_balances(cash_balances, DATA_DIR)
+                    cash = cash_balances.total_cad_equivalent()
+                except Exception as e:
+                    print(f"Warning: Could not update dual currency balances for stop-loss: {e}")
+                    cash += value
+            else:
+                cash += value
+                
             portfolio_df = log_sell(ticker, shares, exec_price, cost, pnl, portfolio_df)
             row = {
                 "Date": today_iso, "Ticker": ticker, "Shares": shares,
@@ -1052,7 +1080,24 @@ If this is a mistake, enter 1. """
             llm_portfolio.at[row_index, "shares"] * llm_portfolio.at[row_index, "buy_price"]
         )
 
-    cash += shares_sold * exec_price
+    # Update cash balances based on currency
+    proceeds = shares_sold * exec_price
+    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+        try:
+            cash_balances = load_cash_balances(DATA_DIR)
+            currency = get_ticker_currency(ticker)
+            if currency == 'USD':
+                cash_balances.add_usd(proceeds)
+            else:  # CAD
+                cash_balances.add_cad(proceeds)
+            save_cash_balances(cash_balances, DATA_DIR)
+            cash = cash_balances.total_cad_equivalent()
+        except Exception as e:
+            print(f"Warning: Could not update dual currency balances: {e}")
+            cash += proceeds
+    else:
+        cash += proceeds
+    
     print(f"Manual SELL LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
     return cash, llm_portfolio
 
@@ -1321,6 +1366,93 @@ def load_latest_portfolio_state(
         cash = 1000.0
     
     return latest_tickers, cash
+
+
+def update_cash_balances_manual(data_dir: Path = None) -> None:
+    """Manually update cash balances - useful for deposits, withdrawals, or corrections"""
+    if data_dir is None:
+        data_dir = DATA_DIR
+    
+    if not (_HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY):
+        print("❌ Dual currency support not available. Cannot update cash balances.")
+        return
+    
+    try:
+        # Load current balances
+        cash_balances = load_cash_balances(data_dir)
+        print(f"\n💰 Current Cash Balances:")
+        print(f"   CAD: ${cash_balances.cad:,.2f}")
+        print(f"   USD: ${cash_balances.usd:,.2f}")
+        print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+        
+        # Get user input
+        action = input("\nWhat would you like to do?\n'c' = add/remove CAD, 'u' = add/remove USD, 's' = set exact amounts, 'q' = quit: ").strip().lower()
+        
+        if action == 'q':
+            return
+            
+        elif action == 'c':
+            try:
+                amount = float(input("Enter CAD amount (positive to add, negative to remove): $"))
+                if amount >= 0:
+                    cash_balances.add_cad(amount)
+                    print(f"✅ Added ${amount:,.2f} CAD")
+                else:
+                    if cash_balances.can_afford_cad(abs(amount)):
+                        cash_balances.spend_cad(abs(amount))
+                        print(f"✅ Removed ${abs(amount):,.2f} CAD")
+                    else:
+                        print(f"❌ Cannot remove ${abs(amount):,.2f} CAD - insufficient balance")
+                        return
+            except ValueError:
+                print("❌ Invalid amount entered")
+                return
+                
+        elif action == 'u':
+            try:
+                amount = float(input("Enter USD amount (positive to add, negative to remove): $"))
+                if amount >= 0:
+                    cash_balances.add_usd(amount)
+                    print(f"✅ Added ${amount:,.2f} USD")
+                else:
+                    if cash_balances.can_afford_usd(abs(amount)):
+                        cash_balances.spend_usd(abs(amount))
+                        print(f"✅ Removed ${abs(amount):,.2f} USD")
+                    else:
+                        print(f"❌ Cannot remove ${abs(amount):,.2f} USD - insufficient balance")
+                        return
+            except ValueError:
+                print("❌ Invalid amount entered")
+                return
+                
+        elif action == 's':
+            try:
+                cad_amount = float(input("Enter exact CAD balance: $"))
+                usd_amount = float(input("Enter exact USD balance: $"))
+                if cad_amount < 0 or usd_amount < 0:
+                    print("❌ Balances cannot be negative")
+                    return
+                cash_balances.cad = cad_amount
+                cash_balances.usd = usd_amount
+                print(f"✅ Set balances to CAD ${cad_amount:,.2f} and USD ${usd_amount:,.2f}")
+            except ValueError:
+                print("❌ Invalid amounts entered")
+                return
+        else:
+            print("❌ Invalid option")
+            return
+        
+        # Save the updated balances
+        save_cash_balances(cash_balances, data_dir)
+        
+        # Show final balances
+        print(f"\n💰 Updated Cash Balances:")
+        print(f"   CAD: ${cash_balances.cad:,.2f}")
+        print(f"   USD: ${cash_balances.usd:,.2f}")
+        print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+        
+    except Exception as e:
+        print(f"❌ Error updating cash balances: {e}")
 
 
 def main(file: str | None = None, data_dir: Path | None = None) -> None:

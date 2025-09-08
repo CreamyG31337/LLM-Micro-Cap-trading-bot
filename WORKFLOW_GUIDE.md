@@ -12,7 +12,7 @@ python trading_script.py --file "Start Your Own/chatgpt_portfolio_update.csv"
 ### **Step 2: What the Script Does**
 1. **Loads your portfolio** from the CSV file
 2. **Shows your cash balances** (CAD and USD if in North American mode)
-3. **Asks if you want to make manual trades** (optional - press Enter to skip)
+3. **Asks if you want to make manual trades** (supports fractional shares - press Enter to skip)
 4. **Fetches current market data** for benchmarks
 5. **Generates performance metrics** (Sharpe ratio, drawdown, etc.)
 6. **Creates the LLM prompt** with all your data

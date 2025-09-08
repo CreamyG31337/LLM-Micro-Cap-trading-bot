@@ -537,7 +537,7 @@ Would you like to log a manual trade? Enter 'b' for buy, 's' for sell, or press 
     s, e = trading_day_window()
     for _, stock in portfolio_df.iterrows():
         ticker = str(stock["ticker"]).upper()
-        shares = int(stock["shares"]) if not pd.isna(stock["shares"]) else 0
+        shares = float(stock["shares"]) if not pd.isna(stock["shares"]) else 0.0
         cost = float(stock["buy_price"]) if not pd.isna(stock["buy_price"]) else 0.0
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
@@ -781,7 +781,7 @@ If this is a mistake, enter 1. """
         return cash, chatgpt_portfolio
 
     ticker_row = chatgpt_portfolio[chatgpt_portfolio["ticker"] == ticker]
-    total_shares = int(ticker_row["shares"].item())
+    total_shares = float(ticker_row["shares"].item())
     if shares_sold > total_shares:
         print(f"Manual sell for {ticker} failed: trying to sell {shares_sold} shares but only own {total_shares}.")
         return cash, chatgpt_portfolio

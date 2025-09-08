@@ -63,7 +63,7 @@ You are participating in a live trading experiment where you manage a real money
 - Factor in CAD/USD exchange rate movements
 
 **TRADING RULES:**
-- Full shares only (no fractional shares)
+- Fractional shares supported (Wealthsimple allows fractional trading)
 - Long positions only (no shorting)
 - Use stop-losses for risk management
 - Position sizing is your decision
@@ -80,7 +80,8 @@ You are participating in a live trading experiment where you manage a real money
 - Analyze both Canadian and US market opportunities
 
 **DECISION MAKING:**
-- If you want to make trades, specify exactly: BUY/SELL [shares] [ticker] at [price] with stop-loss at [price]
+- If you want to make trades, specify exactly: BUY/SELL [shares or dollar amount] [ticker] at [price] with stop-loss at [price]
+- Fractional shares allowed: you can specify exact share quantities (e.g., 1.5 shares) or dollar amounts (e.g., $100 worth)
 - If no changes needed, state "HOLD - no changes to portfolio"
 - Provide brief reasoning for each decision
 - Consider liquidity, volume, and bid-ask spreads

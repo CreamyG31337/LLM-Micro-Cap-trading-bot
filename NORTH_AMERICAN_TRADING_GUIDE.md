@@ -112,11 +112,11 @@ python switch_market.py status
 ```
 Based on current market conditions, I recommend:
 
-1. BUY 50 shares of XYZ.TO (Canadian biotech, CAD $4.50)
+1. BUY 50.5 shares of XYZ.TO (Canadian biotech, CAD $4.50) - fractional shares supported
    - Reason: Phase 2 trial results due next month
    - Stop-loss: CAD $3.60
 
-2. BUY 75 shares of ABCD (US tech micro-cap, USD $12.30)  
+2. BUY 75.25 shares of ABCD (US tech micro-cap, USD $12.30) - fractional shares supported  
    - Reason: Strong Q3 earnings, expanding market share
    - Stop-loss: USD $10.00
 

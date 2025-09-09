@@ -75,9 +75,9 @@ class PromptGenerator:
                     rows.append([ticker, "—", "—", "—"])
                     continue
                 
-                price = float(data["Close"].iloc[-1])
-                last_price = float(data["Close"].iloc[-2])
-                volume = float(data["Volume"].iloc[-1])
+                price = float(data["Close"].iloc[-1].item())
+                last_price = float(data["Close"].iloc[-2].item())
+                volume = float(data["Volume"].iloc[-1].item())
                 
                 percent_change = ((price - last_price) / last_price) * 100
                 rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", f"{int(volume):,}"])

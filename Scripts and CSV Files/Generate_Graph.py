@@ -189,8 +189,8 @@ def main() -> dict:
 
     # annotate final P/Ls
     final_date = llm_totals["Date"].iloc[-1]
-    final_llm = float(llm_totals["Total Equity"].iloc[-1])
-    final_spx = float(sp500["SPX Value ($100 Invested)"].iloc[-1])
+    final_llm = float(llm_totals["Total Equity"].iloc[-1].item())
+    final_spx = float(sp500["SPX Value ($100 Invested)"].iloc[-1].item())
     plt.text(final_date, final_llm + 0.3, f"+{final_llm - 100.0:.1f}%", color="blue", fontsize=9)
     plt.text(final_date, final_spx + 0.9, f"+{final_spx - 100.0:.1f}%", color="orange", fontsize=9)
 

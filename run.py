@@ -328,7 +328,8 @@ def main() -> None:
                 
                 # Special handling for prompt generator
                 elif choice == "d":
-                    args.extend(["--type", "daily"])
+                    # Daily prompt - no additional args needed (defaults to daily)
+                    pass
                 elif choice == "w":
                     args.extend(["--type", "weekly"])
                 

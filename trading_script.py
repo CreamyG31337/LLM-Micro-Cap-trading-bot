@@ -216,7 +216,7 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
             table.add_row(
                 ticker,
                 display_name,
-                f"{int(row.get('shares', 0)):,}",
+                f"{float(row.get('shares', 0)):.4f}",  # Show fractional shares with 4 decimal places
                 f"${float(row.get('buy_price', 0)):.2f}",
                 current_price,
                 pnl_percent,
@@ -256,9 +256,14 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         display_df['Current Price'] = current_prices
         display_df['P&L %'] = pnl_percentages
         
-        # Reorder columns
+        # Reorder columns and format shares to show fractional
         cols = ['ticker', 'Company', 'shares', 'buy_price', 'Current Price', 'P&L %', 'stop_loss', 'cost_basis']
         display_df = display_df[[col for col in cols if col in display_df.columns]]
+        
+        # Format shares column to show fractional shares properly
+        if 'shares' in display_df.columns:
+            display_df['shares'] = display_df['shares'].apply(lambda x: f"{float(x):.4f}")
+        
         print(display_df.to_string(index=False))
 
 def print_trade_menu() -> None:
@@ -431,6 +436,107 @@ STOOQ_MAP = {
 # Cache for company names to avoid repeated API calls
 COMPANY_NAME_CACHE = {}
 
+# Cache for ticker corrections to avoid repeated API calls
+TICKER_CORRECTION_CACHE = {}
+
+def detect_and_correct_ticker(ticker: str) -> str:
+    """
+    Detect if a ticker is Canadian and automatically add the appropriate suffix.
+    This helps prevent issues when logging trades from Wealthsimple where .TO isn't shown.
+    
+    Returns the corrected ticker symbol with appropriate suffix.
+    """
+    ticker = ticker.upper().strip()
+    
+    # Check cache first
+    if ticker in TICKER_CORRECTION_CACHE:
+        return TICKER_CORRECTION_CACHE[ticker]
+    
+    # If already has a suffix, return as-is
+    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+        TICKER_CORRECTION_CACHE[ticker] = ticker
+        return ticker
+    
+    # Known Canadian tickers that need .TO suffix
+    # This is a fallback list for common Canadian stocks/ETFs
+    canadian_tickers = {
+        'VEE': 'VEE.TO',      # Vanguard FTSE Emerging Markets ETF
+        'GMIN': 'GMIN.TO',    # G Mining Ventures
+        'SHOP': 'SHOP.TO',    # Shopify
+        'RY': 'RY.TO',        # Royal Bank
+        'TD': 'TD.TO',        # Toronto Dominion
+        'CNR': 'CNR.TO',      # Canadian National Railway
+        'CP': 'CP.TO',        # Canadian Pacific
+        'BMO': 'BMO.TO',      # Bank of Montreal
+        'BNS': 'BNS.TO',      # Bank of Nova Scotia
+        'ENB': 'ENB.TO',      # Enbridge
+        'TRP': 'TRP.TO',      # TC Energy
+        'SU': 'SU.TO',        # Suncor Energy
+        'CNQ': 'CNQ.TO',      # Canadian Natural Resources
+        'WCN': 'WCN.TO',      # Waste Connections
+        'ATD': 'ATD.TO',      # Alimentation Couche-Tard
+        'MFC': 'MFC.TO',      # Manulife Financial
+        'SLF': 'SLF.TO',      # Sun Life Financial
+        'POW': 'POW.TO',      # Power Corporation
+        'L': 'L.TO',          # Loblaw Companies
+        'MRU': 'MRU.TO',      # Metro Inc
+        'CTC': 'CTC.TO',      # Canadian Tire
+        'WMT': 'WMT.TO',      # Walmart Canada (if trading on TSX)
+    }
+    
+    # Check if it's a known Canadian ticker
+    if ticker in canadian_tickers:
+        corrected = canadian_tickers[ticker]
+        TICKER_CORRECTION_CACHE[ticker] = corrected
+        logger.info(f"Auto-corrected known Canadian ticker {ticker} to {corrected}")
+        return corrected
+    
+    try:
+        import yfinance as yf
+        
+        # Test Canadian variants first (more likely to be Canadian if user is in Canada)
+        canadian_variants = [
+            f"{ticker}.TO",    # TSX
+            f"{ticker}.V",     # TSX Venture
+        ]
+        
+        for variant in canadian_variants:
+            try:
+                canadian_stock = yf.Ticker(variant)
+                canadian_info = canadian_stock.info
+                
+                # If we get valid info and it's a Canadian exchange
+                if (canadian_info and 
+                    canadian_info.get('exchange') and 
+                    'TSX' in canadian_info.get('exchange', '')):
+                    TICKER_CORRECTION_CACHE[ticker] = variant
+                    logger.info(f"Auto-corrected ticker {ticker} to {variant}")
+                    return variant
+            except:
+                continue
+        
+        # Test if the ticker exists as-is (likely US stock)
+        try:
+            us_stock = yf.Ticker(ticker)
+            us_info = us_stock.info
+            
+            # If we get valid info and it's not a Canadian exchange, it's likely US
+            if us_info and us_info.get('exchange') and 'TSX' not in us_info.get('exchange', ''):
+                TICKER_CORRECTION_CACHE[ticker] = ticker
+                return ticker
+        except:
+            pass
+        
+        # If no variant found, assume it's US
+        TICKER_CORRECTION_CACHE[ticker] = ticker
+        return ticker
+        
+    except Exception as e:
+        logger.warning(f"Could not detect ticker type for {ticker}: {e}")
+        # Default to original ticker
+        TICKER_CORRECTION_CACHE[ticker] = ticker
+        return ticker
+
 def get_company_name(ticker: str) -> str:
     """
     Get the full company name for a ticker symbol.
@@ -485,6 +591,11 @@ def _to_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    # Handle multi-level columns (when yfinance returns tuples like ('Close', 'TICKER'))
+    if isinstance(df.columns, pd.MultiIndex):
+        # Flatten multi-level columns to simple names
+        df.columns = df.columns.get_level_values(0)
+    
     # Ensure all expected columns exist
     for c in ["Open", "High", "Low", "Close", "Volume"]:
         if c not in df.columns:
@@ -741,6 +852,12 @@ def process_portfolio(
                 else:
                     ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
                     order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit:{Style.RESET_ALL} ").strip().lower()
+                
+                # Auto-detect and correct ticker symbol
+                original_ticker = ticker
+                ticker = detect_and_correct_ticker(ticker)
+                if ticker != original_ticker:
+                    print(f"🔍 Auto-corrected ticker: {original_ticker} → {ticker}")
 
                 try:
                     if _HAS_RICH and console and not _FORCE_FALLBACK:
@@ -919,6 +1036,12 @@ def process_portfolio(
                         ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
                         shares = float(input(f"{Fore.CYAN}📉 Enter number of shares to sell (LIMIT):{Style.RESET_ALL} "))
                         sell_price = float(input(f"{Fore.CYAN}💵 Enter sell LIMIT price:{Style.RESET_ALL} "))
+                    
+                    # Auto-detect and correct ticker symbol
+                    original_ticker = ticker
+                    ticker = detect_and_correct_ticker(ticker)
+                    if ticker != original_ticker:
+                        print(f"🔍 Auto-corrected ticker: {original_ticker} → {ticker}")
                     if shares <= 0 or sell_price <= 0:
                         raise ValueError
                 except ValueError:
@@ -1225,6 +1348,12 @@ def log_manual_buy(
     market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
     today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
 
+    # Auto-detect and correct ticker symbol
+    original_ticker = ticker
+    ticker = detect_and_correct_ticker(ticker)
+    if ticker != original_ticker:
+        print(f"🔍 Auto-corrected ticker: {original_ticker} → {ticker}")
+
     if interactive:
         check = input(
             f"You are placing a BUY LIMIT for {shares} {ticker} at ${buy_price:.2f}.\n"
@@ -1380,6 +1509,13 @@ def log_manual_sell(
     today_date = datetime.now(pst_tz).date()
     market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
     today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
+    
+    # Auto-detect and correct ticker symbol
+    original_ticker = ticker
+    ticker = detect_and_correct_ticker(ticker)
+    if ticker != original_ticker:
+        print(f"🔍 Auto-corrected ticker: {original_ticker} → {ticker}")
+    
     if interactive:
         reason = input(
             f"""You are placing a SELL LIMIT for {shares_sold} {ticker} at ${sell_price:.2f}.
@@ -1396,7 +1532,7 @@ If this is a mistake, enter 1. """
         return cash, llm_portfolio
 
     ticker_row = llm_portfolio[llm_portfolio["ticker"] == ticker]
-    total_shares = int(ticker_row["shares"].item())
+    total_shares = float(ticker_row["shares"].item())  # Keep as float to preserve fractional shares
     if shares_sold > total_shares:
         print(f"Manual sell for {ticker} failed: trying to sell {shares_sold} shares but only own {total_shares}.")
         return cash, llm_portfolio

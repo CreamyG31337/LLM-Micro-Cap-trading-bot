@@ -495,15 +495,14 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols]
 
 def _yahoo_download(ticker: str, **kwargs: Any) -> pd.DataFrame:
-    """Call yfinance.download with a real UA and silence all chatter."""
-    import io, logging, requests
+    """Call yfinance.download with proper session handling for new API."""
+    import io, logging
     from contextlib import redirect_stderr, redirect_stdout
 
-    sess = requests.Session()
-    sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    # Remove session parameter - let yfinance handle it internally
+    kwargs.pop("session", None)
     kwargs.setdefault("progress", False)
     kwargs.setdefault("threads", False)
-    kwargs.setdefault("session", sess)
 
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     buf = io.StringIO()
@@ -517,16 +516,21 @@ def _yahoo_download(ticker: str, **kwargs: Any) -> pd.DataFrame:
     return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
 
 def _stooq_csv_download(ticker: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Fetch OHLCV from Stooq CSV endpoint (daily). Good for US tickers and many ETFs."""
+    """Fetch OHLCV from Stooq CSV endpoint (daily). Good for US tickers, Canadian tickers, and many ETFs."""
     import requests, io
     if ticker in STOOQ_BLOCKLIST:
         return pd.DataFrame()
     t = STOOQ_MAP.get(ticker, ticker)
 
-    # Stooq daily CSV: lowercase; equities/ETFs use .us, indices keep ^ prefix
+    # Stooq daily CSV: lowercase; handle different exchanges
     if not t.startswith("^"):
         sym = t.lower()
-        if not sym.endswith(".us"):
+        # Handle Canadian tickers (.TO suffix)
+        if sym.endswith(".to"):
+            # Keep .to suffix for Canadian stocks
+            pass
+        # Handle US tickers (add .us if not present)
+        elif not sym.endswith(".us") and not sym.endswith(".to"):
             sym = f"{sym}.us"
     else:
         sym = t.lower()
@@ -566,6 +570,10 @@ def _stooq_download(
     t = STOOQ_MAP.get(ticker, ticker)
     if not t.startswith("^"):
         t = t.lower()
+        # Handle Canadian tickers (.TO suffix) - keep as is for Stooq
+        if not t.endswith(".to") and not t.endswith(".us"):
+            # Default to .us for US tickers if no suffix
+            t = f"{t}.us"
 
     try:
         # Ensure pdr is imported locally if not available globally

@@ -230,6 +230,96 @@ def print_info(message: str, emoji: str = "ℹ️") -> None:
     else:
         print(f"{Fore.BLUE}{emoji} {message}{Style.RESET_ALL}")
 
+def detect_terminal_width() -> int:
+    """Detect the current terminal width in characters."""
+    try:
+        import shutil
+        return shutil.get_terminal_size().columns
+    except Exception:
+        # Fallback to a reasonable default
+        return 80
+
+def detect_environment() -> dict:
+    """Detect OS and terminal environment."""
+    import platform
+    import os
+    
+    env = {
+        'os': platform.system(),
+        'os_version': platform.version(),
+        'is_windows': platform.system() == 'Windows',
+        'is_windows_11': False,
+        'is_conhost': False,
+        'is_windows_terminal': False,
+        'terminal_name': 'Unknown'
+    }
+    
+    if env['is_windows']:
+        # Check if it's Windows 11 (build 22000+)
+        try:
+            version_parts = platform.version().split('.')
+            if len(version_parts) >= 3:
+                build_number = int(version_parts[2])
+                env['is_windows_11'] = build_number >= 22000
+        except (ValueError, IndexError):
+            pass
+        
+        # Detect terminal type
+        try:
+            # Check for Windows Terminal environment variables
+            if os.environ.get('WT_SESSION'):
+                env['is_windows_terminal'] = True
+                env['terminal_name'] = 'Windows Terminal'
+            elif os.environ.get('ConEmuANSI'):
+                env['terminal_name'] = 'ConEmu'
+            else:
+                env['is_conhost'] = True
+                env['terminal_name'] = 'Command Prompt (conhost)'
+        except Exception:
+            env['terminal_name'] = 'Unknown Windows Terminal'
+    
+    return env
+
+def check_table_display_issues() -> None:
+    """Check if tables might be cut off and provide helpful suggestions."""
+    terminal_width = detect_terminal_width()
+    env = detect_environment()
+    
+    if terminal_width < 120:
+        print_warning("⚠️  Terminal width may be too narrow for optimal table display")
+        print_warning(f"   Current width: {terminal_width} characters")
+        print_warning("   Recommended: 120+ characters for best experience")
+        print_warning("")
+        
+        # Provide environment-specific suggestions
+        if env['is_windows']:
+            if env['is_windows_terminal']:
+                print_warning("💡 Windows Terminal detected - To fix this:")
+                print_warning("   1. Open Windows Terminal Settings (Ctrl+,)")
+                print_warning("   2. Go to your profile → Appearance")
+                print_warning("   3. Set 'Columns' to 130 or higher")
+                print_warning("   4. Or maximize this window (click maximize button)")
+                print_warning("   5. Or press F11 for full screen mode")
+            elif env['is_conhost']:
+                print_warning("💡 Command Prompt detected - To fix this:")
+                print_warning("   1. Right-click title bar → Properties → Layout")
+                print_warning("   2. Set 'Window Size Width' to 130 or higher")
+                print_warning("   3. Or maximize this window (click maximize button)")
+                print_warning("   4. Or press F11 for full screen mode")
+                print_warning("   5. Consider upgrading to Windows Terminal for better experience")
+            else:
+                print_warning("💡 To fix this, try:")
+                print_warning("   1. Maximize this window (click maximize button)")
+                print_warning("   2. Press F11 for full screen mode")
+                print_warning("   3. Right-click title bar → Properties → Font → Choose smaller font")
+        else:
+            print_warning("💡 To fix this, try:")
+            print_warning("   1. Maximize this window")
+            print_warning("   2. Increase terminal width in your terminal settings")
+            print_warning("   3. Use a smaller font size")
+        
+        print_warning("")
+
 def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
     """Format money display with color and emoji."""
     formatted = f"${amount:,.2f}"
@@ -248,6 +338,9 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     if portfolio_df.empty:
         print_info("Portfolio is currently empty")
         return
+    
+    # Check for potential table display issues
+    check_table_display_issues()
     
     # Get current prices for all tickers
     print_info("Fetching current prices for portfolio display...", "📈")

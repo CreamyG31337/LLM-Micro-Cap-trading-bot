@@ -30,6 +30,21 @@ import json
 import logging
 from collections import defaultdict
 
+# Color and formatting imports
+try:
+    from colorama import init, Fore, Back, Style
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.text import Text
+    init(autoreset=True)  # Initialize colorama
+    _HAS_RICH = True
+    console = Console()
+except ImportError:
+    _HAS_RICH = False
+    console = None
+
 # Import market configuration
 try:
     from market_config import get_benchmarks, get_daily_instructions, get_market_info, print_active_config
@@ -76,6 +91,115 @@ def set_asof(date: str | datetime | pd.Timestamp | None) -> None:
 _env_asof = os.environ.get("ASOF_DATE")
 if _env_asof:
     set_asof(_env_asof)
+
+# ------------------------------
+# Color and formatting utilities
+# ------------------------------
+
+def print_header(title: str, emoji: str = "🔷") -> None:
+    """Print a colorful header with emoji."""
+    if _HAS_RICH and console:
+        console.print(f"\n{emoji} {title} {emoji}", style="bold blue on white", justify="center")
+        console.print("─" * 60, style="blue")
+    else:
+        print(f"\n{Fore.CYAN}{'='*60}")
+        print(f"{Fore.CYAN}{emoji} {title} {emoji}")
+        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+
+def print_success(message: str, emoji: str = "✅") -> None:
+    """Print a success message with green color and emoji."""
+    if _HAS_RICH and console:
+        console.print(f"{emoji} {message}", style="bold green")
+    else:
+        print(f"{Fore.GREEN}{emoji} {message}{Style.RESET_ALL}")
+
+def print_error(message: str, emoji: str = "❌") -> None:
+    """Print an error message with red color and emoji."""
+    if _HAS_RICH and console:
+        console.print(f"{emoji} {message}", style="bold red")
+    else:
+        print(f"{Fore.RED}{emoji} {message}{Style.RESET_ALL}")
+
+def print_warning(message: str, emoji: str = "⚠️") -> None:
+    """Print a warning message with yellow color and emoji."""
+    if _HAS_RICH and console:
+        console.print(f"{emoji} {message}", style="bold yellow")
+    else:
+        print(f"{Fore.YELLOW}{emoji} {message}{Style.RESET_ALL}")
+
+def print_info(message: str, emoji: str = "ℹ️") -> None:
+    """Print an info message with blue color and emoji."""
+    if _HAS_RICH and console:
+        console.print(f"{emoji} {message}", style="bold blue")
+    else:
+        print(f"{Fore.BLUE}{emoji} {message}{Style.RESET_ALL}")
+
+def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
+    """Format money display with color and emoji."""
+    formatted = f"${amount:,.2f}"
+    if currency:
+        formatted += f" {currency}"
+    
+    if _HAS_RICH and console:
+        color = "green" if amount >= 0 else "red"
+        return f"{emoji} [bold {color}]{formatted}[/bold {color}]"
+    else:
+        color = Fore.GREEN if amount >= 0 else Fore.RED
+        return f"{color}{emoji} {formatted}{Style.RESET_ALL}"
+
+def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
+    """Create a beautiful portfolio table display."""
+    if portfolio_df.empty:
+        print_info("Portfolio is currently empty")
+        return
+    
+    if _HAS_RICH and console:
+        table = Table(title="📊 Current Portfolio", show_header=True, header_style="bold magenta")
+        table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
+        table.add_column("📈 Shares", justify="right", style="green")
+        table.add_column("💵 Buy Price", justify="right", style="blue")
+        table.add_column("🛑 Stop Loss", justify="right", style="red")
+        table.add_column("💰 Cost Basis", justify="right", style="yellow")
+        
+        for _, row in portfolio_df.iterrows():
+            table.add_row(
+                str(row.get('ticker', '')),
+                f"{int(row.get('shares', 0)):,}",
+                f"${float(row.get('buy_price', 0)):.2f}",
+                f"${float(row.get('stop_loss', 0)):.2f}" if row.get('stop_loss', 0) > 0 else "None",
+                f"${float(row.get('cost_basis', 0)):.2f}"
+            )
+        
+        console.print(table)
+    else:
+        print(f"\n{Fore.MAGENTA}📊 Current Portfolio:{Style.RESET_ALL}")
+        print(portfolio_df.to_string(index=False))
+
+def print_trade_menu() -> None:
+    """Print the colorful trade menu."""
+    if _HAS_RICH and console:
+        panel = Panel(
+            "[bold green]📈 Trading Menu[/bold green]\n\n"
+            "[cyan]'b'[/cyan] 🛒 Buy (Market-on-Open or Limit)\n"
+            "[cyan]'s'[/cyan] 📤 Sell (Limit Order)\n"
+            "[cyan]'c'[/cyan] 💵 Log Contribution\n"
+            "[cyan]'w'[/cyan] 💸 Log Withdrawal\n"
+            "[cyan]'u'[/cyan] 🔄 Update Cash Balances\n"
+            "[cyan]'sync'[/cyan] 🔗 Sync Fund Contributions\n"
+            "[cyan]Enter[/cyan] ▶️ Continue to Portfolio Processing",
+            border_style="green",
+            width=62
+        )
+        console.print(panel)
+    else:
+        print(f"\n{Fore.GREEN}📈 Trading Menu:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (Market-on-Open or Limit)")
+        print(f"{Fore.CYAN}'s'{Style.RESET_ALL} 📤 Sell (Limit Order)")
+        print(f"{Fore.CYAN}'c'{Style.RESET_ALL} 💵 Log Contribution")
+        print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
+        print(f"{Fore.CYAN}'u'{Style.RESET_ALL} 🔄 Update Cash Balances")
+        print(f"{Fore.CYAN}'sync'{Style.RESET_ALL} 🔗 Sync Fund Contributions")
+        print(f"{Fore.CYAN}Enter{Style.RESET_ALL} ▶️ Continue to Portfolio Processing")
 
 def _effective_now() -> datetime:
     return (ASOF_DATE.to_pydatetime() if ASOF_DATE is not None else datetime.now())
@@ -448,39 +572,64 @@ def process_portfolio(
 
     # ------- Interactive trade entry (supports MOO) -------
     if interactive:
+        print_header("Portfolio Management", "📊")
+        
         while True:
-            print(portfolio_df)
+            create_portfolio_table(portfolio_df)
+            
             # Show cash balance - dual currency if in North American mode
             if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
                 try:
                     cash_balances = load_cash_balances(DATA_DIR)
-                    cash_info = f"CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}"
+                    if _HAS_RICH and console:
+                        console.print(f"\n💰 [bold green]Cash Balances:[/bold green] CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}")
+                    else:
+                        print(f"\n{Fore.GREEN}💰 Cash Balances: CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}{Style.RESET_ALL}")
                 except Exception:
-                    cash_info = f"${cash:,.2f}"
+                    if _HAS_RICH and console:
+                        console.print(f"\n💰 [bold green]Cash Balance:[/bold green] ${cash:,.2f}")
+                    else:
+                        print(f"\n{Fore.GREEN}💰 Cash Balance: ${cash:,.2f}{Style.RESET_ALL}")
             else:
-                cash_info = f"${cash:,.2f}"
+                if _HAS_RICH and console:
+                    console.print(f"\n💰 [bold green]Cash Balance:[/bold green] ${cash:,.2f}")
+                else:
+                    print(f"\n{Fore.GREEN}💰 Cash Balance: ${cash:,.2f}{Style.RESET_ALL}")
             
-            action = input(
-                f""" You have {cash_info} in cash.
-        Would you like to log a manual trade or fund activity? 
-        Enter 'b' for buy, 's' for sell, 'c' for contribution, 'w' for withdrawal, 'u' for update cash balances, 'sync' to sync fund contributions to CAD balance, or press Enter to continue: """
-            ).strip().lower()
+            print_trade_menu()
+            
+            if _HAS_RICH and console:
+                action = console.input("\n[bold cyan]Choose an action:[/bold cyan] ").strip().lower()
+            else:
+                action = input(f"\n{Fore.CYAN}Choose an action:{Style.RESET_ALL} ").strip().lower()
 
             if action == "b":
-                ticker = input("Enter ticker symbol: ").strip().upper()
-                order_type = input("Order type? 'm' = market-on-open, 'l' = limit: ").strip().lower()
+                print_header("Buy Order", "🛒")
+                
+                if _HAS_RICH and console:
+                    ticker = console.input("🎯 [bold cyan]Enter ticker symbol:[/bold cyan] ").strip().upper()
+                    order_type = console.input("📋 [bold cyan]Order type? 'm' = market-on-open, 'l' = limit:[/bold cyan] ").strip().lower()
+                else:
+                    ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
+                    order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit:{Style.RESET_ALL} ").strip().lower()
 
                 try:
-                    shares = float(input("Enter number of shares: "))
+                    if _HAS_RICH and console:
+                        shares = float(console.input("📈 [bold cyan]Enter number of shares:[/bold cyan] "))
+                    else:
+                        shares = float(input(f"{Fore.CYAN}📈 Enter number of shares:{Style.RESET_ALL} "))
                     if shares <= 0:
                         raise ValueError
                 except ValueError:
-                    print("Invalid share amount. Buy cancelled.")
+                    print_error("Invalid share amount. Buy cancelled.")
                     continue
 
                 if order_type == "m":
                     try:
-                        stop_loss_input = input("Enter stop loss (or 0 to skip): ").strip()
+                        if _HAS_RICH and console:
+                            stop_loss_input = console.input("🛑 [bold cyan]Enter stop loss (or 0 to skip):[/bold cyan] ").strip()
+                        else:
+                            stop_loss_input = input(f"{Fore.CYAN}🛑 Enter stop loss (or 0 to skip):{Style.RESET_ALL} ").strip()
                         if stop_loss_input == "":
                             stop_loss = 0.0
                         else:
@@ -488,21 +637,26 @@ def process_portfolio(
                         if stop_loss < 0:
                             raise ValueError
                     except ValueError:
-                        print("Invalid stop loss. Buy cancelled.")
+                        print_error("Invalid stop loss. Buy cancelled.")
                         continue
 
+                    print_info(f"Fetching market data for {ticker}...", "📊")
                     s, e = trading_day_window()
                     fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
                     data = fetch.df
                     if data.empty:
-                        print(f"MOO buy for {ticker} failed: no market data available (source={fetch.source}).")
+                        print_error(f"MOO buy for {ticker} failed: no market data available (source={fetch.source})")
                         continue
 
                     o = float(data["Open"].iloc[-1]) if "Open" in data else float(data["Close"].iloc[-1])
                     exec_price = round(o, 2)
                     notional = exec_price * shares
+                    
+                    print_info(f"Market open price: ${exec_price:.2f}")
+                    print_info(f"Total cost: ${notional:,.2f}")
+                    
                     if notional > cash:
-                        print(f"MOO buy for {ticker} failed: cost {notional:.2f} exceeds cash {cash:.2f}.")
+                        print_error(f"MOO buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
                         continue
 
                     log = {
@@ -595,13 +749,17 @@ def process_portfolio(
                     else:
                         cash -= notional
                     
-                    print(f"Manual BUY MOO for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
+                    print_success(f"Manual BUY MOO for {ticker} filled at ${exec_price:.2f} ({fetch.source})", "🎉")
                     continue
 
                 elif order_type == "l":
                     try:
-                        buy_price = float(input("Enter buy LIMIT price: "))
-                        stop_loss_input = input("Enter stop loss (or 0 to skip): ").strip()
+                        if _HAS_RICH and console:
+                            buy_price = float(console.input("💵 [bold cyan]Enter buy LIMIT price:[/bold cyan] "))
+                            stop_loss_input = console.input("🛑 [bold cyan]Enter stop loss (or 0 to skip):[/bold cyan] ").strip()
+                        else:
+                            buy_price = float(input(f"{Fore.CYAN}💵 Enter buy LIMIT price:{Style.RESET_ALL} "))
+                            stop_loss_input = input(f"{Fore.CYAN}🛑 Enter stop loss (or 0 to skip):{Style.RESET_ALL} ").strip()
                         if stop_loss_input == "":
                             stop_loss = 0.0
                         else:
@@ -609,7 +767,7 @@ def process_portfolio(
                         if buy_price <= 0 or stop_loss < 0:
                             raise ValueError
                     except ValueError:
-                        print("Invalid input. Limit buy cancelled.")
+                        print_error("Invalid input. Limit buy cancelled.")
                         continue
 
                     cash, portfolio_df = log_manual_buy(
@@ -617,18 +775,25 @@ def process_portfolio(
                     )
                     continue
                 else:
-                    print("Unknown order type. Use 'm' or 'l'.")
+                    print_error("Unknown order type. Use 'm' or 'l'.")
                     continue
 
             if action == "s":
+                print_header("Sell Order", "📤")
+                
                 try:
-                    ticker = input("Enter ticker symbol: ").strip().upper()
-                    shares = float(input("Enter number of shares to sell (LIMIT): "))
-                    sell_price = float(input("Enter sell LIMIT price: "))
+                    if _HAS_RICH and console:
+                        ticker = console.input("🎯 [bold cyan]Enter ticker symbol:[/bold cyan] ").strip().upper()
+                        shares = float(console.input("📉 [bold cyan]Enter number of shares to sell (LIMIT):[/bold cyan] "))
+                        sell_price = float(console.input("💵 [bold cyan]Enter sell LIMIT price:[/bold cyan] "))
+                    else:
+                        ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
+                        shares = float(input(f"{Fore.CYAN}📉 Enter number of shares to sell (LIMIT):{Style.RESET_ALL} "))
+                        sell_price = float(input(f"{Fore.CYAN}💵 Enter sell LIMIT price:{Style.RESET_ALL} "))
                     if shares <= 0 or sell_price <= 0:
                         raise ValueError
                 except ValueError:
-                    print("Invalid input. Manual sell cancelled.")
+                    print_error("Invalid input. Manual sell cancelled.")
                     continue
 
                 cash, portfolio_df = log_manual_sell(
@@ -637,35 +802,51 @@ def process_portfolio(
                 continue
 
             if action == "c":
+                print_header("Fund Contribution", "💵")
+                
                 try:
-                    contributor = input("Enter contributor name: ").strip()
-                    amount = float(input("Enter contribution amount: $"))
-                    notes = input("Enter notes (optional): ").strip()
+                    if _HAS_RICH and console:
+                        contributor = console.input("👤 [bold cyan]Enter contributor name:[/bold cyan] ").strip()
+                        amount = float(console.input("💰 [bold cyan]Enter contribution amount: $[/bold cyan]"))
+                        notes = console.input("📝 [bold cyan]Enter notes (optional):[/bold cyan] ").strip()
+                    else:
+                        contributor = input(f"{Fore.CYAN}👤 Enter contributor name:{Style.RESET_ALL} ").strip()
+                        amount = float(input(f"{Fore.CYAN}💰 Enter contribution amount: ${Style.RESET_ALL}"))
+                        notes = input(f"{Fore.CYAN}📝 Enter notes (optional):{Style.RESET_ALL} ").strip()
                     if amount <= 0:
                         raise ValueError("Amount must be positive")
                 except ValueError as e:
-                    print(f"Invalid input: {e}. Contribution cancelled.")
+                    print_error(f"Invalid input: {e}. Contribution cancelled.")
                     continue
 
                 new_total = save_fund_contribution(DATA_DIR, contributor, amount, "CONTRIBUTION", notes)
-                print(f"✅ Contribution logged: {contributor} contributed ${amount:,.2f}")
-                print(f"   Total fund contributions: ${new_total:,.2f}")
+                print_success(f"Contribution logged: {contributor} contributed ${amount:,.2f}")
+                print_info(f"Total fund contributions: ${new_total:,.2f}")
                 
                 # Show updated ownership
                 ownership = calculate_ownership_percentages(DATA_DIR)
-                print("\n📊 Updated Ownership:")
+                print_info("Updated Ownership:", "📊")
                 for name, percentage in ownership.items():
-                    print(f"   {name}: {percentage:.1f}%")
+                    if _HAS_RICH and console:
+                        console.print(f"   [bold cyan]{name}:[/bold cyan] [green]{percentage:.1f}%[/green]")
+                    else:
+                        print(f"   {Fore.CYAN}{name}:{Style.RESET_ALL} {Fore.GREEN}{percentage:.1f}%{Style.RESET_ALL}")
                 continue
 
             if action == "w":
+                print_header("Fund Withdrawal", "💸")
+                
                 try:
-                    contributor = input("Enter contributor name: ").strip()
-                    amount = float(input("Enter withdrawal amount: $"))
+                    if _HAS_RICH and console:
+                        contributor = console.input("👤 [bold cyan]Enter contributor name:[/bold cyan] ").strip()
+                        amount = float(console.input("💸 [bold cyan]Enter withdrawal amount: $[/bold cyan]"))
+                    else:
+                        contributor = input(f"{Fore.CYAN}👤 Enter contributor name:{Style.RESET_ALL} ").strip()
+                        amount = float(input(f"{Fore.CYAN}💸 Enter withdrawal amount: ${Style.RESET_ALL}"))
                     if amount <= 0:
                         raise ValueError("Amount must be positive")
                 except ValueError as e:
-                    print(f"Invalid input: {e}. Withdrawal cancelled.")
+                    print_error(f"Invalid input: {e}. Withdrawal cancelled.")
                     continue
 
                 # Get current equity for liquidation calculation
@@ -676,27 +857,34 @@ def process_portfolio(
                 liquidation_info = calculate_liquidation_amount(DATA_DIR, contributor, amount, current_equity)
                 
                 if "error" in liquidation_info:
-                    print(f"❌ {liquidation_info['error']}")
+                    print_error(liquidation_info['error'])
                     continue
 
-                print(f"\n💰 Withdrawal Analysis:")
-                print(f"   {contributor}'s equity: ${liquidation_info['contributor_equity']:,.2f}")
-                print(f"   Withdrawal amount: ${liquidation_info['withdrawal_amount']:,.2f}")
-                print(f"   Portfolio liquidation needed: {liquidation_info['liquidation_percentage']:.1f}%")
-                print(f"   Remaining equity: ${liquidation_info['remaining_equity']:,.2f}")
+                print_info("Withdrawal Analysis:", "💰")
+                print_info(f"{contributor}'s equity: ${liquidation_info['contributor_equity']:,.2f}")
+                print_info(f"Withdrawal amount: ${liquidation_info['withdrawal_amount']:,.2f}")
+                print_warning(f"Portfolio liquidation needed: {liquidation_info['liquidation_percentage']:.1f}%")
+                print_info(f"Remaining equity: ${liquidation_info['remaining_equity']:,.2f}")
                 
-                confirm = input("\nProceed with withdrawal? (y/n): ").strip().lower()
+                if _HAS_RICH and console:
+                    confirm = console.input("\n[bold yellow]Proceed with withdrawal? (y/n):[/bold yellow] ").strip().lower()
+                else:
+                    confirm = input(f"\n{Fore.YELLOW}Proceed with withdrawal? (y/n):{Style.RESET_ALL} ").strip().lower()
+                
                 if confirm == "y":
                     new_total = save_fund_contribution(DATA_DIR, contributor, -amount, "WITHDRAWAL", f"Withdrawal of ${amount:,.2f}")
-                    print(f"✅ Withdrawal logged: {contributor} withdrew ${amount:,.2f}")
+                    print_success(f"Withdrawal logged: {contributor} withdrew ${amount:,.2f}")
                     
                     # Show updated ownership
                     ownership = calculate_ownership_percentages(DATA_DIR)
-                    print("\n📊 Updated Ownership:")
+                    print_info("Updated Ownership:", "📊")
                     for name, percentage in ownership.items():
-                        print(f"   {name}: {percentage:.1f}%")
+                        if _HAS_RICH and console:
+                            console.print(f"   [bold cyan]{name}:[/bold cyan] [green]{percentage:.1f}%[/green]")
+                        else:
+                            print(f"   {Fore.CYAN}{name}:{Style.RESET_ALL} {Fore.GREEN}{percentage:.1f}%{Style.RESET_ALL}")
                 else:
-                    print("Withdrawal cancelled.")
+                    print_warning("Withdrawal cancelled.")
                 continue
 
             if action == "u":
@@ -724,6 +912,9 @@ def process_portfolio(
             break  # proceed to pricing
 
     # ------- Daily pricing + stop-loss execution -------
+    if not portfolio_df.empty:
+        print_header("Portfolio Pricing & Stop-Loss Check", "📊")
+        
     s, e = trading_day_window()
     for _, stock in portfolio_df.iterrows():
         ticker = str(stock["ticker"]).upper()
@@ -732,11 +923,12 @@ def process_portfolio(
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
 
+        print_info(f"Fetching data for {ticker}...", "📈")
         fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
         data = fetch.df
 
         if data.empty:
-            print(f"No data for {ticker} (source={fetch.source}).")
+            print_warning(f"No data for {ticker} (source={fetch.source})")
             row = {
                 "Date": today_iso, "Ticker": ticker, "Shares": shares,
                 "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
@@ -758,6 +950,10 @@ def process_portfolio(
             value = round(exec_price * shares, 2)
             pnl = round((exec_price - cost) * shares, 2)
             action = "SELL - Stop Loss Triggered"
+            
+            print_error(f"🚨 STOP LOSS TRIGGERED for {ticker}!")
+            print_warning(f"   Selling {shares:,} shares at ${exec_price:.2f}")
+            print_info(f"   PnL: ${pnl:,.2f}")
             
             # Update cash balances based on currency
             if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
@@ -800,14 +996,34 @@ def process_portfolio(
         results.append(row)
 
     # Calculate totals dynamically - no need to store in CSV
-    print(f"Portfolio Total Value: ${total_value:,.2f}")
-    print(f"Total PnL: ${total_pnl:,.2f}")
-    print(f"Cash Balance: ${cash:,.2f}")
-    print(f"Total Equity: ${total_value + cash:,.2f}")
+    print_header("Portfolio Summary", "📈")
     
-    # Display fund contributions total
-    fund_total = calculate_fund_contributions_total(str(DATA_DIR))
-    print(f"Fund Contributions Total: ${fund_total:,.2f}")
+    if _HAS_RICH and console:
+        summary_table = Table(title="💰 Financial Summary", show_header=True, header_style="bold magenta")
+        summary_table.add_column("Metric", style="cyan", no_wrap=True)
+        summary_table.add_column("Amount", justify="right", style="green")
+        
+        summary_table.add_row("📊 Portfolio Value", f"${total_value:,.2f}")
+        summary_table.add_row("💹 Total P&L", f"${total_pnl:,.2f}" if total_pnl >= 0 else f"[red]${total_pnl:,.2f}[/red]")
+        summary_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        summary_table.add_row("🏦 Total Equity", f"${total_value + cash:,.2f}")
+        
+        fund_total = calculate_fund_contributions_total(str(DATA_DIR))
+        summary_table.add_row("💵 Fund Contributions", f"${fund_total:,.2f}")
+        
+        console.print(summary_table)
+    else:
+        print_info(f"Portfolio Total Value: ${total_value:,.2f}", "📊")
+        if total_pnl >= 0:
+            print_success(f"Total PnL: ${total_pnl:,.2f}", "💹")
+        else:
+            print_error(f"Total PnL: ${total_pnl:,.2f}", "📉")
+        print_info(f"Cash Balance: ${cash:,.2f}", "💰")
+        print_success(f"Total Equity: ${total_value + cash:,.2f}", "🏦")
+        
+        # Display fund contributions total
+        fund_total = calculate_fund_contributions_total(str(DATA_DIR))
+        print_info(f"Fund Contributions Total: ${fund_total:,.2f}", "💵")
 
     df_out = pd.DataFrame(results)
     if PORTFOLIO_CSV.exists():
@@ -848,7 +1064,7 @@ def log_sell(
         "PnL": pnl,
         "Reason": "AUTOMATED SELL - STOPLOSS TRIGGERED",
     }
-    print(f"{ticker} stop loss was met. Selling all shares.")
+    print_error(f"{ticker} stop loss was met. Selling all shares.", "🚨")
     portfolio = portfolio[portfolio["ticker"] != ticker]
 
     if TRADE_LOG_CSV.exists():
@@ -1015,7 +1231,7 @@ def log_manual_buy(
     else:
         cash -= cost_amt
     
-    print(f"Manual BUY LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
+    print_success(f"Manual BUY LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source})", "🎉")
     return cash, llm_portfolio
 
 def log_manual_sell(
@@ -1123,7 +1339,7 @@ If this is a mistake, enter 1. """
     else:
         cash += proceeds
     
-    print(f"Manual SELL LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source}).")
+    print_success(f"Manual SELL LIMIT for {ticker} filled at ${exec_price:.2f} ({fetch.source})", "💰")
     return cash, llm_portfolio
 
 
@@ -1224,10 +1440,10 @@ def handle_insufficient_funds(needed_amount: float, currency: str, current_balan
     
     if not (_HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY):
         # Single currency mode - offer simple cash update
-        print(f"\n💰 Insufficient Funds for {ticker}")
-        print(f"   Need: ${needed_amount:,.2f}")
-        print(f"   Have: ${current_balance:,.2f}")
-        print(f"   Short: ${needed_amount - current_balance:,.2f}")
+        print_error(f"Insufficient Funds for {ticker}", "💰")
+        print_warning(f"Need: ${needed_amount:,.2f}")
+        print_info(f"Have: ${current_balance:,.2f}")
+        print_error(f"Short: ${needed_amount - current_balance:,.2f}")
         
         response = input(f"\nWould you like to add more cash to complete this purchase? (y/n): ").strip().lower()
         if response == 'y':
@@ -1246,10 +1462,10 @@ def handle_insufficient_funds(needed_amount: float, currency: str, current_balan
         return False
     
     # Dual currency mode - offer specific currency update
-    print(f"\n💰 Insufficient {currency} Funds for {ticker}")
-    print(f"   Need: ${needed_amount:,.2f} {currency}")
-    print(f"   Have: ${current_balance:,.2f} {currency}")
-    print(f"   Short: ${needed_amount - current_balance:,.2f} {currency}")
+    print_error(f"Insufficient {currency} Funds for {ticker}", "💰")
+    print_warning(f"Need: ${needed_amount:,.2f} {currency}")
+    print_info(f"Have: ${current_balance:,.2f} {currency}")
+    print_error(f"Short: ${needed_amount - current_balance:,.2f} {currency}")
     
     response = input(f"\nWould you like to add more {currency} to complete this purchase? (y/n): ").strip().lower()
     if response != 'y':
@@ -1417,18 +1633,23 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     llm_portfolio, cash = load_latest_portfolio_state(portfolio_file)
     llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
     
-    print(f"\n✅ Portfolio processing complete!")
-    print(f"💰 Cash balance: ${cash:,.2f}")
+    print_header("Processing Complete", "🎉")
+    print_success("Portfolio processing complete!")
+    print_info(f"Cash balance: ${cash:,.2f}", "💰")
     if not llm_portfolio.empty:
-        print(f"📊 Holdings: {len(llm_portfolio)} positions")
+        print_info(f"Holdings: {len(llm_portfolio)} positions", "📊")
     
     # Display fund contributions total
     fund_total = calculate_fund_contributions_total(str(DATA_DIR))
-    print(f"💵 Fund contributions total: ${fund_total:,.2f}")
+    print_info(f"Fund contributions total: ${fund_total:,.2f}", "💵")
     
-    print(f"\n💡 To generate prompts, use the menu options:")
-    print(f"   'd' for daily trading prompt")
-    print(f"   'w' for weekly deep research prompt")
+    print_info("To generate prompts, use the menu options:", "💡")
+    if _HAS_RICH and console:
+        console.print("   [cyan]'d'[/cyan] for daily trading prompt")
+        console.print("   [cyan]'w'[/cyan] for weekly deep research prompt")
+    else:
+        print(f"   {Fore.CYAN}'d'{Style.RESET_ALL} for daily trading prompt")
+        print(f"   {Fore.CYAN}'w'{Style.RESET_ALL} for weekly deep research prompt")
 
 
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:

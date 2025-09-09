@@ -204,10 +204,10 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
             pnl_percent = ""
             
             if not fetch.df.empty and "Close" in fetch.df.columns:
-                current_price = f"${float(fetch.df['Close'].iloc[-1]):.2f}"
+                current_price = f"${float(fetch.df['Close'].iloc[-1].item()):.2f}"
                 buy_price = float(row.get('buy_price', 0))
                 if buy_price > 0:
-                    pnl_pct = ((float(fetch.df['Close'].iloc[-1]) - buy_price) / buy_price) * 100
+                    pnl_pct = ((float(fetch.df['Close'].iloc[-1].item()) - buy_price) / buy_price) * 100
                     pnl_percent = f"{pnl_pct:+.1f}%"
             else:
                 current_price = "N/A"
@@ -240,7 +240,7 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
             fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
             
             if not fetch.df.empty and "Close" in fetch.df.columns:
-                current_price = float(fetch.df['Close'].iloc[-1])
+                current_price = float(fetch.df['Close'].iloc[-1].item())
                 current_prices.append(f"${current_price:.2f}")
                 
                 buy_price = float(row.get('buy_price', 0))
@@ -777,7 +777,7 @@ def process_portfolio(
                         print_error(f"MOO buy for {ticker} failed: no market data available (source={fetch.source})")
                         continue
 
-                    o = float(data["Open"].iloc[-1]) if "Open" in data else float(data["Close"].iloc[-1])
+                    o = float(data["Open"].iloc[-1].item()) if "Open" in data else float(data["Close"].iloc[-1].item())
                     exec_price = round(o, 2)
                     notional = exec_price * shares
                     
@@ -1068,10 +1068,10 @@ def process_portfolio(
             results.append(row)
             continue
 
-        o = float(data["Open"].iloc[-1]) if "Open" in data else np.nan
-        h = float(data["High"].iloc[-1])
-        l = float(data["Low"].iloc[-1])
-        c = float(data["Close"].iloc[-1])
+        o = float(data["Open"].iloc[-1].item()) if "Open" in data else np.nan
+        h = float(data["High"].iloc[-1].item())
+        l = float(data["Low"].iloc[-1].item())
+        c = float(data["Close"].iloc[-1].item())
         if np.isnan(o):
             o = c
 
@@ -1247,10 +1247,10 @@ def log_manual_buy(
         return cash, llm_portfolio
 
     o = float(data.get("Open", [np.nan])[-1])
-    h = float(data["High"].iloc[-1])
-    l = float(data["Low"].iloc[-1])
+    h = float(data["High"].iloc[-1].item())
+    l = float(data["Low"].iloc[-1].item())
     if np.isnan(o):
-        o = float(data["Close"].iloc[-1])
+        o = float(data["Close"].iloc[-1].item())
 
     if o <= buy_price:
         exec_price = o
@@ -1408,11 +1408,11 @@ If this is a mistake, enter 1. """
         print(f"Manual sell for {ticker} failed: no market data available (source={fetch.source}).")
         return cash, llm_portfolio
 
-    o = float(data["Open"].iloc[-1]) if "Open" in data else np.nan
-    h = float(data["High"].iloc[-1])
-    l = float(data["Low"].iloc[-1])
+    o = float(data["Open"].iloc[-1].item()) if "Open" in data else np.nan
+    h = float(data["High"].iloc[-1].item())
+    l = float(data["Low"].iloc[-1].item())
     if np.isnan(o):
-        o = float(data["Close"].iloc[-1])
+        o = float(data["Close"].iloc[-1].item())
 
     if o >= sell_price:
         exec_price = o

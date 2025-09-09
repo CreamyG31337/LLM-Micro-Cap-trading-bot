@@ -111,7 +111,9 @@ class PromptGenerator:
         trade_log_df = None
         try:
             trade_log_df = pd.read_csv(TRADE_LOG_CSV)
-            trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'])
+            # Handle PST timezone properly - remove PST suffix and localize to PST
+            trade_log_df['Date'] = trade_log_df['Date'].astype(str).str.replace(" PST", " -0800")
+            trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'], format="mixed", utc=True)
         except Exception:
             trade_log_df = None
         

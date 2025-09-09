@@ -216,3 +216,4 @@ test_data/*.json
 # Allow README files and folder structure to be tracked
 !my trading/README.md
 !test_data/README.md
+Results.png

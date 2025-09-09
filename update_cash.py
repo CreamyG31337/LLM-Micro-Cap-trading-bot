@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_dir))
 
 try:
     from dual_currency import load_cash_balances, save_cash_balances, CashBalances
-    from trading_script import DATA_DIR, set_data_dir, DEFAULT_DATA_DIR
+    from trading_script import DATA_DIR, set_data_dir, DEFAULT_DATA_DIR, calculate_fund_contributions_total
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Make sure you're running this script from the project directory.")
@@ -49,6 +49,10 @@ def main():
         print(f"   USD: ${cash_balances.usd:,.2f}")
         print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
         
+        # Display fund contributions total
+        fund_total = calculate_fund_contributions_total(str(data_dir))
+        print(f"💵 Fund contributions total: ${fund_total:,.2f}")
+        
         while True:
             # Get user input
             print("\nOptions:")
@@ -69,6 +73,10 @@ def main():
                 print(f"   CAD: ${cash_balances.cad:,.2f}")
                 print(f"   USD: ${cash_balances.usd:,.2f}")
                 print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+                
+                # Display fund contributions total
+                fund_total = calculate_fund_contributions_total(str(data_dir))
+                print(f"💵 Fund contributions total: ${fund_total:,.2f}")
                 continue
                 
             elif action == 'c':
@@ -130,6 +138,10 @@ def main():
             print(f"   CAD: ${cash_balances.cad:,.2f}")
             print(f"   USD: ${cash_balances.usd:,.2f}")
             print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+            
+            # Display fund contributions total
+            fund_total = calculate_fund_contributions_total(str(data_dir))
+            print(f"💵 Fund contributions total: ${fund_total:,.2f}")
             
     except Exception as e:
         print(f"❌ Error updating cash balances: {e}")

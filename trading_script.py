@@ -1162,6 +1162,8 @@ def load_latest_portfolio_state(
         return portfolio, cash
 
     non_total = df[df["Ticker"] != "TOTAL"].copy()
+    # Handle PST timezone properly - convert PST to UTC offset
+    non_total["Date"] = non_total["Date"].astype(str).str.replace(" PST", " -0800")
     non_total["Date"] = pd.to_datetime(non_total["Date"], format="mixed", errors="coerce")
 
     latest_date = non_total["Date"].max()

@@ -296,10 +296,14 @@ def check_table_display_issues() -> None:
             if env['is_windows_terminal']:
                 print_warning("💡 Windows Terminal detected - To fix this:")
                 print_warning("   1. Open Windows Terminal Settings (Ctrl+,)")
-                print_warning("   2. Go to your profile → Appearance")
-                print_warning("   3. Set 'Columns' to 130 or higher")
-                print_warning("   4. Or maximize this window (click maximize button)")
-                print_warning("   5. Or press F11 for full screen mode")
+                print_warning("   2. Click 'Startup' in the left sidebar")
+                print_warning("   3. Under 'Launch size', set 'Columns' to 130 or higher")
+                print_warning("   4. Click 'Save'")
+                print_warning("   5. Or maximize this window (click maximize button)")
+                print_warning("   6. Or press F11 for full screen mode")
+                print_warning("")
+                print_warning("   Note: This setting is buried deep in the settings!")
+                print_warning("   Microsoft keeps reorganizing the UI, so look for 'Startup' → 'Launch size'")
             elif env['is_conhost']:
                 print_warning("💡 Command Prompt detected - To fix this:")
                 print_warning("   1. Right-click title bar → Properties → Layout")

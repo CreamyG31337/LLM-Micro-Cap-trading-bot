@@ -180,14 +180,21 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         table = Table(title="📊 Current Portfolio", show_header=True, header_style="bold magenta")
         table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
+        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=30)
         table.add_column("📈 Shares", justify="right", style="green")
         table.add_column("💵 Buy Price", justify="right", style="blue")
         table.add_column("🛑 Stop Loss", justify="right", style="red")
         table.add_column("💰 Cost Basis", justify="right", style="yellow")
         
         for _, row in portfolio_df.iterrows():
+            ticker = str(row.get('ticker', ''))
+            company_name = get_company_name(ticker)
+            # Truncate long company names for display
+            display_name = company_name[:27] + "..." if len(company_name) > 30 else company_name
+            
             table.add_row(
-                str(row.get('ticker', '')),
+                ticker,
+                display_name,
                 f"{int(row.get('shares', 0)):,}",
                 f"${float(row.get('buy_price', 0)):.2f}",
                 f"${float(row.get('stop_loss', 0)):.2f}" if row.get('stop_loss', 0) > 0 else "None",
@@ -197,7 +204,13 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         console.print(table)
     else:
         print(f"\n{Fore.MAGENTA}📊 Current Portfolio:{Style.RESET_ALL}")
-        print(portfolio_df.to_string(index=False))
+        # For plain text, add company names as a new column
+        display_df = portfolio_df.copy()
+        display_df['Company'] = display_df['ticker'].apply(get_company_name)
+        # Reorder columns to show company name after ticker
+        cols = ['ticker', 'Company', 'shares', 'buy_price', 'stop_loss', 'cost_basis']
+        display_df = display_df[[col for col in cols if col in display_df.columns]]
+        print(display_df.to_string(index=False))
 
 def print_trade_menu() -> None:
     """Print the colorful trade menu."""
@@ -365,6 +378,41 @@ STOOQ_MAP = {
     "^IXIC": "^IXIC", # Nasdaq Composite
     # "^RUT": not on Stooq; keep Yahoo
 }
+
+# Cache for company names to avoid repeated API calls
+COMPANY_NAME_CACHE = {}
+
+def get_company_name(ticker: str) -> str:
+    """
+    Get the full company name for a ticker symbol.
+    Uses yfinance to fetch company info and caches results.
+    """
+    ticker = ticker.upper()
+    
+    # Check cache first
+    if ticker in COMPANY_NAME_CACHE:
+        return COMPANY_NAME_CACHE[ticker]
+    
+    try:
+        import yfinance as yf
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Try different possible name fields
+        name = (info.get('longName') or 
+                info.get('shortName') or 
+                info.get('name') or 
+                ticker)  # Fallback to ticker if no name found
+        
+        # Cache the result
+        COMPANY_NAME_CACHE[ticker] = name
+        return name
+        
+    except Exception as e:
+        logger.warning(f"Could not fetch company name for {ticker}: {e}")
+        # Cache the ticker as fallback
+        COMPANY_NAME_CACHE[ticker] = ticker
+        return ticker
 
 # Symbols we should *not* attempt on Stooq
 STOOQ_BLOCKLIST = {"^RUT"}
@@ -953,8 +1001,9 @@ def process_portfolio(
 
         if data.empty:
             print_warning(f"No data for {ticker} (source={fetch.source})")
+            company_name = get_company_name(ticker)
             row = {
-                "Date": today_iso, "Ticker": ticker, "Shares": shares,
+                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
                 "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": "", "Total Value": "", "PnL": "",
                 "Action": "NO DATA", "Cash Balance": "", "Total Equity": "",
@@ -997,8 +1046,9 @@ def process_portfolio(
                 cash += value
                 
             portfolio_df = log_sell(ticker, shares, exec_price, cost, pnl, portfolio_df)
+            company_name = get_company_name(ticker)
             row = {
-                "Date": today_iso, "Ticker": ticker, "Shares": shares,
+                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
                 "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": exec_price, "Total Value": value, "PnL": pnl,
                 "Action": action, "Cash Balance": "", "Total Equity": "",
@@ -1010,8 +1060,9 @@ def process_portfolio(
             action = "HOLD"
             total_value += value
             total_pnl += pnl
+            company_name = get_company_name(ticker)
             row = {
-                "Date": today_iso, "Ticker": ticker, "Shares": shares,
+                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
                 "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": price, "Total Value": value, "PnL": pnl,
                 "Action": action, "Cash Balance": "", "Total Equity": "",

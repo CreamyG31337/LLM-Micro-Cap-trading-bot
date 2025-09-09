@@ -100,6 +100,31 @@ Ready to manage this portfolio? What are your trading decisions for today?
 *This is a live trading experiment - your decisions matter!*"""
 
 # ============================================================================
+# TIMEZONE CONFIGURATION
+# ============================================================================
+
+# Default timezone for the trading bot
+# Users can modify this to their preferred timezone
+DEFAULT_TIMEZONE = "PST"  # Pacific Standard Time (GMT-8)
+DEFAULT_TIMEZONE_OFFSET = -8  # Hours from UTC
+
+def get_timezone_config():
+    """Return timezone configuration for the trading bot."""
+    return {
+        "name": DEFAULT_TIMEZONE,
+        "offset_hours": DEFAULT_TIMEZONE_OFFSET,
+        "utc_offset": f"{DEFAULT_TIMEZONE_OFFSET:+03d}:00"  # Format: +08:00 or -08:00
+    }
+
+def get_timezone_offset():
+    """Get the timezone offset in hours from UTC."""
+    return DEFAULT_TIMEZONE_OFFSET
+
+def get_timezone_name():
+    """Get the timezone name."""
+    return DEFAULT_TIMEZONE
+
+# ============================================================================
 # BACKWARDS COMPATIBILITY
 # ============================================================================
 

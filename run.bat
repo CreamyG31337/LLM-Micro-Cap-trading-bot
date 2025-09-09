@@ -2,6 +2,7 @@
 REM Windows batch file to run the LLM Micro-Cap Trading Bot
 REM This script automatically activates the virtual environment and runs the master menu
 
+
 echo.
 echo ========================================
 echo LLM Micro-Cap Trading Bot - Launcher

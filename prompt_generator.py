@@ -13,6 +13,13 @@ Features:
 - Market data fetching and formatting
 - Portfolio data integration
 - Flexible prompt templates
+
+Design Philosophy:
+- Optimized for both human readability and LLM context efficiency
+- Colors enhance human scanning but are stripped during copy/paste
+- Minimal separators save context space while maintaining structure
+- Consistent column alignment makes data easy for LLMs to parse
+- Comprehensive performance metrics (daily + total P&L) for better decisions
 """
 
 from __future__ import annotations
@@ -31,6 +38,20 @@ from trading_script import (
     load_fund_contributions, calculate_ownership_percentages,
     get_company_name, trading_day_window
 )
+
+# Import color formatting
+# Colors enhance human readability but are stripped during copy/paste, so they don't affect LLM context
+try:
+    from colorama import init, Fore, Back, Style
+    init(autoreset=True)
+    _HAS_COLORAMA = True
+except ImportError:
+    _HAS_COLORAMA = False
+    # Create dummy color classes if colorama not available
+    class DummyColor:
+        def __getattr__(self, name):
+            return ""
+    Fore = Back = Style = DummyColor()
 
 # Import market configuration
 try:
@@ -103,7 +124,15 @@ class PromptGenerator:
             return f"${cash:,.2f}", cash
     
     def _format_portfolio_table(self, portfolio_df: pd.DataFrame) -> str:
-        """Format portfolio data with enhanced date range and P&L information"""
+        """Format portfolio data with enhanced date range and P&L information
+        
+        Design decisions:
+        - Colors enhance human readability but are stripped during copy/paste
+        - Consistent column alignment makes data easy for LLMs to parse
+        - Shows both daily and total P&L for comprehensive performance context
+        - Position open dates provide historical context
+        - Minimal separators save context space while maintaining structure
+        """
         if portfolio_df.empty:
             return "No current holdings"
         
@@ -121,12 +150,11 @@ class PromptGenerator:
         current_date = last_trading_date().strftime("%Y-%m-%d")
         s, e = trading_day_window()
         
-        # Create enhanced portfolio display
+        # Create enhanced portfolio display with colors
+        # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
-        lines.append(f"Portfolio Snapshot - {current_date}")
-        lines.append("=" * 80)
-        lines.append(f"{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Buy Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}")
-        lines.append("-" * 80)
+        lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Buy Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}{Style.RESET_ALL}")
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
@@ -174,7 +202,18 @@ class PromptGenerator:
                 total_pnl = "N/A"
                 daily_pnl = "N/A"
             
-            lines.append(f"{ticker:<10} {display_name:<25} {open_date:<8} {shares:<8.4f} ${row.get('buy_price', 0):<9.2f} {current_price_str:<10} {total_pnl:<10} {daily_pnl:<10}")
+            # Color code P&L values - Green for positive, Red for negative
+            # This makes performance immediately visible to humans while preserving data for LLMs
+            total_pnl_colored = total_pnl
+            daily_pnl_colored = daily_pnl
+            if total_pnl != "N/A" and total_pnl.startswith(('+', '-')):
+                total_pnl_colored = f"{Fore.GREEN if total_pnl.startswith('+') else Fore.RED}{total_pnl}{Style.RESET_ALL}"
+            if daily_pnl != "N/A" and daily_pnl.startswith(('+', '-')):
+                daily_pnl_colored = f"{Fore.GREEN if daily_pnl.startswith('+') else Fore.RED}{daily_pnl}{Style.RESET_ALL}"
+            
+            # Format each row with consistent colors and alignment
+            # Colors help humans scan data quickly, alignment helps LLMs parse structure
+            lines.append(f"{Fore.CYAN}{ticker:<10}{Style.RESET_ALL} {display_name:<25} {Fore.BLUE}{open_date:<8}{Style.RESET_ALL} {shares:<8.4f} {Fore.BLUE}${row.get('buy_price', 0):<9.2f}{Style.RESET_ALL} {Fore.YELLOW}{current_price_str:<10}{Style.RESET_ALL} {total_pnl_colored:<10} {daily_pnl_colored:<10}")
         
         return "\n".join(lines)
             
@@ -241,48 +280,50 @@ class PromptGenerator:
         # Get current date
         today = check_weekend()
         
-        # Generate the prompt
-        print("\n" + "=" * 80)
-        print("📋 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM")
-        print("=" * 80)
-        print(f"Daily Results — {today}")
-        print("=" * 80)
+        # Generate the prompt with optimized formatting for both humans and LLMs
+        # Design: Clean headers, colored data, minimal separators to save context space
+        print(f"\n📋 Daily Results — {today}")
+        print("Copy everything below and paste into your LLM:")
         
-        # Market data table
-        print("\n[ Price & Volume ]")
+        # Market data table with colors for human readability
+        # Colors are stripped during copy/paste, so they don't affect LLM context
+        print(f"\n{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
         header = ["Ticker", "Close", "% Chg", "Volume"]
         colw = [10, 12, 9, 15]
-        print(f"{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}")
-        print("-" * sum(colw) + "-" * 3)
+        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}{Style.RESET_ALL}")
         for row in market_rows:
-            print(f"{str(row[0]):<{colw[0]}} {str(row[1]):>{colw[1]}} {str(row[2]):>{colw[2]}} {str(row[3]):>{colw[3]}}")
+            # Color code percentage changes - Green for gains, Red for losses
+            pct_change = str(row[2])
+            pct_colored = pct_change
+            if pct_change != "—" and pct_change.startswith(('+', '-')):
+                pct_colored = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_change}{Style.RESET_ALL}"
+            
+            print(f"{Fore.CYAN}{str(row[0]):<{colw[0]}}{Style.RESET_ALL} {Fore.YELLOW}{str(row[1]):>{colw[1]}}{Style.RESET_ALL} {pct_colored:>{colw[2]}} {Fore.BLUE}{str(row[3]):>{colw[3]}}{Style.RESET_ALL}")
             
         # Portfolio snapshot with enhanced formatting
-        print("\n[ Portfolio Snapshot ]")
+        print(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
         print(self._format_portfolio_table(llm_portfolio))
             
-        # Cash and equity
-        print(f"\nCash Balances: {cash_display}")
-        print(f"Latest LLM Equity: ${total_equity:,.2f}")
-        print("Maximum Drawdown: 0.00% (new portfolio)")
+        # Financial summary with color-coded labels for quick scanning
+        print(f"\n{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
+        print(f"{Fore.GREEN}Latest LLM Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
+        print(f"{Fore.BLUE}Maximum Drawdown:{Style.RESET_ALL} 0.00% (new portfolio)")
             
-        # Fund ownership if available
+        # Fund ownership if available - shows contribution breakdown
         contributions_df = load_fund_contributions(str(self.data_dir))
         if not contributions_df.empty:
             ownership = calculate_ownership_percentages(str(self.data_dir))
             if ownership:
-                print("\n[ Fund Ownership ]")
+                print(f"\n{Fore.CYAN}[ Fund Ownership ]{Style.RESET_ALL}")
                 for contributor, percentage in ownership.items():
-                    print(f"{contributor}: {percentage:.1f}%")
+                    print(f"{Fore.YELLOW}{contributor}:{Style.RESET_ALL} {Fore.BLUE}{percentage:.1f}%{Style.RESET_ALL}")
                     
-        # Instructions
-        print("\n[ Your Instructions ]")
+        # Instructions section - the core trading guidance
+        print(f"\n{Fore.CYAN}[ Your Instructions ]{Style.RESET_ALL}")
         instructions = self._get_daily_instructions()
         print(instructions)
         
-        print("\n" + "=" * 80)
-        print("📋 COPY EVERYTHING ABOVE AND PASTE INTO YOUR LLM")
-        print("=" * 80)
+        print(f"\n📋 End of prompt - copy everything above to your LLM")
         
     def generate_weekly_research_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display weekly deep research prompt"""
@@ -314,10 +355,10 @@ class PromptGenerator:
         week_num = max(1, days_since_start // 7)
         day_num = days_since_start % 7 + 1
         
-        # Generate the deep research prompt
-        print("\n" + "=" * 80)
-        print("🔬 COPY EVERYTHING BELOW AND PASTE INTO YOUR LLM FOR DEEP RESEARCH")
-        print("=" * 80)
+        # Generate the deep research prompt with same color scheme as daily prompt
+        # Weekly prompts need more comprehensive analysis, so colors help organize complex data
+        print(f"\n🔬 Weekly Deep Research - Week {week_num} Day {day_num}")
+        print("Copy everything below and paste into your LLM for deep research:")
         
         # System Message
         print("""System Message
@@ -368,15 +409,15 @@ Context""")
         
         print(f"It is Week {week_num} Day {day_num} of a 6-month live experiment.")
         print()
-        print("Cash Available")
+        print(f"{Fore.GREEN}Cash Available{Style.RESET_ALL}")
         print(cash_display)
         print()
-        print("Current Portfolio State")
+        print(f"{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
         print(self._format_portfolio_table(llm_portfolio))
         print()
-        print("[ Snapshot ]")
-        print(f"Cash Balance: ${cash:,.2f}")
-        print(f"Total Equity: ${total_equity:,.2f}")
+        print(f"{Fore.CYAN}[ Snapshot ]{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")
+        print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
         print()
         print("Last Analyst Thesis For Current Holdings")
         print("(Previous research summary would go here - this could be enhanced to track thesis history)")
@@ -392,9 +433,7 @@ Constraints And Reminders To Enforce
 - Focus on alpha generation and risk-adjusted returns.
 - This is live money - be thorough and disciplined.""")
         
-        print("\n" + "=" * 80)
-        print("🔬 COPY EVERYTHING ABOVE AND PASTE INTO YOUR LLM FOR DEEP RESEARCH")
-        print("=" * 80)
+        print(f"\n🔬 End of deep research prompt - copy everything above to your LLM")
 
 
 def generate_daily_prompt(data_dir: Path | str | None = None) -> None:

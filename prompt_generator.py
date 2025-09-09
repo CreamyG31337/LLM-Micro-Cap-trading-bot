@@ -25,10 +25,11 @@ import pandas as pd
 
 # Import from trading_script for data access
 from trading_script import (
-    DATA_DIR, PORTFOLIO_CSV, 
+    DATA_DIR, PORTFOLIO_CSV, TRADE_LOG_CSV,
     load_latest_portfolio_state, load_benchmarks, download_price_data,
     last_trading_date, check_weekend, set_data_dir,
-    load_fund_contributions, calculate_ownership_percentages
+    load_fund_contributions, calculate_ownership_percentages,
+    get_company_name, trading_day_window
 )
 
 # Import market configuration
@@ -100,6 +101,80 @@ class PromptGenerator:
                 return f"${cash:,.2f}", cash
         else:
             return f"${cash:,.2f}", cash
+    
+    def _format_portfolio_table(self, portfolio_df: pd.DataFrame) -> str:
+        """Format portfolio data with enhanced date range and P&L information"""
+        if portfolio_df.empty:
+            return "No current holdings"
+        
+        # Load trade log to get position open dates
+        trade_log_df = None
+        try:
+            trade_log_df = pd.read_csv(TRADE_LOG_CSV)
+            trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'])
+        except Exception:
+            trade_log_df = None
+        
+        # Get current date for context
+        current_date = last_trading_date().strftime("%Y-%m-%d")
+        s, e = trading_day_window()
+        
+        # Create enhanced portfolio display
+        lines = []
+        lines.append(f"Portfolio Snapshot - {current_date}")
+        lines.append("=" * 80)
+        lines.append(f"{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Buy Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}")
+        lines.append("-" * 80)
+        
+        for _, row in portfolio_df.iterrows():
+            ticker = str(row.get('ticker', ''))
+            company_name = get_company_name(ticker)
+            # Truncate long company names
+            display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
+            
+            # Get position open date
+            open_date = "N/A"
+            if trade_log_df is not None:
+                ticker_trades = trade_log_df[trade_log_df['Ticker'] == ticker]
+                if not ticker_trades.empty:
+                    open_date = ticker_trades['Date'].min().strftime("%m/%d")
+            
+            # Fetch current price data
+            try:
+                fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+                if not fetch.df.empty and "Close" in fetch.df.columns:
+                    current_price = float(fetch.df['Close'].iloc[-1].item())
+                    buy_price = float(row.get('buy_price', 0))
+                    shares = float(row.get('shares', 0))
+                    
+                    # Calculate total P&L since position opened
+                    if buy_price > 0:
+                        total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                        total_pnl = f"{total_pnl_pct:+.1f}%"
+                    else:
+                        total_pnl = "N/A"
+                    
+                    # Calculate daily P&L (today vs yesterday)
+                    if len(fetch.df) > 1:
+                        prev_price = float(fetch.df['Close'].iloc[-2].item())
+                        daily_pnl_pct = ((current_price - prev_price) / prev_price) * 100
+                        daily_pnl = f"{daily_pnl_pct:+.1f}%"
+                    else:
+                        daily_pnl = "N/A"
+                    
+                    current_price_str = f"${current_price:.2f}"
+                else:
+                    current_price_str = "N/A"
+                    total_pnl = "N/A"
+                    daily_pnl = "N/A"
+            except Exception:
+                current_price_str = "N/A"
+                total_pnl = "N/A"
+                daily_pnl = "N/A"
+            
+            lines.append(f"{ticker:<10} {display_name:<25} {open_date:<8} {shares:<8.4f} ${row.get('buy_price', 0):<9.2f} {current_price_str:<10} {total_pnl:<10} {daily_pnl:<10}")
+        
+        return "\n".join(lines)
             
     def _get_daily_instructions(self) -> str:
         """Get daily trading instructions"""
@@ -180,12 +255,9 @@ class PromptGenerator:
         for row in market_rows:
             print(f"{str(row[0]):<{colw[0]}} {str(row[1]):>{colw[1]}} {str(row[2]):>{colw[2]}} {str(row[3]):>{colw[3]}}")
             
-        # Portfolio snapshot
+        # Portfolio snapshot with enhanced formatting
         print("\n[ Portfolio Snapshot ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio.to_string(index=False))
+        print(self._format_portfolio_table(llm_portfolio))
             
         # Cash and equity
         print(f"\nCash Balances: {cash_display}")
@@ -298,11 +370,7 @@ Context""")
         print(cash_display)
         print()
         print("Current Portfolio State")
-        print("[ Holdings ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio.to_string(index=False))
+        print(self._format_portfolio_table(llm_portfolio))
         print()
         print("[ Snapshot ]")
         print(f"Cash Balance: ${cash:,.2f}")

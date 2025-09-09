@@ -181,14 +181,28 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     print_info("Fetching current prices for portfolio display...", "📈")
     s, e = trading_day_window()
     
+    # Load trade log to get position open dates
+    trade_log_df = None
+    try:
+        trade_log_df = pd.read_csv(TRADE_LOG_CSV)
+        trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'])
+    except Exception:
+        trade_log_df = None
+    
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        table = Table(title="📊 Current Portfolio", show_header=True, header_style="bold magenta")
+        # Get date range information for better clarity
+        current_date = last_trading_date().strftime("%Y-%m-%d")
+        table_title = f"📊 Portfolio Snapshot - {current_date}"
+        
+        table = Table(title=table_title, show_header=True, header_style="bold magenta")
         table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
-        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=25)
+        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=25, justify="left")
+        table.add_column("📅 Opened", style="dim", no_wrap=True)
         table.add_column("📈 Shares", justify="right", style="green")
         table.add_column("💵 Buy Price", justify="right", style="blue")
         table.add_column("💰 Current", justify="right", style="yellow")
-        table.add_column("📊 P&L %", justify="right", style="magenta")
+        table.add_column("📊 Total P&L", justify="right", style="magenta")
+        table.add_column("📈 Daily P&L", justify="right", style="cyan")
         table.add_column("🛑 Stop Loss", justify="right", style="red")
         table.add_column("💵 Cost Basis", justify="right", style="yellow")
         
@@ -198,42 +212,88 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
             # Truncate long company names for display
             display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
             
-            # Fetch current price
+            # Get position open date from trade log
+            open_date = "N/A"
+            if trade_log_df is not None:
+                ticker_trades = trade_log_df[trade_log_df['Ticker'] == ticker]
+                if not ticker_trades.empty:
+                    # Get the earliest trade date for this ticker
+                    open_date = ticker_trades['Date'].min().strftime("%m/%d")
+            
+            # Fetch current price and previous day's price
             fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
             current_price = ""
-            pnl_percent = ""
+            total_pnl = ""
+            daily_pnl = ""
             
             if not fetch.df.empty and "Close" in fetch.df.columns:
-                current_price = f"${float(fetch.df['Close'].iloc[-1].item()):.2f}"
+                current_price_val = float(fetch.df['Close'].iloc[-1].item())
+                current_price = f"${current_price_val:.2f}"
                 buy_price = float(row.get('buy_price', 0))
+                shares = float(row.get('shares', 0))
+                
                 if buy_price > 0:
-                    pnl_pct = ((float(fetch.df['Close'].iloc[-1].item()) - buy_price) / buy_price) * 100
-                    pnl_percent = f"{pnl_pct:+.1f}%"
+                    # Calculate total P&L since position opened
+                    total_pnl_pct = ((current_price_val - buy_price) / buy_price) * 100
+                    total_pnl = f"{total_pnl_pct:+.1f}%"
+                    
+                    # Calculate daily P&L (today vs yesterday)
+                    if len(fetch.df) > 1:
+                        prev_price = float(fetch.df['Close'].iloc[-2].item())
+                        daily_pnl_pct = ((current_price_val - prev_price) / prev_price) * 100
+                        daily_pnl = f"{daily_pnl_pct:+.1f}%"
+                    else:
+                        daily_pnl = "N/A"
+                else:
+                    total_pnl = "N/A"
+                    daily_pnl = "N/A"
             else:
                 current_price = "N/A"
-                pnl_percent = "N/A"
+                total_pnl = "N/A"
+                daily_pnl = "N/A"
             
             table.add_row(
                 ticker,
                 display_name,
+                open_date,
                 f"{float(row.get('shares', 0)):.4f}",  # Show fractional shares with 4 decimal places
                 f"${float(row.get('buy_price', 0)):.2f}",
                 current_price,
-                pnl_percent,
+                total_pnl,
+                daily_pnl,
                 f"${float(row.get('stop_loss', 0)):.2f}" if row.get('stop_loss', 0) > 0 else "None",
                 f"${float(row.get('cost_basis', 0)):.2f}"
             )
         
         console.print(table)
     else:
-        print(f"\n{Fore.MAGENTA}📊 Current Portfolio:{Style.RESET_ALL}")
+        # Get date range information for better clarity
+        current_date = last_trading_date().strftime("%Y-%m-%d")
+        print(f"\n{Fore.MAGENTA}📊 Portfolio Snapshot - {current_date}:{Style.RESET_ALL}")
         # For plain text, add company names and current prices
         display_df = portfolio_df.copy()
         display_df['Company'] = display_df['ticker'].apply(get_company_name)
         
+        # Add position open dates
+        open_dates = []
+        if trade_log_df is not None:
+            for _, row in display_df.iterrows():
+                ticker = str(row.get('ticker', ''))
+                ticker_trades = trade_log_df[trade_log_df['Ticker'] == ticker]
+                if not ticker_trades.empty:
+                    open_date = ticker_trades['Date'].min().strftime("%m/%d")
+                    open_dates.append(open_date)
+                else:
+                    open_dates.append("N/A")
+        else:
+            open_dates = ["N/A"] * len(display_df)
+        
+        display_df['Opened'] = open_dates
+        
         # Add current prices and P&L percentages
         current_prices = []
-        pnl_percentages = []
+        total_pnl_percentages = []
+        daily_pnl_percentages = []
         
         for _, row in display_df.iterrows():
             ticker = str(row.get('ticker', ''))
@@ -245,19 +305,31 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
                 
                 buy_price = float(row.get('buy_price', 0))
                 if buy_price > 0:
-                    pnl_pct = ((current_price - buy_price) / buy_price) * 100
-                    pnl_percentages.append(f"{pnl_pct:+.1f}%")
+                    # Total P&L since position opened
+                    total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                    total_pnl_percentages.append(f"{total_pnl_pct:+.1f}%")
+                    
+                    # Daily P&L (today vs yesterday)
+                    if len(fetch.df) > 1:
+                        prev_price = float(fetch.df['Close'].iloc[-2].item())
+                        daily_pnl_pct = ((current_price - prev_price) / prev_price) * 100
+                        daily_pnl_percentages.append(f"{daily_pnl_pct:+.1f}%")
+                    else:
+                        daily_pnl_percentages.append("N/A")
                 else:
-                    pnl_percentages.append("N/A")
+                    total_pnl_percentages.append("N/A")
+                    daily_pnl_percentages.append("N/A")
             else:
                 current_prices.append("N/A")
-                pnl_percentages.append("N/A")
+                total_pnl_percentages.append("N/A")
+                daily_pnl_percentages.append("N/A")
         
         display_df['Current Price'] = current_prices
-        display_df['P&L %'] = pnl_percentages
+        display_df['Total P&L %'] = total_pnl_percentages
+        display_df['Daily P&L %'] = daily_pnl_percentages
         
         # Reorder columns and format shares to show fractional
-        cols = ['ticker', 'Company', 'shares', 'buy_price', 'Current Price', 'P&L %', 'stop_loss', 'cost_basis']
+        cols = ['ticker', 'Company', 'Opened', 'shares', 'buy_price', 'Current Price', 'Total P&L %', 'Daily P&L %', 'stop_loss', 'cost_basis']
         display_df = display_df[[col for col in cols if col in display_df.columns]]
         
         # Format shares column to show fractional shares properly

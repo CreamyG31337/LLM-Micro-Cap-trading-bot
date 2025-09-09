@@ -28,7 +28,79 @@ import pandas as pd
 import yfinance as yf
 import json
 import logging
+
+# Import timezone configuration
+try:
+    from market_config import get_timezone_config, get_timezone_offset, get_timezone_name
+    _HAS_MARKET_CONFIG = True
+except ImportError:
+    _HAS_MARKET_CONFIG = False
+    # Fallback timezone configuration
+    def get_timezone_config():
+        return {"name": "PST", "offset_hours": -8, "utc_offset": "-08:00"}
+    def get_timezone_offset():
+        return -8
+    def get_timezone_name():
+        return "PST"
 from collections import defaultdict
+
+# ============================================================================
+# TIMEZONE UTILITY FUNCTIONS
+# ============================================================================
+
+def get_trading_timezone():
+    """Get the configured trading timezone object."""
+    offset_hours = get_timezone_offset()
+    return timezone(timedelta(hours=offset_hours))
+
+def get_current_trading_time():
+    """Get current time in the configured trading timezone."""
+    tz = get_trading_timezone()
+    return datetime.now(tz)
+
+def get_market_open_time(date=None):
+    """Get market open time (6:30 AM) in the configured timezone for the given date."""
+    tz = get_trading_timezone()
+    if date is None:
+        date = datetime.now(tz).date()
+    elif isinstance(date, str):
+        date = datetime.strptime(date, "%Y-%m-%d").date()
+    
+    market_open_time = datetime.combine(date, datetime.min.time().replace(hour=6, minute=30), tz)
+    return market_open_time
+
+def format_timestamp_for_csv(dt=None):
+    """Format a datetime for CSV storage with timezone suffix."""
+    if dt is None:
+        dt = get_current_trading_time()
+    
+    tz_name = get_timezone_name()
+    return dt.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
+
+def parse_csv_timestamp(timestamp_str):
+    """Parse a timestamp from CSV with proper timezone handling."""
+    if pd.isna(timestamp_str):
+        return None
+    
+    timestamp_str = str(timestamp_str).strip()
+    
+    # Handle different timestamp formats
+    if " PST" in timestamp_str:
+        # Remove PST suffix and add proper UTC offset
+        clean_timestamp = timestamp_str.replace(" PST", "")
+        # Add UTC offset for proper parsing
+        utc_offset = get_timezone_config()["utc_offset"]
+        timestamp_with_offset = f"{clean_timestamp} {utc_offset}"
+        return pd.to_datetime(timestamp_with_offset)
+    elif " UTC" in timestamp_str or " GMT" in timestamp_str:
+        # Already has timezone info, parse directly
+        return pd.to_datetime(timestamp_str)
+    else:
+        # No timezone info, assume it's in the configured timezone
+        tz = get_trading_timezone()
+        dt = pd.to_datetime(timestamp_str)
+        # Localize to the configured timezone
+        return dt.tz_localize(tz)
 
 # Color and formatting imports
 try:
@@ -185,7 +257,8 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     trade_log_df = None
     try:
         trade_log_df = pd.read_csv(TRADE_LOG_CSV)
-        trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'])
+        # Use proper timezone-aware parsing
+        trade_log_df['Date'] = trade_log_df['Date'].apply(parse_csv_timestamp)
     except Exception:
         trade_log_df = None
     
@@ -895,11 +968,9 @@ def process_portfolio(
     cash: float,
     interactive: bool = True,
 ) -> tuple[pd.DataFrame, float]:
-    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
-    pst_tz = timezone(timedelta(hours=-8))
-    today = datetime.now(pst_tz).date()
-    market_open_time = datetime.combine(today, datetime.min.time().replace(hour=6, minute=30), pst_tz)
-    today_iso = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
+    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
+    market_open_time = get_market_open_time()
+    today_iso = format_timestamp_for_csv(market_open_time)
     portfolio_df = _ensure_df(portfolio)
 
     results: list[dict[str, object]] = []
@@ -1381,7 +1452,8 @@ def process_portfolio(
         existing = pd.read_csv(PORTFOLIO_CSV)
         # Migrate old date-only entries to timestamp format
         if len(existing) > 0 and len(str(existing["Date"].iloc[0])) == 10:
-            existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
+            tz_name = get_timezone_name()
+            existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 {tz_name}" if len(str(x)) == 10 else x)
         existing = existing[existing["Date"] != str(today_iso)]
         print("Saving results to CSV...")
         df_out = pd.concat([existing, df_out], ignore_index=True)
@@ -1403,9 +1475,8 @@ def log_sell(
     pnl: float,
     portfolio: pd.DataFrame,
 ) -> pd.DataFrame:
-    # Use PST timezone for timestamps
-    pst_tz = timezone(timedelta(hours=-8))
-    today = datetime.now(pst_tz).strftime("%Y-%m-%d %H:%M:%S PST")
+    # Use configured timezone for timestamps
+    today = format_timestamp_for_csv()
     log = {
         "Date": today,
         "Ticker": ticker,
@@ -1438,11 +1509,9 @@ def log_manual_buy(
     llm_portfolio: pd.DataFrame,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
-    pst_tz = timezone(timedelta(hours=-8))
-    today_date = datetime.now(pst_tz).date()
-    market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
-    today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
+    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
+    market_open_time = get_market_open_time()
+    today = format_timestamp_for_csv(market_open_time)
 
     # Auto-detect and correct ticker symbol using buy price context
     original_ticker = ticker
@@ -1600,11 +1669,9 @@ def log_manual_sell(
     reason: str | None = None,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    # Use PST timezone for timestamps - use market open time (6:30 AM PST) for trades
-    pst_tz = timezone(timedelta(hours=-8))
-    today_date = datetime.now(pst_tz).date()
-    market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
-    today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
+    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
+    market_open_time = get_market_open_time()
+    today = format_timestamp_for_csv(market_open_time)
     
     # Auto-detect and correct ticker symbol
     original_ticker = ticker
@@ -1742,9 +1809,8 @@ def load_latest_portfolio_state(
         return portfolio, cash
 
     non_total = df[df["Ticker"] != "TOTAL"].copy()
-    # Handle PST timezone properly - convert PST to UTC offset
-    non_total["Date"] = non_total["Date"].astype(str).str.replace(" PST", " -0800")
-    non_total["Date"] = pd.to_datetime(non_total["Date"], format="mixed", errors="coerce")
+    # Use proper timezone-aware parsing
+    non_total["Date"] = non_total["Date"].apply(parse_csv_timestamp)
 
     latest_date = non_total["Date"].max()
     latest_tickers = non_total[non_total["Date"] == latest_date].copy()
@@ -2043,14 +2109,16 @@ def load_fund_contributions(data_dir: str) -> pd.DataFrame:
         # Migrate old "Date" column to "Timestamp" if needed
         if "Date" in df.columns and "Timestamp" not in df.columns:
             df = df.rename(columns={"Date": "Timestamp"})
-            # Convert date-only timestamps to full timestamps with PST (assume 00:00:00 for old entries)
-            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} 00:00:00 PST" if len(str(x)) == 10 else x)
+            # Convert date-only timestamps to full timestamps with configured timezone (assume 00:00:00 for old entries)
+            tz_name = get_timezone_name()
+            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} 00:00:00 {tz_name}" if len(str(x)) == 10 else x)
             # Save the updated format
             df.to_csv(contributions_file, index=False)
-        # Also migrate old timestamps without timezone to PST format
-        elif "Timestamp" in df.columns and not df["Timestamp"].astype(str).str.contains("PST|UTC|GMT").any():
-            # Convert old timestamps without timezone to PST format
-            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} PST" if "PST" not in str(x) and "UTC" not in str(x) and "GMT" not in str(x) else x)
+        # Also migrate old timestamps without timezone to configured timezone format
+        elif "Timestamp" in df.columns and not df["Timestamp"].astype(str).str.contains(f"{get_timezone_name()}|UTC|GMT").any():
+            # Convert old timestamps without timezone to configured timezone format
+            tz_name = get_timezone_name()
+            df["Timestamp"] = df["Timestamp"].apply(lambda x: f"{x} {tz_name}" if tz_name not in str(x) and "UTC" not in str(x) and "GMT" not in str(x) else x)
             # Save the updated format
             df.to_csv(contributions_file, index=False)
         return df
@@ -2081,9 +2149,8 @@ def calculate_fund_contributions_total(data_dir: str) -> float:
 def save_fund_contribution(data_dir: str, contributor: str, amount: float, contribution_type: str = "CONTRIBUTION", notes: str = ""):
     """Save a new fund contribution and update CAD balance automatically."""
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
-    # Use PST timezone (GMT-8)
-    pst_tz = timezone(timedelta(hours=-8))
-    timestamp = datetime.now(pst_tz).strftime("%Y-%m-%d %H:%M:%S PST")
+    # Use configured timezone
+    timestamp = format_timestamp_for_csv()
     
     # Load existing contributions
     df = load_fund_contributions(data_dir)

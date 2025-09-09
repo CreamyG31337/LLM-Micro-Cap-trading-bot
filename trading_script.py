@@ -439,7 +439,35 @@ COMPANY_NAME_CACHE = {}
 # Cache for ticker corrections to avoid repeated API calls
 TICKER_CORRECTION_CACHE = {}
 
-def detect_and_correct_ticker(ticker: str) -> str:
+def detect_currency_context(ticker: str, buy_price: float = None) -> str:
+    """
+    Detect if a ticker is likely Canadian based on context clues.
+    Returns 'CAD', 'USD', or 'UNKNOWN'
+    """
+    # If we have a buy price, use it as a clue
+    if buy_price is not None:
+        # Canadian small-caps typically trade in the $1-50 range
+        # US small-caps can be much higher
+        if 1 <= buy_price <= 50:
+            return 'CAD'  # More likely Canadian
+        elif buy_price > 50:
+            return 'USD'  # More likely US
+    
+    # Check if ticker has Canadian characteristics
+    canadian_patterns = [
+        # Common Canadian company name patterns
+        'CAN', 'CANADA', 'NORTH', 'NORTHERN', 'WESTERN', 'EASTERN',
+        'QUEBEC', 'ONTARIO', 'ALBERTA', 'BRITISH', 'COLUMBIA'
+    ]
+    
+    ticker_upper = ticker.upper()
+    for pattern in canadian_patterns:
+        if pattern in ticker_upper:
+            return 'CAD'
+    
+    return 'UNKNOWN'
+
+def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
     """
     Detect if a ticker is Canadian and automatically add the appropriate suffix.
     This helps prevent issues when logging trades from Wealthsimple where .TO isn't shown.
@@ -457,77 +485,73 @@ def detect_and_correct_ticker(ticker: str) -> str:
         TICKER_CORRECTION_CACHE[ticker] = ticker
         return ticker
     
-    # Known Canadian tickers that need .TO suffix
-    # This is a fallback list for common Canadian stocks/ETFs
-    canadian_tickers = {
-        'VEE': 'VEE.TO',      # Vanguard FTSE Emerging Markets ETF
-        'GMIN': 'GMIN.TO',    # G Mining Ventures
-        'SHOP': 'SHOP.TO',    # Shopify
-        'RY': 'RY.TO',        # Royal Bank
-        'TD': 'TD.TO',        # Toronto Dominion
-        'CNR': 'CNR.TO',      # Canadian National Railway
-        'CP': 'CP.TO',        # Canadian Pacific
-        'BMO': 'BMO.TO',      # Bank of Montreal
-        'BNS': 'BNS.TO',      # Bank of Nova Scotia
-        'ENB': 'ENB.TO',      # Enbridge
-        'TRP': 'TRP.TO',      # TC Energy
-        'SU': 'SU.TO',        # Suncor Energy
-        'CNQ': 'CNQ.TO',      # Canadian Natural Resources
-        'WCN': 'WCN.TO',      # Waste Connections
-        'ATD': 'ATD.TO',      # Alimentation Couche-Tard
-        'MFC': 'MFC.TO',      # Manulife Financial
-        'SLF': 'SLF.TO',      # Sun Life Financial
-        'POW': 'POW.TO',      # Power Corporation
-        'L': 'L.TO',          # Loblaw Companies
-        'MRU': 'MRU.TO',      # Metro Inc
-        'CTC': 'CTC.TO',      # Canadian Tire
-        'WMT': 'WMT.TO',      # Walmart Canada (if trading on TSX)
-    }
-    
-    # Check if it's a known Canadian ticker
-    if ticker in canadian_tickers:
-        corrected = canadian_tickers[ticker]
-        TICKER_CORRECTION_CACHE[ticker] = corrected
-        logger.info(f"Auto-corrected known Canadian ticker {ticker} to {corrected}")
-        return corrected
+    # Use currency context to guide detection
+    currency_hint = detect_currency_context(ticker, buy_price)
     
     try:
         import yfinance as yf
         
-        # Test Canadian variants first (more likely to be Canadian if user is in Canada)
-        canadian_variants = [
-            f"{ticker}.TO",    # TSX
-            f"{ticker}.V",     # TSX Venture
-        ]
-        
-        for variant in canadian_variants:
-            try:
-                canadian_stock = yf.Ticker(variant)
-                canadian_info = canadian_stock.info
-                
-                # If we get valid info and it's a Canadian exchange
-                if (canadian_info and 
-                    canadian_info.get('exchange') and 
-                    'TSX' in canadian_info.get('exchange', '')):
-                    TICKER_CORRECTION_CACHE[ticker] = variant
-                    logger.info(f"Auto-corrected ticker {ticker} to {variant}")
-                    return variant
-            except:
-                continue
+        # If currency hint suggests CAD, test Canadian variants first
+        if currency_hint == 'CAD':
+            canadian_variants = [
+                f"{ticker}.TO",    # TSX
+                f"{ticker}.V",     # TSX Venture
+            ]
+            
+            for variant in canadian_variants:
+                try:
+                    canadian_stock = yf.Ticker(variant)
+                    canadian_info = canadian_stock.info
+                    
+                    # If we get valid info and it's a Canadian exchange
+                    if (canadian_info and 
+                        canadian_info.get('exchange') and 
+                        'TSX' in canadian_info.get('exchange', '')):
+                        TICKER_CORRECTION_CACHE[ticker] = variant
+                        logger.info(f"Auto-corrected ticker {ticker} to {variant} (CAD context)")
+                        return variant
+                except:
+                    continue
         
         # Test if the ticker exists as-is (likely US stock)
-        try:
-            us_stock = yf.Ticker(ticker)
-            us_info = us_stock.info
-            
-            # If we get valid info and it's not a Canadian exchange, it's likely US
-            if us_info and us_info.get('exchange') and 'TSX' not in us_info.get('exchange', ''):
-                TICKER_CORRECTION_CACHE[ticker] = ticker
-                return ticker
-        except:
-            pass
+        us_stock = yf.Ticker(ticker)
+        us_info = us_stock.info
         
-        # If no variant found, assume it's US
+        # If we get valid info and it's clearly a US exchange, it's US
+        if (us_info and 
+            us_info.get('exchange') and 
+            any(exchange in us_info.get('exchange', '') for exchange in ['NASDAQ', 'NYSE', 'AMEX', 'OTC'])):
+            TICKER_CORRECTION_CACHE[ticker] = ticker
+            return ticker
+        
+        # If currency hint suggests USD or we haven't found Canadian variants, test Canadian anyway
+        if currency_hint != 'CAD':
+            canadian_variants = [
+                f"{ticker}.TO",    # TSX
+                f"{ticker}.V",     # TSX Venture
+            ]
+            
+            for variant in canadian_variants:
+                try:
+                    canadian_stock = yf.Ticker(variant)
+                    canadian_info = canadian_stock.info
+                    
+                    # If we get valid info and it's a Canadian exchange
+                    if (canadian_info and 
+                        canadian_info.get('exchange') and 
+                        'TSX' in canadian_info.get('exchange', '')):
+                        TICKER_CORRECTION_CACHE[ticker] = variant
+                        logger.info(f"Auto-corrected ticker {ticker} to {variant}")
+                        return variant
+                except:
+                    continue
+        
+        # If we found valid US info earlier but no Canadian variants, it's US
+        if us_info and us_info.get('exchange'):
+            TICKER_CORRECTION_CACHE[ticker] = ticker
+            return ticker
+        
+        # If no clear exchange info, default to original ticker
         TICKER_CORRECTION_CACHE[ticker] = ticker
         return ticker
         
@@ -853,7 +877,7 @@ def process_portfolio(
                     ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
                     order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit:{Style.RESET_ALL} ").strip().lower()
                 
-                # Auto-detect and correct ticker symbol
+                # Auto-detect and correct ticker symbol (will get buy_price later)
                 original_ticker = ticker
                 ticker = detect_and_correct_ticker(ticker)
                 if ticker != original_ticker:
@@ -1348,9 +1372,9 @@ def log_manual_buy(
     market_open_time = datetime.combine(today_date, datetime.min.time().replace(hour=6, minute=30), pst_tz)
     today = market_open_time.strftime("%Y-%m-%d %H:%M:%S PST")
 
-    # Auto-detect and correct ticker symbol
+    # Auto-detect and correct ticker symbol using buy price context
     original_ticker = ticker
-    ticker = detect_and_correct_ticker(ticker)
+    ticker = detect_and_correct_ticker(ticker, buy_price)
     if ticker != original_ticker:
         print(f"🔍 Auto-corrected ticker: {original_ticker} → {ticker}")
 

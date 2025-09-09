@@ -15,18 +15,55 @@ RESULTS_PATH = Path("Results.png")  # NEW
 
 def load_portfolio_totals() -> pd.DataFrame:
     """Load portfolio equity history including a baseline row."""
-    chatgpt_df = pd.read_csv(PORTFOLIO_CSV)
-    chatgpt_totals = chatgpt_df[chatgpt_df["Ticker"] == "TOTAL"].copy()
-    chatgpt_totals["Date"] = pd.to_datetime(chatgpt_totals["Date"])
-    chatgpt_totals["Total Equity"] = pd.to_numeric(
-        chatgpt_totals["Total Equity"], errors="coerce"
-    )
+    llm_df = pd.read_csv(PORTFOLIO_CSV)
+    
+    # Try to find TOTAL rows first
+    total_rows = llm_df[llm_df["Ticker"] == "TOTAL"].copy()
+    
+    if len(total_rows) > 0:
+        # Use existing TOTAL rows
+        llm_totals = total_rows
+        llm_totals["Date"] = pd.to_datetime(llm_totals["Date"])
+        llm_totals["Total Equity"] = pd.to_numeric(
+            llm_totals["Total Equity"], errors="coerce"
+        )
+    else:
+        # Calculate totals from individual positions when no TOTAL rows exist
+        print("No TOTAL rows found. Calculating portfolio totals from individual positions...")
+        
+        # Convert date and clean data
+        llm_df["Date"] = pd.to_datetime(llm_df["Date"])
+        llm_df["Total Value"] = pd.to_numeric(llm_df["Total Value"], errors="coerce")
+        llm_df["Cash Balance"] = pd.to_numeric(llm_df["Cash Balance"], errors="coerce")
+        
+        # Group by date and calculate totals
+        daily_totals = []
+        for date, group in llm_df.groupby("Date"):
+            # Sum up all position values (excluding rows with NaN values)
+            position_value = group["Total Value"].dropna().sum()
+            
+            # Get cash balance (use the last non-null value for the date)
+            cash_balance = group["Cash Balance"].dropna()
+            cash_balance = cash_balance.iloc[-1] if len(cash_balance) > 0 else 0.0
+            
+            total_equity = position_value + cash_balance
+            daily_totals.append({"Date": date, "Total Equity": total_equity})
+        
+        llm_totals = pd.DataFrame(daily_totals)
+        
+        if len(llm_totals) == 0:
+            # Fallback: create a single data point with current date and $100
+            print("Warning: No valid portfolio data found. Creating baseline entry.")
+            llm_totals = pd.DataFrame({
+                "Date": [pd.Timestamp.now()], 
+                "Total Equity": [100.0]
+            })
 
     baseline_date = pd.Timestamp("2025-06-27")
     baseline_equity = 100.0
     baseline_row = pd.DataFrame({"Date": [baseline_date], "Total Equity": [baseline_equity]})
 
-    out = pd.concat([baseline_row, chatgpt_totals], ignore_index=True).sort_values("Date")
+    out = pd.concat([baseline_row, llm_totals], ignore_index=True).sort_values("Date")
     out = out.drop_duplicates(subset=["Date"], keep="last").reset_index(drop=True)
     return out
 
@@ -106,24 +143,24 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
 
 def main() -> dict:
     """Generate and display the comparison graph; return metrics."""
-    chatgpt_totals = load_portfolio_totals()
+    llm_totals = load_portfolio_totals()
 
     start_date = pd.Timestamp("2025-06-27")
-    end_date = chatgpt_totals["Date"].max()
+    end_date = llm_totals["Date"].max()
     sp500 = download_sp500(start_date, end_date)
 
     # metrics
-    largest_start, largest_end, largest_gain = find_largest_gain(chatgpt_totals)
-    dd_date, dd_value, dd_pct = compute_drawdown(chatgpt_totals)
+    largest_start, largest_end, largest_gain = find_largest_gain(llm_totals)
+    dd_date, dd_value, dd_pct = compute_drawdown(llm_totals)
 
     # plotting
     plt.figure(figsize=(10, 6))
     plt.style.use("seaborn-v0_8-whitegrid")
 
     plt.plot(
-        chatgpt_totals["Date"],
-        chatgpt_totals["Total Equity"],
-        label="ChatGPT ($100 Invested)",
+        llm_totals["Date"],
+        llm_totals["Total Equity"],
+        label="LLM ($100 Invested)",
         marker="o",
         color="blue",
         linewidth=2,
@@ -140,7 +177,7 @@ def main() -> dict:
 
     # annotate largest gain
     largest_peak_value = float(
-        chatgpt_totals.loc[chatgpt_totals["Date"] == largest_end, "Total Equity"].iloc[0]
+        llm_totals.loc[llm_totals["Date"] == largest_end, "Total Equity"].iloc[0]
     )
     plt.text(
         largest_end,
@@ -151,10 +188,10 @@ def main() -> dict:
     )
 
     # annotate final P/Ls
-    final_date = chatgpt_totals["Date"].iloc[-1]
-    final_chatgpt = float(chatgpt_totals["Total Equity"].iloc[-1])
+    final_date = llm_totals["Date"].iloc[-1]
+    final_llm = float(llm_totals["Total Equity"].iloc[-1])
     final_spx = float(sp500["SPX Value ($100 Invested)"].iloc[-1])
-    plt.text(final_date, final_chatgpt + 0.3, f"+{final_chatgpt - 100.0:.1f}%", color="blue", fontsize=9)
+    plt.text(final_date, final_llm + 0.3, f"+{final_llm - 100.0:.1f}%", color="blue", fontsize=9)
     plt.text(final_date, final_spx + 0.9, f"+{final_spx - 100.0:.1f}%", color="orange", fontsize=9)
 
     # annotate max drawdown
@@ -166,7 +203,7 @@ def main() -> dict:
         fontsize=9,
     )
 
-    plt.title("ChatGPT's Micro Cap Portfolio vs. S&P 500")
+    plt.title("LLM Micro Cap Portfolio vs. S&P 500")
     plt.xlabel("Date")
     plt.ylabel("Value of $100 Investment")
     plt.xticks(rotation=15)

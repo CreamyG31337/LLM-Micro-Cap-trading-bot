@@ -804,6 +804,10 @@ def process_portfolio(
     print(f"Total PnL: ${total_pnl:,.2f}")
     print(f"Cash Balance: ${cash:,.2f}")
     print(f"Total Equity: ${total_value + cash:,.2f}")
+    
+    # Display fund contributions total
+    fund_total = calculate_fund_contributions_total(str(DATA_DIR))
+    print(f"Fund Contributions Total: ${fund_total:,.2f}")
 
     df_out = pd.DataFrame(results)
     if PORTFOLIO_CSV.exists():
@@ -1415,6 +1419,11 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     print(f"💰 Cash balance: ${cash:,.2f}")
     if not llm_portfolio.empty:
         print(f"📊 Holdings: {len(llm_portfolio)} positions")
+    
+    # Display fund contributions total
+    fund_total = calculate_fund_contributions_total(str(DATA_DIR))
+    print(f"💵 Fund contributions total: ${fund_total:,.2f}")
+    
     print(f"\n💡 To generate prompts, use the menu options:")
     print(f"   'd' for daily trading prompt")
     print(f"   'w' for weekly deep research prompt")
@@ -1425,6 +1434,14 @@ def load_fund_contributions(data_dir: str) -> pd.DataFrame:
     contributions_file = os.path.join(data_dir, "fund_contributions.csv")
     if os.path.exists(contributions_file):
         df = pd.read_csv(contributions_file)
+        
+        # Remove Running_Total column if it exists (we calculate this dynamically now)
+        if "Running_Total" in df.columns:
+            df = df.drop(columns=["Running_Total"])
+            # Save the updated format
+            df.to_csv(contributions_file, index=False)
+            print("ℹ️  Migrated fund_contributions.csv: Removed Running_Total column (now calculated dynamically)")
+        
         # Migrate old "Date" column to "Timestamp" if needed
         if "Date" in df.columns and "Timestamp" not in df.columns:
             df = df.rename(columns={"Date": "Timestamp"})
@@ -1441,7 +1458,26 @@ def load_fund_contributions(data_dir: str) -> pd.DataFrame:
         return df
     else:
         # Create empty DataFrame with expected columns
-        return pd.DataFrame(columns=["Timestamp", "Contributor", "Amount", "Type", "Running_Total", "Notes"])
+        return pd.DataFrame(columns=["Timestamp", "Contributor", "Amount", "Type", "Notes"])
+
+
+def calculate_fund_contributions_total(data_dir: str) -> float:
+    """Calculate the current running total of fund contributions dynamically."""
+    df = load_fund_contributions(data_dir)
+    
+    if len(df) == 0:
+        return 0.0
+    
+    # Sum all contributions and withdrawals
+    total = 0.0
+    for _, row in df.iterrows():
+        amount = row["Amount"]
+        if row["Type"] == "WITHDRAWAL":
+            total += amount  # amount should already be negative for withdrawals
+        else:
+            total += amount
+    
+    return total
 
 
 def save_fund_contribution(data_dir: str, contributor: str, amount: float, contribution_type: str = "CONTRIBUTION", notes: str = ""):
@@ -1454,27 +1490,21 @@ def save_fund_contribution(data_dir: str, contributor: str, amount: float, contr
     # Load existing contributions
     df = load_fund_contributions(data_dir)
     
-    # Calculate new running total
-    if len(df) > 0:
-        last_total = df["Running_Total"].iloc[-1]
-    else:
-        last_total = 0.0
-    
-    new_total = last_total + amount
-    
-    # Create new row
+    # Create new row (no more Running_Total column)
     new_row = {
         "Timestamp": timestamp,
         "Contributor": contributor,
         "Amount": amount,
         "Type": contribution_type,
-        "Running_Total": new_total,
         "Notes": notes
     }
     
     # Add to DataFrame and save
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     df.to_csv(contributions_file, index=False)
+    
+    # Calculate the new total dynamically
+    new_total = calculate_fund_contributions_total(data_dir)
     
     # Optionally update CAD balance if dual currency is enabled
     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
@@ -1533,13 +1563,8 @@ def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
             print("📊 No fund contributions found. Nothing to sync.")
             return True
         
-        # Calculate net contributions (contributions minus withdrawals)
-        total_contributions = 0.0
-        for _, row in df.iterrows():
-            amount = row["Amount"]
-            if row["Type"] == "WITHDRAWAL":
-                amount = -abs(amount)  # Ensure withdrawals are negative
-            total_contributions += amount
+        # Calculate net contributions using the dynamic function
+        total_contributions = calculate_fund_contributions_total(data_dir)
         
         # Load current cash balances
         cash_balances = load_cash_balances(data_path)
@@ -1584,8 +1609,8 @@ def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
             amount = -amount  # Withdrawals are negative
         contributions[row["Contributor"]] += amount
     
-    # Calculate total fund value
-    total_contributions = sum(contributions.values())
+    # Calculate total fund value using dynamic calculation
+    total_contributions = calculate_fund_contributions_total(data_dir)
     
     if total_contributions <= 0:
         return {}

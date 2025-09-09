@@ -350,6 +350,11 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     print_info("Fetching current prices for portfolio display...", "📈")
     s, e = trading_day_window()
     
+    # For daily P&L calculation, we need more historical data
+    # Expand the date range to include at least 2 days of data
+    from datetime import timedelta
+    s_expanded = s - timedelta(days=5)  # Go back 5 days to ensure we have enough data
+    
     # Load trade log to get position open dates
     trade_log_df = None
     try:
@@ -391,7 +396,8 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
                     open_date = ticker_trades['Date'].min().strftime("%m/%d")
             
             # Fetch current price and previous day's price
-            fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+            # Use expanded date range to ensure we have enough data for daily P&L calculation
+            fetch = download_price_data(ticker, start=s_expanded, end=e, auto_adjust=False, progress=False)
             current_price = ""
             total_pnl = ""
             daily_pnl = ""
@@ -467,7 +473,8 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         
         for _, row in display_df.iterrows():
             ticker = str(row.get('ticker', ''))
-            fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+            # Use expanded date range to ensure we have enough data for daily P&L calculation
+            fetch = download_price_data(ticker, start=s_expanded, end=e, auto_adjust=False, progress=False)
             
             if not fetch.df.empty and "Close" in fetch.df.columns:
                 current_price = float(fetch.df['Close'].iloc[-1].item())

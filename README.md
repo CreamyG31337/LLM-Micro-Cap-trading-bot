@@ -91,6 +91,45 @@ This project is an attempt to find out — with transparency, data, and a real b
 - **Backtesting Support** - ASOF_DATE override for historical analysis
 - **Performance Analytics** - CAPM analysis, Sharpe/Sortino ratios, drawdown metrics
 - **Trade Logging** - Complete transparency with detailed execution logs
+- **Daily P&L Calculation** - Industry-standard daily performance tracking with market hours handling
+- **Debug Tools** - Comprehensive analysis scripts for troubleshooting price data and P&L calculations
+
+## Daily P&L Calculation Design
+
+The system implements industry-standard daily P&L calculation with robust market hours handling:
+
+### **How It Works**
+- **Data Source**: Fetches 5 days of historical price data to ensure sufficient data for calculations
+- **Calculation Method**: Compares current day's closing price vs previous day's closing price
+- **Market Hours Handling**: 
+  - **During Market Hours**: Uses most recent close price (updates throughout the day)
+  - **After Hours**: Uses 4 PM close price vs previous day's close
+  - **Pre-Market**: Uses previous day's close (appropriate for pre-market scenarios)
+  - **Weekends/Holidays**: Uses last trading day's close vs previous trading day's close
+
+### **Industry Standards Compliance**
+✅ **Follows standard industry practices:**
+- Uses close-to-close price comparison for daily P&L
+- Handles different market scenarios appropriately
+- Provides consistent calculations regardless of when the script is run
+- Matches major trading platforms' daily P&L calculations
+
+### **Technical Implementation**
+- **Date Range**: Expands trading day window by 5 days to ensure sufficient historical data
+- **Fallback Handling**: Multiple data sources (Yahoo Finance → Stooq) for reliability
+- **Timezone Support**: Handles PST timezone for consistent reporting
+- **Error Handling**: Graceful fallback to "N/A" when insufficient data is available
+
+## Debug Tools
+
+The repository includes comprehensive debugging tools in the `debug/` folder:
+
+- **`daily_pnl_debug.py`** - Analyzes daily P&L calculation issues and data availability
+- **`market_hours_analysis.py`** - Tests market hours handling and compares with industry standards
+- **`price_debug.py`** - General price data debugging and validation
+- **`comprehensive_price_debug.py`** - Advanced price data analysis and troubleshooting
+
+These tools help ensure the trading system operates correctly and provide transparency into how calculations are performed.
 
 ## System Requirements
 - Python  3.11+

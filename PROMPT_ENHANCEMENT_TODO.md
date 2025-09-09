@@ -4,6 +4,12 @@
 *Focus on features that provide immediate value for a small, new portfolio*
 
 ### ✅ **Quick Wins** (1-2 hours implementation)
+- [x] **Daily P&L Calculation** ✅ **COMPLETED**
+  - [x] Fixed daily P&L showing "N/A" by expanding date range
+  - [x] Implemented industry-standard close-to-close calculation
+  - [x] Added proper market hours handling
+  - [x] Documented design and implementation
+
 - [ ] **Enhanced Position Performance Display**
   - [ ] Add individual position P&L percentages
   - [ ] Show position performance vs. buy price
@@ -29,6 +35,13 @@
   - [ ] Geographic exposure (CAD vs USD)
   - [ ] Liquidity analysis (days to liquidate)
 
+- [ ] **Enhanced Daily P&L Features**
+  - [ ] Real-time price updates during market hours (use currentPrice from yfinance)
+  - [ ] After-hours price movement inclusion in daily P&L
+  - [ ] Market status indicator (Open/Closed/Pre-Market/After Hours)
+  - [ ] Timezone handling for US vs Canadian market hours
+  - [ ] Pre-market price integration for early morning calculations
+
 - [ ] **Enhanced Instructions**
   - [ ] Add position-specific trading recommendations
   - [ ] Include stop-loss analysis and suggestions
@@ -51,9 +64,10 @@
 ## 🚀 **Implementation Plan**
 
 ### Phase 1: Quick Wins (This Week)
-1. **Enhanced Position Display** - Show P&L, weights, performance
-2. **Basic Risk Metrics** - Concentration, volatility, drawdown
-3. **Improved Market Data** - Multi-timeframe, volume trends
+1. ✅ **Daily P&L Calculation** - Fixed N/A issue, implemented industry standards
+2. **Enhanced Position Display** - Show P&L, weights, performance
+3. **Basic Risk Metrics** - Concentration, volatility, drawdown
+4. **Improved Market Data** - Multi-timeframe, volume trends
 
 ### Phase 2: Portfolio Health (Next Week)
 1. **Portfolio Dashboard** - Overall health metrics

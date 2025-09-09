@@ -52,9 +52,22 @@ Instead of trying to resize programmatically, we implemented:
 1. **Smart Environment Detection** - Detects OS and terminal type
 2. **Terminal Width Detection** - Uses `shutil.get_terminal_size()`
 3. **Environment-Specific Guidance** - Provides appropriate suggestions:
-   - Windows Terminal: Settings → Appearance → Columns
-   - Command Prompt: Properties → Layout → Window Size
+   - Windows Terminal: Settings → Startup → Launch size → Columns (set to 130+)
+   - Command Prompt: Properties → Layout → Window Size Width (set to 130+)
    - Other: Generic maximize/font suggestions
+
+## Windows Terminal Settings Location (Windows 11)
+
+The Windows Terminal column setting is buried deep in the settings:
+
+1. Open Windows Terminal
+2. Click the dropdown arrow next to the + tab
+3. Select "Settings" (or press Ctrl+,)
+4. In the left sidebar, click "Startup"
+5. Under "Launch size", set "Columns" to 130 or higher
+6. Click "Save"
+
+**Note:** Microsoft frequently reorganizes these settings, so the exact path may vary by Windows Terminal version.
 
 ## Files
 

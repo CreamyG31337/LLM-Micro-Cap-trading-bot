@@ -197,17 +197,17 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
 
 def show_menu() -> None:
     """Display the main menu"""
-    print_colored("\n" + "=" * 60, Colors.HEADER)
+    print_colored("\n" + "=" * 80, Colors.HEADER)
     print_colored("🤖 LLM MICRO-CAP TRADING BOT - MASTER CONTROL", Colors.HEADER + Colors.BOLD)
-    print_colored("=" * 60, Colors.HEADER)
+    print_colored("=" * 80, Colors.HEADER)
     
     options = get_menu_options()
     
     for key, title, description, _ in options:
-        print_colored(f"\n[{key}] {title}", Colors.CYAN + Colors.BOLD)
-        print_colored(f"    {description}", Colors.ENDC)
+        # Format: [key] title - description (all on one line with different colors)
+        print(f"{Colors.CYAN}{Colors.BOLD}[{key}] {title} - {Colors.ENDC}{description}")
     
-    print_colored("\n" + "=" * 60, Colors.HEADER)
+    print_colored("\n" + "=" * 80, Colors.HEADER)
 
 def handle_configuration() -> None:
     """Handle configuration menu"""

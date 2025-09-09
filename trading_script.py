@@ -574,7 +574,7 @@ def print_trade_menu() -> None:
             "[cyan]'w'[/cyan] 💸 Log Withdrawal\n"
             "[cyan]'u'[/cyan] 🔄 Update Cash Balances\n"
             "[cyan]'sync'[/cyan] 🔗 Sync Fund Contributions\n"
-            "[cyan]Enter[/cyan] ▶️ Continue to Portfolio Processing",
+            "[cyan]Enter[/cyan] ➤  Continue to Portfolio Processing",
             border_style="green",
             width=62
         )
@@ -587,7 +587,7 @@ def print_trade_menu() -> None:
         print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
         print(f"{Fore.CYAN}'u'{Style.RESET_ALL} 🔄 Update Cash Balances")
         print(f"{Fore.CYAN}'sync'{Style.RESET_ALL} 🔗 Sync Fund Contributions")
-        print(f"{Fore.CYAN}Enter{Style.RESET_ALL} ▶️ Continue to Portfolio Processing")
+        print(f"{Fore.CYAN}Enter{Style.RESET_ALL} ➤ Continue to Portfolio Processing")
 
 def _effective_now() -> datetime:
     return (ASOF_DATE.to_pydatetime() if ASOF_DATE is not None else datetime.now())

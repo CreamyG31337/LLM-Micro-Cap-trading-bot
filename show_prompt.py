@@ -20,9 +20,9 @@ def show_complete_prompt():
     
     # Market info
     market_info = get_market_info()
-    print(f"Current Market Configuration: {market_info['market']}")
+    print(f"Current Market Configuration: {market_info['name']}")
     print(f"Currency: {market_info['currency']}")
-    print(f"Market Cap Range: {market_info['market_cap_range']}")
+    print(f"Market Cap Range: {market_info['market_cap']}")
     print()
     
     # Show what to copy/paste

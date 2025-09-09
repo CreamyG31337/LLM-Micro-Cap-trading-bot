@@ -160,8 +160,8 @@ def plot_comparison(
     ax.plot(spx["Date"], spx["SPX Value"], label="S&P 500", marker="o", linestyle="--")
     
     # Annotate last points as percent vs baseline
-    p_last = float(portfolio["Total Equity"].iloc[-1])
-    s_last = float(spx["SPX Value"].iloc[-1])
+    p_last = float(portfolio["Total Equity"].iloc[-1].item())
+    s_last = float(spx["SPX Value"].iloc[-1].item())
 
     p_pct = (p_last / starting_equity - 1.0) * 100.0
     s_pct = (s_last / starting_equity - 1.0) * 100.0

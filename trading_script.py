@@ -172,31 +172,54 @@ def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
         return f"{color}{emoji} {formatted}{Style.RESET_ALL}"
 
 def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
-    """Create a beautiful portfolio table display."""
+    """Create a beautiful portfolio table display with current prices and P&L."""
     if portfolio_df.empty:
         print_info("Portfolio is currently empty")
         return
     
+    # Get current prices for all tickers
+    print_info("Fetching current prices for portfolio display...", "📈")
+    s, e = trading_day_window()
+    
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         table = Table(title="📊 Current Portfolio", show_header=True, header_style="bold magenta")
         table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
-        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=30)
+        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=25)
         table.add_column("📈 Shares", justify="right", style="green")
         table.add_column("💵 Buy Price", justify="right", style="blue")
+        table.add_column("💰 Current", justify="right", style="yellow")
+        table.add_column("📊 P&L %", justify="right", style="magenta")
         table.add_column("🛑 Stop Loss", justify="right", style="red")
-        table.add_column("💰 Cost Basis", justify="right", style="yellow")
+        table.add_column("💵 Cost Basis", justify="right", style="yellow")
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
             company_name = get_company_name(ticker)
             # Truncate long company names for display
-            display_name = company_name[:27] + "..." if len(company_name) > 30 else company_name
+            display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
+            
+            # Fetch current price
+            fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+            current_price = ""
+            pnl_percent = ""
+            
+            if not fetch.df.empty and "Close" in fetch.df.columns:
+                current_price = f"${float(fetch.df['Close'].iloc[-1]):.2f}"
+                buy_price = float(row.get('buy_price', 0))
+                if buy_price > 0:
+                    pnl_pct = ((float(fetch.df['Close'].iloc[-1]) - buy_price) / buy_price) * 100
+                    pnl_percent = f"{pnl_pct:+.1f}%"
+            else:
+                current_price = "N/A"
+                pnl_percent = "N/A"
             
             table.add_row(
                 ticker,
                 display_name,
                 f"{int(row.get('shares', 0)):,}",
                 f"${float(row.get('buy_price', 0)):.2f}",
+                current_price,
+                pnl_percent,
                 f"${float(row.get('stop_loss', 0)):.2f}" if row.get('stop_loss', 0) > 0 else "None",
                 f"${float(row.get('cost_basis', 0)):.2f}"
             )
@@ -204,11 +227,37 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         console.print(table)
     else:
         print(f"\n{Fore.MAGENTA}📊 Current Portfolio:{Style.RESET_ALL}")
-        # For plain text, add company names as a new column
+        # For plain text, add company names and current prices
         display_df = portfolio_df.copy()
         display_df['Company'] = display_df['ticker'].apply(get_company_name)
-        # Reorder columns to show company name after ticker
-        cols = ['ticker', 'Company', 'shares', 'buy_price', 'stop_loss', 'cost_basis']
+        
+        # Add current prices and P&L percentages
+        current_prices = []
+        pnl_percentages = []
+        
+        for _, row in display_df.iterrows():
+            ticker = str(row.get('ticker', ''))
+            fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+            
+            if not fetch.df.empty and "Close" in fetch.df.columns:
+                current_price = float(fetch.df['Close'].iloc[-1])
+                current_prices.append(f"${current_price:.2f}")
+                
+                buy_price = float(row.get('buy_price', 0))
+                if buy_price > 0:
+                    pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                    pnl_percentages.append(f"{pnl_pct:+.1f}%")
+                else:
+                    pnl_percentages.append("N/A")
+            else:
+                current_prices.append("N/A")
+                pnl_percentages.append("N/A")
+        
+        display_df['Current Price'] = current_prices
+        display_df['P&L %'] = pnl_percentages
+        
+        # Reorder columns
+        cols = ['ticker', 'Company', 'shares', 'buy_price', 'Current Price', 'P&L %', 'stop_loss', 'cost_basis']
         display_df = display_df[[col for col in cols if col in display_df.columns]]
         print(display_df.to_string(index=False))
 

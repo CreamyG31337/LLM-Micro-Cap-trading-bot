@@ -239,6 +239,20 @@ def detect_terminal_width() -> int:
         # Fallback to a reasonable default
         return 80
 
+def is_using_test_data() -> bool:
+    """Check if the script is currently using the test_data folder."""
+    return "test_data" in str(DATA_DIR).lower()
+
+def get_optimal_table_width() -> int:
+    """Get the optimal table width based on environment and data source."""
+    terminal_width = detect_terminal_width()
+    
+    # If using test_data or terminal is narrow, force a wider minimum
+    if is_using_test_data() or terminal_width < 140:
+        return max(terminal_width, 140)  # Force minimum 140 chars for test data
+    
+    return terminal_width
+
 def detect_environment() -> dict:
     """Detect OS and terminal environment."""
     import platform
@@ -283,6 +297,8 @@ def detect_environment() -> dict:
 def check_table_display_issues() -> None:
     """Check if tables might be cut off and provide helpful suggestions."""
     terminal_width = detect_terminal_width()
+    optimal_width = get_optimal_table_width()
+    using_test_data = is_using_test_data()
     env = detect_environment()
     
     if terminal_width < 120:
@@ -323,6 +339,12 @@ def check_table_display_issues() -> None:
             print_warning("   3. Use a smaller font size")
         
         print_warning("")
+    
+    if using_test_data:
+        print_info("🧪 Test Data Mode: Forcing wider table display for better visibility")
+        if optimal_width > terminal_width:
+            print_info(f"   Table will be optimized for {optimal_width} characters (current: {terminal_width})")
+        print_info("")
 
 def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
     """Format money display with color and emoji."""
@@ -369,23 +391,33 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         current_date = last_trading_date().strftime("%Y-%m-%d")
         table_title = f"📊 Portfolio Snapshot - {current_date}"
         
+        # Determine optimal column widths based on environment
+        optimal_width = get_optimal_table_width()
+        using_test_data = is_using_test_data()
+        
+        # Set minimum widths for numerical columns to ensure visibility
+        # Ticker is most important, then numbers, company name can be heavily truncated
+        company_max_width = 25 if optimal_width >= 140 else 15
+        if using_test_data:
+            company_max_width = 12  # Even more conservative for test data
+        
         table = Table(title=table_title, show_header=True, header_style="bold magenta")
-        table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
-        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=25, justify="left")
-        table.add_column("📅 Opened", style="dim", no_wrap=True)
-        table.add_column("📈 Shares", justify="right", style="green")
-        table.add_column("💵 Buy Price", justify="right", style="blue")
-        table.add_column("💰 Current", justify="right", style="yellow")
-        table.add_column("📊 Total P&L", justify="right", style="magenta")
-        table.add_column("📈 Daily P&L", justify="right", style="cyan")
-        table.add_column("🛑 Stop Loss", justify="right", style="red")
-        table.add_column("💵 Cost Basis", justify="right", style="yellow")
+        table.add_column("🎯 Ticker", style="cyan", no_wrap=True, width=11)  # Slightly wider for ticker visibility
+        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=company_max_width, justify="left")
+        table.add_column("📅 Opened", style="dim", no_wrap=True, width=10)  # Fixed width for date
+        table.add_column("📈 Shares", justify="right", style="green", width=10)  # Ensure shares fit
+        table.add_column("💵 Buy Price", justify="right", style="blue", width=10)  # Ensure price fits
+        table.add_column("💰 Current", justify="right", style="yellow", width=10)  # Ensure price fits
+        table.add_column("📊 Total P&L", justify="right", style="magenta", width=10)  # Ensure P&L fits
+        table.add_column("📈 Daily P&L", justify="right", style="cyan", width=10)  # Ensure P&L fits
+        table.add_column("🛑 Stop Loss", justify="right", style="red", width=10)  # Ensure price fits
+        table.add_column("💵 Cost Basis", justify="right", style="yellow", width=10)  # Ensure price fits
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
             company_name = get_company_name(ticker)
-            # Truncate long company names for display
-            display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
+            # Truncate long company names for display using dynamic width
+            display_name = company_name[:company_max_width-3] + "..." if len(company_name) > company_max_width else company_name
             
             # Get position open date from trade log
             open_date = "N/A"
@@ -513,7 +545,23 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         if 'shares' in display_df.columns:
             display_df['shares'] = display_df['shares'].apply(lambda x: f"{float(x):.4f}")
         
+        # Use better formatting for plain text to ensure numerical data is visible
+        optimal_width = get_optimal_table_width()
+        using_test_data = is_using_test_data()
+        
+        # Set pandas display options for better formatting
+        # Prioritize ticker visibility over company names
+        import pandas as pd
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', optimal_width)
+        pd.set_option('display.max_colwidth', 18 if using_test_data else 20)  # Shorter company names
+        
         print(display_df.to_string(index=False))
+        
+        # Reset pandas options
+        pd.reset_option('display.max_columns')
+        pd.reset_option('display.width')
+        pd.reset_option('display.max_colwidth')
 
 def print_trade_menu() -> None:
     """Print the colorful trade menu."""
@@ -1441,7 +1489,7 @@ def process_portfolio(
     s, e = trading_day_window()
     for _, stock in portfolio_df.iterrows():
         ticker = str(stock["ticker"]).upper()
-        shares = int(stock["shares"]) if not pd.isna(stock["shares"]) else 0
+        shares = float(stock["shares"]) if not pd.isna(stock["shares"]) else 0.0
         cost = float(stock["buy_price"]) if not pd.isna(stock["buy_price"]) else 0.0
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
@@ -1894,6 +1942,8 @@ def load_latest_portfolio_state(
     df = pd.read_csv(file)
     if df.empty:
         portfolio = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
+        # Ensure shares column is float even for empty DataFrame
+        portfolio['shares'] = portfolio['shares'].astype(float)
         print("Portfolio CSV is empty. Returning set amount of cash for creating portfolio.")
         
         # Check if we're in North American mode and should use dual currency
@@ -1943,9 +1993,15 @@ def load_latest_portfolio_state(
         },
         inplace=True,
     )
+    
+    # Ensure shares column is float to preserve fractional shares
+    if 'shares' in latest_tickers.columns:
+        latest_tickers['shares'] = latest_tickers['shares'].astype(float)
     # Ensure we always return a DataFrame, even if empty
     if latest_tickers.empty:
         latest_tickers = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
+        # Ensure shares column is float even for empty DataFrame
+        latest_tickers['shares'] = latest_tickers['shares'].astype(float)
     else:
         latest_tickers = latest_tickers.reset_index(drop=True)
 

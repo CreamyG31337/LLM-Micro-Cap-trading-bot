@@ -45,6 +45,30 @@ except ImportError:
     _HAS_RICH = False
     console = None
 
+# Force fallback mode for testing (set via environment variable or function call)
+_FORCE_FALLBACK = os.environ.get("FORCE_FALLBACK", "").lower() in ("true", "1", "yes", "on")
+_FORCE_COLORAMA_ONLY = os.environ.get("FORCE_COLORAMA_ONLY", "").lower() in ("true", "1", "yes", "on")
+
+def set_force_fallback(force_fallback: bool = True, colorama_only: bool = False) -> None:
+    """Force fallback mode for testing purposes.
+    
+    Args:
+        force_fallback: If True, disable Rich and use colorama/plain text
+        colorama_only: If True, disable Rich but keep colorama (only works if force_fallback=True)
+    """
+    global _HAS_RICH, _FORCE_FALLBACK, _FORCE_COLORAMA_ONLY
+    _FORCE_FALLBACK = force_fallback
+    _FORCE_COLORAMA_ONLY = colorama_only
+    if force_fallback:
+        _HAS_RICH = False
+        if not colorama_only:
+            # Also disable colorama for plain text testing
+            global Fore, Back, Style
+            class DummyColor:
+                def __getattr__(self, name):
+                    return ""
+            Fore = Back = Style = DummyColor()
+
 # Import market configuration
 try:
     from market_config import get_benchmarks, get_daily_instructions, get_market_info, print_active_config
@@ -98,7 +122,7 @@ if _env_asof:
 
 def print_header(title: str, emoji: str = "🔷") -> None:
     """Print a colorful header with emoji."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print(f"\n{emoji} {title} {emoji}", style="bold blue on white", justify="center")
         console.print("─" * 60, style="blue")
     else:
@@ -108,28 +132,28 @@ def print_header(title: str, emoji: str = "🔷") -> None:
 
 def print_success(message: str, emoji: str = "✅") -> None:
     """Print a success message with green color and emoji."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print(f"{emoji} {message}", style="bold green")
     else:
         print(f"{Fore.GREEN}{emoji} {message}{Style.RESET_ALL}")
 
 def print_error(message: str, emoji: str = "❌") -> None:
     """Print an error message with red color and emoji."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print(f"{emoji} {message}", style="bold red")
     else:
         print(f"{Fore.RED}{emoji} {message}{Style.RESET_ALL}")
 
 def print_warning(message: str, emoji: str = "⚠️") -> None:
     """Print a warning message with yellow color and emoji."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print(f"{emoji} {message}", style="bold yellow")
     else:
         print(f"{Fore.YELLOW}{emoji} {message}{Style.RESET_ALL}")
 
 def print_info(message: str, emoji: str = "ℹ️") -> None:
     """Print an info message with blue color and emoji."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print(f"{emoji} {message}", style="bold blue")
     else:
         print(f"{Fore.BLUE}{emoji} {message}{Style.RESET_ALL}")
@@ -140,7 +164,7 @@ def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
     if currency:
         formatted += f" {currency}"
     
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         color = "green" if amount >= 0 else "red"
         return f"{emoji} [bold {color}]{formatted}[/bold {color}]"
     else:
@@ -153,7 +177,7 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         print_info("Portfolio is currently empty")
         return
     
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         table = Table(title="📊 Current Portfolio", show_header=True, header_style="bold magenta")
         table.add_column("🎯 Ticker", style="cyan", no_wrap=True)
         table.add_column("📈 Shares", justify="right", style="green")
@@ -177,7 +201,7 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
 
 def print_trade_menu() -> None:
     """Print the colorful trade menu."""
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         panel = Panel(
             "[bold green]📈 Trading Menu[/bold green]\n\n"
             "[cyan]'b'[/cyan] 🛒 Buy (Market-on-Open or Limit)\n"
@@ -581,24 +605,24 @@ def process_portfolio(
             if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
                 try:
                     cash_balances = load_cash_balances(DATA_DIR)
-                    if _HAS_RICH and console:
+                    if _HAS_RICH and console and not _FORCE_FALLBACK:
                         console.print(f"\n💰 [bold green]Cash Balances:[/bold green] CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}")
                     else:
                         print(f"\n{Fore.GREEN}💰 Cash Balances: CAD ${cash_balances.cad:,.2f} | USD ${cash_balances.usd:,.2f}{Style.RESET_ALL}")
                 except Exception:
-                    if _HAS_RICH and console:
+                    if _HAS_RICH and console and not _FORCE_FALLBACK:
                         console.print(f"\n💰 [bold green]Cash Balance:[/bold green] ${cash:,.2f}")
                     else:
                         print(f"\n{Fore.GREEN}💰 Cash Balance: ${cash:,.2f}{Style.RESET_ALL}")
             else:
-                if _HAS_RICH and console:
+                if _HAS_RICH and console and not _FORCE_FALLBACK:
                     console.print(f"\n💰 [bold green]Cash Balance:[/bold green] ${cash:,.2f}")
                 else:
                     print(f"\n{Fore.GREEN}💰 Cash Balance: ${cash:,.2f}{Style.RESET_ALL}")
             
             print_trade_menu()
             
-            if _HAS_RICH and console:
+            if _HAS_RICH and console and not _FORCE_FALLBACK:
                 action = console.input("\n[bold cyan]Choose an action:[/bold cyan] ").strip().lower()
             else:
                 action = input(f"\n{Fore.CYAN}Choose an action:{Style.RESET_ALL} ").strip().lower()
@@ -606,7 +630,7 @@ def process_portfolio(
             if action == "b":
                 print_header("Buy Order", "🛒")
                 
-                if _HAS_RICH and console:
+                if _HAS_RICH and console and not _FORCE_FALLBACK:
                     ticker = console.input("🎯 [bold cyan]Enter ticker symbol:[/bold cyan] ").strip().upper()
                     order_type = console.input("📋 [bold cyan]Order type? 'm' = market-on-open, 'l' = limit:[/bold cyan] ").strip().lower()
                 else:
@@ -614,7 +638,7 @@ def process_portfolio(
                     order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit:{Style.RESET_ALL} ").strip().lower()
 
                 try:
-                    if _HAS_RICH and console:
+                    if _HAS_RICH and console and not _FORCE_FALLBACK:
                         shares = float(console.input("📈 [bold cyan]Enter number of shares:[/bold cyan] "))
                     else:
                         shares = float(input(f"{Fore.CYAN}📈 Enter number of shares:{Style.RESET_ALL} "))
@@ -998,7 +1022,7 @@ def process_portfolio(
     # Calculate totals dynamically - no need to store in CSV
     print_header("Portfolio Summary", "📈")
     
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         summary_table = Table(title="💰 Financial Summary", show_header=True, header_style="bold magenta")
         summary_table.add_column("Metric", style="cyan", no_wrap=True)
         summary_table.add_column("Amount", justify="right", style="green")
@@ -1627,6 +1651,17 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
         # Use the default portfolio file in the data directory
         portfolio_file = str(PORTFOLIO_CSV)
     
+    # Show formatting mode
+    if _FORCE_FALLBACK:
+        if _FORCE_COLORAMA_ONLY:
+            print("🧪 Testing Mode: Colorama Only (Rich disabled)")
+        else:
+            print("🧪 Testing Mode: Plain Text (Rich and Colorama disabled)")
+    elif _HAS_RICH:
+        print("🎨 Rich Formatting Mode: Full visual enhancements")
+    else:
+        print("🎨 Colorama Mode: Basic colors and emojis")
+    
     print(f"Using portfolio file: {portfolio_file}")
     print(f"Using data directory: {DATA_DIR}")
     
@@ -1644,7 +1679,7 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     print_info(f"Fund contributions total: ${fund_total:,.2f}", "💵")
     
     print_info("To generate prompts, use the menu options:", "💡")
-    if _HAS_RICH and console:
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
         console.print("   [cyan]'d'[/cyan] for daily trading prompt")
         console.print("   [cyan]'w'[/cyan] for weekly deep research prompt")
     else:
@@ -1886,10 +1921,18 @@ if __name__ == "__main__":
                        help="Data directory (default: my trading)")
     parser.add_argument("--asof", default=None, 
                        help="Treat this YYYY-MM-DD as 'today' (e.g., 2025-08-27)")
+    parser.add_argument("--force-fallback", action="store_true",
+                       help="Force fallback mode (disable Rich, use colorama/plain text)")
+    parser.add_argument("--colorama-only", action="store_true",
+                       help="Force colorama-only mode (disable Rich but keep colorama)")
     args = parser.parse_args()
 
     if args.asof:
         set_asof(args.asof)
+    
+    # Handle force fallback options
+    if args.force_fallback or args.colorama_only:
+        set_force_fallback(force_fallback=True, colorama_only=args.colorama_only)
 
     # Use the new main function with better defaults
     main(args.file, Path(args.data_dir) if args.data_dir else None)

@@ -191,13 +191,6 @@ class PromptGenerator:
         print(f"\nCash Balances: {cash_display}")
         print(f"Latest LLM Equity: ${total_equity:,.2f}")
         print("Maximum Drawdown: 0.00% (new portfolio)")
-        
-        # Holdings (duplicate for compatibility)
-        print("\n[ Holdings ]")
-        if llm_portfolio.empty:
-            print("No current holdings")
-        else:
-            print(llm_portfolio.to_string(index=False))
             
         # Fund ownership if available
         contributions_df = load_fund_contributions(str(self.data_dir))

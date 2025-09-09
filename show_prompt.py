@@ -25,6 +25,8 @@ def calculate_position_metrics(portfolio_df, cash_balance):
     pnl_percentages = []
     position_values = []
     position_weights = []
+    daily_pnl_amounts = []
+    daily_pnl_percentages = []
     days_held = []
     
     total_portfolio_value = 0
@@ -32,28 +34,43 @@ def calculate_position_metrics(portfolio_df, cash_balance):
     for _, row in portfolio_df.iterrows():
         ticker = str(row.get('ticker', ''))
         
-        # Fetch current price
+        # Fetch current price and previous day's price for daily P&L
         fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
         if not fetch.df.empty and "Close" in fetch.df.columns:
             current_price = float(fetch.df['Close'].iloc[-1].item())
+            # Get previous day's price for daily P&L calculation
+            if len(fetch.df) > 1:
+                prev_price = float(fetch.df['Close'].iloc[-2].item())
+            else:
+                prev_price = current_price  # If only one day of data, no daily change
         else:
             current_price = float(row.get('buy_price', 0))
+            prev_price = current_price
         
         shares = float(row.get('shares', 0))
         buy_price = float(row.get('buy_price', 0))
         cost_basis = float(row.get('cost_basis', 0))
         
-        # Calculate metrics
+        # Calculate total P&L since purchase
         position_value = current_price * shares
-        # Use buy_price * shares for cost basis calculation, not the stored cost_basis
         actual_cost_basis = buy_price * shares
-        pnl_amount = position_value - actual_cost_basis
-        pnl_percent = (pnl_amount / actual_cost_basis * 100) if actual_cost_basis > 0 else 0
+        total_pnl_amount = position_value - actual_cost_basis
+        total_pnl_percent = (total_pnl_amount / actual_cost_basis * 100) if actual_cost_basis > 0 else 0
+        
+        # Calculate daily P&L change
+        daily_pnl_amount = (current_price - prev_price) * shares
+        daily_pnl_percent = ((current_price - prev_price) / prev_price * 100) if prev_price > 0 else 0
+        
+        # Calculate days held (simplified - in real system you'd track purchase dates)
+        days_held_approx = 1  # Default to 1 day for now
         
         current_prices.append(current_price)
-        pnl_amounts.append(pnl_amount)
-        pnl_percentages.append(pnl_percent)
+        pnl_amounts.append(total_pnl_amount)
+        pnl_percentages.append(total_pnl_percent)
         position_values.append(position_value)
+        daily_pnl_amounts.append(daily_pnl_amount)
+        daily_pnl_percentages.append(daily_pnl_percent)
+        days_held.append(days_held_approx)
         
         total_portfolio_value += position_value
     
@@ -65,8 +82,11 @@ def calculate_position_metrics(portfolio_df, cash_balance):
     # Add calculated columns
     enhanced_df['Current_Price'] = current_prices
     enhanced_df['Position_Value'] = position_values
-    enhanced_df['PnL_Amount'] = pnl_amounts
-    enhanced_df['PnL_Percent'] = pnl_percentages
+    enhanced_df['Total_PnL_Amount'] = pnl_amounts
+    enhanced_df['Total_PnL_Percent'] = pnl_percentages
+    enhanced_df['Daily_PnL_Amount'] = daily_pnl_amounts
+    enhanced_df['Daily_PnL_Percent'] = daily_pnl_percentages
+    enhanced_df['Days_Held'] = days_held
     enhanced_df['Weight_Percent'] = position_weights
     
     return enhanced_df, total_portfolio_value
@@ -77,19 +97,27 @@ def format_enhanced_portfolio_display(enhanced_df):
         return "No current holdings"
     
     lines = []
-    lines.append("Ticker        Shares    Buy Price  Current   P&L $      P&L %     Weight %")
-    lines.append("-" * 75)
+    lines.append("Ticker        Shares    Buy Price  Current   Total P&L  Daily P&L  Weight %")
+    lines.append("                                 $      %      $      %")
+    lines.append("-" * 85)
     
     for _, row in enhanced_df.iterrows():
         ticker = str(row.get('ticker', ''))[:12].ljust(12)
         shares = f"{float(row.get('shares', 0)):.4f}".rjust(8)  # Show fractional shares with 4 decimal places
         buy_price = f"${float(row.get('buy_price', 0)):.2f}".rjust(9)
         current = f"${float(row.get('Current_Price', 0)):.2f}".rjust(8)
-        pnl_amount = f"${float(row.get('PnL_Amount', 0)):+.2f}".rjust(9)
-        pnl_percent = f"{float(row.get('PnL_Percent', 0)):+.1f}%".rjust(8)
+        
+        # Total P&L (since purchase)
+        total_pnl_amount = f"${float(row.get('Total_PnL_Amount', 0)):+.2f}".rjust(9)
+        total_pnl_percent = f"{float(row.get('Total_PnL_Percent', 0)):+.1f}%".rjust(8)
+        
+        # Daily P&L (today's change)
+        daily_pnl_amount = f"${float(row.get('Daily_PnL_Amount', 0)):+.2f}".rjust(9)
+        daily_pnl_percent = f"{float(row.get('Daily_PnL_Percent', 0)):+.1f}%".rjust(8)
+        
         weight = f"{float(row.get('Weight_Percent', 0)):.1f}%".rjust(9)
         
-        lines.append(f"{ticker} {shares} {buy_price} {current} {pnl_amount} {pnl_percent} {weight}")
+        lines.append(f"{ticker} {shares} {buy_price} {current} {total_pnl_amount} {total_pnl_percent} {daily_pnl_amount} {daily_pnl_percent} {weight}")
     
     return "\n".join(lines)
 
@@ -118,7 +146,7 @@ def calculate_portfolio_risk_metrics(enhanced_df, total_portfolio_value, cash_ba
     
     # Portfolio volatility (simplified - average of individual position volatilities)
     # This is a basic approximation - in practice you'd calculate portfolio volatility properly
-    portfolio_volatility = enhanced_df['PnL_Percent'].std() if len(enhanced_df) > 1 else 0
+    portfolio_volatility = enhanced_df['Total_PnL_Percent'].std() if len(enhanced_df) > 1 else 0
     
     return {
         'concentration_risk': max_weight,
@@ -201,13 +229,42 @@ def show_complete_prompt():
         
         # Portfolio summary
         if not enhanced_df.empty:
-            total_pnl = enhanced_df['PnL_Amount'].sum()
+            total_pnl = enhanced_df['Total_PnL_Amount'].sum()
+            daily_pnl = enhanced_df['Daily_PnL_Amount'].sum()
             total_equity = total_portfolio_value + cash
+            
+            # Calculate performance metrics
+            total_pnl_percent = (total_pnl / (total_portfolio_value - total_pnl) * 100) if (total_portfolio_value - total_pnl) > 0 else 0
+            daily_pnl_percent = (daily_pnl / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+            
             print(f"[ Portfolio Summary ]")
             print(f"Total Portfolio Value: ${total_portfolio_value:,.2f}")
-            print(f"Total P&L: ${total_pnl:+,.2f}")
+            print(f"Total P&L (since purchase): ${total_pnl:+,.2f} ({total_pnl_percent:+.1f}%)")
+            print(f"Daily P&L (today's change): ${daily_pnl:+,.2f} ({daily_pnl_percent:+.1f}%)")
             print(f"Total Equity: ${total_equity:,.2f}")
             print()
+            
+            # Performance context
+            if daily_pnl > 0:
+                print(f"[ Daily Performance ]")
+                print(f"📈 Portfolio gained ${daily_pnl:,.2f} today ({daily_pnl_percent:+.1f}%)")
+            elif daily_pnl < 0:
+                print(f"[ Daily Performance ]")
+                print(f"📉 Portfolio lost ${abs(daily_pnl):,.2f} today ({daily_pnl_percent:+.1f}%)")
+            else:
+                print(f"[ Daily Performance ]")
+                print(f"➡️ Portfolio unchanged today (${daily_pnl:+,.2f})")
+            print()
+            
+            # Top performers analysis
+            if len(enhanced_df) > 1:
+                best_performer = enhanced_df.loc[enhanced_df['Total_PnL_Percent'].idxmax()]
+                worst_performer = enhanced_df.loc[enhanced_df['Total_PnL_Percent'].idxmin()]
+                
+                print(f"[ Top Performers ]")
+                print(f"🏆 Best: {best_performer['ticker']} ({best_performer['Total_PnL_Percent']:+.1f}%)")
+                print(f"📉 Worst: {worst_performer['ticker']} ({worst_performer['Total_PnL_Percent']:+.1f}%)")
+                print()
         
     except Exception as e:
         print(f"[ Portfolio Snapshot ]")

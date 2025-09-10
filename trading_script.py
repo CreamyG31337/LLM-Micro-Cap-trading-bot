@@ -2479,7 +2479,8 @@ def load_latest_portfolio_state(
     latest_tickers.rename(
         columns={
             "Cost Basis": "cost_basis",
-            "Average Price": "buy_price",
+            "Average Price": "buy_price",  # Primary column name for clarity
+            "Buy Price": "buy_price",      # Fallback for older files
             "Shares": "shares",
             "Ticker": "ticker",
             "Stop Loss": "stop_loss",

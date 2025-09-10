@@ -223,3 +223,6 @@ test_data/backups/
 !my trading/README.md
 !test_data/README.md
 Results.png
+
+# Runtime files - should not be tracked
+.script_timestamp

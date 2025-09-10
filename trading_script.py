@@ -380,7 +380,7 @@ def print_money(amount: float, currency: str = "", emoji: str = "💰") -> str:
         return f"{color}{emoji} {formatted}{Style.RESET_ALL}"
 
 def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
-    """Create a beautiful portfolio table display with current prices and P&L."""
+    """Create a beautiful portfolio table display with current prices, P&L, and position weights."""
     if portfolio_df.empty:
         print_info("Portfolio is currently empty")
         return
@@ -449,13 +449,48 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         table.add_column("📈 Shares", justify="right", style="green", width=10)  # Ensure shares fit
         table.add_column("💵 Buy Price", justify="right", style="blue", width=10)  # Ensure price fits
         table.add_column("💰 Current", justify="right", style="yellow", width=10)  # Ensure price fits
-        table.add_column("📊 Total P&L", justify="right", style="magenta", width=10)  # Ensure P&L fits
+        table.add_column("📊 Total P&L", justify="right", style="magenta", width=12)  # Wider for P&L display
         table.add_column("📈 Daily P&L", justify="right", style="cyan", width=10)  # Ensure P&L fits
+        table.add_column("📊 5-Day P&L", justify="right", style="bright_magenta", width=10)  # 5-day performance
+        table.add_column("🍕 Weight", justify="right", style="bright_blue", width=8)  # Position weight as % of portfolio
         table.add_column("🛑 Stop Loss", justify="right", style="red", width=10)  # Ensure price fits
         table.add_column("💵 Cost Basis", justify="right", style="yellow", width=10)  # Ensure price fits
         
+        # First pass: Calculate total portfolio value for position weights
+        total_portfolio_value = 0.0
+        position_data = []
+        
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
+            shares = float(row.get('shares', 0))
+            buy_price = float(row.get('buy_price', 0))
+            
+            # Fetch current price
+            fetch = download_price_data(ticker, start=s_expanded, end=e, auto_adjust=False, progress=False)
+            current_price_val = 0.0
+            
+            if not fetch.df.empty and "Close" in fetch.df.columns:
+                current_price_val = float(fetch.df['Close'].iloc[-1].item())
+            
+            # Calculate position value
+            position_value = current_price_val * shares
+            total_portfolio_value += position_value
+            
+            # Store position data for second pass
+            position_data.append({
+                'ticker': ticker,
+                'shares': shares,
+                'buy_price': buy_price,
+                'current_price_val': current_price_val,
+                'position_value': position_value,
+                'fetch': fetch,
+                'stop_loss': float(row.get('stop_loss', 0)),
+                'cost_basis': float(row.get('cost_basis', 0))
+            })
+        
+        # Second pass: Create table rows with position weights
+        for pos_data in position_data:
+            ticker = pos_data['ticker']
             company_name = get_company_name(ticker)
             # Truncate long company names for display using dynamic width
             display_name = company_name[:company_max_width-3] + "..." if len(company_name) > company_max_width else company_name
@@ -473,50 +508,66 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
                         except Exception:
                             open_date = "N/A"
             
-            # Fetch current price and previous day's price
-            # Use expanded date range to ensure we have enough data for daily P&L calculation
-            fetch = download_price_data(ticker, start=s_expanded, end=e, auto_adjust=False, progress=False)
-            current_price = ""
+            # Format current price
+            current_price_val = pos_data['current_price_val']
+            current_price = f"${current_price_val:.2f}" if current_price_val > 0 else "N/A"
+            
+            # Calculate P&L metrics
+            buy_price = pos_data['buy_price']
+            shares = pos_data['shares']
             total_pnl = ""
             daily_pnl = ""
+            five_day_pnl = ""
+            position_weight = ""
             
-            if not fetch.df.empty and "Close" in fetch.df.columns:
-                current_price_val = float(fetch.df['Close'].iloc[-1].item())
-                current_price = f"${current_price_val:.2f}"
-                buy_price = float(row.get('buy_price', 0))
-                shares = float(row.get('shares', 0))
+            if current_price_val > 0 and buy_price > 0:
+                # Calculate total P&L since position opened
+                total_pnl_pct = ((current_price_val - buy_price) / buy_price) * 100
+                total_pnl_amount = (current_price_val - buy_price) * shares
+                total_pnl = f"{total_pnl_pct:+.1f}% (${total_pnl_amount:+.2f})"
                 
-                if buy_price > 0:
-                    # Calculate total P&L since position opened
-                    total_pnl_pct = ((current_price_val - buy_price) / buy_price) * 100
-                    total_pnl = f"{total_pnl_pct:+.1f}%"
-                    
-                    # Calculate daily P&L (today vs yesterday)
-                    if len(fetch.df) > 1:
-                        prev_price = float(fetch.df['Close'].iloc[-2].item())
-                        daily_pnl_pct = ((current_price_val - prev_price) / prev_price) * 100
-                        daily_pnl = f"{daily_pnl_pct:+.1f}%"
-                    else:
-                        daily_pnl = "N/A"
+                # Calculate daily P&L (today vs yesterday)
+                fetch = pos_data['fetch']
+                if len(fetch.df) > 1:
+                    prev_price = float(fetch.df['Close'].iloc[-2].item())
+                    daily_pnl_pct = ((current_price_val - prev_price) / prev_price) * 100
+                    daily_pnl = f"{daily_pnl_pct:+.1f}%"
                 else:
-                    total_pnl = "N/A"
                     daily_pnl = "N/A"
+                
+                # Calculate 5-day P&L (today vs 5 days ago)
+                if len(fetch.df) >= 5:
+                    five_days_ago_price = float(fetch.df['Close'].iloc[-5].item())
+                    five_day_pnl_pct = ((current_price_val - five_days_ago_price) / five_days_ago_price) * 100
+                    five_day_pnl = f"{five_day_pnl_pct:+.1f}%"
+                else:
+                    five_day_pnl = "N/A"
+                
+                # Calculate position weight as % of total portfolio
+                if total_portfolio_value > 0:
+                    weight_pct = (pos_data['position_value'] / total_portfolio_value) * 100
+                    position_weight = f"{weight_pct:.1f}%"
+                else:
+                    position_weight = "N/A"
             else:
-                current_price = "N/A"
                 total_pnl = "N/A"
                 daily_pnl = "N/A"
+                five_day_pnl = "N/A"
+                position_weight = "N/A"
             
             table.add_row(
                 ticker,
                 display_name,
                 open_date,
-                f"{float(row.get('shares', 0)):.4f}",  # Show fractional shares with 4 decimal places
-                f"${float(row.get('buy_price', 0)):.2f}",
+                f"{shares:.4f}",  # Show fractional shares with 4 decimal places
+                f"${buy_price:.2f}",
                 current_price,
                 total_pnl,
                 daily_pnl,
-                f"${float(row.get('stop_loss', 0)):.2f}" if row.get('stop_loss', 0) > 0 else "None",
-                f"${float(row.get('cost_basis', 0)):.2f}"
+                five_day_pnl,
+                position_weight,
+                f"${pos_data['stop_loss']:.2f}" if pos_data['stop_loss'] > 0 else "None",
+                f"${pos_data['cost_basis']:.2f}"
             )
         
         console.print(table)
@@ -1160,6 +1211,80 @@ def _ensure_df(portfolio: pd.DataFrame | dict[str, list[object]] | list[dict[str
         return pd.DataFrame(portfolio)
     raise TypeError("portfolio must be a DataFrame, dict, or list[dict]")
 
+def _display_ownership_percentages(data_dir: str) -> None:
+    """Display ownership percentages by contributor"""
+    ownership = calculate_ownership_percentages(data_dir)
+    
+    if not ownership:
+        return
+    
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
+        ownership_table = Table(title="👥 Ownership Percentages", show_header=True, header_style="bold blue")
+        ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
+        ownership_table.add_column("Ownership %", justify="right", style="green")
+        
+        # Sort by ownership percentage (highest first)
+        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1], reverse=True)
+        
+        for contributor, percentage in sorted_ownership:
+            ownership_table.add_row(contributor, f"{percentage:.1f}%")
+        
+        console.print(ownership_table)
+    else:
+        print_info("Ownership Percentages:", "👥")
+        # Sort by ownership percentage (highest first)
+        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1], reverse=True)
+        
+        for contributor, percentage in sorted_ownership:
+            print(f"  {contributor}: {percentage:.1f}%")
+
+
+def _display_risk_metrics(portfolio_df: pd.DataFrame, total_value: float, cash: float) -> None:
+    """Display basic risk metrics for the portfolio"""
+    if portfolio_df.empty:
+        return
+    
+    # Calculate position weights
+    position_weights = []
+    for _, row in portfolio_df.iterrows():
+        shares = float(row.get('shares', 0))
+        buy_price = float(row.get('buy_price', 0))
+        # Use buy price as proxy for current value (in real implementation, you'd fetch current prices)
+        position_value = shares * buy_price
+        weight = (position_value / total_value * 100) if total_value > 0 else 0
+        position_weights.append(weight)
+    
+    # Risk metrics
+    max_weight = max(position_weights) if position_weights else 0
+    largest_position_idx = position_weights.index(max_weight) if position_weights else 0
+    largest_position = str(portfolio_df.iloc[largest_position_idx].get('ticker', 'N/A')) if not portfolio_df.empty else "N/A"
+    
+    total_equity = total_value + cash
+    cash_allocation = (cash / total_equity * 100) if total_equity > 0 else 100
+    
+    # Portfolio concentration analysis
+    concentration_risk = "Low" if max_weight < 30 else "Medium" if max_weight < 50 else "High"
+    
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
+        risk_table = Table(title="⚠️ Risk Metrics", show_header=True, header_style="bold red")
+        risk_table.add_column("Metric", style="cyan", no_wrap=True)
+        risk_table.add_column("Value", justify="right", style="yellow")
+        risk_table.add_column("Status", justify="center", style="green")
+        
+        risk_table.add_row("📊 Portfolio Concentration", f"{max_weight:.1f}%", f"[{concentration_risk.lower()}] {concentration_risk}[/{concentration_risk.lower()}]")
+        risk_table.add_row("🎯 Largest Position", largest_position, "")
+        risk_table.add_row("💰 Cash Allocation", f"{cash_allocation:.1f}%", "Good" if cash_allocation > 10 else "Low")
+        risk_table.add_row("📈 Total Positions", f"{len(portfolio_df)}", "Diversified" if len(portfolio_df) > 2 else "Concentrated")
+        
+        console.print(risk_table)
+    else:
+        print_info("Risk Metrics:", "⚠️")
+        print(f"  Portfolio Concentration: {max_weight:.1f}% ({concentration_risk})")
+        print(f"  Largest Position: {largest_position}")
+        print(f"  Cash Allocation: {cash_allocation:.1f}%")
+        print(f"  Total Positions: {len(portfolio_df)}")
+
+
 def process_portfolio(
     portfolio: pd.DataFrame | dict[str, list[object]] | list[dict[str, object]],
     cash: float,
@@ -1179,6 +1304,7 @@ def process_portfolio(
         print_header("Portfolio Management", "📊")
         
         while True:
+            # Display all information BEFORE the menu
             create_portfolio_table(portfolio_df)
             
             # Show cash balance - dual currency if in North American mode
@@ -1199,6 +1325,17 @@ def process_portfolio(
                     console.print(f"\n💰 [bold green]Cash Balance:[/bold green] ${cash:,.2f}")
                 else:
                     print(f"\n{Fore.GREEN}💰 Cash Balance: ${cash:,.2f}{Style.RESET_ALL}")
+            
+            # Calculate portfolio value for risk metrics and ownership
+            total_value = 0.0
+            for _, row in portfolio_df.iterrows():
+                shares = float(row.get('shares', 0))
+                buy_price = float(row.get('buy_price', 0))
+                total_value += shares * buy_price  # Use buy price as proxy for current value
+            
+            # Display risk metrics and ownership BEFORE menu
+            _display_risk_metrics(portfolio_df, total_value, cash)
+            _display_ownership_percentages(str(DATA_DIR))
             
             print_trade_menu()
             

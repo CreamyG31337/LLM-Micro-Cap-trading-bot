@@ -686,6 +686,8 @@ def print_trade_menu() -> None:
             "[cyan]'w'[/cyan] 💸 Log Withdrawal\n"
             "[cyan]'u'[/cyan] 🔄 Update Cash Balances\n"
             "[cyan]'sync'[/cyan] 🔗 Sync Fund Contributions\n"
+            "[cyan]'backup'[/cyan] 💾 Create Backup\n"
+            "[cyan]'restore'[/cyan] 🔄 Restore from Backup\n"
             "[cyan]Enter[/cyan] ➤  Continue to Portfolio Processing",
             border_style="green",
             width=62
@@ -699,6 +701,8 @@ def print_trade_menu() -> None:
         print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
         print(f"{Fore.CYAN}'u'{Style.RESET_ALL} 🔄 Update Cash Balances")
         print(f"{Fore.CYAN}'sync'{Style.RESET_ALL} 🔗 Sync Fund Contributions")
+        print(f"{Fore.CYAN}'backup'{Style.RESET_ALL} 💾 Create Backup")
+        print(f"{Fore.CYAN}'restore'{Style.RESET_ALL} 🔄 Restore from Backup")
         print(f"{Fore.CYAN}Enter{Style.RESET_ALL} ➤ Continue to Portfolio Processing")
 
 def _effective_now() -> datetime:
@@ -715,6 +719,131 @@ PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
 # Default benchmarks (fallback if market_config not available)
 DEFAULT_BENCHMARKS = ["SPY", "QQQ", "IWM", "^GSPTSE"]  # North American benchmarks
+
+# ------------------------------
+# Backup system for trading CSV files
+# ------------------------------
+
+def backup_trading_files(data_dir: Path = None) -> None:
+    """
+    Create timestamped backups of all trading CSV files before modifications.
+    
+    Args:
+        data_dir: Directory containing trading files. Defaults to DATA_DIR.
+    """
+    if data_dir is None:
+        data_dir = DATA_DIR
+    
+    backup_dir = data_dir / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    
+    # Get current timestamp for backup naming
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Files to backup
+    files_to_backup = [
+        "llm_trade_log.csv",
+        "llm_portfolio_update.csv", 
+        "cash_balances.json",
+        "fund_contributions.csv"
+    ]
+    
+    backed_up_files = []
+    for filename in files_to_backup:
+        source_file = data_dir / filename
+        if source_file.exists():
+            backup_file = backup_dir / f"{filename}.backup_{timestamp}"
+            try:
+                import shutil
+                shutil.copy2(source_file, backup_file)
+                backed_up_files.append(filename)
+            except Exception as e:
+                logger.warning(f"Failed to backup {filename}: {e}")
+    
+    if backed_up_files:
+        logger.info(f"✅ Backed up {len(backed_up_files)} files: {', '.join(backed_up_files)}")
+    else:
+        logger.info("ℹ️  No files found to backup")
+
+def restore_from_backup(data_dir: Path = None, backup_timestamp: str = None) -> bool:
+    """
+    Restore trading files from a specific backup.
+    
+    Args:
+        data_dir: Directory containing trading files. Defaults to DATA_DIR.
+        backup_timestamp: Specific backup timestamp to restore. If None, restores latest.
+        
+    Returns:
+        True if restore was successful, False otherwise.
+    """
+    if data_dir is None:
+        data_dir = DATA_DIR
+    
+    backup_dir = data_dir / "backups"
+    if not backup_dir.exists():
+        logger.error("No backup directory found")
+        return False
+    
+    # Find backup files
+    backup_files = list(backup_dir.glob("*.backup_*"))
+    if not backup_files:
+        logger.error("No backup files found")
+        return False
+    
+    if backup_timestamp is None:
+        # Use the latest backup
+        backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        latest_backup = backup_files[0]
+        backup_timestamp = latest_backup.name.split("backup_")[1]
+        logger.info(f"Using latest backup: {backup_timestamp}")
+    
+    # Restore files
+    restored_files = []
+    for backup_file in backup_files:
+        if backup_timestamp in backup_file.name:
+            original_name = backup_file.name.split(".backup_")[0]
+            target_file = data_dir / original_name
+            try:
+                import shutil
+                shutil.copy2(backup_file, target_file)
+                restored_files.append(original_name)
+            except Exception as e:
+                logger.error(f"Failed to restore {original_name}: {e}")
+                return False
+    
+    if restored_files:
+        logger.info(f"✅ Restored {len(restored_files)} files: {', '.join(restored_files)}")
+        return True
+    else:
+        logger.error("No files were restored")
+        return False
+
+def list_backups(data_dir: Path = None) -> List[str]:
+    """
+    List available backup timestamps.
+    
+    Args:
+        data_dir: Directory containing trading files. Defaults to DATA_DIR.
+        
+    Returns:
+        List of backup timestamps sorted by creation time (newest first).
+    """
+    if data_dir is None:
+        data_dir = DATA_DIR
+    
+    backup_dir = data_dir / "backups"
+    if not backup_dir.exists():
+        return []
+    
+    backup_files = list(backup_dir.glob("*.backup_*"))
+    timestamps = set()
+    for backup_file in backup_files:
+        timestamp = backup_file.name.split("backup_")[1]
+        timestamps.add(timestamp)
+    
+    # Sort by creation time (newest first)
+    timestamps = sorted(timestamps, key=lambda x: datetime.strptime(x, "%Y%m%d_%H%M%S"), reverse=True)
+    return timestamps
 
 # ------------------------------
 # Configuration helpers — benchmark tickers (tickers.json)
@@ -1487,6 +1616,9 @@ def process_portfolio(
                             df_log = pd.concat([df_log, pd.DataFrame([log])], ignore_index=True)
                     else:
                         df_log = pd.DataFrame([log])
+                    
+                    # Backup before saving trade log
+                    backup_trading_files()
                     df_log.to_csv(TRADE_LOG_CSV, index=False)
 
                     # Check cash availability BEFORE updating portfolio
@@ -1725,6 +1857,54 @@ def process_portfolio(
                             pass
                 continue
 
+            if action == "backup":
+                backup_trading_files()
+                continue
+
+            if action == "restore":
+                # List available backups
+                backups = list_backups()
+                if not backups:
+                    print_error("No backups found", "❌")
+                    continue
+                
+                print_info("Available backups:", "📋")
+                for i, timestamp in enumerate(backups[:10]):  # Show last 10
+                    print(f"  {i+1}. {timestamp}")
+                
+                choice = input("\nEnter backup number (or 'latest' for most recent): ").strip()
+                
+                if choice.lower() == 'latest' or choice == '1':
+                    timestamp = backups[0]
+                else:
+                    try:
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(backups):
+                            timestamp = backups[idx]
+                        else:
+                            print_error("Invalid backup number", "❌")
+                            continue
+                    except ValueError:
+                        print_error("Invalid input", "❌")
+                        continue
+                
+                confirm = input(f"Restore from backup {timestamp}? This will overwrite current files. (y/N): ")
+                if confirm.lower() == 'y':
+                    if restore_from_backup(backup_timestamp=timestamp):
+                        print_success(f"Successfully restored from backup {timestamp}", "✅")
+                        # Reload data after restore
+                        if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                            try:
+                                cash_balances = load_cash_balances(DATA_DIR)
+                                cash = cash_balances.total_cad_equivalent()
+                            except Exception:
+                                pass
+                    else:
+                        print_error("Failed to restore backup", "❌")
+                else:
+                    print_info("Restore cancelled", "ℹ️")
+                continue
+
             break  # proceed to pricing
 
     # ------- Daily pricing + stop-loss execution -------
@@ -1854,6 +2034,9 @@ def process_portfolio(
         existing = existing[existing["Date"] != str(today_iso)]
         print("Saving results to CSV...")
         df_out = pd.concat([existing, df_out], ignore_index=True)
+    
+    # Backup before saving portfolio updates
+    backup_trading_files()
     df_out.to_csv(PORTFOLIO_CSV, index=False)
 
     return portfolio_df, cash
@@ -1894,6 +2077,9 @@ def log_sell(
             df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
+    
+    # Backup before saving trade log
+    backup_trading_files()
     df.to_csv(TRADE_LOG_CSV, index=False)
     return portfolio
 
@@ -1997,6 +2183,9 @@ def log_manual_buy(
             df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
+    
+    # Backup before saving trade log
+    backup_trading_files()
     df.to_csv(TRADE_LOG_CSV, index=False)
 
     rows = llm_portfolio.loc[llm_portfolio["ticker"].str.upper() == ticker.upper()]
@@ -2137,6 +2326,9 @@ If this is a mistake, enter 1. """
             df = pd.concat([df, pd.DataFrame([log])], ignore_index=True)
     else:
         df = pd.DataFrame([log])
+    
+    # Backup before saving trade log
+    backup_trading_files()
     df.to_csv(TRADE_LOG_CSV, index=False)
 
 

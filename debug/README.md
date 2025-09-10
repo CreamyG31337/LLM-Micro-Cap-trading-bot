@@ -44,22 +44,30 @@ Simple debug script specifically for VEE.TO price data.
 ### 3. `gmin_debug.py`
 Quick debug script for GMIN.TO price data.
 
-### 4. `recalculate_avg_prices.py`
-Recalculates average prices in the portfolio CSV based on the trade log data.
+### 4. `recalculate_portfolio_data.py`
+Comprehensive script that recalculates ALL portfolio data (shares, prices, cost basis) based on the trade log data.
 
 **Usage:**
 ```bash
-# Recalculate prices for default data directory
-python debug/recalculate_avg_prices.py
+# Recalculate all data for default data directory
+python debug/recalculate_portfolio_data.py
 
-# Recalculate prices for specific data directory
-python debug/recalculate_avg_prices.py test_data
+# Recalculate all data for specific data directory
+python debug/recalculate_portfolio_data.py test_data
 ```
 
 **When to use:**
 - After manually editing the trade log
-- When portfolio CSV has stale average prices
-- To verify price calculations are correct
+- When portfolio CSV has stale data (shares, prices, or cost basis)
+- To verify all calculations are correct
+- When you notice share count discrepancies
+- To sync portfolio CSV with trade log after manual edits
+
+**What it fixes:**
+- Share count discrepancies (e.g., 3.0 vs 3.1406 shares)
+- Average price calculations
+- Cost basis calculations
+- Any data inconsistencies between trade log and portfolio
 
 ### 5. `activate_venv.bat`
 Convenience script to activate the virtual environment.
@@ -78,6 +86,33 @@ Convenience script to activate the virtual environment.
 - Run the main trading script to fetch current data
 - Use debug scripts to verify data accuracy
 - Manually correct historical data if needed
+
+## ⚠️ Known Issues Requiring Manual Monitoring
+
+### Corporate Actions (Stock Splits & Dividend Reinvestments)
+**Issue**: Wealthsimple automatically handles stock splits and dividend reinvestments, but these events are not captured in the trade log, causing discrepancies between the bot's records and actual holdings.
+
+**Examples**:
+- **Stock Split**: CRWD 2:1 split → 0.7261 shares becomes 1.4522 shares
+- **Dividend Reinvestment**: CRWD pays $0.50 dividend → automatically reinvested as additional fractional shares
+- **Mixed Holdings**: Personal + Bot holdings in same TFSA account make tracking complex
+
+**Current Workaround**:
+- Monitor Wealthsimple emails for corporate action notifications
+- Manually adjust portfolio CSV when discrepancies are detected
+- Use `recalculate_portfolio_data.py` to sync data after manual corrections
+
+**Future Solutions** (TODO):
+- Create manual correction tool for corporate actions
+- Integrate with Wealthsimple data export
+- Implement corporate actions database
+- Add automatic detection and adjustment
+
+**Monitoring Required**:
+- Check share counts against Wealthsimple holdings regularly
+- Watch for unexpected changes in total share counts
+- Verify cost basis calculations after corporate actions
+- Keep trade log and portfolio CSV synchronized
 
 ## Best Practices
 

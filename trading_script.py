@@ -837,16 +837,7 @@ def detect_currency_context(ticker: str, buy_price: float = None) -> str:
     Detect if a ticker is likely Canadian based on context clues.
     Returns 'CAD', 'USD', or 'UNKNOWN'
     """
-    # If we have a buy price, use it as a clue
-    if buy_price is not None:
-        # Canadian small-caps typically trade in the $1-50 range
-        # US small-caps can be much higher
-        if 1 <= buy_price <= 50:
-            return 'CAD'  # More likely Canadian
-        elif buy_price > 50:
-            return 'USD'  # More likely US
-    
-    # Check if ticker has Canadian characteristics
+    # Check if ticker has Canadian characteristics in the name
     canadian_patterns = [
         # Common Canadian company name patterns
         'CAN', 'CANADA', 'NORTH', 'NORTHERN', 'WESTERN', 'EASTERN',
@@ -858,6 +849,7 @@ def detect_currency_context(ticker: str, buy_price: float = None) -> str:
         if pattern in ticker_upper:
             return 'CAD'
     
+    # Don't use price as a clue - it's unreliable
     return 'UNKNOWN'
 
 def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
@@ -878,81 +870,136 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
         TICKER_CORRECTION_CACHE[ticker] = ticker
         return ticker
     
-    # Use currency context to guide detection
-    currency_hint = detect_currency_context(ticker, buy_price)
-    
     try:
         import yfinance as yf
-        
-        # If currency hint suggests CAD, test Canadian variants first
-        if currency_hint == 'CAD':
-            canadian_variants = [
-                f"{ticker}.TO",    # TSX
-                f"{ticker}.V",     # TSX Venture
-            ]
-            
-            for variant in canadian_variants:
-                try:
-                    canadian_stock = yf.Ticker(variant)
-                    canadian_info = canadian_stock.info
-                    
-                    # If we get valid info and it's a Canadian exchange
-                    if (canadian_info and 
-                        canadian_info.get('exchange') and 
-                        'TSX' in canadian_info.get('exchange', '')):
-                        TICKER_CORRECTION_CACHE[ticker] = variant
-                        logger.info(f"Auto-corrected ticker {ticker} to {variant} (CAD context)")
-                        return variant
-                except:
-                    continue
         
         # Test if the ticker exists as-is (likely US stock)
         us_stock = yf.Ticker(ticker)
         us_info = us_stock.info
+        us_exists = us_info and us_info.get('exchange')
         
-        # If we get valid info and it's clearly a US exchange, it's US
-        if (us_info and 
-            us_info.get('exchange') and 
-            any(exchange in us_info.get('exchange', '') for exchange in ['NASDAQ', 'NYSE', 'AMEX', 'OTC'])):
-            TICKER_CORRECTION_CACHE[ticker] = ticker
-            return ticker
+        # Test Canadian variants to see if they also exist
+        canadian_variants = [f"{ticker}.TO", f"{ticker}.V", f"{ticker}.CN"]
+        canadian_exists = False
+        canadian_variant_found = None
         
-        # If currency hint suggests USD or we haven't found Canadian variants, test Canadian anyway
-        if currency_hint != 'CAD':
-            canadian_variants = [
-                f"{ticker}.TO",    # TSX
-                f"{ticker}.V",     # TSX Venture
-            ]
+        for variant in canadian_variants:
+            try:
+                canadian_stock = yf.Ticker(variant)
+                canadian_info = canadian_stock.info
+                if (canadian_info and 
+                    canadian_info.get('exchange') and 
+                    any(exchange in canadian_info.get('exchange', '') for exchange in ['TSX', 'VAN', 'CNQ', 'TOR'])):
+                    canadian_exists = True
+                    canadian_variant_found = variant
+                    break
+            except:
+                continue
+        
+        # If both US and Canadian versions exist, ask user to choose
+        if us_exists and canadian_exists:
+            print(f"\n🔍 Found both US and Canadian versions of {ticker}:")
+            print(f"US: {us_info.get('longName', 'Unknown')} ({us_info.get('exchange', 'Unknown exchange')})")
+            print(f"Canadian ({canadian_variant_found}): {canadian_stock.info.get('longName', 'Unknown')} ({canadian_stock.info.get('exchange', 'Unknown exchange')})")
             
-            for variant in canadian_variants:
+            print("\nWhich version do you want to trade?")
+            print("1. US Stock")
+            print("2. Canadian Stock")
+            
+            while True:
                 try:
-                    canadian_stock = yf.Ticker(variant)
-                    canadian_info = canadian_stock.info
-                    
-                    # If we get valid info and it's a Canadian exchange
-                    if (canadian_info and 
-                        canadian_info.get('exchange') and 
-                        'TSX' in canadian_info.get('exchange', '')):
-                        TICKER_CORRECTION_CACHE[ticker] = variant
-                        logger.info(f"Auto-corrected ticker {ticker} to {variant}")
-                        return variant
-                except:
-                    continue
+                    choice = input("Enter choice (1-2): ").strip()
+                    if choice == "1":
+                        TICKER_CORRECTION_CACHE[ticker] = ticker
+                        return ticker
+                    elif choice == "2":
+                        TICKER_CORRECTION_CACHE[ticker] = canadian_variant_found
+                        return canadian_variant_found
+                    else:
+                        print("Please enter 1 or 2")
+                except KeyboardInterrupt:
+                    print("\nCancelled. Using US version.")
+                    TICKER_CORRECTION_CACHE[ticker] = ticker
+                    return ticker
         
-        # If we found valid US info earlier but no Canadian variants, it's US
-        if us_info and us_info.get('exchange'):
+        # If only Canadian version exists, use it
+        elif canadian_exists:
+            TICKER_CORRECTION_CACHE[ticker] = canadian_variant_found
+            logger.info(f"Auto-corrected ticker {ticker} to {canadian_variant_found} (only Canadian version found)")
+            return canadian_variant_found
+        
+        # If only US version exists, use it
+        elif us_exists:
             TICKER_CORRECTION_CACHE[ticker] = ticker
             return ticker
         
-        # If no clear exchange info, default to original ticker
-        TICKER_CORRECTION_CACHE[ticker] = ticker
-        return ticker
+        # If no clear exchange info, ask the user
+        print(f"\n🔍 Could not auto-detect exchange for {ticker}")
+        print("Please specify the exchange:")
+        print("1. US Stock (NYSE/NASDAQ)")
+        print("2. Canadian Stock - TSX (.TO)")
+        print("3. Canadian Stock - TSX Venture (.V)")
+        print("4. Canadian Stock - CSE (.CN)")
+        
+        while True:
+            try:
+                choice = input("Enter choice (1-4): ").strip()
+                if choice == "1":
+                    TICKER_CORRECTION_CACHE[ticker] = ticker
+                    return ticker
+                elif choice == "2":
+                    corrected = f"{ticker}.TO"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                elif choice == "3":
+                    corrected = f"{ticker}.V"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                elif choice == "4":
+                    corrected = f"{ticker}.CN"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                else:
+                    print("Please enter 1, 2, 3, or 4")
+            except KeyboardInterrupt:
+                print("\nCancelled. Using original ticker.")
+                TICKER_CORRECTION_CACHE[ticker] = ticker
+                return ticker
         
     except Exception as e:
         logger.warning(f"Could not detect ticker type for {ticker}: {e}")
-        # Default to original ticker
-        TICKER_CORRECTION_CACHE[ticker] = ticker
-        return ticker
+        # Ask user when exception occurs
+        print(f"\n🔍 Error detecting exchange for {ticker}: {e}")
+        print("Please specify the exchange:")
+        print("1. US Stock (NYSE/NASDAQ)")
+        print("2. Canadian Stock - TSX (.TO)")
+        print("3. Canadian Stock - TSX Venture (.V)")
+        print("4. Canadian Stock - CSE (.CN)")
+        
+        while True:
+            try:
+                choice = input("Enter choice (1-4): ").strip()
+                if choice == "1":
+                    TICKER_CORRECTION_CACHE[ticker] = ticker
+                    return ticker
+                elif choice == "2":
+                    corrected = f"{ticker}.TO"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                elif choice == "3":
+                    corrected = f"{ticker}.V"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                elif choice == "4":
+                    corrected = f"{ticker}.CN"
+                    TICKER_CORRECTION_CACHE[ticker] = corrected
+                    return corrected
+                else:
+                    print("Please enter 1, 2, 3, or 4")
+            except KeyboardInterrupt:
+                print("\nCancelled. Using original ticker.")
+                TICKER_CORRECTION_CACHE[ticker] = ticker
+                return ticker
 
 def get_company_name(ticker: str) -> str:
     """
@@ -2602,33 +2649,150 @@ def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
 
 
 def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
-    """Calculate current ownership percentages for each contributor."""
+    """Calculate current ownership percentages for each contributor based on equity shares."""
     df = load_fund_contributions(data_dir)
     
     if len(df) == 0:
         return {}
     
-    # Sum contributions by contributor
-    contributions = defaultdict(float)
-    for _, row in df.iterrows():
-        amount = row["Amount"]
-        if row["Type"] == "WITHDRAWAL":
-            amount = -amount  # Withdrawals are negative
-        contributions[row["Contributor"]] += amount
+    # Calculate current total fund equity (portfolio + cash)
+    current_equity = get_current_fund_equity(data_dir)
     
-    # Calculate total fund value using dynamic calculation
-    total_contributions = calculate_fund_contributions_total(data_dir)
-    
-    if total_contributions <= 0:
+    if current_equity <= 0:
         return {}
     
-    # Calculate percentages
+    # Calculate shares owned by each contributor
+    contributor_shares = defaultdict(float)
+    total_shares_outstanding = 0.0
+    
+    for _, row in df.iterrows():
+        amount = row["Amount"]
+        contributor = row["Contributor"]
+        
+        if row["Type"] == "WITHDRAWAL":
+            amount = -amount  # Withdrawals are negative
+        
+        # Calculate fund value per share at time of transaction
+        # For now, use a simplified approach - in production you'd track this historically
+        fund_value_per_share = get_fund_value_per_share_at_time(data_dir, row["Timestamp"])
+        
+        if fund_value_per_share > 0:
+            shares_purchased = amount / fund_value_per_share
+            contributor_shares[contributor] += shares_purchased
+            total_shares_outstanding += shares_purchased
+    
+    if total_shares_outstanding <= 0:
+        return {}
+    
+    # Calculate ownership percentages based on shares
     percentages = {}
-    for contributor, amount in contributions.items():
-        if amount > 0:  # Only show contributors with positive balance
-            percentages[contributor] = (amount / total_contributions) * 100
+    for contributor, shares in contributor_shares.items():
+        if shares > 0:  # Only show contributors with positive shares
+            percentages[contributor] = (shares / total_shares_outstanding) * 100
     
     return percentages
+
+
+def get_current_fund_equity(data_dir: str) -> float:
+    """Get current total fund equity (portfolio value + cash balance)."""
+    try:
+        # Load current portfolio
+        portfolio_csv = Path(data_dir) / "llm_portfolio_update.csv"
+        if not portfolio_csv.exists():
+            return 0.0
+        
+        df = pd.read_csv(portfolio_csv)
+        if df.empty:
+            return 0.0
+        
+        # Get the most recent date's data
+        df['Date'] = pd.to_datetime(df['Date'])
+        latest_date = df['Date'].max()
+        latest_data = df[df['Date'] == latest_date]
+        
+        # Calculate total portfolio value
+        portfolio_value = 0.0
+        cash_balance = 0.0
+        
+        for _, row in latest_data.iterrows():
+            if pd.notna(row.get('Total Value')):
+                portfolio_value += float(row['Total Value'])
+            if pd.notna(row.get('Cash Balance')) and row.get('Cash Balance') != '':
+                cash_balance = float(row['Cash Balance'])  # Use the last cash balance
+        
+        # If no cash balance in portfolio data, try to get it from cash balances file
+        if cash_balance == 0.0:
+            try:
+                cash_file = Path(data_dir) / "cash_balances.json"
+                if cash_file.exists():
+                    import json
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cash_balance = float(cash_data.get('CAD', 0.0))
+            except Exception:
+                pass
+        
+        # If still no cash balance, use fund contributions as a fallback
+        if cash_balance == 0.0:
+            total_contributions = calculate_fund_contributions_total(data_dir)
+            # Assume some portion is in cash (simplified)
+            cash_balance = max(0.0, total_contributions - portfolio_value)
+        
+        return portfolio_value + cash_balance
+    
+    except Exception as e:
+        print(f"Error calculating current fund equity: {e}")
+        return 0.0
+
+
+def get_fund_value_per_share_at_time(data_dir: str, timestamp: str) -> float:
+    """Get fund value per share at a specific timestamp."""
+    try:
+        # For now, implement a simplified approach that assumes $1 per share initially
+        # In a production system, you'd track historical fund values and share counts
+        
+        # Load fund contributions to get total contributions up to that point
+        df = load_fund_contributions(data_dir)
+        if df.empty:
+            return 1.0  # Default to $1 per share if no data
+        
+        # Convert timestamp to datetime for comparison
+        target_time = pd.to_datetime(timestamp)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        
+        # Get contributions up to the target time
+        historical_contributions = df[df['Timestamp'] <= target_time]
+        
+        if historical_contributions.empty:
+            return 1.0  # Default to $1 per share
+        
+        # Calculate total contributions up to that point
+        total_contributions = 0.0
+        for _, row in historical_contributions.iterrows():
+            amount = row["Amount"]
+            if row["Type"] == "WITHDRAWAL":
+                amount = -amount
+            total_contributions += amount
+        
+        if total_contributions <= 0:
+            return 1.0
+        
+        # Simplified approach: assume fund starts at $1 per share
+        # and grows proportionally with total contributions
+        # This is a placeholder - in production you'd track actual fund performance
+        
+        # For now, use a simple linear growth model
+        # Fund value per share = 1.0 + (contribution_sequence * growth_factor)
+        contribution_sequence = len(historical_contributions)
+        growth_factor = 0.1  # 10% growth per contribution (simplified)
+        
+        fund_value_per_share = 1.0 + (contribution_sequence * growth_factor)
+        
+        return max(fund_value_per_share, 0.01)  # Minimum $0.01 per share
+    
+    except Exception as e:
+        print(f"Error calculating fund value per share: {e}")
+        return 1.0
 
 
 def calculate_liquidation_amount(data_dir: str, contributor: str, withdrawal_amount: float, current_equity: float) -> Dict[str, float]:

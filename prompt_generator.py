@@ -35,7 +35,6 @@ from trading_script import (
     DATA_DIR, PORTFOLIO_CSV, TRADE_LOG_CSV,
     load_latest_portfolio_state, load_benchmarks, download_price_data,
     last_trading_date, check_weekend, set_data_dir,
-    load_fund_contributions, calculate_ownership_percentages,
     get_company_name, trading_day_window
 )
 
@@ -66,6 +65,13 @@ try:
     _HAS_DUAL_CURRENCY = True
 except ImportError:
     _HAS_DUAL_CURRENCY = False
+
+# Import experiment configuration
+try:
+    from experiment_config import get_experiment_timeline
+    _HAS_EXPERIMENT_CONFIG = True
+except ImportError:
+    _HAS_EXPERIMENT_CONFIG = False
 
 
 class PromptGenerator:
@@ -280,9 +286,17 @@ class PromptGenerator:
         # Get current date
         today = check_weekend()
         
+        # Calculate experiment timeline
+        if _HAS_EXPERIMENT_CONFIG:
+            week_num, day_num = get_experiment_timeline()
+            timeline_text = f"Week {week_num} Day {day_num}"
+        else:
+            # Fallback to simple date if experiment config not available
+            timeline_text = today
+        
         # Generate the prompt with optimized formatting for both humans and LLMs
         # Design: Clean headers, colored data, minimal separators to save context space
-        print(f"\n📋 Daily Results — {today}")
+        print(f"\n📋 Daily Results — {today} ({timeline_text})")
         print("Copy everything below and paste into your LLM:")
         
         # Market data table with colors for human readability
@@ -309,14 +323,6 @@ class PromptGenerator:
         print(f"{Fore.GREEN}Latest LLM Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
         print(f"{Fore.BLUE}Maximum Drawdown:{Style.RESET_ALL} 0.00% (new portfolio)")
             
-        # Fund ownership if available - shows contribution breakdown
-        contributions_df = load_fund_contributions(str(self.data_dir))
-        if not contributions_df.empty:
-            ownership = calculate_ownership_percentages(str(self.data_dir))
-            if ownership:
-                print(f"\n{Fore.CYAN}[ Fund Ownership ]{Style.RESET_ALL}")
-                for contributor, percentage in ownership.items():
-                    print(f"{Fore.YELLOW}{contributor}:{Style.RESET_ALL} {Fore.BLUE}{percentage:.1f}%{Style.RESET_ALL}")
                     
         # Instructions section - the core trading guidance
         print(f"\n{Fore.CYAN}[ Your Instructions ]{Style.RESET_ALL}")
@@ -347,13 +353,16 @@ class PromptGenerator:
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
         
-        # Calculate week and day (simplified - could be enhanced)
-        today = datetime.now()
-        # This is a simplified calculation - you might want to track actual experiment weeks
-        start_date = datetime(2024, 6, 30)  # Approximate start of experiment
-        days_since_start = (today - start_date).days
-        week_num = max(1, days_since_start // 7)
-        day_num = days_since_start % 7 + 1
+        # Calculate experiment timeline using proper configuration
+        if _HAS_EXPERIMENT_CONFIG:
+            week_num, day_num = get_experiment_timeline()
+        else:
+            # Fallback calculation if experiment config not available
+            today = datetime.now()
+            start_date = datetime(2024, 6, 30)  # Fallback start date
+            days_since_start = (today - start_date).days
+            week_num = max(1, days_since_start // 7)
+            day_num = days_since_start % 7 + 1
         
         # Generate the deep research prompt with same color scheme as daily prompt
         # Weekly prompts need more comprehensive analysis, so colors help organize complex data

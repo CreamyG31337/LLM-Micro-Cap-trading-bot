@@ -324,7 +324,7 @@ def check_table_display_issues() -> None:
     if terminal_width < 120:
         print_warning("⚠️  Terminal width may be too narrow for optimal table display")
         print_warning(f"   Current width: {terminal_width} characters")
-        print_warning("   Recommended: 120+ characters for best experience")
+        print_warning("   Recommended: 130+ characters for best experience")
         print_warning("")
         
         # Provide environment-specific suggestions

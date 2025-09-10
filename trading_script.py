@@ -104,6 +104,24 @@ def get_market_open_time(date=None):
     market_open_time = datetime.combine(date, datetime.min.time().replace(hour=6, minute=30), tz)
     return market_open_time
 
+def is_market_open():
+    """
+    Check if the market is currently open.
+    Returns True if market is open, False if closed.
+    """
+    tz = get_trading_timezone()
+    now = datetime.now(tz)
+    
+    # Check if it's a weekday (Monday = 0, Friday = 4)
+    if now.weekday() >= 5:  # Saturday or Sunday
+        return False
+    
+    # Market hours: 6:30 AM to 1:00 PM PST (9:30 AM to 4:00 PM EST)
+    market_open = now.replace(hour=6, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=13, minute=0, second=0, microsecond=0)
+    
+    return market_open <= now <= market_close
+
 def format_timestamp_for_csv(dt=None):
     """Format a datetime for CSV storage with timezone suffix."""
     if dt is None:
@@ -158,7 +176,7 @@ def check_source_modification():
             with open(timestamp_file, 'r') as f:
                 stored_mtime = float(f.read().strip())
             
-            # If current modification time is newer, abort execution
+            # If current modification time is newer than stored execution time, abort execution
             if current_mtime > stored_mtime:
                 print("🚨 SOURCE CODE MODIFICATION DETECTED!")
                 print(f"Script was modified at: {datetime.fromtimestamp(current_mtime)}")
@@ -168,11 +186,8 @@ def check_source_modification():
                 print("\nTo bypass this check (not recommended), delete the file:")
                 print(f"  {timestamp_file}")
                 exit(1)
-        else:
-            # First run - create timestamp file
-            with open(timestamp_file, 'w') as f:
-                f.write(str(current_mtime))
-            print("✅ Source modification check initialized")
+        # If no timestamp file exists, this is the first run - don't create timestamp yet
+        # The timestamp will be created after successful execution
     
     except Exception as e:
         print(f"⚠️  Warning: Could not check source modification: {e}")
@@ -184,9 +199,10 @@ def update_source_timestamp():
     timestamp_file = script_path.parent / ".script_timestamp"
     
     try:
-        current_mtime = script_path.stat().st_mtime
+        # Store the current execution time, not the script modification time
+        current_execution_time = datetime.now().timestamp()
         with open(timestamp_file, 'w') as f:
-            f.write(str(current_mtime))
+            f.write(str(current_execution_time))
     except Exception as e:
         print(f"⚠️  Warning: Could not update source timestamp: {e}")
 
@@ -733,7 +749,7 @@ def print_trade_menu() -> None:
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         panel = Panel(
             "[bold green]📈 Trading Menu[/bold green]\n\n"
-            "[cyan]'b'[/cyan] 🛒 Buy (Market-on-Open or Limit)\n"
+            "[cyan]'b'[/cyan] 🛒 Buy (MOO, Limit, or Log Executed Trade)\n"
             "[cyan]'s'[/cyan] 📤 Sell (Limit Order)\n"
             "[cyan]'c'[/cyan] 💵 Log Contribution\n"
             "[cyan]'w'[/cyan] 💸 Log Withdrawal\n"
@@ -748,7 +764,7 @@ def print_trade_menu() -> None:
         console.print(panel)
     else:
         print(f"\n{Fore.GREEN}📈 Trading Menu:{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (Market-on-Open or Limit)")
+        print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (MOO, Limit, or Log Executed Trade)")
         print(f"{Fore.CYAN}'s'{Style.RESET_ALL} 📤 Sell (Limit Order)")
         print(f"{Fore.CYAN}'c'{Style.RESET_ALL} 💵 Log Contribution")
         print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
@@ -1597,10 +1613,10 @@ def process_portfolio(
                 
                 if _HAS_RICH and console and not _FORCE_FALLBACK:
                     ticker = console.input("🎯 [bold cyan]Enter ticker symbol:[/bold cyan] ").strip().upper()
-                    order_type = console.input("📋 [bold cyan]Order type? 'm' = market-on-open, 'l' = limit:[/bold cyan] ").strip().lower()
+                    order_type = console.input("📋 [bold cyan]Order type? 'm' = market-on-open, 'l' = limit, 'manual' = log executed trade:[/bold cyan] ").strip().lower()
                 else:
                     ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
-                    order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit:{Style.RESET_ALL} ").strip().lower()
+                    order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit, 'manual' = log executed trade:{Style.RESET_ALL} ").strip().lower()
                 
                 # Auto-detect and correct ticker symbol (will get buy_price later)
                 original_ticker = ticker
@@ -1649,6 +1665,25 @@ def process_portfolio(
                     
                     print_info(f"Market open price: ${exec_price:.2f}")
                     print_info(f"Total cost: ${notional:,.2f}")
+                    
+                    # Check market status and add appropriate confirmation
+                    market_open = is_market_open()
+                    if market_open:
+                        print_warning("⚠️  Market is currently OPEN - this trade will be backdated to 6:30 AM")
+                        print_warning("⚠️  You may have already executed this trade in your brokerage account")
+                    else:
+                        print_warning("⚠️  Market is currently CLOSED - this trade will be filled at market open tomorrow")
+                        print_warning("⚠️  Price may differ from current estimate - you'll need to correct it later if filled")
+                    
+                    # Confirmation prompt
+                    if _HAS_RICH and console and not _FORCE_FALLBACK:
+                        confirm = console.input(f"🤔 [bold yellow]Confirm MOO buy of {shares} shares of {ticker} at ${exec_price:.2f}? (y/n):[/bold yellow] ").strip().lower()
+                    else:
+                        confirm = input(f"{Fore.YELLOW}🤔 Confirm MOO buy of {shares} shares of {ticker} at ${exec_price:.2f}? (y/n):{Style.RESET_ALL} ").strip().lower()
+                    
+                    if confirm not in ['y', 'yes']:
+                        print_info("Trade cancelled by user")
+                        continue
                     
                     if notional > cash:
                         print_error(f"MOO buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
@@ -1772,8 +1807,154 @@ def process_portfolio(
                         buy_price, shares, ticker, stop_loss, cash, portfolio_df
                     )
                     continue
+                
+                elif order_type == "manual":
+                    print_header("Log Executed Trade", "✏️")
+                    print_info("📝 You're logging a trade that was already executed in your brokerage account")
+                    
+                    # Get current market data for price suggestion
+                    print_info(f"Fetching current market data for {ticker}...", "📊")
+                    s, e = trading_day_window()
+                    fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+                    data = fetch.df
+                    
+                    suggested_price = None
+                    if not data.empty and "Close" in data:
+                        suggested_price = round(float(data["Close"].iloc[-1].item()), 2)
+                    
+                    # Get current time for date suggestion
+                    current_time = get_current_trading_time()
+                    suggested_date = current_time.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    try:
+                        # Price input with suggestion - emphasize actual fill price
+                        if suggested_price:
+                            print_info(f"💡 Current market price: ${suggested_price:.2f} (use this as reference)")
+                            if _HAS_RICH and console:
+                                price_input = console.input(f"💵 [bold cyan]Enter ACTUAL fill price (suggested: ${suggested_price:.2f}):[/bold cyan] ").strip()
+                            else:
+                                price_input = input(f"{Fore.CYAN}💵 Enter ACTUAL fill price (suggested: ${suggested_price:.2f}):{Style.RESET_ALL} ").strip()
+                            
+                            if price_input == "":
+                                buy_price = suggested_price
+                            else:
+                                buy_price = float(price_input)
+                        else:
+                            if _HAS_RICH and console:
+                                buy_price = float(console.input("💵 [bold cyan]Enter ACTUAL fill price:[/bold cyan] "))
+                            else:
+                                buy_price = float(input(f"{Fore.CYAN}💵 Enter ACTUAL fill price:{Style.RESET_ALL} "))
+                        
+                        # Date/time input with suggestion
+                        print_info(f"📅 Date/Time Format: YYYY-MM-DD HH:MM:SS (Timezone: {get_trading_timezone().zone})")
+                        print_info(f"📅 Suggested: {suggested_date} (current time)")
+                        print_info("📅 For trades executed this morning, use: 2025-09-10 06:30:00")
+                        print_info("📅 For trades executed during market hours, use the actual time")
+                        
+                        if _HAS_RICH and console:
+                            date_input = console.input(f"📅 [bold cyan]Enter execution date/time (suggested: {suggested_date}):[/bold cyan] ").strip()
+                        else:
+                            date_input = input(f"{Fore.CYAN}📅 Enter execution date/time (suggested: {suggested_date}):{Style.RESET_ALL} ").strip()
+                        
+                        if date_input == "":
+                            trade_date = current_time
+                        else:
+                            # Parse the date input
+                            try:
+                                trade_date = datetime.strptime(date_input, "%Y-%m-%d %H:%M:%S")
+                                # Convert to timezone-aware datetime
+                                tz = get_trading_timezone()
+                                trade_date = tz.localize(trade_date)
+                            except ValueError:
+                                print_error("Invalid date format. Use: YYYY-MM-DD HH:MM:SS")
+                                continue
+                        
+                        # Stop loss input
+                        if _HAS_RICH and console:
+                            stop_loss_input = console.input("🛑 [bold cyan]Enter stop loss (or 0 to skip):[/bold cyan] ").strip()
+                        else:
+                            stop_loss_input = input(f"{Fore.CYAN}🛑 Enter stop loss (or 0 to skip):{Style.RESET_ALL} ").strip()
+                        
+                        if stop_loss_input == "":
+                            stop_loss = 0.0
+                        else:
+                            stop_loss = float(stop_loss_input)
+                        
+                        if buy_price <= 0 or stop_loss < 0:
+                            raise ValueError("Invalid price or stop loss")
+                            
+                    except ValueError as e:
+                        print_error(f"Invalid input: {e}. Manual entry cancelled.")
+                        continue
+                    
+                    # Calculate notional and check cash
+                    notional = buy_price * shares
+                    if notional > cash:
+                        print_error(f"Manual buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
+                        continue
+                    
+                    # Log the manual trade
+                    trade_date_iso = format_timestamp_for_csv(trade_date)
+                    
+                    log = {
+                        "Date": trade_date_iso,
+                        "Ticker": ticker,
+                        "Shares Bought": shares,
+                        "Buy Price": buy_price,
+                        "Cost Basis": notional,
+                        "PnL": 0.0,
+                        "Reason": "MANUAL BUY - Manual Entry",
+                    }
+                    
+                    # Save to trade log
+                    if os.path.exists(TRADE_LOG_CSV):
+                        df_log = pd.read_csv(TRADE_LOG_CSV)
+                        if df_log.empty:
+                            df_log = pd.DataFrame([log])
+                        else:
+                            df_log = pd.concat([df_log, pd.DataFrame([log])], ignore_index=True)
+                    else:
+                        df_log = pd.DataFrame([log])
+                    
+                    # Backup before saving trade log
+                    backup_trading_files()
+                    df_log.to_csv(TRADE_LOG_CSV, index=False)
+                    
+                    # Update portfolio
+                    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                        try:
+                            update_dual_currency_balances(DATA_DIR, ticker, -notional)
+                            cash -= notional
+                        except Exception as e:
+                            print(f"Warning: Could not update dual currency balances: {e}")
+                            cash -= notional
+                    else:
+                        cash -= notional
+                    
+                    # Add to portfolio
+                    new_row = {
+                        "Date": trade_date_iso,
+                        "Ticker": ticker,
+                        "Shares": shares,
+                        "Average Price": buy_price,
+                        "Cost Basis": notional,
+                        "Stop Loss": stop_loss,
+                        "Current Price": buy_price,  # Will be updated on next run
+                        "Total Value": notional,
+                        "PnL": 0.0,
+                        "Action": "BUY",
+                        "Cash Balance": cash,
+                        "Total Equity": cash + portfolio_df["Total Value"].sum() if not portfolio_df.empty else cash,
+                        "Company": "Unknown"  # Will be filled by company name detection
+                    }
+                    
+                    portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    print_success(f"Executed BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
+                    continue
+                
                 else:
-                    print_error("Unknown order type. Use 'm' or 'l'.")
+                    print_error("Unknown order type. Use 'm', 'l', or 'manual'.")
                     continue
 
             if action == "s":

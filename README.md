@@ -156,6 +156,20 @@ These tools help ensure the trading system operates correctly and provide transp
 - **Error Handling** - Improved logging and error management throughout the system
 - **Data Source Reliability** - Yahoo Finance primary with Stooq fallback for robust data fetching
 
+#### **Fund Management & Ownership System**
+- **Fair Shares-Based Ownership** - Each dollar contributed equals one share for proportional ownership
+- **Dynamic Ownership Calculation** - Real-time ownership percentages that always total 100%
+- **Contribution Tracking** - Complete history of all fund contributions and withdrawals
+- **Withdrawal Protection** - Prevents over-withdrawal beyond contributor's equity value
+- **Proportional Liquidation** - Withdrawals are funded from overall fund performance, not individual positions
+- **Ownership Redistribution** - When someone withdraws, remaining contributors' ownership increases proportionally
+
+**How It Works:**
+- **Contributions**: Each $1 contributed = 1 share. Ownership percentage = (your shares / total shares) × 100%
+- **Withdrawals**: Reduces your share count. Other contributors' ownership increases to maintain 100% total
+- **Fair Performance Sharing**: All contributors benefit equally from fund performance regardless of when they joined
+- **Example**: If 10 people each contribute $100 (1,000 shares total) and fund grows 10x, someone contributing $100 later gets 100/1,100 = 9.09% ownership (fair!)
+
 ### 🔧 **Technical Improvements**
 - **Requirements Updates** - Updated library dependencies and added UI enhancements
 - **Code Refactoring** - Streamlined ticker correction logic and removed redundant files
@@ -177,3 +191,43 @@ This fork includes all the original functionality plus enhanced features for por
 4. **Run the trading script** with `python trading_script.py --data-dir test_data`
 
 For the original setup guide and methodology, see the [original repository](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment).
+
+## Fund Management Usage
+
+The trading bot includes a comprehensive fund management system for tracking multiple contributors and their ownership percentages.
+
+### **Managing Contributions & Withdrawals**
+
+When you run the trading script, you'll see options for fund management:
+
+```
+Fund Management Options:
+c - Add fund contribution
+w - Process fund withdrawal
+o - Show ownership percentages
+```
+
+### **Adding Contributions**
+1. Select `c` from the main menu
+2. Enter contributor name
+3. Enter contribution amount
+4. Add optional notes
+5. The system automatically updates ownership percentages
+
+### **Processing Withdrawals**
+1. Select `w` from the main menu
+2. Enter contributor name
+3. Enter withdrawal amount
+4. The system validates the withdrawal against their equity
+5. If valid, processes the withdrawal and updates ownership
+
+### **Viewing Ownership**
+- Select `o` from the main menu to see current ownership percentages
+- Ownership is calculated in real-time based on contributions
+- Percentages always total exactly 100%
+
+### **Key Features**
+- **Fair Ownership**: Each dollar contributed = 1 share
+- **Protection**: Cannot withdraw more than your equity value
+- **Transparency**: Complete history in `fund_contributions.csv`
+- **Real-time Updates**: Ownership percentages update immediately

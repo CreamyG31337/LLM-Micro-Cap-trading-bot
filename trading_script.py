@@ -2946,7 +2946,7 @@ def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
 
 
 def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
-    """Calculate current ownership percentages for each contributor based on their equity value."""
+    """Calculate current ownership percentages using a fair shares-based model."""
     df = load_fund_contributions(data_dir)
     
     if len(df) == 0:
@@ -2958,8 +2958,10 @@ def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
     if current_equity <= 0:
         return {}
     
-    # Calculate each contributor's current equity value
-    contributor_equity = defaultdict(float)
+    # Use a shares-based model where each contributor gets shares proportional to their contribution
+    # This prevents the unfair scenario where late contributors get disproportionate ownership
+    contributor_shares = defaultdict(float)
+    total_shares = 0.0
     
     for _, row in df.iterrows():
         amount = row["Amount"]
@@ -2968,18 +2970,18 @@ def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
         if row["Type"] == "WITHDRAWAL":
             amount = -amount  # Withdrawals are negative
         
-        # Calculate the fund's performance multiplier since this contribution
-        fund_value_at_time = get_fund_value_at_time(data_dir, row["Timestamp"])
-        performance_multiplier = current_equity / fund_value_at_time if fund_value_at_time > 0 else 1.0
-        
-        # Contributor's current equity = original contribution * performance multiplier
-        contributor_equity[contributor] += amount * performance_multiplier
+        # Each dollar contributed = 1 share (simplified but fair)
+        contributor_shares[contributor] += amount
+        total_shares += amount
     
-    # Calculate ownership percentages based on current equity values
+    if total_shares <= 0:
+        return {}
+    
+    # Calculate ownership percentages based on share count
     percentages = {}
-    for contributor, equity_value in contributor_equity.items():
-        if equity_value > 0:  # Only show contributors with positive equity
-            percentages[contributor] = (equity_value / current_equity) * 100
+    for contributor, shares in contributor_shares.items():
+        if shares > 0:  # Only show contributors with positive shares
+            percentages[contributor] = (shares / total_shares) * 100
     
     return percentages
 
@@ -3036,8 +3038,77 @@ def get_current_fund_equity(data_dir: str) -> float:
         return 0.0
 
 
+def get_fund_value_at_contribution_time(data_dir: str, timestamp: str) -> float:
+    """Get total fund value at a specific contribution timestamp, including portfolio performance."""
+    try:
+        # Load portfolio data to get historical fund values
+        portfolio_csv = Path(data_dir) / "llm_portfolio_update.csv"
+        if not portfolio_csv.exists():
+            # If no portfolio data, just return contributions up to that point
+            return get_fund_value_at_time(data_dir, timestamp)
+        
+        df = pd.read_csv(portfolio_csv)
+        if df.empty:
+            return get_fund_value_at_time(data_dir, timestamp)
+        
+        # Convert timestamp to datetime for comparison
+        target_time = safe_parse_datetime_column(timestamp, "timestamp")
+        df['Date'] = safe_parse_datetime_column(df['Date'], "Date")
+        
+        # Find the closest portfolio update date to the contribution time
+        df_sorted = df.sort_values('Date')
+        portfolio_dates = df_sorted['Date'].unique()
+        
+        # Find the most recent portfolio update before or at the contribution time
+        closest_date = None
+        for date in portfolio_dates:
+            if date <= target_time:
+                closest_date = date
+            else:
+                break
+        
+        if closest_date is None:
+            # If no portfolio data before this contribution, use contributions only
+            return get_fund_value_at_time(data_dir, timestamp)
+        
+        # Get the portfolio data for the closest date
+        closest_data = df[df['Date'] == closest_date]
+        
+        # Calculate total fund value at that time (portfolio + cash)
+        portfolio_value = 0.0
+        cash_balance = 0.0
+        
+        for _, row in closest_data.iterrows():
+            if pd.notna(row.get('Total Value')):
+                portfolio_value += float(row['Total Value'])
+            if pd.notna(row.get('Cash Balance')) and row.get('Cash Balance') != '':
+                cash_balance = float(row['Cash Balance'])
+        
+        # If no cash balance in portfolio data, try to get it from cash balances file
+        if cash_balance == 0.0:
+            try:
+                cash_file = Path(data_dir) / "cash_balances.json"
+                if cash_file.exists():
+                    import json
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cash_balance = float(cash_data.get('CAD', 0.0))
+            except Exception:
+                pass
+        
+        # If still no cash balance, use contributions as fallback
+        if cash_balance == 0.0:
+            total_contributions = get_fund_value_at_time(data_dir, timestamp)
+            cash_balance = max(0.0, total_contributions - portfolio_value)
+        
+        return portfolio_value + cash_balance
+    
+    except Exception as e:
+        print(f"Error calculating fund value at contribution time: {e}")
+        return get_fund_value_at_time(data_dir, timestamp)
+
 def get_fund_value_at_time(data_dir: str, timestamp: str) -> float:
-    """Get total fund value at a specific timestamp."""
+    """Get total fund value at a specific timestamp (contributions only)."""
     try:
         # Load fund contributions to get total contributions up to that point
         df = load_fund_contributions(data_dir)

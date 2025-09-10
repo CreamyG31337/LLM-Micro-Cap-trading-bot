@@ -60,6 +60,7 @@ def main():
             print("  'u' = add/remove USD") 
             print("  's' = set exact amounts")
             print("  'v' = view current balances")
+            print("  'n' = toggle negative balance mode")
             print("  'q' = quit")
             
             action = input("\nWhat would you like to do? ").strip().lower()
@@ -126,6 +127,23 @@ def main():
                 except ValueError:
                     print("❌ Invalid amounts entered")
                     continue
+                    
+            elif action == 'n':
+                # Toggle negative balance mode
+                current_mode = "enabled" if cash_balances.allow_negative else "disabled"
+                print(f"\n🔧 Negative Balance Mode: Currently {current_mode}")
+                print("When enabled, trades can proceed even with insufficient funds,")
+                print("resulting in negative balances that can be corrected later.")
+                
+                toggle = input(f"Toggle negative balance mode? (y/n): ").strip().lower()
+                if toggle == 'y':
+                    cash_balances.allow_negative = not cash_balances.allow_negative
+                    new_mode = "enabled" if cash_balances.allow_negative else "disabled"
+                    print(f"✅ Negative balance mode {new_mode}")
+                else:
+                    print("❌ Mode unchanged")
+                    continue
+                    
             else:
                 print("❌ Invalid option")
                 continue

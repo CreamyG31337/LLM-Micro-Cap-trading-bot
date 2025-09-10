@@ -137,6 +137,59 @@ def parse_csv_timestamp(timestamp_str):
         # Localize to the configured timezone
         return dt.tz_localize(tz)
 
+# ============================================================================
+# SOURCE MODIFICATION CHECK
+# ============================================================================
+
+def check_source_modification():
+    """
+    Check if the source code has been modified since last execution.
+    This prevents running outdated code that could corrupt data.
+    """
+    script_path = Path(__file__)
+    timestamp_file = script_path.parent / ".script_timestamp"
+    
+    try:
+        # Get current script modification time
+        current_mtime = script_path.stat().st_mtime
+        
+        # Check if timestamp file exists
+        if timestamp_file.exists():
+            with open(timestamp_file, 'r') as f:
+                stored_mtime = float(f.read().strip())
+            
+            # If current modification time is newer, abort execution
+            if current_mtime > stored_mtime:
+                print("🚨 SOURCE CODE MODIFICATION DETECTED!")
+                print(f"Script was modified at: {datetime.fromtimestamp(current_mtime)}")
+                print(f"Last execution was at: {datetime.fromtimestamp(stored_mtime)}")
+                print("\n❌ ABORTING EXECUTION to prevent data corruption.")
+                print("Please restart the application to use the updated code.")
+                print("\nTo bypass this check (not recommended), delete the file:")
+                print(f"  {timestamp_file}")
+                exit(1)
+        else:
+            # First run - create timestamp file
+            with open(timestamp_file, 'w') as f:
+                f.write(str(current_mtime))
+            print("✅ Source modification check initialized")
+    
+    except Exception as e:
+        print(f"⚠️  Warning: Could not check source modification: {e}")
+        print("Continuing execution...")
+
+def update_source_timestamp():
+    """Update the source modification timestamp after successful execution."""
+    script_path = Path(__file__)
+    timestamp_file = script_path.parent / ".script_timestamp"
+    
+    try:
+        current_mtime = script_path.stat().st_mtime
+        with open(timestamp_file, 'w') as f:
+            f.write(str(current_mtime))
+    except Exception as e:
+        print(f"⚠️  Warning: Could not update source timestamp: {e}")
+
 # Color and formatting imports
 try:
     from colorama import init, Fore, Back, Style
@@ -1496,6 +1549,9 @@ def process_portfolio(
         print_header("Portfolio Management", "📊")
         
         while True:
+            # Check for source code modifications before each menu iteration
+            check_source_modification()
+            
             # Display all information BEFORE the menu
             create_portfolio_table(portfolio_df)
             
@@ -2729,6 +2785,9 @@ def update_cash_balances_manual(data_dir: Path = None) -> None:
 
 def main(file: str | None = None, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
+    # Check for source code modifications first
+    check_source_modification()
+    
     # Set up data directory first
     if data_dir is not None:
         set_data_dir(data_dir)
@@ -2777,6 +2836,9 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     else:
         print(f"   {Fore.CYAN}'d'{Style.RESET_ALL} for daily trading prompt")
         print(f"   {Fore.CYAN}'w'{Style.RESET_ALL} for weekly deep research prompt")
+    
+    # Update source modification timestamp after successful execution
+    update_source_timestamp()
 
 
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:

@@ -1,7 +1,11 @@
 numpy==2.3.2
-pandas==2.2.2
+pandas>=2.2.2
 yfinance==0.2.65
-matplotlib==3.8.4
+matplotlib>=3.8.4
+
+# UI and display libraries
+rich>=14.0.0
+colorama>=0.4.6
 
 # Development and code quality tools
 mypy>=1.8.0

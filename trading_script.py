@@ -29,6 +29,26 @@ import yfinance as yf
 import json
 import logging
 
+# Development mode for stricter checking
+import os
+DEVELOPMENT_MODE = os.getenv("TRADING_BOT_DEV", "false").lower() == "true"
+
+def check_variable_scoping(func_name: str, required_vars: list[str]) -> None:
+    """Check for common variable scoping issues in development mode."""
+    if not DEVELOPMENT_MODE:
+        return
+    
+    import inspect
+    frame = inspect.currentframe().f_back
+    local_vars = frame.f_locals
+    global_vars = frame.f_globals
+    
+    for var in required_vars:
+        if var in local_vars and var in global_vars:
+            logger.warning(f"Potential scoping issue in {func_name}: '{var}' exists in both local and global scope")
+        elif var not in local_vars and var not in global_vars:
+            logger.error(f"Variable '{var}' not found in {func_name}")
+
 # Import timezone configuration
 try:
     from market_config import get_timezone_config, get_timezone_offset, get_timezone_name
@@ -365,6 +385,9 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         print_info("Portfolio is currently empty")
         return
     
+    # Check for potential scoping issues in development mode
+    check_variable_scoping("create_portfolio_table", ["pd", "timedelta"])
+    
     # Check for potential table display issues
     check_table_display_issues()
     
@@ -374,16 +397,34 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
     
     # For daily P&L calculation, we need more historical data
     # Expand the date range to include at least 2 days of data
-    from datetime import timedelta
     s_expanded = s - timedelta(days=5)  # Go back 5 days to ensure we have enough data
     
     # Load trade log to get position open dates
-    trade_log_df = None
+    trade_log_df: pd.DataFrame | None = None
     try:
-        trade_log_df = pd.read_csv(TRADE_LOG_CSV)
-        # Use proper timezone-aware parsing
-        trade_log_df['Date'] = trade_log_df['Date'].apply(parse_csv_timestamp)
-    except Exception:
+        if not TRADE_LOG_CSV.exists():
+            logger.warning(f"Trade log file does not exist: {TRADE_LOG_CSV}")
+            trade_log_df = None
+        else:
+            trade_log_df = pd.read_csv(TRADE_LOG_CSV)
+            if trade_log_df.empty:
+                logger.info("Trade log is empty")
+                trade_log_df = None
+            else:
+                # Use proper timezone-aware parsing
+                trade_log_df['Date'] = trade_log_df['Date'].apply(parse_csv_timestamp)
+                logger.debug(f"Successfully loaded trade log with {len(trade_log_df)} entries")
+    except FileNotFoundError:
+        logger.warning(f"Trade log file not found: {TRADE_LOG_CSV}")
+        trade_log_df = None
+    except pd.errors.EmptyDataError:
+        logger.warning(f"Trade log file is empty: {TRADE_LOG_CSV}")
+        trade_log_df = None
+    except pd.errors.ParserError as e:
+        logger.error(f"Failed to parse trade log CSV: {e}")
+        trade_log_df = None
+    except Exception as e:
+        logger.error(f"Unexpected error loading trade log: {e}", exc_info=True)
         trade_log_df = None
     
     if _HAS_RICH and console and not _FORCE_FALLBACK:
@@ -425,7 +466,12 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
                 ticker_trades = trade_log_df[trade_log_df['Ticker'] == ticker]
                 if not ticker_trades.empty:
                     # Get the earliest trade date for this ticker
-                    open_date = ticker_trades['Date'].min().strftime("%m/%d")
+                    min_date = ticker_trades['Date'].min()
+                    if not pd.isna(min_date):
+                        try:
+                            open_date = min_date.strftime("%m/%d")
+                        except Exception:
+                            open_date = "N/A"
             
             # Fetch current price and previous day's price
             # Use expanded date range to ensure we have enough data for daily P&L calculation
@@ -551,7 +597,6 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         
         # Set pandas display options for better formatting
         # Prioritize ticker visibility over company names
-        import pandas as pd
         pd.set_option('display.max_columns', None)
         pd.set_option('display.width', optimal_width)
         pd.set_option('display.max_colwidth', 18 if using_test_data else 20)  # Shorter company names

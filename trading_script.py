@@ -2649,7 +2649,7 @@ def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
 
 
 def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
-    """Calculate current ownership percentages for each contributor based on equity shares."""
+    """Calculate current ownership percentages for each contributor based on their equity value."""
     df = load_fund_contributions(data_dir)
     
     if len(df) == 0:
@@ -2661,9 +2661,8 @@ def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
     if current_equity <= 0:
         return {}
     
-    # Calculate shares owned by each contributor
-    contributor_shares = defaultdict(float)
-    total_shares_outstanding = 0.0
+    # Calculate each contributor's current equity value
+    contributor_equity = defaultdict(float)
     
     for _, row in df.iterrows():
         amount = row["Amount"]
@@ -2672,23 +2671,18 @@ def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
         if row["Type"] == "WITHDRAWAL":
             amount = -amount  # Withdrawals are negative
         
-        # Calculate fund value per share at time of transaction
-        # For now, use a simplified approach - in production you'd track this historically
-        fund_value_per_share = get_fund_value_per_share_at_time(data_dir, row["Timestamp"])
+        # Calculate the fund's performance multiplier since this contribution
+        fund_value_at_time = get_fund_value_at_time(data_dir, row["Timestamp"])
+        performance_multiplier = current_equity / fund_value_at_time if fund_value_at_time > 0 else 1.0
         
-        if fund_value_per_share > 0:
-            shares_purchased = amount / fund_value_per_share
-            contributor_shares[contributor] += shares_purchased
-            total_shares_outstanding += shares_purchased
+        # Contributor's current equity = original contribution * performance multiplier
+        contributor_equity[contributor] += amount * performance_multiplier
     
-    if total_shares_outstanding <= 0:
-        return {}
-    
-    # Calculate ownership percentages based on shares
+    # Calculate ownership percentages based on current equity values
     percentages = {}
-    for contributor, shares in contributor_shares.items():
-        if shares > 0:  # Only show contributors with positive shares
-            percentages[contributor] = (shares / total_shares_outstanding) * 100
+    for contributor, equity_value in contributor_equity.items():
+        if equity_value > 0:  # Only show contributors with positive equity
+            percentages[contributor] = (equity_value / current_equity) * 100
     
     return percentages
 
@@ -2745,16 +2739,13 @@ def get_current_fund_equity(data_dir: str) -> float:
         return 0.0
 
 
-def get_fund_value_per_share_at_time(data_dir: str, timestamp: str) -> float:
-    """Get fund value per share at a specific timestamp."""
+def get_fund_value_at_time(data_dir: str, timestamp: str) -> float:
+    """Get total fund value at a specific timestamp."""
     try:
-        # For now, implement a simplified approach that assumes $1 per share initially
-        # In a production system, you'd track historical fund values and share counts
-        
         # Load fund contributions to get total contributions up to that point
         df = load_fund_contributions(data_dir)
         if df.empty:
-            return 1.0  # Default to $1 per share if no data
+            return 0.0
         
         # Convert timestamp to datetime for comparison
         target_time = pd.to_datetime(timestamp)
@@ -2764,7 +2755,7 @@ def get_fund_value_per_share_at_time(data_dir: str, timestamp: str) -> float:
         historical_contributions = df[df['Timestamp'] <= target_time]
         
         if historical_contributions.empty:
-            return 1.0  # Default to $1 per share
+            return 0.0
         
         # Calculate total contributions up to that point
         total_contributions = 0.0
@@ -2774,25 +2765,11 @@ def get_fund_value_per_share_at_time(data_dir: str, timestamp: str) -> float:
                 amount = -amount
             total_contributions += amount
         
-        if total_contributions <= 0:
-            return 1.0
-        
-        # Simplified approach: assume fund starts at $1 per share
-        # and grows proportionally with total contributions
-        # This is a placeholder - in production you'd track actual fund performance
-        
-        # For now, use a simple linear growth model
-        # Fund value per share = 1.0 + (contribution_sequence * growth_factor)
-        contribution_sequence = len(historical_contributions)
-        growth_factor = 0.1  # 10% growth per contribution (simplified)
-        
-        fund_value_per_share = 1.0 + (contribution_sequence * growth_factor)
-        
-        return max(fund_value_per_share, 0.01)  # Minimum $0.01 per share
+        return max(total_contributions, 0.0)
     
     except Exception as e:
-        print(f"Error calculating fund value per share: {e}")
-        return 1.0
+        print(f"Error calculating fund value at time: {e}")
+        return 0.0
 
 
 def calculate_liquidation_amount(data_dir: str, contributor: str, withdrawal_amount: float, current_equity: float) -> Dict[str, float]:

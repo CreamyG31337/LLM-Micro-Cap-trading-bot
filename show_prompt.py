@@ -97,7 +97,7 @@ def format_enhanced_portfolio_display(enhanced_df):
         return "No current holdings"
     
     lines = []
-    lines.append("Ticker        Shares    Buy Price  Current   Total P&L  Daily P&L  Weight %")
+    lines.append("Ticker        Shares    Avg Price  Current   Total P&L  Daily P&L  Weight %")
     lines.append("                                 $      %      $      %")
     lines.append("-" * 85)
     

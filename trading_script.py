@@ -189,7 +189,8 @@ try:
     from dual_currency import (
         CashBalances, prompt_for_dual_currency_cash, save_cash_balances, 
         load_cash_balances, format_cash_display, get_ticker_currency, 
-        get_trade_currency_info, is_canadian_ticker, is_us_ticker
+        get_trade_currency_info, is_canadian_ticker, is_us_ticker,
+        calculate_conversion_with_fee
     )
     _HAS_DUAL_CURRENCY = True
 except ImportError:
@@ -1747,7 +1748,7 @@ def process_portfolio(
             company_name = get_company_name(ticker)
             row = {
                 "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": "", "Total Value": "", "PnL": "",
                 "Action": "NO DATA", "Cash Balance": "", "Total Equity": "",
             }
@@ -1792,7 +1793,7 @@ def process_portfolio(
             company_name = get_company_name(ticker)
             row = {
                 "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": exec_price, "Total Value": value, "PnL": pnl,
                 "Action": action, "Cash Balance": "", "Total Equity": "",
             }
@@ -1806,7 +1807,7 @@ def process_portfolio(
             company_name = get_company_name(ticker)
             row = {
                 "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                "Buy Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": price, "Total Value": value, "PnL": pnl,
                 "Action": action, "Cash Balance": "", "Total Equity": "",
             }
@@ -2230,7 +2231,7 @@ def load_latest_portfolio_state(
     latest_tickers.rename(
         columns={
             "Cost Basis": "cost_basis",
-            "Buy Price": "buy_price",
+            "Average Price": "buy_price",
             "Shares": "shares",
             "Ticker": "ticker",
             "Stop Loss": "stop_loss",
@@ -2266,7 +2267,10 @@ def load_latest_portfolio_state(
 
 def handle_insufficient_funds(needed_amount: float, currency: str, current_balance: float, ticker: str, data_dir: Path = None) -> bool:
     """
-    Handle insufficient funds by offering to update cash balances.
+    Handle insufficient funds by offering multiple options:
+    1. Add more cash
+    2. Convert from other currency (if dual currency)
+    3. Allow negative balance (if enabled)
     Returns True if user updated balance and there are now sufficient funds, False otherwise.
     """
     if data_dir is None:
@@ -2295,15 +2299,11 @@ def handle_insufficient_funds(needed_amount: float, currency: str, current_balan
                 return False
         return False
     
-    # Dual currency mode - offer specific currency update
+    # Dual currency mode - offer multiple options
     print_error(f"Insufficient {currency} Funds for {ticker}", "💰")
     print_warning(f"Need: ${needed_amount:,.2f} {currency}")
     print_info(f"Have: ${current_balance:,.2f} {currency}")
     print_error(f"Short: ${needed_amount - current_balance:,.2f} {currency}")
-    
-    response = input(f"\nWould you like to add more {currency} to complete this purchase? (y/n): ").strip().lower()
-    if response != 'y':
-        return False
     
     try:
         # Load current balances
@@ -2314,40 +2314,130 @@ def handle_insufficient_funds(needed_amount: float, currency: str, current_balan
         print(f"   CAD: ${cash_balances.cad:,.2f}")
         print(f"   USD: ${cash_balances.usd:,.2f}")
         
-        # Ask for the amount to add
+        # Calculate how much we need
         amount_needed = needed_amount - current_balance
-        suggested_amount = max(amount_needed, amount_needed * 1.1)  # Suggest 10% buffer
         
-        amount_input = input(f"Enter {currency} amount to add (suggested: ${suggested_amount:,.2f}): $").strip()
-        if amount_input == "":
-            amount_to_add = suggested_amount
-        else:
-            amount_to_add = float(amount_input)
+        # Offer options
+        print(f"\n🔧 Options to complete this purchase:")
+        print(f"1. Add more {currency} cash")
+        
+        # Check if we can convert from the other currency
+        other_currency = 'USD' if currency == 'CAD' else 'CAD'
+        other_balance = cash_balances.usd if currency == 'CAD' else cash_balances.cad
+        
+        if other_balance > 0:
+            # Calculate how much we'd get from converting all other currency
+            conversion_info = calculate_conversion_with_fee(other_balance, other_currency, currency)
+            print(f"2. Convert {other_currency} to {currency} (would get ~${conversion_info['amount_after_fee']:,.2f} {currency})")
+        
+        print(f"3. Allow negative balance and proceed (manual correction later)")
+        print(f"4. Cancel this purchase")
+        
+        choice = input(f"\nChoose an option (1-4): ").strip()
+        
+        if choice == '1':
+            # Add more cash
+            suggested_amount = max(amount_needed, amount_needed * 1.1)  # Suggest 10% buffer
+            amount_input = input(f"Enter {currency} amount to add (suggested: ${suggested_amount:,.2f}): $").strip()
+            if amount_input == "":
+                amount_to_add = suggested_amount
+            else:
+                amount_to_add = float(amount_input)
+                
+            if amount_to_add <= 0:
+                print("❌ Amount must be positive")
+                return False
             
-        if amount_to_add <= 0:
-            print("❌ Amount must be positive")
+            # Add the funds
+            if currency == 'USD':
+                cash_balances.add_usd(amount_to_add)
+                new_balance = cash_balances.usd
+            else:  # CAD
+                cash_balances.add_cad(amount_to_add)
+                new_balance = cash_balances.cad
+            
+            # Save the updated balances
+            save_cash_balances(cash_balances, data_dir)
+            
+            print(f"✅ Added ${amount_to_add:,.2f} {currency}")
+            print(f"   New {currency} balance: ${new_balance:,.2f}")
+            
+            # Check if we now have sufficient funds
+            if new_balance >= needed_amount:
+                print(f"✅ Sufficient funds available for {ticker} purchase!")
+                return True
+            else:
+                print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
+                return False
+                
+        elif choice == '2' and other_balance > 0:
+            # Convert from other currency
+            print(f"\n💱 Currency Conversion: {other_currency} → {currency}")
+            print(f"   Current {other_currency} balance: ${other_balance:,.2f}")
+            
+            # Calculate how much to convert
+            conversion_amount_input = input(f"Enter {other_currency} amount to convert (max: ${other_balance:,.2f}): $").strip()
+            if conversion_amount_input == "":
+                conversion_amount = other_balance
+            else:
+                conversion_amount = float(conversion_amount_input)
+            
+            if conversion_amount <= 0 or conversion_amount > other_balance:
+                print("❌ Invalid conversion amount")
+                return False
+            
+            # Perform conversion
+            if currency == 'USD':  # Converting CAD to USD
+                usd_received, fee_charged = cash_balances.convert_cad_to_usd(conversion_amount)
+                print(f"✅ Converted ${conversion_amount:,.2f} CAD to ${usd_received:,.2f} USD")
+                print(f"   Fee charged: ${fee_charged:,.2f} USD")
+                print(f"   New USD balance: ${cash_balances.usd:,.2f}")
+            else:  # Converting USD to CAD
+                cad_received, fee_charged = cash_balances.convert_usd_to_cad(conversion_amount)
+                print(f"✅ Converted ${conversion_amount:,.2f} USD to ${cad_received:,.2f} CAD")
+                print(f"   Fee charged: ${fee_charged:,.2f} CAD")
+                print(f"   New CAD balance: ${cash_balances.cad:,.2f}")
+            
+            # Save the updated balances
+            save_cash_balances(cash_balances, data_dir)
+            
+            # Check if we now have sufficient funds
+            if currency == 'USD':
+                new_balance = cash_balances.usd
+            else:
+                new_balance = cash_balances.cad
+                
+            if new_balance >= needed_amount:
+                print(f"✅ Sufficient funds available for {ticker} purchase!")
+                return True
+            else:
+                print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
+                return False
+                
+        elif choice == '3':
+            # Allow negative balance
+            print(f"\n⚠️  Allowing negative balance for this purchase")
+            print(f"   This will result in a negative {currency} balance of ${current_balance - needed_amount:,.2f}")
+            print(f"   You can manually correct balances later using the update_cash.py script")
+            
+            confirm = input(f"Proceed with negative balance? (y/n): ").strip().lower()
+            if confirm == 'y':
+                # Enable negative balance mode temporarily
+                cash_balances.allow_negative = True
+                save_cash_balances(cash_balances, data_dir)
+                print(f"✅ Proceeding with negative balance")
+                return True
+            else:
+                print(f"❌ Purchase cancelled")
+                return False
+                
+        elif choice == '4':
+            # Cancel purchase
+            print(f"❌ Purchase cancelled")
             return False
-        
-        # Add the funds
-        if currency == 'USD':
-            cash_balances.add_usd(amount_to_add)
-            new_balance = cash_balances.usd
-        else:  # CAD
-            cash_balances.add_cad(amount_to_add)
-            new_balance = cash_balances.cad
-        
-        # Save the updated balances
-        save_cash_balances(cash_balances, data_dir)
-        
-        print(f"✅ Added ${amount_to_add:,.2f} {currency}")
-        print(f"   New {currency} balance: ${new_balance:,.2f}")
-        
-        # Check if we now have sufficient funds
-        if new_balance >= needed_amount:
-            print(f"✅ Sufficient funds available for {ticker} purchase!")
-            return True
+            
         else:
-            print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
+            print(f"❌ Invalid option selected")
             return False
             
     except ValueError:

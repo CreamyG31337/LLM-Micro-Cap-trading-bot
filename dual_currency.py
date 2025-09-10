@@ -14,6 +14,7 @@ class CashBalances:
     """Container for dual currency cash balances"""
     cad: float = 0.0
     usd: float = 0.0
+    allow_negative: bool = False  # New flag to allow negative balances
     
     def total_cad_equivalent(self, usd_to_cad_rate: float = 1.35) -> float:
         """Calculate total cash in CAD equivalent"""
@@ -24,22 +25,26 @@ class CashBalances:
         return self.usd + (self.cad * cad_to_usd_rate)
     
     def can_afford_cad(self, amount: float) -> bool:
-        """Check if we have enough CAD cash"""
+        """Check if we have enough CAD cash (or if negative balances are allowed)"""
+        if self.allow_negative:
+            return True  # Allow negative balances
         return self.cad >= amount
     
     def can_afford_usd(self, amount: float) -> bool:
-        """Check if we have enough USD cash"""
+        """Check if we have enough USD cash (or if negative balances are allowed)"""
+        if self.allow_negative:
+            return True  # Allow negative balances
         return self.usd >= amount
     
     def spend_cad(self, amount: float) -> bool:
-        """Spend CAD cash if available"""
+        """Spend CAD cash if available (or if negative balances are allowed)"""
         if self.can_afford_cad(amount):
             self.cad -= amount
             return True
         return False
     
     def spend_usd(self, amount: float) -> bool:
-        """Spend USD cash if available"""
+        """Spend USD cash if available (or if negative balances are allowed)"""
         if self.can_afford_usd(amount):
             self.usd -= amount
             return True
@@ -52,6 +57,52 @@ class CashBalances:
     def add_usd(self, amount: float) -> None:
         """Add USD cash (from sales, etc.)"""
         self.usd += amount
+    
+    def convert_cad_to_usd(self, cad_amount: float, exchange_rate: float = None, fee_rate: float = 0.015) -> Tuple[float, float]:
+        """
+        Convert CAD to USD at market rate plus fee.
+        Returns (usd_received, fee_charged)
+        """
+        if exchange_rate is None:
+            exchange_rate = get_exchange_rate('CAD', 'USD')
+        
+        # Calculate conversion with fee
+        usd_before_fee = cad_amount * exchange_rate
+        fee_charged = usd_before_fee * fee_rate
+        usd_received = usd_before_fee - fee_charged
+        
+        # Update balances
+        self.cad -= cad_amount
+        self.usd += usd_received
+        
+        return usd_received, fee_charged
+    
+    def convert_usd_to_cad(self, usd_amount: float, exchange_rate: float = None, fee_rate: float = 0.015) -> Tuple[float, float]:
+        """
+        Convert USD to CAD at market rate plus fee.
+        Returns (cad_received, fee_charged)
+        """
+        if exchange_rate is None:
+            exchange_rate = get_exchange_rate('USD', 'CAD')
+        
+        # Calculate conversion with fee
+        cad_before_fee = usd_amount * exchange_rate
+        fee_charged = cad_before_fee * fee_rate
+        cad_received = cad_before_fee - fee_charged
+        
+        # Update balances
+        self.usd -= usd_amount
+        self.cad += cad_received
+        
+        return cad_received, fee_charged
+    
+    def can_convert_cad_to_usd(self, cad_amount: float) -> bool:
+        """Check if we have enough CAD to convert"""
+        return self.cad >= cad_amount
+    
+    def can_convert_usd_to_cad(self, usd_amount: float) -> bool:
+        """Check if we have enough USD to convert"""
+        return self.usd >= usd_amount
 
 def is_canadian_ticker(ticker: str) -> bool:
     """Determine if ticker is Canadian based on suffix"""
@@ -113,7 +164,8 @@ def save_cash_balances(balances: CashBalances, data_dir: Path) -> None:
     cash_file = data_dir / "cash_balances.json"
     data = {
         "cad": balances.cad,
-        "usd": balances.usd
+        "usd": balances.usd,
+        "allow_negative": balances.allow_negative
     }
     with open(cash_file, 'w') as f:
         json.dump(data, f, indent=2)
@@ -130,7 +182,8 @@ def load_cash_balances(data_dir: Path) -> CashBalances:
             data = json.load(f)
         return CashBalances(
             cad=data.get('cad', 0.0),
-            usd=data.get('usd', 0.0)
+            usd=data.get('usd', 0.0),
+            allow_negative=data.get('allow_negative', False)
         )
     except Exception:
         return CashBalances()
@@ -164,3 +217,44 @@ def get_exchange_rate(from_currency: str, to_currency: str) -> float:
         ('CAD', 'CAD'): 1.0
     }
     return rates.get((from_currency, to_currency), 1.0)
+
+def get_live_exchange_rate(from_currency: str, to_currency: str) -> float:
+    """
+    Get live exchange rate from a free API.
+    Falls back to static rates if API is unavailable.
+    """
+    try:
+        import requests
+        
+        # Using exchangerate-api.com (free tier)
+        url = f"https://api.exchangerate-api.com/v4/latest/{from_currency}"
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data['rates'].get(to_currency, get_exchange_rate(from_currency, to_currency))
+        else:
+            print(f"⚠️  API unavailable, using static rate for {from_currency} to {to_currency}")
+            return get_exchange_rate(from_currency, to_currency)
+            
+    except Exception as e:
+        print(f"⚠️  Error fetching live rate: {e}, using static rate")
+        return get_exchange_rate(from_currency, to_currency)
+
+def calculate_conversion_with_fee(amount: float, from_currency: str, to_currency: str, fee_rate: float = 0.015) -> Dict[str, float]:
+    """
+    Calculate conversion details including fee.
+    Returns dict with: amount_before_fee, fee_charged, amount_after_fee, exchange_rate
+    """
+    exchange_rate = get_live_exchange_rate(from_currency, to_currency)
+    amount_before_fee = amount * exchange_rate
+    fee_charged = amount_before_fee * fee_rate
+    amount_after_fee = amount_before_fee - fee_charged
+    
+    return {
+        'amount_before_fee': amount_before_fee,
+        'fee_charged': fee_charged,
+        'amount_after_fee': amount_after_fee,
+        'exchange_rate': exchange_rate,
+        'fee_rate': fee_rate
+    }

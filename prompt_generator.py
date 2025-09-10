@@ -160,7 +160,7 @@ class PromptGenerator:
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
         lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
-        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Buy Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}{Style.RESET_ALL}")
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Avg Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}{Style.RESET_ALL}")
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))

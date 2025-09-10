@@ -44,7 +44,24 @@ Simple debug script specifically for VEE.TO price data.
 ### 3. `gmin_debug.py`
 Quick debug script for GMIN.TO price data.
 
-### 4. `activate_venv.bat`
+### 4. `recalculate_avg_prices.py`
+Recalculates average prices in the portfolio CSV based on the trade log data.
+
+**Usage:**
+```bash
+# Recalculate prices for default data directory
+python debug/recalculate_avg_prices.py
+
+# Recalculate prices for specific data directory
+python debug/recalculate_avg_prices.py test_data
+```
+
+**When to use:**
+- After manually editing the trade log
+- When portfolio CSV has stale average prices
+- To verify price calculations are correct
+
+### 5. `activate_venv.bat`
 Convenience script to activate the virtual environment.
 
 ## Common Issues and Solutions

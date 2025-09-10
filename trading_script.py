@@ -73,6 +73,21 @@ def get_trading_timezone():
     offset_hours = get_timezone_offset()
     return timezone(timedelta(hours=offset_hours))
 
+def safe_parse_datetime_column(series_or_str, column_name="datetime"):
+    """
+    Safely parse datetime columns that may contain timezone information.
+    Handles PST timezone strings and other common formats.
+    """
+    if isinstance(series_or_str, str):
+        # Single string - use existing timezone-aware function
+        return parse_csv_timestamp(series_or_str)
+    elif hasattr(series_or_str, 'apply'):
+        # Pandas Series - apply timezone-aware parsing to each element
+        return series_or_str.apply(lambda x: parse_csv_timestamp(x) if pd.notna(x) else x)
+    else:
+        # Fallback for other types
+        return pd.to_datetime(series_or_str)
+
 def get_current_trading_time():
     """Get current time in the configured trading timezone."""
     tz = get_trading_timezone()
@@ -1049,7 +1064,7 @@ class FetchResult:
 def _to_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(df.index, pd.DatetimeIndex):
         try:
-            df.index = pd.to_datetime(df.index)
+            df.index = safe_parse_datetime_column(df.index, "index")
         except Exception:
             pass
     return df
@@ -1119,7 +1134,7 @@ def _stooq_csv_download(ticker: str, start: pd.Timestamp, end: pd.Timestamp) -> 
         if df.empty:
             return pd.DataFrame()
 
-        df["Date"] = pd.to_datetime(df["Date"])
+        df["Date"] = safe_parse_datetime_column(df["Date"], "Date")
         df.set_index("Date", inplace=True)
         df.sort_index(inplace=True)
 
@@ -2700,7 +2715,7 @@ def get_current_fund_equity(data_dir: str) -> float:
             return 0.0
         
         # Get the most recent date's data
-        df['Date'] = pd.to_datetime(df['Date'])
+        df['Date'] = safe_parse_datetime_column(df['Date'], "Date")
         latest_date = df['Date'].max()
         latest_data = df[df['Date'] == latest_date]
         
@@ -2748,8 +2763,8 @@ def get_fund_value_at_time(data_dir: str, timestamp: str) -> float:
             return 0.0
         
         # Convert timestamp to datetime for comparison
-        target_time = pd.to_datetime(timestamp)
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        target_time = safe_parse_datetime_column(timestamp, "timestamp")
+        df['Timestamp'] = safe_parse_datetime_column(df['Timestamp'], "Timestamp")
         
         # Get contributions up to the target time
         historical_contributions = df[df['Timestamp'] <= target_time]

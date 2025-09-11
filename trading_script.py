@@ -123,31 +123,111 @@ def is_market_open():
     return market_open <= now <= market_close
 
 def format_timestamp_for_csv(dt=None):
-    """Format a datetime for CSV storage with timezone suffix."""
+    """
+    CRITICAL FUNCTION: Format timestamps for CSV storage with user-readable timezone names.
+
+    IMPORTANT: This function MUST use PST/PDT for CSV files to maintain user readability.
+    The parse_csv_timestamp() function depends on this format for proper timezone conversion.
+    Changing this to UTC offsets will break CSV parsing and cause pandas FutureWarnings!
+
+    NEVER change this to use UTC offsets like "-07:00" - keep PST/PDT for CSV display!
+    The parsing function handles the conversion to pandas-compatible formats internally.
+    """
     if dt is None:
         dt = get_current_trading_time()
-    
+
     tz_name = get_timezone_name()
     return dt.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
 
 def parse_csv_timestamp(timestamp_str):
-    """Parse a timestamp from CSV with proper timezone handling."""
+    """
+    CRITICAL FUNCTION: Parse timestamps from CSV files with comprehensive timezone handling.
+
+    IMPORTANT: This function is CRITICAL for avoiding pandas FutureWarnings!
+    It converts common timezone abbreviations from CSV files into pandas-compatible
+    UTC offset formats before parsing.
+
+    SUPPORTED TIMEZONE CONVERSIONS:
+    - PST (Pacific Standard Time): UTC-8 → "-08:00"
+    - PDT (Pacific Daylight Time): UTC-7 → "-07:00"
+    - MST (Mountain Standard Time): UTC-7 → "-07:00"
+    - MDT (Mountain Daylight Time): UTC-6 → "-06:00"
+    - CST (Central Standard Time): UTC-6 → "-06:00"
+    - CDT (Central Daylight Time): UTC-5 → "-05:00"
+    - EST (Eastern Standard Time): UTC-5 → "-05:00"
+    - EDT (Eastern Daylight Time): UTC-4 → "-04:00"
+    - UTC/GMT: Already pandas-compatible
+
+    WORKFLOW:
+    1. CSV files store: "2025-09-10 06:30:00 EST" (user-readable)
+    2. This function converts to: "2025-09-10 06:30:00-05:00" (pandas-compatible)
+    3. Pandas parses without warnings
+
+    NEVER remove or modify this conversion logic! Timezone abbreviations in CSVs will always
+    cause pandas FutureWarnings if not converted to UTC offsets first.
+    """
     if pd.isna(timestamp_str):
         return None
-    
+
     timestamp_str = str(timestamp_str).strip()
-    
-    # Handle different timestamp formats
-    if " PST" in timestamp_str or " PDT" in timestamp_str:
-        # Remove PST/PDT suffix and add proper UTC offset
-        clean_timestamp = timestamp_str.replace(" PST", "").replace(" PDT", "")
-        # Add UTC offset for proper parsing
-        utc_offset = get_timezone_config()["utc_offset"]
-        timestamp_with_offset = f"{clean_timestamp} {utc_offset}"
+
+    # CRITICAL: Handle common timezone abbreviations to prevent pandas FutureWarnings
+    # Each timezone gets converted to its pandas-compatible UTC offset format
+
+    # Pacific Time (West Coast)
+    if " PST" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" PST", "")
+        timestamp_with_offset = f"{clean_timestamp}-08:00"
         return pd.to_datetime(timestamp_with_offset)
+    elif " PDT" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" PDT", "")
+        timestamp_with_offset = f"{clean_timestamp}-07:00"
+        return pd.to_datetime(timestamp_with_offset)
+
+    # Mountain Time (Rockies)
+    elif " MST" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" MST", "")
+        timestamp_with_offset = f"{clean_timestamp}-07:00"
+        return pd.to_datetime(timestamp_with_offset)
+    elif " MDT" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" MDT", "")
+        timestamp_with_offset = f"{clean_timestamp}-06:00"
+        return pd.to_datetime(timestamp_with_offset)
+
+    # Central Time (Midwest)
+    elif " CST" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" CST", "")
+        timestamp_with_offset = f"{clean_timestamp}-06:00"
+        return pd.to_datetime(timestamp_with_offset)
+    elif " CDT" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" CDT", "")
+        timestamp_with_offset = f"{clean_timestamp}-05:00"
+        return pd.to_datetime(timestamp_with_offset)
+
+    # Eastern Time (East Coast)
+    elif " EST" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" EST", "")
+        timestamp_with_offset = f"{clean_timestamp}-05:00"
+        return pd.to_datetime(timestamp_with_offset)
+    elif " EDT" in timestamp_str:
+        clean_timestamp = timestamp_str.replace(" EDT", "")
+        timestamp_with_offset = f"{clean_timestamp}-04:00"
+        return pd.to_datetime(timestamp_with_offset)
+
+    # Already pandas-compatible formats
     elif " UTC" in timestamp_str or " GMT" in timestamp_str:
-        # Already has timezone info, parse directly
         return pd.to_datetime(timestamp_str)
+
+    # UTC offset format already present (e.g., "2025-09-10 06:30:00-05:00")
+    elif ("+" in timestamp_str or ("-" in timestamp_str and timestamp_str[-6:-3].isdigit())):
+        # Handle already timezone-aware timestamps
+        try:
+            return pd.to_datetime(timestamp_str)
+        except Exception:
+            # If it fails, try without timezone conversion
+            dt = pd.to_datetime(timestamp_str, utc=True)
+            return dt
+
     else:
         # No timezone info, assume it's in the configured timezone
         tz = get_trading_timezone()
@@ -1112,7 +1192,12 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
         # Test if the ticker exists as-is (likely US stock)
         us_stock = yf.Ticker(ticker)
         us_info = us_stock.info
-        us_exists = us_info and us_info.get('exchange')
+        # More robust validation: check exchange exists AND longName is not "Unknown" AND it's not empty
+        us_exists = (us_info and
+                    us_info.get('exchange') and
+                    us_info.get('longName') and
+                    us_info.get('longName') != 'Unknown' and
+                    us_info.get('longName') != ticker)
         
         # Test Canadian variants to see if they also exist
         canadian_variants = [f"{ticker}.TO", f"{ticker}.V", f"{ticker}.CN"]
@@ -1123,9 +1208,12 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
             try:
                 canadian_stock = yf.Ticker(variant)
                 canadian_info = canadian_stock.info
-                if (canadian_info and 
-                    canadian_info.get('exchange') and 
-                    any(exchange in canadian_info.get('exchange', '') for exchange in ['TSX', 'VAN', 'CNQ', 'TOR'])):
+                if (canadian_info and
+                    canadian_info.get('exchange') and
+                    any(exchange in canadian_info.get('exchange', '') for exchange in ['TSX', 'VAN', 'CNQ', 'TOR']) and
+                    canadian_info.get('longName') and
+                    canadian_info.get('longName') != 'Unknown' and
+                    canadian_info.get('longName') != variant):
                     canadian_exists = True
                     canadian_variant_found = variant
                     break
@@ -1641,31 +1729,45 @@ def _ensure_df(portfolio: pd.DataFrame | dict[str, list[object]] | list[dict[str
     raise TypeError("portfolio must be a DataFrame, dict, or list[dict]")
 
 def _display_ownership_percentages(data_dir: str) -> None:
-    """Display ownership percentages by contributor"""
-    ownership = calculate_ownership_percentages(data_dir)
-    
+    """Display detailed ownership information by contributor"""
+    ownership = calculate_ownership_detailed(data_dir)
+
     if not ownership:
         return
-    
+
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        ownership_table = Table(title="👥 Ownership Percentages", show_header=True, header_style="bold blue")
+        ownership_table = Table(title="👥 Ownership Details", show_header=True, header_style="bold blue")
         ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
-        ownership_table.add_column("Ownership %", justify="right", style="green")
-        
+        ownership_table.add_column("Shares", justify="right", style="cyan")
+        ownership_table.add_column("Contributed", justify="right", style="green")
+        ownership_table.add_column("Ownership %", justify="right", style="magenta")
+        ownership_table.add_column("Current Value", justify="right", style="red")
+
         # Sort by ownership percentage (highest first)
-        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1], reverse=True)
-        
-        for contributor, percentage in sorted_ownership:
-            ownership_table.add_row(contributor, f"{percentage:.1f}%")
-        
+        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1]["ownership_percentage"], reverse=True)
+
+        for contributor, data in sorted_ownership:
+            ownership_table.add_row(
+                contributor,
+                f"{data['shares']:.2f}",
+                f"${data['net_contribution']:.2f}",
+                f"{data['ownership_percentage']:.1f}%",
+                f"${data['current_value']:.2f}"
+            )
+
         console.print(ownership_table)
     else:
-        print_info("Ownership Percentages:", "👥")
+        print_info("Ownership Details:", "👥")
         # Sort by ownership percentage (highest first)
-        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1], reverse=True)
-        
-        for contributor, percentage in sorted_ownership:
-            print(f"  {contributor}: {percentage:.1f}%")
+        sorted_ownership = sorted(ownership.items(), key=lambda x: x[1]["ownership_percentage"], reverse=True)
+
+        for contributor, data in sorted_ownership:
+            print(f"  {contributor}:")
+            print(f"    Shares: {data['shares']:.2f}")
+            print(f"    Contributed: ${data['net_contribution']:.2f}")
+            print(f"    Ownership: {data['ownership_percentage']:.1f}%")
+            print(f"    Current Value: ${data['current_value']:.2f}")
+            print()
 
 
 def _display_risk_metrics(portfolio_df: pd.DataFrame, total_value: float, cash: float) -> None:
@@ -2399,7 +2501,7 @@ def process_portfolio(
         if PORTFOLIO_CSV.exists():
             existing_df = pd.read_csv(PORTFOLIO_CSV)
             existing_df['Date_only'] = safe_parse_datetime_column(existing_df['Date']).dt.date
-            today_date_only = pd.to_datetime(today_iso).date()
+            today_date_only = parse_csv_timestamp(today_iso).date()
             existing_today = existing_df[existing_df['Date_only'] == today_date_only]
         
         existing_tickers_today = set(existing_today['Ticker']) if not existing_today.empty else set()
@@ -2573,7 +2675,7 @@ def process_portfolio(
             df_out['Date_only'] = safe_parse_datetime_column(df_out['Date']).dt.date
 
             # Remove existing entries that match today's date and ticker combinations
-            today_date_only = pd.to_datetime(today_iso).date()
+            today_date_only = parse_csv_timestamp(today_iso).date()
             existing = existing[~(existing['Date_only'] == today_date_only)]
 
             # Concatenate existing data with new data
@@ -3398,45 +3500,64 @@ def sync_fund_contributions_to_cad_balance(data_dir: str) -> bool:
         return False
 
 
-def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
-    """Calculate current ownership percentages using a fair shares-based model."""
+def calculate_ownership_detailed(data_dir: str) -> Dict[str, Dict[str, float]]:
+    """Calculate detailed ownership information including shares, contributions, and current values."""
     df = load_fund_contributions(data_dir)
-    
+
     if len(df) == 0:
         return {}
-    
+
     # Calculate current total fund equity (portfolio + cash)
     current_equity = get_current_fund_equity(data_dir)
-    
+
     if current_equity <= 0:
         return {}
-    
+
     # Use a shares-based model where each contributor gets shares proportional to their contribution
-    # This prevents the unfair scenario where late contributors get disproportionate ownership
-    contributor_shares = defaultdict(float)
+    contributor_data = defaultdict(lambda: {"shares": 0.0, "contributions": 0.0, "withdrawals": 0.0})
     total_shares = 0.0
-    
+
     for _, row in df.iterrows():
         amount = row["Amount"]
         contributor = row["Contributor"]
-        
+
         if row["Type"] == "WITHDRAWAL":
-            amount = -amount  # Withdrawals are negative
-        
+            contributor_data[contributor]["withdrawals"] += amount
+            amount = -amount  # Withdrawals are negative for share calculation
+        else:
+            contributor_data[contributor]["contributions"] += row["Amount"]
+
         # Each dollar contributed = 1 share (simplified but fair)
-        contributor_shares[contributor] += amount
+        contributor_data[contributor]["shares"] += amount
         total_shares += amount
-    
+
     if total_shares <= 0:
         return {}
-    
-    # Calculate ownership percentages based on share count
-    percentages = {}
-    for contributor, shares in contributor_shares.items():
-        if shares > 0:  # Only show contributors with positive shares
-            percentages[contributor] = (shares / total_shares) * 100
-    
-    return percentages
+
+    # Calculate ownership percentages and current values
+    detailed_ownership = {}
+    for contributor, data in contributor_data.items():
+        if data["shares"] > 0:  # Only show contributors with positive shares
+            percentage = (data["shares"] / total_shares) * 100
+            current_value = (percentage / 100) * current_equity  # Fixed: use current equity, not original contribution
+            detailed_ownership[contributor] = {
+                "shares": data["shares"],
+                "contributions": data["contributions"],
+                "withdrawals": data["withdrawals"],
+                "net_contribution": data["contributions"] - data["withdrawals"],
+                "ownership_percentage": percentage,
+                "current_value": current_value
+            }
+
+    return detailed_ownership
+
+
+def calculate_ownership_percentages(data_dir: str) -> Dict[str, float]:
+    """Calculate current ownership percentages using a fair shares-based model."""
+    detailed = calculate_ownership_detailed(data_dir)
+
+    # Return just percentages for backward compatibility
+    return {contributor: data["ownership_percentage"] for contributor, data in detailed.items()}
 
 
 def get_current_fund_equity(data_dir: str) -> float:
@@ -3478,11 +3599,10 @@ def get_current_fund_equity(data_dir: str) -> float:
             except Exception:
                 pass
         
-        # If still no cash balance, use fund contributions as a fallback
+        # If still no cash balance, use a reasonable default
         if cash_balance == 0.0:
-            total_contributions = calculate_fund_contributions_total(data_dir)
-            # Assume some portion is in cash (simplified)
-            cash_balance = max(0.0, total_contributions - portfolio_value)
+            # Use a small cash buffer for operations, but don't inflate the total equity
+            cash_balance = 100.0  # Default cash balance for operations
         
         return portfolio_value + cash_balance
     

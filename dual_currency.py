@@ -14,7 +14,6 @@ class CashBalances:
     """Container for dual currency cash balances"""
     cad: float = 0.0
     usd: float = 0.0
-    allow_negative: bool = False  # New flag to allow negative balances
     
     def total_cad_equivalent(self, usd_to_cad_rate: float = 1.35) -> float:
         """Calculate total cash in CAD equivalent"""
@@ -25,30 +24,32 @@ class CashBalances:
         return self.usd + (self.cad * cad_to_usd_rate)
     
     def can_afford_cad(self, amount: float) -> bool:
-        """Check if we have enough CAD cash (or if negative balances are allowed)"""
-        if self.allow_negative:
-            return True  # Allow negative balances
+        """Check if we have enough CAD cash"""
         return self.cad >= amount
-    
+
     def can_afford_usd(self, amount: float) -> bool:
-        """Check if we have enough USD cash (or if negative balances are allowed)"""
-        if self.allow_negative:
-            return True  # Allow negative balances
+        """Check if we have enough USD cash"""
         return self.usd >= amount
     
     def spend_cad(self, amount: float) -> bool:
-        """Spend CAD cash if available (or if negative balances are allowed)"""
-        if self.can_afford_cad(amount):
+        """Spend CAD cash - only spends available amount, prevents negative balance"""
+        if self.cad >= amount:
             self.cad -= amount
-            return True
-        return False
+            return True  # Full amount spent
+        else:
+            # Spend only what's available, balance goes to 0
+            self.cad = 0.0
+            return False  # Partial amount spent (or none if already 0)
     
     def spend_usd(self, amount: float) -> bool:
-        """Spend USD cash if available (or if negative balances are allowed)"""
-        if self.can_afford_usd(amount):
+        """Spend USD cash - only spends available amount, prevents negative balance"""
+        if self.usd >= amount:
             self.usd -= amount
-            return True
-        return False
+            return True  # Full amount spent
+        else:
+            # Spend only what's available, balance goes to 0
+            self.usd = 0.0
+            return False  # Partial amount spent (or none if already 0)
     
     def add_cad(self, amount: float) -> None:
         """Add CAD cash (from sales, etc.)"""
@@ -164,8 +165,7 @@ def save_cash_balances(balances: CashBalances, data_dir: Path) -> None:
     cash_file = data_dir / "cash_balances.json"
     data = {
         "cad": balances.cad,
-        "usd": balances.usd,
-        "allow_negative": balances.allow_negative
+        "usd": balances.usd
     }
     with open(cash_file, 'w') as f:
         json.dump(data, f, indent=2)
@@ -182,8 +182,7 @@ def load_cash_balances(data_dir: Path) -> CashBalances:
             data = json.load(f)
         return CashBalances(
             cad=data.get('cad', 0.0),
-            usd=data.get('usd', 0.0),
-            allow_negative=data.get('allow_negative', False)
+            usd=data.get('usd', 0.0)
         )
     except Exception:
         return CashBalances()

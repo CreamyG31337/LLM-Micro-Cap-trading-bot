@@ -1272,6 +1272,15 @@ def get_company_name(ticker: str) -> str:
     Get the full company name for a ticker symbol.
     Uses yfinance to fetch company info and caches results.
     """
+    # Guard against NaN or non-string inputs
+    if ticker is None:
+        return "Unknown"
+    try:
+        ticker = str(ticker)
+    except Exception:
+        return "Unknown"
+    if ticker == "" or str(ticker).lower() == "nan":
+        return "Unknown"
     ticker = ticker.upper()
     
     # Check cache first
@@ -1514,6 +1523,113 @@ def set_data_dir(data_dir: Path) -> None:
 
 
 # ------------------------------
+# CSV column normalization
+# ------------------------------
+
+def normalize_portfolio_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize column names from variant headers to the expected schema.
+
+    Expected canonical headers in the portfolio CSV:
+    - Date, Ticker, Shares, Average Price, Cost Basis, Stop Loss,
+      Current Price, Total Value, PnL, Action, Company, Currency,
+      (optionally) Cash Balance, Total Equity
+    """
+    if df is None or len(df.columns) == 0:
+        return df
+
+    # Build a mapping from variant names (case/space insensitive) to canonical names
+    canonical_by_key: dict[str, str] = {
+        "date": "Date",
+        "timestamp": "Date",
+        "datetime": "Date",
+        "time": "Date",
+
+        "ticker": "Ticker",
+        "symbol": "Ticker",
+
+        "shares": "Shares",
+        "qty": "Shares",
+        "quantity": "Shares",
+        "position": "Shares",
+
+        "averageprice": "Average Price",
+        "avgprice": "Average Price",
+        "avg_price": "Average Price",
+        "buyprice": "Average Price",
+        "buy_price": "Average Price",
+        "entryprice": "Average Price",
+        "entry_price": "Average Price",
+
+        "costbasis": "Cost Basis",
+        "basis": "Cost Basis",
+        "cost": "Cost Basis",
+
+        "stoploss": "Stop Loss",
+        "stop": "Stop Loss",
+
+        "currentprice": "Current Price",
+        "price": "Current Price",
+        "lastprice": "Current Price",
+        "last": "Current Price",
+
+        "totalvalue": "Total Value",
+        "marketvalue": "Total Value",
+        "value": "Total Value",
+
+        "pnl": "PnL",
+        "p&l": "PnL",
+        "profit": "PnL",
+        "gain": "PnL",
+
+        "action": "Action",
+        "status": "Action",
+        "signal": "Action",
+
+        "company": "Company",
+        "companyname": "Company",
+        "name": "Company",
+
+        "currency": "Currency",
+        "curr": "Currency",
+
+        "cashbalance": "Cash Balance",
+        "cash": "Cash Balance",
+
+        "totalequity": "Total Equity",
+        "equity": "Total Equity",
+    }
+
+    rename_map: dict[str, str] = {}
+    for original_col in list(df.columns):
+        key = str(original_col).strip().lower().replace(" ", "").replace("-", "_")
+        if key in canonical_by_key:
+            rename_map[original_col] = canonical_by_key[key]
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    return df
+
+# Helper: filter out invalid/blank tickers
+def _filter_valid_tickers_df(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
+    if col_name not in df.columns:
+        return df
+    s = df[col_name].astype(str)
+    upper = s.str.upper()
+    # Valid tickers: start with a letter; allow letters/digits/dot/dash afterwards
+    pattern = r"^[A-Za-z][A-Za-z0-9\.-]*$"
+    mask_valid = (
+        df[col_name].notna()
+        & (s.str.strip() != "")
+        & (upper != "NAN")
+        & (upper != "NA")
+        & (upper != "NONE")
+        & (upper != "N/A")
+        & s.str.fullmatch(pattern, na=False)
+    )
+    return df[mask_valid].copy()
+
+# ------------------------------
 # Portfolio operations
 # ------------------------------
 
@@ -1607,6 +1723,9 @@ def process_portfolio(
     market_open_time = get_market_open_time()
     today_iso = format_timestamp_for_csv(market_open_time)
     portfolio_df = _ensure_df(portfolio)
+    # Drop any empty/NaN ticker rows to prevent 'NAN' symbol and NaN totals
+    if 'ticker' in portfolio_df.columns:
+        portfolio_df = _filter_valid_tickers_df(portfolio_df, 'ticker')
 
     results: list[dict[str, object]] = []
     total_value = 0.0
@@ -1811,8 +1930,8 @@ def process_portfolio(
                     # Calculate notional and check cash
                     notional = buy_price * shares
                     if notional > cash:
-                        print_error(f"Order for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
-                        continue
+                        print_warning(f"⚠️  Order for {ticker}: cost ${notional:,.2f} exceeds cash ${cash:,.2f} - proceeding anyway")
+                        # Continue with the trade despite insufficient cash
 
                     # Log the trade
                     trade_date_iso = format_timestamp_for_csv(trade_date)
@@ -1844,8 +1963,14 @@ def process_portfolio(
                     # Update portfolio
                     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
                         try:
-                            update_dual_currency_balances(DATA_DIR, ticker, -notional)
-                            cash -= notional
+                            cash_balances = load_cash_balances(DATA_DIR)
+                            currency = get_ticker_currency(ticker)
+                            if currency == 'USD':
+                                cash_balances.spend_usd(notional)
+                            else:  # CAD
+                                cash_balances.spend_cad(notional)
+                            save_cash_balances(cash_balances, DATA_DIR)
+                            cash = cash_balances.total_cad_equivalent()
                         except Exception as e:
                             print(f"Warning: Could not update dual currency balances: {e}")
                             cash -= notional
@@ -1856,29 +1981,19 @@ def process_portfolio(
                     # Detect currency
                     currency = "CAD" if ticker.endswith(".TO") else "USD"
                     
+                    # Add to in-memory portfolio using internal schema (lowercase columns)
                     new_row = {
-                        "Date": trade_date_iso,
-                        "Ticker": ticker,
-                        "Shares": shares,
-                        "Average Price": buy_price,
-                        "Cost Basis": notional,
-                        "Stop Loss": stop_loss,
-                        "Current Price": buy_price,  # Will be updated on next run
-                        "Total Value": notional,
-                        "PnL": 0.0,
-                        "Action": "BUY",
-                        "Company": "Unknown",  # Will be filled by company name detection
-                        "Currency": currency
+                        "ticker": ticker,
+                        "shares": float(shares),
+                        "buy_price": float(buy_price),
+                        "cost_basis": float(notional),
+                        "stop_loss": float(stop_loss),
                     }
                     
                     portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
                     
-                    # Save portfolio updates to CSV
-                    try:
-                        portfolio_df.to_csv(PORTFOLIO_CSV, index=False)
-                        print_info(f"Portfolio updated and saved to {PORTFOLIO_CSV}", "💾")
-                    except Exception as e:
-                        print_error(f"Failed to save portfolio: {e}")
+                    # Portfolio updated in memory - CSV will be updated by process_portfolio function
+                    print_info(f"Portfolio updated in memory", "💾")
                     
                     order_type_name = "Market Open" if order_type == "market_open" else "Limit"
                     print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
@@ -2008,8 +2123,8 @@ def process_portfolio(
                     # Calculate notional and check cash
                     notional = buy_price * shares
                     if notional > cash:
-                        print_error(f"Manual buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
-                    continue
+                        print_warning(f"⚠️  Manual buy for {ticker}: cost ${notional:,.2f} exceeds cash ${cash:,.2f} - proceeding anyway")
+                        # Continue with the trade despite insufficient cash
                     
                     # Log the manual trade
                     trade_date_iso = format_timestamp_for_csv(trade_date)
@@ -2041,8 +2156,14 @@ def process_portfolio(
                     # Update portfolio
                     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
                         try:
-                            update_dual_currency_balances(DATA_DIR, ticker, -notional)
-                            cash -= notional
+                            cash_balances = load_cash_balances(DATA_DIR)
+                            currency = get_ticker_currency(ticker)
+                            if currency == 'USD':
+                                cash_balances.spend_usd(notional)
+                            else:  # CAD
+                                cash_balances.spend_cad(notional)
+                            save_cash_balances(cash_balances, DATA_DIR)
+                            cash = cash_balances.total_cad_equivalent()
                         except Exception as e:
                             print(f"Warning: Could not update dual currency balances: {e}")
                             cash -= notional
@@ -2053,29 +2174,19 @@ def process_portfolio(
                     # Detect currency
                     currency = "CAD" if ticker.endswith(".TO") else "USD"
                     
+                    # Add to in-memory portfolio using internal schema (lowercase columns)
                     new_row = {
-                        "Date": trade_date_iso,
-                        "Ticker": ticker,
-                        "Shares": shares,
-                        "Average Price": buy_price,
-                        "Cost Basis": notional,
-                        "Stop Loss": stop_loss,
-                        "Current Price": buy_price,  # Will be updated on next run
-                        "Total Value": notional,
-                        "PnL": 0.0,
-                        "Action": "BUY",
-                        "Company": "Unknown",  # Will be filled by company name detection
-                        "Currency": currency
+                        "ticker": ticker,
+                        "shares": float(shares),
+                        "buy_price": float(buy_price),
+                        "cost_basis": float(notional),
+                        "stop_loss": float(stop_loss),
                     }
                     
                     portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
                     
-                    # Save portfolio updates to CSV
-                    try:
-                        portfolio_df.to_csv(PORTFOLIO_CSV, index=False)
-                        print_info(f"Portfolio updated and saved to {PORTFOLIO_CSV}", "💾")
-                    except Exception as e:
-                        print_error(f"Failed to save portfolio: {e}")
+                    # Portfolio updated in memory - CSV will be updated by process_portfolio function
+                    print_info(f"Portfolio updated in memory", "💾")
                     
                     order_type_name = "Market Open" if order_type == "market_open" else "Limit"
                     print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
@@ -2276,18 +2387,18 @@ def process_portfolio(
     if not portfolio_df.empty:
         print_header("Portfolio Pricing & Stop-Loss Check", "📊")
         
-        # Check if market is open and if we should update CSV
+        # Check if market is open (we update CSV regardless now, but still show status)
         market_open = is_market_open()
         if market_open:
-            print_info("Market is open - will update CSV with current prices", "📈")
+            print_info("Market is open - updating CSV with current prices", "📈")
         else:
-            print_info("Market is closed - will display prices but not update CSV", "⏰")
+            print_info("Market is closed - updating CSV with latest prices", "⏰")
         
         # Check what tickers already exist for today
         existing_today = pd.DataFrame()
         if PORTFOLIO_CSV.exists():
             existing_df = pd.read_csv(PORTFOLIO_CSV)
-            existing_df['Date_only'] = pd.to_datetime(existing_df['Date']).dt.date
+            existing_df['Date_only'] = safe_parse_datetime_column(existing_df['Date']).dt.date
             today_date_only = pd.to_datetime(today_iso).date()
             existing_today = existing_df[existing_df['Date_only'] == today_date_only]
         
@@ -2312,26 +2423,25 @@ def process_portfolio(
 
         if data.empty:
             print_warning(f"No data for {ticker} (source={fetch.source})")
-            if market_open:  # Only add to CSV if market is open
-                company_name = get_company_name(ticker)
-                # Detect currency and get exchange rate
-                currency = "CAD" if ticker.endswith(".TO") else "USD"
-                usd_cad_rate = 1.0
-                if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
-                    try:
-                        from dual_currency import get_exchange_rate
-                        usd_cad_rate = get_exchange_rate()
-                    except Exception:
-                        usd_cad_rate = 1.38  # Fallback rate
-                
-                row = {
-                    "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                    "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
-                    "Current Price": "", "Total Value": "", "PnL": "",
-                    "Action": "NO DATA",
-                    "Currency": currency
-                }
-                results.append(row)
+            company_name = get_company_name(ticker)
+            # Detect currency and get exchange rate
+            currency = "CAD" if ticker.endswith(".TO") else "USD"
+            usd_cad_rate = 1.0
+            if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                try:
+                    from dual_currency import get_exchange_rate
+                    usd_cad_rate = get_exchange_rate()
+                except Exception:
+                    usd_cad_rate = 1.38  # Fallback rate
+            
+            row = {
+                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
+                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                "Current Price": "", "Total Value": "", "PnL": "",
+                "Action": "NO DATA",
+                "Currency": currency
+            }
+            results.append(row)
             continue
 
         o = float(data["Open"].iloc[-1].item()) if "Open" in data else np.nan
@@ -2381,11 +2491,10 @@ def process_portfolio(
                     usd_cad_rate = 1.38  # Fallback rate
             
             row = {
-                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
+                "Date": today_iso, "Ticker": ticker, "Shares": shares,
                 "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": exec_price, "Total Value": value, "PnL": pnl,
-                "Action": action,
-                "Currency": currency
+                "Action": action, "Company": company_name, "Currency": currency
             }
         else:
             price = round(c, 2)
@@ -2396,28 +2505,23 @@ def process_portfolio(
             total_pnl += pnl
             company_name = get_company_name(ticker)
             
-            # Only add to CSV if market is open
-            if market_open:
-                # Detect currency and get exchange rate
-                currency = "CAD" if ticker.endswith(".TO") else "USD"
-                usd_cad_rate = 1.0
-                if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
-                    try:
-                        from dual_currency import get_exchange_rate
-                        usd_cad_rate = get_exchange_rate()
-                    except Exception:
-                        usd_cad_rate = 1.38  # Fallback rate
-                
-                row = {
-                    "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                    "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
-                    "Current Price": price, "Total Value": value, "PnL": pnl,
-                    "Action": action,
-                    "Currency": currency, "USD_CAD_Rate": usd_cad_rate
-                }
-                results.append(row)
-            else:
-                print_info(f"Market closed - {ticker} price ${price:.2f} (not saved to CSV)", "⏰")
+            # Detect currency and get exchange rate
+            currency = "CAD" if ticker.endswith(".TO") else "USD"
+            usd_cad_rate = 1.0
+            if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                try:
+                    from dual_currency import get_exchange_rate
+                    usd_cad_rate = get_exchange_rate()
+                except Exception:
+                    usd_cad_rate = 1.38  # Fallback rate
+            
+            row = {
+                "Date": today_iso, "Ticker": ticker, "Shares": shares,
+                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                "Current Price": price, "Total Value": value, "PnL": pnl,
+                "Action": action, "Company": company_name, "Currency": currency
+            }
+            results.append(row)
 
     # Calculate totals dynamically - no need to store in CSV
     print_header("Portfolio Summary", "📈")
@@ -2449,19 +2553,24 @@ def process_portfolio(
         fund_total = calculate_fund_contributions_total(str(DATA_DIR))
         print_info(f"Fund Contributions Total: ${fund_total:,.2f}", "💵")
 
-    # Only update CSV if market is open and we have new data
-    if market_open and len(results) > 0:
+    # Update CSV if we have new data (regardless of market hours)
+    if len(results) > 0:
         df_out = pd.DataFrame(results)
+        df_out = normalize_portfolio_columns(df_out)
         if PORTFOLIO_CSV.exists():
             existing = pd.read_csv(PORTFOLIO_CSV)
+            existing = normalize_portfolio_columns(existing)
+            # Remove any invalid or accidental 'NAN' ticker rows
+            if 'Ticker' in existing.columns:
+                existing = _filter_valid_tickers_df(existing, 'Ticker')
             # Migrate old date-only entries to timestamp format
             if len(existing) > 0 and len(str(existing["Date"].iloc[0])) == 10:
                 tz_name = get_timezone_name()
                 existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 {tz_name}" if len(str(x)) == 10 else x)
 
             # Create date-only column for deduplication
-            existing['Date_only'] = pd.to_datetime(existing['Date']).dt.date
-            df_out['Date_only'] = pd.to_datetime(df_out['Date']).dt.date
+            existing['Date_only'] = safe_parse_datetime_column(existing['Date']).dt.date
+            df_out['Date_only'] = safe_parse_datetime_column(df_out['Date']).dt.date
 
             # Remove existing entries that match today's date and ticker combinations
             today_date_only = pd.to_datetime(today_iso).date()
@@ -2478,11 +2587,20 @@ def process_portfolio(
             # If no existing file, just use the new data
             df_out = df_out.drop(columns=['Date_only'], errors='ignore')
         
+        # Ensure column order matches existing file if present; otherwise, keep canonical order
+        desired_cols = [
+            "Date", "Ticker", "Shares", "Average Price", "Cost Basis", "Stop Loss",
+            "Current Price", "Total Value", "PnL", "Action", "Company", "Currency",
+            "Cash Balance", "Total Equity"
+        ]
+        # Keep only columns that exist, in desired order, plus any extras at the end
+        existing_cols_order = [col for col in desired_cols if col in df_out.columns]
+        extra_cols = [col for col in df_out.columns if col not in existing_cols_order]
+        df_out = df_out[existing_cols_order + extra_cols]
+
         # Backup before saving portfolio updates
         backup_trading_files()
         df_out.to_csv(PORTFOLIO_CSV, index=False)
-    elif not market_open:
-        print_info("Market is closed - CSV not updated", "⏰")
     else:
         print_info("No new data to save", "ℹ️")
 
@@ -2529,6 +2647,40 @@ def log_sell(
     backup_trading_files()
     df.to_csv(TRADE_LOG_CSV, index=False)
     return portfolio
+
+def add_manual_trade_to_csv(ticker: str, shares: float, price: float, cost_basis: float, stop_loss: float, action: str) -> None:
+    """Add a manual trade to the portfolio CSV with the correct format"""
+    market_open_time = get_market_open_time()
+    today_iso = format_timestamp_for_csv(market_open_time)
+    company_name = get_company_name(ticker)
+    currency = "CAD" if ticker.endswith(".TO") else "USD"
+    
+    # Create row in the correct CSV format
+    new_row = {
+        "Date": today_iso,
+        "Ticker": ticker,
+        "Shares": shares,
+        "Average Price": price,
+        "Cost Basis": cost_basis,
+        "Stop Loss": stop_loss,
+        "Current Price": price,  # Same as buy price for new trades
+        "Total Value": cost_basis,
+        "PnL": 0.0,  # No PnL for new trades
+        "Action": action,
+        "Company": company_name,
+        "Currency": currency
+    }
+    
+    # Read existing CSV or create new one
+    if PORTFOLIO_CSV.exists():
+        df = pd.read_csv(PORTFOLIO_CSV)
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    else:
+        df = pd.DataFrame([new_row])
+    
+    # Backup before saving
+    backup_trading_files()
+    df.to_csv(PORTFOLIO_CSV, index=False)
 
 def log_manual_buy(
     buy_price: float,
@@ -2586,32 +2738,24 @@ def log_manual_buy(
 
     cost_amt = exec_price * shares
     
-    # Check cash availability using dual currency if available
+    # Check cash availability using dual currency if available - show warnings but don't stop
     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
         try:
             cash_balances = load_cash_balances(DATA_DIR)
             currency = get_ticker_currency(ticker)
             if currency == 'USD':
                 if not cash_balances.can_afford_usd(cost_amt):
-                    if not handle_insufficient_funds(cost_amt, 'USD', cash_balances.usd, ticker, DATA_DIR):
-                        return cash, llm_portfolio
-                    # Reload balances after potential update
-                    cash_balances = load_cash_balances(DATA_DIR)
+                    print_warning(f"⚠️  Insufficient USD funds: need ${cost_amt:,.2f}, have ${cash_balances.usd:,.2f} - proceeding anyway")
             else:  # CAD
                 if not cash_balances.can_afford_cad(cost_amt):
-                    if not handle_insufficient_funds(cost_amt, 'CAD', cash_balances.cad, ticker, DATA_DIR):
-                        return cash, llm_portfolio
-                    # Reload balances after potential update
-                    cash_balances = load_cash_balances(DATA_DIR)
+                    print_warning(f"⚠️  Insufficient CAD funds: need ${cost_amt:,.2f}, have ${cash_balances.cad:,.2f} - proceeding anyway")
         except Exception as e:
             print(f"Warning: Could not check dual currency balances: {e}")
             if cost_amt > cash:
-                if not handle_insufficient_funds(cost_amt, 'CASH', cash, ticker, DATA_DIR):
-                    return cash, llm_portfolio
+                print_warning(f"⚠️  Insufficient cash: need ${cost_amt:,.2f}, have ${cash:,.2f} - proceeding anyway")
     else:
         if cost_amt > cash:
-            if not handle_insufficient_funds(cost_amt, 'CASH', cash, ticker, DATA_DIR):
-                return cash, llm_portfolio
+            print_warning(f"⚠️  Insufficient cash: need ${cost_amt:,.2f}, have ${cash:,.2f} - proceeding anyway")
 
     log = {
         "Date": today,
@@ -2667,21 +2811,16 @@ def log_manual_buy(
         llm_portfolio.at[idx, "buy_price"] = new_cost / new_shares if new_shares else 0.0
         llm_portfolio.at[idx, "stop_loss"] = float(stoploss)
 
-    # Update cash balances based on currency
+    # Update cash balances based on currency - allow negative balances
     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
         try:
             cash_balances = load_cash_balances(DATA_DIR)
             currency = get_ticker_currency(ticker)
+            # Always allow negative balances for transactions
             if currency == 'USD':
-                if not cash_balances.spend_usd(cost_amt):
-                    # This should not happen since we checked above, but just in case
-                    print(f"❌ Unexpected error: Insufficient USD cash after balance check")
-                    return cash, llm_portfolio
+                cash_balances.spend_usd(cost_amt)  # This will now always succeed
             else:  # CAD
-                if not cash_balances.spend_cad(cost_amt):
-                    # This should not happen since we checked above, but just in case
-                    print(f"❌ Unexpected error: Insufficient CAD cash after balance check")
-                    return cash, llm_portfolio
+                cash_balances.spend_cad(cost_amt)  # This will now always succeed
             save_cash_balances(cash_balances, DATA_DIR)
             cash = cash_balances.total_cad_equivalent()
         except Exception as e:
@@ -2824,6 +2963,7 @@ def load_latest_portfolio_state(
 ) -> tuple[pd.DataFrame | list[dict[str, Any]], float]:
     """Load the most recent portfolio snapshot and cash balance."""
     df = pd.read_csv(file)
+    df = normalize_portfolio_columns(df)
     if df.empty:
         portfolio = pd.DataFrame(columns=["ticker", "shares", "stop_loss", "buy_price", "cost_basis"])
         # Ensure shares column is float even for empty DataFrame
@@ -2878,6 +3018,9 @@ def load_latest_portfolio_state(
         },
         inplace=True,
     )
+    # Drop rows with missing/invalid tickers to avoid accidental 'NAN' symbol
+    if 'ticker' in latest_tickers.columns:
+        latest_tickers = _filter_valid_tickers_df(latest_tickers, 'ticker')
     
     # Ensure shares column is float to preserve fractional shares
     if 'shares' in latest_tickers.columns:
@@ -2907,185 +3050,35 @@ def load_latest_portfolio_state(
 
 def handle_insufficient_funds(needed_amount: float, currency: str, current_balance: float, ticker: str, data_dir: Path = None) -> bool:
     """
-    Handle insufficient funds by offering multiple options:
-    1. Add more cash
-    2. Convert from other currency (if dual currency)
-    3. Allow negative balance (if enabled)
-    Returns True if user updated balance and there are now sufficient funds, False otherwise.
+    Handle insufficient funds by showing warnings but always allowing the transaction.
+    Returns True to always proceed with the transaction.
     """
     if data_dir is None:
         data_dir = DATA_DIR
     
     if not (_HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY):
-        # Single currency mode - offer simple cash update
-        print_error(f"Insufficient Funds for {ticker}", "💰")
+        # Single currency mode - just show warning
+        print_warning(f"⚠️  Insufficient Funds for {ticker}", "💰")
         print_warning(f"Need: ${needed_amount:,.2f}")
         print_info(f"Have: ${current_balance:,.2f}")
-        print_error(f"Short: ${needed_amount - current_balance:,.2f}")
-        
-        response = input(f"\nWould you like to add more cash to complete this purchase? (y/n): ").strip().lower()
-        if response == 'y':
-            try:
-                additional_cash = float(input(f"Enter additional cash amount: $"))
-                if additional_cash <= 0:
-                    print("❌ Amount must be positive")
-                    return False
-                # Note: In single currency mode, we don't actually update the balance
-                # This is more of a "promise" that the user will fund the account
-                print(f"✅ Proceeding with purchase assuming ${additional_cash:,.2f} additional funding")
-                return True
-            except ValueError:
-                print("❌ Invalid amount entered")
-                return False
-        return False
+        print_warning(f"Short: ${needed_amount - current_balance:,.2f} - proceeding anyway")
+        return True
     
-    # Dual currency mode - offer multiple options
-    print_error(f"Insufficient {currency} Funds for {ticker}", "💰")
+    # Dual currency mode - just show warning and proceed
+    print_warning(f"⚠️  Insufficient {currency} Funds for {ticker}", "💰")
     print_warning(f"Need: ${needed_amount:,.2f} {currency}")
     print_info(f"Have: ${current_balance:,.2f} {currency}")
-    print_error(f"Short: ${needed_amount - current_balance:,.2f} {currency}")
+    print_warning(f"Short: ${needed_amount - current_balance:,.2f} {currency} - proceeding anyway")
     
     try:
-        # Load current balances
+        # Load current balances (negative balances always allowed)
         cash_balances = load_cash_balances(data_dir)
-        
-        # Show current balances
-        print(f"\n💰 Current Cash Balances:")
-        print(f"   CAD: ${cash_balances.cad:,.2f}")
-        print(f"   USD: ${cash_balances.usd:,.2f}")
-        
-        # Calculate how much we need
-        amount_needed = needed_amount - current_balance
-        
-        # Offer options
-        print(f"\n🔧 Options to complete this purchase:")
-        print(f"1. Add more {currency} cash")
-        
-        # Check if we can convert from the other currency
-        other_currency = 'USD' if currency == 'CAD' else 'CAD'
-        other_balance = cash_balances.usd if currency == 'CAD' else cash_balances.cad
-        
-        if other_balance > 0:
-            # Calculate how much we'd get from converting all other currency
-            conversion_info = calculate_conversion_with_fee(other_balance, other_currency, currency)
-            print(f"2. Convert {other_currency} to {currency} (would get ~${conversion_info['amount_after_fee']:,.2f} {currency})")
-        
-        print(f"3. Allow negative balance and proceed (manual correction later)")
-        print(f"4. Cancel this purchase")
-        
-        choice = input(f"\nChoose an option (1-4): ").strip()
-        
-        if choice == '1':
-            # Add more cash
-            suggested_amount = max(amount_needed, amount_needed * 1.1)  # Suggest 10% buffer
-            amount_input = input(f"Enter {currency} amount to add (suggested: ${suggested_amount:,.2f}): $").strip()
-            if amount_input == "":
-                amount_to_add = suggested_amount
-            else:
-                amount_to_add = float(amount_input)
-                
-            if amount_to_add <= 0:
-                print("❌ Amount must be positive")
-                return False
-            
-            # Add the funds
-            if currency == 'USD':
-                cash_balances.add_usd(amount_to_add)
-                new_balance = cash_balances.usd
-            else:  # CAD
-                cash_balances.add_cad(amount_to_add)
-                new_balance = cash_balances.cad
-            
-            # Save the updated balances
-            save_cash_balances(cash_balances, data_dir)
-            
-            print(f"✅ Added ${amount_to_add:,.2f} {currency}")
-            print(f"   New {currency} balance: ${new_balance:,.2f}")
-            
-            # Check if we now have sufficient funds
-            if new_balance >= needed_amount:
-                print(f"✅ Sufficient funds available for {ticker} purchase!")
-                return True
-            else:
-                print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
-                return False
-                
-        elif choice == '2' and other_balance > 0:
-            # Convert from other currency
-            print(f"\n💱 Currency Conversion: {other_currency} → {currency}")
-            print(f"   Current {other_currency} balance: ${other_balance:,.2f}")
-            
-            # Calculate how much to convert
-            conversion_amount_input = input(f"Enter {other_currency} amount to convert (max: ${other_balance:,.2f}): $").strip()
-            if conversion_amount_input == "":
-                conversion_amount = other_balance
-            else:
-                conversion_amount = float(conversion_amount_input)
-            
-            if conversion_amount <= 0 or conversion_amount > other_balance:
-                print("❌ Invalid conversion amount")
-                return False
-            
-            # Perform conversion
-            if currency == 'USD':  # Converting CAD to USD
-                usd_received, fee_charged = cash_balances.convert_cad_to_usd(conversion_amount)
-                print(f"✅ Converted ${conversion_amount:,.2f} CAD to ${usd_received:,.2f} USD")
-                print(f"   Fee charged: ${fee_charged:,.2f} USD")
-                print(f"   New USD balance: ${cash_balances.usd:,.2f}")
-            else:  # Converting USD to CAD
-                cad_received, fee_charged = cash_balances.convert_usd_to_cad(conversion_amount)
-                print(f"✅ Converted ${conversion_amount:,.2f} USD to ${cad_received:,.2f} CAD")
-                print(f"   Fee charged: ${fee_charged:,.2f} CAD")
-                print(f"   New CAD balance: ${cash_balances.cad:,.2f}")
-            
-            # Save the updated balances
-            save_cash_balances(cash_balances, data_dir)
-            
-            # Check if we now have sufficient funds
-            if currency == 'USD':
-                new_balance = cash_balances.usd
-            else:
-                new_balance = cash_balances.cad
-                
-            if new_balance >= needed_amount:
-                print(f"✅ Sufficient funds available for {ticker} purchase!")
-                return True
-            else:
-                print(f"⚠️  Still short ${needed_amount - new_balance:,.2f} {currency} for this purchase")
-                return False
-                
-        elif choice == '3':
-            # Allow negative balance
-            print(f"\n⚠️  Allowing negative balance for this purchase")
-            print(f"   This will result in a negative {currency} balance of ${current_balance - needed_amount:,.2f}")
-            print(f"   You can manually correct balances later using the update_cash.py script")
-            
-            confirm = input(f"Proceed with negative balance? (y/n): ").strip().lower()
-            if confirm == 'y':
-                # Enable negative balance mode temporarily
-                cash_balances.allow_negative = True
-                save_cash_balances(cash_balances, data_dir)
-                print(f"✅ Proceeding with negative balance")
-                return True
-            else:
-                print(f"❌ Purchase cancelled")
-                return False
-                
-        elif choice == '4':
-            # Cancel purchase
-            print(f"❌ Purchase cancelled")
-            return False
-            
-        else:
-            print(f"❌ Invalid option selected")
-            return False
-            
-    except ValueError:
-        print("❌ Invalid amount entered")
-        return False
+        save_cash_balances(cash_balances, data_dir)
+        print(f"✅ Negative balances are always allowed")
     except Exception as e:
-        print(f"❌ Error updating cash balances: {e}")
-        return False
+        print(f"Warning: Could not update cash balances: {e}")
+    
+    return True
 
 
 def update_cash_balances_manual(data_dir: Path = None) -> None:

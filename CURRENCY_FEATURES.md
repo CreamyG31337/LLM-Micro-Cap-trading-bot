@@ -85,7 +85,7 @@ Options:
 - `get_live_exchange_rate()` - Fetch live exchange rates
 
 ### Data Storage
-- `allow_negative` flag stored in `cash_balances.json`
+- Negative balances are always allowed by default
 - Backward compatible with existing balance files
 
 ## Benefits

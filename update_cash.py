@@ -139,20 +139,11 @@ def main():
                     continue
                     
             elif action == 'n':
-                # Toggle negative balance mode
-                current_mode = "enabled" if cash_balances.allow_negative else "disabled"
-                print(f"\n🔧 Negative Balance Mode: Currently {current_mode}")
-                print("When enabled, trades can proceed even with insufficient funds,")
+                # Negative balance mode is now always enabled
+                print(f"\n🔧 Negative Balance Mode: Always enabled")
+                print("All trades can proceed even with insufficient funds,")
                 print("resulting in negative balances that can be corrected later.")
-                
-                toggle = input(f"Toggle negative balance mode? (y/n): ").strip().lower()
-                if toggle == 'y':
-                    cash_balances.allow_negative = not cash_balances.allow_negative
-                    new_mode = "enabled" if cash_balances.allow_negative else "disabled"
-                    print(f"✅ Negative balance mode {new_mode}")
-                else:
-                    print("❌ Mode unchanged")
-                    continue
+                print("✅ Negative balance mode is permanently enabled")
                     
             else:
                 print("❌ Invalid option")

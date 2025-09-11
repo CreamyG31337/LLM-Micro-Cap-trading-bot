@@ -2990,8 +2990,12 @@ def load_latest_portfolio_state(
     # Use proper timezone-aware parsing
     non_total["Date"] = non_total["Date"].apply(parse_csv_timestamp)
 
-    latest_date = non_total["Date"].max()
-    latest_tickers = non_total[non_total["Date"] == latest_date].copy()
+    # Sort by position size (Total Value) descending (largest first), then drop duplicates by ticker
+    # This keeps the most recent entry for each ticker, then sorts by position size
+    non_total = non_total.sort_values("Date", ascending=False)  # First get most recent entries
+    latest_tickers = non_total.drop_duplicates(subset="Ticker", keep="first").copy()
+    # Now sort by position size (Total Value) descending
+    latest_tickers = latest_tickers.sort_values("Total Value", ascending=False).copy()
     sold_mask = latest_tickers["Action"].astype(str).str.startswith("SELL")
     latest_tickers = latest_tickers[~sold_mask].copy()
     latest_tickers.drop(

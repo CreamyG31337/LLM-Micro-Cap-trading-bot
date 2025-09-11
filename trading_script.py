@@ -439,6 +439,14 @@ if _env_asof:
 # Color and formatting utilities
 # ------------------------------
 
+def clear_screen():
+    """Clear the terminal screen in a cross-platform way."""
+    import os
+    if os.name == 'nt':  # Windows
+        os.system('cls')
+    else:  # Unix/Linux/Mac
+        os.system('clear')
+
 def print_header(title: str, emoji: str = "🔷") -> None:
     """Print a colorful header with emoji."""
     if _HAS_RICH and console and not _FORCE_FALLBACK:
@@ -476,6 +484,51 @@ def print_info(message: str, emoji: str = "ℹ️") -> None:
         console.print(f"{emoji} {message}", style="bold blue")
     else:
         print(f"{Fore.BLUE}{emoji} {message}{Style.RESET_ALL}")
+
+def display_market_time_header() -> None:
+    """Display current time and market hours in a prominent header format."""
+    tz = get_trading_timezone()
+    tz_name = get_timezone_name()
+    now = datetime.now(tz)
+    market_open_time = now.replace(hour=6, minute=30, second=0, microsecond=0)
+    market_close_time = now.replace(hour=13, minute=0, second=0, microsecond=0)
+    market_open = is_market_open()
+
+    current_time = now.strftime('%I:%M:%S %p')
+    market_open_str = market_open_time.strftime('%I:%M %p')
+    market_close_str = market_close_time.strftime('%I:%M %p')
+
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
+        # Rich formatting with table
+        from rich.table import Table
+        from rich.text import Text
+
+        time_table = Table(show_header=False, show_edge=False, pad_edge=False)
+        time_table.add_column("Time", style="bold cyan", width=15)
+        time_table.add_column("Value", style="bold white", width=20)
+        time_table.add_column("Status", style="bold", width=25)
+
+        status_text = Text("🟢 OPEN", style="bold green") if market_open else Text("🔴 CLOSED", style="bold red")
+
+        time_table.add_row("🕐 Current Time", f"{current_time} {tz_name}", "")
+        time_table.add_row("🌅 Market Open", f"{market_open_str} {tz_name}", "")
+        time_table.add_row("🌙 Market Close", f"{market_close_str} {tz_name}", status_text)
+
+        console.print("\n" + "─" * 60, style="blue")
+        console.print(time_table, justify="center")
+        console.print("─" * 60, style="blue")
+    else:
+        # Plain text formatting
+        status = "🟢 MARKET OPEN" if market_open else "🔴 MARKET CLOSED"
+        print(f"\n{Fore.CYAN}{'─'*60}")
+        print(f"{Fore.CYAN}🕐 Current Time: {current_time} {tz_name}")
+        print(f"{Fore.CYAN}🌅 Market Open:  {market_open_str} {tz_name}")
+        print(f"{Fore.CYAN}🌙 Market Close: {market_close_str} {tz_name}")
+        if market_open:
+            print(f"{Fore.GREEN}{status}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}{status}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'─'*60}{Style.RESET_ALL}")
 
 def detect_terminal_width() -> int:
     """Detect the current terminal width in characters."""
@@ -654,11 +707,14 @@ def create_portfolio_table(portfolio_df: pd.DataFrame) -> None:
         logger.error(f"Unexpected error loading trade log: {e}", exc_info=True)
         trade_log_df = None
     
+    # Display market time information prominently at the top
+    display_market_time_header()
+
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         # Get date range information for better clarity
         current_date = last_trading_date().strftime("%Y-%m-%d")
         table_title = f"📊 Portfolio Snapshot - {current_date}"
-        
+
         # Determine optimal column widths based on environment
         optimal_width = get_optimal_table_width()
         using_test_data = is_using_test_data()
@@ -1861,9 +1917,9 @@ def process_portfolio(
     cash: float,
     interactive: bool = True,
 ) -> tuple[pd.DataFrame, float]:
-    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
-    market_open_time = get_market_open_time()
-    today_iso = format_timestamp_for_csv(market_open_time)
+    # Use configured timezone for timestamps - use current time for portfolio updates
+    current_time = get_current_trading_time()
+    today_iso = format_timestamp_for_csv(current_time)
     portfolio_df = _ensure_df(portfolio)
     # Drop any empty/NaN ticker rows to prevent 'NAN' symbol and NaN totals
     if 'ticker' in portfolio_df.columns:
@@ -1875,12 +1931,13 @@ def process_portfolio(
 
     # ------- Interactive trade entry (supports MOO) -------
     if interactive:
+        clear_screen()  # Clear screen for clean dashboard appearance
         print_header("Portfolio Management", "📊")
-        
+
         while True:
             # Check for source code modifications before each menu iteration
             check_source_modification()
-            
+
             # Display all information BEFORE the menu
             create_portfolio_table(portfolio_df)
             
@@ -2528,13 +2585,25 @@ def process_portfolio(
     # ------- Daily pricing + stop-loss execution -------
     if not portfolio_df.empty:
         print_header("Portfolio Pricing & Stop-Loss Check", "📊")
-        
-        # Check if market is open (we update CSV regardless now, but still show status)
+
+        # Display comprehensive market time information for user clarity
+        tz = get_trading_timezone()
+        tz_name = get_timezone_name()  # Use the proper timezone name function
+        now = datetime.now(tz)
+        market_open_time = now.replace(hour=6, minute=30, second=0, microsecond=0)
+        market_close_time = now.replace(hour=13, minute=0, second=0, microsecond=0)
         market_open = is_market_open()
+
+        print_info(f"🕐 Current Time: {now.strftime('%Y-%m-%d %I:%M:%S %p')} {tz_name}", "⏰")
+        print_info(f"🌅 Market Open: {market_open_time.strftime('%I:%M %p')} {tz_name}", "📈")
+        print_info(f"🌙 Market Close: {market_close_time.strftime('%I:%M %p')} {tz_name}", "⏰")
+
         if market_open:
+            print_success("🎯 MARKET IS CURRENTLY OPEN - Live prices available", "📈")
             print_info("Market is open - updating CSV with current prices", "📈")
         else:
-            print_info("Market is closed - updating CSV with latest prices", "⏰")
+            print_warning("🔒 MARKET IS CURRENTLY CLOSED - Using last known prices", "⏰")
+            print_info("Market is closed - preserving existing data (avoiding after-hours prices)", "⏰")
         
         # Check what tickers already exist for today
         existing_today = pd.DataFrame()
@@ -2554,13 +2623,16 @@ def process_portfolio(
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else float(calculate_cost_basis(cost, shares))
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
 
-        # Check if this ticker already exists for today with valid data
+        # Handle existing tickers based on market status and entry type
         if ticker in existing_tickers_today:
-            # Check if existing entry has "NO DATA" - if so, allow reprocessing
             existing_entry = existing_today[existing_today['Ticker'].str.upper() == ticker]
             if not existing_entry.empty and existing_entry['Action'].astype(str).iloc[0] != "NO DATA":
-                print_info(f"Skipping {ticker} - already has valid data for today", "⏭️")
-                continue
+                # Only update existing portfolio data if market is open (avoid after-hours prices)
+                if market_open:
+                    print_info(f"Market open - updating {ticker} with current prices", "📈")
+                else:
+                    print_info(f"Market closed - preserving existing {ticker} data (avoiding after-hours prices)", "⏰")
+                    continue  # Skip updating existing data when market is closed
             else:
                 print_info(f"Reprocessing {ticker} - updating NO DATA entry", "🔄")
         
@@ -2807,8 +2879,8 @@ def log_sell(
 
 def add_manual_trade_to_csv(ticker: str, shares: float, price: float, cost_basis: float, stop_loss: float, action: str) -> None:
     """Add a manual trade to the portfolio CSV with the correct format"""
-    market_open_time = get_market_open_time()
-    today_iso = format_timestamp_for_csv(market_open_time)
+    current_time = get_current_trading_time()
+    today_iso = format_timestamp_for_csv(current_time)
     company_name = get_company_name(ticker)
     currency = "CAD" if ticker.endswith(".TO") else "USD"
     
@@ -2848,9 +2920,9 @@ def log_manual_buy(
     llm_portfolio: pd.DataFrame,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
-    market_open_time = get_market_open_time()
-    today = format_timestamp_for_csv(market_open_time)
+    # Use configured timezone for timestamps - use current time for portfolio updates
+    current_time = get_current_trading_time()
+    today = format_timestamp_for_csv(current_time)
 
     # Auto-detect and correct ticker symbol using buy price context
     original_ticker = ticker
@@ -2998,9 +3070,9 @@ def log_manual_sell(
     reason: str | None = None,
     interactive: bool = True,
 ) -> tuple[float, pd.DataFrame]:
-    # Use configured timezone for timestamps - use market open time (6:30 AM) for trades
-    market_open_time = get_market_open_time()
-    today = format_timestamp_for_csv(market_open_time)
+    # Use configured timezone for timestamps - use current time for portfolio updates
+    current_time = get_current_trading_time()
+    today = format_timestamp_for_csv(current_time)
     
     # Auto-detect and correct ticker symbol
     original_ticker = ticker
@@ -3366,6 +3438,7 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
     print(f"Using data directory: {DATA_DIR}")
     
     llm_portfolio, cash = load_latest_portfolio_state(portfolio_file)
+    clear_screen()  # Clear technical messages before showing main dashboard
     llm_portfolio, cash = process_portfolio(llm_portfolio, cash)
     
     print_header("Processing Complete", "🎉")

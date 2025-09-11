@@ -48,6 +48,26 @@ This fork builds upon the original with:
 - **Advanced Performance Tracking** — Enhanced P&L calculations and market hours handling
 - **Visualization Tools** — Matplotlib graphs for portfolio analysis
 - **Comprehensive Debugging** — Multiple debug tools for troubleshooting
+
+## How the Trading Script Works
+
+### Market Hours & CSV Updates
+- **Market Hours**: 6:30 AM - 1:00 PM PST (9:30 AM - 4:00 PM EST)
+- **CSV Updates**: Only occur during market hours and once per day
+- **Price Display**: Always shows current prices (even after hours) but doesn't save them
+- **New Stocks**: Only added to CSV when market is open, with Action = "BUY"
+
+### Portfolio Management
+- **One Row Per Day**: Each stock gets one row per day in the CSV
+- **No Duplicates**: Script skips stocks that already exist for today
+- **Historical Data**: Preserves all historical prices for graphing
+- **Action Tracking**: Automatically sets Action = "BUY" for new stocks
+
+### Usage
+1. **Run anytime**: Script works 24/7 for viewing data and managing portfolio
+2. **Market hours**: CSV gets updated with current prices and new stocks
+3. **After hours**: Shows prices but doesn't save to CSV
+4. **Graphing**: Use the CSV data to generate portfolio performance charts
 - **Better User Experience** — Terminal optimization and interactive menus
 
 *For performance data and results, see the CSV files in `my trading/` and `test_data/` folders.*  

@@ -31,8 +31,13 @@ from typing import Optional, List, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / "venv"
 MY_TRADING_DIR = PROJECT_ROOT / "my trading"
+TEST_DATA_DIR = PROJECT_ROOT / "test_data"
 SCRIPTS_DIR = PROJECT_ROOT / "Scripts and CSV Files"
 START_YOUR_OWN_DIR = PROJECT_ROOT / "Start Your Own"
+
+# Check if we're in test mode
+IS_TEST_MODE = os.environ.get('TEST_DATA_MODE') == '1'
+DATA_DIR = TEST_DATA_DIR if IS_TEST_MODE else MY_TRADING_DIR
 
 # Virtual environment paths based on platform
 if platform.system() == "Windows":
@@ -137,14 +142,15 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
     """Get available menu options with (key, title, description, args)"""
+    data_folder_name = "test_data" if IS_TEST_MODE else "my trading"
     return [
         ("1", "🔄 Main Trading Script", 
-         "Run the main portfolio management and trading script (uses 'my trading' folder)", 
-         ["--data-dir", str(MY_TRADING_DIR)]),
+         f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("2", "🤖 Simple Automation", 
-         "Run LLM-powered automated trading (requires OpenAI API key)", 
-         ["--data-dir", str(MY_TRADING_DIR)]),
+         f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("3", "📊 Generate Performance Graph", 
          "Create performance comparison charts from your trading data", 
@@ -175,16 +181,16 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          []),
         
         ("d", "📋 Generate Daily Trading Prompt", 
-         "Generate daily trading prompt with current portfolio data", 
-         ["--data-dir", str(MY_TRADING_DIR)]),
+         f"Generate daily trading prompt with current portfolio data (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("w", "🔬 Generate Weekly Deep Research Prompt", 
-         "Generate weekly deep research prompt for comprehensive portfolio analysis", 
-         ["--data-dir", str(MY_TRADING_DIR)]),
+         f"Generate weekly deep research prompt for comprehensive portfolio analysis (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("u", "💰 Update Cash Balances", 
-         "Manually update your CAD/USD cash balances (deposits, withdrawals, corrections)", 
-         []),
+         f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("c", "⚙️  Configure", 
          "Configuration options and setup", 
@@ -281,10 +287,18 @@ def get_script_path(option: str) -> Optional[Path]:
 
 def main() -> None:
     """Main application loop"""
-    print_colored("🚀 Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
+    if IS_TEST_MODE:
+        print_colored("🧪 Initializing LLM Micro-Cap Trading Bot in TEST MODE...", Colors.YELLOW)
+        print_colored(f"📁 Using test data folder: {DATA_DIR}", Colors.CYAN)
+    else:
+        print_colored("🚀 Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
+        print_colored(f"📁 Using production data folder: {DATA_DIR}", Colors.CYAN)
     
-    # Ensure my trading directory exists
-    create_my_trading_dir()
+    # Ensure data directory exists
+    if IS_TEST_MODE:
+        DATA_DIR.mkdir(exist_ok=True)
+    else:
+        create_my_trading_dir()
     
     # Check venv status
     if not check_venv():

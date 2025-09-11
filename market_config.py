@@ -111,7 +111,7 @@ DEFAULT_TIMEZONE_OFFSET = -7  # Hours from UTC
 def get_timezone_config():
     """Return timezone configuration for the trading bot."""
     return {
-        "name": DEFAULT_TIMEZONE,
+        "name": DEFAULT_TIMEZONE,  # Display name for CSV files
         "offset_hours": DEFAULT_TIMEZONE_OFFSET,
         "utc_offset": f"{DEFAULT_TIMEZONE_OFFSET:+03d}:00"  # Format: +08:00 or -08:00
     }
@@ -121,7 +121,16 @@ def get_timezone_offset():
     return DEFAULT_TIMEZONE_OFFSET
 
 def get_timezone_name():
-    """Get the timezone name."""
+    """
+    Get the timezone name for CSV display.
+
+    This returns the user-readable format (PST/PDT) for CSV files.
+    The parsing function handles conversion to pandas-compatible formats.
+    """
+    return DEFAULT_TIMEZONE
+
+def get_timezone_display_name():
+    """Get the timezone display name for user-facing text."""
     return DEFAULT_TIMEZONE
 
 # ============================================================================

@@ -138,9 +138,9 @@ def parse_csv_timestamp(timestamp_str):
     timestamp_str = str(timestamp_str).strip()
     
     # Handle different timestamp formats
-    if " PST" in timestamp_str:
-        # Remove PST suffix and add proper UTC offset
-        clean_timestamp = timestamp_str.replace(" PST", "")
+    if " PST" in timestamp_str or " PDT" in timestamp_str:
+        # Remove PST/PDT suffix and add proper UTC offset
+        clean_timestamp = timestamp_str.replace(" PST", "").replace(" PDT", "")
         # Add UTC offset for proper parsing
         utc_offset = get_timezone_config()["utc_offset"]
         timestamp_with_offset = f"{clean_timestamp} {utc_offset}"
@@ -164,47 +164,53 @@ def check_source_modification():
     Check if the source code has been modified since last execution.
     This prevents running outdated code that could corrupt data.
     """
+    import hashlib
+    
     script_path = Path(__file__)
-    timestamp_file = script_path.parent / ".script_timestamp"
+    hash_file = script_path.parent / ".script_hash"
     
     try:
-        # Get current script modification time
-        current_mtime = script_path.stat().st_mtime
+        # Calculate current script content hash
+        with open(script_path, 'rb') as f:
+            current_hash = hashlib.md5(f.read()).hexdigest()
         
-        # Check if timestamp file exists
-        if timestamp_file.exists():
-            with open(timestamp_file, 'r') as f:
-                stored_mtime = float(f.read().strip())
+        # Check if hash file exists
+        if hash_file.exists():
+            with open(hash_file, 'r') as f:
+                stored_hash = f.read().strip()
             
-            # If current modification time is newer than stored execution time, abort execution
-            if current_mtime > stored_mtime:
+            # If current hash is different from stored hash, abort execution
+            if current_hash != stored_hash:
                 print("🚨 SOURCE CODE MODIFICATION DETECTED!")
-                print(f"Script was modified at: {datetime.fromtimestamp(current_mtime)}")
-                print(f"Last execution was at: {datetime.fromtimestamp(stored_mtime)}")
+                print("Script content has been modified since last execution.")
                 print("\n❌ ABORTING EXECUTION to prevent data corruption.")
                 print("Please restart the application to use the updated code.")
                 print("\nTo bypass this check (not recommended), delete the file:")
-                print(f"  {timestamp_file}")
+                print(f"  {hash_file}")
                 exit(1)
-        # If no timestamp file exists, this is the first run - don't create timestamp yet
-        # The timestamp will be created after successful execution
+        # If no hash file exists, this is the first run - don't create hash yet
+        # The hash will be created after successful execution
     
     except Exception as e:
         print(f"⚠️  Warning: Could not check source modification: {e}")
         print("Continuing execution...")
 
 def update_source_timestamp():
-    """Update the source modification timestamp after successful execution."""
+    """Update the source modification hash after successful execution."""
+    import hashlib
+    
     script_path = Path(__file__)
-    timestamp_file = script_path.parent / ".script_timestamp"
+    hash_file = script_path.parent / ".script_hash"
     
     try:
-        # Store the current execution time, not the script modification time
-        current_execution_time = datetime.now().timestamp()
-        with open(timestamp_file, 'w') as f:
-            f.write(str(current_execution_time))
+        # Calculate and store the current script content hash
+        with open(script_path, 'rb') as f:
+            current_hash = hashlib.md5(f.read()).hexdigest()
+        
+        with open(hash_file, 'w') as f:
+            f.write(current_hash)
     except Exception as e:
-        print(f"⚠️  Warning: Could not update source timestamp: {e}")
+        print(f"⚠️  Warning: Could not update source hash: {e}")
 
 # Color and formatting imports
 try:
@@ -749,7 +755,7 @@ def print_trade_menu() -> None:
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         panel = Panel(
             "[bold green]📈 Trading Menu[/bold green]\n\n"
-            "[cyan]'b'[/cyan] 🛒 Buy (MOO, Limit, or Log Executed Trade)\n"
+            "[cyan]'b'[/cyan] 🛒 Buy (Limit Order or Market Open Order)\n"
             "[cyan]'s'[/cyan] 📤 Sell (Limit Order)\n"
             "[cyan]'c'[/cyan] 💵 Log Contribution\n"
             "[cyan]'w'[/cyan] 💸 Log Withdrawal\n"
@@ -764,7 +770,7 @@ def print_trade_menu() -> None:
         console.print(panel)
     else:
         print(f"\n{Fore.GREEN}📈 Trading Menu:{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (MOO, Limit, or Log Executed Trade)")
+        print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (Limit Order or Market Open Order)")
         print(f"{Fore.CYAN}'s'{Style.RESET_ALL} 📤 Sell (Limit Order)")
         print(f"{Fore.CYAN}'c'{Style.RESET_ALL} 💵 Log Contribution")
         print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
@@ -1613,10 +1619,18 @@ def process_portfolio(
                 
                 if _HAS_RICH and console and not _FORCE_FALLBACK:
                     ticker = console.input("🎯 [bold cyan]Enter ticker symbol:[/bold cyan] ").strip().upper()
-                    order_type = console.input("📋 [bold cyan]Order type? 'm' = market-on-open, 'l' = limit, 'manual' = log executed trade:[/bold cyan] ").strip().lower()
+                    order_type = console.input("📋 [bold cyan]Order type? [bold green]l[/bold green]imit order (default), [bold green]m[/bold green]arket open order:[/bold cyan] ").strip().lower()
+                    if order_type == "" or order_type == "l":
+                        order_type = "limit"
+                    elif order_type == "m":
+                        order_type = "market_open"
                 else:
                     ticker = input(f"{Fore.CYAN}🎯 Enter ticker symbol:{Style.RESET_ALL} ").strip().upper()
-                    order_type = input(f"{Fore.CYAN}📋 Order type? 'm' = market-on-open, 'l' = limit, 'manual' = log executed trade:{Style.RESET_ALL} ").strip().lower()
+                    order_type = input(f"{Fore.CYAN}📋 Order type? {Fore.GREEN}[l]{Style.RESET_ALL}{Fore.CYAN}imit order (default), {Fore.GREEN}[m]{Style.RESET_ALL}{Fore.CYAN}arket open order:{Style.RESET_ALL} ").strip().lower()
+                    if order_type == "" or order_type == "l":
+                        order_type = "limit"
+                    elif order_type == "m":
+                        order_type = "market_open"
                 
                 # Auto-detect and correct ticker symbol (will get buy_price later)
                 original_ticker = ticker
@@ -1635,70 +1649,139 @@ def process_portfolio(
                     print_error("Invalid share amount. Buy cancelled.")
                     continue
 
-                if order_type == "m":
+                if order_type == "market_open":
+                    print_header("Market Open Order", "🌅")
+                    print_info("📝 Market open order - defaults to 6:30 AM PST")
+                    
+                    # Get current market data for price suggestion
+                    print_info(f"Fetching current market data for {ticker}...", "📊")
+                    s, e = trading_day_window()
+                    fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
+                    data = fetch.df
+                    
+                    suggested_price = None
+                    if not data.empty and "Close" in data:
+                        suggested_price = round(float(data["Close"].iloc[-1].item()), 2)
+                    
+                    # Get current time for date suggestion
+                    current_time = get_current_trading_time()
+                    suggested_date = current_time.strftime("%Y-%m-%d")
+                    
                     try:
+                        # Price input with suggestion
+                        if suggested_price:
+                            print_info(f"💡 Current market price: ${suggested_price:.2f} (use this as reference)")
+                            if _HAS_RICH and console:
+                                price_input = console.input(f"💵 [bold cyan]Enter fill price (suggested: ${suggested_price:.2f}, press Enter to accept):[/bold cyan] ").strip()
+                            else:
+                                price_input = input(f"{Fore.CYAN}💵 Enter fill price (suggested: ${suggested_price:.2f}, press Enter to accept):{Style.RESET_ALL} ").strip()
+                            
+                            if price_input == "":
+                                buy_price = suggested_price
+                                print_info(f"✅ Using suggested price: ${buy_price:.2f}")
+                            else:
+                                buy_price = float(price_input)
+                        else:
+                            if _HAS_RICH and console:
+                                buy_price = float(console.input("💵 [bold cyan]Enter fill price:[/bold cyan] "))
+                            else:
+                                buy_price = float(input(f"{Fore.CYAN}💵 Enter fill price:{Style.RESET_ALL} "))
+                        
+                        # Simplified date and time inputs (no seconds needed)
+                        tz = get_trading_timezone()
+                        tz_name = tz.tzname(None) if hasattr(tz, 'tzname') else str(tz)
+                        
+                        # Market open defaults to 6:30 AM today
+                        default_date = current_time.strftime("%Y-%m-%d")
+                        default_time = "06:30"
+                        print_info("🌅 Market open order - defaults to 6:30 AM today")
+                        
+                        print_info(f"📅 Format: YYYY-MM-DD HH:MM (Timezone: {tz_name})")
+                        print_info(f"📅 Suggested: {default_date} {default_time}")
+                        print_info("📅 Use + or - to change date (e.g., +1 for tomorrow, -1 for yesterday)")
+                        
+                        # Date input with +/- shortcuts
+                        if _HAS_RICH and console:
+                            date_input = console.input(f"📅 [bold cyan]Enter date (suggested: {default_date}, +/- for day change):[/bold cyan] ").strip()
+                        else:
+                            date_input = input(f"{Fore.CYAN}📅 Enter date (suggested: {default_date}, +/- for day change):{Style.RESET_ALL} ").strip()
+                        
+                        if date_input == "":
+                            date_input = default_date
+                            print_info(f"✅ Using suggested date: {date_input}")
+                        elif date_input.startswith(('+', '-')):
+                            # Handle +/- shortcuts
+                            try:
+                                days = int(date_input)
+                                new_date = current_time + timedelta(days=days)
+                                date_input = new_date.strftime("%Y-%m-%d")
+                                print_info(f"✅ Adjusted date: {date_input}")
+                            except ValueError:
+                                print_error("Invalid day adjustment. Use +1, -1, etc.")
+                                continue
+                        
+                        # Time input (no seconds)
+                        if _HAS_RICH and console:
+                            time_input = console.input(f"🕐 [bold cyan]Enter time (suggested: {default_time}):[/bold cyan] ").strip()
+                        else:
+                            time_input = input(f"{Fore.CYAN}🕐 Enter time (suggested: {default_time}):{Style.RESET_ALL} ").strip()
+                        
+                        if time_input == "":
+                            time_input = default_time
+                            print_info(f"✅ Using suggested time: {time_input}")
+                        
+                        # Combine date and time (add seconds)
+                        try:
+                            datetime_str = f"{date_input} {time_input}:00"
+                            trade_date = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+                            # Convert to timezone-aware datetime
+                            tz = get_trading_timezone()
+                            if hasattr(tz, 'localize'):
+                                trade_date = tz.localize(trade_date)
+                            else:
+                                trade_date = trade_date.replace(tzinfo=tz)
+                        except ValueError:
+                            print_error("Invalid date/time format. Use: YYYY-MM-DD for date, HH:MM for time")
+                            continue
+                        
+                        # Stop loss input
                         if _HAS_RICH and console:
                             stop_loss_input = console.input("🛑 [bold cyan]Enter stop loss (or 0 to skip):[/bold cyan] ").strip()
                         else:
                             stop_loss_input = input(f"{Fore.CYAN}🛑 Enter stop loss (or 0 to skip):{Style.RESET_ALL} ").strip()
+                        
                         if stop_loss_input == "":
                             stop_loss = 0.0
                         else:
                             stop_loss = float(stop_loss_input)
-                        if stop_loss < 0:
-                            raise ValueError
-                    except ValueError:
-                        print_error("Invalid stop loss. Buy cancelled.")
+                        
+                        if buy_price <= 0 or stop_loss < 0:
+                            raise ValueError("Invalid price or stop loss")
+                            
+                    except ValueError as e:
+                        print_error(f"Invalid input: {e}. Order cancelled.")
                         continue
 
-                    print_info(f"Fetching market data for {ticker}...", "📊")
-                    s, e = trading_day_window()
-                    fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
-                    data = fetch.df
-                    if data.empty:
-                        print_error(f"MOO buy for {ticker} failed: no market data available (source={fetch.source})")
-                        continue
-
-                    o = float(data["Open"].iloc[-1].item()) if "Open" in data else float(data["Close"].iloc[-1].item())
-                    exec_price = round(o, 2)
-                    notional = exec_price * shares
-                    
-                    print_info(f"Market open price: ${exec_price:.2f}")
-                    print_info(f"Total cost: ${notional:,.2f}")
-                    
-                    # Check market status and add appropriate confirmation
-                    market_open = is_market_open()
-                    if market_open:
-                        print_warning("⚠️  Market is currently OPEN - this trade will be backdated to 6:30 AM")
-                        print_warning("⚠️  You may have already executed this trade in your brokerage account")
-                    else:
-                        print_warning("⚠️  Market is currently CLOSED - this trade will be filled at market open tomorrow")
-                        print_warning("⚠️  Price may differ from current estimate - you'll need to correct it later if filled")
-                    
-                    # Confirmation prompt
-                    if _HAS_RICH and console and not _FORCE_FALLBACK:
-                        confirm = console.input(f"🤔 [bold yellow]Confirm MOO buy of {shares} shares of {ticker} at ${exec_price:.2f}? (y/n):[/bold yellow] ").strip().lower()
-                    else:
-                        confirm = input(f"{Fore.YELLOW}🤔 Confirm MOO buy of {shares} shares of {ticker} at ${exec_price:.2f}? (y/n):{Style.RESET_ALL} ").strip().lower()
-                    
-                    if confirm not in ['y', 'yes']:
-                        print_info("Trade cancelled by user")
-                        continue
-                    
+                    # Calculate notional and check cash
+                    notional = buy_price * shares
                     if notional > cash:
-                        print_error(f"MOO buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
+                        print_error(f"Order for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
                         continue
 
+                    # Log the trade
+                    trade_date_iso = format_timestamp_for_csv(trade_date)
+                    
                     log = {
-                        "Date": today_iso,
+                        "Date": trade_date_iso,
                         "Ticker": ticker,
                         "Shares Bought": shares,
-                        "Buy Price": exec_price,
+                        "Buy Price": buy_price,
                         "Cost Basis": notional,
                         "PnL": 0.0,
-                        "Reason": "MANUAL BUY MOO - Filled",
+                        "Reason": "MANUAL BUY MARKET OPEN - Filled",
                     }
-                    # --- Manual BUY MOO logging ---
+                    
+                    # Save to trade log
                     if os.path.exists(TRADE_LOG_CSV):
                         df_log = pd.read_csv(TRADE_LOG_CSV)
                         if df_log.empty:
@@ -1712,105 +1795,44 @@ def process_portfolio(
                     backup_trading_files()
                     df_log.to_csv(TRADE_LOG_CSV, index=False)
 
-                    # Check cash availability BEFORE updating portfolio
-                    if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
-                        try:
-                            cash_balances = load_cash_balances(DATA_DIR)
-                            currency = get_ticker_currency(ticker)
-                            if currency == 'USD':
-                                if not cash_balances.can_afford_usd(notional):
-                                    if not handle_insufficient_funds(notional, 'USD', cash_balances.usd, ticker, DATA_DIR):
-                                        continue
-                                    # Reload balances after potential update
-                                    cash_balances = load_cash_balances(DATA_DIR)
-                            else:  # CAD
-                                if not cash_balances.can_afford_cad(notional):
-                                    if not handle_insufficient_funds(notional, 'CAD', cash_balances.cad, ticker, DATA_DIR):
-                                        continue
-                                    # Reload balances after potential update
-                                    cash_balances = load_cash_balances(DATA_DIR)
-                        except Exception as e:
-                            print(f"Warning: Could not check dual currency balances: {e}")
-                            if notional > cash:
-                                if not handle_insufficient_funds(notional, 'CASH', cash, ticker, DATA_DIR):
-                                    continue
-                    else:
-                        if notional > cash:
-                            if not handle_insufficient_funds(notional, 'CASH', cash, ticker, DATA_DIR):
-                                continue
-
                     # Update portfolio
-                    rows = portfolio_df.loc[portfolio_df["ticker"].astype(str).str.upper() == ticker.upper()]
-                    if rows.empty:
-                        new_trade = {
-                            "ticker": ticker,
-                            "shares": float(shares),
-                            "stop_loss": float(stop_loss),
-                            "buy_price": float(exec_price),
-                            "cost_basis": float(notional),
-                        }
-                        if portfolio_df.empty:
-                            portfolio_df = pd.DataFrame([new_trade])
-                        else:
-                            portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_trade])], ignore_index=True)
-                    else:
-                        idx = rows.index[0]
-                        cur_shares = float(portfolio_df.at[idx, "shares"])
-                        cur_cost = float(portfolio_df.at[idx, "cost_basis"])
-                        new_shares = cur_shares + float(shares)
-                        new_cost = cur_cost + float(notional)
-                        avg_price = new_cost / new_shares if new_shares else 0.0
-                        portfolio_df.at[idx, "shares"] = new_shares
-                        portfolio_df.at[idx, "cost_basis"] = new_cost
-                        portfolio_df.at[idx, "buy_price"] = avg_price
-                        portfolio_df.at[idx, "stop_loss"] = float(stop_loss)
-
-                    # Update cash balances after successful portfolio update
                     if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
                         try:
-                            cash_balances = load_cash_balances(DATA_DIR)
-                            currency = get_ticker_currency(ticker)
-                            if currency == 'USD':
-                                cash_balances.spend_usd(notional)
-                            else:  # CAD
-                                cash_balances.spend_cad(notional)
-                            save_cash_balances(cash_balances, DATA_DIR)
-                            cash = cash_balances.total_cad_equivalent()
+                            update_dual_currency_balances(DATA_DIR, ticker, -notional)
+                            cash -= notional
                         except Exception as e:
                             print(f"Warning: Could not update dual currency balances: {e}")
                             cash -= notional
                     else:
                         cash -= notional
                     
-                    print_success(f"Manual BUY MOO for {ticker} filled at ${exec_price:.2f} ({fetch.source})", "🎉")
+                    # Add to portfolio
+                    new_row = {
+                        "Date": trade_date_iso,
+                        "Ticker": ticker,
+                        "Shares": shares,
+                        "Average Price": buy_price,
+                        "Cost Basis": notional,
+                        "Stop Loss": stop_loss,
+                        "Current Price": buy_price,  # Will be updated on next run
+                        "Total Value": notional,
+                        "PnL": 0.0,
+                        "Action": "BUY",
+                        "Cash Balance": cash,
+                        "Total Equity": cash + (portfolio_df["Total Value"].sum() if not portfolio_df.empty and "Total Value" in portfolio_df.columns else 0),
+                        "Company": "Unknown"  # Will be filled by company name detection
+                    }
+                    
+                    portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    order_type_name = "Market Open" if order_type == "market_open" else "Limit"
+                    print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
                     continue
 
-                elif order_type == "l":
-                    try:
-                        if _HAS_RICH and console:
-                            buy_price = float(console.input("💵 [bold cyan]Enter buy LIMIT price:[/bold cyan] "))
-                            stop_loss_input = console.input("🛑 [bold cyan]Enter stop loss (or 0 to skip):[/bold cyan] ").strip()
-                        else:
-                            buy_price = float(input(f"{Fore.CYAN}💵 Enter buy LIMIT price:{Style.RESET_ALL} "))
-                            stop_loss_input = input(f"{Fore.CYAN}🛑 Enter stop loss (or 0 to skip):{Style.RESET_ALL} ").strip()
-                        if stop_loss_input == "":
-                            stop_loss = 0.0
-                        else:
-                            stop_loss = float(stop_loss_input)
-                        if buy_price <= 0 or stop_loss < 0:
-                            raise ValueError
-                    except ValueError:
-                        print_error("Invalid input. Limit buy cancelled.")
-                        continue
-
-                    cash, portfolio_df = log_manual_buy(
-                        buy_price, shares, ticker, stop_loss, cash, portfolio_df
-                    )
-                    continue
                 
-                elif order_type == "manual":
-                    print_header("Log Executed Trade", "✏️")
-                    print_info("📝 You're logging a trade that was already executed in your brokerage account")
+                elif order_type == "limit":
+                    print_header("Limit Order", "📊")
+                    print_info("📝 Limit order - defaults to current time")
                     
                     # Get current market data for price suggestion
                     print_info(f"Fetching current market data for {ticker}...", "📊")
@@ -1831,12 +1853,13 @@ def process_portfolio(
                         if suggested_price:
                             print_info(f"💡 Current market price: ${suggested_price:.2f} (use this as reference)")
                             if _HAS_RICH and console:
-                                price_input = console.input(f"💵 [bold cyan]Enter ACTUAL fill price (suggested: ${suggested_price:.2f}):[/bold cyan] ").strip()
+                                price_input = console.input(f"💵 [bold cyan]Enter ACTUAL fill price (suggested: ${suggested_price:.2f}, press Enter to accept):[/bold cyan] ").strip()
                             else:
-                                price_input = input(f"{Fore.CYAN}💵 Enter ACTUAL fill price (suggested: ${suggested_price:.2f}):{Style.RESET_ALL} ").strip()
+                                price_input = input(f"{Fore.CYAN}💵 Enter ACTUAL fill price (suggested: ${suggested_price:.2f}, press Enter to accept):{Style.RESET_ALL} ").strip()
                             
                             if price_input == "":
                                 buy_price = suggested_price
+                                print_info(f"✅ Using suggested price: ${buy_price:.2f}")
                             else:
                                 buy_price = float(price_input)
                         else:
@@ -1845,29 +1868,69 @@ def process_portfolio(
                             else:
                                 buy_price = float(input(f"{Fore.CYAN}💵 Enter ACTUAL fill price:{Style.RESET_ALL} "))
                         
-                        # Date/time input with suggestion
-                        print_info(f"📅 Date/Time Format: YYYY-MM-DD HH:MM:SS (Timezone: {get_trading_timezone().zone})")
-                        print_info(f"📅 Suggested: {suggested_date} (current time)")
-                        print_info("📅 For trades executed this morning, use: 2025-09-10 06:30:00")
-                        print_info("📅 For trades executed during market hours, use the actual time")
+                        # Simplified date and time inputs (no seconds needed)
+                        tz = get_trading_timezone()
+                        tz_name = tz.tzname(None) if hasattr(tz, 'tzname') else str(tz)
                         
+                        # Set defaults based on order type
+                        if order_type == "market_open":
+                            # Market open defaults to 6:30 AM today
+                            default_date = current_time.strftime("%Y-%m-%d")
+                            default_time = "06:30"
+                            print_info("🌅 Market open order - defaults to 6:30 AM today")
+                        else:  # limit order
+                            # Limit order defaults to current time
+                            default_date = current_time.strftime("%Y-%m-%d")
+                            default_time = current_time.strftime("%H:%M")
+                            print_info("📊 Limit order - defaults to current time")
+                        
+                        print_info(f"📅 Format: YYYY-MM-DD HH:MM (Timezone: {tz_name})")
+                        print_info(f"📅 Suggested: {default_date} {default_time}")
+                        print_info("📅 Use + or - to change date (e.g., +1 for tomorrow, -1 for yesterday)")
+                        
+                        # Date input with +/- shortcuts
                         if _HAS_RICH and console:
-                            date_input = console.input(f"📅 [bold cyan]Enter execution date/time (suggested: {suggested_date}):[/bold cyan] ").strip()
+                            date_input = console.input(f"📅 [bold cyan]Enter date (suggested: {default_date}, +/- for day change):[/bold cyan] ").strip()
                         else:
-                            date_input = input(f"{Fore.CYAN}📅 Enter execution date/time (suggested: {suggested_date}):{Style.RESET_ALL} ").strip()
+                            date_input = input(f"{Fore.CYAN}📅 Enter date (suggested: {default_date}, +/- for day change):{Style.RESET_ALL} ").strip()
                         
                         if date_input == "":
-                            trade_date = current_time
-                        else:
-                            # Parse the date input
+                            date_input = default_date
+                            print_info(f"✅ Using suggested date: {date_input}")
+                        elif date_input.startswith(('+', '-')):
+                            # Handle +/- shortcuts
                             try:
-                                trade_date = datetime.strptime(date_input, "%Y-%m-%d %H:%M:%S")
-                                # Convert to timezone-aware datetime
-                                tz = get_trading_timezone()
-                                trade_date = tz.localize(trade_date)
+                                days = int(date_input)
+                                new_date = current_time + timedelta(days=days)
+                                date_input = new_date.strftime("%Y-%m-%d")
+                                print_info(f"✅ Adjusted date: {date_input}")
                             except ValueError:
-                                print_error("Invalid date format. Use: YYYY-MM-DD HH:MM:SS")
+                                print_error("Invalid day adjustment. Use +1, -1, etc.")
                                 continue
+
+                        # Time input (no seconds)
+                        if _HAS_RICH and console:
+                            time_input = console.input(f"🕐 [bold cyan]Enter time (suggested: {default_time}):[/bold cyan] ").strip()
+                        else:
+                            time_input = input(f"{Fore.CYAN}🕐 Enter time (suggested: {default_time}):{Style.RESET_ALL} ").strip()
+                        
+                        if time_input == "":
+                            time_input = default_time
+                            print_info(f"✅ Using suggested time: {time_input}")
+                        
+                        # Combine date and time (add seconds)
+                        try:
+                            datetime_str = f"{date_input} {time_input}:00"
+                            trade_date = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+                            # Convert to timezone-aware datetime
+                            tz = get_trading_timezone()
+                            if hasattr(tz, 'localize'):
+                                trade_date = tz.localize(trade_date)
+                            else:
+                                trade_date = trade_date.replace(tzinfo=tz)
+                        except ValueError:
+                            print_error("Invalid date/time format. Use: YYYY-MM-DD for date, HH:MM for time")
+                            continue
                         
                         # Stop loss input
                         if _HAS_RICH and console:
@@ -1886,12 +1949,12 @@ def process_portfolio(
                     except ValueError as e:
                         print_error(f"Invalid input: {e}. Manual entry cancelled.")
                         continue
-                    
+
                     # Calculate notional and check cash
                     notional = buy_price * shares
                     if notional > cash:
                         print_error(f"Manual buy for {ticker} failed: cost ${notional:,.2f} exceeds cash ${cash:,.2f}")
-                        continue
+                    continue
                     
                     # Log the manual trade
                     trade_date_iso = format_timestamp_for_csv(trade_date)
@@ -1944,17 +2007,18 @@ def process_portfolio(
                         "PnL": 0.0,
                         "Action": "BUY",
                         "Cash Balance": cash,
-                        "Total Equity": cash + portfolio_df["Total Value"].sum() if not portfolio_df.empty else cash,
+                        "Total Equity": cash + (portfolio_df["Total Value"].sum() if not portfolio_df.empty and "Total Value" in portfolio_df.columns else 0),
                         "Company": "Unknown"  # Will be filled by company name detection
                     }
                     
                     portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
                     
-                    print_success(f"Executed BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
+                    order_type_name = "Market Open" if order_type == "market_open" else "Limit"
+                    print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
                     continue
                 
                 else:
-                    print_error("Unknown order type. Use 'm', 'l', or 'manual'.")
+                    print_error("Unknown order type. Use 'l' for limit order or 'm' for market open order.")
                     continue
 
             if action == "s":

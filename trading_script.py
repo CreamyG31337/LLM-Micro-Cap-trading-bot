@@ -159,9 +159,41 @@ def parse_csv_timestamp(timestamp_str):
 # SOURCE MODIFICATION CHECK
 # ============================================================================
 
+def delete_source_hash():
+    """Delete the source modification hash file at startup."""
+    import hashlib
+    
+    script_path = Path(__file__)
+    hash_file = script_path.parent / ".script_hash"
+    
+    try:
+        if hash_file.exists():
+            hash_file.unlink()
+            print("🗑️  Deleted existing source hash file")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not delete source hash: {e}")
+
+def create_source_hash():
+    """Create the source modification hash at startup."""
+    import hashlib
+    
+    script_path = Path(__file__)
+    hash_file = script_path.parent / ".script_hash"
+    
+    try:
+        # Calculate and store the current script content hash
+        with open(script_path, 'rb') as f:
+            current_hash = hashlib.md5(f.read()).hexdigest()
+        
+        with open(hash_file, 'w') as f:
+            f.write(current_hash)
+        print("🔒 Created source hash file")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not create source hash: {e}")
+
 def check_source_modification():
     """
-    Check if the source code has been modified since last execution.
+    Check if the source code has been modified during execution.
     This prevents running outdated code that could corrupt data.
     """
     import hashlib
@@ -182,35 +214,19 @@ def check_source_modification():
             # If current hash is different from stored hash, abort execution
             if current_hash != stored_hash:
                 print("🚨 SOURCE CODE MODIFICATION DETECTED!")
-                print("Script content has been modified since last execution.")
+                print("Script content has been modified during execution.")
                 print("\n❌ ABORTING EXECUTION to prevent data corruption.")
                 print("Please restart the application to use the updated code.")
                 print("\nTo bypass this check (not recommended), delete the file:")
                 print(f"  {hash_file}")
                 exit(1)
-        # If no hash file exists, this is the first run - don't create hash yet
-        # The hash will be created after successful execution
+        else:
+            print("⚠️  Warning: No source hash file found - this should not happen")
     
     except Exception as e:
         print(f"⚠️  Warning: Could not check source modification: {e}")
         print("Continuing execution...")
 
-def update_source_timestamp():
-    """Update the source modification hash after successful execution."""
-    import hashlib
-    
-    script_path = Path(__file__)
-    hash_file = script_path.parent / ".script_hash"
-    
-    try:
-        # Calculate and store the current script content hash
-        with open(script_path, 'rb') as f:
-            current_hash = hashlib.md5(f.read()).hexdigest()
-        
-        with open(hash_file, 'w') as f:
-            f.write(current_hash)
-    except Exception as e:
-        print(f"⚠️  Warning: Could not update source hash: {e}")
 
 # Color and formatting imports
 try:
@@ -787,8 +803,8 @@ def _effective_now() -> datetime:
 # Globals / file locations
 # ------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-# Default to 'my trading' folder for private data (gitignored)
-DEFAULT_DATA_DIR = SCRIPT_DIR / "my trading"
+# Default to 'test_data' folder for safe testing (not gitignored)
+DEFAULT_DATA_DIR = SCRIPT_DIR / "test_data"
 DATA_DIR = DEFAULT_DATA_DIR
 PORTFOLIO_CSV = DATA_DIR / "llm_portfolio_update.csv"
 TRADE_LOG_CSV = DATA_DIR / "llm_trade_log.csv"
@@ -1220,6 +1236,36 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
                 print("\nCancelled. Using original ticker.")
                 TICKER_CORRECTION_CACHE[ticker] = ticker
                 return ticker
+
+def get_exchange_rate(date_str: str = None) -> float:
+    """
+    Get the USD/CAD exchange rate for a given date.
+    If no date provided, returns the most recent rate.
+    """
+    try:
+        exchange_file = DATA_DIR / "exchange_rates.csv"
+        if not exchange_file.exists():
+            return 1.38  # Fallback rate
+        
+        df = pd.read_csv(exchange_file)
+        if df.empty:
+            return 1.38
+        
+        if date_str:
+            # Find rate for specific date
+            df['Date'] = pd.to_datetime(df['Date'])
+            target_date = pd.to_datetime(date_str)
+            # Find closest date
+            df['date_diff'] = abs(df['Date'] - target_date)
+            closest_row = df.loc[df['date_diff'].idxmin()]
+            return float(closest_row['USD_CAD_Rate'])
+        else:
+            # Return most recent rate
+            return float(df['USD_CAD_Rate'].iloc[-1])
+    
+    except Exception as e:
+        print(f"Warning: Could not load exchange rate: {e}")
+        return 1.38  # Fallback rate
 
 def get_company_name(ticker: str) -> str:
     """
@@ -1807,6 +1853,9 @@ def process_portfolio(
                         cash -= notional
                     
                     # Add to portfolio
+                    # Detect currency
+                    currency = "CAD" if ticker.endswith(".TO") else "USD"
+                    
                     new_row = {
                         "Date": trade_date_iso,
                         "Ticker": ticker,
@@ -1818,12 +1867,18 @@ def process_portfolio(
                         "Total Value": notional,
                         "PnL": 0.0,
                         "Action": "BUY",
-                        "Cash Balance": cash,
-                        "Total Equity": cash + (portfolio_df["Total Value"].sum() if not portfolio_df.empty and "Total Value" in portfolio_df.columns else 0),
-                        "Company": "Unknown"  # Will be filled by company name detection
+                        "Company": "Unknown",  # Will be filled by company name detection
+                        "Currency": currency
                     }
                     
                     portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    # Save portfolio updates to CSV
+                    try:
+                        portfolio_df.to_csv(PORTFOLIO_CSV, index=False)
+                        print_info(f"Portfolio updated and saved to {PORTFOLIO_CSV}", "💾")
+                    except Exception as e:
+                        print_error(f"Failed to save portfolio: {e}")
                     
                     order_type_name = "Market Open" if order_type == "market_open" else "Limit"
                     print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
@@ -1995,6 +2050,9 @@ def process_portfolio(
                         cash -= notional
                     
                     # Add to portfolio
+                    # Detect currency
+                    currency = "CAD" if ticker.endswith(".TO") else "USD"
+                    
                     new_row = {
                         "Date": trade_date_iso,
                         "Ticker": ticker,
@@ -2006,12 +2064,18 @@ def process_portfolio(
                         "Total Value": notional,
                         "PnL": 0.0,
                         "Action": "BUY",
-                        "Cash Balance": cash,
-                        "Total Equity": cash + (portfolio_df["Total Value"].sum() if not portfolio_df.empty and "Total Value" in portfolio_df.columns else 0),
-                        "Company": "Unknown"  # Will be filled by company name detection
+                        "Company": "Unknown",  # Will be filled by company name detection
+                        "Currency": currency
                     }
                     
                     portfolio_df = pd.concat([portfolio_df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    # Save portfolio updates to CSV
+                    try:
+                        portfolio_df.to_csv(PORTFOLIO_CSV, index=False)
+                        print_info(f"Portfolio updated and saved to {PORTFOLIO_CSV}", "💾")
+                    except Exception as e:
+                        print_error(f"Failed to save portfolio: {e}")
                     
                     order_type_name = "Market Open" if order_type == "market_open" else "Limit"
                     print_success(f"{order_type_name} BUY for {ticker} logged at ${buy_price:.2f} on {trade_date_iso}", "🎉")
@@ -2212,6 +2276,23 @@ def process_portfolio(
     if not portfolio_df.empty:
         print_header("Portfolio Pricing & Stop-Loss Check", "📊")
         
+        # Check if market is open and if we should update CSV
+        market_open = is_market_open()
+        if market_open:
+            print_info("Market is open - will update CSV with current prices", "📈")
+        else:
+            print_info("Market is closed - will display prices but not update CSV", "⏰")
+        
+        # Check what tickers already exist for today
+        existing_today = pd.DataFrame()
+        if PORTFOLIO_CSV.exists():
+            existing_df = pd.read_csv(PORTFOLIO_CSV)
+            existing_df['Date_only'] = pd.to_datetime(existing_df['Date']).dt.date
+            today_date_only = pd.to_datetime(today_iso).date()
+            existing_today = existing_df[existing_df['Date_only'] == today_date_only]
+        
+        existing_tickers_today = set(existing_today['Ticker']) if not existing_today.empty else set()
+        
     s, e = trading_day_window()
     for _, stock in portfolio_df.iterrows():
         ticker = str(stock["ticker"]).upper()
@@ -2220,20 +2301,37 @@ def process_portfolio(
         cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
 
+        # Check if this ticker already exists for today
+        if ticker in existing_tickers_today:
+            print_info(f"Skipping {ticker} - already exists for today", "⏭️")
+            continue
+        
         print_info(f"Fetching data for {ticker}...", "📈")
         fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
         data = fetch.df
 
         if data.empty:
             print_warning(f"No data for {ticker} (source={fetch.source})")
-            company_name = get_company_name(ticker)
-            row = {
-                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
-                "Current Price": "", "Total Value": "", "PnL": "",
-                "Action": "NO DATA", "Cash Balance": "", "Total Equity": "",
-            }
-            results.append(row)
+            if market_open:  # Only add to CSV if market is open
+                company_name = get_company_name(ticker)
+                # Detect currency and get exchange rate
+                currency = "CAD" if ticker.endswith(".TO") else "USD"
+                usd_cad_rate = 1.0
+                if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                    try:
+                        from dual_currency import get_exchange_rate
+                        usd_cad_rate = get_exchange_rate()
+                    except Exception:
+                        usd_cad_rate = 1.38  # Fallback rate
+                
+                row = {
+                    "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
+                    "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                    "Current Price": "", "Total Value": "", "PnL": "",
+                    "Action": "NO DATA",
+                    "Currency": currency
+                }
+                results.append(row)
             continue
 
         o = float(data["Open"].iloc[-1].item()) if "Open" in data else np.nan
@@ -2272,28 +2370,54 @@ def process_portfolio(
                 
             portfolio_df = log_sell(ticker, shares, exec_price, cost, pnl, portfolio_df)
             company_name = get_company_name(ticker)
+            # Detect currency and get exchange rate
+            currency = "CAD" if ticker.endswith(".TO") else "USD"
+            usd_cad_rate = 1.0
+            if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                try:
+                    from dual_currency import get_exchange_rate
+                    usd_cad_rate = get_exchange_rate()
+                except Exception:
+                    usd_cad_rate = 1.38  # Fallback rate
+            
             row = {
                 "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
                 "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
                 "Current Price": exec_price, "Total Value": value, "PnL": pnl,
-                "Action": action, "Cash Balance": "", "Total Equity": "",
+                "Action": action,
+                "Currency": currency
             }
         else:
             price = round(c, 2)
             value = round(price * shares, 2)
             pnl = round((price - cost) * shares, 2)
-            action = "HOLD"
+            action = "BUY"  # New ticker = BUY
             total_value += value
             total_pnl += pnl
             company_name = get_company_name(ticker)
-            row = {
-                "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
-                "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
-                "Current Price": price, "Total Value": value, "PnL": pnl,
-                "Action": action, "Cash Balance": "", "Total Equity": "",
-            }
-
-        results.append(row)
+            
+            # Only add to CSV if market is open
+            if market_open:
+                # Detect currency and get exchange rate
+                currency = "CAD" if ticker.endswith(".TO") else "USD"
+                usd_cad_rate = 1.0
+                if _HAS_MARKET_CONFIG and _HAS_DUAL_CURRENCY:
+                    try:
+                        from dual_currency import get_exchange_rate
+                        usd_cad_rate = get_exchange_rate()
+                    except Exception:
+                        usd_cad_rate = 1.38  # Fallback rate
+                
+                row = {
+                    "Date": today_iso, "Ticker": ticker, "Company": company_name, "Shares": shares,
+                    "Average Price": cost, "Cost Basis": cost_basis, "Stop Loss": stop,
+                    "Current Price": price, "Total Value": value, "PnL": pnl,
+                    "Action": action,
+                    "Currency": currency, "USD_CAD_Rate": usd_cad_rate
+                }
+                results.append(row)
+            else:
+                print_info(f"Market closed - {ticker} price ${price:.2f} (not saved to CSV)", "⏰")
 
     # Calculate totals dynamically - no need to store in CSV
     print_header("Portfolio Summary", "📈")
@@ -2325,20 +2449,42 @@ def process_portfolio(
         fund_total = calculate_fund_contributions_total(str(DATA_DIR))
         print_info(f"Fund Contributions Total: ${fund_total:,.2f}", "💵")
 
-    df_out = pd.DataFrame(results)
-    if PORTFOLIO_CSV.exists():
-        existing = pd.read_csv(PORTFOLIO_CSV)
-        # Migrate old date-only entries to timestamp format
-        if len(existing) > 0 and len(str(existing["Date"].iloc[0])) == 10:
-            tz_name = get_timezone_name()
-            existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 {tz_name}" if len(str(x)) == 10 else x)
-        existing = existing[existing["Date"] != str(today_iso)]
-        print("Saving results to CSV...")
-        df_out = pd.concat([existing, df_out], ignore_index=True)
-    
-    # Backup before saving portfolio updates
-    backup_trading_files()
-    df_out.to_csv(PORTFOLIO_CSV, index=False)
+    # Only update CSV if market is open and we have new data
+    if market_open and len(results) > 0:
+        df_out = pd.DataFrame(results)
+        if PORTFOLIO_CSV.exists():
+            existing = pd.read_csv(PORTFOLIO_CSV)
+            # Migrate old date-only entries to timestamp format
+            if len(existing) > 0 and len(str(existing["Date"].iloc[0])) == 10:
+                tz_name = get_timezone_name()
+                existing["Date"] = existing["Date"].apply(lambda x: f"{x} 00:00:00 {tz_name}" if len(str(x)) == 10 else x)
+
+            # Create date-only column for deduplication
+            existing['Date_only'] = pd.to_datetime(existing['Date']).dt.date
+            df_out['Date_only'] = pd.to_datetime(df_out['Date']).dt.date
+
+            # Remove existing entries that match today's date and ticker combinations
+            today_date_only = pd.to_datetime(today_iso).date()
+            existing = existing[~(existing['Date_only'] == today_date_only)]
+
+            # Concatenate existing data with new data
+            df_out = pd.concat([existing, df_out], ignore_index=True)
+
+            # Remove temporary date column
+            df_out = df_out.drop(columns=['Date_only'], errors='ignore')
+
+            print("Saving results to CSV...")
+        else:
+            # If no existing file, just use the new data
+            df_out = df_out.drop(columns=['Date_only'], errors='ignore')
+        
+        # Backup before saving portfolio updates
+        backup_trading_files()
+        df_out.to_csv(PORTFOLIO_CSV, index=False)
+    elif not market_open:
+        print_info("Market is closed - CSV not updated", "⏰")
+    else:
+        print_info("No new data to save", "ℹ️")
 
     return portfolio_df, cash
 
@@ -3031,8 +3177,11 @@ def update_cash_balances_manual(data_dir: Path = None) -> None:
 
 def main(file: str | None = None, data_dir: Path | None = None) -> None:
     """Check versions, then run the trading script."""
-    # Check for source code modifications first
-    check_source_modification()
+    # Step 1: Delete existing hash file
+    delete_source_hash()
+    
+    # Step 2: Create new hash file
+    create_source_hash()
     
     # Set up data directory first
     if data_dir is not None:
@@ -3083,8 +3232,7 @@ def main(file: str | None = None, data_dir: Path | None = None) -> None:
         print(f"   {Fore.CYAN}'d'{Style.RESET_ALL} for daily trading prompt")
         print(f"   {Fore.CYAN}'w'{Style.RESET_ALL} for weekly deep research prompt")
     
-    # Update source modification timestamp after successful execution
-    update_source_timestamp()
+    # Hash check is now handled before each menu iteration
 
 
 def load_fund_contributions(data_dir: str) -> pd.DataFrame:

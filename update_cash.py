@@ -12,6 +12,7 @@ Usage: python update_cash.py
 """
 
 import sys
+import argparse
 from pathlib import Path
 
 # Add the project directory to the path so we can import modules
@@ -29,12 +30,21 @@ except ImportError as e:
 
 def main():
     """Main function to update cash balances"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Update cash balances")
+    parser.add_argument("--data-dir", type=str, help="Data directory path")
+    args = parser.parse_args()
+    
     print("💰 Cash Balance Update Utility")
     print("=" * 40)
     
     # Set up data directory
-    set_data_dir(DEFAULT_DATA_DIR)
-    data_dir = DATA_DIR
+    if args.data_dir:
+        data_dir = Path(args.data_dir)
+        set_data_dir(data_dir)
+    else:
+        set_data_dir(DEFAULT_DATA_DIR)
+        data_dir = DATA_DIR
     
     if not data_dir.exists():
         print(f"❌ Data directory not found: {data_dir}")

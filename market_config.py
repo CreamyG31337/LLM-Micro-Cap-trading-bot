@@ -105,8 +105,8 @@ Ready to manage this portfolio? What are your trading decisions for today?
 
 # Default timezone for the trading bot
 # Users can modify this to their preferred timezone
-DEFAULT_TIMEZONE = "PST"  # Pacific Standard Time (GMT-8)
-DEFAULT_TIMEZONE_OFFSET = -8  # Hours from UTC
+DEFAULT_TIMEZONE = "PDT"  # Pacific Daylight Time (GMT-7)
+DEFAULT_TIMEZONE_OFFSET = -7  # Hours from UTC
 
 def get_timezone_config():
     """Return timezone configuration for the trading bot."""

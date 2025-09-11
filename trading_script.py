@@ -28,6 +28,7 @@ import pandas as pd
 import yfinance as yf
 import json
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 
 # Development mode for stricter checking
 import os
@@ -63,6 +64,45 @@ except ImportError:
     def get_timezone_name():
         return "PST"
 from collections import defaultdict
+
+# ============================================================================
+# FINANCIAL CALCULATION UTILITIES
+# ============================================================================
+
+def money_to_decimal(value: float | int | str | Decimal) -> Decimal:
+    """Convert monetary values to Decimal for precise calculations."""
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def calculate_cost_basis(price: float | Decimal, shares: float | Decimal) -> Decimal:
+    """Calculate cost basis with precise decimal arithmetic."""
+    price_dec = money_to_decimal(price)
+    shares_dec = Decimal(str(shares))
+    return (price_dec * shares_dec).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def calculate_position_value(price: float | Decimal, shares: float | Decimal) -> Decimal:
+    """Calculate position value with precise decimal arithmetic."""
+    price_dec = money_to_decimal(price)
+    shares_dec = Decimal(str(shares))
+    return (price_dec * shares_dec).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def calculate_pnl(current_price: float | Decimal, buy_price: float | Decimal, shares: float | Decimal) -> Decimal:
+    """Calculate profit/loss with precise decimal arithmetic."""
+    current_dec = money_to_decimal(current_price)
+    buy_dec = money_to_decimal(buy_price)
+    shares_dec = Decimal(str(shares))
+    return ((current_dec - buy_dec) * shares_dec).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def round_money(value: float | Decimal) -> float:
+    """Round monetary value to 2 decimal places and return as float."""
+    return float(money_to_decimal(value))
+
+def validate_money_precision(value: float, tolerance: float = 0.005) -> bool:
+    """Check if a float value has precision issues (far from a clean decimal)."""
+    dec_value = money_to_decimal(value)
+    float_value = float(dec_value)
+    return abs(value - float_value) < tolerance
 
 # ============================================================================
 # TIMEZONE UTILITY FUNCTIONS
@@ -2511,13 +2551,18 @@ def process_portfolio(
         ticker = str(stock["ticker"]).upper()
         shares = float(stock["shares"]) if not pd.isna(stock["shares"]) else 0.0
         cost = float(stock["buy_price"]) if not pd.isna(stock["buy_price"]) else 0.0
-        cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else cost * shares
+        cost_basis = float(stock["cost_basis"]) if not pd.isna(stock["cost_basis"]) else float(calculate_cost_basis(cost, shares))
         stop = float(stock["stop_loss"]) if not pd.isna(stock["stop_loss"]) else 0.0
 
-        # Check if this ticker already exists for today
+        # Check if this ticker already exists for today with valid data
         if ticker in existing_tickers_today:
-            print_info(f"Skipping {ticker} - already exists for today", "⏭️")
-            continue
+            # Check if existing entry has "NO DATA" - if so, allow reprocessing
+            existing_entry = existing_today[existing_today['Ticker'].str.upper() == ticker]
+            if not existing_entry.empty and existing_entry['Action'].astype(str).iloc[0] != "NO DATA":
+                print_info(f"Skipping {ticker} - already has valid data for today", "⏭️")
+                continue
+            else:
+                print_info(f"Reprocessing {ticker} - updating NO DATA entry", "🔄")
         
         print_info(f"Fetching data for {ticker}...", "📈")
         fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
@@ -2554,9 +2599,9 @@ def process_portfolio(
             o = c
 
         if stop and l <= stop:
-            exec_price = round(o if o <= stop else stop, 2)
-            value = round(exec_price * shares, 2)
-            pnl = round((exec_price - cost) * shares, 2)
+            exec_price = round_money(o if o <= stop else stop)
+            value = float(calculate_position_value(exec_price, shares))
+            pnl = float(calculate_pnl(exec_price, cost, shares))
             action = "SELL - Stop Loss Triggered"
             
             print_error(f"🚨 STOP LOSS TRIGGERED for {ticker}!")
@@ -2599,9 +2644,9 @@ def process_portfolio(
                 "Action": action, "Company": company_name, "Currency": currency
             }
         else:
-            price = round(c, 2)
-            value = round(price * shares, 2)
-            pnl = round((price - cost) * shares, 2)
+            price = round_money(c)
+            value = float(calculate_position_value(price, shares))
+            pnl = float(calculate_pnl(price, cost, shares))
             action = "BUY"  # New ticker = BUY
             total_value += value
             total_pnl += pnl
@@ -2674,9 +2719,13 @@ def process_portfolio(
             existing['Date_only'] = safe_parse_datetime_column(existing['Date']).dt.date
             df_out['Date_only'] = safe_parse_datetime_column(df_out['Date']).dt.date
 
-            # Remove existing entries that match today's date and ticker combinations
+            # Remove existing entries that match today's date AND are for tickers being updated
             today_date_only = parse_csv_timestamp(today_iso).date()
-            existing = existing[~(existing['Date_only'] == today_date_only)]
+            tickers_being_updated = set(df_out['Ticker'].str.upper())  # Get tickers from new data
+            existing = existing[~(
+                (existing['Date_only'] == today_date_only) &
+                (existing['Ticker'].str.upper().isin(tickers_being_updated))
+            )]
 
             # Concatenate existing data with new data
             df_out = pd.concat([existing, df_out], ignore_index=True)
@@ -2689,6 +2738,12 @@ def process_portfolio(
             # If no existing file, just use the new data
             df_out = df_out.drop(columns=['Date_only'], errors='ignore')
         
+        # Validate and fix precision issues in monetary columns before saving
+        monetary_cols = ["Average Price", "Cost Basis", "Stop Loss", "Current Price", "Total Value", "PnL"]
+        for col in monetary_cols:
+            if col in df_out.columns:
+                df_out[col] = df_out[col].apply(lambda x: round_money(float(x)) if pd.notna(x) else x)
+
         # Ensure column order matches existing file if present; otherwise, keep canonical order
         desired_cols = [
             "Date", "Ticker", "Shares", "Average Price", "Cost Basis", "Stop Loss",

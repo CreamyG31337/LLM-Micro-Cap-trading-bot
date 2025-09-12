@@ -1,0 +1,143 @@
+"""Trade data models."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Dict, Optional, Any
+
+
+@dataclass
+class Trade:
+    """Represents a single trade transaction.
+    
+    This model is designed to work with both CSV and database backends,
+    supporting serialization to/from dictionaries for CSV rows and JSON.
+    """
+    ticker: str
+    action: str  # BUY/SELL/HOLD
+    shares: Decimal
+    price: Decimal
+    timestamp: datetime
+    cost_basis: Optional[Decimal] = None
+    pnl: Optional[Decimal] = None
+    reason: Optional[str] = None
+    currency: str = "CAD"
+    trade_id: Optional[str] = None  # For database primary key
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for CSV/JSON serialization.
+        
+        Returns:
+            Dictionary representation compatible with CSV format
+        """
+        return {
+            'ticker': self.ticker,
+            'action': self.action,
+            'shares': float(self.shares),
+            'price': float(self.price),
+            'timestamp': self.timestamp.isoformat(),
+            'cost_basis': float(self.cost_basis) if self.cost_basis is not None else None,
+            'pnl': float(self.pnl) if self.pnl is not None else None,
+            'reason': self.reason,
+            'currency': self.currency,
+            'trade_id': self.trade_id
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Trade:
+        """Create Trade from dictionary (CSV row or database record).
+        
+        Args:
+            data: Dictionary containing trade data
+            
+        Returns:
+            Trade instance
+        """
+        timestamp = data['timestamp']
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+        
+        return cls(
+            ticker=str(data.get('ticker', '')),
+            action=str(data.get('action', 'BUY')),
+            shares=Decimal(str(data.get('shares', 0))),
+            price=Decimal(str(data.get('price', 0))),
+            timestamp=timestamp,
+            cost_basis=Decimal(str(data['cost_basis'])) if data.get('cost_basis') is not None else None,
+            pnl=Decimal(str(data['pnl'])) if data.get('pnl') is not None else None,
+            reason=data.get('reason'),
+            currency=str(data.get('currency', 'CAD')),
+            trade_id=data.get('trade_id')
+        )
+    
+    def to_csv_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary matching current CSV format.
+        
+        Returns:
+            Dictionary with keys matching llm_trade_log.csv format
+        """
+        return {
+            'Date': self.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'Ticker': self.ticker,
+            'Shares Bought': float(self.shares),
+            'Buy Price': float(self.price),
+            'Cost Basis': float(self.cost_basis) if self.cost_basis is not None else 0.0,
+            'PnL': float(self.pnl) if self.pnl is not None else 0.0,
+            'Reason': self.reason or ''
+        }
+    
+    @classmethod
+    def from_csv_dict(cls, data: Dict[str, Any], timestamp: Optional[datetime] = None) -> Trade:
+        """Create Trade from CSV dictionary format.
+        
+        Args:
+            data: Dictionary with keys from llm_trade_log.csv
+            timestamp: Optional timestamp if not in data
+            
+        Returns:
+            Trade instance
+        """
+        # Handle timestamp from Date column or parameter
+        if timestamp is None and 'Date' in data:
+            # This would need proper timezone parsing in real implementation
+            timestamp = datetime.fromisoformat(str(data['Date']).replace(' PST', '').replace(' PDT', ''))
+        elif timestamp is None:
+            timestamp = datetime.now()
+        
+        return cls(
+            ticker=str(data.get('Ticker', '')),
+            action='BUY',  # Default action for trade log entries
+            shares=Decimal(str(data.get('Shares Bought', 0))),
+            price=Decimal(str(data.get('Buy Price', 0))),
+            timestamp=timestamp,
+            cost_basis=Decimal(str(data.get('Cost Basis', 0))),
+            pnl=Decimal(str(data.get('PnL', 0))),
+            reason=data.get('Reason'),
+            currency='CAD'  # Default currency
+        )
+    
+    def calculate_cost_basis(self) -> Decimal:
+        """Calculate cost basis for this trade.
+        
+        Returns:
+            Cost basis (price * shares)
+        """
+        return (self.price * self.shares).quantize(Decimal('0.01'))
+    
+    def is_buy(self) -> bool:
+        """Check if this is a buy trade.
+        
+        Returns:
+            True if action is BUY
+        """
+        return self.action.upper() == 'BUY'
+    
+    def is_sell(self) -> bool:
+        """Check if this is a sell trade.
+        
+        Returns:
+            True if action is SELL
+        """
+        return self.action.upper() == 'SELL'

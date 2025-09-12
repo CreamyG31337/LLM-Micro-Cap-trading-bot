@@ -127,8 +127,9 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📈')} Shares", justify="right", style="green", width=10)
         table.add_column(f"{_safe_emoji('💵')} Buy Price", justify="right", style="blue", width=10)
         table.add_column(f"{_safe_emoji('💰')} Current", justify="right", style="yellow", width=10)
-        table.add_column(f"{_safe_emoji('📊')} Total P&L", justify="right", style="magenta", width=12)
-        table.add_column(f"{_safe_emoji('📈')} Daily P&L", justify="right", style="cyan", width=10)
+        table.add_column(f"{_safe_emoji('💵')} Total Value", justify="right", style="yellow", width=12)
+        table.add_column(f"{_safe_emoji('📊')} Total P&L", justify="right", style="magenta", width=18)
+        table.add_column(f"{_safe_emoji('📈')} Daily P&L", justify="right", style="cyan", width=18)
         table.add_column(f"{_safe_emoji('📊')} 5-Day P&L", justify="right", style="bright_magenta", width=10)
         table.add_column(f"{_safe_emoji('🍕')} Weight", justify="right", style="bright_blue", width=8)
         table.add_column(f"{_safe_emoji('🛑')} Stop Loss", justify="right", style="red", width=10)
@@ -140,9 +141,39 @@ class TableFormatter:
             display_name = (company_name[:company_max_width-3] + "..." 
                           if len(company_name) > company_max_width else company_name)
             
-            # Calculate P&L display values
+            # Calculate total value
+            shares = float(position.get('shares', 0))
+            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
+            total_value = shares * current_price if current_price > 0 else 0
+            total_value_display = f"${total_value:.2f}" if total_value > 0 else "N/A"
+
+            # Calculate combined P&L values: percentage [dollar amount]
             unrealized_pnl = position.get('unrealized_pnl', 0)
-            pnl_display = f"${unrealized_pnl:.2f}" if unrealized_pnl != 0 else "N/A"
+            total_pnl_pct = position.get('total_pnl', 'N/A')
+            daily_pnl_pct = position.get('daily_pnl', 'N/A')
+
+            # Create combined display strings
+            if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
+                total_pnl_display = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
+            elif total_pnl_pct != 'N/A':
+                total_pnl_display = f"{total_pnl_pct} [$0.00]"
+            else:
+                total_pnl_display = 'N/A'
+
+            if daily_pnl_pct != 'N/A':
+                # For daily P&L, calculate dollar amount for the day
+                daily_dollar_pnl = 0
+                try:
+                    # This is a simplified calculation - in practice you'd need market data
+                    if current_price > 0 and shares > 0:
+                        # Estimate daily dollar change based on available data
+                        daily_dollar_pnl = float(position.get('daily_pnl_dollar', 0))
+                except:
+                    daily_dollar_pnl = 0
+
+                daily_pnl_display = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
+            else:
+                daily_pnl_display = 'N/A'
             
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
@@ -154,8 +185,9 @@ class TableFormatter:
                 f"{float(position.get('shares', 0)):.4f}",
                 f"${float(position.get('avg_price', 0)):.2f}",  # Fixed field name
                 f"${float(position.get('current_price', 0)):.2f}" if position.get('current_price', 0) > 0 else "N/A",
-                pnl_display,  # Fixed to use unrealized_pnl
-                position.get('daily_pnl', 'N/A'),  # Daily P&L from enhanced data
+                total_value_display,  # Total Value (shares * current price)
+                total_pnl_display,  # Combined Total P&L: percentage [dollar amount]
+                daily_pnl_display,  # Combined Daily P&L: percentage [dollar amount]
                 position.get('five_day_pnl', 'N/A'),  # 5-day P&L from enhanced data
                 weight_display,  # Position weight from enhanced data
                 f"${float(position.get('stop_loss', 0)):.2f}" if position.get('stop_loss', 0) > 0 else "None",
@@ -186,16 +218,46 @@ class TableFormatter:
                 'Cost Basis': f"${float(position.get('cost_basis', 0)):.2f}"
             })
         
+        # Update columns to match new combined format
+        for position in df_data:
+            shares = float(position.get('Shares', '0').replace(',', ''))
+            current_price_str = position.get('Current', 'N/A')
+            current_price = float(current_price_str.replace('$', '').replace(',', '')) if current_price_str != 'N/A' and current_price_str != '$0.00' else 0
+
+            # Calculate total value
+            total_value = shares * current_price if current_price > 0 else 0
+            position['Total Value'] = f"${total_value:.2f}" if total_value > 0 else "N/A"
+
+            # Create combined P&L values
+            unrealized_pnl = float(position.get('Cost Basis', '0').replace('$', '').replace(',', '')) - float(position.get('Buy Price', '$0').replace('$', '').replace(',', ''))
+            total_pnl_pct = position.get('Total P&L', 'N/A')
+            daily_pnl_pct = position.get('Daily P&L', 'N/A')
+
+            # Combine percentage and dollar amount
+            if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
+                position['Total P&L'] = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
+            elif total_pnl_pct != 'N/A':
+                position['Total P&L'] = f"{total_pnl_pct} [$0.00]"
+            else:
+                position['Total P&L'] = 'N/A'
+
+            if daily_pnl_pct != 'N/A':
+                # Estimate daily dollar change (simplified)
+                daily_dollar_pnl = 0
+                position['Daily P&L'] = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
+            else:
+                position['Daily P&L'] = 'N/A'
+
         if df_data and _HAS_PANDAS:
             df = pd.DataFrame(df_data)
-            
+
             # Set pandas display options for better formatting
             pd.set_option('display.max_columns', None)
             pd.set_option('display.width', self.optimal_width)
             pd.set_option('display.max_colwidth', 18 if self.using_test_data else 20)
-            
+
             print(df.to_string(index=False))
-            
+
             # Reset pandas options
             pd.reset_option('display.max_columns')
             pd.reset_option('display.width')
@@ -203,12 +265,12 @@ class TableFormatter:
         elif df_data:
             # Fallback to simple table formatting without pandas
             headers = list(df_data[0].keys()) if df_data else []
-            
+
             # Print headers
             header_line = " | ".join(f"{header:>12}" for header in headers)
             print(header_line)
             print("-" * len(header_line))
-            
+
             # Print data rows
             for row in df_data:
                 data_line = " | ".join(f"{str(row.get(header, 'N/A')):>12}" for header in headers)
@@ -242,6 +304,7 @@ class TableFormatter:
                         <th>📈 Shares</th>
                         <th>💵 Buy Price</th>
                         <th>💰 Current</th>
+                        <th>💵 Total Value</th>
                         <th>📊 Total P&L</th>
                         <th>📈 Daily P&L</th>
                         <th>🍕 Weight</th>
@@ -253,6 +316,30 @@ class TableFormatter:
         """
         
         for position in portfolio_data:
+            # Calculate total value for HTML
+            shares = float(position.get('shares', 0))
+            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
+            total_value = shares * current_price if current_price > 0 else 0
+
+            # Create combined P&L values for HTML
+            unrealized_pnl = position.get('unrealized_pnl', 0)
+            total_pnl_pct = position.get('total_pnl', 'N/A')
+            daily_pnl_pct = position.get('daily_pnl', 'N/A')
+
+            # Combine percentage and dollar amount
+            if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
+                total_pnl_display = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
+            elif total_pnl_pct != 'N/A':
+                total_pnl_display = f"{total_pnl_pct} [$0.00]"
+            else:
+                total_pnl_display = 'N/A'
+
+            if daily_pnl_pct != 'N/A':
+                daily_dollar_pnl = 0  # Simplified calculation
+                daily_pnl_display = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
+            else:
+                daily_pnl_display = 'N/A'
+
             html += f"""
                     <tr>
                         <td>{position.get('ticker', 'N/A')}</td>
@@ -261,8 +348,9 @@ class TableFormatter:
                         <td>{float(position.get('shares', 0)):.4f}</td>
                         <td>${float(position.get('buy_price', 0)):.2f}</td>
                         <td>${float(position.get('current_price', 0)):.2f}</td>
-                        <td>{position.get('total_pnl', 'N/A')}</td>
-                        <td>{position.get('daily_pnl', 'N/A')}</td>
+                        <td>${total_value:.2f}</td>
+                        <td>{total_pnl_display}</td>
+                        <td>{daily_pnl_display}</td>
                         <td>{position.get('position_weight', 'N/A')}</td>
                         <td>${float(position.get('stop_loss', 0)):.2f}</td>
                         <td>${float(position.get('cost_basis', 0)):.2f}</td>

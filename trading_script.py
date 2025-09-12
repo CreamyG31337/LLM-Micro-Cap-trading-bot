@@ -34,6 +34,7 @@ from config.constants import DEFAULT_DATA_DIR, LOG_FILE, VERSION
 # Repository and data access
 from data.repositories.repository_factory import RepositoryFactory, get_repository_container, configure_repositories
 from data.repositories.base_repository import BaseRepository, RepositoryError
+from data.models.portfolio import PortfolioSnapshot
 
 # Business logic modules
 from portfolio.portfolio_manager import PortfolioManager

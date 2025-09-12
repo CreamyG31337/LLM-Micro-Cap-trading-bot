@@ -156,19 +156,19 @@ class TableFormatter:
             if cost_basis > 0:
                 total_pnl_pct = (unrealized_pnl / cost_basis) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/green]"
+                    total_pnl_display = f"[green]{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/red]"
+                    total_pnl_display = f"[red]{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}[/red]"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
             elif avg_price > 0 and current_price > 0:
                 total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/green]"
+                    total_pnl_display = f"[green]{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/red]"
+                    total_pnl_display = f"[red]{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}[/red]"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
             else:
                 total_pnl_display = 'N/A'
 
@@ -178,14 +178,16 @@ class TableFormatter:
                 # Convert dollar amount to percentage for display
                 if avg_price > 0 and current_price > 0:
                     daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                    # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
+                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', ''))
                     if daily_pnl_pct > 0:
-                        daily_pnl_display = f"[green]{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}][/green]"
+                        daily_pnl_display = f"[green]{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}[/green]"
                     elif daily_pnl_pct < 0:
-                        daily_pnl_display = f"[red]{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}][/red]"
+                        daily_pnl_display = f"[red]{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}[/red]"
                     else:
-                        daily_pnl_display = f"{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]"
+                        daily_pnl_display = f"{daily_pnl_pct:.1f}% {daily_pnl_dollar}"
                 else:
-                    daily_pnl_display = f"N/A [{daily_pnl_dollar}]"
+                    daily_pnl_display = f"N/A {daily_pnl_dollar}"
             else:
                 daily_pnl_display = daily_pnl_dollar
             
@@ -230,19 +232,19 @@ class TableFormatter:
             if cost_basis > 0:
                 total_pnl_pct = (unrealized_pnl / cost_basis) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
             elif avg_price > 0 and current_price > 0:
                 total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
             else:
                 total_pnl_display = 'N/A'
             
@@ -251,14 +253,16 @@ class TableFormatter:
             if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
                 if avg_price > 0 and current_price > 0:
                     daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                    # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
+                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', ''))
                     if daily_pnl_pct > 0:
-                        daily_pnl_display = f"{Fore.GREEN}{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.GREEN}{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}{Style.RESET_ALL}"
                     elif daily_pnl_pct < 0:
-                        daily_pnl_display = f"{Fore.RED}{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.RED}{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}{Style.RESET_ALL}"
                     else:
-                        daily_pnl_display = f"{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]"
+                        daily_pnl_display = f"{daily_pnl_pct:.1f}% {daily_pnl_dollar}"
                 else:
-                    daily_pnl_display = f"N/A [{daily_pnl_dollar}]"
+                    daily_pnl_display = f"N/A {daily_pnl_dollar}"
             else:
                 daily_pnl_display = daily_pnl_dollar
             
@@ -270,7 +274,7 @@ class TableFormatter:
                 'Buy Price': f"${avg_price:.2f}",
                 'Current': f"${current_price:.2f}" if current_price > 0 else "N/A",
                 'Total Value': f"${total_value:.2f}" if total_value > 0 else "N/A",
-                'Dollar P&L': f"${unrealized_pnl:+,.2f}",
+                'Dollar P&L': f"${abs(unrealized_pnl):,.2f}" if unrealized_pnl != 0 else "$0.00",
                 'Total P&L': total_pnl_display,
                 'Daily P&L': daily_pnl_display,
                 'Weight': position.get('position_weight', 'N/A'),

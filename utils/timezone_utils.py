@@ -104,17 +104,25 @@ def format_timestamp_for_csv(dt: Optional[datetime] = None) -> str:
 
     NEVER change this to use UTC offsets like "-07:00" - keep PST/PDT for CSV display!
     The parsing function handles the conversion to pandas-compatible formats internally.
-    
+
     Args:
         dt: The datetime to format. If None, uses current trading time.
-    
+
     Returns:
         str: Formatted timestamp string for CSV storage
     """
     if dt is None:
         dt = get_current_trading_time()
 
-    tz_name = get_timezone_name()
+    # Determine the appropriate timezone name based on the date
+    # This ensures historical dates use the correct timezone for that time period
+    try:
+        from market_config import _is_dst
+        tz_name = "PDT" if _is_dst(dt) else "PST"
+    except ImportError:
+        # Fallback if market_config is not available
+        tz_name = "PST"
+
     return dt.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
 
 

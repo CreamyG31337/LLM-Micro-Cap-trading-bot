@@ -105,20 +105,53 @@ Ready to manage this portfolio? What are your trading decisions for today?
 
 # Default timezone for the trading bot
 # Users can modify this to their preferred timezone
-DEFAULT_TIMEZONE = "PDT"  # Pacific Daylight Time (GMT-7)
-DEFAULT_TIMEZONE_OFFSET = -7  # Hours from UTC
+from datetime import datetime, timezone, timedelta
+
+def _is_dst(dt: datetime) -> bool:
+    """Determine if a datetime is during Daylight Saving Time for Pacific Time."""
+    # Create timezone-aware datetimes for comparison
+    pacific_tz = timezone(timedelta(hours=-8))  # PST
+    dt_pacific = dt.astimezone(pacific_tz)
+
+    # DST typically starts second Sunday in March and ends first Sunday in November
+    year = dt_pacific.year
+    march = datetime(year, 3, 1, tzinfo=pacific_tz)
+    november = datetime(year, 11, 1, tzinfo=pacific_tz)
+
+    # Find second Sunday in March
+    dst_start = march + timedelta(days=(13 - march.weekday()) % 7 + 7)
+
+    # Find first Sunday in November
+    dst_end = november + timedelta(days=(6 - november.weekday()) % 7)
+
+    return dst_start <= dt_pacific < dst_end
+
+def _get_current_timezone_name() -> str:
+    """Get the current timezone name (PST or PDT) based on DST status."""
+    now = datetime.now(timezone.utc)
+    return "PDT" if _is_dst(now) else "PST"
+
+def _get_current_timezone_offset() -> int:
+    """Get the current timezone offset based on DST status."""
+    now = datetime.now(timezone.utc)
+    return -7 if _is_dst(now) else -8
+
+DEFAULT_TIMEZONE = _get_current_timezone_name()  # Dynamic based on DST
+DEFAULT_TIMEZONE_OFFSET = _get_current_timezone_offset()  # Dynamic based on DST
 
 def get_timezone_config():
     """Return timezone configuration for the trading bot."""
+    name = _get_current_timezone_name()
+    offset = _get_current_timezone_offset()
     return {
-        "name": DEFAULT_TIMEZONE,  # Display name for CSV files
-        "offset_hours": DEFAULT_TIMEZONE_OFFSET,
-        "utc_offset": f"{DEFAULT_TIMEZONE_OFFSET:+03d}:00"  # Format: +08:00 or -08:00
+        "name": name,  # Display name for CSV files
+        "offset_hours": offset,
+        "utc_offset": f"{offset:+03d}:00"  # Format: +08:00 or -08:00
     }
 
 def get_timezone_offset():
     """Get the timezone offset in hours from UTC."""
-    return DEFAULT_TIMEZONE_OFFSET
+    return _get_current_timezone_offset()
 
 def get_timezone_name():
     """
@@ -127,7 +160,7 @@ def get_timezone_name():
     This returns the user-readable format (PST/PDT) for CSV files.
     The parsing function handles conversion to pandas-compatible formats.
     """
-    return DEFAULT_TIMEZONE
+    return _get_current_timezone_name()
 
 def get_timezone_display_name():
     """Get the timezone display name for user-facing text."""

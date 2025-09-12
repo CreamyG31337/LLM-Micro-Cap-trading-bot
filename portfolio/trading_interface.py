@@ -59,10 +59,11 @@ class TradingInterface:
             
             # Save contribution to CSV
             contribution_data = {
+                'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'Contributor': contributor,
                 'Amount': amount,
                 'Type': 'CONTRIBUTION',
-                'Date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+                'Notes': ''
             }
             
             self._save_contribution(contribution_data)
@@ -102,10 +103,11 @@ class TradingInterface:
             
             # Save withdrawal to CSV (as negative contribution)
             withdrawal_data = {
+                'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'Contributor': contributor,
                 'Amount': amount,
                 'Type': 'WITHDRAWAL',
-                'Date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+                'Notes': ''
             }
             
             self._save_contribution(withdrawal_data)

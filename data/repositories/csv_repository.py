@@ -141,6 +141,67 @@ class CSVRepository(BaseRepository):
             logger.error(f"Failed to save portfolio snapshot: {e}")
             raise RepositoryError(f"Failed to save portfolio snapshot: {e}") from e
     
+    def update_daily_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+        """Update today's portfolio snapshot or create new one if it doesn't exist.
+        
+        This method follows the rule: only add new rows once per day, update prices in existing rows.
+        
+        Args:
+            snapshot: PortfolioSnapshot to save or update
+        """
+        try:
+            from datetime import datetime, timezone
+            import pytz
+            
+            # Get today's date in the same timezone as the snapshot
+            today = snapshot.timestamp.date()
+            
+            # Check if today's snapshot already exists
+            existing_df = None
+            if self.portfolio_file.exists():
+                existing_df = pd.read_csv(self.portfolio_file)
+                if not existing_df.empty:
+                    # Parse dates to compare
+                    existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    existing_df['Date_Only'] = existing_df['Date'].dt.date
+                    
+                    # Check if today's data exists
+                    today_data = existing_df[existing_df['Date_Only'] == today]
+                    if not today_data.empty:
+                        logger.info(f"Today's portfolio snapshot already exists, updating prices only")
+                        
+                        # Update prices in today's existing rows
+                        for _, position_row in today_data.iterrows():
+                            ticker = position_row['Ticker']
+                            
+                            # Find the updated position
+                            updated_position = None
+                            for pos in snapshot.positions:
+                                if pos.ticker == ticker:
+                                    updated_position = pos
+                                    break
+                            
+                            if updated_position:
+                                # Update only price-related fields, preserve Action
+                                existing_df.loc[existing_df['Ticker'] == ticker, 'Current Price'] = float(updated_position.current_price or 0)
+                                existing_df.loc[existing_df['Ticker'] == ticker, 'Total Value'] = float(updated_position.market_value or 0)
+                                existing_df.loc[existing_df['Ticker'] == ticker, 'PnL'] = float(updated_position.unrealized_pnl or 0)
+                                logger.debug(f"Updated prices for {ticker}")
+                        
+                        # Save the updated DataFrame
+                        existing_df = existing_df.drop('Date_Only', axis=1)  # Remove helper column
+                        existing_df.to_csv(self.portfolio_file, index=False)
+                        logger.info(f"Updated today's portfolio snapshot with current prices")
+                        return
+            
+            # If today's snapshot doesn't exist, create new rows
+            logger.info(f"Creating new portfolio snapshot for today")
+            self.save_portfolio_snapshot(snapshot)
+            
+        except Exception as e:
+            logger.error(f"Failed to update daily portfolio snapshot: {e}")
+            raise RepositoryError(f"Failed to update daily portfolio snapshot: {e}") from e
+    
     def get_latest_portfolio_snapshot(self) -> Optional[PortfolioSnapshot]:
         """Get the most recent portfolio snapshot.
         

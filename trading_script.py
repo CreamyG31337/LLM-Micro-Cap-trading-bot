@@ -37,7 +37,7 @@ from data.repositories.base_repository import BaseRepository, RepositoryError
 
 # Business logic modules
 from portfolio.portfolio_manager import PortfolioManager
-from portfolio.trade_processor import TradeProcessor
+from portfolio.fifo_trade_processor import FIFOTradeProcessor
 from portfolio.position_calculator import PositionCalculator
 from portfolio.trading_interface import TradingInterface
 
@@ -190,7 +190,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
         
         # Initialize portfolio components
         portfolio_manager = PortfolioManager(repository)
-        trade_processor = TradeProcessor(repository)
+        trade_processor = FIFOTradeProcessor(repository)
         position_calculator = PositionCalculator(repository)
         trading_interface = TradingInterface(repository, trade_processor)
         
@@ -575,11 +575,17 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     elif contrib_type.upper() == 'WITHDRAWAL':
                         total_contributions -= amount
             
+            # Get realized P&L from FIFO processor
+            realized_summary = trade_processor.get_realized_pnl_summary()
+            total_realized_pnl = float(realized_summary.get('total_realized_pnl', 0))
+            
             stats_data = {
                 'total_contributions': total_contributions,
                 'total_cost_basis': float(portfolio_metrics.get('total_cost_basis', 0)),
                 'total_current_value': float(total_portfolio_value),
-                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0))
+                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)),
+                'total_realized_pnl': total_realized_pnl,
+                'total_portfolio_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)) + total_realized_pnl
             }
             table_formatter.create_statistics_table(stats_data)
             print()  # Add spacing
@@ -763,6 +769,48 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Error in trading menu: {e}")
             print_warning("Error in trading menu")
+        
+        # Save updated portfolio snapshot (following daily update rules)
+        try:
+            # Create updated snapshot with current prices
+            updated_snapshot = PortfolioSnapshot(
+                positions=updated_positions,
+                timestamp=datetime.now(),
+                total_value=sum(pos.market_value or 0 for pos in updated_positions)
+            )
+            
+            # Check if we should update prices (market hours or no update today)
+            should_update_prices = False
+            
+            # Check if market is open
+            if market_hours.is_market_open():
+                should_update_prices = True
+                logger.info("Market is open - updating portfolio prices")
+            else:
+                # Check if portfolio was updated today
+                latest_snapshot = portfolio_manager.get_latest_portfolio()
+                if latest_snapshot:
+                    latest_date = latest_snapshot.timestamp.date()
+                    today = datetime.now().date()
+                    if latest_date < today:
+                        should_update_prices = True
+                        logger.info("Portfolio not updated today - updating prices outside market hours")
+                    else:
+                        logger.info("Portfolio already updated today and market is closed - skipping price update")
+                else:
+                    should_update_prices = True
+                    logger.info("No existing portfolio data - creating initial snapshot")
+            
+            if should_update_prices:
+                # Use the new daily update method
+                repository.update_daily_portfolio_snapshot(updated_snapshot)
+                print_success("Portfolio snapshot updated successfully")
+            else:
+                print_info("Portfolio prices not updated (market closed and already updated today)")
+                
+        except Exception as e:
+            logger.warning(f"Could not save portfolio snapshot: {e}")
+            print_warning(f"Could not save portfolio snapshot: {e}")
         
         print_success("Portfolio workflow completed successfully")
         

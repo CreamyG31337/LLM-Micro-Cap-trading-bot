@@ -177,7 +177,11 @@ class PromptGenerator:
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
         lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
-        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':<8} {'Avg Price':<10} {'Current':<10} {'Total P&L':<10} {'Daily P&L':<10}{Style.RESET_ALL}")
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total P&L':>10} {'Daily P&L':>10}{Style.RESET_ALL}")
+        # Compute separator length dynamically: sum of column widths + spaces between (7)
+        _col_widths = [10, 25, 8, 8, 10, 10, 10, 10]
+        _sep_len = sum(_col_widths) + 7
+        lines.append("-" * _sep_len)
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
@@ -250,7 +254,37 @@ class PromptGenerator:
             
             # Format each row with consistent colors and alignment
             # Colors help humans scan data quickly, alignment helps LLMs parse structure
-            lines.append(f"{Fore.CYAN}{ticker:<10}{Style.RESET_ALL} {display_name:<25} {Fore.BLUE}{open_date:<8}{Style.RESET_ALL} {shares:<8.4f} {Fore.BLUE}{buy_price_str:<10}{Style.RESET_ALL} {Fore.YELLOW}{current_price_str:<10}{Style.RESET_ALL} {total_pnl_colored:<10} {daily_pnl_colored:<10}")
+            # Build padded cells first to enforce alignment, then colorize
+            ticker_cell = f"{ticker:<10}"
+            company_cell = f"{display_name:<25}"
+            opened_cell = f"{open_date:<8}"
+            shares_cell = f"{shares:>8.4f}"
+            buy_price_cell = f"{buy_price_str:>10}"
+            current_price_cell = f"{current_price_str:>10}"
+            total_pnl_cell = f"{total_pnl:>10}"
+            daily_pnl_cell = f"{daily_pnl:>10}"
+
+            # Colorize padded P&L cells so ANSI codes don't affect alignment
+            total_pnl_cell_colored = total_pnl_cell
+            if total_pnl != "N/A" and total_pnl.startswith(("+", "-")):
+                total_pnl_cell_colored = f"{Fore.GREEN if total_pnl.startswith('+') else Fore.RED}{total_pnl_cell}{Style.RESET_ALL}"
+
+            daily_pnl_cell_colored = daily_pnl_cell
+            if daily_pnl != "N/A" and daily_pnl.startswith(("+", "-")):
+                daily_pnl_cell_colored = f"{Fore.GREEN if daily_pnl.startswith('+') else Fore.RED}{daily_pnl_cell}{Style.RESET_ALL}"
+
+            # Apply colors to other columns
+            line = (
+                f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} "
+                f"{company_cell} "
+                f"{Fore.BLUE}{opened_cell}{Style.RESET_ALL} "
+                f"{shares_cell} "
+                f"{Fore.BLUE}{buy_price_cell}{Style.RESET_ALL} "
+                f"{Fore.YELLOW}{current_price_cell}{Style.RESET_ALL} "
+                f"{total_pnl_cell_colored} "
+                f"{daily_pnl_cell_colored}"
+            )
+            lines.append(line)
         
         return "\n".join(lines)
             
@@ -406,14 +440,24 @@ class PromptGenerator:
         header = ["Ticker", "Close", "% Chg", "Volume"]
         colw = [10, 12, 9, 15]
         print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}{Style.RESET_ALL}")
+        print("-" * (colw[0] + colw[1] + colw[2] + colw[3] + 3))  # Add separator line
         for row in market_rows:
-            # Color code percentage changes - Green for gains, Red for losses
+            # Build padded cells first, then apply color so ANSI codes don't affect spacing
+            ticker_cell = f"{str(row[0]):<{colw[0]}}"
+            close_cell_plain = str(row[1]).rjust(colw[1])
             pct_change = str(row[2])
-            pct_colored = pct_change
+            pct_cell_plain = pct_change.rjust(colw[2])
+            volume_cell_plain = str(row[3]).rjust(colw[3])
+
+            # Apply colors to fully padded cells
+            close_cell = f"{Fore.YELLOW}{close_cell_plain}{Style.RESET_ALL}"
             if pct_change != "—" and pct_change.startswith(('+', '-')):
-                pct_colored = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_change}{Style.RESET_ALL}"
-            
-            print(f"{Fore.CYAN}{str(row[0]):<{colw[0]}}{Style.RESET_ALL} {Fore.YELLOW}{str(row[1]):>{colw[1]}}{Style.RESET_ALL} {pct_colored:>{colw[2]}} {Fore.BLUE}{str(row[3]):>{colw[3]}}{Style.RESET_ALL}")
+                pct_cell = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_cell_plain}{Style.RESET_ALL}"
+            else:
+                pct_cell = pct_cell_plain
+            volume_cell = f"{Fore.BLUE}{volume_cell_plain}{Style.RESET_ALL}"
+
+            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell}")
             
         # Portfolio snapshot with enhanced formatting
         print(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
@@ -428,7 +472,9 @@ class PromptGenerator:
         # Instructions section - the core trading guidance
         print(f"\n{Fore.CYAN}[ Your Instructions ]{Style.RESET_ALL}")
         instructions = self._get_daily_instructions()
-        print(instructions)
+        # Preserve original content; only adapt output if console can't handle Unicode
+        from display.console_output import format_text_for_console
+        print(format_text_for_console(instructions))
         
         print(f"\n[END] End of prompt - copy everything above to your LLM")
         

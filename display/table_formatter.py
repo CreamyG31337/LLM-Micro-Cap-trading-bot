@@ -415,16 +415,17 @@ class TableFormatter:
             )
             self.console.print(panel)
         else:
-            print(f"\\n{Fore.GREEN}📈 Trading Menu:{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}'b'{Style.RESET_ALL} 🛒 Buy (Limit Order or Market Open Order)")
-            print(f"{Fore.CYAN}'s'{Style.RESET_ALL} 📤 Sell (Limit Order)")
-            print(f"{Fore.CYAN}'c'{Style.RESET_ALL} 💵 Log Contribution")
-            print(f"{Fore.CYAN}'w'{Style.RESET_ALL} 💸 Log Withdrawal")
-            print(f"{Fore.CYAN}'u'{Style.RESET_ALL} 🔄 Update Cash Balances")
-            print(f"{Fore.CYAN}'sync'{Style.RESET_ALL} 🔗 Sync Fund Contributions")
-            print(f"{Fore.CYAN}'backup'{Style.RESET_ALL} 💾 Create Backup")
-            print(f"{Fore.CYAN}'restore'{Style.RESET_ALL} 🔄 Restore from Backup")
-            print(f"{Fore.CYAN}Enter{Style.RESET_ALL} ➤ Continue to Portfolio Processing")
+            from .console_output import _safe_emoji
+            print(f"\\n{Fore.GREEN}{_safe_emoji('📈')} Trading Menu:{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}'b'{Style.RESET_ALL} {_safe_emoji('🛒')} Buy (Limit Order or Market Open Order)")
+            print(f"{Fore.CYAN}'s'{Style.RESET_ALL} {_safe_emoji('📤')} Sell (Limit Order)")
+            print(f"{Fore.CYAN}'c'{Style.RESET_ALL} {_safe_emoji('💵')} Log Contribution")
+            print(f"{Fore.CYAN}'w'{Style.RESET_ALL} {_safe_emoji('💸')} Log Withdrawal")
+            print(f"{Fore.CYAN}'u'{Style.RESET_ALL} {_safe_emoji('🔄')} Update Cash Balances")
+            print(f"{Fore.CYAN}'sync'{Style.RESET_ALL} {_safe_emoji('🔗')} Sync Fund Contributions")
+            print(f"{Fore.CYAN}'backup'{Style.RESET_ALL} {_safe_emoji('💾')} Create Backup")
+            print(f"{Fore.CYAN}'restore'{Style.RESET_ALL} {_safe_emoji('🔄')} Restore from Backup")
+            print(f"{Fore.CYAN}Enter{Style.RESET_ALL} {_safe_emoji('➤')} Continue to Portfolio Processing")
 
 
 # Convenience functions for backward compatibility

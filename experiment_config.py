@@ -45,7 +45,22 @@ def _get_experiment_start_date() -> datetime:
                         if _HAS_TIMEZONE_PARSING:
                             first_trade_date = parse_csv_timestamp(real_trades['Date'].iloc[0])
                         else:
-                            first_trade_date = pd.to_datetime(real_trades['Date'].iloc[0])
+                            # Fallback: manually normalize common TZ abbreviations to offsets to avoid warnings
+                            ts_raw = str(real_trades['Date'].iloc[0])
+                            for abbr, offset in {
+                                " PST": "-08:00",
+                                " PDT": "-07:00",
+                                " MST": "-07:00",
+                                " MDT": "-06:00",
+                                " CST": "-06:00",
+                                " CDT": "-05:00",
+                                " EST": "-05:00",
+                                " EDT": "-04:00",
+                            }.items():
+                                if abbr in ts_raw:
+                                    ts_raw = ts_raw.replace(abbr, offset)
+                                    break
+                            first_trade_date = pd.to_datetime(ts_raw)
                         return first_trade_date.to_pydatetime()
             except Exception:
                 continue

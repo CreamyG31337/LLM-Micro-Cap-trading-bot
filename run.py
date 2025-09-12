@@ -87,9 +87,9 @@ This folder contains your **private trading data** and is excluded from version 
 
 ## Privacy & Security
 
-- ✅ **Git Ignored**: This entire folder is in `.gitignore` so your trading data stays private
-- ✅ **Local Only**: These files never get committed to GitHub or shared publicly
-- ✅ **Default Location**: The trading scripts now use this folder by default
+- _safe_emoji('✅') **Git Ignored**: This entire folder is in `.gitignore` so your trading data stays private
+- _safe_emoji('✅') **Local Only**: These files never get committed to GitHub or shared publicly
+- _safe_emoji('✅') **Default Location**: The trading scripts now use this folder by default
 
 ## Getting Started
 
@@ -111,7 +111,7 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
         args = []
     
     if not check_venv():
-        print_colored("❌ Virtual environment not found!", Colors.RED)
+        print_colored("_safe_emoji('❌') Virtual environment not found!", Colors.RED)
         print_colored(f"Expected location: {VENV_DIR}", Colors.YELLOW)
         print_colored("Please create a virtual environment first:", Colors.YELLOW)
         print_colored("  python -m venv venv", Colors.CYAN)
@@ -126,7 +126,7 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
     # Prepare command
     cmd = [str(VENV_PYTHON), str(script_path)] + args
     
-    print_colored(f"🚀 Running: {' '.join(cmd)}", Colors.CYAN)
+    print_colored(f"_safe_emoji('🚀') Running: {' '.join(cmd)}", Colors.CYAN)
     print_colored("=" * 60, Colors.BLUE)
     
     # Run the command
@@ -134,10 +134,10 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
         result = subprocess.run(cmd, cwd=PROJECT_ROOT)
         return result.returncode
     except KeyboardInterrupt:
-        print_colored("\n\n⚠️  Script interrupted by user", Colors.YELLOW)
+        print_colored("\n\n_safe_emoji('⚠️')  Script interrupted by user", Colors.YELLOW)
         return 130
     except Exception as e:
-        print_colored(f"\n❌ Error running script: {e}", Colors.RED)
+        print_colored(f"\n_safe_emoji('❌') Error running script: {e}", Colors.RED)
         return 1
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
@@ -148,7 +148,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(DATA_DIR)]),
         
-        ("2", "🤖 Simple Automation", 
+        ("2", "_safe_emoji('🤖') Simple Automation", 
          f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(DATA_DIR)]),
         
@@ -204,7 +204,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
 def show_menu() -> None:
     """Display the main menu"""
     print_colored("\n" + "=" * 80, Colors.HEADER)
-    print_colored("🤖 LLM MICRO-CAP TRADING BOT - MASTER CONTROL", Colors.HEADER + Colors.BOLD)
+    print_colored("_safe_emoji('🤖') LLM MICRO-CAP TRADING BOT - MASTER CONTROL", Colors.HEADER + Colors.BOLD)
     print_colored("=" * 80, Colors.HEADER)
     
     options = get_menu_options()
@@ -230,9 +230,9 @@ def handle_configuration() -> None:
     if choice == "1":
         print_colored(f"\n📍 Virtual Environment Status:", Colors.BLUE + Colors.BOLD)
         if check_venv():
-            print_colored(f"✅ Found: {VENV_PYTHON}", Colors.GREEN)
+            print_colored(f"_safe_emoji('✅') Found: {VENV_PYTHON}", Colors.GREEN)
         else:
-            print_colored(f"❌ Not found: {VENV_PYTHON}", Colors.RED)
+            print_colored(f"_safe_emoji('❌') Not found: {VENV_PYTHON}", Colors.RED)
             print_colored("Run the following commands to create it:", Colors.YELLOW)
             print_colored("  python -m venv venv", Colors.CYAN)
             if platform.system() == "Windows":
@@ -244,10 +244,10 @@ def handle_configuration() -> None:
     elif choice == "2":
         print_colored(f"\n📁 Project Structure:", Colors.BLUE + Colors.BOLD)
         print_colored(f"Project Root: {PROJECT_ROOT}", Colors.ENDC)
-        print_colored(f"Virtual Env:  {VENV_DIR} {'✅' if VENV_DIR.exists() else '❌'}", Colors.ENDC)
-        print_colored(f"My Trading:   {MY_TRADING_DIR} {'✅' if MY_TRADING_DIR.exists() else '❌'}", Colors.ENDC)
-        print_colored(f"Scripts Dir:  {SCRIPTS_DIR} {'✅' if SCRIPTS_DIR.exists() else '❌'}", Colors.ENDC)
-        print_colored(f"Start Your Own: {START_YOUR_OWN_DIR} {'✅' if START_YOUR_OWN_DIR.exists() else '❌'}", Colors.ENDC)
+        print_colored(f"Virtual Env:  {VENV_DIR} {'_safe_emoji('✅')' if VENV_DIR.exists() else '_safe_emoji('❌')'}", Colors.ENDC)
+        print_colored(f"My Trading:   {MY_TRADING_DIR} {'_safe_emoji('✅')' if MY_TRADING_DIR.exists() else '_safe_emoji('❌')'}", Colors.ENDC)
+        print_colored(f"Scripts Dir:  {SCRIPTS_DIR} {'_safe_emoji('✅')' if SCRIPTS_DIR.exists() else '_safe_emoji('❌')'}", Colors.ENDC)
+        print_colored(f"Start Your Own: {START_YOUR_OWN_DIR} {'_safe_emoji('✅')' if START_YOUR_OWN_DIR.exists() else '_safe_emoji('❌')'}", Colors.ENDC)
     
     elif choice == "3":
         print_colored(f"\n📂 Data Directory Status:", Colors.BLUE + Colors.BOLD)
@@ -259,9 +259,9 @@ def handle_configuration() -> None:
         cash_file = MY_TRADING_DIR / "cash_balances.json"
         
         print_colored(f"📁 {MY_TRADING_DIR}", Colors.CYAN)
-        print_colored(f"  📄 Portfolio: {'✅' if portfolio_file.exists() else '❌'} {portfolio_file.name}", Colors.ENDC)
-        print_colored(f"  📄 Trade Log: {'✅' if trade_log_file.exists() else '❌'} {trade_log_file.name}", Colors.ENDC)
-        print_colored(f"  📄 Cash Balances: {'✅' if cash_file.exists() else '❌'} {cash_file.name}", Colors.ENDC)
+        print_colored(f"  _safe_emoji('📄') Portfolio: {'_safe_emoji('✅')' if portfolio_file.exists() else '_safe_emoji('❌')'} {portfolio_file.name}", Colors.ENDC)
+        print_colored(f"  _safe_emoji('📄') Trade Log: {'_safe_emoji('✅')' if trade_log_file.exists() else '_safe_emoji('❌')'} {trade_log_file.name}", Colors.ENDC)
+        print_colored(f"  _safe_emoji('📄') Cash Balances: {'_safe_emoji('✅')' if cash_file.exists() else '_safe_emoji('❌')'} {cash_file.name}", Colors.ENDC)
         print_colored(f"\n💡 Tip: Use option 'u' from the main menu to update cash balances!", Colors.YELLOW)
     
     input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
@@ -291,7 +291,7 @@ def main() -> None:
         print_colored("🧪 Initializing LLM Micro-Cap Trading Bot in TEST MODE...", Colors.YELLOW)
         print_colored(f"📁 Using test data folder: {DATA_DIR}", Colors.CYAN)
     else:
-        print_colored("🚀 Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
+        print_colored("_safe_emoji('🚀') Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
         print_colored(f"📁 Using production data folder: {DATA_DIR}", Colors.CYAN)
     
     # Ensure data directory exists
@@ -302,9 +302,9 @@ def main() -> None:
     
     # Check venv status
     if not check_venv():
-        print_colored("⚠️  Virtual environment not detected", Colors.YELLOW)
+        print_colored("_safe_emoji('⚠️')  Virtual environment not detected", Colors.YELLOW)
     else:
-        print_colored("✅ Virtual environment ready", Colors.GREEN)
+        print_colored("_safe_emoji('✅') Virtual environment ready", Colors.GREEN)
     
     options = get_menu_options()
     
@@ -352,15 +352,15 @@ def main() -> None:
                 
                 print_colored("\n" + "=" * 60, Colors.BLUE)
                 if return_code == 0:
-                    print_colored("✅ Script completed successfully!", Colors.GREEN)
+                    print_colored("_safe_emoji('✅') Script completed successfully!", Colors.GREEN)
                 else:
-                    print_colored(f"❌ Script exited with code: {return_code}", Colors.RED)
+                    print_colored(f"_safe_emoji('❌') Script exited with code: {return_code}", Colors.RED)
                 
                 input(f"\n{Colors.YELLOW}Press Enter to return to menu...{Colors.ENDC}")
             else:
-                print_colored("❌ Invalid option selected", Colors.RED)
+                print_colored("_safe_emoji('❌') Invalid option selected", Colors.RED)
         else:
-            print_colored("❌ Invalid option. Please try again.", Colors.RED)
+            print_colored("_safe_emoji('❌') Invalid option. Please try again.", Colors.RED)
             input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
 
 if __name__ == "__main__":
@@ -369,5 +369,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print_colored("\n\n👋 Goodbye!", Colors.GREEN)
     except Exception as e:
-        print_colored(f"\n❌ Unexpected error: {e}", Colors.RED)
+        print_colored(f"\n_safe_emoji('❌') Unexpected error: {e}", Colors.RED)
         sys.exit(1)

@@ -638,19 +638,22 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         # Use fancy Unicode borders if supported, otherwise ASCII fallback
         from display.console_output import _can_handle_unicode, _safe_emoji
         
+        # Use safe emoji function for consistent Unicode handling
+        from display.console_output import _safe_emoji
+
         if _can_handle_unicode():
             print("┌─────────────────────────────────────────────────────────────────┐")
-            print("│ 'b' 🛒 Buy (Limit Order or Market Open Order)                  │")
-            print("│ 's' 📤 Sell (Limit Order)                                      │")
-            print("│ 'c' 💵 Log Contribution                                        │")
-            print("│ 'w' 💸 Log Withdrawal                                          │")
-            print("│ 'u' 🔄 Update Cash Balances                                    │")
-            print("│ 'sync' 🔗 Sync Fund Contributions                              │")
-            print("│ 'backup' 💾 Create Backup                                      │")
-            print("│ 'restore' 🔄 Restore from Backup                               │")
-            print("│ 'r' 🔄 Refresh Portfolio                                       │")
-            print("│ Enter ➤  Continue to Portfolio Processing                       │")
-            print("│ 'q' ❌ Quit                                                     │")
+            print(f"│ 'b' {_safe_emoji('🛒')} Buy (Limit Order or Market Open Order)                  │")
+            print(f"│ 's' {_safe_emoji('📤')} Sell (Limit Order)                                      │")
+            print(f"│ 'c' {_safe_emoji('💵')} Log Contribution                                        │")
+            print(f"│ 'w' {_safe_emoji('💸')} Log Withdrawal                                          │")
+            print(f"│ 'u' {_safe_emoji('🔄')} Update Cash Balances                                    │")
+            print(f"│ 'sync' {_safe_emoji('🔗')} Sync Fund Contributions                              │")
+            print(f"│ 'backup' {_safe_emoji('💾')} Create Backup                                      │")
+            print(f"│ 'restore' {_safe_emoji('🔄')} Restore from Backup                               │")
+            print(f"│ 'r' {_safe_emoji('🔄')} Refresh Portfolio                                       │")
+            print(f"│ Enter {_safe_emoji('➤')}  Continue to Portfolio Processing                       │")
+            print(f"│ 'q' {_safe_emoji('❌')} Quit                                                     │")
             print("└─────────────────────────────────────────────────────────────────┘")
         else:
             print("+---------------------------------------------------------------+")

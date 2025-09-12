@@ -38,7 +38,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Log Fund Contribution", "💵")
+            print_info("Log Fund Contribution", "_safe_emoji('💵')")
             
             # Get contributor name
             contributor = input("Enter contributor name: ").strip()
@@ -81,7 +81,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Log Fund Withdrawal", "💸")
+            print_info("Log Fund Withdrawal", "_safe_emoji('💸')")
             
             # Get contributor name
             contributor = input("Enter contributor name: ").strip()
@@ -124,7 +124,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Update Cash Balances", "🔄")
+            print_info("Update Cash Balances", "_safe_emoji('🔄')")
             
             # Load current cash balances
             cash_file = Path(self.repository.data_dir) / "cash_balances.json"
@@ -177,7 +177,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Buy Stock", "🛒")
+            print_info("Buy Stock", "_safe_emoji('🛒')")
             
             # Get order type
             order_type = input("Order type (limit/market): ").strip().lower()
@@ -257,7 +257,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Sell Stock", "📤")
+            print_info("Sell Stock", "_safe_emoji('📤')")
             
             # Get ticker
             ticker = input("Enter ticker symbol: ").strip().upper()
@@ -314,7 +314,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Sync Fund Contributions", "🔗")
+            print_info("Sync Fund Contributions", "_safe_emoji('🔗')")
             print_warning("Fund contribution sync not yet implemented")
             print_info("This feature will sync contributions from external sources")
             return True

@@ -33,13 +33,13 @@ def test_timezone_parsing():
         future_warnings = [warning for warning in w if issubclass(warning.category, FutureWarning)]
 
         if future_warnings:
-            print("❌ FutureWarnings still present:")
+            print("_safe_emoji('❌') FutureWarnings still present:")
             for warning in future_warnings:
                 print(f"  {warning.message}")
             return False
         else:
-            print("✅ No FutureWarnings detected")
-            print(f"✅ Parsed dates: {df['Date'].tolist()}")
+            print("_safe_emoji('✅') No FutureWarnings detected")
+            print(f"_safe_emoji('✅') Parsed dates: {df['Date'].tolist()}")
             return True
 
 if __name__ == "__main__":
@@ -51,4 +51,4 @@ if __name__ == "__main__":
     with open("debug/timezone_parsing_test_result.txt", "w") as f:
         f.write(result + "\n")
         if success:
-            f.write("✅ Timezone FutureWarning has been fixed!\n")
+            f.write("_safe_emoji('✅') Timezone FutureWarning has been fixed!\n")

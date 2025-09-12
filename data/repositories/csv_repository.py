@@ -518,22 +518,18 @@ class CSVRepository(BaseRepository):
     
     def _format_timestamp_for_csv(self, timestamp: datetime) -> str:
         """Format timestamp for CSV output with timezone name.
-        
-        Uses PST/PDT format for user readability in CSV files.
-        
+
+        Uses centralized timezone utilities for consistent formatting.
+
         Args:
             timestamp: Datetime to format
-            
+
         Returns:
             Formatted timestamp string with timezone abbreviation
         """
-        # Determine timezone abbreviation based on date
-        # This is a simplified implementation - in production would use proper timezone detection
-        if timestamp.month >= 3 and timestamp.month <= 10:
-            # Daylight saving time (approximate)
-            tz_name = "PDT"
-        else:
-            # Standard time
-            tz_name = "PST"
-        
-        return timestamp.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
+        try:
+            from utils.timezone_utils import format_timestamp_for_csv
+            return format_timestamp_for_csv(timestamp)
+        except ImportError:
+            # Fallback to basic formatting if timezone_utils not available
+            return timestamp.strftime("%Y-%m-%d %H:%M:%S PST")

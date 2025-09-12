@@ -461,7 +461,9 @@ class TableFormatter:
             stats_table.add_row("💰 Total Contributions", f"${stats_data.get('total_contributions', 0):,.2f}")
             stats_table.add_row("💵 Total Cost Basis", f"${stats_data.get('total_cost_basis', 0):,.2f}")
             stats_table.add_row("📈 Current Portfolio Value", f"${stats_data.get('total_current_value', 0):,.2f}")
-            stats_table.add_row("💹 Total P&L", f"${stats_data.get('total_pnl', 0):,.2f}")
+            stats_table.add_row("💹 Unrealized P&L", f"${stats_data.get('total_pnl', 0):,.2f}")
+            stats_table.add_row("💰 Realized P&L", f"${stats_data.get('total_realized_pnl', 0):,.2f}")
+            stats_table.add_row("📊 Total Portfolio P&L", f"${stats_data.get('total_portfolio_pnl', 0):,.2f}")
             
             self.console.print(stats_table)
         else:
@@ -469,7 +471,9 @@ class TableFormatter:
             print(f"  Total Contributions: ${stats_data.get('total_contributions', 0):,.2f}")
             print(f"  Total Cost Basis: ${stats_data.get('total_cost_basis', 0):,.2f}")
             print(f"  Current Portfolio Value: ${stats_data.get('total_current_value', 0):,.2f}")
-            print(f"  Total P&L: ${stats_data.get('total_pnl', 0):,.2f}")
+            print(f"  Unrealized P&L: ${stats_data.get('total_pnl', 0):,.2f}")
+            print(f"  Realized P&L: ${stats_data.get('total_realized_pnl', 0):,.2f}")
+            print(f"  Total Portfolio P&L: ${stats_data.get('total_portfolio_pnl', 0):,.2f}")
         
         return None
     

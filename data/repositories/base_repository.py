@@ -46,6 +46,20 @@ class BaseRepository(ABC):
         """
         pass
     
+    def update_daily_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+        """Update today's portfolio snapshot or create new one if it doesn't exist.
+        
+        This method follows the rule: only add new rows once per day, update prices in existing rows.
+        Default implementation just calls save_portfolio_snapshot.
+        
+        Args:
+            snapshot: PortfolioSnapshot to save or update
+            
+        Raises:
+            RepositoryError: If update operation fails
+        """
+        self.save_portfolio_snapshot(snapshot)
+    
     @abstractmethod
     def get_latest_portfolio_snapshot(self) -> Optional[PortfolioSnapshot]:
         """Get the most recent portfolio snapshot.

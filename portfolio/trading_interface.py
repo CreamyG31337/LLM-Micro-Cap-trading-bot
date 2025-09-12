@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 
 from data.repositories.base_repository import BaseRepository
-from portfolio.trade_processor import TradeProcessor
+from portfolio.fifo_trade_processor import FIFOTradeProcessor
 from display.console_output import print_success, print_error, print_info, print_warning
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class TradingInterface:
     """Handles user interface for trading actions."""
     
-    def __init__(self, repository: BaseRepository, trade_processor: TradeProcessor):
+    def __init__(self, repository: BaseRepository, trade_processor: FIFOTradeProcessor):
         """Initialize trading interface.
         
         Args:

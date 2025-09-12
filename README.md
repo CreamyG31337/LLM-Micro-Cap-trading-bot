@@ -131,6 +131,43 @@ The system implements industry-standard daily P&L calculation with robust market
 - **Configurable Timezone Support**: Handles PST timezone with flexible configuration options
 - **Error Handling**: Graceful fallback to "N/A" when insufficient data is available
 
+## FIFO Lot Tracking System
+
+The system now uses **FIFO (First-In, First-Out)** lot tracking for industry-standard P&L calculation, replacing the previous average cost method.
+
+### **What is FIFO?**
+FIFO is an accounting method that assumes the **oldest shares are sold first** when you do a partial sell. This is the industry standard used by professional trading platforms and provides better tax optimization.
+
+### **Key Benefits**
+✅ **Industry Standard Compliance** - Matches major brokerage firms' accounting methods
+✅ **Tax Advantages** - Longer holding periods qualify for lower capital gains rates  
+✅ **Accurate P&L Tracking** - Handles partial sells and re-buys correctly
+✅ **Realized P&L Display** - Shows profits/losses from sold positions
+✅ **Audit Trail** - Complete tracking of each purchase lot
+
+### **How It Works**
+- **Each Purchase** creates a new "lot" with unique tracking
+- **Partial Sells** consume lots in chronological order (oldest first)
+- **Re-buys** create new lots without affecting previous ones
+- **P&L Calculation** uses the actual cost basis of sold shares
+
+### **Example Scenario**
+```
+Day 1: Buy 100 shares @ $100 (Lot A)
+Day 2: Buy 100 shares @ $120 (Lot B)  
+Day 3: Sell 100 shares @ $130
+
+FIFO Result: Sells Lot A first (100 @ $100)
+Realized P&L: (130 - 100) × 100 = $3,000
+Remaining: 100 shares @ $120 (Lot B)
+```
+
+### **Portfolio Display**
+The portfolio summary now shows:
+- **Unrealized P&L** - Current positions' profit/loss
+- **Realized P&L** - Profits/losses from sold positions  
+- **Total Portfolio P&L** - Combined unrealized + realized
+
 ## Debug Tools
 
 The repository includes comprehensive debugging tools in the `debug/` folder:
@@ -139,6 +176,9 @@ The repository includes comprehensive debugging tools in the `debug/` folder:
 - **`market_hours_analysis.py`** - Tests market hours handling and compares with industry standards
 - **`price_debug.py`** - General price data debugging and validation
 - **`comprehensive_price_debug.py`** - Advanced price data analysis and troubleshooting
+- **`test_fifo_system.py`** - Unit tests for FIFO lot tracking system
+- **`demo_fifo_integration.py`** - Demonstrates FIFO vs average cost comparison
+- **`fifo_integration_plan.py`** - Integration guide and migration strategy
 
 These tools help ensure the trading system operates correctly and provide transparency into how calculations are performed.
 
@@ -157,6 +197,12 @@ These tools help ensure the trading system operates correctly and provide transp
 - **Industry-Standard Implementation** - Fixed daily P&L showing "N/A" by implementing proper close-to-close calculations
 - **Market Hours Handling** - Robust handling of pre-market, market hours, after-hours, and weekend scenarios
 - **Configurable Timezone Support** - PST timezone with flexible configuration options
+
+#### **FIFO Lot Tracking System**
+- **Industry-Standard Accounting** - Replaced average cost method with FIFO (First-In, First-Out) lot tracking
+- **Realized P&L Tracking** - Complete tracking of profits/losses from sold positions
+- **Tax Optimization** - Longer holding periods qualify for lower capital gains rates
+- **Audit Trail** - Complete tracking of each purchase lot with unique identifiers
 
 #### **Enhanced User Experience**
 - **Terminal Width Detection** - Automatic terminal resizing and display optimization

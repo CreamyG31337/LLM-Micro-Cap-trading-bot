@@ -1866,50 +1866,75 @@ def _display_ownership_percentages(data_dir: str) -> None:
             print()
 
 
-def _display_risk_metrics(portfolio_df: pd.DataFrame, total_value: float, cash: float) -> None:
-    """Display basic risk metrics for the portfolio"""
+def _calculate_portfolio_cost_basis(portfolio_df: pd.DataFrame) -> float:
+    """Calculate total cost basis of all positions in the portfolio"""
+    if portfolio_df.empty:
+        return 0.0
+
+    total_cost = 0.0
+    for _, row in portfolio_df.iterrows():
+        # Try both the renamed column name and original CSV column name
+        cost_basis = float(row.get('cost_basis', row.get('cost basis', row.get('Cost Basis', 0))))
+        total_cost += cost_basis
+
+    return total_cost
+
+
+def _calculate_portfolio_current_value(data_dir: str) -> float:
+    """Calculate total current value of all positions in the portfolio"""
+    # Load raw CSV to get Total Value data
+    portfolio_file = os.path.join(data_dir, "llm_portfolio_update.csv")
+    if not os.path.exists(portfolio_file):
+        return 0.0
+
+    # Load raw CSV to get Total Value data
+    raw_df = pd.read_csv(portfolio_file)
+
+    # Filter out TOTAL rows and get latest entries
+    non_total = raw_df[raw_df["Ticker"] != "TOTAL"].copy()
+    if non_total.empty:
+        return 0.0
+
+    # Sort by date and get latest entries for each ticker
+    non_total["Date"] = non_total["Date"].apply(parse_csv_timestamp)
+    non_total = non_total.sort_values("Date", ascending=False)
+    latest_tickers = non_total.drop_duplicates(subset="Ticker", keep="first")
+
+    # Filter out sold positions
+    sold_mask = latest_tickers["Action"].astype(str).str.startswith("SELL")
+    latest_tickers = latest_tickers[~sold_mask]
+
+    # Sum up the Total Value column
+    total_value = latest_tickers["Total Value"].sum()
+
+    return float(total_value)
+
+
+def _display_risk_metrics(portfolio_df: pd.DataFrame, total_value: float, cash: float, data_dir: str) -> None:
+    """Display general portfolio statistics"""
     if portfolio_df.empty:
         return
-    
-    # Calculate position weights
-    position_weights = []
-    for _, row in portfolio_df.iterrows():
-        shares = float(row.get('shares', 0))
-        buy_price = float(row.get('buy_price', 0))
-        # Use buy price as proxy for current value (in real implementation, you'd fetch current prices)
-        position_value = shares * buy_price
-        weight = (position_value / total_value * 100) if total_value > 0 else 0
-        position_weights.append(weight)
-    
-    # Risk metrics
-    max_weight = max(position_weights) if position_weights else 0
-    largest_position_idx = position_weights.index(max_weight) if position_weights else 0
-    largest_position = str(portfolio_df.iloc[largest_position_idx].get('ticker', 'N/A')) if not portfolio_df.empty else "N/A"
-    
-    total_equity = total_value + cash
-    cash_allocation = (cash / total_equity * 100) if total_equity > 0 else 100
-    
-    # Portfolio concentration analysis
-    concentration_risk = "Low" if max_weight < 30 else "Medium" if max_weight < 50 else "High"
-    
+
+    # Calculate general statistics
+    total_contributions = calculate_fund_contributions_total(data_dir)
+    total_cost_basis = _calculate_portfolio_cost_basis(portfolio_df)
+    total_current_value = _calculate_portfolio_current_value(data_dir)
+
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        risk_table = Table(title="⚠️ Risk Metrics", show_header=True, header_style="bold red")
-        risk_table.add_column("Metric", style="cyan", no_wrap=True)
-        risk_table.add_column("Value", justify="right", style="yellow")
-        risk_table.add_column("Status", justify="center", style="green")
-        
-        risk_table.add_row("📊 Portfolio Concentration", f"{max_weight:.1f}%", f"[{concentration_risk.lower()}] {concentration_risk}[/{concentration_risk.lower()}]")
-        risk_table.add_row("🎯 Largest Position", largest_position, "")
-        risk_table.add_row("💰 Cash Allocation", f"{cash_allocation:.1f}%", "Good" if cash_allocation > 10 else "Low")
-        risk_table.add_row("📈 Total Positions", f"{len(portfolio_df)}", "Diversified" if len(portfolio_df) > 2 else "Concentrated")
-        
-        console.print(risk_table)
+        stats_table = Table(title="📊 Portfolio Statistics", show_header=True, header_style="bold blue")
+        stats_table.add_column("Statistic", style="cyan", no_wrap=True)
+        stats_table.add_column("Amount", justify="right", style="yellow")
+
+        stats_table.add_row("💰 Total Contributions", f"${total_contributions:,.2f}")
+        stats_table.add_row("💵 Total Cost Basis", f"${total_cost_basis:,.2f}")
+        stats_table.add_row("📈 Current Portfolio Value", f"${total_current_value:,.2f}")
+
+        console.print(stats_table)
     else:
-        print_info("Risk Metrics:", "⚠️")
-        print(f"  Portfolio Concentration: {max_weight:.1f}% ({concentration_risk})")
-        print(f"  Largest Position: {largest_position}")
-        print(f"  Cash Allocation: {cash_allocation:.1f}%")
-        print(f"  Total Positions: {len(portfolio_df)}")
+        print_info("Portfolio Statistics:", "📊")
+        print(f"  Total Contributions: ${total_contributions:,.2f}")
+        print(f"  Total Cost Basis: ${total_cost_basis:,.2f}")
+        print(f"  Current Portfolio Value: ${total_current_value:,.2f}")
 
 
 def process_portfolio(
@@ -1968,7 +1993,7 @@ def process_portfolio(
                 total_value += shares * buy_price  # Use buy price as proxy for current value
             
             # Display risk metrics and ownership BEFORE menu
-            _display_risk_metrics(portfolio_df, total_value, cash)
+            _display_risk_metrics(portfolio_df, total_value, cash, str(DATA_DIR))
             _display_ownership_percentages(str(DATA_DIR))
             
             print_trade_menu()

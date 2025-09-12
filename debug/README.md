@@ -69,7 +69,20 @@ python debug/recalculate_portfolio_data.py test_data
 - Cost basis calculations
 - Any data inconsistencies between trade log and portfolio
 
-### 5. `activate_venv.bat`
+### 5. `timezone_parsing_test.py`
+Test script to verify that timezone parsing doesn't generate pandas FutureWarnings.
+
+**Usage:**
+```bash
+python debug/timezone_parsing_test.py
+```
+
+**When to use:**
+- After modifying date parsing code
+- To verify timezone handling is working correctly
+- Before deploying changes that affect timestamp processing
+
+### 6. `activate_venv.bat`
 Convenience script to activate the virtual environment.
 
 ## Common Issues and Solutions
@@ -114,9 +127,24 @@ Convenience script to activate the virtual environment.
 - Verify cost basis calculations after corporate actions
 - Keep trade log and portfolio CSV synchronized
 
+## File Organization
+
+### Recently Added/Updated Files
+- `timezone_parsing_test.py` - Tests timezone parsing to prevent pandas FutureWarnings
+- `timezone_parsing_test_result.txt` - Output file from timezone parsing test
+
+### Removed Files (Cleanup)
+- `direct_test.py` - Temporary test file (removed)
+- `simple_stats_test.py` - Temporary test file (removed) 
+- `test_fix.py` - Temporary test file (removed)
+- `test_portfolio_stats.py` - Temporary test file (removed)
+- `test_timezone_fix.py` - Renamed to `timezone_parsing_test.py`
+
 ## Best Practices
 
 1. **Always activate venv first** - This is the most common source of errors
 2. **Use test data for development** - Run with `--data-dir test_data` flag
 3. **Verify price data accuracy** - Use debug scripts before making corrections
 4. **Keep debug scripts updated** - Add new tickers or features as needed
+5. **Clean up temporary files** - Remove test files after debugging is complete
+6. **Use descriptive names** - Name files clearly to indicate their purpose

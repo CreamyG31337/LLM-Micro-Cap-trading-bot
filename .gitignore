@@ -227,3 +227,4 @@ Results.png
 # Runtime files - should not be tracked
 .script_timestamp
 .script_hash
+.vscode/settings.json

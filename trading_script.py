@@ -36,6 +36,7 @@ from data.repositories.base_repository import BaseRepository, RepositoryError
 from portfolio.portfolio_manager import PortfolioManager
 from portfolio.trade_processor import TradeProcessor
 from portfolio.position_calculator import PositionCalculator
+from portfolio.trading_interface import TradingInterface
 
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.market_hours import MarketHours
@@ -177,7 +178,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
     Raises:
         InitializationError: If component initialization fails
     """
-    global portfolio_manager, trade_processor, position_calculator
+    global portfolio_manager, trade_processor, position_calculator, trading_interface
     global market_data_fetcher, market_hours, price_cache
     global currency_handler, pnl_calculator, table_formatter, backup_manager
     
@@ -188,6 +189,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
         portfolio_manager = PortfolioManager(repository)
         trade_processor = TradeProcessor(repository)
         position_calculator = PositionCalculator(repository)
+        trading_interface = TradingInterface(repository, trade_processor)
         
         # Initialize market data components
         price_cache = PriceCache()
@@ -372,13 +374,14 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         raise InitializationError(error_msg) from e
 
 
-def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository) -> None:
+def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface) -> None:
     """Run the main portfolio management workflow.
     
     Args:
         args: Parsed command-line arguments
         settings: System settings
         repository: Initialized repository
+        trading_interface: Trading interface for user actions
     """
     try:
         print_header("Portfolio Management Workflow", "📊")
@@ -483,7 +486,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     buy_trades = [t for t in trades if t.action.upper() == 'BUY']
                     if buy_trades:
                         first_buy = min(buy_trades, key=lambda t: t.timestamp)
-                        pos_dict['opened_date'] = first_buy.timestamp.strftime('%Y-%m-%d')
+                        pos_dict['opened_date'] = first_buy.timestamp.strftime('%m-%d-%y')
                         logger.debug(f"Found open date for {position.ticker}: {pos_dict['opened_date']}")
                     else:
                         pos_dict['opened_date'] = "N/A"
@@ -497,40 +500,217 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             
             # Calculate daily P&L using historical portfolio data
             try:
-                # Get historical snapshots to calculate daily change
-                if len(portfolio_snapshots) >= 2:
-                    # Get previous snapshot (second to last)
-                    previous_snapshot = portfolio_snapshots[-2]
-                    # Find the same ticker in previous snapshot
-                    prev_position = None
-                    for prev_pos in previous_snapshot.positions:
-                        if prev_pos.ticker == position.ticker:
-                            prev_position = prev_pos
+                daily_pnl_calculated = False
+                # Try to find daily P&L from multiple previous snapshots
+                for i in range(1, min(len(portfolio_snapshots), 4)):  # Check up to 3 previous snapshots
+                    if len(portfolio_snapshots) > i:
+                        previous_snapshot = portfolio_snapshots[-(i+1)]
+                        # Find the same ticker in previous snapshot
+                        prev_position = None
+                        for prev_pos in previous_snapshot.positions:
+                            if prev_pos.ticker == position.ticker:
+                                prev_position = prev_pos
+                                break
+                        
+                        if prev_position and prev_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
+                            daily_pnl_change = position.unrealized_pnl - prev_position.unrealized_pnl
+                            pos_dict['daily_pnl'] = f"${daily_pnl_change:.2f}"
+                            daily_pnl_calculated = True
                             break
-                    
-                    if prev_position and prev_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
-                        daily_pnl_change = position.unrealized_pnl - prev_position.unrealized_pnl
-                        pos_dict['daily_pnl'] = f"${daily_pnl_change:.2f}"
+                
+                if not daily_pnl_calculated:
+                    # If no historical data, show current P&L as daily change for new positions
+                    if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
+                        pos_dict['daily_pnl'] = f"${position.unrealized_pnl:.2f}*"  # * indicates new position
                     else:
-                        pos_dict['daily_pnl'] = "N/A"
-                else:
-                    pos_dict['daily_pnl'] = "N/A"
+                        pos_dict['daily_pnl'] = "$0.00"
             except Exception as e:
                 logger.debug(f"Could not calculate daily P&L for {position.ticker}: {e}")
-                pos_dict['daily_pnl'] = "N/A"
+                pos_dict['daily_pnl'] = "$0.00"
             
             # 5-day P&L would require more historical data
             pos_dict['five_day_pnl'] = "N/A"
             
             enhanced_positions.append(pos_dict)
         
+        # Clear screen before displaying portfolio
+        import os
+        import json
+        import pandas as pd
+        from pathlib import Path
+        os.system('cls' if os.name == 'nt' else 'clear')
+        
         # Display portfolio table
         print_header("Portfolio Summary", "💼")
         table_formatter.create_portfolio_table(enhanced_positions)
         
+        # Display additional tables
+        print()  # Add spacing
+        
+        # Load fund contributions data first
+        fund_contributions = []
+        try:
+            fund_file = Path(repository.data_dir) / "fund_contributions.csv"
+            if fund_file.exists():
+                df = pd.read_csv(fund_file)
+                fund_contributions = df.to_dict('records')
+        except Exception as e:
+            logger.debug(f"Could not load fund contributions: {e}")
+        
+        # Calculate and display portfolio statistics
+        try:
+            portfolio_metrics = position_calculator.calculate_portfolio_metrics(latest_snapshot)
+            
+            # Calculate total contributions from fund data
+            total_contributions = 0
+            if fund_contributions:
+                for contribution in fund_contributions:
+                    amount = float(contribution.get('Amount', contribution.get('amount', 0)))
+                    contrib_type = contribution.get('Type', contribution.get('type', 'CONTRIBUTION'))
+                    if contrib_type.upper() == 'CONTRIBUTION':
+                        total_contributions += amount
+                    elif contrib_type.upper() == 'WITHDRAWAL':
+                        total_contributions -= amount
+            
+            stats_data = {
+                'total_contributions': total_contributions,
+                'total_cost_basis': float(portfolio_metrics.get('total_cost_basis', 0)),
+                'total_current_value': float(total_portfolio_value),
+                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0))
+            }
+            table_formatter.create_statistics_table(stats_data)
+            print()  # Add spacing
+        except Exception as e:
+            logger.debug(f"Could not calculate portfolio statistics: {e}")
+            print_warning(f"Could not display portfolio statistics: {e}")
+        
+        # Calculate and display ownership information
+        try:
+            
+            if fund_contributions:
+                ownership_raw = position_calculator.calculate_ownership_percentages(
+                    fund_contributions, Decimal(str(total_portfolio_value))
+                )
+                # Map field names for table formatter
+                ownership_data = {}
+                for contributor, data in ownership_raw.items():
+                    ownership_data[contributor] = {
+                        'shares': 0,  # Not applicable for fund contributions
+                        'contributed': float(data.get('net_contribution', 0)),
+                        'ownership_pct': float(data.get('ownership_percentage', 0)),
+                        'current_value': float(data.get('current_value', 0))
+                    }
+                table_formatter.create_ownership_table(ownership_data)
+                print()  # Add spacing
+        except Exception as e:
+            logger.debug(f"Could not calculate ownership data: {e}")
+        
+        # Display financial summary
+        try:
+            # Load cash balance
+            cash_balance = 0
+            try:
+                cash_file = Path(repository.data_dir) / "cash_balances.json"
+                if cash_file.exists():
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cash_balance = cash_data.get('cad', 0) + cash_data.get('usd', 0)
+            except Exception as e:
+                logger.debug(f"Could not load cash balance: {e}")
+            
+            summary_data = {
+                'portfolio_value': float(total_portfolio_value),
+                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)),
+                'cash_balance': float(cash_balance),
+                'fund_contributions': float(stats_data.get('total_contributions', 0))
+            }
+            table_formatter.create_summary_table(summary_data)
+        except Exception as e:
+            logger.debug(f"Could not create financial summary: {e}")
+        
         # Display market timing information
         market_time_header = market_hours.display_market_time_header()
         print_info(market_time_header)
+        
+        # Display trading menu
+        print()  # Add spacing
+        print_header("Trading Actions", "⚡")
+        # Use fancy Unicode borders if supported, otherwise ASCII fallback
+        from display.console_output import _can_handle_unicode, _safe_emoji
+        
+        if _can_handle_unicode():
+            print("┌─────────────────────────────────────────────────────────────────┐")
+            print("│ 'b' 🛒 Buy (Limit Order or Market Open Order)                  │")
+            print("│ 's' 📤 Sell (Limit Order)                                      │")
+            print("│ 'c' 💵 Log Contribution                                        │")
+            print("│ 'w' 💸 Log Withdrawal                                          │")
+            print("│ 'u' 🔄 Update Cash Balances                                    │")
+            print("│ 'sync' 🔗 Sync Fund Contributions                              │")
+            print("│ 'backup' 💾 Create Backup                                      │")
+            print("│ 'restore' 🔄 Restore from Backup                               │")
+            print("│ 'r' 🔄 Refresh Portfolio                                       │")
+            print("│ Enter ➤  Continue to Portfolio Processing                       │")
+            print("│ 'q' ❌ Quit                                                     │")
+            print("└─────────────────────────────────────────────────────────────────┘")
+        else:
+            print("+---------------------------------------------------------------+")
+            print("| 'b' [B] Buy (Limit Order or Market Open Order)              |")
+            print("| 's' [S] Sell (Limit Order)                                  |")
+            print("| 'c' $ Log Contribution                                      |")
+            print("| 'w' -$ Log Withdrawal                                       |")
+            print("| 'u' ~ Update Cash Balances                                  |")
+            print("| 'sync' & Sync Fund Contributions                            |")
+            print("| 'backup' [B] Create Backup                                  |")
+            print("| 'restore' ~ Restore from Backup                             |")
+            print("| 'r' ~ Refresh Portfolio                                     |")
+            print("| Enter -> Continue to Portfolio Processing                   |")
+            print("| 'q' X Quit                                                  |")
+            print("+---------------------------------------------------------------+")
+        print()
+        
+        # Get user input for trading action
+        try:
+            action = input("Select an action: ").strip().lower()
+            
+            if action == 'q':
+                print_info("Exiting trading system...")
+                return
+            elif action == '' or action == 'enter':
+                print_info("Continuing to portfolio processing...")
+                return
+            elif action == 'r':
+                print_info("Refreshing portfolio...")
+                # Recursive call to refresh (could be improved with a loop)
+                run_portfolio_workflow(args, settings, repository, trading_interface)
+                return
+            elif action == 'backup':
+                print_info("Creating backup...")
+                backup_name = backup_manager.create_backup()
+                print_success(f"Backup created: {backup_name}")
+            elif action == 'c':
+                trading_interface.log_contribution()
+            elif action == 'w':
+                trading_interface.log_withdrawal()
+            elif action == 'u':
+                trading_interface.update_cash_balances()
+            elif action == 'b':
+                trading_interface.buy_stock()
+            elif action == 's':
+                trading_interface.sell_stock()
+            elif action == 'sync':
+                trading_interface.sync_fund_contributions()
+            elif action == 'restore':
+                print_warning("Restore functionality not yet implemented")
+                print_info("This feature will be added in future updates")
+            else:
+                print_warning("Invalid action selected")
+                
+        except KeyboardInterrupt:
+            print_info("\nExiting trading system...")
+            return
+        except Exception as e:
+            logger.debug(f"Error in trading menu: {e}")
+            print_warning("Error in trading menu")
         
         print_success("Portfolio workflow completed successfully")
         
@@ -563,7 +743,7 @@ def main() -> None:
         repository = system_repository
         
         # Run main workflow
-        run_portfolio_workflow(args, system_settings, system_repository)
+        run_portfolio_workflow(args, system_settings, system_repository, trading_interface)
         
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user")

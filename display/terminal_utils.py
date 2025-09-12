@@ -130,7 +130,7 @@ def check_table_display_issues(data_dir: Optional[str] = None) -> None:
     env = detect_environment()
     
     if terminal_width < 120:
-        print_warning("⚠️  Terminal width may be too narrow for optimal table display")
+        print_warning("Terminal width may be too narrow for optimal table display")
         print_warning(f"   Current width: {terminal_width} characters")
         print_warning("   Recommended: 130+ characters for best experience")
         print_warning("")
@@ -138,7 +138,7 @@ def check_table_display_issues(data_dir: Optional[str] = None) -> None:
         # Provide environment-specific suggestions
         if env['is_windows']:
             if env['is_windows_terminal']:
-                print_warning("💡 Windows Terminal detected - To fix this:")
+                print_warning("Windows Terminal detected - To fix this:")
                 print_warning("   1. Open Windows Terminal Settings (Ctrl+,)")
                 print_warning("   2. Click 'Startup' in the left sidebar")
                 print_warning("   3. Under 'Launch size', set 'Columns' to 130 or higher")
@@ -147,21 +147,21 @@ def check_table_display_issues(data_dir: Optional[str] = None) -> None:
                 print_warning("   6. Or press F11 for full screen mode")
                 print_warning("")
                 print_warning("   Note: This setting is buried deep in the settings!")
-                print_warning("   Microsoft keeps reorganizing the UI, so look for 'Startup' → 'Launch size'")
+                print_warning("   Microsoft keeps reorganizing the UI, so look for 'Startup' -> 'Launch size'")
             elif env['is_conhost']:
-                print_warning("💡 Command Prompt detected - To fix this:")
-                print_warning("   1. Right-click title bar → Properties → Layout")
+                print_warning("Command Prompt detected - To fix this:")
+                print_warning("   1. Right-click title bar -> Properties -> Layout")
                 print_warning("   2. Set 'Window Size Width' to 130 or higher")
                 print_warning("   3. Or maximize this window (click maximize button)")
                 print_warning("   4. Or press F11 for full screen mode")
                 print_warning("   5. Consider upgrading to Windows Terminal for better experience")
             else:
-                print_warning("💡 To fix this, try:")
+                print_warning("To fix this, try:")
                 print_warning("   1. Maximize this window (click maximize button)")
                 print_warning("   2. Press F11 for full screen mode")
-                print_warning("   3. Right-click title bar → Properties → Font → Choose smaller font")
+                print_warning("   3. Right-click title bar -> Properties -> Font -> Choose smaller font")
         else:
-            print_warning("💡 To fix this, try:")
+            print_warning("To fix this, try:")
             print_warning("   1. Maximize this window")
             print_warning("   2. Increase terminal width in your terminal settings")
             print_warning("   3. Use a smaller font size")
@@ -169,7 +169,7 @@ def check_table_display_issues(data_dir: Optional[str] = None) -> None:
         print_warning("")
     
     if using_test_data:
-        print_info("🧪 Test Data Mode: Forcing wider table display for better visibility")
+        print_info("Test Data Mode: Forcing wider table display for better visibility")
         if optimal_width > terminal_width:
             print_info(f"   Table will be optimized for {optimal_width} characters (current: {terminal_width})")
         print_info("")

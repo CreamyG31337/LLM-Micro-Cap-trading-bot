@@ -162,7 +162,7 @@ class PositionCalculator:
             PositionCalculatorError: If calculation fails
         """
         try:
-            logger.info(f"Calculating position metrics for {position.ticker}")
+            logger.debug(f"Calculating position metrics for {position.ticker}")
             
             # Use provided current price or position's current price
             price = current_price or position.current_price
@@ -213,7 +213,7 @@ class PositionCalculator:
                 'company': position.company
             }
             
-            logger.info(f"Position metrics calculated for {position.ticker}: "
+            logger.debug(f"Position metrics calculated for {position.ticker}: "
                        f"P&L: {unrealized_pnl}, {unrealized_pnl_percentage}%")
             
             return metrics
@@ -242,7 +242,7 @@ class PositionCalculator:
                 if snapshot is None:
                     return self._empty_portfolio_metrics()
             
-            logger.info(f"Calculating portfolio metrics for {len(snapshot.positions)} positions")
+            logger.debug(f"Calculating portfolio metrics for {len(snapshot.positions)} positions")
             
             # Initialize metrics
             total_cost_basis = Decimal('0')
@@ -321,7 +321,7 @@ class PositionCalculator:
                 'position_metrics': position_metrics
             }
             
-            logger.info(f"Portfolio metrics calculated: {len(snapshot.positions)} positions, "
+            logger.debug(f"Portfolio metrics calculated: {len(snapshot.positions)} positions, "
                        f"${total_market_value} total value, {total_unrealized_pnl_percentage}% P&L")
             
             return metrics
@@ -345,7 +345,7 @@ class PositionCalculator:
             PositionCalculatorError: If calculation fails
         """
         try:
-            logger.info(f"Calculating ownership percentages for {len(fund_contributions_data)} contributions")
+            logger.debug(f"Calculating ownership percentages for {len(fund_contributions_data)} contributions")
             
             if not fund_contributions_data or current_fund_value <= 0:
                 return {}
@@ -353,9 +353,9 @@ class PositionCalculator:
             # Group contributions by contributor
             contributor_data = {}
             for contribution in fund_contributions_data:
-                contributor = contribution.get('contributor', 'Unknown')
-                amount = Decimal(str(contribution.get('amount', 0)))
-                contribution_type = contribution.get('type', 'contribution')
+                contributor = contribution.get('Contributor', contribution.get('contributor', 'Unknown'))
+                amount = Decimal(str(contribution.get('Amount', contribution.get('amount', 0))))
+                contribution_type = contribution.get('Type', contribution.get('type', 'contribution'))
                 
                 if contributor not in contributor_data:
                     contributor_data[contributor] = {
@@ -402,7 +402,7 @@ class PositionCalculator:
                         ).quantize(Decimal('0.1')) if data['net_contribution'] > 0 else Decimal('0')
                     }
             
-            logger.info(f"Ownership calculated for {len(ownership_details)} contributors")
+            logger.debug(f"Ownership calculated for {len(ownership_details)} contributors")
             return ownership_details
             
         except Exception as e:

@@ -21,11 +21,37 @@ sys.path.insert(0, str(project_dir))
 
 try:
     from dual_currency import load_cash_balances, save_cash_balances, CashBalances
-    from trading_script import DATA_DIR, set_data_dir, DEFAULT_DATA_DIR, calculate_fund_contributions_total
+    from config.constants import DEFAULT_DATA_DIR
+    from portfolio.position_calculator import PositionCalculator
+    from data.repositories.csv_repository import CSVRepository
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Make sure you're running this script from the project directory.")
     sys.exit(1)
+
+
+def calculate_fund_contributions_total(data_dir: Path) -> float:
+    """Calculate total fund contributions from CSV file."""
+    try:
+        fund_file = data_dir / "fund_contributions.csv"
+        if not fund_file.exists():
+            return 0.0
+        
+        import pandas as pd
+        df = pd.read_csv(fund_file)
+        total = 0.0
+        
+        for _, row in df.iterrows():
+            amount = float(row.get('Amount', 0))
+            contrib_type = row.get('Type', 'CONTRIBUTION')
+            if contrib_type.upper() == 'CONTRIBUTION':
+                total += amount
+            elif contrib_type.upper() == 'WITHDRAWAL':
+                total -= amount
+        
+        return total
+    except Exception:
+        return 0.0
 
 
 def main():
@@ -41,10 +67,8 @@ def main():
     # Set up data directory
     if args.data_dir:
         data_dir = Path(args.data_dir)
-        set_data_dir(data_dir)
     else:
-        set_data_dir(DEFAULT_DATA_DIR)
-        data_dir = DATA_DIR
+        data_dir = Path(DEFAULT_DATA_DIR)
     
     if not data_dir.exists():
         print(f"❌ Data directory not found: {data_dir}")
@@ -60,7 +84,7 @@ def main():
         print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
         
         # Display fund contributions total
-        fund_total = calculate_fund_contributions_total(str(data_dir))
+        fund_total = calculate_fund_contributions_total(data_dir)
         print(f"💵 Fund contributions total: ${fund_total:,.2f}")
         
         while True:
@@ -86,7 +110,7 @@ def main():
                 print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
                 
                 # Display fund contributions total
-                fund_total = calculate_fund_contributions_total(str(data_dir))
+                fund_total = calculate_fund_contributions_total(data_dir)
                 print(f"💵 Fund contributions total: ${fund_total:,.2f}")
                 continue
                 
@@ -159,7 +183,7 @@ def main():
             print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             
             # Display fund contributions total
-            fund_total = calculate_fund_contributions_total(str(data_dir))
+            fund_total = calculate_fund_contributions_total(data_dir)
             print(f"💵 Fund contributions total: ${fund_total:,.2f}")
             
     except Exception as e:

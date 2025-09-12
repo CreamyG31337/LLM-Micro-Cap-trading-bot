@@ -305,9 +305,19 @@ class MarketHours:
         time_str = now.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")
         
         # Market status
-        if self.is_market_open(now):
-            status = "🟢 MARKET OPEN"
-        else:
-            status = "🔴 MARKET CLOSED"
+        # Use emojis if Unicode is supported
+        try:
+            # Test if we can encode emojis
+            "🟢".encode('utf-8')
+            if self.is_market_open(now):
+                status = "🟢 MARKET OPEN"
+            else:
+                status = "🔴 MARKET CLOSED"
+        except (UnicodeEncodeError, LookupError):
+            # Fallback to plain text
+            if self.is_market_open(now):
+                status = "MARKET OPEN"
+            else:
+                status = "MARKET CLOSED"
         
         return f"{time_str} | {status}"

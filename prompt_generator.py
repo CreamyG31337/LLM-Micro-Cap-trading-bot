@@ -30,13 +30,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import pandas as pd
 
-# Import from trading_script for data access
-from trading_script import (
-    DATA_DIR, PORTFOLIO_CSV, TRADE_LOG_CSV,
-    load_latest_portfolio_state, load_benchmarks, download_price_data,
-    last_trading_date, check_weekend, set_data_dir,
-    get_company_name, trading_day_window
-)
+# Import from modular components
+from config.constants import DEFAULT_DATA_DIR
+from config.settings import get_settings
+from data.repositories.repository_factory import get_repository_container
+from portfolio.portfolio_manager import PortfolioManager
+from market_data.market_hours import MarketHours
+from market_data.data_fetcher import MarketDataFetcher
+from market_data.price_cache import PriceCache
 
 # Import color formatting
 # Colors enhance human readability but are stripped during copy/paste, so they don't affect LLM context
@@ -79,33 +80,43 @@ class PromptGenerator:
     
     def __init__(self, data_dir: Path | str | None = None):
         """Initialize prompt generator with optional data directory"""
-        if data_dir:
-            set_data_dir(Path(data_dir))
-        self.data_dir = DATA_DIR
+        self.data_dir = Path(data_dir) if data_dir else Path(DEFAULT_DATA_DIR)
+        
+        # Initialize components
+        self.settings = get_settings()
+        self.market_hours = MarketHours(self.settings)
+        self.price_cache = PriceCache()
+        self.market_data_fetcher = MarketDataFetcher(cache_instance=self.price_cache)
+        
+        # Initialize repository and portfolio manager
+        from data.repositories.csv_repository import CSVRepository
+        self.repository = CSVRepository(self.data_dir)
+        self.portfolio_manager = PortfolioManager(self.repository)
         
     def _get_market_data_table(self, portfolio_tickers: List[str]) -> List[List[str]]:
         """Fetch market data for portfolio tickers and benchmarks"""
         rows: List[List[str]] = []
         
-        end_d = last_trading_date()
-        start_d = (end_d - pd.Timedelta(days=4)).normalize()
+        # Get trading day window
+        start_d, end_d = self.market_hours.trading_day_window()
+        start_d = start_d - pd.Timedelta(days=4)  # Get more historical data
         
-        # Get benchmarks
-        benchmarks = load_benchmarks()
+        # Get benchmarks (hardcoded for now, could be moved to config)
+        benchmarks = ["SPY", "QQQ", "VTI"]
         all_tickers = portfolio_tickers + benchmarks
         
         for ticker in all_tickers:
             try:
-                fetch = download_price_data(ticker, start=start_d, end=(end_d + pd.Timedelta(days=1)), progress=False)
-                data = fetch.df
+                result = self.market_data_fetcher.fetch_price_data(ticker, start_d, end_d)
+                data = result.df
                 
                 if data.empty or len(data) < 2:
                     rows.append([ticker, "—", "—", "—"])
                     continue
                 
-                price = float(data["Close"].iloc[-1].item())
-                last_price = float(data["Close"].iloc[-2].item())
-                volume = float(data["Volume"].iloc[-1].item())
+                price = float(data["Close"].iloc[-1])
+                last_price = float(data["Close"].iloc[-2])
+                volume = float(data["Volume"].iloc[-1])
                 
                 percent_change = ((price - last_price) / last_price) * 100
                 rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", f"{int(volume):,}"])
@@ -145,16 +156,22 @@ class PromptGenerator:
         # Load trade log to get position open dates
         trade_log_df = None
         try:
-            trade_log_df = pd.read_csv(TRADE_LOG_CSV)
-            # Handle PST timezone properly - remove PST suffix and localize to PST
-            trade_log_df['Date'] = trade_log_df['Date'].astype(str).str.replace(" PST", " -0800")
-            trade_log_df['Date'] = pd.to_datetime(trade_log_df['Date'], format="mixed", utc=True)
+            trades = self.repository.get_all_trades()
+            if trades:
+                trade_data = []
+                for trade in trades:
+                    trade_data.append({
+                        'Ticker': trade.ticker,
+                        'Date': trade.timestamp,
+                        'Action': trade.action
+                    })
+                trade_log_df = pd.DataFrame(trade_data)
         except Exception:
             trade_log_df = None
         
         # Get current date for context
-        current_date = last_trading_date().strftime("%Y-%m-%d")
-        s, e = trading_day_window()
+        current_date = self.market_hours.last_trading_date().strftime("%Y-%m-%d")
+        s, e = self.market_hours.trading_day_window()
         
         # Create enhanced portfolio display with colors
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
@@ -164,47 +181,61 @@ class PromptGenerator:
         
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
-            company_name = get_company_name(ticker)
+            # Use company name from enhanced data (correct field name)
+            company_name = row.get('company', ticker) or ticker
             # Truncate long company names
             display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
             
-            # Get position open date
-            open_date = "N/A"
-            if trade_log_df is not None:
-                ticker_trades = trade_log_df[trade_log_df['Ticker'] == ticker]
-                if not ticker_trades.empty:
-                    open_date = ticker_trades['Date'].min().strftime("%m/%d")
+            # Use open date from enhanced data
+            open_date = row.get('opened_date', 'N/A')
+            if open_date != 'N/A':
+                # Convert from mm-dd-yy to mm/dd format for consistency
+                try:
+                    from datetime import datetime
+                    date_obj = datetime.strptime(open_date, '%m-%d-%y')
+                    open_date = date_obj.strftime('%m/%d')
+                except:
+                    pass
             
             # Fetch current price data
             try:
-                fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
-                if not fetch.df.empty and "Close" in fetch.df.columns:
-                    current_price = float(fetch.df['Close'].iloc[-1].item())
-                    buy_price = float(row.get('buy_price', 0))
+                result = self.market_data_fetcher.fetch_price_data(ticker, s, e)
+                if not result.df.empty and "Close" in result.df.columns:
+                    current_price = float(result.df['Close'].iloc[-1])
+                    buy_price = float(row.get('avg_price', 0))
                     shares = float(row.get('shares', 0))
                     
-                    # Calculate total P&L since position opened
-                    if buy_price > 0:
+                    # Calculate total P&L percentage from unrealized_pnl and cost_basis
+                    pnl_amount = row.get('unrealized_pnl', 0)
+                    cost_basis = row.get('cost_basis', 0)
+                    if cost_basis > 0 and pnl_amount != 0:
+                        total_pnl_pct = (pnl_amount / cost_basis) * 100
+                        total_pnl = f"{total_pnl_pct:+.1f}%"
+                    elif buy_price > 0:
+                        # Fallback calculation using current vs buy price
                         total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
                         total_pnl = f"{total_pnl_pct:+.1f}%"
                     else:
                         total_pnl = "N/A"
                     
-                    # Calculate daily P&L (today vs yesterday)
-                    if len(fetch.df) > 1:
-                        prev_price = float(fetch.df['Close'].iloc[-2].item())
+                    # Use daily P&L from enhanced data if available
+                    daily_pnl = row.get('daily_pnl', 'N/A')
+                    if daily_pnl == 'N/A' and len(result.df) > 1:
+                        # Fallback calculation if not in enhanced data
+                        prev_price = float(result.df['Close'].iloc[-2])
                         daily_pnl_pct = ((current_price - prev_price) / prev_price) * 100
                         daily_pnl = f"{daily_pnl_pct:+.1f}%"
-                    else:
-                        daily_pnl = "N/A"
                     
                     current_price_str = f"${current_price:.2f}"
+                    buy_price_str = f"${buy_price:.2f}"
                 else:
                     current_price_str = "N/A"
+                    buy_price_str = f"${buy_price:.2f}" if buy_price > 0 else "N/A"
                     total_pnl = "N/A"
                     daily_pnl = "N/A"
             except Exception:
                 current_price_str = "N/A"
+                buy_price_str = f"${buy_price:.2f}" if buy_price > 0 else "N/A"
                 total_pnl = "N/A"
                 daily_pnl = "N/A"
             
@@ -219,7 +250,7 @@ class PromptGenerator:
             
             # Format each row with consistent colors and alignment
             # Colors help humans scan data quickly, alignment helps LLMs parse structure
-            lines.append(f"{Fore.CYAN}{ticker:<10}{Style.RESET_ALL} {display_name:<25} {Fore.BLUE}{open_date:<8}{Style.RESET_ALL} {shares:<8.4f} {Fore.BLUE}${row.get('buy_price', 0):<9.2f}{Style.RESET_ALL} {Fore.YELLOW}{current_price_str:<10}{Style.RESET_ALL} {total_pnl_colored:<10} {daily_pnl_colored:<10}")
+            lines.append(f"{Fore.CYAN}{ticker:<10}{Style.RESET_ALL} {display_name:<25} {Fore.BLUE}{open_date:<8}{Style.RESET_ALL} {shares:<8.4f} {Fore.BLUE}{buy_price_str:<10}{Style.RESET_ALL} {Fore.YELLOW}{current_price_str:<10}{Style.RESET_ALL} {total_pnl_colored:<10} {daily_pnl_colored:<10}")
         
         return "\n".join(lines)
             
@@ -256,18 +287,88 @@ class PromptGenerator:
     def generate_daily_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display daily trading prompt with live data"""
         if data_dir:
-            set_data_dir(Path(data_dir))
+            self.data_dir = Path(data_dir)
+            # Reinitialize repository with new data dir
+            from data.repositories.csv_repository import CSVRepository
+            self.repository = CSVRepository(self.data_dir)
+            self.portfolio_manager = PortfolioManager(self.repository)
             
         # Load portfolio data
-        portfolio_file = self.data_dir / "llm_portfolio_update.csv"
-        
-        if not portfolio_file.exists():
-            print(f"❌ Portfolio file not found: {portfolio_file}")
-            print("Please run the main trading script first to create portfolio data.")
-            return
-            
         try:
-            llm_portfolio, cash = load_latest_portfolio_state(str(portfolio_file))
+            latest_snapshot = self.portfolio_manager.get_latest_portfolio()
+            if latest_snapshot is None:
+                print(f"❌ No portfolio data found in {self.data_dir}")
+                print("Please run the main trading script first to create portfolio data.")
+                return
+            
+            # Convert to DataFrame with enhanced data (same as main trading script)
+            portfolio_data = []
+            total_portfolio_value = sum(pos.market_value or 0 for pos in latest_snapshot.positions)
+            
+            for position in latest_snapshot.positions:
+                # Use the same to_dict() method as main trading script
+                pos_dict = position.to_dict()
+                
+                # Get open date from trade log (same logic as main script)
+                try:
+                    trades = self.repository.get_trade_history(position.ticker)
+                    if trades:
+                        # Find first BUY trade for this ticker
+                        buy_trades = [t for t in trades if t.action.upper() == 'BUY']
+                        if buy_trades:
+                            first_buy = min(buy_trades, key=lambda t: t.timestamp)
+                            pos_dict['opened_date'] = first_buy.timestamp.strftime('%m-%d-%y')
+                        else:
+                            pos_dict['opened_date'] = "N/A"
+                    else:
+                        pos_dict['opened_date'] = "N/A"
+                except Exception:
+                    pos_dict['opened_date'] = "N/A"
+                
+                # Calculate daily P&L (simplified version)
+                try:
+                    # Get historical snapshots for daily P&L calculation
+                    snapshots = self.portfolio_manager.load_portfolio()
+                    if len(snapshots) >= 2:
+                        # Find this position in previous snapshot
+                        prev_snapshot = snapshots[-2]  # Second to last snapshot
+                        prev_position = None
+                        for prev_pos in prev_snapshot.positions:
+                            if prev_pos.ticker == position.ticker:
+                                prev_position = prev_pos
+                                break
+                        
+                        if prev_position and position.unrealized_pnl is not None and prev_position.unrealized_pnl is not None:
+                            daily_pnl = position.unrealized_pnl - prev_position.unrealized_pnl
+                            pos_dict['daily_pnl'] = f"{daily_pnl:+.1f}%"
+                        else:
+                            # New position - show total P&L with asterisk
+                            if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
+                                pos_dict['daily_pnl'] = f"{position.unrealized_pnl:+.1f}%*"
+                            else:
+                                pos_dict['daily_pnl'] = "N/A"
+                    else:
+                        # Not enough historical data
+                        pos_dict['daily_pnl'] = "N/A"
+                except Exception:
+                    pos_dict['daily_pnl'] = "N/A"
+                
+                portfolio_data.append(pos_dict)
+            
+            llm_portfolio = pd.DataFrame(portfolio_data)
+            
+            # Load cash balance
+            cash = 0.0
+            try:
+                import json
+                cash_file = self.data_dir / "cash_balances.json"
+                if cash_file.exists():
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cash = cash_data.get('cad', 0) + cash_data.get('usd', 0)
+            except Exception:
+                cash = 0.0
+                
         except Exception as e:
             print(f"❌ Error loading portfolio data: {e}")
             return
@@ -284,7 +385,7 @@ class PromptGenerator:
         cash_display, total_equity = self._format_cash_info(cash)
         
         # Get current date
-        today = check_weekend()
+        today = self.market_hours.last_trading_date_str()
         
         # Calculate experiment timeline
         if _HAS_EXPERIMENT_CONFIG:
@@ -296,7 +397,7 @@ class PromptGenerator:
         
         # Generate the prompt with optimized formatting for both humans and LLMs
         # Design: Clean headers, colored data, minimal separators to save context space
-        print(f"\n📋 Daily Results — {today} ({timeline_text})")
+        print(f"\n[PROMPT] Daily Results — {today} ({timeline_text})")
         print("Copy everything below and paste into your LLM:")
         
         # Market data table with colors for human readability
@@ -329,7 +430,7 @@ class PromptGenerator:
         instructions = self._get_daily_instructions()
         print(instructions)
         
-        print(f"\n📋 End of prompt - copy everything above to your LLM")
+        print(f"\n[END] End of prompt - copy everything above to your LLM")
         
     def generate_weekly_research_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display weekly deep research prompt"""

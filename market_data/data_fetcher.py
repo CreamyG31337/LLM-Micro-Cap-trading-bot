@@ -26,7 +26,8 @@ try:
     _HAS_PDR = True
 except ImportError:
     _HAS_PDR = False
-    logger.warning("pandas-datareader not available. Stooq PDR fallback disabled.")
+    # Downgrade to debug to avoid noisy warnings in terminal output
+    logger.debug("pandas-datareader not available. Stooq PDR fallback disabled.")
 
 # Known Stooq symbol remaps for common indices
 STOOQ_MAP = {

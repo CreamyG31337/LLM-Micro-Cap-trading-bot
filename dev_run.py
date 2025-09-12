@@ -46,5 +46,5 @@ if __name__ == "__main__":
         
     except Exception as e:
         logging.error(f"Development run failed: {e}", exc_info=True)
-        print(f"❌ Development run failed: {e}")
+        print(f"_safe_emoji('❌') Development run failed: {e}")
         sys.exit(1)

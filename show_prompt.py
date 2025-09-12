@@ -275,7 +275,7 @@ def show_complete_prompt():
             # Performance context
             if daily_pnl > 0:
                 print(f"[ Daily Performance ]")
-                print(f"📈 Portfolio gained ${daily_pnl:,.2f} today ({daily_pnl_percent:+.1f}%)")
+                print(f"_safe_emoji('📈') Portfolio gained ${daily_pnl:,.2f} today ({daily_pnl_percent:+.1f}%)")
             elif daily_pnl < 0:
                 print(f"[ Daily Performance ]")
                 print(f"📉 Portfolio lost ${abs(daily_pnl):,.2f} today ({daily_pnl_percent:+.1f}%)")

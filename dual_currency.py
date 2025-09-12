@@ -153,7 +153,7 @@ def prompt_for_dual_currency_cash() -> CashBalances:
     
     balances = CashBalances(cad=cad_cash, usd=usd_cash)
     
-    print(f"\n✅ Cash balances set:")
+    print(f"\n_safe_emoji('✅') Cash balances set:")
     print(f"   CAD: ${balances.cad:,.2f}")
     print(f"   USD: ${balances.usd:,.2f}")
     print(f"   Total (CAD equiv): ${balances.total_cad_equivalent():,.2f}")
@@ -233,11 +233,11 @@ def get_live_exchange_rate(from_currency: str, to_currency: str) -> float:
             data = response.json()
             return data['rates'].get(to_currency, get_exchange_rate(from_currency, to_currency))
         else:
-            print(f"⚠️  API unavailable, using static rate for {from_currency} to {to_currency}")
+            print(f"_safe_emoji('⚠️')  API unavailable, using static rate for {from_currency} to {to_currency}")
             return get_exchange_rate(from_currency, to_currency)
             
     except Exception as e:
-        print(f"⚠️  Error fetching live rate: {e}, using static rate")
+        print(f"_safe_emoji('⚠️')  Error fetching live rate: {e}, using static rate")
         return get_exchange_rate(from_currency, to_currency)
 
 def calculate_conversion_with_fee(amount: float, from_currency: str, to_currency: str, fee_rate: float = 0.015) -> Dict[str, float]:

@@ -175,6 +175,9 @@ class MarketHours:
             Trading timezone (defaults to US/Pacific)
         """
         tz_name = self.settings.get('timezone.name', 'US/Pacific') if self.settings else "US/Pacific"
+        # Normalize common abbreviations to canonical pytz names
+        if tz_name in {"PST", "PDT"}:
+            tz_name = "US/Pacific"
         
         # Cache timezone objects for performance
         if tz_name not in self._timezone_cache:

@@ -194,6 +194,8 @@ def _safe_emoji(emoji: str) -> str:
             "✅": "OK",
             "⚠️": "!",
             "ℹ️": "i",
+            "🤖": "[AI]",
+            "➤": "->",
             "🎯": "[T]",
             "🏢": "[C]",
             "📅": "[D]",
@@ -205,6 +207,59 @@ def _safe_emoji(emoji: str) -> str:
             "🏦": "[E]"
         }
         return emoji_map.get(emoji, "*")
+
+
+def format_text_for_console(text: str) -> str:
+    """Format a block of text for the current console capabilities.
+
+    - If Unicode is supported, return text unchanged.
+    - If not, replace known emojis with safe ASCII via _safe_emoji and ensure encodable.
+    """
+    if _can_handle_unicode():
+        return text
+    # Replace known emojis with safe alternatives
+    replacements = {
+        "🔥": _safe_emoji("🔥"),
+        "🚀": _safe_emoji("🚀"),
+        "💼": _safe_emoji("💼"),
+        "⚡": _safe_emoji("⚡"),
+        "📊": _safe_emoji("📊"),
+        "💰": _safe_emoji("💰"),
+        "🛒": _safe_emoji("🛒"),
+        "📤": _safe_emoji("📤"),
+        "💵": _safe_emoji("💵"),
+        "💸": _safe_emoji("💸"),
+        "🔄": _safe_emoji("🔄"),
+        "🔗": _safe_emoji("🔗"),
+        "💾": _safe_emoji("💾"),
+        "❌": _safe_emoji("❌"),
+        "📋": _safe_emoji("📋"),
+        "🔷": _safe_emoji("🔷"),
+        "✅": _safe_emoji("✅"),
+        "⚠️": _safe_emoji("⚠️"),
+        "ℹ️": _safe_emoji("ℹ️"),
+        "🤖": _safe_emoji("🤖"),
+        "➤": _safe_emoji("➤"),
+        "🎯": _safe_emoji("🎯"),
+        "🏢": _safe_emoji("🏢"),
+        "📅": _safe_emoji("📅"),
+        "📈": _safe_emoji("📈"),
+        "🍕": _safe_emoji("🍕"),
+        "🛑": _safe_emoji("🛑"),
+        "💹": _safe_emoji("💹"),
+        "👥": _safe_emoji("👥"),
+        "🏦": _safe_emoji("🏦"),
+    }
+    out = text
+    for k, v in replacements.items():
+        if k in out:
+            out = out.replace(k, v)
+    # Ensure encodable for the console to avoid crashes
+    try:
+        out.encode(sys.stdout.encoding or 'utf-8')
+        return out
+    except (UnicodeEncodeError, LookupError):
+        return out.encode('ascii', 'ignore').decode('ascii')
 
 
 def print_header(title: str, emoji: str = "🔷", width: int = 60) -> None:

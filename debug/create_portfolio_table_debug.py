@@ -29,9 +29,9 @@ def debug_create_portfolio_table_logic():
     # Load portfolio using the exact same function as the main script
     print("📁 Loading portfolio using load_latest_portfolio_state...")
     portfolio_df, cash = load_latest_portfolio_state(str(PORTFOLIO_CSV))
-    print(f"✅ Portfolio loaded: {len(portfolio_df)} rows")
-    print(f"📊 Portfolio columns: {list(portfolio_df.columns)}")
-    print(f"📊 Portfolio tickers: {list(portfolio_df['ticker'].unique())}")
+    print(f"_safe_emoji('✅') Portfolio loaded: {len(portfolio_df)} rows")
+    print(f"_safe_emoji('📊') Portfolio columns: {list(portfolio_df.columns)}")
+    print(f"_safe_emoji('📊') Portfolio tickers: {list(portfolio_df['ticker'].unique())}")
     print()
     
     # Load trade log using the exact same logic as create_portfolio_table
@@ -39,13 +39,13 @@ def debug_create_portfolio_table_logic():
     trade_log_df = None
     try:
         trade_log_df = pd.read_csv(TRADE_LOG_CSV)
-        print(f"✅ Trade log loaded: {len(trade_log_df)} rows")
-        print(f"📊 Trade log columns: {list(trade_log_df.columns)}")
-        print(f"📊 Trade log tickers: {list(trade_log_df['Ticker'].unique())}")
+        print(f"_safe_emoji('✅') Trade log loaded: {len(trade_log_df)} rows")
+        print(f"_safe_emoji('📊') Trade log columns: {list(trade_log_df.columns)}")
+        print(f"_safe_emoji('📊') Trade log tickers: {list(trade_log_df['Ticker'].unique())}")
         
         # Apply date parsing (exact logic from create_portfolio_table)
         trade_log_df['Date'] = trade_log_df['Date'].apply(parse_csv_timestamp)
-        print("✅ Date parsing applied to trade log")
+        print("_safe_emoji('✅') Date parsing applied to trade log")
         print(f"📅 Parsed dates sample: {trade_log_df['Date'].head().tolist()}")
         print()
         
@@ -59,14 +59,14 @@ def debug_create_portfolio_table_logic():
     
     # Create display_df (exact logic from create_portfolio_table)
     display_df = portfolio_df.copy()
-    print(f"📊 Display DF shape: {display_df.shape}")
-    print(f"📊 Display DF columns: {list(display_df.columns)}")
+    print(f"_safe_emoji('📊') Display DF shape: {display_df.shape}")
+    print(f"_safe_emoji('📊') Display DF columns: {list(display_df.columns)}")
     print()
     
     # Add position open dates (exact logic from create_portfolio_table lines 485-499)
     open_dates = []
     if trade_log_df is not None:
-        print("✅ Trade log is not None, processing dates...")
+        print("_safe_emoji('✅') Trade log is not None, processing dates...")
         for i, (_, row) in enumerate(display_df.iterrows()):
             ticker = str(row.get('ticker', ''))
             print(f"  Processing row {i+1}: {ticker}")
@@ -85,7 +85,7 @@ def debug_create_portfolio_table_logic():
                 else:
                     try:
                         open_date = min_date.strftime("%m/%d")
-                        print(f"    ✅ Formatted date: {open_date}")
+                        print(f"    _safe_emoji('✅') Formatted date: {open_date}")
                         open_dates.append(open_date)
                     except Exception as e:
                         print(f"    ❌ strftime error: {e}")
@@ -102,7 +102,7 @@ def debug_create_portfolio_table_logic():
     display_df['Opened'] = open_dates
     
     # Show the final result
-    print("\n📊 Final Display DataFrame:")
+    print("\n_safe_emoji('📊') Final Display DataFrame:")
     print(display_df[['ticker', 'Opened']].to_string(index=False))
 
 if __name__ == "__main__":

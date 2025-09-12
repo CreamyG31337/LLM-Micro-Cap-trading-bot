@@ -2,6 +2,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
 from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from display.console_output import _safe_emoji
 
 # Default to parent directory's 'my trading' folder, fallback to local directory
 SCRIPT_DIR = Path(__file__).resolve().parent

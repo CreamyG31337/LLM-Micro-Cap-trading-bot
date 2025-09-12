@@ -177,7 +177,7 @@ def main():
     print("=" * 50)
     
     # Analyze main script
-    print("\n📊 Main Script Analysis:")
+    print("\n_safe_emoji('📊') Main Script Analysis:")
     main_script_metrics = count_lines_of_code("trading_script.py")
     print(f"  Total lines: {main_script_metrics['total_lines']}")
     print(f"  Code lines: {main_script_metrics['code_lines']}")
@@ -186,10 +186,10 @@ def main():
     
     target_lines = 500
     if main_script_metrics['total_lines'] <= target_lines:
-        print(f"  ✅ Main script is under target ({target_lines} lines)")
+        print(f"  _safe_emoji('✅') Main script is under target ({target_lines} lines)")
     else:
         excess = main_script_metrics['total_lines'] - target_lines
-        print(f"  ⚠️  Main script exceeds target by {excess} lines")
+        print(f"  _safe_emoji('⚠️')  Main script exceeds target by {excess} lines")
     
     # Analyze modular structure
     print("\n🏗️  Modular Structure Analysis:")
@@ -203,20 +203,20 @@ def main():
             print(f"    {module_name}: {len(module_info['files'])} files, {module_info['total_lines']} lines")
     
     # Performance testing
-    print("\n⚡ Performance Testing:")
+    print("\n_safe_emoji('⚡') Performance Testing:")
     print("  Testing refactored script...")
     
     perf_metrics = measure_script_performance("trading_script.py")
     
     if perf_metrics['success']:
-        print(f"  ✅ Execution time: {perf_metrics['execution_time']:.2f} seconds")
+        print(f"  _safe_emoji('✅') Execution time: {perf_metrics['execution_time']:.2f} seconds")
         print(f"  📝 Output lines: {perf_metrics['stdout_lines']}")
     else:
-        print(f"  ❌ Script failed: {perf_metrics.get('error', 'Unknown error')}")
+        print(f"  _safe_emoji('❌') Script failed: {perf_metrics.get('error', 'Unknown error')}")
         print(f"  Return code: {perf_metrics['return_code']}")
     
     # Summary
-    print("\n📋 Summary:")
+    print("\n_safe_emoji('📋') Summary:")
     total_system_lines = main_script_metrics['total_lines'] + module_analysis['total_lines']
     print(f"  Total system size: {total_system_lines} lines")
     print(f"  Main script: {main_script_metrics['total_lines']} lines ({main_script_metrics['total_lines']/total_system_lines*100:.1f}%)")

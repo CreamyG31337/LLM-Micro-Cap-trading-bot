@@ -163,7 +163,7 @@ def execute_automated_trades(trades: List[Dict[str, Any]], portfolio_df: pd.Data
                     cash -= cost
                     print(f"  Simulated: Cash reduced by ${cost:.2f}, new balance: ${cash:.2f}")
                 else:
-                    print(f"⚠️  BUY WARNING: {ticker} - Insufficient cash (need ${cost:.2f}, have ${cash:.2f}) - proceeding anyway")
+                    print(f"_safe_emoji('⚠️')  BUY WARNING: {ticker} - Insufficient cash (need ${cost:.2f}, have ${cash:.2f}) - proceeding anyway")
                     # Proceed with the trade despite insufficient cash
                     cash -= cost
                     print(f"  Simulated: Cash reduced by ${cost:.2f}, new balance: ${cash:.2f}")

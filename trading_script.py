@@ -22,6 +22,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Force fallback mode to avoid Windows console encoding issues
+# os.environ["FORCE_FALLBACK"] = "true"
+
 import pandas as pd
 
 # Core system imports
@@ -541,7 +544,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         os.system('cls' if os.name == 'nt' else 'clear')
         
         # Display portfolio table
-        print_header("Portfolio Summary", "💼")
+        print_header("Portfolio Summary", "📊")
         table_formatter.create_portfolio_table(enhanced_positions)
         
         # Display additional tables
@@ -593,17 +596,55 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 )
                 # Map field names for table formatter
                 ownership_data = {}
+
+                # Calculate total shares in portfolio for proportional ownership
+                try:
+                    total_shares = sum(float(pos.shares) for pos in updated_positions) if updated_positions else 0
+                    logger.debug(f"Calculated total shares: {total_shares}")
+                except Exception as calc_error:
+                    logger.warning(f"Could not calculate total shares: {calc_error}")
+                    total_shares = 0
+
                 for contributor, data in ownership_raw.items():
+                    ownership_pct = float(data.get('ownership_percentage', 0))
+                    # Calculate proportional shares owned by this contributor
+                    # Since this is a pooled fund, shares are owned collectively, but we show
+                    # proportional ownership based on each contributor's percentage of the fund
+                    contributor_shares = (ownership_pct / 100) * total_shares if total_shares > 0 else 0
+
                     ownership_data[contributor] = {
-                        'shares': 0,  # Not applicable for fund contributions
+                        'shares': contributor_shares,  # Proportional share ownership
                         'contributed': float(data.get('net_contribution', 0)),
-                        'ownership_pct': float(data.get('ownership_percentage', 0)),
+                        'ownership_pct': ownership_pct,
                         'current_value': float(data.get('current_value', 0))
                     }
+
+                    logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
+
+                # Create the ownership table
+                logger.debug(f"Creating ownership table with {len(ownership_data)} contributors")
                 table_formatter.create_ownership_table(ownership_data)
                 print()  # Add spacing
         except Exception as e:
-            logger.debug(f"Could not calculate ownership data: {e}")
+            logger.error(f"Could not calculate ownership data: {e}")
+            # Try to show a basic ownership table as fallback
+            try:
+                if fund_contributions and ownership_raw:
+                    logger.debug("Attempting fallback ownership table...")
+                    fallback_ownership_data = {}
+                    for contributor, data in ownership_raw.items():
+                        fallback_ownership_data[contributor] = {
+                            'shares': 0.0,  # Fallback to 0 shares
+                            'contributed': float(data.get('net_contribution', 0)),
+                            'ownership_pct': float(data.get('ownership_percentage', 0)),
+                            'current_value': float(data.get('current_value', 0))
+                        }
+                    table_formatter.create_ownership_table(fallback_ownership_data)
+                    print()  # Add spacing
+                    logger.info("Displayed fallback ownership table")
+            except Exception as fallback_e:
+                logger.error(f"Fallback ownership table also failed: {fallback_e}")
+                print_warning("Could not display ownership information")
         
         # Display financial summary
         try:
@@ -629,12 +670,20 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             logger.debug(f"Could not create financial summary: {e}")
         
         # Display market timing information
-        market_time_header = market_hours.display_market_time_header()
-        print_info(market_time_header)
+        try:
+            market_time_header = market_hours.display_market_time_header()
+            print_info(market_time_header, emoji="⏰")
+        except Exception as e:
+            logger.debug(f"Could not display market time header: {e}")
+            # Fallback to simple market time display
+            tz = market_hours.get_trading_timezone()
+            now = datetime.now(tz)
+            simple_time = now.strftime("%Y-%m-%d %H:%M:%S")
+            print(f"Current time: {simple_time}")
         
         # Display trading menu
         print()  # Add spacing
-        print_header("Trading Actions", "⚡")
+        print_header("Trading Actions", "💰")
         # Use fancy Unicode borders if supported, otherwise ASCII fallback
         from display.console_output import _can_handle_unicode, _safe_emoji
         

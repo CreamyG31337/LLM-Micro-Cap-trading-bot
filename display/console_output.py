@@ -40,6 +40,10 @@ def _can_handle_unicode() -> bool:
         return False
 
 
+# Initialize fallback variables
+_FORCE_FALLBACK = False  # Allow Rich display by default
+_FORCE_COLORAMA_ONLY = os.environ.get("FORCE_COLORAMA_ONLY", "").lower() in ("true", "1", "yes", "on")
+
 # Color and formatting imports with fallback handling
 try:
     from colorama import init, Fore, Back, Style
@@ -68,10 +72,6 @@ except ImportError:
             return ""
     
     Fore = Back = Style = DummyColor()
-
-# Force fallback mode for testing (set via environment variable or function call)
-_FORCE_FALLBACK = os.environ.get("FORCE_FALLBACK", "").lower() in ("true", "1", "yes", "on")
-_FORCE_COLORAMA_ONLY = os.environ.get("FORCE_COLORAMA_ONLY", "").lower() in ("true", "1", "yes", "on")
 
 
 def set_force_fallback(force_fallback: bool = True, colorama_only: bool = False) -> None:

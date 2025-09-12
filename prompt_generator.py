@@ -183,10 +183,10 @@ class PromptGenerator:
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
         lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
-        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total Value':>11} {'Total P&L':>16} {'Daily P&L':>16}{Style.RESET_ALL}")
-        # Compute separator length dynamically: sum of column widths + spaces between (7)
-        _col_widths = [10, 25, 8, 8, 10, 10, 11, 16, 16]
-        _sep_len = sum(_col_widths) + 7
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total Value':>11} {'Dollar P&L':>11} {'Total P&L':>10} {'Daily P&L':>10}{Style.RESET_ALL}")
+        # Compute separator length dynamically: sum of column widths + spaces between (9)
+        _col_widths = [10, 25, 8, 8, 10, 10, 11, 11, 10, 10]
+        _sep_len = sum(_col_widths) + 9
         lines.append("-" * _sep_len)
         
         # Prepare data for sorting
@@ -273,9 +273,10 @@ class PromptGenerator:
             # Calculate P&L values
             if current_price > 0:
                 # Calculate total P&L percentage from unrealized_pnl and cost_basis
-                pnl_amount = row.get('unrealized_pnl', 0)
-                cost_basis = row.get('cost_basis', 0)
-                if cost_basis > 0 and pnl_amount != 0:
+                pnl_amount = row.get('unrealized_pnl', 0) or 0
+                cost_basis = row.get('cost_basis', 0) or 0
+                
+                if cost_basis > 0:
                     total_pnl_pct = (pnl_amount / cost_basis) * 100
                     total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
                 elif buy_price > 0:
@@ -299,29 +300,16 @@ class PromptGenerator:
                     except:
                         daily_pnl_pct_str = "N/A"
 
-                # Create combined P&L strings: percentage [dollar amount]
+                # Combine P&L values with brackets around dollar amounts
                 dollar_pnl_str = f"${dollar_pnl:+,.2f}" if dollar_pnl != 0 else "$0.00"
-                if total_pnl_pct_str != "N/A":
-                    total_pnl = f"{total_pnl_pct_str} [{dollar_pnl_str}]"
+                total_pnl = f"{total_pnl_pct_str} [{dollar_pnl_str}]"
+                
+                # Use daily P&L from the row data (already calculated in trading script)
+                daily_pnl_dollar = row.get('daily_pnl', 'N/A')
+                if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
+                    daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
                 else:
-                    total_pnl = "N/A"
-
-                if daily_pnl_pct_str != "N/A":
-                    # For daily P&L, we need to calculate the dollar amount for the day
-                    daily_dollar_pnl = 0
-                    try:
-                        result = self.market_data_fetcher.fetch_price_data(ticker, s, e)
-                        if not result.df.empty and len(result.df) > 1:
-                            prev_price = float(result.df['Close'].iloc[-2])
-                            daily_price_change = current_price - prev_price
-                            daily_dollar_pnl = daily_price_change * shares
-                    except:
-                        daily_dollar_pnl = 0
-
-                    daily_dollar_str = f"${daily_dollar_pnl:+,.2f}" if daily_dollar_pnl != 0 else "$0.00"
-                    daily_pnl = f"{daily_pnl_pct_str} [{daily_dollar_str}]"
-                else:
-                    daily_pnl = "N/A"
+                    daily_pnl = f"{daily_pnl_pct_str} [$0.00]"
 
                 current_price_str = f"${current_price:.2f}"
                 buy_price_str = f"${buy_price:.2f}"
@@ -453,33 +441,35 @@ class PromptGenerator:
                 except Exception:
                     pos_dict['opened_date'] = "N/A"
                 
-                # Calculate daily P&L (simplified version)
+                # Calculate daily P&L (same logic as trading script)
                 try:
-                    # Get historical snapshots for daily P&L calculation
+                    daily_pnl_calculated = False
                     snapshots = self.portfolio_manager.load_portfolio()
-                    if len(snapshots) >= 2:
-                        # Find this position in previous snapshot
-                        prev_snapshot = snapshots[-2]  # Second to last snapshot
-                        prev_position = None
-                        for prev_pos in prev_snapshot.positions:
-                            if prev_pos.ticker == position.ticker:
-                                prev_position = prev_pos
+                    # Try to find daily P&L from multiple previous snapshots
+                    for i in range(1, min(len(snapshots), 4)):  # Check up to 3 previous snapshots
+                        if len(snapshots) > i:
+                            previous_snapshot = snapshots[-(i+1)]
+                            # Find the same ticker in previous snapshot
+                            prev_position = None
+                            for prev_pos in previous_snapshot.positions:
+                                if prev_pos.ticker == position.ticker:
+                                    prev_position = prev_pos
+                                    break
+                            
+                            if prev_position and prev_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
+                                daily_pnl_change = position.unrealized_pnl - prev_position.unrealized_pnl
+                                pos_dict['daily_pnl'] = f"${daily_pnl_change:.2f}"
+                                daily_pnl_calculated = True
                                 break
-                        
-                        if prev_position and position.unrealized_pnl is not None and prev_position.unrealized_pnl is not None:
-                            daily_pnl = position.unrealized_pnl - prev_position.unrealized_pnl
-                            pos_dict['daily_pnl'] = f"{daily_pnl:+.1f}%"
+                    
+                    if not daily_pnl_calculated:
+                        # If no historical data, show current P&L as daily change for new positions
+                        if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
+                            pos_dict['daily_pnl'] = f"${position.unrealized_pnl:.2f}*"  # * indicates new position
                         else:
-                            # New position - show total P&L with asterisk
-                            if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
-                                pos_dict['daily_pnl'] = f"{position.unrealized_pnl:+.1f}%*"
-                            else:
-                                pos_dict['daily_pnl'] = "N/A"
-                    else:
-                        # Not enough historical data
-                        pos_dict['daily_pnl'] = "N/A"
-                except Exception:
-                    pos_dict['daily_pnl'] = "N/A"
+                            pos_dict['daily_pnl'] = "$0.00"
+                except Exception as e:
+                    pos_dict['daily_pnl'] = "$0.00"
                 
                 portfolio_data.append(pos_dict)
             

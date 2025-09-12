@@ -137,7 +137,7 @@ class TableFormatter:
         
         for position in portfolio_data:
             # Truncate long company names for display
-            company_name = position.get('company', 'N/A')  # Fixed field name
+            company_name = position.get('company', 'N/A')
             display_name = (company_name[:company_max_width-3] + "..." 
                           if len(company_name) > company_max_width else company_name)
             
@@ -147,33 +147,47 @@ class TableFormatter:
             total_value = shares * current_price if current_price > 0 else 0
             total_value_display = f"${total_value:.2f}" if total_value > 0 else "N/A"
 
-            # Calculate combined P&L values: percentage [dollar amount]
-            unrealized_pnl = position.get('unrealized_pnl', 0)
-            total_pnl_pct = position.get('total_pnl', 'N/A')
-            daily_pnl_pct = position.get('daily_pnl', 'N/A')
-
-            # Create combined display strings
-            if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
-                total_pnl_display = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
-            elif total_pnl_pct != 'N/A':
-                total_pnl_display = f"{total_pnl_pct} [$0.00]"
+            # Calculate P&L values
+            unrealized_pnl = position.get('unrealized_pnl', 0) or 0
+            cost_basis = position.get('cost_basis', 0) or 0
+            avg_price = position.get('avg_price', 0) or 0
+            
+            # Calculate total P&L percentage with color coding
+            if cost_basis > 0:
+                total_pnl_pct = (unrealized_pnl / cost_basis) * 100
+                if total_pnl_pct > 0:
+                    total_pnl_display = f"[green]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/green]"
+                elif total_pnl_pct < 0:
+                    total_pnl_display = f"[red]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/red]"
+                else:
+                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+            elif avg_price > 0 and current_price > 0:
+                total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                if total_pnl_pct > 0:
+                    total_pnl_display = f"[green]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/green]"
+                elif total_pnl_pct < 0:
+                    total_pnl_display = f"[red]{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}][/red]"
+                else:
+                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
             else:
                 total_pnl_display = 'N/A'
 
-            if daily_pnl_pct != 'N/A':
-                # For daily P&L, calculate dollar amount for the day
-                daily_dollar_pnl = 0
-                try:
-                    # This is a simplified calculation - in practice you'd need market data
-                    if current_price > 0 and shares > 0:
-                        # Estimate daily dollar change based on available data
-                        daily_dollar_pnl = float(position.get('daily_pnl_dollar', 0))
-                except:
-                    daily_dollar_pnl = 0
-
-                daily_pnl_display = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
+            # Daily P&L (already calculated in trading_script.py as dollar amount)
+            daily_pnl_dollar = position.get('daily_pnl', 'N/A')
+            if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
+                # Convert dollar amount to percentage for display
+                if avg_price > 0 and current_price > 0:
+                    daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                    if daily_pnl_pct > 0:
+                        daily_pnl_display = f"[green]{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}][/green]"
+                    elif daily_pnl_pct < 0:
+                        daily_pnl_display = f"[red]{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}][/red]"
+                    else:
+                        daily_pnl_display = f"{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]"
+                else:
+                    daily_pnl_display = f"N/A [{daily_pnl_dollar}]"
             else:
-                daily_pnl_display = 'N/A'
+                daily_pnl_display = daily_pnl_dollar
             
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
@@ -204,49 +218,65 @@ class TableFormatter:
         # Convert to DataFrame for better plain text formatting
         df_data = []
         for position in portfolio_data:
+            # Calculate values
+            shares = float(position.get('shares', 0))
+            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
+            avg_price = float(position.get('avg_price', 0)) or 0
+            cost_basis = float(position.get('cost_basis', 0)) or 0
+            unrealized_pnl = float(position.get('unrealized_pnl', 0)) or 0
+            total_value = shares * current_price if current_price > 0 else 0
+            
+            # Calculate P&L percentage with color coding
+            if cost_basis > 0:
+                total_pnl_pct = (unrealized_pnl / cost_basis) * 100
+                if total_pnl_pct > 0:
+                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                elif total_pnl_pct < 0:
+                    total_pnl_display = f"{Fore.RED}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                else:
+                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+            elif avg_price > 0 and current_price > 0:
+                total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                if total_pnl_pct > 0:
+                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                elif total_pnl_pct < 0:
+                    total_pnl_display = f"{Fore.RED}{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]{Style.RESET_ALL}"
+                else:
+                    total_pnl_display = f"{total_pnl_pct:+.1f}% [${unrealized_pnl:+,.2f}]"
+            else:
+                total_pnl_display = 'N/A'
+            
+            # Daily P&L with color coding
+            daily_pnl_dollar = position.get('daily_pnl', 'N/A')
+            if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
+                if avg_price > 0 and current_price > 0:
+                    daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                    if daily_pnl_pct > 0:
+                        daily_pnl_display = f"{Fore.GREEN}{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]{Style.RESET_ALL}"
+                    elif daily_pnl_pct < 0:
+                        daily_pnl_display = f"{Fore.RED}{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]{Style.RESET_ALL}"
+                    else:
+                        daily_pnl_display = f"{daily_pnl_pct:+.1f}% [{daily_pnl_dollar}]"
+                else:
+                    daily_pnl_display = f"N/A [{daily_pnl_dollar}]"
+            else:
+                daily_pnl_display = daily_pnl_dollar
+            
             df_data.append({
                 'Ticker': position.get('ticker', 'N/A'),
-                'Company': position.get('company_name', 'N/A'),
+                'Company': position.get('company', 'N/A'),
                 'Opened': position.get('opened_date', 'N/A'),
-                'Shares': f"{float(position.get('shares', 0)):.4f}",
-                'Buy Price': f"${float(position.get('buy_price', 0)):.2f}",
-                'Current': f"${float(position.get('current_price', 0)):.2f}" if position.get('current_price', 0) > 0 else "N/A",
-                'Total P&L': position.get('total_pnl', 'N/A'),
-                'Daily P&L': position.get('daily_pnl', 'N/A'),
+                'Shares': f"{shares:.4f}",
+                'Buy Price': f"${avg_price:.2f}",
+                'Current': f"${current_price:.2f}" if current_price > 0 else "N/A",
+                'Total Value': f"${total_value:.2f}" if total_value > 0 else "N/A",
+                'Dollar P&L': f"${unrealized_pnl:+,.2f}",
+                'Total P&L': total_pnl_display,
+                'Daily P&L': daily_pnl_display,
                 'Weight': position.get('position_weight', 'N/A'),
                 'Stop Loss': f"${float(position.get('stop_loss', 0)):.2f}" if position.get('stop_loss', 0) > 0 else "None",
-                'Cost Basis': f"${float(position.get('cost_basis', 0)):.2f}"
+                'Cost Basis': f"${cost_basis:.2f}"
             })
-        
-        # Update columns to match new combined format
-        for position in df_data:
-            shares = float(position.get('Shares', '0').replace(',', ''))
-            current_price_str = position.get('Current', 'N/A')
-            current_price = float(current_price_str.replace('$', '').replace(',', '')) if current_price_str != 'N/A' and current_price_str != '$0.00' else 0
-
-            # Calculate total value
-            total_value = shares * current_price if current_price > 0 else 0
-            position['Total Value'] = f"${total_value:.2f}" if total_value > 0 else "N/A"
-
-            # Create combined P&L values
-            unrealized_pnl = float(position.get('Cost Basis', '0').replace('$', '').replace(',', '')) - float(position.get('Buy Price', '$0').replace('$', '').replace(',', ''))
-            total_pnl_pct = position.get('Total P&L', 'N/A')
-            daily_pnl_pct = position.get('Daily P&L', 'N/A')
-
-            # Combine percentage and dollar amount
-            if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
-                position['Total P&L'] = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
-            elif total_pnl_pct != 'N/A':
-                position['Total P&L'] = f"{total_pnl_pct} [$0.00]"
-            else:
-                position['Total P&L'] = 'N/A'
-
-            if daily_pnl_pct != 'N/A':
-                # Estimate daily dollar change (simplified)
-                daily_dollar_pnl = 0
-                position['Daily P&L'] = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
-            else:
-                position['Daily P&L'] = 'N/A'
 
         if df_data and _HAS_PANDAS:
             df = pd.DataFrame(df_data)
@@ -379,7 +409,7 @@ class TableFormatter:
             return json.dumps({"ownership": ownership_data}, indent=2)
         
         if has_rich_support() and self.console:
-            ownership_table = Table(title="👥 Ownership Details", show_header=True, header_style="bold blue")
+            ownership_table = Table(title="Ownership Details", show_header=True, header_style="bold blue")
             ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
             ownership_table.add_column("Shares", justify="right", style="cyan")
             ownership_table.add_column("Contributed", justify="right", style="green")

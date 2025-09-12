@@ -62,7 +62,7 @@ def main():
     args = parser.parse_args()
     
     from display.console_output import _safe_emoji
-    print(f"{_safe_emoji('_safe_emoji('💰')')} Cash Balance Update Utility")
+    print(f"{_safe_emoji('💰')} Cash Balance Update Utility")
     print("=" * 40)
     
     # Set up data directory

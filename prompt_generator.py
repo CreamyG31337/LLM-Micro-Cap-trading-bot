@@ -140,19 +140,25 @@ class PromptGenerator:
         else:
             return f"${cash:,.2f}", cash
     
-    def _format_portfolio_table(self, portfolio_df: pd.DataFrame) -> str:
+    def _format_portfolio_table(self, portfolio_df: pd.DataFrame, sort_by: str = "date") -> str:
         """Format portfolio data with enhanced date range and P&L information
-        
+
         Design decisions:
         - Colors enhance human readability but are stripped during copy/paste
         - Consistent column alignment makes data easy for LLMs to parse
         - Shows both daily and total P&L for comprehensive performance context
         - Position open dates provide historical context
         - Minimal separators save context space while maintaining structure
+        - Added dollar P&L and total value columns
+        - Sorting by date or total value
+
+        Args:
+            portfolio_df: Portfolio data as DataFrame
+            sort_by: Sort method - "date" or "value"
         """
         if portfolio_df.empty:
             return "No current holdings"
-        
+
         # Load trade log to get position open dates
         trade_log_df = None
         try:
@@ -168,78 +174,162 @@ class PromptGenerator:
                 trade_log_df = pd.DataFrame(trade_data)
         except Exception:
             trade_log_df = None
-        
+
         # Get current date for context
         current_date = self.market_hours.last_trading_date().strftime("%Y-%m-%d")
         s, e = self.market_hours.trading_day_window()
-        
+
         # Create enhanced portfolio display with colors
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
         lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
-        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total P&L':>10} {'Daily P&L':>10}{Style.RESET_ALL}")
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total Value':>11} {'Total P&L':>16} {'Daily P&L':>16}{Style.RESET_ALL}")
         # Compute separator length dynamically: sum of column widths + spaces between (7)
-        _col_widths = [10, 25, 8, 8, 10, 10, 10, 10]
+        _col_widths = [10, 25, 8, 8, 10, 10, 11, 16, 16]
         _sep_len = sum(_col_widths) + 7
         lines.append("-" * _sep_len)
         
+        # Prepare data for sorting
+        portfolio_rows = []
         for _, row in portfolio_df.iterrows():
             ticker = str(row.get('ticker', ''))
             # Use company name from enhanced data (correct field name)
             company_name = row.get('company', ticker) or ticker
             # Truncate long company names
             display_name = company_name[:22] + "..." if len(company_name) > 25 else company_name
-            
-            # Use open date from enhanced data
+
+            # Use open date from enhanced data and ensure mm-dd-yy format
             open_date = row.get('opened_date', 'N/A')
             if open_date != 'N/A':
-                # Convert from mm-dd-yy to mm/dd format for consistency
+                # Ensure mm-dd-yy format
                 try:
                     from datetime import datetime
-                    date_obj = datetime.strptime(open_date, '%m-%d-%y')
-                    open_date = date_obj.strftime('%m/%d')
+                    if len(open_date) == 5:  # mm/dd format
+                        # Convert mm/dd to mm-dd-yy
+                        date_obj = datetime.strptime(open_date + f"/{datetime.now().year}", '%m/%d/%Y')
+                        open_date = date_obj.strftime('%m-%d-%y')
+                    elif '/' in open_date:
+                        # Convert mm/dd/yy to mm-dd-yy
+                        parts = open_date.split('/')
+                        if len(parts) == 3:
+                            open_date = f"{parts[0].zfill(2)}-{parts[1].zfill(2)}-{parts[2]}"
+                    # If already in correct format, keep as is
                 except:
                     pass
-            
-            # Fetch current price data
+
+            # Get current price and calculate values
             try:
                 result = self.market_data_fetcher.fetch_price_data(ticker, s, e)
                 if not result.df.empty and "Close" in result.df.columns:
                     current_price = float(result.df['Close'].iloc[-1])
-                    buy_price = float(row.get('avg_price', 0))
-                    shares = float(row.get('shares', 0))
-                    
-                    # Calculate total P&L percentage from unrealized_pnl and cost_basis
-                    pnl_amount = row.get('unrealized_pnl', 0)
-                    cost_basis = row.get('cost_basis', 0)
-                    if cost_basis > 0 and pnl_amount != 0:
-                        total_pnl_pct = (pnl_amount / cost_basis) * 100
-                        total_pnl = f"{total_pnl_pct:+.1f}%"
-                    elif buy_price > 0:
-                        # Fallback calculation using current vs buy price
-                        total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
-                        total_pnl = f"{total_pnl_pct:+.1f}%"
-                    else:
-                        total_pnl = "N/A"
-                    
-                    # Use daily P&L from enhanced data if available
-                    daily_pnl = row.get('daily_pnl', 'N/A')
-                    if daily_pnl == 'N/A' and len(result.df) > 1:
-                        # Fallback calculation if not in enhanced data
-                        prev_price = float(result.df['Close'].iloc[-2])
-                        daily_pnl_pct = ((current_price - prev_price) / prev_price) * 100
-                        daily_pnl = f"{daily_pnl_pct:+.1f}%"
-                    
-                    current_price_str = f"${current_price:.2f}"
-                    buy_price_str = f"${buy_price:.2f}"
                 else:
-                    current_price_str = "N/A"
-                    buy_price_str = f"${buy_price:.2f}" if buy_price > 0 else "N/A"
+                    current_price = 0.0
+            except:
+                current_price = 0.0
+
+            shares = float(row.get('shares', 0))
+            buy_price = float(row.get('avg_price', 0))
+
+            # Calculate total value (shares * current price)
+            total_value = shares * current_price if current_price > 0 else 0.0
+
+            # Calculate dollar P&L (unrealized_pnl from enhanced data)
+            dollar_pnl = row.get('unrealized_pnl', 0)
+            if dollar_pnl == 0 and buy_price > 0 and current_price > 0:
+                # Fallback calculation: (current - buy) * shares
+                dollar_pnl = (current_price - buy_price) * shares
+
+            portfolio_rows.append({
+                'row': row,
+                'ticker': ticker,
+                'display_name': display_name,
+                'open_date': open_date,
+                'shares': shares,
+                'buy_price': buy_price,
+                'current_price': current_price,
+                'total_value': total_value,
+                'dollar_pnl': dollar_pnl,
+                'sort_key': open_date if sort_by == "date" else total_value
+            })
+
+        # Sort the rows
+        if sort_by == "date":
+            portfolio_rows.sort(key=lambda x: x['sort_key'] if x['sort_key'] != 'N/A' else '99-99-99')
+        else:  # sort by value
+            portfolio_rows.sort(key=lambda x: x['sort_key'], reverse=True)
+
+        # Process sorted rows
+        for item in portfolio_rows:
+            row = item['row']
+            ticker = item['ticker']
+            display_name = item['display_name']
+            open_date = item['open_date']
+            shares = item['shares']
+            buy_price = item['buy_price']
+            current_price = item['current_price']
+            total_value = item['total_value']
+            dollar_pnl = item['dollar_pnl']
+            
+            # Calculate P&L values
+            if current_price > 0:
+                # Calculate total P&L percentage from unrealized_pnl and cost_basis
+                pnl_amount = row.get('unrealized_pnl', 0)
+                cost_basis = row.get('cost_basis', 0)
+                if cost_basis > 0 and pnl_amount != 0:
+                    total_pnl_pct = (pnl_amount / cost_basis) * 100
+                    total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
+                elif buy_price > 0:
+                    # Fallback calculation using current vs buy price
+                    total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                    total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
+                else:
+                    total_pnl_pct_str = "N/A"
+
+                # Use daily P&L from enhanced data if available
+                daily_pnl_pct_str = row.get('daily_pnl', 'N/A')
+                if daily_pnl_pct_str == 'N/A':
+                    try:
+                        result = self.market_data_fetcher.fetch_price_data(ticker, s, e)
+                        if not result.df.empty and len(result.df) > 1:
+                            prev_price = float(result.df['Close'].iloc[-2])
+                            daily_pnl_pct = ((current_price - prev_price) / prev_price) * 100
+                            daily_pnl_pct_str = f"{daily_pnl_pct:+.1f}%"
+                        else:
+                            daily_pnl_pct_str = "N/A"
+                    except:
+                        daily_pnl_pct_str = "N/A"
+
+                # Create combined P&L strings: percentage [dollar amount]
+                dollar_pnl_str = f"${dollar_pnl:+,.2f}" if dollar_pnl != 0 else "$0.00"
+                if total_pnl_pct_str != "N/A":
+                    total_pnl = f"{total_pnl_pct_str} [{dollar_pnl_str}]"
+                else:
                     total_pnl = "N/A"
+
+                if daily_pnl_pct_str != "N/A":
+                    # For daily P&L, we need to calculate the dollar amount for the day
+                    daily_dollar_pnl = 0
+                    try:
+                        result = self.market_data_fetcher.fetch_price_data(ticker, s, e)
+                        if not result.df.empty and len(result.df) > 1:
+                            prev_price = float(result.df['Close'].iloc[-2])
+                            daily_price_change = current_price - prev_price
+                            daily_dollar_pnl = daily_price_change * shares
+                    except:
+                        daily_dollar_pnl = 0
+
+                    daily_dollar_str = f"${daily_dollar_pnl:+,.2f}" if daily_dollar_pnl != 0 else "$0.00"
+                    daily_pnl = f"{daily_pnl_pct_str} [{daily_dollar_str}]"
+                else:
                     daily_pnl = "N/A"
-            except Exception:
+
+                current_price_str = f"${current_price:.2f}"
+                buy_price_str = f"${buy_price:.2f}"
+                total_value_str = f"${total_value:.2f}"
+            else:
                 current_price_str = "N/A"
                 buy_price_str = f"${buy_price:.2f}" if buy_price > 0 else "N/A"
+                total_value_str = "N/A"
                 total_pnl = "N/A"
                 daily_pnl = "N/A"
             
@@ -247,11 +337,13 @@ class PromptGenerator:
             # This makes performance immediately visible to humans while preserving data for LLMs
             total_pnl_colored = total_pnl
             daily_pnl_colored = daily_pnl
+
+            # Color based on the percentage part (first character)
             if total_pnl != "N/A" and total_pnl.startswith(('+', '-')):
                 total_pnl_colored = f"{Fore.GREEN if total_pnl.startswith('+') else Fore.RED}{total_pnl}{Style.RESET_ALL}"
             if daily_pnl != "N/A" and daily_pnl.startswith(('+', '-')):
                 daily_pnl_colored = f"{Fore.GREEN if daily_pnl.startswith('+') else Fore.RED}{daily_pnl}{Style.RESET_ALL}"
-            
+
             # Format each row with consistent colors and alignment
             # Colors help humans scan data quickly, alignment helps LLMs parse structure
             # Build padded cells first to enforce alignment, then colorize
@@ -261,8 +353,9 @@ class PromptGenerator:
             shares_cell = f"{shares:>8.4f}"
             buy_price_cell = f"{buy_price_str:>10}"
             current_price_cell = f"{current_price_str:>10}"
-            total_pnl_cell = f"{total_pnl:>10}"
-            daily_pnl_cell = f"{daily_pnl:>10}"
+            total_value_cell = f"{total_value_str:>11}"
+            total_pnl_cell = f"{total_pnl:>16}"
+            daily_pnl_cell = f"{daily_pnl:>16}"
 
             # Colorize padded P&L cells so ANSI codes don't affect alignment
             total_pnl_cell_colored = total_pnl_cell
@@ -281,6 +374,7 @@ class PromptGenerator:
                 f"{shares_cell} "
                 f"{Fore.BLUE}{buy_price_cell}{Style.RESET_ALL} "
                 f"{Fore.YELLOW}{current_price_cell}{Style.RESET_ALL} "
+                f"{Fore.YELLOW}{total_value_cell}{Style.RESET_ALL} "
                 f"{total_pnl_cell_colored} "
                 f"{daily_pnl_cell_colored}"
             )
@@ -461,7 +555,7 @@ class PromptGenerator:
             
         # Portfolio snapshot with enhanced formatting
         print(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
-        print(self._format_portfolio_table(llm_portfolio))
+        print(self._format_portfolio_table(llm_portfolio, sort_by="date"))
             
         # Financial summary with color-coded labels for quick scanning
         print(f"\n{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
@@ -481,7 +575,14 @@ class PromptGenerator:
     def generate_weekly_research_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display weekly deep research prompt"""
         if data_dir:
-            set_data_dir(Path(data_dir))
+            # Import here to avoid circular imports
+            try:
+                from config.settings import set_data_dir
+            except ImportError:
+                # Fallback if not available
+                pass
+            else:
+                set_data_dir(Path(data_dir))
             
         # Load portfolio data
         portfolio_file = self.data_dir / "llm_portfolio_update.csv"
@@ -492,6 +593,13 @@ class PromptGenerator:
             return
             
         try:
+            # Import here to avoid circular imports
+            try:
+                from trading_script import load_latest_portfolio_state
+            except ImportError:
+                print("❌ Required module trading_script not found")
+                return
+
             llm_portfolio, cash = load_latest_portfolio_state(str(portfolio_file))
         except Exception as e:
             print(f"❌ Error loading portfolio data: {e}")
@@ -569,7 +677,7 @@ Context""")
         print(cash_display)
         print()
         print(f"{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
-        print(self._format_portfolio_table(llm_portfolio))
+        print(self._format_portfolio_table(llm_portfolio, sort_by="value"))
         print()
         print(f"{Fore.CYAN}[ Snapshot ]{Style.RESET_ALL}")
         print(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")

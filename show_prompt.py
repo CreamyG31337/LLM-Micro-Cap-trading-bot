@@ -7,7 +7,10 @@ This script shows you the complete prompt that you should copy and paste into yo
 
 from market_config import get_daily_instructions, get_market_info, ACTIVE_MARKET
 from dual_currency import load_cash_balances, format_cash_display
-from trading_script import DATA_DIR, last_trading_date, download_price_data, trading_day_window
+from config.constants import DEFAULT_DATA_DIR
+from market_data.market_hours import MarketHours
+from market_data.data_fetcher import MarketDataFetcher
+from market_data.price_cache import PriceCache
 import pandas as pd
 import numpy as np
 
@@ -17,7 +20,8 @@ def calculate_position_metrics(portfolio_df, cash_balance):
         return pd.DataFrame()
     
     # Get current prices for all positions
-    s, e = trading_day_window()
+    market_hours = MarketHours()
+    s, e = market_hours.trading_day_window()
     enhanced_df = portfolio_df.copy()
     
     current_prices = []
@@ -35,12 +39,13 @@ def calculate_position_metrics(portfolio_df, cash_balance):
         ticker = str(row.get('ticker', ''))
         
         # Fetch current price and previous day's price for daily P&L
-        fetch = download_price_data(ticker, start=s, end=e, auto_adjust=False, progress=False)
-        if not fetch.df.empty and "Close" in fetch.df.columns:
-            current_price = float(fetch.df['Close'].iloc[-1].item())
+        market_data_fetcher = MarketDataFetcher()
+        result = market_data_fetcher.fetch_price_data(ticker, s, e)
+        if not result.df.empty and "Close" in result.df.columns:
+            current_price = float(result.df['Close'].iloc[-1])
             # Get previous day's price for daily P&L calculation
-            if len(fetch.df) > 1:
-                prev_price = float(fetch.df['Close'].iloc[-2].item())
+            if len(result.df) > 1:
+                prev_price = float(result.df['Close'].iloc[-2])
             else:
                 prev_price = current_price  # If only one day of data, no daily change
         else:
@@ -177,7 +182,8 @@ def show_complete_prompt():
     
     # This would normally come from your trading script output
     print("================================================================")
-    print(f"Daily Results — {last_trading_date().date().isoformat()}")
+    market_hours = MarketHours()
+    print(f"Daily Results — {market_hours.last_trading_date_str()}")
     print("================================================================")
     print()
     
@@ -192,8 +198,30 @@ def show_complete_prompt():
     
     # Load actual portfolio data for enhanced display
     try:
-        from trading_script import load_latest_portfolio_state
-        portfolio_df, cash = load_latest_portfolio_state(str(DATA_DIR / "llm_portfolio_update.csv"))
+        # Load portfolio using modular components
+        from data.repositories.csv_repository import CSVRepository
+        from portfolio.portfolio_manager import PortfolioManager
+        
+        data_dir = Path(DEFAULT_DATA_DIR)
+        repository = CSVRepository(data_dir)
+        portfolio_manager = PortfolioManager(repository)
+        
+        latest_snapshot = portfolio_manager.get_latest_portfolio()
+        if latest_snapshot:
+            # Convert to DataFrame for compatibility
+            portfolio_data = []
+            for position in latest_snapshot.positions:
+                portfolio_data.append({
+                    'ticker': position.ticker,
+                    'shares': float(position.shares),
+                    'buy_price': float(position.avg_price),
+                    'company': position.company or position.ticker
+                })
+            portfolio_df = pd.DataFrame(portfolio_data)
+            cash = 0.0  # Will be loaded separately
+        else:
+            portfolio_df = pd.DataFrame()
+            cash = 0.0
         
         # Calculate enhanced metrics
         enhanced_df, total_portfolio_value = calculate_position_metrics(portfolio_df, cash)
@@ -218,7 +246,7 @@ def show_complete_prompt():
         # Cash balance
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
-                cash_balances = load_cash_balances(DATA_DIR)
+                cash_balances = load_cash_balances(Path(DEFAULT_DATA_DIR))
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
@@ -277,7 +305,7 @@ def show_complete_prompt():
         # Cash balance fallback
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
-                cash_balances = load_cash_balances(DATA_DIR)
+                cash_balances = load_cash_balances(Path(DEFAULT_DATA_DIR))
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
@@ -297,5 +325,10 @@ def show_complete_prompt():
     print()
     print("Then paste it into your preferred LLM (ChatGPT, Claude, Gemini, etc.)")
 
-if __name__ == "__main__":
+def main():
+    """Main function for show_prompt script."""
     show_complete_prompt()
+
+
+if __name__ == "__main__":
+    main()

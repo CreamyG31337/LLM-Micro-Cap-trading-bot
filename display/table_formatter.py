@@ -98,7 +98,10 @@ class TableFormatter:
         if not current_date:
             current_date = datetime.now().strftime("%Y-%m-%d")
         
-        table_title = f"📊 Portfolio Snapshot - {current_date}"
+        # Create safe table title for environments that can't handle Unicode
+        from display.console_output import _safe_emoji
+        safe_chart_emoji = _safe_emoji("📊")
+        table_title = f"{safe_chart_emoji} Portfolio Snapshot - {current_date}"
         
         if has_rich_support() and self.console:
             self._create_rich_portfolio_table(portfolio_data, table_title)
@@ -108,24 +111,28 @@ class TableFormatter:
     def _create_rich_portfolio_table(self, portfolio_data: List[Dict[str, Any]], 
                                    table_title: str) -> None:
         """Create Rich-formatted portfolio table."""
+        # Import safe emoji function
+        from display.console_output import _safe_emoji
+        
         # Determine optimal column widths based on environment
         company_max_width = 25 if self.optimal_width >= 140 else 15
         if self.using_test_data:
             company_max_width = 12  # Even more conservative for test data
         
         table = Table(title=table_title, show_header=True, header_style="bold magenta")
-        table.add_column("🎯 Ticker", style="cyan", no_wrap=True, width=11)
-        table.add_column("🏢 Company", style="white", no_wrap=True, max_width=company_max_width, justify="left")
-        table.add_column("📅 Opened", style="dim", no_wrap=True, width=10)
-        table.add_column("📈 Shares", justify="right", style="green", width=10)
-        table.add_column("💵 Buy Price", justify="right", style="blue", width=10)
-        table.add_column("💰 Current", justify="right", style="yellow", width=10)
-        table.add_column("📊 Total P&L", justify="right", style="magenta", width=12)
-        table.add_column("📈 Daily P&L", justify="right", style="cyan", width=10)
-        table.add_column("📊 5-Day P&L", justify="right", style="bright_magenta", width=10)
-        table.add_column("🍕 Weight", justify="right", style="bright_blue", width=8)
-        table.add_column("🛑 Stop Loss", justify="right", style="red", width=10)
-        table.add_column("💵 Cost Basis", justify="right", style="yellow", width=10)
+        # Create safe column headers
+        table.add_column(f"{_safe_emoji('🎯')} Ticker", style="cyan", no_wrap=True, width=11)
+        table.add_column(f"{_safe_emoji('🏢')} Company", style="white", no_wrap=True, max_width=company_max_width, justify="left")
+        table.add_column(f"{_safe_emoji('📅')} Opened", style="dim", no_wrap=True, width=10)
+        table.add_column(f"{_safe_emoji('📈')} Shares", justify="right", style="green", width=10)
+        table.add_column(f"{_safe_emoji('💵')} Buy Price", justify="right", style="blue", width=10)
+        table.add_column(f"{_safe_emoji('💰')} Current", justify="right", style="yellow", width=10)
+        table.add_column(f"{_safe_emoji('📊')} Total P&L", justify="right", style="magenta", width=12)
+        table.add_column(f"{_safe_emoji('📈')} Daily P&L", justify="right", style="cyan", width=10)
+        table.add_column(f"{_safe_emoji('📊')} 5-Day P&L", justify="right", style="bright_magenta", width=10)
+        table.add_column(f"{_safe_emoji('🍕')} Weight", justify="right", style="bright_blue", width=8)
+        table.add_column(f"{_safe_emoji('🛑')} Stop Loss", justify="right", style="red", width=10)
+        table.add_column(f"{_safe_emoji('💵')} Cost Basis", justify="right", style="yellow", width=10)
         
         for position in portfolio_data:
             # Truncate long company names for display
@@ -336,6 +343,7 @@ class TableFormatter:
             stats_table.add_row("💰 Total Contributions", f"${stats_data.get('total_contributions', 0):,.2f}")
             stats_table.add_row("💵 Total Cost Basis", f"${stats_data.get('total_cost_basis', 0):,.2f}")
             stats_table.add_row("📈 Current Portfolio Value", f"${stats_data.get('total_current_value', 0):,.2f}")
+            stats_table.add_row("💹 Total P&L", f"${stats_data.get('total_pnl', 0):,.2f}")
             
             self.console.print(stats_table)
         else:
@@ -343,6 +351,7 @@ class TableFormatter:
             print(f"  Total Contributions: ${stats_data.get('total_contributions', 0):,.2f}")
             print(f"  Total Cost Basis: ${stats_data.get('total_cost_basis', 0):,.2f}")
             print(f"  Current Portfolio Value: ${stats_data.get('total_current_value', 0):,.2f}")
+            print(f"  Total P&L: ${stats_data.get('total_pnl', 0):,.2f}")
         
         return None
     

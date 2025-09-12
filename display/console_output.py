@@ -6,7 +6,39 @@ any repository type and provide consistent messaging across the trading system.
 """
 
 import os
+import sys
 from typing import Optional
+
+
+def _can_handle_unicode() -> bool:
+    """Check if the current environment can handle Unicode characters."""
+    try:
+        # Test encoding a common emoji and box drawing character
+        test_emoji = "📊"
+        test_box = "┌"
+        test_emoji.encode(sys.stdout.encoding or 'utf-8')
+        test_box.encode(sys.stdout.encoding or 'utf-8')
+        
+        # Additional check for Windows Terminal vs Command Prompt
+        import os
+        if os.name == 'nt':  # Windows
+            # Check if we're in Windows Terminal (which supports Unicode better)
+            wt_session = os.environ.get('WT_SESSION')
+            if wt_session:
+                return True
+            # Check for modern Windows 10+ with UTF-8 support
+            try:
+                import locale
+                encoding = locale.getpreferredencoding()
+                if 'utf' in encoding.lower():
+                    return True
+            except:
+                pass
+        
+        return True
+    except (UnicodeEncodeError, LookupError):
+        return False
+
 
 # Color and formatting imports with fallback handling
 try:
@@ -18,7 +50,15 @@ try:
     from rich.text import Text
     init(autoreset=True)  # Initialize colorama
     _HAS_RICH = True
-    console = Console()
+    # Try to create Rich console, but be more permissive
+    try:
+        console = Console()
+        # Test if Rich can actually render without crashing
+        test_output = console.render_str("test")
+    except Exception:
+        # Only disable Rich if it completely fails
+        _HAS_RICH = False
+        console = None
 except ImportError:
     _HAS_RICH = False
     console = None
@@ -65,10 +105,14 @@ def print_success(message: str, emoji: str = "✅") -> None:
         message: The success message to display
         emoji: The emoji to display with the message (default: ✅)
     """
+    safe_emoji = _safe_emoji(emoji)
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        console.print(f"{emoji} {message}", style="bold green")
+        try:
+            console.print(f"{safe_emoji} {message}", style="bold green")
+        except UnicodeEncodeError:
+            print(f"SUCCESS: {message}")
     else:
-        print(f"{Fore.GREEN}{emoji} {message}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
 def print_error(message: str, emoji: str = "❌") -> None:
@@ -78,10 +122,14 @@ def print_error(message: str, emoji: str = "❌") -> None:
         message: The error message to display
         emoji: The emoji to display with the message (default: ❌)
     """
+    safe_emoji = _safe_emoji(emoji)
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        console.print(f"{emoji} {message}", style="bold red")
+        try:
+            console.print(f"{safe_emoji} {message}", style="bold red")
+        except UnicodeEncodeError:
+            print(f"ERROR: {message}")
     else:
-        print(f"{Fore.RED}{emoji} {message}{Style.RESET_ALL}")
+        print(f"{Fore.RED}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
 def print_warning(message: str, emoji: str = "⚠️") -> None:
@@ -91,10 +139,14 @@ def print_warning(message: str, emoji: str = "⚠️") -> None:
         message: The warning message to display
         emoji: The emoji to display with the message (default: ⚠️)
     """
+    safe_emoji = _safe_emoji(emoji)
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        console.print(f"{emoji} {message}", style="bold yellow")
+        try:
+            console.print(f"{safe_emoji} {message}", style="bold yellow")
+        except UnicodeEncodeError:
+            print(f"WARNING: {message}")
     else:
-        print(f"{Fore.YELLOW}{emoji} {message}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
 def print_info(message: str, emoji: str = "ℹ️") -> None:
@@ -104,10 +156,55 @@ def print_info(message: str, emoji: str = "ℹ️") -> None:
         message: The info message to display
         emoji: The emoji to display with the message (default: ℹ️)
     """
+    safe_emoji = _safe_emoji(emoji)
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        console.print(f"{emoji} {message}", style="bold blue")
+        try:
+            console.print(f"{safe_emoji} {message}", style="bold blue")
+        except UnicodeEncodeError:
+            print(f"INFO: {message}")
     else:
-        print(f"{Fore.BLUE}{emoji} {message}{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}{safe_emoji} {message}{Style.RESET_ALL}")
+
+
+def _safe_emoji(emoji: str) -> str:
+    """Return emoji if supported, otherwise return a safe alternative."""
+    try:
+        # Test if we can encode the emoji
+        emoji.encode(sys.stdout.encoding or 'utf-8')
+        return emoji
+    except (UnicodeEncodeError, LookupError):
+        # Return safe alternatives for common emojis
+        emoji_map = {
+            "🔥": "*",
+            "🚀": ">>",
+            "💼": "[P]",
+            "⚡": "!",
+            "📊": "[S]",
+            "💰": "$",
+            "🛒": "[B]",
+            "📤": "[S]",
+            "💵": "$",
+            "💸": "-$",
+            "🔄": "~",
+            "🔗": "&",
+            "💾": "[B]",
+            "❌": "X",
+            "📋": "[L]",
+            "🔷": "◆",
+            "✅": "OK",
+            "⚠️": "!",
+            "ℹ️": "i",
+            "🎯": "[T]",
+            "🏢": "[C]",
+            "📅": "[D]",
+            "📈": "[^]",
+            "🍕": "[W]",
+            "🛑": "[!]",
+            "💹": "[P]",
+            "👥": "[O]",
+            "🏦": "[E]"
+        }
+        return emoji_map.get(emoji, "*")
 
 
 def print_header(title: str, emoji: str = "🔷", width: int = 60) -> None:
@@ -118,12 +215,19 @@ def print_header(title: str, emoji: str = "🔷", width: int = 60) -> None:
         emoji: The emoji to display with the title (default: 🔷)
         width: The width of the header line (default: 60)
     """
-    header_text = f"{emoji} {title} {emoji}"
+    safe_emoji = _safe_emoji(emoji)
+    header_text = f"{safe_emoji} {title} {safe_emoji}"
     
     if _HAS_RICH and console and not _FORCE_FALLBACK:
-        console.print(f"{'='*width}", style="cyan")
-        console.print(f"{header_text:^{width}}", style="bold cyan")
-        console.print(f"{'='*width}", style="cyan")
+        try:
+            console.print(f"{'='*width}", style="cyan")
+            console.print(f"{header_text:^{width}}", style="bold cyan")
+            console.print(f"{'='*width}", style="cyan")
+        except UnicodeEncodeError:
+            # Fallback to plain text if Rich has encoding issues
+            print(f"{'='*width}")
+            print(f"{header_text:^{width}}")
+            print(f"{'='*width}")
     else:
         print(f"{Fore.CYAN}{'='*width}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{header_text:^{width}}{Style.RESET_ALL}")

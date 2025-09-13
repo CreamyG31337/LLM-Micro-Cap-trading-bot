@@ -78,9 +78,10 @@ class CSVRepository(BaseRepository):
                 
                 df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             
-            # Group by date to create snapshots
+            # Group by date to create snapshots (group by date only, not exact timestamp)
+            df['Date_Only'] = df['Date'].dt.date
             snapshots = []
-            for date, group in df.groupby('Date'):
+            for date, group in df.groupby('Date_Only'):
                 positions = []
                 total_value = Decimal('0')
                 
@@ -90,9 +91,11 @@ class CSVRepository(BaseRepository):
                     if position.market_value:
                         total_value += position.market_value
                 
+                # Use the latest timestamp from the group for the snapshot
+                latest_timestamp = group['Date'].max()
                 snapshot = PortfolioSnapshot(
                     positions=positions,
-                    timestamp=date,
+                    timestamp=latest_timestamp,
                     total_value=total_value
                 )
                 snapshots.append(snapshot)
@@ -218,9 +221,9 @@ class CSVRepository(BaseRepository):
                             if updated_position:
                                 # Update only price-related fields for today's rows only
                                 mask = (existing_df['Date_Only'] == today) & (existing_df['Ticker'] == ticker)
-                                existing_df.loc[mask, 'Current Price'] = float(updated_position.current_price or 0)
-                                existing_df.loc[mask, 'Total Value'] = float(updated_position.market_value or 0)
-                                existing_df.loc[mask, 'PnL'] = float(updated_position.unrealized_pnl or 0)
+                                existing_df.loc[mask, 'Current Price'] = round(float(updated_position.current_price or 0), 2)
+                                existing_df.loc[mask, 'Total Value'] = round(float(updated_position.market_value or 0), 2)
+                                existing_df.loc[mask, 'PnL'] = round(float(updated_position.unrealized_pnl or 0), 2)
                                 logger.debug(f"Updated prices for {ticker}")
                         
                         # Save the updated DataFrame

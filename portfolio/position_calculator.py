@@ -97,10 +97,10 @@ class PositionCalculator:
                 shares = position_value / entry_price
             
             result = {
-                'recommended_shares': shares.quantize(Decimal('0.01')),
-                'position_value': position_value.quantize(Decimal('0.01')),
+                'recommended_shares': shares.quantize(Decimal('0.0001')),  # 4 decimal places for shares
+                'position_value': position_value.quantize(Decimal('0.01')),  # 2 decimal places for currency
                 'risk_amount': risk_amount.quantize(Decimal('0.01')),
-                'risk_per_share': abs(entry_price - stop_loss_price) if stop_loss_price else Decimal('0'),
+                'risk_per_share': abs(entry_price - stop_loss_price).quantize(Decimal('0.01')) if stop_loss_price else Decimal('0'),
                 'capital_allocation_percentage': (position_value / available_capital * 100).quantize(Decimal('0.1')),
                 'entry_price': entry_price,
                 'stop_loss_price': stop_loss_price

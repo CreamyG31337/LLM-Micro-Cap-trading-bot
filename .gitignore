@@ -218,6 +218,7 @@ my trading/backups/
 test_data/backups/
 **/backups/
 *.backup_*
+*.backup
 
 # Allow README files and folder structure to be tracked
 !my trading/README.md

@@ -424,6 +424,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         latest_snapshot = portfolio_snapshots[-1]
         print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions")
         
+        # Update exchange rates CSV with current rates
+        print_info("Updating exchange rates...")
+        currency_handler.update_exchange_rates_csv()
+        
         # Fetch current market data
         print_info("Fetching current market data...")
         tickers = [pos.ticker for pos in latest_snapshot.positions]

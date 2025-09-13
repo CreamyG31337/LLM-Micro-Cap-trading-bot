@@ -138,10 +138,35 @@ class CSVRepository(BaseRepository):
             # Reorder columns
             df = df[expected_columns]
             
-            # Append to existing file or create new one
+            # Check for duplicates before saving
             if self.portfolio_file.exists():
-                df.to_csv(self.portfolio_file, mode='a', header=False, index=False)
+                existing_df = pd.read_csv(self.portfolio_file)
+                if not existing_df.empty:
+                    # Parse dates to compare
+                    existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    existing_df['Date_Only'] = existing_df['Date'].dt.date
+                    
+                    # Check if today's data already exists
+                    today = snapshot.timestamp.date()
+                    today_data = existing_df[existing_df['Date_Only'] == today]
+                    
+                    if not today_data.empty:
+                        logger.warning(f"Portfolio data for {today} already exists. Use update_daily_portfolio_snapshot() instead of save_portfolio_snapshot() to prevent duplicates.")
+                        # Remove existing today's data to prevent duplicates
+                        existing_df = existing_df[existing_df['Date_Only'] != today]
+                        existing_df = existing_df.drop('Date_Only', axis=1)  # Remove helper column
+                        
+                        # Combine existing data with new data
+                        combined_df = pd.concat([existing_df, df], ignore_index=True)
+                        combined_df.to_csv(self.portfolio_file, index=False)
+                    else:
+                        # No duplicates, append normally
+                        df.to_csv(self.portfolio_file, mode='a', header=False, index=False)
+                else:
+                    # Empty file, create new
+                    df.to_csv(self.portfolio_file, index=False)
             else:
+                # File doesn't exist, create new
                 df.to_csv(self.portfolio_file, index=False)
             
             logger.info(f"Saved portfolio snapshot with {len(snapshot.positions)} positions")
@@ -179,7 +204,7 @@ class CSVRepository(BaseRepository):
                     if not today_data.empty:
                         logger.info(f"Today's portfolio snapshot already exists, updating prices only")
                         
-                        # Update prices in today's existing rows
+                        # Update prices in today's existing rows only
                         for _, position_row in today_data.iterrows():
                             ticker = position_row['Ticker']
                             
@@ -191,10 +216,11 @@ class CSVRepository(BaseRepository):
                                     break
                             
                             if updated_position:
-                                # Update only price-related fields, preserve Action
-                                existing_df.loc[existing_df['Ticker'] == ticker, 'Current Price'] = float(updated_position.current_price or 0)
-                                existing_df.loc[existing_df['Ticker'] == ticker, 'Total Value'] = float(updated_position.market_value or 0)
-                                existing_df.loc[existing_df['Ticker'] == ticker, 'PnL'] = float(updated_position.unrealized_pnl or 0)
+                                # Update only price-related fields for today's rows only
+                                mask = (existing_df['Date_Only'] == today) & (existing_df['Ticker'] == ticker)
+                                existing_df.loc[mask, 'Current Price'] = float(updated_position.current_price or 0)
+                                existing_df.loc[mask, 'Total Value'] = float(updated_position.market_value or 0)
+                                existing_df.loc[mask, 'PnL'] = float(updated_position.unrealized_pnl or 0)
                                 logger.debug(f"Updated prices for {ticker}")
                         
                         # Save the updated DataFrame

@@ -935,6 +935,374 @@ class TestCommandLineInterface(unittest.TestCase):
             readonly_dir.chmod(0o755)
 
 
+class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
+    """Test duplicate prevention and data integrity with realistic trading scenarios."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.data_dir = Path(self.temp_dir) / "data"
+        self.data_dir.mkdir(parents=True)
+        
+        # Create repository and managers
+        self.repository = CSVRepository(self.data_dir)
+        self.portfolio_manager = PortfolioManager(self.repository)
+        self.trade_processor = TradeProcessor(self.repository)
+        
+        # Create initial cash balances
+        cash_balances = {
+            "CAD": 10000.0,
+            "USD": 5000.0
+        }
+        with open(self.data_dir / "cash_balances.json", "w") as f:
+            json.dump(cash_balances, f)
+    
+    def tearDown(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir)
+    
+    def test_duplicate_prevention_with_multiple_updates_same_day(self):
+        """Test that multiple updates on the same day don't create duplicates."""
+        from datetime import datetime, timezone
+        import pytz
+        
+        # Create a position
+        ticker = "TEST"
+        shares = Decimal('100')
+        price = Decimal('50.00')
+        
+        # Create initial position
+        snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares,
+                    avg_price=price,
+                    cost_basis=shares * price,
+                    current_price=price,
+                    market_value=shares * price,
+                    unrealized_pnl=Decimal('0'),
+                    currency="CAD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=shares * price
+        )
+        
+        # Save initial snapshot
+        self.repository.update_daily_portfolio_snapshot(snapshot)
+        
+        # Verify one row exists
+        portfolio_data = self.repository.get_portfolio_data()
+        self.assertEqual(len(portfolio_data), 1)
+        self.assertEqual(len(portfolio_data[0].positions), 1)
+        
+        # Simulate multiple price updates throughout the day
+        for i in range(5):
+            # Update price
+            new_price = price + Decimal(str(i * 10))  # 50, 60, 70, 80, 90
+            updated_snapshot = PortfolioSnapshot(
+                positions=[
+                    Position(
+                        ticker=ticker,
+                        shares=shares,
+                        avg_price=price,  # Average price stays the same
+                        cost_basis=shares * price,
+                        current_price=new_price,
+                        market_value=shares * new_price,
+                        unrealized_pnl=shares * (new_price - price),
+                        currency="CAD"
+                    )
+                ],
+                timestamp=datetime.now(timezone.utc),
+                total_value=shares * new_price
+            )
+            
+            # Update portfolio (should not create duplicates)
+            self.repository.update_daily_portfolio_snapshot(updated_snapshot)
+        
+        # Verify still only one row exists
+        portfolio_data = self.repository.get_portfolio_data()
+        self.assertEqual(len(portfolio_data), 1)
+        self.assertEqual(len(portfolio_data[0].positions), 1)
+        
+        # Verify the final price is correct (should be the last update)
+        final_position = portfolio_data[0].positions[0]
+        self.assertEqual(final_position.current_price, Decimal('90.00'))
+        self.assertEqual(final_position.market_value, Decimal('9000.00'))
+    
+    def test_buy_sell_actions_preserved_during_price_updates(self):
+        """Test that buy/sell actions are preserved during price updates."""
+        from datetime import datetime, timezone
+        
+        # Create initial BUY position
+        ticker = "TEST"
+        shares = Decimal('100')
+        price = Decimal('50.00')
+        
+        snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares,
+                    avg_price=price,
+                    cost_basis=shares * price,
+                    current_price=price,
+                    market_value=shares * price,
+                    unrealized_pnl=Decimal('0'),
+                    currency="CAD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=shares * price
+        )
+        
+        # Save initial snapshot
+        self.repository.update_daily_portfolio_snapshot(snapshot)
+        
+        # Execute a BUY trade (this creates a new portfolio snapshot)
+        trade = self.trade_processor.execute_buy_trade(
+            ticker=ticker,
+            shares=Decimal('50'),
+            price=Decimal('55.00'),
+            currency="CAD"
+        )
+        
+        # Verify trade was created
+        self.assertEqual(trade.action, "BUY")
+        self.assertEqual(trade.ticker, ticker)
+        
+        # Now update prices (should preserve the BUY action)
+        updated_snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares + Decimal('50'),  # Total shares after buy
+                    avg_price=Decimal('51.67'),  # New average price
+                    cost_basis=(shares + Decimal('50')) * Decimal('51.67'),
+                    current_price=Decimal('60.00'),  # New current price
+                    market_value=(shares + Decimal('50')) * Decimal('60.00'),
+                    unrealized_pnl=(shares + Decimal('50')) * (Decimal('60.00') - Decimal('51.67')),
+                    currency="CAD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=(shares + Decimal('50')) * Decimal('60.00')
+        )
+        
+        # Update portfolio
+        self.repository.update_daily_portfolio_snapshot(updated_snapshot)
+        
+        # Verify portfolio data - should have 2 snapshots (initial + after buy trade)
+        portfolio_data = self.repository.get_portfolio_data()
+        self.assertEqual(len(portfolio_data), 2)
+        
+        # Check that we have the correct number of positions
+        self.assertGreaterEqual(len(portfolio_data[0].positions), 1)
+        self.assertGreaterEqual(len(portfolio_data[1].positions), 1)
+    
+    def test_multiple_days_no_duplicates(self):
+        """Test that multiple days don't create duplicates within each day."""
+        from datetime import datetime, timezone, timedelta
+        
+        ticker = "TEST"
+        shares = Decimal('100')
+        price = Decimal('50.00')
+        
+        # Create positions for 3 different days
+        for day_offset in range(3):
+            current_date = datetime.now(timezone.utc) + timedelta(days=day_offset)
+            
+            snapshot = PortfolioSnapshot(
+                positions=[
+                    Position(
+                        ticker=ticker,
+                        shares=shares,
+                        avg_price=price,
+                        cost_basis=shares * price,
+                        current_price=price + Decimal(str(day_offset * 5)),  # Different prices each day
+                        market_value=shares * (price + Decimal(str(day_offset * 5))),
+                        unrealized_pnl=shares * Decimal(str(day_offset * 5)),
+                        currency="CAD"
+                    )
+                ],
+                timestamp=current_date,
+                total_value=shares * (price + Decimal(str(day_offset * 5)))
+            )
+            
+            # Save snapshot for this day
+            self.repository.update_daily_portfolio_snapshot(snapshot)
+            
+            # Simulate multiple updates on the same day
+            for update in range(3):
+                updated_snapshot = PortfolioSnapshot(
+                    positions=[
+                        Position(
+                            ticker=ticker,
+                            shares=shares,
+                            avg_price=price,
+                            cost_basis=shares * price,
+                            current_price=price + Decimal(str(day_offset * 5 + update)),
+                            market_value=shares * (price + Decimal(str(day_offset * 5 + update))),
+                            unrealized_pnl=shares * Decimal(str(day_offset * 5 + update)),
+                            currency="CAD"
+                        )
+                    ],
+                    timestamp=current_date,
+                    total_value=shares * (price + Decimal(str(day_offset * 5 + update)))
+                )
+                
+                # Update portfolio (should not create duplicates)
+                self.repository.update_daily_portfolio_snapshot(updated_snapshot)
+        
+        # Verify we have exactly 3 days of data (one row per day)
+        portfolio_data = self.repository.get_portfolio_data()
+        self.assertEqual(len(portfolio_data), 3)
+        
+        # Verify each day has exactly one position
+        for snapshot in portfolio_data:
+            self.assertEqual(len(snapshot.positions), 1)
+    
+    def test_data_integrity_validation(self):
+        """Test that the validation system catches duplicates."""
+        from datetime import datetime, timezone
+        import pandas as pd
+        from utils.validation import validate_portfolio_data
+        
+        # Create a position
+        ticker = "TEST"
+        shares = Decimal('100')
+        price = Decimal('50.00')
+        
+        snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares,
+                    avg_price=price,
+                    cost_basis=shares * price,
+                    current_price=price,
+                    market_value=shares * price,
+                    unrealized_pnl=Decimal('0'),
+                    currency="CAD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=shares * price
+        )
+        
+        # Save initial snapshot
+        self.repository.update_daily_portfolio_snapshot(snapshot)
+        
+        # Manually create a duplicate row in the CSV (simulating a bug)
+        portfolio_file = self.data_dir / "llm_portfolio_update.csv"
+        df = pd.read_csv(portfolio_file)
+        
+        # Duplicate the first row
+        duplicate_row = df.iloc[0].copy()
+        df = pd.concat([df, duplicate_row], ignore_index=True)
+        df.to_csv(portfolio_file, index=False)
+        
+        # Now validate the data using the proper validation function
+        validation_errors = validate_portfolio_data(df)
+        
+        # Should have validation errors about duplicates
+        self.assertGreater(len(validation_errors), 0)
+        duplicate_errors = [error for error in validation_errors if "duplicate" in error.lower()]
+        self.assertGreater(len(duplicate_errors), 0)
+    
+    def test_realistic_trading_scenario(self):
+        """Test a realistic trading scenario with buys, sells, and price updates."""
+        from datetime import datetime, timezone, timedelta
+        
+        # Day 1: Buy a stock
+        ticker = "AAPL"
+        shares = Decimal('10')
+        price = Decimal('150.00')
+        
+        # Create initial position
+        snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares,
+                    avg_price=price,
+                    cost_basis=shares * price,
+                    current_price=price,
+                    market_value=shares * price,
+                    unrealized_pnl=Decimal('0'),
+                    currency="USD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=shares * price
+        )
+        
+        self.repository.update_daily_portfolio_snapshot(snapshot)
+        
+        # Day 1: Price update (market hours)
+        updated_snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares,
+                    avg_price=price,
+                    cost_basis=shares * price,
+                    current_price=Decimal('155.00'),  # Price went up
+                    market_value=shares * Decimal('155.00'),
+                    unrealized_pnl=shares * Decimal('5.00'),
+                    currency="USD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc),
+            total_value=shares * Decimal('155.00')
+        )
+        
+        self.repository.update_daily_portfolio_snapshot(updated_snapshot)
+        
+        # Day 2: Buy more shares
+        buy_trade = self.trade_processor.execute_buy_trade(
+            ticker=ticker,
+            shares=Decimal('5'),
+            price=Decimal('160.00'),
+            currency="USD"
+        )
+        
+        # Day 2: Price update
+        day2_snapshot = PortfolioSnapshot(
+            positions=[
+                Position(
+                    ticker=ticker,
+                    shares=shares + Decimal('5'),  # Total shares
+                    avg_price=Decimal('153.33'),  # New average price
+                    cost_basis=(shares + Decimal('5')) * Decimal('153.33'),
+                    current_price=Decimal('165.00'),
+                    market_value=(shares + Decimal('5')) * Decimal('165.00'),
+                    unrealized_pnl=(shares + Decimal('5')) * (Decimal('165.00') - Decimal('153.33')),
+                    currency="USD"
+                )
+            ],
+            timestamp=datetime.now(timezone.utc) + timedelta(days=1),
+            total_value=(shares + Decimal('5')) * Decimal('165.00')
+        )
+        
+        self.repository.update_daily_portfolio_snapshot(day2_snapshot)
+        
+        # Verify we have 3 snapshots: Day 1 initial, Day 1 after price update, Day 2 after buy trade
+        portfolio_data = self.repository.get_portfolio_data()
+        self.assertEqual(len(portfolio_data), 3)
+        
+        # Verify each snapshot has exactly one position
+        for snapshot in portfolio_data:
+            self.assertEqual(len(snapshot.positions), 1)
+        
+        # Verify the trade was recorded
+        trades = self.repository.get_trade_history()
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].action, "BUY")
+        self.assertEqual(trades[0].ticker, ticker)
+
+
 class TestRepositoryFactory(unittest.TestCase):
     """Test repository factory integration."""
     

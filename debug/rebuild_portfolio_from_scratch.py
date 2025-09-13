@@ -215,8 +215,21 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
             last_date = pd.to_datetime(unique_calendar_dates[-1])
             today = datetime.now()
             
+            # Check if market is open today (before market close time)
+            tz = pytz.timezone(timezone_str)
+            current_time = today.astimezone(tz)
+            market_close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
+            
+            # Always include today, but use different timestamp logic
+            end_date = today.date()
+            
+            if current_time.hour < market_close_hour:
+                print(f"   ⏰ Market still open ({current_time.strftime('%H:%M')} < {market_close_hour}:00), using current time for today's HOLD entries")
+            else:
+                print(f"   ⏰ Market closed ({current_time.strftime('%H:%M')} >= {market_close_hour}:00), using market close time for today's HOLD entries")
+            
             current_date = first_date
-            while current_date.date() <= today.date():
+            while current_date.date() <= end_date:
                 all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
                 current_date += timedelta(days=1)
         
@@ -278,11 +291,19 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
                         total_value = position['shares'] * current_price_decimal
                         unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
                         
-                        # Set HOLD entries to market close time in local timezone
+                        # Set HOLD entries timestamp based on market status
                         tz = pytz.timezone(timezone_str)
-                        close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
-                        timezone_abbr = tz.localize(hold_date_obj).strftime('%Z')
-                        hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
+                        hold_date_obj_tz = tz.localize(hold_date_obj)
+                        
+                        # Check if this is today and market is still open
+                        if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
+                            # Use current time for today if market is still open
+                            hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+                        else:
+                            # Use market close time for all other days
+                            close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
+                            timezone_abbr = hold_date_obj_tz.strftime('%Z')
+                            hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
                         
                         portfolio_entries.append({
                             'Date': hold_date_str,

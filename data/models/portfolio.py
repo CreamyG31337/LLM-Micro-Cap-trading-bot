@@ -28,23 +28,43 @@ class Position:
     stop_loss: Optional[Decimal] = None
     position_id: Optional[str] = None  # For database primary key
     
+    def __post_init__(self):
+        """Convert string values to Decimal for financial fields."""
+        # Convert string values to Decimal for financial fields
+        if isinstance(self.shares, str):
+            self.shares = Decimal(self.shares)
+        if isinstance(self.avg_price, str):
+            self.avg_price = Decimal(self.avg_price)
+        if isinstance(self.cost_basis, str):
+            self.cost_basis = Decimal(self.cost_basis)
+        if isinstance(self.current_price, str):
+            self.current_price = Decimal(self.current_price)
+        if isinstance(self.market_value, str):
+            self.market_value = Decimal(self.market_value)
+        if isinstance(self.unrealized_pnl, str):
+            self.unrealized_pnl = Decimal(self.unrealized_pnl)
+        if isinstance(self.stop_loss, str):
+            self.stop_loss = Decimal(self.stop_loss)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for CSV/JSON serialization.
         
         Returns:
             Dictionary representation compatible with CSV format
         """
+        from decimal import ROUND_HALF_UP
+        
         return {
             'ticker': self.ticker,
-            'shares': round(float(self.shares), 4),  # 4 decimal places for shares
-            'avg_price': round(float(self.avg_price), 2),  # 2 decimal places for prices
-            'cost_basis': round(float(self.cost_basis), 2),
+            'shares': float(self.shares.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)),  # 4 decimal places for shares
+            'avg_price': float(self.avg_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),  # 2 decimal places for prices
+            'cost_basis': float(self.cost_basis.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'currency': self.currency,
             'company': self.company or '',
-            'current_price': round(float(self.current_price), 2) if self.current_price is not None else 0.0,
-            'market_value': round(float(self.market_value), 2) if self.market_value is not None else 0.0,
-            'unrealized_pnl': round(float(self.unrealized_pnl), 2) if self.unrealized_pnl is not None else 0.0,
-            'stop_loss': round(float(self.stop_loss), 2) if self.stop_loss is not None else 0.0,
+            'current_price': float(self.current_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.current_price is not None else 0.0,
+            'market_value': float(self.market_value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.market_value is not None else 0.0,
+            'unrealized_pnl': float(self.unrealized_pnl.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.unrealized_pnl is not None else 0.0,
+            'stop_loss': float(self.stop_loss.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.stop_loss is not None else 0.0,
             'position_id': self.position_id
         }
     
@@ -78,17 +98,19 @@ class Position:
         Returns:
             Dictionary with keys matching llm_portfolio_update.csv format
         """
+        from decimal import ROUND_HALF_UP
+        
         return {
             'Ticker': self.ticker,
-            'Shares': round(float(self.shares), 4),  # 4 decimal places for shares
-            'Average Price': round(float(self.avg_price), 2),  # 2 decimal places for prices
-            'Cost Basis': round(float(self.cost_basis), 2),
+            'Shares': float(self.shares.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)),  # 4 decimal places for shares
+            'Average Price': float(self.avg_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),  # 2 decimal places for prices
+            'Cost Basis': float(self.cost_basis.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'Currency': self.currency,
             'Company': self.company or '',
-            'Current Price': round(float(self.current_price), 2) if self.current_price is not None else 0.0,
-            'Total Value': round(float(self.market_value), 2) if self.market_value is not None else 0.0,
-            'PnL': round(float(self.unrealized_pnl), 2) if self.unrealized_pnl is not None else 0.0,
-            'Stop Loss': round(float(self.stop_loss), 2) if self.stop_loss is not None else 0.0
+            'Current Price': float(self.current_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.current_price is not None else 0.0,
+            'Total Value': float(self.market_value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.market_value is not None else 0.0,
+            'PnL': float(self.unrealized_pnl.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.unrealized_pnl is not None else 0.0,
+            'Stop Loss': float(self.stop_loss.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if self.stop_loss is not None else 0.0
         }
     
     @classmethod

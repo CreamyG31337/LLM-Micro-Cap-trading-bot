@@ -220,10 +220,11 @@ class CSVRepository(BaseRepository):
                             
                             if updated_position:
                                 # Update only price-related fields for today's rows only
+                                from decimal import ROUND_HALF_UP
                                 mask = (existing_df['Date_Only'] == today) & (existing_df['Ticker'] == ticker)
-                                existing_df.loc[mask, 'Current Price'] = round(float(updated_position.current_price or 0), 2)
-                                existing_df.loc[mask, 'Total Value'] = round(float(updated_position.market_value or 0), 2)
-                                existing_df.loc[mask, 'PnL'] = round(float(updated_position.unrealized_pnl or 0), 2)
+                                existing_df.loc[mask, 'Current Price'] = float((updated_position.current_price or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                existing_df.loc[mask, 'Total Value'] = float((updated_position.market_value or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                existing_df.loc[mask, 'PnL'] = float((updated_position.unrealized_pnl or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
                                 logger.debug(f"Updated prices for {ticker}")
                         
                         # Save the updated DataFrame

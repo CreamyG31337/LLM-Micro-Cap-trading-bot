@@ -26,6 +26,18 @@ class Trade:
     currency: str = "CAD"
     trade_id: Optional[str] = None  # For database primary key
     
+    def __post_init__(self):
+        """Convert string values to Decimal for financial fields."""
+        # Convert string values to Decimal for financial fields
+        if isinstance(self.shares, str):
+            self.shares = Decimal(self.shares)
+        if isinstance(self.price, str):
+            self.price = Decimal(self.price)
+        if isinstance(self.cost_basis, str):
+            self.cost_basis = Decimal(self.cost_basis)
+        if isinstance(self.pnl, str):
+            self.pnl = Decimal(self.pnl)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for CSV/JSON serialization.
         

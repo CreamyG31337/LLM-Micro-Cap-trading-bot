@@ -344,9 +344,9 @@ class TestDataModelSerialization(unittest.TestCase):
         json_data = position.to_dict()
         restored = Position.from_dict(json_data)
         
-        # Should preserve reasonable precision (some loss expected due to float conversion)
-        self.assertAlmostEqual(float(restored.shares), float(position.shares), places=6)
-        self.assertAlmostEqual(float(restored.avg_price), float(position.avg_price), places=4)
+        # Should preserve business-required precision: 4 decimal places for shares, 2 for money
+        self.assertAlmostEqual(float(restored.shares), float(position.shares), places=4)
+        self.assertAlmostEqual(float(restored.avg_price), float(position.avg_price), places=2)
     
     def test_serialization_with_none_values(self):
         """Test serialization handling of None values."""

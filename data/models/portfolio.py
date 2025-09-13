@@ -36,15 +36,15 @@ class Position:
         """
         return {
             'ticker': self.ticker,
-            'shares': float(self.shares),
-            'avg_price': float(self.avg_price),
-            'cost_basis': float(self.cost_basis),
+            'shares': round(float(self.shares), 4),  # 4 decimal places for shares
+            'avg_price': round(float(self.avg_price), 2),  # 2 decimal places for prices
+            'cost_basis': round(float(self.cost_basis), 2),
             'currency': self.currency,
             'company': self.company or '',
-            'current_price': float(self.current_price) if self.current_price is not None else 0.0,
-            'market_value': float(self.market_value) if self.market_value is not None else 0.0,
-            'unrealized_pnl': float(self.unrealized_pnl) if self.unrealized_pnl is not None else 0.0,
-            'stop_loss': float(self.stop_loss) if self.stop_loss is not None else 0.0,
+            'current_price': round(float(self.current_price), 2) if self.current_price is not None else 0.0,
+            'market_value': round(float(self.market_value), 2) if self.market_value is not None else 0.0,
+            'unrealized_pnl': round(float(self.unrealized_pnl), 2) if self.unrealized_pnl is not None else 0.0,
+            'stop_loss': round(float(self.stop_loss), 2) if self.stop_loss is not None else 0.0,
             'position_id': self.position_id
         }
     
@@ -80,15 +80,15 @@ class Position:
         """
         return {
             'Ticker': self.ticker,
-            'Shares': float(self.shares),
-            'Average Price': float(self.avg_price),
-            'Cost Basis': float(self.cost_basis),
+            'Shares': round(float(self.shares), 4),  # 4 decimal places for shares
+            'Average Price': round(float(self.avg_price), 2),  # 2 decimal places for prices
+            'Cost Basis': round(float(self.cost_basis), 2),
             'Currency': self.currency,
             'Company': self.company or '',
-            'Current Price': float(self.current_price) if self.current_price is not None else 0.0,
-            'Total Value': float(self.market_value) if self.market_value is not None else 0.0,
-            'PnL': float(self.unrealized_pnl) if self.unrealized_pnl is not None else 0.0,
-            'Stop Loss': float(self.stop_loss) if self.stop_loss is not None else 0.0
+            'Current Price': round(float(self.current_price), 2) if self.current_price is not None else 0.0,
+            'Total Value': round(float(self.market_value), 2) if self.market_value is not None else 0.0,
+            'PnL': round(float(self.unrealized_pnl), 2) if self.unrealized_pnl is not None else 0.0,
+            'Stop Loss': round(float(self.stop_loss), 2) if self.stop_loss is not None else 0.0
         }
     
     @classmethod

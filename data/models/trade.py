@@ -92,8 +92,11 @@ class Trade:
         """
         # Format timestamp with proper timezone handling
         if self.timestamp.tzinfo is not None:
-            # Timezone-aware datetime - use the timezone abbreviation
-            date_str = self.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
+            # Timezone-aware datetime - convert to PDT and format properly
+            from utils.timezone_utils import get_trading_timezone, format_timestamp_for_csv
+            tz = get_trading_timezone()
+            dt_pdt = self.timestamp.astimezone(tz)
+            date_str = format_timestamp_for_csv(dt_pdt)
         else:
             # Naive datetime - assume PST/PDT based on date
             from utils.timezone_utils import format_timestamp_for_csv

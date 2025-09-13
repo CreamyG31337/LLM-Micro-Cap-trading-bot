@@ -11,6 +11,7 @@ from config.constants import DEFAULT_DATA_DIR
 from market_data.market_hours import MarketHours
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.price_cache import PriceCache
+from display.console_output import _safe_emoji
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -318,7 +319,7 @@ def show_complete_prompt():
             # Performance context
             if daily_pnl > 0:
                 print(f"[ Daily Performance ]")
-                print(f"_safe_emoji('📈') Portfolio gained ${daily_pnl:,.2f} today ({daily_pnl_percent:+.1f}%)")
+                print(f"{_safe_emoji('📈')} Portfolio gained ${daily_pnl:,.2f} today ({daily_pnl_percent:+.1f}%)")
             elif daily_pnl < 0:
                 print(f"[ Daily Performance ]")
                 print(f"📉 Portfolio lost ${abs(daily_pnl):,.2f} today ({daily_pnl_percent:+.1f}%)")

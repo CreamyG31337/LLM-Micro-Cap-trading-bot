@@ -17,6 +17,9 @@ from collections import defaultdict
 import sys
 from datetime import datetime
 
+# Import emoji handling
+from display.console_output import _safe_emoji
+
 def recalculate_portfolio_data(data_dir: str = "my trading"):
     """Update existing portfolio rows with correct data from trade log - preserves all historical price tracking"""
     
@@ -25,11 +28,11 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
     portfolio_file = data_path / "llm_portfolio_update.csv"
     
     if not trade_log_file.exists():
-        print(f"_safe_emoji('_safe_emoji('❌')') Trade log not found: {trade_log_file}")
+        print(f"{_safe_emoji('❌')} Trade log not found: {trade_log_file}")
         return False
     
     if not portfolio_file.exists():
-        print(f"_safe_emoji('_safe_emoji('❌')') Portfolio file not found: {portfolio_file}")
+        print(f"{_safe_emoji('❌')} Portfolio file not found: {portfolio_file}")
         return False
     
     try:
@@ -37,14 +40,14 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
         backup_file = portfolio_file.with_suffix(f'.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
         portfolio_df = pd.read_csv(portfolio_file)
         portfolio_df.to_csv(backup_file, index=False)
-        print(f"_safe_emoji('💾') Backed up portfolio to: {backup_file}")
+        print(f"{_safe_emoji('💾')} Backed up portfolio to: {backup_file}")
         
         # Read trade log
         trade_df = pd.read_csv(trade_log_file)
-        print(f"_safe_emoji('📊') Loaded {len(trade_df)} trades from trade log")
+        print(f"{_safe_emoji('📊')} Loaded {len(trade_df)} trades from trade log")
         
         # Read existing portfolio - KEEP ALL ROWS
-        print(f"_safe_emoji('📊') Loaded {len(portfolio_df)} portfolio entries")
+        print(f"{_safe_emoji('📊')} Loaded {len(portfolio_df)} portfolio entries")
         
         # Calculate correct positions from trade log
         ticker_data = defaultdict(lambda: {'total_shares': 0, 'total_cost': 0, 'last_action': 'BUY', 'last_price': 0, 'sell_shares': 0, 'sell_price': 0, 'sell_pnl': 0})
@@ -278,7 +281,7 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
         
         # Show detailed changes
         if changes_made:
-            print(f"\n_safe_emoji('_safe_emoji('🔄')') Updated {updated_count} latest entries:")
+            print(f"\n{_safe_emoji('🔄')} Updated {updated_count} latest entries:")
             for change in changes_made:
                 print(f"   {change['ticker']}:")
                 print(f"     Shares: {change['old_shares']:.4f} → {change['new_shares']:.4f} ({change['shares_diff']:.4f} diff)")
@@ -288,7 +291,7 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
                 if change['action_changed']:
                     print(f"     Action: {change['old_action']} → {change['new_action']}")
         else:
-            print(f"\n_safe_emoji('✅') No changes needed - all data is already accurate")
+            print(f"\n{_safe_emoji('✅')} No changes needed - all data is already accurate")
         
         # Round all numeric columns to 2 decimal places before saving
         numeric_columns = ['Shares', 'Average Price', 'Cost Basis', 'Stop Loss', 'Current Price', 'Total Value', 'PnL']
@@ -299,7 +302,7 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
         # Save updated portfolio (preserves all historical rows)
         portfolio_df.to_csv(portfolio_file, index=False)
         
-        print(f"\n_safe_emoji('✅') Portfolio updated with trade log data: {portfolio_file}")
+        print(f"\n{_safe_emoji('✅')} Portfolio updated with trade log data: {portfolio_file}")
         print(f"   Preserved ALL {len(portfolio_df)} historical price tracking rows")
         print(f"   Updated only the latest entry for each ticker with correct data")
         print(f"   Used actual PnL from trade log for sell transactions")
@@ -308,14 +311,14 @@ def recalculate_portfolio_data(data_dir: str = "my trading"):
         return True
         
     except Exception as e:
-        print(f"_safe_emoji('_safe_emoji('❌')') Error recalculating portfolio data: {e}")
+        print(f"{_safe_emoji('❌')} Error recalculating portfolio data: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 def main():
     """Main function to recalculate portfolio data"""
-    print("_safe_emoji('_safe_emoji('🔄')') Recalculating Portfolio Data from Trade Log")
+    print(f"{_safe_emoji('🔄')} Recalculating Portfolio Data from Trade Log")
     print("=" * 50)
     
     # Check if data directory argument provided
@@ -331,7 +334,7 @@ def main():
         print("\n🎉 Portfolio data recalculated successfully!")
         print("   All shares, prices, and cost basis are now accurate based on the trade log")
     else:
-        print("\n_safe_emoji('_safe_emoji('❌')') Failed to recalculate portfolio data")
+        print(f"\n{_safe_emoji('❌')} Failed to recalculate portfolio data")
         sys.exit(1)
 
 if __name__ == "__main__":

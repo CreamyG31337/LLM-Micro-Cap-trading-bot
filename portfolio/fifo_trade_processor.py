@@ -89,7 +89,8 @@ class FIFOTradeProcessor:
                          stop_loss: Optional[Decimal] = None,
                          reason: Optional[str] = None,
                          currency: str = "CAD",
-                         validate_funds: bool = True) -> Trade:
+                         validate_funds: bool = True,
+                         trade_timestamp: Optional[datetime] = None) -> Trade:
         """Execute a buy trade with FIFO lot tracking.
         
         Args:
@@ -118,13 +119,16 @@ class FIFOTradeProcessor:
             if validate_funds:
                 self._validate_sufficient_funds(cost_basis, currency)
             
+            # Use custom timestamp or current time
+            timestamp = trade_timestamp or datetime.now()
+
             # Create trade record
             trade = Trade(
                 ticker=ticker,
                 action='BUY',
                 shares=shares,
                 price=price,
-                timestamp=datetime.now(),
+                timestamp=timestamp,
                 cost_basis=cost_basis,
                 reason=reason or "FIFO BUY TRADE",
                 currency=currency
@@ -145,7 +149,7 @@ class FIFOTradeProcessor:
             )
             
             # Update portfolio position
-            self._update_position_after_buy(ticker, trade, stop_loss)
+            self._update_position_after_buy(ticker, trade, stop_loss, timestamp)
             
             logger.info(f"FIFO buy trade executed: {ticker} {shares} @ {price} (Lot: {lot.lot_id})")
             return trade
@@ -157,7 +161,8 @@ class FIFOTradeProcessor:
     def execute_sell_trade(self, ticker: str, shares: Decimal, price: Decimal,
                           reason: Optional[str] = None,
                           currency: str = "CAD",
-                          validate_shares: bool = True) -> Trade:
+                          validate_shares: bool = True,
+                          trade_timestamp: Optional[datetime] = None) -> Trade:
         """Execute a sell trade with FIFO lot tracking.
         
         Args:
@@ -192,20 +197,23 @@ class FIFOTradeProcessor:
                         f"Insufficient shares for {ticker}: need {shares}, have {total_remaining}"
                     )
             
+            # Use custom timestamp or current time
+            timestamp = trade_timestamp or datetime.now()
+
             # Execute FIFO sell
-            sales = tracker.sell_shares_fifo(shares, price, datetime.now())
-            
+            sales = tracker.sell_shares_fifo(shares, price, timestamp)
+
             # Calculate total realized P&L
             total_realized_pnl = sum(sale['realized_pnl'] for sale in sales)
             total_proceeds = sum(sale['proceeds'] for sale in sales)
-            
+
             # Create trade record
             trade = Trade(
                 ticker=ticker,
                 action='SELL',
                 shares=shares,
                 price=price,
-                timestamp=datetime.now(),
+                timestamp=timestamp,
                 cost_basis=total_proceeds - total_realized_pnl,  # Cost basis of sold shares
                 pnl=total_realized_pnl,
                 reason=reason or "FIFO SELL TRADE",
@@ -216,7 +224,7 @@ class FIFOTradeProcessor:
             self.repository.save_trade(trade)
             
             # Update portfolio position
-            self._update_position_after_sell(ticker, trade)
+            self._update_position_after_sell(ticker, trade, timestamp)
             
             logger.info(f"FIFO sell trade executed: {ticker} {shares} @ {price} "
                        f"(Realized P&L: ${total_realized_pnl:.2f})")
@@ -226,8 +234,9 @@ class FIFOTradeProcessor:
             logger.error(f"Failed to execute FIFO sell trade for {ticker}: {e}")
             raise TradeProcessorError(f"Failed to execute FIFO sell trade for {ticker}: {e}") from e
     
-    def _update_position_after_buy(self, ticker: str, trade: Trade, 
-                                  stop_loss: Optional[Decimal] = None) -> None:
+    def _update_position_after_buy(self, ticker: str, trade: Trade,
+                                  stop_loss: Optional[Decimal] = None,
+                                  timestamp: Optional[datetime] = None) -> None:
         """Update portfolio position after a buy trade."""
         try:
             # Get latest portfolio snapshot
@@ -257,7 +266,7 @@ class FIFOTradeProcessor:
                 
                 # Update snapshot
                 latest_snapshot.add_position(position)
-                latest_snapshot.timestamp = trade.timestamp
+                latest_snapshot.timestamp = timestamp or trade.timestamp
                 
                 # Save updated snapshot
                 self.repository.save_portfolio_snapshot(latest_snapshot)
@@ -267,7 +276,7 @@ class FIFOTradeProcessor:
         except Exception as e:
             logger.error(f"Failed to update position after FIFO buy trade: {e}")
     
-    def _update_position_after_sell(self, ticker: str, trade: Trade) -> None:
+    def _update_position_after_sell(self, ticker: str, trade: Trade, timestamp: Optional[datetime] = None) -> None:
         """Update portfolio position after a sell trade."""
         try:
             # Get latest portfolio snapshot
@@ -301,7 +310,7 @@ class FIFOTradeProcessor:
                 logger.info(f"Position removed after FIFO sell: {ticker}")
             
             # Update snapshot timestamp
-            latest_snapshot.timestamp = trade.timestamp
+            latest_snapshot.timestamp = timestamp or trade.timestamp
             
             # Save updated snapshot
             self.repository.save_portfolio_snapshot(latest_snapshot)

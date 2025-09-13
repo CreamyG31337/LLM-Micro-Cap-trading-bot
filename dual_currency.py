@@ -225,20 +225,111 @@ def get_live_exchange_rate(from_currency: str, to_currency: str) -> float:
     try:
         import requests
         
-        # Using exchangerate-api.com (free tier)
+        # Try Bank of Canada API first (most accurate for CAD rates)
+        if from_currency == 'USD' and to_currency == 'CAD':
+            try:
+                url = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json"
+                response = requests.get(url, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'observations' in data and data['observations']:
+                        # Get the latest observation
+                        latest = data['observations'][-1]
+                        if 'FXUSDCAD' in latest and 'v' in latest['FXUSDCAD']:
+                            rate = float(latest['FXUSDCAD']['v'])
+                            print(f"✅ Using Bank of Canada rate: {rate}")
+                            return rate
+            except Exception as e:
+                print(f"⚠️  Bank of Canada API failed: {e}")
+        
+        # Fallback to exchangerate-api.com
         url = f"https://api.exchangerate-api.com/v4/latest/{from_currency}"
         response = requests.get(url, timeout=5)
         
         if response.status_code == 200:
             data = response.json()
-            return data['rates'].get(to_currency, get_exchange_rate(from_currency, to_currency))
+            rate = data['rates'].get(to_currency, get_exchange_rate(from_currency, to_currency))
+            print(f"✅ Using exchangerate-api.com rate: {rate}")
+            return rate
         else:
-            print(f"_safe_emoji('⚠️')  API unavailable, using static rate for {from_currency} to {to_currency}")
+            print(f"⚠️  API unavailable, using static rate for {from_currency} to {to_currency}")
             return get_exchange_rate(from_currency, to_currency)
             
     except Exception as e:
-        print(f"_safe_emoji('⚠️')  Error fetching live rate: {e}, using static rate")
+        print(f"⚠️  Error fetching live rate: {e}, using static rate")
         return get_exchange_rate(from_currency, to_currency)
+
+def update_exchange_rates_csv() -> None:
+    """
+    Update the exchange rates CSV file with current rates.
+    
+    This function checks if today's exchange rate is missing and adds it.
+    """
+    try:
+        import pandas as pd
+        from datetime import datetime
+        import pytz
+        from pathlib import Path
+        
+        # Determine data directory
+        data_dir = Path("my trading")
+        if not data_dir.exists():
+            data_dir = Path("test_data")
+        
+        exchange_rates_file = data_dir / "exchange_rates.csv"
+        trading_tz = pytz.timezone('America/Los_Angeles')
+        now = datetime.now(trading_tz)
+        today = now.date()
+        
+        # Load existing CSV
+        if exchange_rates_file.exists():
+            df = pd.read_csv(exchange_rates_file)
+            # Check if today's entry exists
+            df['Date_Only'] = df['Date'].str.split(' ').str[0]
+            today_str = today.strftime('%Y-%m-%d')
+            
+            if today_str in df['Date_Only'].values:
+                return  # Today's entry already exists
+        else:
+            df = pd.DataFrame(columns=['Date', 'USD_CAD_Rate'])
+        
+        # Get current exchange rate
+        current_rate = get_live_exchange_rate('USD', 'CAD')
+        
+        # Add today's entry
+        timestamp = trading_tz.localize(
+            datetime.combine(today, datetime.min.time().replace(hour=6, minute=30))
+        )
+        
+        new_entry = pd.DataFrame([{
+            'Date': timestamp.strftime('%Y-%m-%d %H:%M:%S PDT'),
+            'USD_CAD_Rate': f'{current_rate:.4f}'  # Format to 4 decimal places like existing entries
+        }])
+        
+        df = pd.concat([df, new_entry], ignore_index=True)
+        df = df.drop('Date_Only', axis=1, errors='ignore')  # Remove helper column
+        df = df.sort_values('Date')
+        
+        # Save updated CSV
+        df.to_csv(exchange_rates_file, index=False)
+        print(f"✅ Updated exchange rates CSV with rate {current_rate} for {today}")
+        
+    except Exception as e:
+        print(f"⚠️  Failed to update exchange rates CSV: {e}")
+
+def get_exchange_rate_with_csv_update(from_currency: str, to_currency: str) -> float:
+    """
+    Get exchange rate and update CSV if needed.
+    
+    This function ensures the exchange rates CSV is updated with today's rate
+    before returning the requested rate.
+    """
+    # Update CSV with current rates if needed
+    update_exchange_rates_csv()
+    
+    # Return the exchange rate using the existing method
+    return get_exchange_rate(from_currency, to_currency)
 
 def calculate_conversion_with_fee(amount: float, from_currency: str, to_currency: str, fee_rate: float = 0.015) -> Dict[str, float]:
     """

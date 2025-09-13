@@ -258,13 +258,34 @@ class CurrencyHandler:
         try:
             import requests
             
-            # Using exchangerate-api.com (free tier)
+            # Try Bank of Canada API first (most accurate for CAD rates)
+            if from_currency == 'USD' and to_currency == 'CAD':
+                try:
+                    url = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json"
+                    response = requests.get(url, timeout=5)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'observations' in data and data['observations']:
+                            # Get the latest observation
+                            latest = data['observations'][-1]
+                            if 'FXUSDCAD' in latest and 'v' in latest['FXUSDCAD']:
+                                rate = float(latest['FXUSDCAD']['v'])
+                                logger.info(f"Using Bank of Canada rate: {rate}")
+                                return rate
+                except Exception as e:
+                    logger.debug(f"Bank of Canada API failed: {e}")
+            
+            # Fallback to exchangerate-api.com
             url = f"https://api.exchangerate-api.com/v4/latest/{from_currency}"
             response = requests.get(url, timeout=5)
             
             if response.status_code == 200:
                 data = response.json()
-                return data['rates'].get(to_currency)
+                rate = data['rates'].get(to_currency)
+                if rate:
+                    logger.info(f"Using exchangerate-api.com rate: {rate}")
+                return rate
             
         except ImportError:
             logger.debug("requests library not available for live exchange rates")
@@ -443,6 +464,84 @@ class CurrencyHandler:
     def clear_exchange_rate_cache(self) -> None:
         """Clear the exchange rate cache to force fresh rates."""
         self._exchange_rate_cache.clear()
+    
+    def update_exchange_rates_csv(self) -> None:
+        """
+        Update the exchange rates CSV file with current rates.
+        
+        This method checks if today's exchange rate is missing and adds it.
+        """
+        if self.data_dir is None:
+            logger.debug("No data directory specified, cannot update exchange rates CSV")
+            return
+        
+        try:
+            import pandas as pd
+            from datetime import datetime, timedelta
+            import pytz
+            from utils.timezone_utils import format_timestamp_for_csv
+            
+            exchange_rates_file = self.data_dir / "exchange_rates.csv"
+            trading_tz = pytz.timezone('America/Los_Angeles')
+            now = datetime.now(trading_tz)
+            today = now.date()
+            
+            # Load existing CSV
+            if exchange_rates_file.exists():
+                df = pd.read_csv(exchange_rates_file)
+                # Check if today's entry exists
+                df['Date_Only'] = df['Date'].str.split(' ').str[0]
+                today_str = today.strftime('%Y-%m-%d')
+                
+                if today_str in df['Date_Only'].values:
+                    logger.debug("Today's exchange rate already exists in CSV")
+                    return
+            else:
+                df = pd.DataFrame(columns=['Date', 'USD_CAD_Rate'])
+            
+            # Get current exchange rate
+            current_rate = self._get_live_exchange_rate('USD', 'CAD')
+            if current_rate is None:
+                # Fall back to default rate
+                current_rate = self.DEFAULT_RATES.get(('USD', 'CAD'), 1.38)
+                logger.warning("Using fallback exchange rate for CSV update")
+            else:
+                logger.info(f"Using live exchange rate: {current_rate}")
+            
+            # Add today's entry
+            timestamp = trading_tz.localize(
+                datetime.combine(today, datetime.min.time().replace(hour=6, minute=30))
+            )
+            
+            new_entry = pd.DataFrame([{
+                'Date': format_timestamp_for_csv(timestamp),
+                'USD_CAD_Rate': f'{current_rate:.4f}'  # Format to 4 decimal places like existing entries
+            }])
+            
+            df = pd.concat([df, new_entry], ignore_index=True)
+            df = df.drop('Date_Only', axis=1, errors='ignore')  # Remove helper column
+            df = df.sort_values('Date')
+            
+            # Save updated CSV
+            df.to_csv(exchange_rates_file, index=False)
+            logger.info(f"Updated exchange rates CSV with rate {current_rate} for {today}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update exchange rates CSV: {e}")
+    
+    def get_exchange_rate_with_csv_update(self, from_currency: str, to_currency: str, 
+                                        date: Optional[str] = None) -> Decimal:
+        """
+        Get exchange rate and update CSV if needed.
+        
+        This method ensures the exchange rates CSV is updated with today's rate
+        before returning the requested rate.
+        """
+        # Update CSV with current rates if needed
+        self.update_exchange_rates_csv()
+        
+        # Return the exchange rate using the existing method
+        return self.get_exchange_rate(from_currency, to_currency, date)
 
 
 # Convenience functions for backward compatibility

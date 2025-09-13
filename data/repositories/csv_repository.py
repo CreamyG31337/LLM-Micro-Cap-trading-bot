@@ -67,6 +67,15 @@ class CSVRepository(BaseRepository):
             # Filter by date range if provided
             if date_range:
                 start_date, end_date = date_range
+                # Ensure date range parameters are timezone-aware for comparison
+                from utils.timezone_utils import get_trading_timezone
+                trading_tz = get_trading_timezone()
+                
+                if start_date.tzinfo is None:
+                    start_date = start_date.replace(tzinfo=trading_tz)
+                if end_date.tzinfo is None:
+                    end_date = end_date.replace(tzinfo=trading_tz)
+                
                 df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             
             # Group by date to create snapshots
@@ -242,6 +251,15 @@ class CSVRepository(BaseRepository):
             # Filter by date range if provided
             if date_range:
                 start_date, end_date = date_range
+                # Ensure date range parameters are timezone-aware for comparison
+                from utils.timezone_utils import get_trading_timezone
+                trading_tz = get_trading_timezone()
+                
+                if start_date.tzinfo is None:
+                    start_date = start_date.replace(tzinfo=trading_tz)
+                if end_date.tzinfo is None:
+                    end_date = end_date.replace(tzinfo=trading_tz)
+                
                 df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
             
             # Convert to Trade objects
@@ -508,13 +526,20 @@ class CSVRepository(BaseRepository):
                 return dt.to_pydatetime()
 
         else:
-            # No timezone info, assume local timezone
+            # No timezone info, assume local timezone and make it timezone-aware
             try:
                 dt = pd.to_datetime(timestamp_str)
+                # Convert to timezone-aware using the trading timezone
+                from utils.timezone_utils import get_trading_timezone
+                trading_tz = get_trading_timezone()
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=trading_tz)
                 return dt.to_pydatetime()
             except Exception:
                 logger.warning(f"Failed to parse timestamp: {timestamp_str}")
-                return datetime.now()
+                from utils.timezone_utils import get_trading_timezone
+                trading_tz = get_trading_timezone()
+                return datetime.now(trading_tz)
     
     def _format_timestamp_for_csv(self, timestamp: datetime) -> str:
         """Format timestamp for CSV output with timezone name.

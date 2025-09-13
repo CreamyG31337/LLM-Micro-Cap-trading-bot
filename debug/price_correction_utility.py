@@ -406,10 +406,10 @@ class PriceCorrectionUtility:
                     corrections_log.append(correction_log)
                     
                     if not dry_run:
-                        # Apply the correction
-                        df.loc[idx, 'Current Price'] = correct_price
-                        df.loc[idx, 'Total Value'] = new_total_value
-                        df.loc[idx, 'PnL'] = new_pnl
+                        # Apply the correction with proper rounding
+                        df.loc[idx, 'Current Price'] = round(correct_price, 2)
+                        df.loc[idx, 'Total Value'] = round(new_total_value, 2)
+                        df.loc[idx, 'PnL'] = round(new_pnl, 2)
                     
                     corrections_made += 1
                     
@@ -423,6 +423,12 @@ class PriceCorrectionUtility:
                 backup_file = f"{self.portfolio_file}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 original_df.to_csv(backup_file, index=False)
                 print(f"💾 Created backup: {backup_file}")
+                
+                # Round all numeric columns to 2 decimal places before saving
+                numeric_columns = ['Shares', 'Average Price', 'Cost Basis', 'Stop Loss', 'Current Price', 'Total Value', 'PnL']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = df[col].round(2)
                 
                 # Save corrected data
                 df.to_csv(self.portfolio_file, index=False)

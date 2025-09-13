@@ -109,22 +109,38 @@ from datetime import datetime, timezone, timedelta
 
 def _is_dst(dt: datetime) -> bool:
     """Determine if a datetime is during Daylight Saving Time for Pacific Time."""
-    # Create timezone-aware datetimes for comparison
-    pacific_tz = timezone(timedelta(hours=-8))  # PST
-    dt_pacific = dt.astimezone(pacific_tz)
+    # If the datetime is naive, assume it's in Pacific time
+    if dt.tzinfo is None:
+        # For naive datetimes, we need to determine DST based on the date
+        # DST typically starts second Sunday in March and ends first Sunday in November
+        year = dt.year
+        
+        # Find second Sunday in March
+        march = datetime(year, 3, 1)
+        dst_start = march + timedelta(days=(13 - march.weekday()) % 7 + 7)
 
-    # DST typically starts second Sunday in March and ends first Sunday in November
-    year = dt_pacific.year
-    march = datetime(year, 3, 1, tzinfo=pacific_tz)
-    november = datetime(year, 11, 1, tzinfo=pacific_tz)
+        # Find first Sunday in November  
+        november = datetime(year, 11, 1)
+        dst_end = november + timedelta(days=(6 - november.weekday()) % 7)
 
-    # Find second Sunday in March
-    dst_start = march + timedelta(days=(13 - march.weekday()) % 7 + 7)
+        return dst_start <= dt < dst_end
+    else:
+        # For timezone-aware datetimes, convert to Pacific time
+        pacific_tz = timezone(timedelta(hours=-8))  # PST
+        dt_pacific = dt.astimezone(pacific_tz)
 
-    # Find first Sunday in November
-    dst_end = november + timedelta(days=(6 - november.weekday()) % 7)
+        # DST typically starts second Sunday in March and ends first Sunday in November
+        year = dt_pacific.year
+        
+        # Find second Sunday in March
+        march = datetime(year, 3, 1, tzinfo=pacific_tz)
+        dst_start = march + timedelta(days=(13 - march.weekday()) % 7 + 7)
 
-    return dst_start <= dt_pacific < dst_end
+        # Find first Sunday in November  
+        november = datetime(year, 11, 1, tzinfo=pacific_tz)
+        dst_end = november + timedelta(days=(6 - november.weekday()) % 7)
+
+        return dst_start <= dt_pacific < dst_end
 
 def _get_current_timezone_name() -> str:
     """Get the current timezone name (PST or PDT) based on DST status."""

@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+"""
+Rebuild Portfolio from Trade Log - Complete Recreation
+
+This script completely rebuilds the portfolio CSV from scratch based on the trade log.
+It processes every trade chronologically and creates the proper portfolio entries:
+- BUY entries for each purchase
+- HOLD entries for price tracking between trades (with Yahoo API prices)
+- SELL entries for each sale
+
+Usage:
+    python debug/rebuild_portfolio_from_scratch.py
+    python debug/rebuild_portfolio_from_scratch.py test_data
+    python debug/rebuild_portfolio_from_scratch.py "my trading" "US/Pacific"
+    python debug/rebuild_portfolio_from_scratch.py "my trading" "US/Eastern"
+
+Configuration:
+    - Change DEFAULT_TIMEZONE to your local timezone
+    - Market close times are automatically calculated based on timezone
+    - Supported timezones: US/Pacific, US/Eastern, US/Central, US/Mountain, Canada/*, etc.
+    - Focuses on North American markets: NYSE, NASDAQ, TSX (all close at 4:00 PM ET)
+    - For other global markets, see comments in MARKET_CLOSE_TIMES section
+"""
+
+import pandas as pd
+from pathlib import Path
+from collections import defaultdict
+import sys
+from datetime import datetime, timedelta
+import yfinance as yf
+import time
+from decimal import Decimal, getcontext
+import pytz
+
+# Set precision for decimal calculations
+getcontext().prec = 10
+
+# Configuration - Market close times by timezone
+# Based on North American markets (NYSE, NASDAQ, TSX) closing at 4:00 PM ET
+MARKET_CLOSE_TIMES = {
+    'US/Eastern': 16,  # 4:00 PM ET (NYSE, NASDAQ)
+    'US/Pacific': 13,  # 1:00 PM PT (4:00 PM ET)
+    'US/Central': 15,  # 3:00 PM CT (4:00 PM ET)
+    'US/Mountain': 14, # 2:00 PM MT (4:00 PM ET)
+    'Canada/Eastern': 16,  # 4:00 PM ET (TSX)
+    'Canada/Pacific': 13,  # 1:00 PM PT (4:00 PM ET)
+    'Canada/Central': 15,  # 3:00 PM CT (4:00 PM ET)
+    'Canada/Mountain': 14, # 2:00 PM MT (4:00 PM ET)
+}
+
+# Note: This bot focuses on North American markets (NYSE, NASDAQ, TSX)
+# Other global markets have different closing times:
+# - London (LSE): 8:30 AM PDT (4:30 PM BST)
+# - Frankfurt (DB): 8:30 AM PDT (5:30 PM CEST)  
+# - Tokyo (JPX): 11:00 PM PDT previous day (3:00 PM JST)
+# - Hong Kong (HKEX): 1:00 AM PDT (4:00 PM HKT)
+
+# Default timezone - change this to your local timezone
+DEFAULT_TIMEZONE = 'US/Pacific'  # Change to your timezone
+
+def get_market_close_time(timezone_str: str = None) -> str:
+    """Get market close time in the specified timezone"""
+    if timezone_str is None:
+        timezone_str = DEFAULT_TIMEZONE
+    
+    # Get the hour for market close in this timezone
+    close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)  # Default to 4 PM if not found
+    
+    # Get timezone info
+    tz = pytz.timezone(timezone_str)
+    
+    # Get current date in the specified timezone
+    now = datetime.now(tz)
+    
+    # Format as "YYYY-MM-DD HH:MM:SS TZ"
+    timezone_abbr = now.strftime('%Z')
+    return f"{now.strftime('%Y-%m-%d')} {close_hour:02d}:00:00 {timezone_abbr}"
+
+def get_current_price(ticker: str) -> float:
+    """Get current price from Yahoo Finance"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return float(info.get('currentPrice', info.get('regularMarketPrice', 0)))
+    except:
+        return 0.0
+
+def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: str = None):
+    """Completely rebuild portfolio from trade log"""
+    if timezone_str is None:
+        timezone_str = DEFAULT_TIMEZONE
+    
+    data_path = Path(data_dir)
+    trade_log_file = data_path / "llm_trade_log.csv"
+    portfolio_file = data_path / "llm_portfolio_update.csv"
+    
+    print(f"_safe_emoji('🔄') Rebuilding Portfolio from Trade Log")
+    print("=" * 50)
+    print(f"📁 Using data directory: {data_dir}")
+    print(f"🕐 Using timezone: {timezone_str}")
+    print(f"🕐 Market close time: {MARKET_CLOSE_TIMES.get(timezone_str, 16)}:00 local time")
+    
+    if not trade_log_file.exists():
+        print(f"_safe_emoji('_safe_emoji('❌')') Trade log not found: {trade_log_file}")
+        return False
+    
+    try:
+        # BACKUP THE FILE FIRST
+        backup_file = portfolio_file.with_suffix(f'.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        if portfolio_file.exists():
+            portfolio_df = pd.read_csv(portfolio_file)
+            portfolio_df.to_csv(backup_file, index=False)
+            print(f"_safe_emoji('💾') Backed up portfolio to: {backup_file}")
+        
+        # Read trade log
+        trade_df = pd.read_csv(trade_log_file)
+        print(f"_safe_emoji('📊') Loaded {len(trade_df)} trades from trade log")
+        
+        # Sort trades by date
+        trade_df = trade_df.sort_values('Date').reset_index(drop=True)
+        
+        # Process trades chronologically to build complete portfolio
+        portfolio_entries = []
+        running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': []})
+        
+        print(f"\n📈 Processing trades chronologically:")
+        
+        for _, trade in trade_df.iterrows():
+            ticker = trade['Ticker']
+            date = trade['Date']
+            shares = Decimal(str(trade['Shares Bought']))  # Keep original precision
+            price = Decimal(str(trade['Buy Price']))
+            cost = Decimal(str(trade['Cost Basis']))
+            pnl = Decimal(str(trade['PnL']))
+            reason = trade['Reason']
+            
+            # Determine if this is a buy or sell
+            is_sell = 'SELL' in reason.upper() or 'sell' in reason.lower()
+            
+            print(f"   {date} | {ticker} | {shares:.4f} @ ${price:.2f} | ${cost:.2f} | PnL: ${pnl:.2f} | {reason}")
+            
+            if is_sell:
+                # For sells, create entry with 0 shares and sell details
+                avg_price = running_positions[ticker]['cost'] / running_positions[ticker]['shares'] if running_positions[ticker]['shares'] > 0 else Decimal('0')
+                
+                portfolio_entries.append({
+                    'Date': date,
+                    'Ticker': ticker,
+                    'Shares': Decimal('0'),
+                    'Average Price': Decimal('0'),
+                    'Cost Basis': Decimal('0'),
+                    'Stop Loss': Decimal('0'),
+                    'Current Price': price,
+                    'Total Value': Decimal('0'),
+                    'PnL': pnl,  # Use actual PnL from trade log
+                    'Action': 'SELL',
+                    'Company': get_company_name(ticker),
+                    'Currency': get_currency(ticker)
+                })
+                
+                # Reset position after sell
+                running_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': []}
+            else:
+                # For buys, update running position
+                running_positions[ticker]['shares'] += shares
+                running_positions[ticker]['cost'] += cost
+                running_positions[ticker]['trades'].append({'shares': shares, 'price': price, 'cost': cost})
+                
+                # Calculate current values
+                total_shares = running_positions[ticker]['shares']
+                total_cost = running_positions[ticker]['cost']
+                avg_price = total_cost / total_shares if total_shares > 0 else Decimal('0')
+                current_price = price  # Use the trade price as current price
+                total_value = total_shares * current_price
+                unrealized_pnl = (current_price - avg_price) * total_shares
+                
+                portfolio_entries.append({
+                    'Date': date,
+                    'Ticker': ticker,
+                    'Shares': total_shares,
+                    'Average Price': avg_price,
+                    'Cost Basis': total_cost,
+                    'Stop Loss': Decimal('0'),
+                    'Current Price': current_price,
+                    'Total Value': total_value,
+                    'PnL': unrealized_pnl,
+                    'Action': 'BUY',
+                    'Company': get_company_name(ticker),
+                    'Currency': get_currency(ticker)
+                })
+        
+        # Add HOLD entries for every day between trades and current positions
+        print(f"\n📊 Adding HOLD entries for price tracking...")
+        
+        # Get all unique trade dates
+        trade_dates = sorted(trade_df['Date'].unique())
+        print(f"   Trade dates: {trade_dates}")
+        
+        # Create a list of all dates we need HOLD entries for
+        all_dates = []
+        for i in range(len(trade_dates)):
+            current_trade_date = pd.to_datetime(trade_dates[i])
+            
+            # Add HOLD entries for days between this trade and the next trade
+            if i < len(trade_dates) - 1:
+                next_trade_date = pd.to_datetime(trade_dates[i + 1])
+                # Add each day between current and next trade
+                current_date = current_trade_date + timedelta(days=1)
+                while current_date < next_trade_date:
+                    all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
+                    current_date += timedelta(days=1)
+            else:
+                # For the last trade, add HOLD entries up to today
+                current_date = current_trade_date + timedelta(days=1)
+                today = datetime.now()
+                while current_date.date() <= today.date():
+                    all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
+                    current_date += timedelta(days=1)
+        
+        print(f"   Adding HOLD entries for {len(all_dates)} dates")
+        
+        # Process each date and add HOLD entries for stocks that have shares
+        for hold_date in all_dates:
+            print(f"   Processing {hold_date}...")
+            
+            # Recalculate positions up to this date
+            temp_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0')})
+            
+            # Process all trades up to this date
+            for _, trade in trade_df.iterrows():
+                trade_date = trade['Date']
+                if trade_date <= hold_date:
+                    ticker = trade['Ticker']
+                    shares = Decimal(str(trade['Shares Bought']))  # Keep original precision
+                    cost = Decimal(str(trade['Cost Basis']))
+                    reason = trade['Reason']
+                    
+                    is_sell = 'SELL' in reason.upper() or 'sell' in reason.lower()
+                    
+                    if is_sell:
+                        # Reset position after sell
+                        temp_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0')}
+                    else:
+                        # Add to position
+                        temp_positions[ticker]['shares'] += shares
+                        temp_positions[ticker]['cost'] += cost
+            
+            # Add HOLD entry for each ticker that has shares on this date
+            for ticker, position in temp_positions.items():
+                if position['shares'] > 0:
+                    # Get current price from Yahoo Finance
+                    current_price = get_current_price(ticker)
+                    
+                    if current_price > 0:
+                        current_price_decimal = Decimal(str(current_price))
+                        avg_price = position['cost'] / position['shares']
+                        total_value = position['shares'] * current_price_decimal
+                        unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
+                        
+                        # Set HOLD entries to market close time in local timezone
+                        hold_date_obj = pd.to_datetime(hold_date)
+                        date_str = hold_date_obj.strftime('%Y-%m-%d')
+                        
+                        # Get market close time for the date
+                        tz = pytz.timezone(timezone_str)
+                        close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
+                        timezone_abbr = tz.localize(hold_date_obj).strftime('%Z')
+                        hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
+                        
+                        portfolio_entries.append({
+                            'Date': hold_date_str,
+                            'Ticker': ticker,
+                            'Shares': position['shares'],
+                            'Average Price': avg_price,
+                            'Cost Basis': position['cost'],
+                            'Stop Loss': Decimal('0'),
+                            'Current Price': current_price_decimal,
+                            'Total Value': total_value,
+                            'PnL': unrealized_pnl,
+                            'Action': 'HOLD',
+                            'Company': get_company_name(ticker),
+                            'Currency': get_currency(ticker)
+                        })
+                        print(f"     Added HOLD: {ticker} @ ${current_price:.2f}")
+                    else:
+                        print(f"     ⚠️  Could not get price for {ticker} on {hold_date}")
+        
+        # Create new portfolio DataFrame
+        new_portfolio_df = pd.DataFrame(portfolio_entries)
+        
+        # Sort by date and ticker
+        new_portfolio_df = new_portfolio_df.sort_values(['Date', 'Ticker']).reset_index(drop=True)
+        
+        print(f"\n📊 Generated {len(new_portfolio_df)} portfolio entries from trade log")
+        
+        # Show summary of positions
+        print(f"\n📈 Final positions:")
+        for ticker in new_portfolio_df['Ticker'].unique():
+            ticker_entries = new_portfolio_df[new_portfolio_df['Ticker'] == ticker]
+            latest = ticker_entries.iloc[-1]
+            print(f"   {ticker}: {latest['Shares']:.2f} shares @ ${latest['Average Price']:.2f} | ${latest['Cost Basis']:.2f} | {latest['Action']} | PnL: ${latest['PnL']:.2f}")
+        
+        # Convert Decimal objects to float with proper precision
+        numeric_columns = ['Shares', 'Average Price', 'Cost Basis', 'Stop Loss', 'Current Price', 'Total Value', 'PnL']
+        for col in numeric_columns:
+            if col in new_portfolio_df.columns:
+                # Convert Decimal to float, preserving precision
+                new_portfolio_df[col] = new_portfolio_df[col].apply(lambda x: float(x) if isinstance(x, Decimal) else x)
+                if col == 'Shares':
+                    # Round shares to 4 decimal places
+                    new_portfolio_df[col] = new_portfolio_df[col].round(4)
+                else:
+                    # Round other columns to 2 decimal places
+                    new_portfolio_df[col] = new_portfolio_df[col].round(2)
+        
+        # Save new portfolio
+        new_portfolio_df.to_csv(portfolio_file, index=False)
+        
+        print(f"\n_safe_emoji('✅') Portfolio completely rebuilt from trade log: {portfolio_file}")
+        print(f"   Created {len(new_portfolio_df)} entries from {len(trade_df)} trades")
+        print(f"   Added HOLD entries for price tracking")
+        print(f"   Used actual PnL from trade log for sell transactions")
+        print(f"   Backup created at: {backup_file}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"_safe_emoji('_safe_emoji('❌')') Error rebuilding portfolio: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def get_company_name(ticker: str) -> str:
+    """Get company name for ticker"""
+    company_names = {
+        'CTRN': 'Citi Trends, Inc.',
+        'VEE.TO': 'Vanguard FTSE Emerging Markets All Cap Index ETF',
+        'GMIN.TO': 'G Mining Ventures Corp.',
+        'CRWD': 'CrowdStrike Holdings, Inc.',
+        'PLTR': 'Palantir Technologies Inc.',
+        'SMH': 'VanEck Semiconductor ETF',
+        'XMA.TO': 'iShares S&P/TSX Capped Materials Index ETF',
+        'HLIT.TO': 'Global X Lithium Producers Index ETF',
+        'WEB.V': 'Westbridge Renewable Energy Corp.',
+        'ZCH.TO': 'BMO MSCI China Selection Equity Index ETF'
+    }
+    return company_names.get(ticker, 'Unknown')
+
+def get_currency(ticker: str) -> str:
+    """Get currency for ticker"""
+    if '.TO' in ticker or '.V' in ticker:
+        return 'CAD'
+    return 'USD'
+
+def main():
+    """Main function to rebuild portfolio from scratch"""
+    # Check if data directory argument provided
+    data_dir = "my trading"
+    timezone_str = None
+    
+    if len(sys.argv) > 1:
+        data_dir = sys.argv[1]
+    if len(sys.argv) > 2:
+        timezone_str = sys.argv[2]
+    
+    success = rebuild_portfolio_from_scratch(data_dir, timezone_str)
+    
+    if success:
+        print("\n🎉 Portfolio rebuilt successfully from trade log!")
+        print("   All entries created from scratch based on trade log")
+    else:
+        print("\n_safe_emoji('_safe_emoji('❌')') Failed to rebuild portfolio")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

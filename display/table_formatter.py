@@ -179,7 +179,7 @@ class TableFormatter:
                 if avg_price > 0 and current_price > 0:
                     daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                     # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
-                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', ''))
+                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
                     if daily_pnl_pct > 0:
                         daily_pnl_display = f"[green]{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}[/green]"
                     elif daily_pnl_pct < 0:
@@ -254,7 +254,7 @@ class TableFormatter:
                 if avg_price > 0 and current_price > 0:
                     daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                     # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
-                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', ''))
+                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
                     if daily_pnl_pct > 0:
                         daily_pnl_display = f"{Fore.GREEN}{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}{Style.RESET_ALL}"
                     elif daily_pnl_pct < 0:

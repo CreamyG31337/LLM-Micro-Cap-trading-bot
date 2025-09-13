@@ -119,8 +119,12 @@ class FIFOTradeProcessor:
             if validate_funds:
                 self._validate_sufficient_funds(cost_basis, currency)
             
-            # Use custom timestamp or current time
-            timestamp = trade_timestamp or datetime.now()
+            # Use custom timestamp or current trading time
+            if trade_timestamp is not None:
+                timestamp = trade_timestamp
+            else:
+                from utils.timezone_utils import get_current_trading_time
+                timestamp = get_current_trading_time()
 
             # Create trade record
             trade = Trade(
@@ -197,8 +201,12 @@ class FIFOTradeProcessor:
                         f"Insufficient shares for {ticker}: need {shares}, have {total_remaining}"
                     )
             
-            # Use custom timestamp or current time
-            timestamp = trade_timestamp or datetime.now()
+            # Use custom timestamp or current trading time
+            if trade_timestamp is not None:
+                timestamp = trade_timestamp
+            else:
+                from utils.timezone_utils import get_current_trading_time
+                timestamp = get_current_trading_time()
 
             # Execute FIFO sell
             sales = tracker.sell_shares_fifo(shares, price, timestamp)

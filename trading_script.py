@@ -59,6 +59,7 @@ from utils.timezone_utils import get_trading_timezone, format_timestamp_for_csv
 from utils.validation import validate_portfolio_data, validate_trade_data
 from utils.backup_manager import BackupManager
 from utils.system_utils import setup_error_handlers, validate_system_requirements, log_system_info, InitializationError
+from utils.hash_verification import require_script_integrity, initialize_launch_time, ScriptIntegrityError
 
 # Global logger
 logger = logging.getLogger(__name__)
@@ -376,6 +377,25 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         print_error(error_msg)
         logger.error(error_msg, exc_info=True)
         raise InitializationError(error_msg) from e
+
+
+def verify_script_before_action() -> None:
+    """Verify script integrity before allowing sensitive operations.
+    
+    Raises:
+        ScriptIntegrityError: If script integrity cannot be verified
+    """
+    try:
+        project_root = Path(__file__).parent.absolute()
+        require_script_integrity(project_root)
+    except ScriptIntegrityError as e:
+        print_error(f"Script integrity verification failed: {e}")
+        print_error("Trading operations are disabled for security reasons")
+        raise
+    except Exception as e:
+        print_error(f"Script integrity check failed: {e}")
+        print_error("Trading operations are disabled for security reasons")
+        raise ScriptIntegrityError(f"Script integrity check failed: {e}") from e
 
 
 def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface) -> None:
@@ -742,6 +762,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 print_info("Continuing to portfolio processing...")
                 return
             elif action == 'r':
+                verify_script_before_action()
                 print_info("Refreshing portfolio...")
                 # Recursive call to refresh (could be improved with a loop)
                 run_portfolio_workflow(args, settings, repository, trading_interface)
@@ -751,16 +772,22 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 backup_name = backup_manager.create_backup()
                 print_success(f"Backup created: {backup_name}")
             elif action == 'c':
+                verify_script_before_action()
                 trading_interface.log_contribution()
             elif action == 'w':
+                verify_script_before_action()
                 trading_interface.log_withdrawal()
             elif action == 'u':
+                verify_script_before_action()
                 trading_interface.update_cash_balances()
             elif action == 'b':
+                verify_script_before_action()
                 trading_interface.buy_stock()
             elif action == 's':
+                verify_script_before_action()
                 trading_interface.sell_stock()
             elif action == 'sync':
+                verify_script_before_action()
                 trading_interface.sync_fund_contributions()
             elif action == 'restore':
                 print_warning("Restore functionality not yet implemented")
@@ -836,6 +863,9 @@ def main() -> None:
     4. Handle errors gracefully with proper cleanup
     """
     try:
+        # Initialize launch time for integrity checking
+        initialize_launch_time()
+        
         # Parse command-line arguments
         args = parse_command_line_arguments()
         
@@ -864,6 +894,10 @@ def main() -> None:
         
     except TradingSystemError as e:
         print_error(f"Trading system error: {e}")
+        sys.exit(1)
+        
+    except ScriptIntegrityError as e:
+        print_error(f"Script integrity error: {e}")
         sys.exit(1)
         
     except Exception as e:

@@ -120,7 +120,7 @@ class TestPositionDecimalFormatting(unittest.TestCase):
         
         position_dict = position_round_up.to_dict()
         self.assertEqual(position_dict['shares'], 10.1235)
-        self.assertEqual(position_dict['avg_price'], 100.12)
+        self.assertEqual(position_dict['avg_price'], 100.13)  # ROUND_HALF_UP rounds 100.125 to 100.13
         
         # Test rounding down
         position_round_down = Position(

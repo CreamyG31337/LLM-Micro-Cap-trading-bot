@@ -99,7 +99,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Log Fund Contribution", "_safe_emoji('💵')")
+            print_info("Log Fund Contribution", "💵")
             
             # Get contributor name
             contributor = input("Enter contributor name: ").strip()
@@ -143,7 +143,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Log Fund Withdrawal", "_safe_emoji('💸')")
+            print_info("Log Fund Withdrawal", "💸")
             
             # Get contributor name
             contributor = input("Enter contributor name: ").strip()
@@ -187,7 +187,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Update Cash Balances", "_safe_emoji('🔄')")
+            print_info("Update Cash Balances", "🔄")
             
             # Load current cash balances
             cash_file = Path(self.repository.data_dir) / "cash_balances.json"
@@ -240,12 +240,16 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Buy Stock", "_safe_emoji('🛒')")
+            print_info("Buy Stock", "🛒")
             
             # Get order type
             order_type = input("Order type (limit/market): ").strip().lower()
-            if order_type not in ['limit', 'market']:
-                print_error("Order type must be 'limit' or 'market'")
+            if order_type in ['l', 'limit']:
+                order_type = 'limit'
+            elif order_type in ['m', 'market']:
+                order_type = 'market'
+            else:
+                print_error("Order type must be 'limit' or 'market' (or 'l'/'m')")
                 return False
             
             # Get ticker
@@ -324,7 +328,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Sell Stock", "_safe_emoji('📤')")
+            print_info("Sell Stock", "📤")
 
             # Get latest portfolio snapshot
             snapshot = self.repository.get_latest_portfolio_snapshot()
@@ -436,7 +440,7 @@ class TradingInterface:
             bool: True if successful, False otherwise
         """
         try:
-            print_info("Sync Fund Contributions", "_safe_emoji('🔗')")
+            print_info("Sync Fund Contributions", "🔗")
             print_warning("Fund contribution sync not yet implemented")
             print_info("This feature will sync contributions from external sources")
             return True

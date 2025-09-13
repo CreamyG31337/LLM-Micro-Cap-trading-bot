@@ -85,6 +85,23 @@ def get_current_price(ticker: str) -> float:
     except:
         return 0.0
 
+def get_historical_close_price(ticker: str, date_str: str) -> float:
+    """Get the historical close price for a ticker on a given calendar date (YYYY-MM-DD)."""
+    try:
+        date_obj = pd.to_datetime(date_str).date()
+        next_date = date_obj + timedelta(days=1)
+        stock = yf.Ticker(ticker)
+        hist = stock.history(start=str(date_obj), end=str(next_date), interval='1d')
+        if hist is not None and not hist.empty and 'Close' in hist.columns:
+            return float(hist['Close'].iloc[0])
+        # Fallback to previous available close before the date
+        fallback = stock.history(end=str(date_obj), period='5d', interval='1d')
+        if fallback is not None and not fallback.empty and 'Close' in fallback.columns:
+            return float(fallback['Close'].iloc[-1])
+        return 0.0
+    except:
+        return 0.0
+
 def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: str = None):
     """Completely rebuild portfolio from trade log"""
     if timezone_str is None:
@@ -106,7 +123,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
     
     try:
         # BACKUP THE FILE FIRST
-        backup_file = portfolio_file.with_suffix(f'.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        backup_dir = data_path / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        backup_file = backup_dir / f"{portfolio_file.name}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         if portfolio_file.exists():
             portfolio_df = pd.read_csv(portfolio_file)
             portfolio_df.to_csv(backup_file, index=False)
@@ -282,20 +301,26 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
                         print(f"     Skipping HOLD for {ticker} (was traded on {date_str})")
                         continue
                     
-                    # Get current price from Yahoo Finance
-                    current_price = get_current_price(ticker)
+                    # Determine the correct price for this hold date
+                    tz = pytz.timezone(timezone_str)
+                    hold_date_obj_tz = tz.localize(hold_date_obj)
+                    if hold_date_obj_tz.date() == current_time.date():
+                        # Today
+                        if current_time.hour < market_close_hour:
+                            price_value = get_current_price(ticker)
+                        else:
+                            price_value = get_historical_close_price(ticker, date_str)
+                    else:
+                        # Historical day
+                        price_value = get_historical_close_price(ticker, date_str)
                     
-                    if current_price > 0:
-                        current_price_decimal = Decimal(str(current_price))
+                    if price_value > 0:
+                        current_price_decimal = Decimal(str(price_value))
                         avg_price = position['cost'] / position['shares']
                         total_value = position['shares'] * current_price_decimal
                         unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
                         
                         # Set HOLD entries timestamp based on market status
-                        tz = pytz.timezone(timezone_str)
-                        hold_date_obj_tz = tz.localize(hold_date_obj)
-                        
-                        # Check if this is today and market is still open
                         if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
                             # Use current time for today if market is still open
                             hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
@@ -319,7 +344,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
                             'Company': get_company_name(ticker),
                             'Currency': get_currency(ticker)
                         })
-                        print(f"     Added HOLD: {ticker} @ ${current_price:.2f}")
+                        print(f"     Added HOLD: {ticker} @ ${price_value:.2f}")
                     else:
                         print(f"     ⚠️  Could not get price for {ticker} on {hold_date}")
         

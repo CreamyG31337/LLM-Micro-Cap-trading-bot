@@ -116,23 +116,34 @@ class Position:
     @classmethod
     def from_csv_dict(cls, data: Dict[str, Any]) -> Position:
         """Create Position from CSV dictionary format.
-        
+
         Args:
             data: Dictionary with keys from llm_portfolio_update.csv
-            
+
         Returns:
             Position instance
         """
+        shares = Decimal(str(data.get('Shares', 0)))
+        avg_price = Decimal(str(data.get('Average Price', 0)))
+        current_price = Decimal(str(data['Current Price'])) if data.get('Current Price') else None
+
+        # Calculate proper unrealized P&L instead of using the potentially incorrect CSV value
+        unrealized_pnl = None
+        market_value = None
+        if current_price is not None:
+            unrealized_pnl = (current_price - avg_price) * shares
+            market_value = current_price * shares
+
         return cls(
             ticker=str(data.get('Ticker', '')),
-            shares=Decimal(str(data.get('Shares', 0))),
-            avg_price=Decimal(str(data.get('Average Price', 0))),
+            shares=shares,
+            avg_price=avg_price,
             cost_basis=Decimal(str(data.get('Cost Basis', 0))),
             currency=str(data.get('Currency', 'CAD')),
             company=data.get('Company'),
-            current_price=Decimal(str(data['Current Price'])) if data.get('Current Price') else None,
-            market_value=Decimal(str(data['Total Value'])) if data.get('Total Value') else None,
-            unrealized_pnl=Decimal(str(data['PnL'])) if data.get('PnL') else None,
+            current_price=current_price,
+            market_value=market_value,
+            unrealized_pnl=unrealized_pnl,
             stop_loss=Decimal(str(data['Stop Loss'])) if data.get('Stop Loss') else None
         )
 

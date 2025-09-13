@@ -527,34 +527,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 pos_dict['opened_date'] = "N/A"
             
             # Calculate daily P&L using historical portfolio data
-            try:
-                daily_pnl_calculated = False
-                # Try to find daily P&L from multiple previous snapshots
-                for i in range(1, min(len(portfolio_snapshots), 4)):  # Check up to 3 previous snapshots
-                    if len(portfolio_snapshots) > i:
-                        previous_snapshot = portfolio_snapshots[-(i+1)]
-                        # Find the same ticker in previous snapshot
-                        prev_position = None
-                        for prev_pos in previous_snapshot.positions:
-                            if prev_pos.ticker == position.ticker:
-                                prev_position = prev_pos
-                                break
-                        
-                        if prev_position and prev_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
-                            daily_pnl_change = position.unrealized_pnl - prev_position.unrealized_pnl
-                            pos_dict['daily_pnl'] = f"${daily_pnl_change:.2f}"
-                            daily_pnl_calculated = True
-                            break
-                
-                if not daily_pnl_calculated:
-                    # If no historical data, show current P&L as daily change for new positions
-                    if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
-                        pos_dict['daily_pnl'] = f"${position.unrealized_pnl:.2f}*"  # * indicates new position
-                    else:
-                        pos_dict['daily_pnl'] = "$0.00"
-            except Exception as e:
-                logger.debug(f"Could not calculate daily P&L for {position.ticker}: {e}")
-                pos_dict['daily_pnl'] = "$0.00"
+            # SHARED LOGIC: Same function used by prompt_generator.py when user hits 'd' in menu
+            from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+            pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, portfolio_snapshots)
             
             # 5-day P&L would require more historical data
             pos_dict['five_day_pnl'] = "N/A"

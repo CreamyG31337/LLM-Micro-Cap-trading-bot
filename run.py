@@ -114,7 +114,7 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
         args = []
     
     if not check_venv():
-        print_colored("_safe_emoji('❌') Virtual environment not found!", Colors.RED)
+        print_colored(f"{_safe_emoji('❌')} Virtual environment not found!", Colors.RED)
         print_colored(f"Expected location: {VENV_DIR}", Colors.YELLOW)
         print_colored("Please create a virtual environment first:", Colors.YELLOW)
         print_colored("  python -m venv venv", Colors.CYAN)
@@ -137,10 +137,10 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
         result = subprocess.run(cmd, cwd=PROJECT_ROOT)
         return result.returncode
     except KeyboardInterrupt:
-        print_colored("\n\n_safe_emoji('⚠️')  Script interrupted by user", Colors.YELLOW)
+        print_colored(f"\n\n{_safe_emoji('⚠️')}  Script interrupted by user", Colors.YELLOW)
         return 130
     except Exception as e:
-        print_colored(f"\n_safe_emoji('❌') Error running script: {e}", Colors.RED)
+        print_colored(f"\n{_safe_emoji('❌')} Error running script: {e}", Colors.RED)
         return 1
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
@@ -183,8 +183,8 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Display the current LLM prompt template", 
          []),
         
-        ("d", "📋 Generate Daily Trading Prompt", 
-         f"Generate daily trading prompt with current portfolio data (uses '{data_folder_name}' folder)", 
+        ("d", "📋 Generate Daily Trading Prompt",
+         f"Generate daily trading prompt with current portfolio data (uses '{data_folder_name}' folder) - runs prompt_generator.py",
          ["--data-dir", str(DATA_DIR)]),
         
         ("w", "🔬 Generate Weekly Deep Research Prompt", 
@@ -193,6 +193,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
         
         ("u", "💰 Update Cash Balances", 
          f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
+        
+        ("e", "📧 Add Trade from Email",
+         f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs email trade parser",
          ["--data-dir", str(DATA_DIR)]),
         
         ("c", "⚙️  Configure", 
@@ -283,7 +287,8 @@ def get_script_path(option: str) -> Optional[Path]:
         "9": PROJECT_ROOT / "show_prompt.py",
         "d": PROJECT_ROOT / "prompt_generator.py",
         "w": PROJECT_ROOT / "prompt_generator.py",
-        "u": PROJECT_ROOT / "update_cash.py"
+        "u": PROJECT_ROOT / "update_cash.py",
+        "e": PROJECT_ROOT / "quick_add_trade.py"
     }
     
     return script_map.get(option)
@@ -350,6 +355,11 @@ def main() -> None:
                 elif choice == "w":
                     args.extend(["--type", "weekly"])
                 
+                # Special handling for email trade parser
+                elif choice == "e":
+                    # Email trade parser - no additional args needed, uses quick_add_trade.py
+                    pass
+                
                 # Run the script
                 return_code = run_with_venv(script_path, args)
                 
@@ -372,5 +382,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print_colored("\n\n👋 Goodbye!", Colors.GREEN)
     except Exception as e:
-        print_colored(f"\n_safe_emoji('❌') Unexpected error: {e}", Colors.RED)
+        print_colored(f"\n{_safe_emoji('❌')} Unexpected error: {e}", Colors.RED)
         sys.exit(1)

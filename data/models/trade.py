@@ -90,8 +90,17 @@ class Trade:
         Returns:
             Dictionary with keys matching llm_trade_log.csv format
         """
+        # Format timestamp with proper timezone handling
+        if self.timestamp.tzinfo is not None:
+            # Timezone-aware datetime - use the timezone abbreviation
+            date_str = self.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
+        else:
+            # Naive datetime - assume PST/PDT based on date
+            from utils.timezone_utils import format_timestamp_for_csv
+            date_str = format_timestamp_for_csv(self.timestamp)
+        
         return {
-            'Date': self.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'Date': date_str,
             'Ticker': self.ticker,
             'Shares Bought': float(self.shares),
             'Buy Price': float(self.price),

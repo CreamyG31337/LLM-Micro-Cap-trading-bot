@@ -98,13 +98,14 @@ class TradeProcessor:
             if validate_funds:
                 self._validate_sufficient_funds(cost_basis, currency)
             
-            # Create trade record
+            # Create trade record with timezone-aware timestamp
+            from utils.timezone_utils import get_current_trading_time
             trade = Trade(
                 ticker=ticker,
                 action='BUY',
                 shares=shares,
                 price=price,
-                timestamp=datetime.now(),
+                timestamp=get_current_trading_time(),
                 cost_basis=cost_basis,
                 reason=reason or "BUY TRADE",
                 currency=currency

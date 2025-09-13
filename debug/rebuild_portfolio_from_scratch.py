@@ -198,30 +198,46 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
         
         # Create a list of all dates we need HOLD entries for
         all_dates = []
-        for i in range(len(trade_dates)):
-            current_trade_date = pd.to_datetime(trade_dates[i])
+        unique_calendar_dates = set()
+        
+        # First, collect all unique calendar dates from trade dates
+        for trade_date in trade_dates:
+            date_obj = pd.to_datetime(trade_date)
+            calendar_date = date_obj.strftime('%Y-%m-%d')
+            unique_calendar_dates.add(calendar_date)
+        
+        # Convert to sorted list
+        unique_calendar_dates = sorted(list(unique_calendar_dates))
+        
+        # Generate all dates between first trade and today
+        if unique_calendar_dates:
+            first_date = pd.to_datetime(unique_calendar_dates[0])
+            last_date = pd.to_datetime(unique_calendar_dates[-1])
+            today = datetime.now()
             
-            # Add HOLD entries for days between this trade and the next trade
-            if i < len(trade_dates) - 1:
-                next_trade_date = pd.to_datetime(trade_dates[i + 1])
-                # Add each day between current and next trade
-                current_date = current_trade_date + timedelta(days=1)
-                while current_date < next_trade_date:
-                    all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
-                    current_date += timedelta(days=1)
-            else:
-                # For the last trade, add HOLD entries up to today
-                current_date = current_trade_date + timedelta(days=1)
-                today = datetime.now()
-                while current_date.date() <= today.date():
-                    all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
-                    current_date += timedelta(days=1)
+            current_date = first_date
+            while current_date.date() <= today.date():
+                all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
+                current_date += timedelta(days=1)
         
         print(f"   Adding HOLD entries for {len(all_dates)} dates")
         
         # Process each date and add HOLD entries for stocks that have shares
         for hold_date in all_dates:
             print(f"   Processing {hold_date}...")
+            
+            # Check if this date already has trade entries
+            hold_date_obj = pd.to_datetime(hold_date)
+            date_str = hold_date_obj.strftime('%Y-%m-%d')
+            
+            # Get list of tickers that were traded on this exact date
+            traded_tickers_on_date = set()
+            for _, trade in trade_df.iterrows():
+                trade_date = pd.to_datetime(trade['Date']).strftime('%Y-%m-%d')
+                if trade_date == date_str:
+                    traded_tickers_on_date.add(trade['Ticker'])
+            
+            print(f"     Tickers traded on {date_str}: {traded_tickers_on_date}")
             
             # Recalculate positions up to this date
             temp_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0')})
@@ -248,6 +264,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
             # Add HOLD entry for each ticker that has shares on this date
             for ticker, position in temp_positions.items():
                 if position['shares'] > 0:
+                    # Skip HOLD entry if this ticker was traded on this date (to avoid duplicates)
+                    if ticker in traded_tickers_on_date:
+                        print(f"     Skipping HOLD for {ticker} (was traded on {date_str})")
+                        continue
+                    
                     # Get current price from Yahoo Finance
                     current_price = get_current_price(ticker)
                     
@@ -258,10 +279,6 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
                         unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
                         
                         # Set HOLD entries to market close time in local timezone
-                        hold_date_obj = pd.to_datetime(hold_date)
-                        date_str = hold_date_obj.strftime('%Y-%m-%d')
-                        
-                        # Get market close time for the date
                         tz = pytz.timezone(timezone_str)
                         close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
                         timezone_abbr = tz.localize(hold_date_obj).strftime('%Z')

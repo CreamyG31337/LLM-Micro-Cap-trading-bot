@@ -13,17 +13,16 @@ from market_data.data_fetcher import MarketDataFetcher
 from market_data.price_cache import PriceCache
 import pandas as pd
 import numpy as np
+from pathlib import Path
+import sys
 
 def calculate_position_metrics(portfolio_df, cash_balance):
     """Calculate enhanced position metrics for portfolio display"""
     if portfolio_df.empty:
-        return pd.DataFrame()
-    
-    # Get current prices for all positions
-    market_hours = MarketHours()
-    s, e = market_hours.trading_day_window()
+        return pd.DataFrame(), 0
+
     enhanced_df = portfolio_df.copy()
-    
+
     current_prices = []
     pnl_amounts = []
     pnl_percentages = []
@@ -32,43 +31,41 @@ def calculate_position_metrics(portfolio_df, cash_balance):
     daily_pnl_amounts = []
     daily_pnl_percentages = []
     days_held = []
-    
+
     total_portfolio_value = 0
-    
+
     for _, row in portfolio_df.iterrows():
         ticker = str(row.get('ticker', ''))
-        
-        # Fetch current price and previous day's price for daily P&L
-        market_data_fetcher = MarketDataFetcher()
-        result = market_data_fetcher.fetch_price_data(ticker, s, e)
-        if not result.df.empty and "Close" in result.df.columns:
-            current_price = float(result.df['Close'].iloc[-1])
-            # Get previous day's price for daily P&L calculation
-            if len(result.df) > 1:
-                prev_price = float(result.df['Close'].iloc[-2])
-            else:
-                prev_price = current_price  # If only one day of data, no daily change
-        else:
-            current_price = float(row.get('buy_price', 0))
-            prev_price = current_price
-        
+
+        # Get current price from the row data
+        current_price = float(row.get('current_price', row.get('buy_price', 0)))
         shares = float(row.get('shares', 0))
         buy_price = float(row.get('buy_price', 0))
         cost_basis = float(row.get('cost_basis', 0))
-        
+
+        # Use daily P&L from the data if available, otherwise calculate
+        daily_pnl_str = row.get('daily_pnl', '$0.00')
+        if daily_pnl_str and daily_pnl_str != 'N/A':
+            # Parse the daily P&L string (e.g., "$123.45" -> 123.45)
+            try:
+                daily_pnl_amount = float(daily_pnl_str.replace('$', '').replace(',', '').replace('*', ''))
+            except (ValueError, AttributeError):
+                daily_pnl_amount = 0.0
+        else:
+            daily_pnl_amount = 0.0
+
         # Calculate total P&L since purchase
         position_value = current_price * shares
         actual_cost_basis = buy_price * shares
         total_pnl_amount = position_value - actual_cost_basis
         total_pnl_percent = (total_pnl_amount / actual_cost_basis * 100) if actual_cost_basis > 0 else 0
-        
-        # Calculate daily P&L change
-        daily_pnl_amount = (current_price - prev_price) * shares
-        daily_pnl_percent = ((current_price - prev_price) / prev_price * 100) if prev_price > 0 else 0
-        
+
+        # Calculate daily P&L percentage from the amount
+        daily_pnl_percent = (daily_pnl_amount / position_value * 100) if position_value > 0 else 0
+
         # Calculate days held (simplified - in real system you'd track purchase dates)
         days_held_approx = 1  # Default to 1 day for now
-        
+
         current_prices.append(current_price)
         pnl_amounts.append(total_pnl_amount)
         pnl_percentages.append(total_pnl_percent)
@@ -76,7 +73,7 @@ def calculate_position_metrics(portfolio_df, cash_balance):
         daily_pnl_amounts.append(daily_pnl_amount)
         daily_pnl_percentages.append(daily_pnl_percent)
         days_held.append(days_held_approx)
-        
+
         total_portfolio_value += position_value
     
     # Calculate position weights
@@ -100,11 +97,11 @@ def format_enhanced_portfolio_display(enhanced_df):
     """Format the enhanced portfolio display with better metrics"""
     if enhanced_df.empty:
         return "No current holdings"
-    
+
     lines = []
-    lines.append("Ticker        Shares    Avg Price  Current   Total P&L  Daily P&L  Weight %")
-    lines.append("                                 $      %      $      %")
-    lines.append("-" * 85)
+    lines.append("Ticker        Shares    Avg Price  Current   Total P&L        Daily P&L        Weight %")
+    lines.append("                                              $      %            $      %")
+    lines.append("-" * 92)
     
     for _, row in enhanced_df.iterrows():
         ticker = str(row.get('ticker', ''))[:12].ljust(12)
@@ -120,7 +117,7 @@ def format_enhanced_portfolio_display(enhanced_df):
         daily_pnl_amount = f"${float(row.get('Daily_PnL_Amount', 0)):+.2f}".rjust(9)
         daily_pnl_percent = f"{float(row.get('Daily_PnL_Percent', 0)):+.1f}%".rjust(8)
         
-        weight = f"{float(row.get('Weight_Percent', 0)):.1f}%".rjust(9)
+        weight = f"{float(row.get('Weight_Percent', 0)):.1f}%".rjust(8)
         
         lines.append(f"{ticker} {shares} {buy_price} {current} {total_pnl_amount} {total_pnl_percent} {daily_pnl_amount} {daily_pnl_percent} {weight}")
     
@@ -198,35 +195,80 @@ def show_complete_prompt():
     
     # Load actual portfolio data for enhanced display
     try:
-        # Load portfolio using modular components
+        # Load portfolio using modular components (same as main script)
         from data.repositories.csv_repository import CSVRepository
         from portfolio.portfolio_manager import PortfolioManager
-        
+
         data_dir = Path(DEFAULT_DATA_DIR)
         repository = CSVRepository(data_dir)
         portfolio_manager = PortfolioManager(repository)
-        
+
         latest_snapshot = portfolio_manager.get_latest_portfolio()
-        if latest_snapshot:
-            # Convert to DataFrame for compatibility
-            portfolio_data = []
+        if latest_snapshot and latest_snapshot.positions:
+            # Get portfolio snapshots for historical comparison
+            portfolio_snapshots = portfolio_manager.get_portfolio_snapshots(limit=10)
+
+            # Convert to enhanced format with daily P&L (same logic as main script)
+            enhanced_positions = []
             for position in latest_snapshot.positions:
-                portfolio_data.append({
+                pos_dict = {
                     'ticker': position.ticker,
+                    'company': position.company or position.ticker,
                     'shares': float(position.shares),
-                    'buy_price': float(position.avg_price),
-                    'company': position.company or position.ticker
-                })
-            portfolio_df = pd.DataFrame(portfolio_data)
+                    'avg_price': float(position.avg_price),
+                    'current_price': float(position.current_price) if position.current_price else float(position.avg_price),
+                    'total_value': float(position.market_value) if position.market_value else 0,
+                    'unrealized_pnl': float(position.unrealized_pnl) if position.unrealized_pnl else 0,
+                    'cost_basis': float(position.cost_basis) if position.cost_basis else 0,
+                    'opened_date': "N/A",  # Will be filled if available
+                }
+
+                # Calculate daily P&L using historical snapshots (same logic as main script)
+                try:
+                    daily_pnl_calculated = False
+                    # Try to find daily P&L from multiple previous snapshots
+                    for i in range(1, min(len(portfolio_snapshots), 4)):  # Check up to 3 previous snapshots
+                        if len(portfolio_snapshots) > i:
+                            previous_snapshot = portfolio_snapshots[-(i+1)]
+                            # Find the same ticker in previous snapshot
+                            prev_position = None
+                            for prev_pos in previous_snapshot.positions:
+                                if prev_pos.ticker == position.ticker:
+                                    prev_position = prev_pos
+                                    break
+
+                            if prev_position and prev_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
+                                daily_pnl_change = position.unrealized_pnl - prev_position.unrealized_pnl
+                                pos_dict['daily_pnl'] = f"${daily_pnl_change:.2f}"
+                                daily_pnl_calculated = True
+                                break
+
+                    if not daily_pnl_calculated:
+                        # If no historical data, show current P&L as daily change for new positions
+                        if position.unrealized_pnl is not None and abs(position.unrealized_pnl) > 0.01:
+                            pos_dict['daily_pnl'] = f"${position.unrealized_pnl:.2f}*"  # * indicates new position
+                        else:
+                            pos_dict['daily_pnl'] = "$0.00"
+                except Exception as e:
+                    logger.debug(f"Could not calculate daily P&L for {position.ticker}: {e}")
+                    pos_dict['daily_pnl'] = "$0.00"
+
+                # 5-day P&L would require more historical data
+                pos_dict['five_day_pnl'] = "N/A"
+
+                enhanced_positions.append(pos_dict)
+
+            # Convert to DataFrame for display
+            portfolio_df = pd.DataFrame(enhanced_positions)
             cash = 0.0  # Will be loaded separately
         else:
             portfolio_df = pd.DataFrame()
             cash = 0.0
-        
+
         # Calculate enhanced metrics
         enhanced_df, total_portfolio_value = calculate_position_metrics(portfolio_df, cash)
         risk_metrics = calculate_portfolio_risk_metrics(enhanced_df, total_portfolio_value, cash)
-        
+
         print("[ Enhanced Portfolio Analysis ]")
         if not enhanced_df.empty:
             print(format_enhanced_portfolio_display(enhanced_df))
@@ -263,7 +305,8 @@ def show_complete_prompt():
             
             # Calculate performance metrics
             total_pnl_percent = (total_pnl / (total_portfolio_value - total_pnl) * 100) if (total_portfolio_value - total_pnl) > 0 else 0
-            daily_pnl_percent = (daily_pnl / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+            # Daily P&L percentage should be 0% when daily P&L amount is 0
+            daily_pnl_percent = 0 if daily_pnl == 0 else (daily_pnl / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
             
             print(f"[ Portfolio Summary ]")
             print(f"Total Portfolio Value: ${total_portfolio_value:,.2f}")
@@ -296,7 +339,7 @@ def show_complete_prompt():
         
     except Exception as e:
         print(f"[ Portfolio Snapshot ]")
-        print("Error loading portfolio data - using fallback display")
+        print(f"Error loading portfolio data: {e}")
         print("Empty DataFrame")
         print("Columns: [ticker, shares, stop_loss, buy_price, cost_basis]")
         print("Index: []")

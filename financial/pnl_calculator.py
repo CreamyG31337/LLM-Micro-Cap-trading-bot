@@ -458,38 +458,88 @@ def calculate_portfolio_current_value(positions: List[Dict]) -> Decimal:
     return portfolio_pnl['total_current_value']
 
 
-def calculate_daily_portfolio_pnl(positions: List[Dict], 
+def calculate_daily_portfolio_pnl(positions: List[Dict],
                                  previous_prices: Dict[str, NumericInput]) -> Dict[str, Decimal]:
     """
     Calculate daily P&L for entire portfolio.
-    
+
     Args:
         positions: List of position dictionaries
         previous_prices: Dict mapping ticker to previous day's price
-        
+
     Returns:
         Dict containing daily portfolio P&L
     """
     calculator = PnLCalculator()
     total_daily_pnl = Decimal('0')
-    
+
     for position in positions:
         if not calculator._is_valid_position(position):
             continue
-            
+
         ticker = position.get('ticker', '')
         if ticker not in previous_prices:
             continue
-            
+
         daily_pnl = calculator.calculate_daily_pnl(
             position['current_price'],
             previous_prices[ticker],
             position['shares']
         )
-        
+
         total_daily_pnl += daily_pnl['daily_absolute_pnl']
-    
+
     return {
         'total_daily_absolute_pnl': total_daily_pnl,
         'positions_calculated': len([p for p in positions if calculator._is_valid_position(p)])
     }
+
+
+def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
+    """
+    SHARED FUNCTION: Used by both trading_script.py and prompt_generator.py
+
+    Calculate daily P&L for a position by comparing current_price with yesterday's closing price.
+    Since snapshots may be created before market open, we compare current live price with
+    the most recent historical snapshot that has different prices.
+
+    Args:
+        current_position: Current position object with current_price
+        portfolio_snapshots: List of historical portfolio snapshots (from portfolio_manager.load_portfolio())
+
+    Returns:
+        str: Formatted daily P&L string (e.g., "$123.45", "$0.00")
+    """
+    try:
+        if not portfolio_snapshots or len(portfolio_snapshots) < 2:
+            return "$0.00"
+
+        # Find the most recent snapshot that has a different price than current
+        # This handles the case where snapshots are created before market open
+        current_price = current_position.current_price
+
+        for i in range(1, len(portfolio_snapshots)):
+            previous_snapshot = portfolio_snapshots[-(i+1)]
+
+            # Find the same ticker in previous snapshot
+            prev_position = None
+            for prev_pos in previous_snapshot.positions:
+                if prev_pos.ticker == current_position.ticker:
+                    prev_position = prev_pos
+                    break
+
+            if prev_position and prev_position.current_price is not None and current_price is not None:
+                prev_price = prev_position.current_price
+
+                # If we found a snapshot with a different price, calculate P&L
+                if abs(current_price - prev_price) > 0.01:  # More than 1 cent difference
+                    daily_price_change = current_price - prev_price
+                    daily_pnl_amount = daily_price_change * current_position.shares
+                    return f"${daily_pnl_amount:.2f}"
+
+        # If all recent snapshots have the same price (e.g., created before market open), show $0.00
+        return "$0.00"
+
+    except Exception as e:
+        logger.debug(f"Could not calculate daily P&L for {current_position.ticker}: {e}")
+        return "$0.00"

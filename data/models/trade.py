@@ -127,11 +127,23 @@ class Trade:
         elif timestamp is None:
             timestamp = datetime.now()
         
+        # Determine action based on reason or other indicators
+        reason = data.get('Reason', '').lower()
+        if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
+            action = 'SELL'
+            # For sell trades, use the sell price and shares sold
+            shares = Decimal(str(data.get('Shares Bought', 0)))  # This should be shares sold
+            price = Decimal(str(data.get('Buy Price', 0)))  # This should be sell price
+        else:
+            action = 'BUY'
+            shares = Decimal(str(data.get('Shares Bought', 0)))
+            price = Decimal(str(data.get('Buy Price', 0)))
+        
         return cls(
             ticker=str(data.get('Ticker', '')),
-            action='BUY',  # Default action for trade log entries
-            shares=Decimal(str(data.get('Shares Bought', 0))),
-            price=Decimal(str(data.get('Buy Price', 0))),
+            action=action,
+            shares=shares,
+            price=price,
             timestamp=timestamp,
             cost_basis=Decimal(str(data.get('Cost Basis', 0))),
             pnl=Decimal(str(data.get('PnL', 0))),

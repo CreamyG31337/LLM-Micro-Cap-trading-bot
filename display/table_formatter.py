@@ -175,21 +175,22 @@ class TableFormatter:
             # Daily P&L (already calculated in trading_script.py as dollar amount)
             daily_pnl_dollar = position.get('daily_pnl', 'N/A')
             if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
-                # Convert dollar amount to percentage for display
-                if avg_price > 0 and current_price > 0:
-                    daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
-                    # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
-                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
-                    if daily_pnl_pct > 0:
-                        daily_pnl_display = f"[green]{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}[/green]"
-                    elif daily_pnl_pct < 0:
-                        daily_pnl_display = f"[red]{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}[/red]"
-                    else:
-                        daily_pnl_display = f"{daily_pnl_pct:.1f}% {daily_pnl_dollar}"
+                # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
+                daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
+
+                # Calculate daily P&L percentage based on the dollar amount and total position value
+                total_position_value = shares * current_price if current_price > 0 else 0
+                daily_pnl_pct = (daily_pnl_value / total_position_value * 100) if total_position_value > 0 else 0
+
+                if daily_pnl_pct > 0:
+                    daily_pnl_display = f"[green]{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}[/green]"
+                elif daily_pnl_pct < 0:
+                    daily_pnl_display = f"[red]{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}[/red]"
                 else:
-                    daily_pnl_display = f"N/A {daily_pnl_dollar}"
+                    daily_pnl_display = f"{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}"
             else:
-                daily_pnl_display = daily_pnl_dollar
+                # When daily P&L is $0.00, percentage should also be 0.00%
+                daily_pnl_display = "0.0% $0.00"
             
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
@@ -461,23 +462,41 @@ class TableFormatter:
             stats_table = Table(title="📊 Portfolio Statistics", show_header=True, header_style="bold blue")
             stats_table.add_column("Statistic", style="cyan", no_wrap=True)
             stats_table.add_column("Amount", justify="right", style="yellow")
-            
+
+            # Helper function to get color style based on value
+            def get_pnl_style(value: float) -> str:
+                return "green" if value >= 0 else "red"
+
             stats_table.add_row("💰 Total Contributions", f"${stats_data.get('total_contributions', 0):,.2f}")
             stats_table.add_row("💵 Total Cost Basis", f"${stats_data.get('total_cost_basis', 0):,.2f}")
             stats_table.add_row("📈 Current Portfolio Value", f"${stats_data.get('total_current_value', 0):,.2f}")
-            stats_table.add_row("💹 Unrealized P&L", f"${stats_data.get('total_pnl', 0):,.2f}")
-            stats_table.add_row("💰 Realized P&L", f"${stats_data.get('total_realized_pnl', 0):,.2f}")
-            stats_table.add_row("📊 Total Portfolio P&L", f"${stats_data.get('total_portfolio_pnl', 0):,.2f}")
-            
+            stats_table.add_row("💹 Unrealized P&L", f"${stats_data.get('total_pnl', 0):,.2f}",
+                               style=get_pnl_style(stats_data.get('total_pnl', 0)))
+            stats_table.add_row("💰 Realized P&L", f"${stats_data.get('total_realized_pnl', 0):,.2f}",
+                               style=get_pnl_style(stats_data.get('total_realized_pnl', 0)))
+            stats_table.add_row("📊 Total Portfolio P&L", f"${stats_data.get('total_portfolio_pnl', 0):,.2f}",
+                               style=get_pnl_style(stats_data.get('total_portfolio_pnl', 0)))
+
             self.console.print(stats_table)
         else:
             print_info("Portfolio Statistics:", "📊")
+
+            # Helper function to get color based on value for fallback display
+            def get_pnl_color(value: float) -> str:
+                return Fore.GREEN if value >= 0 else Fore.RED
+
             print(f"  Total Contributions: ${stats_data.get('total_contributions', 0):,.2f}")
             print(f"  Total Cost Basis: ${stats_data.get('total_cost_basis', 0):,.2f}")
             print(f"  Current Portfolio Value: ${stats_data.get('total_current_value', 0):,.2f}")
-            print(f"  Unrealized P&L: ${stats_data.get('total_pnl', 0):,.2f}")
-            print(f"  Realized P&L: ${stats_data.get('total_realized_pnl', 0):,.2f}")
-            print(f"  Total Portfolio P&L: ${stats_data.get('total_portfolio_pnl', 0):,.2f}")
+
+            unrealized_pnl = stats_data.get('total_pnl', 0)
+            print(f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}")
+
+            realized_pnl = stats_data.get('total_realized_pnl', 0)
+            print(f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}")
+
+            total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
+            print(f"  Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}")
         
         return None
     

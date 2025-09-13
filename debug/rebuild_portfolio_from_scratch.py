@@ -32,6 +32,9 @@ import time
 from decimal import Decimal, getcontext
 import pytz
 
+# Import emoji handling
+from display.console_output import _safe_emoji
+
 # Set precision for decimal calculations
 getcontext().prec = 10
 
@@ -111,14 +114,14 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
     trade_log_file = data_path / "llm_trade_log.csv"
     portfolio_file = data_path / "llm_portfolio_update.csv"
     
-    print(f"_safe_emoji('🔄') Rebuilding Portfolio from Trade Log")
+    print(f"{_safe_emoji('🔄')} Rebuilding Portfolio from Trade Log")
     print("=" * 50)
     print(f"📁 Using data directory: {data_dir}")
     print(f"🕐 Using timezone: {timezone_str}")
     print(f"🕐 Market close time: {MARKET_CLOSE_TIMES.get(timezone_str, 16)}:00 local time")
     
     if not trade_log_file.exists():
-        print(f"_safe_emoji('_safe_emoji('❌')') Trade log not found: {trade_log_file}")
+        print(f"{_safe_emoji('❌')} Trade log not found: {trade_log_file}")
         return False
     
     try:
@@ -129,11 +132,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
         if portfolio_file.exists():
             portfolio_df = pd.read_csv(portfolio_file)
             portfolio_df.to_csv(backup_file, index=False)
-            print(f"_safe_emoji('💾') Backed up portfolio to: {backup_file}")
+            print(f"{_safe_emoji('💾')} Backed up portfolio to: {backup_file}")
         
         # Read trade log
         trade_df = pd.read_csv(trade_log_file)
-        print(f"_safe_emoji('📊') Loaded {len(trade_df)} trades from trade log")
+        print(f"{_safe_emoji('📊')} Loaded {len(trade_df)} trades from trade log")
         
         # Sort trades by date
         trade_df = trade_df.sort_values('Date').reset_index(drop=True)
@@ -379,7 +382,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
         # Save new portfolio
         new_portfolio_df.to_csv(portfolio_file, index=False)
         
-        print(f"\n_safe_emoji('✅') Portfolio completely rebuilt from trade log: {portfolio_file}")
+        print(f"\n{_safe_emoji('✅')} Portfolio completely rebuilt from trade log: {portfolio_file}")
         print(f"   Created {len(new_portfolio_df)} entries from {len(trade_df)} trades")
         print(f"   Added HOLD entries for price tracking")
         print(f"   Used actual PnL from trade log for sell transactions")
@@ -388,7 +391,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: s
         return True
         
     except Exception as e:
-        print(f"_safe_emoji('_safe_emoji('❌')') Error rebuilding portfolio: {e}")
+        print(f"{_safe_emoji('❌')} Error rebuilding portfolio: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -432,7 +435,7 @@ def main():
         print("\n🎉 Portfolio rebuilt successfully from trade log!")
         print("   All entries created from scratch based on trade log")
     else:
-        print("\n_safe_emoji('_safe_emoji('❌')') Failed to rebuild portfolio")
+        print(f"\n{_safe_emoji('❌')} Failed to rebuild portfolio")
         sys.exit(1)
 
 if __name__ == "__main__":

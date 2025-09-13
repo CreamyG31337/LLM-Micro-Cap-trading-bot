@@ -348,25 +348,14 @@ def add_trade_from_email(email_text: str, data_dir: str = "my trading") -> bool:
         repository = CSVRepository(data_dir)
         processor = TradeProcessor(repository)
         
-        # Add the trade
+        # Save the trade directly to the repository with the correct timestamp
+        repository.save_trade(trade)
+        
+        # Update portfolio position
         if trade.action == 'BUY':
-            processor.execute_buy_trade(
-                ticker=trade.ticker,
-                shares=trade.shares,
-                price=trade.price,
-                reason=trade.reason,
-                currency=trade.currency,
-                validate_funds=False  # Skip fund validation for email trades
-            )
+            processor._update_position_after_buy(trade, None)
         elif trade.action == 'SELL':
-            processor.execute_sell_trade(
-                ticker=trade.ticker,
-                shares=trade.shares,
-                price=trade.price,
-                reason=trade.reason,
-                currency=trade.currency,
-                validate_shares=False  # Skip share validation for email trades
-            )
+            processor._update_position_after_sell(trade)
         else:
             print(f"Unsupported action: {trade.action}")
             return False

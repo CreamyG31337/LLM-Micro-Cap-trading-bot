@@ -229,3 +229,4 @@ Results.png
 .script_timestamp
 .script_hash
 .vscode/settings.json
+*.exe

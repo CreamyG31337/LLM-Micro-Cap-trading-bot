@@ -333,9 +333,9 @@ class CSVRepository(BaseRepository):
             
             # Append to existing file or create new one
             if self.trade_log_file.exists():
-                df.to_csv(self.trade_log_file, mode='a', header=False, index=False)
+                df.to_csv(self.trade_log_file, mode='a', header=False, index=False, lineterminator='\n')
             else:
-                df.to_csv(self.trade_log_file, index=False)
+                df.to_csv(self.trade_log_file, index=False, lineterminator='\n')
             
             logger.info(f"Saved trade: {trade.ticker} {trade.action} {trade.shares} @ {trade.price}")
             

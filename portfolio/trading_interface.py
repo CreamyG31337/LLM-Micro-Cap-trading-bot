@@ -107,6 +107,11 @@ class TradingInterface:
                 print_error("Contributor name cannot be empty")
                 return False
             
+            # Get contributor email (optional)
+            email = input("Enter contributor email (optional): ").strip()
+            if email and '@' not in email:
+                print_warning("Email format may be invalid, but continuing...")
+            
             # Get contribution amount
             try:
                 amount_str = input("Enter contribution amount: $").strip()
@@ -124,7 +129,8 @@ class TradingInterface:
                 'Contributor': contributor,
                 'Amount': amount,
                 'Type': 'CONTRIBUTION',
-                'Notes': ''
+                'Notes': '',
+                'Email': email
             }
             
             self._save_contribution(contribution_data)
@@ -151,6 +157,11 @@ class TradingInterface:
                 print_error("Contributor name cannot be empty")
                 return False
             
+            # Get contributor email (optional)
+            email = input("Enter contributor email (optional): ").strip()
+            if email and '@' not in email:
+                print_warning("Email format may be invalid, but continuing...")
+            
             # Get withdrawal amount
             try:
                 amount_str = input("Enter withdrawal amount: $").strip()
@@ -168,7 +179,8 @@ class TradingInterface:
                 'Contributor': contributor,
                 'Amount': amount,
                 'Type': 'WITHDRAWAL',
-                'Notes': ''
+                'Notes': '',
+                'Email': email
             }
             
             self._save_contribution(withdrawal_data)
@@ -448,6 +460,122 @@ class TradingInterface:
         except Exception as e:
             logger.error(f"Error syncing fund contributions: {e}")
             print_error(f"Failed to sync fund contributions: {e}")
+            return False
+    
+    def manage_contributors(self) -> bool:
+        """Handle contributor management action.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            print_info("Manage Contributors", "👥")
+            
+            # Load current contributors from CSV
+            fund_file = Path(self.repository.data_dir) / "fund_contributions.csv"
+            
+            if not fund_file.exists():
+                print_warning("No fund contributions file found")
+                return False
+            
+            # Read existing data
+            df = pd.read_csv(fund_file)
+            
+            # Ensure Email column exists for backward compatibility
+            if 'Email' not in df.columns:
+                df['Email'] = ''
+            
+            # Get unique contributors
+            contributors = df[['Contributor', 'Email']].groupby('Contributor').agg({'Email': 'first'}).reset_index()
+            contributors = contributors.sort_values('Contributor')
+            
+            if contributors.empty:
+                print_warning("No contributors found")
+                return False
+            
+            # Display contributors
+            print("Current Contributors:")
+            print("─" * 60)
+            print(f"{'#':<3} {'Name':<25} {'Email':<30}")
+            print("─" * 60)
+            
+            for i, row in contributors.iterrows():
+                idx = i + 1
+                name = row['Contributor']
+                email = row['Email'] if row['Email'] and pd.notna(row['Email']) else "Not provided"
+                print(f"{idx:<3} {name:<25} {email:<30}")
+            
+            print("─" * 60)
+            print("Select a contributor by number to edit, or 'cancel' to abort")
+            
+            # Get user selection
+            while True:
+                try:
+                    selection = input("Enter selection: ").strip().lower()
+                    
+                    if selection == 'cancel':
+                        print_info("Contributor management cancelled")
+                        return False
+                    
+                    selection_num = int(selection)
+                    if 1 <= selection_num <= len(contributors):
+                        selected_contributor = contributors.iloc[selection_num - 1]
+                        break
+                    else:
+                        print_error(f"Invalid selection. Please enter a number between 1 and {len(contributors)}")
+                except ValueError:
+                    print_error("Invalid input. Please enter a number or 'cancel'")
+            
+            # Get updated information
+            current_name = selected_contributor['Contributor']
+            current_email = selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ""
+            
+            print(f"\nEditing contributor: {current_name}")
+            print(f"Current email: {current_email if current_email else 'Not provided'}")
+            
+            # Get new name
+            new_name = input(f"Enter new name [{current_name}]: ").strip()
+            if not new_name:
+                new_name = current_name
+            
+            # Get new email
+            new_email = input(f"Enter new email [{current_email}]: ").strip()
+            if not new_email:
+                new_email = current_email
+            
+            # Validate email format if provided
+            if new_email and '@' not in new_email:
+                print_warning("Email format may be invalid, but continuing...")
+            
+            # Confirm changes
+            if new_name != current_name or new_email != current_email:
+                print(f"\nChanges to be made:")
+                if new_name != current_name:
+                    print(f"  Name: {current_name} → {new_name}")
+                if new_email != current_email:
+                    print(f"  Email: {current_email if current_email else '(empty)'} → {new_email if new_email else '(empty)'}")
+                
+                confirm = input("\nSave changes? (y/N): ").strip().lower()
+                if confirm not in ['y', 'yes']:
+                    print_info("Changes cancelled")
+                    return False
+                
+                # Update the DataFrame
+                df.loc[df['Contributor'] == current_name, 'Contributor'] = new_name
+                df.loc[df['Contributor'] == new_name, 'Email'] = new_email
+                
+                # Save updated CSV
+                df.to_csv(fund_file, index=False)
+                print_success(f"Contributor information updated successfully")
+                logger.info(f"Updated contributor: {current_name} → {new_name}, email: {new_email}")
+            else:
+                print_info("No changes made")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error managing contributors: {e}")
+            print_error(f"Failed to manage contributors: {e}")
             return False
     
     def _save_contribution(self, contribution_data: Dict[str, Any]) -> None:

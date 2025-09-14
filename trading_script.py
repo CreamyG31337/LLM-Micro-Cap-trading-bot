@@ -697,6 +697,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(f"│ 's' {_safe_emoji('📤')} Sell (Limit Order)                                      │")
             print(f"│ 'c' {_safe_emoji('💵')} Log Contribution                                        │")
             print(f"│ 'w' {_safe_emoji('💸')} Log Withdrawal                                          │")
+            print(f"│ 'm' {_safe_emoji('👥')} Manage Contributors                                      │")
             print(f"│ 'u' {_safe_emoji('🔄')} Update Cash Balances                                    │")
             print(f"│ 'sync' {_safe_emoji('🔗')} Sync Fund Contributions                              │")
             print(f"│ 'backup' {_safe_emoji('💾')} Create Backup                                      │")
@@ -711,6 +712,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 's' [S] Sell (Limit Order)                                  |")
             print("| 'c' $ Log Contribution                                      |")
             print("| 'w' -$ Log Withdrawal                                       |")
+            print("| 'm' [M] Manage Contributors                                 |")
             print("| 'u' ~ Update Cash Balances                                  |")
             print("| 'sync' & Sync Fund Contributions                            |")
             print("| 'backup' [B] Create Backup                                  |")
@@ -747,6 +749,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             elif action == 'w':
                 verify_script_before_action()
                 trading_interface.log_withdrawal()
+            elif action == 'm':
+                verify_script_before_action()
+                trading_interface.manage_contributors()
             elif action == 'u':
                 verify_script_before_action()
                 trading_interface.update_cash_balances()

@@ -120,20 +120,42 @@ class TableFormatter:
             company_max_width = 12  # Even more conservative for test data
         
         table = Table(title=table_title, show_header=True, header_style="bold magenta")
-        # Create safe column headers
-        table.add_column(f"{_safe_emoji('🎯')} Ticker", style="cyan", no_wrap=True, width=11)
-        table.add_column(f"{_safe_emoji('🏢')} Company", style="white", no_wrap=True, max_width=company_max_width, justify="left")
-        table.add_column(f"{_safe_emoji('📅')} Opened", style="dim", no_wrap=True, width=10)
-        table.add_column(f"{_safe_emoji('📈')} Shares", justify="right", style="green", width=10)
-        table.add_column(f"{_safe_emoji('💵')} Price", justify="right", style="blue", width=10)
-        table.add_column(f"{_safe_emoji('💰')} Current", justify="right", style="yellow", width=10)
-        table.add_column(f"{_safe_emoji('💵')} Total Value", justify="right", style="yellow", width=12)
-        table.add_column(f"{_safe_emoji('📊')} Total P&L", justify="right", style="magenta", width=16)
-        table.add_column(f"{_safe_emoji('📈')} Daily P&L", justify="right", style="cyan", width=16)
-        table.add_column(f"{_safe_emoji('📊')} 5-Day P&L", justify="right", style="bright_magenta", width=10)
-        table.add_column(f"{_safe_emoji('🍕')} Weight", justify="right", style="bright_blue", width=8)
-        table.add_column(f"{_safe_emoji('🛑')} Stop Loss", justify="right", style="red", width=10)
-        table.add_column(f"{_safe_emoji('💵')} Cost Basis", justify="right", style="yellow", width=10)
+        # Create safe column headers (headers can wrap, data stays no_wrap where appropriate)
+        table.add_column(f"{_safe_emoji('🎯')}\nTicker", style="cyan", no_wrap=True, width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('🏢')}\nCompany", style="white", no_wrap=True, max_width=company_max_width, justify="left", header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📅')}\nOpened", style="dim", no_wrap=True, width=11, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="green", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="blue", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="yellow", width=12, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=16, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=15, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=9, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
+        
+        def format_shares(shares_value):
+            """Format shares with up to 6 significant digits, adjusting decimals based on magnitude."""
+            if shares_value == 0:
+                return "0"
+            
+            shares = float(shares_value)
+            if shares >= 1000:
+                # For 1000+: show no decimals (e.g., 1234)
+                return f"{shares:.0f}"
+            elif shares >= 100:
+                # For 100-999: show 3 decimals max (e.g., 123.456)
+                return f"{shares:.3f}".rstrip('0').rstrip('.')
+            elif shares >= 10:
+                # For 10-99: show 4 decimals max (e.g., 12.3456)
+                return f"{shares:.4f}".rstrip('0').rstrip('.')
+            elif shares >= 1:
+                # For 1-9: show 5 decimals max (e.g., 1.23456)
+                return f"{shares:.5f}".rstrip('0').rstrip('.')
+            else:
+                # For <1: show 6 decimals max (e.g., 0.123456)
+                return f"{shares:.6f}".rstrip('0').rstrip('.')
         
         for position in portfolio_data:
             # Truncate long company names for display
@@ -152,23 +174,23 @@ class TableFormatter:
             cost_basis = position.get('cost_basis', 0) or 0
             avg_price = position.get('avg_price', 0) or 0
             
-            # Calculate total P&L percentage with color coding
+            # Calculate total P&L percentage with color coding (dollar amount first, then percentage)
             if cost_basis > 0:
                 total_pnl_pct = (unrealized_pnl / cost_basis) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}[/green]"
+                    total_pnl_display = f"[green]${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}[/red]"
+                    total_pnl_display = f"[red]${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
+                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
             elif avg_price > 0 and current_price > 0:
                 total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}[/green]"
+                    total_pnl_display = f"[green]${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}[/red]"
+                    total_pnl_display = f"[red]${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
+                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
             else:
                 total_pnl_display = 'N/A'
 
@@ -183,14 +205,14 @@ class TableFormatter:
                 daily_pnl_pct = (daily_pnl_value / total_position_value * 100) if total_position_value > 0 else 0
 
                 if daily_pnl_pct > 0:
-                    daily_pnl_display = f"[green]{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}[/green]"
+                    daily_pnl_display = f"[green]${daily_pnl_value:,.2f} +{daily_pnl_pct:.1f}%[/green]"
                 elif daily_pnl_pct < 0:
-                    daily_pnl_display = f"[red]{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}[/red]"
+                    daily_pnl_display = f"[red]${abs(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%[/red]"
                 else:
-                    daily_pnl_display = f"{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}"
+                    daily_pnl_display = f"${daily_pnl_value:,.2f} {daily_pnl_pct:.1f}%"
             else:
                 # When daily P&L is $0.00, percentage should also be 0.00%
-                daily_pnl_display = "0.0% $0.00"
+                daily_pnl_display = "$0.00 0.0%"
             
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
@@ -199,7 +221,7 @@ class TableFormatter:
                 position.get('ticker', 'N/A'),
                 display_name,
                 position.get('opened_date', 'N/A'),
-                f"{float(position.get('shares', 0)):.4f}",
+                format_shares(position.get('shares', 0)),
                 f"${float(position.get('avg_price', 0)):.2f}",  # Fixed field name
                 f"${float(position.get('current_price', 0)):.2f}" if position.get('current_price', 0) > 0 else "N/A",
                 total_value_display,  # Total Value (shares * current price)
@@ -218,6 +240,28 @@ class TableFormatter:
         """Create plain text portfolio table."""
         print(f"\\n{Fore.MAGENTA}{table_title}:{Style.RESET_ALL}")
         
+        def format_shares_plain(shares_value):
+            """Format shares with up to 6 significant digits, adjusting decimals based on magnitude."""
+            if shares_value == 0:
+                return "0"
+            
+            shares = float(shares_value)
+            if shares >= 1000:
+                # For 1000+: show no decimals (e.g., 1234)
+                return f"{shares:.0f}"
+            elif shares >= 100:
+                # For 100-999: show 3 decimals max (e.g., 123.456)
+                return f"{shares:.3f}".rstrip('0').rstrip('.')
+            elif shares >= 10:
+                # For 10-99: show 4 decimals max (e.g., 12.3456)
+                return f"{shares:.4f}".rstrip('0').rstrip('.')
+            elif shares >= 1:
+                # For 1-9: show 5 decimals max (e.g., 1.23456)
+                return f"{shares:.5f}".rstrip('0').rstrip('.')
+            else:
+                # For <1: show 6 decimals max (e.g., 0.123456)
+                return f"{shares:.6f}".rstrip('0').rstrip('.')
+        
         # Convert to DataFrame for better plain text formatting
         df_data = []
         for position in portfolio_data:
@@ -229,23 +273,23 @@ class TableFormatter:
             unrealized_pnl = float(position.get('unrealized_pnl', 0)) or 0
             total_value = shares * current_price if current_price > 0 else 0
             
-            # Calculate P&L percentage with color coding
+            # Calculate P&L percentage with color coding (dollar amount first, then percentage)
             if cost_basis > 0:
                 total_pnl_pct = (unrealized_pnl / cost_basis) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
+                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
             elif avg_price > 0 and current_price > 0:
                 total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}{abs(total_pnl_pct):.1f}% ${abs(unrealized_pnl):,.2f}{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"{total_pnl_pct:.1f}% ${unrealized_pnl:,.2f}"
+                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
             else:
                 total_pnl_display = 'N/A'
             
@@ -257,11 +301,11 @@ class TableFormatter:
                     # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
                     daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
                     if daily_pnl_pct > 0:
-                        daily_pnl_display = f"{Fore.GREEN}{daily_pnl_pct:.1f}% ${daily_pnl_value:,.2f}{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.GREEN}${daily_pnl_value:,.2f} +{daily_pnl_pct:.1f}%{Style.RESET_ALL}"
                     elif daily_pnl_pct < 0:
-                        daily_pnl_display = f"{Fore.RED}{abs(daily_pnl_pct):.1f}% ${abs(daily_pnl_value):,.2f}{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.RED}${abs(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%{Style.RESET_ALL}"
                     else:
-                        daily_pnl_display = f"{daily_pnl_pct:.1f}% {daily_pnl_dollar}"
+                        daily_pnl_display = f"${daily_pnl_value:,.2f} {daily_pnl_pct:.1f}%"
                 else:
                     daily_pnl_display = f"N/A {daily_pnl_dollar}"
             else:
@@ -271,7 +315,7 @@ class TableFormatter:
                 'Ticker': position.get('ticker', 'N/A'),
                 'Company': position.get('company', 'N/A'),
                 'Opened': position.get('opened_date', 'N/A'),
-                'Shares': f"{shares:.4f}",
+                'Shares': format_shares_plain(shares),
                 'Price': f"${avg_price:.2f}",
                 'Current': f"${current_price:.2f}" if current_price > 0 else "N/A",
                 'Total Value': f"${total_value:.2f}" if total_value > 0 else "N/A",

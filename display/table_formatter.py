@@ -541,6 +541,283 @@ class TableFormatter:
         
         return None
     
+    def create_unified_financial_table(self, stats_data: Dict[str, float], 
+                                      summary_data: Dict[str, float]) -> None:
+        """Create a unified financial overview table combining statistics and summary.
+        
+        Args:
+            stats_data: Dictionary of portfolio statistics
+            summary_data: Dictionary of financial summary data
+        """
+        if has_rich_support() and self.console:
+            self._create_rich_unified_financial_table(stats_data, summary_data)
+        else:
+            self._create_plain_unified_financial_table(stats_data, summary_data)
+    
+    def create_financial_and_ownership_tables(self, stats_data: Dict[str, float], 
+                                             summary_data: Dict[str, float],
+                                             ownership_data: Dict[str, Dict[str, Any]]) -> None:
+        """Create financial overview and ownership tables side by side.
+        
+        Args:
+            stats_data: Dictionary of portfolio statistics
+            summary_data: Dictionary of financial summary data
+            ownership_data: Dictionary of ownership information by contributor
+        """
+        if has_rich_support() and self.console:
+            self._create_rich_financial_and_ownership_tables(stats_data, summary_data, ownership_data)
+        else:
+            self._create_plain_financial_and_ownership_tables(stats_data, summary_data, ownership_data)
+    
+    def _create_rich_unified_financial_table(self, stats_data: Dict[str, float], 
+                                            summary_data: Dict[str, float]) -> None:
+        """Create Rich-formatted unified financial table."""
+        
+        # Create unified financial overview table
+        financial_table = Table(title="💰 Financial Overview", show_header=True, header_style="bold magenta")
+        financial_table.add_column("Metric", style="cyan", no_wrap=True)
+        financial_table.add_column("Amount", justify="right", style="yellow")
+        
+        # Helper function to get color style based on value
+        def get_pnl_style(value: float) -> str:
+            return "green" if value >= 0 else "red"
+        
+        # Extract values
+        total_value = summary_data.get('portfolio_value', 0)
+        cash = summary_data.get('cash_balance', 0)
+        total_contributions = stats_data.get('total_contributions', 0)
+        cost_basis = stats_data.get('total_cost_basis', 0)
+        unrealized_pnl = stats_data.get('total_pnl', 0)
+        realized_pnl = stats_data.get('total_realized_pnl', 0)
+        total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
+        total_equity = total_value + cash
+        
+        # Portfolio Value Section
+        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}")
+        financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]")
+        
+        # Add separator
+        financial_table.add_row("", "")
+        
+        # Investment Performance Section
+        financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
+        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}")
+        
+        # Add separator
+        financial_table.add_row("", "")
+        
+        # P&L Section with color coding
+        financial_table.add_row("💹 Unrealized P&L", f"${unrealized_pnl:,.2f}",
+                               style=get_pnl_style(unrealized_pnl))
+        financial_table.add_row("💰 Realized P&L", f"${realized_pnl:,.2f}",
+                               style=get_pnl_style(realized_pnl))
+        financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
+                               style=get_pnl_style(total_portfolio_pnl))
+        
+        # Calculate and display overall performance
+        if total_contributions > 0:
+            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
+                                   style=get_pnl_style(overall_return_pct))
+        
+        self.console.print(financial_table)
+    
+    def _create_rich_financial_and_ownership_tables(self, stats_data: Dict[str, float], 
+                                                   summary_data: Dict[str, float],
+                                                   ownership_data: Dict[str, Dict[str, Any]]) -> None:
+        """Create Rich-formatted financial and ownership tables side by side."""
+        from rich.columns import Columns
+        
+        # Create financial overview table (reuse existing logic)
+        financial_table = Table(title="💰 Financial Overview", show_header=True, header_style="bold magenta")
+        financial_table.add_column("Metric", style="cyan", no_wrap=True)
+        financial_table.add_column("Amount", justify="right", style="yellow")
+        
+        # Helper function to get color style based on value
+        def get_pnl_style(value: float) -> str:
+            return "green" if value >= 0 else "red"
+        
+        # Extract values
+        total_value = summary_data.get('portfolio_value', 0)
+        cash = summary_data.get('cash_balance', 0)
+        total_contributions = stats_data.get('total_contributions', 0)
+        cost_basis = stats_data.get('total_cost_basis', 0)
+        unrealized_pnl = stats_data.get('total_pnl', 0)
+        realized_pnl = stats_data.get('total_realized_pnl', 0)
+        total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
+        total_equity = total_value + cash
+        
+        # Portfolio Value Section
+        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}")
+        financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]")
+        
+        # Add separator
+        financial_table.add_row("", "")
+        
+        # Investment Performance Section
+        financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
+        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}")
+        
+        # Add separator
+        financial_table.add_row("", "")
+        
+        # P&L Section with color coding
+        financial_table.add_row("💹 Unrealized P&L", f"${unrealized_pnl:,.2f}",
+                               style=get_pnl_style(unrealized_pnl))
+        financial_table.add_row("💰 Realized P&L", f"${realized_pnl:,.2f}",
+                               style=get_pnl_style(realized_pnl))
+        financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
+                               style=get_pnl_style(total_portfolio_pnl))
+        
+        # Calculate and display overall performance
+        if total_contributions > 0:
+            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
+                                   style=get_pnl_style(overall_return_pct))
+        
+        # Create ownership table
+        ownership_table = Table(title="👥 Ownership Details", show_header=True, header_style="bold blue")
+        ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
+        ownership_table.add_column("Shares", justify="right", style="cyan")
+        ownership_table.add_column("Contributed", justify="right", style="green")
+        ownership_table.add_column("Ownership %", justify="right", style="magenta")
+        ownership_table.add_column("Current Value", justify="right", style="red")
+        
+        # Sort by ownership percentage (highest first)
+        sorted_ownership = sorted(ownership_data.items(), 
+                                key=lambda x: x[1].get('ownership_pct', 0), reverse=True)
+        
+        for contributor, data in sorted_ownership:
+            ownership_table.add_row(
+                contributor,
+                f"{data.get('shares', 0):.2f}",
+                f"${data.get('contributed', 0):,.2f}",
+                f"{data.get('ownership_pct', 0):.1f}%",
+                f"${data.get('current_value', 0):,.2f}"
+            )
+        
+        # Display tables side by side
+        columns = Columns([financial_table, ownership_table], equal=True, expand=True)
+        self.console.print(columns)
+    
+    def _create_plain_unified_financial_table(self, stats_data: Dict[str, float], 
+                                             summary_data: Dict[str, float]) -> None:
+        """Create plain text unified financial table."""
+        from display.console_output import _safe_emoji
+        
+        # Helper function to get color based on value
+        def get_pnl_color(value: float) -> str:
+            return Fore.GREEN if value >= 0 else Fore.RED
+        
+        # Extract values
+        total_value = summary_data.get('portfolio_value', 0)
+        cash = summary_data.get('cash_balance', 0)
+        total_contributions = stats_data.get('total_contributions', 0)
+        cost_basis = stats_data.get('total_cost_basis', 0)
+        unrealized_pnl = stats_data.get('total_pnl', 0)
+        realized_pnl = stats_data.get('total_realized_pnl', 0)
+        total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
+        total_equity = total_value + cash
+        
+        print(f"\n{Fore.MAGENTA}{_safe_emoji('💰')} Financial Overview:{Style.RESET_ALL}")
+        print("─" * 50)
+        
+        # Portfolio Value Section
+        print(f"  Current Portfolio Value: ${total_value:,.2f}")
+        print(f"  Cash Balance: ${cash:,.2f}")
+        print(f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}")
+        print()
+        
+        # Investment Performance Section  
+        print(f"  Total Contributions: ${total_contributions:,.2f}")
+        print(f"  Total Cost Basis: ${cost_basis:,.2f}")
+        print()
+        
+        # P&L Section with color coding
+        print(f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}")
+        print(f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}")
+        print(f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}")
+        
+        # Calculate and display overall performance
+        if total_contributions > 0:
+            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            print(f"  {Fore.CYAN}Overall Return: {get_pnl_color(overall_return_pct)}{overall_return_pct:+.2f}%{Style.RESET_ALL}")
+    
+    def _create_plain_financial_and_ownership_tables(self, stats_data: Dict[str, float], 
+                                                   summary_data: Dict[str, float],
+                                                   ownership_data: Dict[str, Dict[str, Any]]) -> None:
+        """Create plain text financial and ownership tables side by side."""
+        from display.console_output import _safe_emoji
+        
+        # Helper function to get color based on value
+        def get_pnl_color(value: float) -> str:
+            return Fore.GREEN if value >= 0 else Fore.RED
+        
+        # Extract financial values
+        total_value = summary_data.get('portfolio_value', 0)
+        cash = summary_data.get('cash_balance', 0)
+        total_contributions = stats_data.get('total_contributions', 0)
+        cost_basis = stats_data.get('total_cost_basis', 0)
+        unrealized_pnl = stats_data.get('total_pnl', 0)
+        realized_pnl = stats_data.get('total_realized_pnl', 0)
+        total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
+        total_equity = total_value + cash
+        
+        # Prepare financial data lines
+        financial_lines = [
+            f"{_safe_emoji('💰')} Financial Overview",
+            "─" * 35,
+            f"  Current Portfolio Value: ${total_value:,.2f}",
+            f"  Cash Balance: ${cash:,.2f}",
+            f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}",
+            "",
+            f"  Total Contributions: ${total_contributions:,.2f}",
+            f"  Total Cost Basis: ${cost_basis:,.2f}",
+            "",
+            f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}",
+            f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}",
+            f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}"
+        ]
+        
+        # Add overall return if contributions exist
+        if total_contributions > 0:
+            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            financial_lines.append(f"  {Fore.CYAN}Overall Return: {get_pnl_color(overall_return_pct)}{overall_return_pct:+.2f}%{Style.RESET_ALL}")
+        
+        # Prepare ownership data lines
+        ownership_lines = [
+            f"{_safe_emoji('👥')} Ownership Details",
+            "─" * 35,
+        ]
+        
+        # Sort by ownership percentage (highest first)
+        sorted_ownership = sorted(ownership_data.items(), 
+                                key=lambda x: x[1].get('ownership_pct', 0), reverse=True)
+        
+        for contributor, data in sorted_ownership:
+            shares = data.get('shares', 0)
+            contributed = data.get('contributed', 0)
+            ownership_pct = data.get('ownership_pct', 0)
+            current_value = data.get('current_value', 0)
+            
+            # Format contributor line
+            contrib_line = f"  {contributor[:15]:<15}: {shares:>6.1f} shares"
+            ownership_lines.append(contrib_line)
+            ownership_lines.append(f"    ${contributed:>7,.0f} ({ownership_pct:4.1f}%) = ${current_value:>8,.0f}")
+        
+        # Display side by side
+        print("\n")
+        max_lines = max(len(financial_lines), len(ownership_lines))
+        for i in range(max_lines):
+            financial_line = financial_lines[i] if i < len(financial_lines) else ""
+            ownership_line = ownership_lines[i] if i < len(ownership_lines) else ""
+            
+            # Pad the financial line to consistent width
+            financial_padded = f"{financial_line:<50}"
+            print(f"{financial_padded} {ownership_line}")
+    
     def create_trade_menu(self) -> None:
         """Create the trading menu display."""
         if has_rich_support() and self.console:
@@ -618,6 +895,40 @@ def create_summary_table(summary_data: Dict[str, float],
     """
     formatter = TableFormatter(data_dir=data_dir)
     return formatter.create_summary_table(summary_data, output_format)
+
+
+def create_unified_financial_table(stats_data: Dict[str, float], 
+                                   summary_data: Dict[str, float],
+                                   data_dir: Optional[str] = None) -> None:
+    """Create a unified financial overview table combining statistics and summary.
+    
+    Convenience function that creates a TableFormatter instance and displays unified financial table.
+    
+    Args:
+        stats_data: Dictionary of portfolio statistics
+        summary_data: Dictionary of financial summary data
+        data_dir: Optional data directory path for context
+    """
+    formatter = TableFormatter(data_dir=data_dir)
+    formatter.create_unified_financial_table(stats_data, summary_data)
+
+
+def create_financial_and_ownership_tables(stats_data: Dict[str, float], 
+                                         summary_data: Dict[str, float],
+                                         ownership_data: Dict[str, Dict[str, Any]],
+                                         data_dir: Optional[str] = None) -> None:
+    """Create financial overview and ownership tables side by side.
+    
+    Convenience function that creates a TableFormatter instance and displays side-by-side tables.
+    
+    Args:
+        stats_data: Dictionary of portfolio statistics
+        summary_data: Dictionary of financial summary data
+        ownership_data: Dictionary of ownership information by contributor
+        data_dir: Optional data directory path for context
+    """
+    formatter = TableFormatter(data_dir=data_dir)
+    formatter.create_financial_and_ownership_tables(stats_data, summary_data, ownership_data)
 
 
 def print_trade_menu(data_dir: Optional[str] = None) -> None:

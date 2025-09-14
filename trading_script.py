@@ -587,74 +587,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 'total_realized_pnl': total_realized_pnl,
                 'total_portfolio_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)) + total_realized_pnl
             }
-            table_formatter.create_statistics_table(stats_data)
-            print()  # Add spacing
-        except Exception as e:
-            logger.debug(f"Could not calculate portfolio statistics: {e}")
-            print_warning(f"Could not display portfolio statistics: {e}")
-        
-        # Calculate and display ownership information
-        try:
             
-            if fund_contributions:
-                ownership_raw = position_calculator.calculate_ownership_percentages(
-                    fund_contributions, Decimal(str(total_portfolio_value))
-                )
-                # Map field names for table formatter
-                ownership_data = {}
-
-                # Calculate total shares in portfolio for proportional ownership
-                try:
-                    total_shares = sum(float(pos.shares) for pos in updated_positions) if updated_positions else 0
-                    logger.debug(f"Calculated total shares: {total_shares}")
-                except Exception as calc_error:
-                    logger.warning(f"Could not calculate total shares: {calc_error}")
-                    total_shares = 0
-
-                for contributor, data in ownership_raw.items():
-                    ownership_pct = float(data.get('ownership_percentage', 0))
-                    # Calculate proportional shares owned by this contributor
-                    # Since this is a pooled fund, shares are owned collectively, but we show
-                    # proportional ownership based on each contributor's percentage of the fund
-                    contributor_shares = (ownership_pct / 100) * total_shares if total_shares > 0 else 0
-
-                    ownership_data[contributor] = {
-                        'shares': contributor_shares,  # Proportional share ownership
-                        'contributed': float(data.get('net_contribution', 0)),
-                        'ownership_pct': ownership_pct,
-                        'current_value': float(data.get('current_value', 0))
-                    }
-
-                    logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
-
-                # Create the ownership table
-                logger.debug(f"Creating ownership table with {len(ownership_data)} contributors")
-                table_formatter.create_ownership_table(ownership_data)
-                print()  # Add spacing
-        except Exception as e:
-            logger.error(f"Could not calculate ownership data: {e}")
-            # Try to show a basic ownership table as fallback
-            try:
-                if fund_contributions and ownership_raw:
-                    logger.debug("Attempting fallback ownership table...")
-                    fallback_ownership_data = {}
-                    for contributor, data in ownership_raw.items():
-                        fallback_ownership_data[contributor] = {
-                            'shares': 0.0,  # Fallback to 0 shares
-                            'contributed': float(data.get('net_contribution', 0)),
-                            'ownership_pct': float(data.get('ownership_percentage', 0)),
-                            'current_value': float(data.get('current_value', 0))
-                        }
-                    table_formatter.create_ownership_table(fallback_ownership_data)
-                    print()  # Add spacing
-                    logger.info("Displayed fallback ownership table")
-            except Exception as fallback_e:
-                logger.error(f"Fallback ownership table also failed: {fallback_e}")
-                print_warning("Could not display ownership information")
-        
-        # Display financial summary
-        try:
-            # Load cash balance
+            # Load cash balance for summary
             cash_balance = 0
             try:
                 cash_file = Path(repository.data_dir) / "cash_balances.json"
@@ -665,15 +599,59 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception as e:
                 logger.debug(f"Could not load cash balance: {e}")
             
+            # Prepare summary data
             summary_data = {
                 'portfolio_value': float(total_portfolio_value),
                 'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)),
                 'cash_balance': float(cash_balance),
                 'fund_contributions': float(stats_data.get('total_contributions', 0))
             }
-            table_formatter.create_summary_table(summary_data)
+            
+            # Calculate ownership information to display alongside financial overview
+            ownership_data = {}
+            try:
+                if fund_contributions:
+                    ownership_raw = position_calculator.calculate_ownership_percentages(
+                        fund_contributions, Decimal(str(total_portfolio_value))
+                    )
+                    
+                    # Calculate total shares in portfolio for proportional ownership
+                    try:
+                        total_shares = sum(float(pos.shares) for pos in updated_positions) if updated_positions else 0
+                        logger.debug(f"Calculated total shares: {total_shares}")
+                    except Exception as calc_error:
+                        logger.warning(f"Could not calculate total shares: {calc_error}")
+                        total_shares = 0
+
+                    for contributor, data in ownership_raw.items():
+                        ownership_pct = float(data.get('ownership_percentage', 0))
+                        # Calculate proportional shares owned by this contributor
+                        # Since this is a pooled fund, shares are owned collectively, but we show
+                        # proportional ownership based on each contributor's percentage of the fund
+                        contributor_shares = (ownership_pct / 100) * total_shares if total_shares > 0 else 0
+
+                        ownership_data[contributor] = {
+                            'shares': contributor_shares,  # Proportional share ownership
+                            'contributed': float(data.get('net_contribution', 0)),
+                            'ownership_pct': ownership_pct,
+                            'current_value': float(data.get('current_value', 0))
+                        }
+
+                        logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
+            except Exception as e:
+                logger.error(f"Could not calculate ownership data: {e}")
+            
+            # Display financial overview and ownership tables side by side
+            if ownership_data:
+                table_formatter.create_financial_and_ownership_tables(stats_data, summary_data, ownership_data)
+            else:
+                # Fallback to just financial table if no ownership data
+                table_formatter.create_unified_financial_table(stats_data, summary_data)
+            
+            print()  # Add spacing
         except Exception as e:
-            logger.debug(f"Could not create financial summary: {e}")
+            logger.debug(f"Could not calculate portfolio statistics or financial summary: {e}")
+            print_warning(f"Could not display portfolio metrics: {e}")
         
         # Display market timing information
         try:

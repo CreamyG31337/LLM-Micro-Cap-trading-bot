@@ -319,7 +319,7 @@ class CSVRepository(BaseRepository):
             
             # Ensure proper column order
             expected_columns = [
-                'Date', 'Ticker', 'Shares Bought', 'Buy Price', 
+                'Date', 'Ticker', 'Shares', 'Price', 
                 'Cost Basis', 'PnL', 'Reason'
             ]
             
@@ -473,7 +473,7 @@ class CSVRepository(BaseRepository):
             # Check trade log file
             if self.trade_log_file.exists():
                 df = pd.read_csv(self.trade_log_file)
-                required_columns = ['Date', 'Ticker', 'Shares Bought', 'Buy Price']
+                required_columns = ['Date', 'Ticker', 'Shares', 'Price']
                 missing_columns = [col for col in required_columns if col not in df.columns]
                 if missing_columns:
                     issues.append(f"Trade log file missing columns: {missing_columns}")

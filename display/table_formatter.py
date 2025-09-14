@@ -125,7 +125,7 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('🏢')} Company", style="white", no_wrap=True, max_width=company_max_width, justify="left")
         table.add_column(f"{_safe_emoji('📅')} Opened", style="dim", no_wrap=True, width=10)
         table.add_column(f"{_safe_emoji('📈')} Shares", justify="right", style="green", width=10)
-        table.add_column(f"{_safe_emoji('💵')} Buy Price", justify="right", style="blue", width=10)
+        table.add_column(f"{_safe_emoji('💵')} Price", justify="right", style="blue", width=10)
         table.add_column(f"{_safe_emoji('💰')} Current", justify="right", style="yellow", width=10)
         table.add_column(f"{_safe_emoji('💵')} Total Value", justify="right", style="yellow", width=12)
         table.add_column(f"{_safe_emoji('📊')} Total P&L", justify="right", style="magenta", width=16)
@@ -272,7 +272,7 @@ class TableFormatter:
                 'Company': position.get('company', 'N/A'),
                 'Opened': position.get('opened_date', 'N/A'),
                 'Shares': f"{shares:.4f}",
-                'Buy Price': f"${avg_price:.2f}",
+                'Price': f"${avg_price:.2f}",
                 'Current': f"${current_price:.2f}" if current_price > 0 else "N/A",
                 'Total Value': f"${total_value:.2f}" if total_value > 0 else "N/A",
                 'Dollar P&L': f"${abs(unrealized_pnl):,.2f}" if unrealized_pnl != 0 else "$0.00",
@@ -337,7 +337,7 @@ class TableFormatter:
                         <th>🏢 Company</th>
                         <th>📅 Opened</th>
                         <th>📈 Shares</th>
-                        <th>💵 Buy Price</th>
+                        <th>💵 Price</th>
                         <th>💰 Current</th>
                         <th>💵 Total Value</th>
                         <th>📊 Total P&L</th>
@@ -381,7 +381,7 @@ class TableFormatter:
                         <td>{position.get('company_name', 'N/A')}</td>
                         <td>{position.get('opened_date', 'N/A')}</td>
                         <td>{float(position.get('shares', 0)):.4f}</td>
-                        <td>${float(position.get('buy_price', 0)):.2f}</td>
+                        <td>${float(position.get('avg_price', 0)):.2f}</td>
                         <td>${float(position.get('current_price', 0)):.2f}</td>
                         <td>${total_value:.2f}</td>
                         <td>{total_pnl_display}</td>

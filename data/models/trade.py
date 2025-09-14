@@ -118,8 +118,8 @@ class Trade:
         return {
             'Date': date_str,
             'Ticker': self.ticker,
-            'Shares Bought': float(self.shares),
-            'Buy Price': float(self.price),
+            'Shares': float(self.shares),
+            'Price': float(self.price),
             'Cost Basis': float(self.cost_basis) if self.cost_basis is not None else 0.0,
             'PnL': float(self.pnl) if self.pnl is not None else 0.0,
             'Reason': self.reason or ''
@@ -172,12 +172,12 @@ class Trade:
         if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
             action = 'SELL'
             # For sell trades, use the sell price and shares sold
-            shares = safe_decimal_convert(data.get('Shares Bought', 0))  # This should be shares sold
-            price = safe_decimal_convert(data.get('Buy Price', 0))  # This should be sell price
+            shares = safe_decimal_convert(data.get('Shares', 0))  # This should be shares sold
+            price = safe_decimal_convert(data.get('Price', 0))  # This should be sell price
         else:
             action = 'BUY'
-            shares = safe_decimal_convert(data.get('Shares Bought', 0))
-            price = safe_decimal_convert(data.get('Buy Price', 0))
+            shares = safe_decimal_convert(data.get('Shares', 0))
+            price = safe_decimal_convert(data.get('Price', 0))
         
         return cls(
             ticker=str(data.get('Ticker', '')),

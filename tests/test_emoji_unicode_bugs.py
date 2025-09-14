@@ -174,7 +174,7 @@ class TestPandasUnicodeBugs:
                 'Company': 'Apple Inc.',
                 'Opened': '01-01-24',
                 'Shares': '10.0000',
-                'Buy Price': '$150.00',
+                'Price': '$150.00',
                 'Current': '$155.00',
                 'Total Value': '$1550.00',
                 'Dollar P&L': '$50.00',

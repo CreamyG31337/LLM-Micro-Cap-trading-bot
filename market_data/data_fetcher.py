@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, cast
 
 import pandas as pd
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,17 @@ class MarketDataFetcher:
         """
         self.cache = cache_instance
         self.proxy_map = PROXY_MAP.copy()
+        
+        # In-memory fundamentals cache (TTL-based)
+        self._fund_cache: Dict[str, Dict[str, Any]] = {}
+        self._fund_cache_meta: Dict[str, Dict[str, Any]] = {}
+        self._fund_cache_ttl = timedelta(minutes=60)
+        
+        # Attempt to load fundamentals cache from disk
+        try:
+            self._load_fundamentals_cache()
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Could not load fundamentals cache: {e}")
     
     def fetch_price_data(
         self,
@@ -335,3 +347,273 @@ class MarketDataFetcher:
         """Cache the fetch result if cache is available."""
         if self.cache and not result.df.empty:
             self.cache.cache_price_data(ticker, result.df, result.source)
+    
+    # -------------------- Fundamentals cache persistence --------------------
+    def _get_fund_cache_path(self) -> Optional[Path]:
+        """Determine the cache file path for fundamentals."""
+        try:
+            if self.cache and getattr(self.cache, 'settings', None):
+                from config.settings import Settings  # type: ignore
+                data_dir = self.cache.settings.get_data_directory()
+                cache_dir = Path(data_dir) / ".cache"
+            else:
+                # Fallback to current working directory .cache
+                cache_dir = Path.cwd() / ".cache"
+            cache_dir.mkdir(exist_ok=True)
+            return cache_dir / "fundamentals_cache.json"
+        except Exception:
+            return None
+    
+    def _load_fundamentals_cache(self) -> None:
+        """Load fundamentals cache from disk if available."""
+        path = self._get_fund_cache_path()
+        if not path or not path.exists():
+            return
+        import json
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            entries: Dict[str, Dict[str, Any]] = data.get('entries', {})
+            ttl_minutes: int = data.get('default_ttl_minutes', int(self._fund_cache_ttl.total_minutes()) if hasattr(self._fund_cache_ttl, 'total_minutes') else int(self._fund_cache_ttl.total_seconds() // 60))
+            default_ttl = timedelta(minutes=ttl_minutes)
+            for ticker_key, payload in entries.items():
+                fund = payload.get('data', {})
+                ts_str = payload.get('ts')
+                ttl_min = payload.get('ttl_minutes', ttl_minutes)
+                try:
+                    ts = datetime.fromisoformat(ts_str) if ts_str else None
+                except Exception:
+                    ts = None
+                # Skip expired entries
+                if ts and (datetime.now() - ts) < timedelta(minutes=ttl_min):
+                    self._fund_cache[ticker_key] = fund
+                    self._fund_cache_meta[ticker_key] = {
+                        'ts': ts,
+                        'ttl': timedelta(minutes=ttl_min) if ttl_min else default_ttl
+                    }
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Failed to load fundamentals cache: {e}")
+    
+    def _save_fundamentals_cache(self) -> None:
+        """Save fundamentals cache to disk."""
+        path = self._get_fund_cache_path()
+        if not path:
+            return
+        import json
+        try:
+            # Build serializable structure
+            entries: Dict[str, Any] = {}
+            for ticker_key, fund in self._fund_cache.items():
+                meta = self._fund_cache_meta.get(ticker_key, {})
+                ts = meta.get('ts')
+                ttl = meta.get('ttl', self._fund_cache_ttl)
+                entries[ticker_key] = {
+                    'data': fund,
+                    'ts': ts.isoformat() if isinstance(ts, datetime) else None,
+                    'ttl_minutes': int(ttl.total_seconds() // 60) if isinstance(ttl, timedelta) else int(self._fund_cache_ttl.total_seconds() // 60)
+                }
+            payload = {
+                'entries': entries,
+                'default_ttl_minutes': int(self._fund_cache_ttl.total_seconds() // 60)
+            }
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Failed to save fundamentals cache: {e}")
+    
+    def fetch_fundamentals(self, ticker: str) -> Dict[str, Any]:
+        """Fetch fundamental data for a ticker using yfinance with TTL cache.
+        
+        Returns:
+            Dict with keys: sector, industry, country, marketCap, trailingPE, 
+            dividendYield, fiftyTwoWeekHigh, fiftyTwoWeekLow, or "N/A" if unavailable
+        """
+        ticker_key = ticker.upper().strip()
+        # Check in-memory TTL cache first
+        meta = self._fund_cache_meta.get(ticker_key)
+        if meta:
+            ts: datetime = meta.get('ts')
+            ttl: timedelta = meta.get('ttl', self._fund_cache_ttl)
+            if ts and (datetime.now() - ts) < ttl:
+                cached = self._fund_cache.get(ticker_key)
+                if cached:
+                    return cached
+            else:
+                # Expired
+                self._fund_cache.pop(ticker_key, None)
+                self._fund_cache_meta.pop(ticker_key, None)
+        
+        fundamentals = {
+            'sector': 'N/A',
+            'industry': 'N/A', 
+            'country': 'N/A',
+            'marketCap': 'N/A',
+            'trailingPE': 'N/A',
+            'dividendYield': 'N/A',
+            'fiftyTwoWeekHigh': 'N/A',
+            'fiftyTwoWeekLow': 'N/A'
+        }
+        
+        try:
+            import yfinance as yf
+            
+            # Suppress yfinance logging
+            logging.getLogger("yfinance").setLevel(logging.ERROR)
+            
+            ticker_obj = yf.Ticker(ticker)
+            
+            # Try new get_info() first, fallback to .info for compatibility
+            info = {}
+            try:
+                get_info = getattr(ticker_obj, 'get_info', None)
+                if callable(get_info):
+                    info = get_info() or {}
+            except Exception:
+                info = {}
+            if not info:
+                try:
+                    info = ticker_obj.info or {}
+                except Exception:
+                    info = {}
+            
+            # fast_info for performant fields
+            try:
+                finfo = getattr(ticker_obj, 'fast_info', None)
+            except Exception:
+                finfo = None
+            finfo = finfo or {}
+            
+            # Current price (for computed dividend yield)
+            price = None
+            try:
+                price = finfo.get('last_price')
+            except Exception:
+                price = None
+            if not price:
+                # Fallback to recent close
+                try:
+                    pr = self.fetch_price_data(ticker, period='5d')
+                    if not pr.df.empty and 'Close' in pr.df.columns:
+                        price = float(pr.df['Close'].iloc[-1])
+                except Exception:
+                    price = None
+            
+            # Extract available fields with fallbacks
+            fundamentals['sector'] = info.get('sector', 'N/A') or 'N/A'
+            fundamentals['industry'] = info.get('industry', 'N/A') or 'N/A'
+            fundamentals['country'] = info.get('country', 'N/A') or 'N/A'
+            
+            # Market cap with formatting - check for ETF first
+            company_name = info.get('longName', ticker) or ticker
+            market_cap = info.get('marketCap')
+            if 'ETF' in company_name.upper():
+                fundamentals['marketCap'] = 'ETF'
+            else:
+                if not market_cap and finfo:
+                    market_cap = finfo.get('market_cap')
+                if market_cap and isinstance(market_cap, (int, float)) and market_cap > 0:
+                    if market_cap >= 1e9:
+                        fundamentals['marketCap'] = f"${market_cap/1e9:.2f}B"
+                    elif market_cap >= 1e6:
+                        fundamentals['marketCap'] = f"${market_cap/1e6:.1f}M"
+                    else:
+                        fundamentals['marketCap'] = f"${market_cap:,.0f}"
+            
+            # P/E ratio
+            pe_ratio = info.get('trailingPE')
+            if not pe_ratio and finfo:
+                pe_ratio = finfo.get('trailing_pe')
+            if pe_ratio and isinstance(pe_ratio, (int, float)) and pe_ratio > 0:
+                fundamentals['trailingPE'] = f"{pe_ratio:.1f}"
+                
+            # Dividend yield (prefer computed from last 365 days of dividends)
+            computed_yield = None
+            try:
+                div_series = ticker_obj.dividends
+                if div_series is not None and not div_series.empty and price and price > 0:
+                    recent = div_series[div_series.index >= pd.Timestamp.now() - pd.Timedelta(days=365)]
+                    if not recent.empty:
+                        annual_div = float(recent.sum())
+                        if annual_div > 0:
+                            computed_yield = (annual_div / float(price)) * 100.0
+            except Exception:
+                computed_yield = None
+            
+            if computed_yield is not None:
+                fundamentals['dividendYield'] = f"{computed_yield:.1f}%"
+            else:
+                # Normalize possibly inconsistent API fields
+                div_yield = info.get('dividendYield')
+                if not div_yield:
+                    div_yield = info.get('trailingAnnualDividendYield')
+                if div_yield and isinstance(div_yield, (int, float)) and div_yield > 0:
+                    if div_yield > 1.0:
+                        # Assume already percent
+                        fundamentals['dividendYield'] = f"{div_yield:.1f}%"
+                    else:
+                        fundamentals['dividendYield'] = f"{div_yield*100:.1f}%"
+            
+            # 52-week high/low
+            high_52w = info.get('fiftyTwoWeekHigh')
+            low_52w = info.get('fiftyTwoWeekLow')
+            # Try fast_info names
+            if not high_52w and finfo:
+                high_52w = finfo.get('year_high') or finfo.get('fifty_two_week_high')
+            if not low_52w and finfo:
+                low_52w = finfo.get('year_low') or finfo.get('fifty_two_week_low')
+            
+            # As a final fallback, compute from last ~1y of history
+            if (not high_52w or not low_52w):
+                try:
+                    hist = self.fetch_price_data(ticker, period='1y')
+                    if not hist.df.empty:
+                        if not high_52w and 'High' in hist.df.columns:
+                            high_52w = float(hist.df['High'].max())
+                        if not low_52w and 'Low' in hist.df.columns:
+                            low_52w = float(hist.df['Low'].min())
+                except Exception:
+                    pass
+            
+            if high_52w and isinstance(high_52w, (int, float)):
+                fundamentals['fiftyTwoWeekHigh'] = f"${high_52w:.2f}"
+            if low_52w and isinstance(low_52w, (int, float)):
+                fundamentals['fiftyTwoWeekLow'] = f"${low_52w:.2f}"
+                
+            # Normalize country names and apply fallbacks
+            country = fundamentals['country']
+            if country and country != 'N/A':
+                # Normalize common country names to shorter versions
+                country_map = {
+                    'United States': 'USA',
+                    'United States of America': 'USA',
+                    'US': 'USA',
+                    'Canada': 'Canada',
+                    'United Kingdom': 'UK',
+                    'Great Britain': 'UK'
+                }
+                fundamentals['country'] = country_map.get(country, country)
+            
+            # Country fallback based on ticker suffix
+            if fundamentals['country'] == 'N/A':
+                if ticker.endswith('.TO') or ticker.endswith('.V'):
+                    fundamentals['country'] = 'Canada'
+                else:
+                    fundamentals['country'] = 'USA'
+                    
+        except Exception as e:
+            logger.debug(f"Fundamentals fetch failed for {ticker}: {e}")
+            
+        # Store in cache (even if partial) to avoid repeated calls in same run
+        self._fund_cache[ticker_key] = fundamentals
+        self._fund_cache_meta[ticker_key] = {
+            'ts': datetime.now(),
+            'ttl': self._fund_cache_ttl
+        }
+        
+        # Persist to disk (best-effort)
+        try:
+            self._save_fundamentals_cache()
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Could not save fundamentals cache: {e}")
+        
+        return fundamentals

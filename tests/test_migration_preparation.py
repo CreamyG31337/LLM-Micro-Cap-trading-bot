@@ -234,8 +234,8 @@ class TestDataModelSerialization(unittest.TestCase):
         # Test CSV serialization
         csv_data = trade.to_csv_dict()
         self.assertIn('Ticker', csv_data)
-        self.assertIn('Shares Bought', csv_data)
-        self.assertIn('Buy Price', csv_data)
+        self.assertIn('Shares', csv_data)
+        self.assertIn('Price', csv_data)
         self.assertEqual(csv_data['Ticker'], 'GOOGL')
         self.assertEqual(csv_data['Reason'], 'Strong fundamentals')
         
@@ -764,8 +764,8 @@ class TestBackupRestoreFunctionality(unittest.TestCase):
             trade = Trade(
                 ticker=t_data.get('Ticker', ''),
                 action="BUY",  # Simplified
-                shares=Decimal(str(t_data.get('Shares Bought', 0))),
-                price=Decimal(str(t_data.get('Buy Price', 0))),
+                shares=Decimal(str(t_data.get('Shares', 0))),
+                price=Decimal(str(t_data.get('Price', 0))),
                 timestamp=datetime.now(timezone.utc),  # Simplified
                 cost_basis=Decimal(str(t_data.get('Cost Basis', 0))),
                 reason=t_data.get('Reason', '')

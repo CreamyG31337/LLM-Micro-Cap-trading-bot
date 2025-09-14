@@ -166,20 +166,20 @@ def validate_trade_data(trade_df: pd.DataFrame) -> List[str]:
         return issues  # Empty trade log is valid
     
     # Check required columns
-    required_columns = ['Date', 'Ticker', 'Shares Bought', 'Buy Price']
+    required_columns = ['Date', 'Ticker', 'Shares', 'Price']
     missing_columns = [col for col in required_columns if col not in trade_df.columns]
     if missing_columns:
         issues.append(f"Trade data missing required columns: {missing_columns}")
         return issues  # Can't continue validation without required columns
     
     # Check for zero or negative shares
-    if (trade_df['Shares Bought'] <= 0).any():
-        invalid_shares_count = (trade_df['Shares Bought'] <= 0).sum()
+    if (trade_df['Shares'] <= 0).any():
+        invalid_shares_count = (trade_df['Shares'] <= 0).sum()
         issues.append(f"Trade log contains {invalid_shares_count} trades with zero or negative shares")
     
     # Check for zero or negative prices
-    if (trade_df['Buy Price'] <= 0).any():
-        invalid_price_count = (trade_df['Buy Price'] <= 0).sum()
+    if (trade_df['Price'] <= 0).any():
+        invalid_price_count = (trade_df['Price'] <= 0).sum()
         issues.append(f"Trade log contains {invalid_price_count} trades with zero or negative prices")
     
     # Check for invalid tickers
@@ -194,7 +194,7 @@ def validate_trade_data(trade_df: pd.DataFrame) -> List[str]:
             issues.append(f"... and {len(invalid_tickers) - 5} more invalid tickers")
     
     # Check for precision issues in monetary columns
-    monetary_columns = ['Buy Price', 'Stop Loss', 'Current Price', 'Total Value', 'PnL']
+    monetary_columns = ['Price', 'Stop Loss', 'Current Price', 'Total Value', 'PnL']
     for col in monetary_columns:
         if col in trade_df.columns:
             precision_issues = []

@@ -71,8 +71,8 @@ def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
         
         for _, trade in trade_df.iterrows():
             ticker = trade['Ticker']
-            shares = float(trade['Shares Bought'])
-            price = float(trade['Buy Price'])
+            shares = float(trade['Shares'])
+            price = float(trade['Price'])
             cost = float(trade['Cost Basis'])
             pnl = float(trade['PnL'])
             reason = trade['Reason']
@@ -107,8 +107,8 @@ def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
         for _, trade in trade_df.iterrows():
             ticker = trade['Ticker']
             date = trade['Date']
-            shares = float(trade['Shares Bought'])
-            price = float(trade['Buy Price'])
+            shares = float(trade['Shares'])
+            price = float(trade['Price'])
             cost = float(trade['Cost Basis'])
             pnl = float(trade['PnL'])
             reason = trade['Reason']

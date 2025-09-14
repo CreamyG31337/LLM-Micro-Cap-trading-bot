@@ -134,11 +134,11 @@ class PriceCorrectionUtility:
             
             if not matching_trades.empty:
                 if action == 'BUY':
-                    return float(matching_trades['Buy Price'].iloc[0])
+                    return float(matching_trades['Price'].iloc[0])
                 elif action == 'SELL':
                     # For SELL actions, we might need to calculate from PnL or have a separate column
                     # For now, assume we can derive from the trade data
-                    return float(matching_trades['Buy Price'].iloc[0])  # Placeholder
+                    return float(matching_trades['Price'].iloc[0])  # Placeholder
             
             return None
             

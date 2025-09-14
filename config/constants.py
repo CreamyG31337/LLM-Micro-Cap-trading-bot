@@ -75,7 +75,7 @@ PORTFOLIO_CSV_COLUMNS = [
 ]
 
 TRADE_LOG_CSV_COLUMNS = [
-    'Date', 'Ticker', 'Shares Bought', 'Buy Price', 
+    'Date', 'Ticker', 'Shares', 'Price', 
     'Cost Basis', 'PnL', 'Reason'
 ]
 

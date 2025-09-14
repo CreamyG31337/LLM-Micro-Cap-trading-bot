@@ -197,7 +197,7 @@ class TestTrade(unittest.TestCase):
         # Test to_csv_dict
         csv_data = trade.to_csv_dict()
         expected_keys = [
-            'Date', 'Ticker', 'Shares Bought', 'Buy Price', 'Cost Basis', 'PnL', 'Reason'
+            'Date', 'Ticker', 'Shares', 'Price', 'Cost Basis', 'PnL', 'Reason'
         ]
         
         for key in expected_keys:

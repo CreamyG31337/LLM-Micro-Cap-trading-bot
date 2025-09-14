@@ -64,8 +64,8 @@ def merge_backups_intelligently():
     sell_trade = hlit_sell.iloc[0]
     print(f"\n🔍 Found HLIT.TO sell trade:")
     print(f"   Date: {sell_trade['Date']}")
-    print(f"   Shares: {sell_trade['Shares Bought']}")
-    print(f"   Price: ${sell_trade['Buy Price']}")
+    print(f"   Shares: {sell_trade['Shares']}")
+    print(f"   Price: ${sell_trade['Price']}")
     print(f"   PnL: ${sell_trade['PnL']}")
     
     # Start with the latest backup (has all recent data)
@@ -94,8 +94,8 @@ def merge_backups_intelligently():
     
     # Add the HLIT.TO sell entry
     sell_date = sell_trade['Date']
-    sell_shares = float(sell_trade['Shares Bought'])
-    sell_price = float(sell_trade['Buy Price'])
+    sell_shares = float(sell_trade['Shares'])
+    sell_price = float(sell_trade['Price'])
     sell_pnl = float(sell_trade['PnL'])
     
     sell_entry = {

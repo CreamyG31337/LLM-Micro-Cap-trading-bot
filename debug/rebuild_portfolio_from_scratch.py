@@ -155,8 +155,8 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         for _, trade in trade_df.iterrows():
             ticker = trade['Ticker']
             date = trade['Date']
-            shares = Decimal(str(trade['Shares Bought']))  # Keep original precision
-            price = Decimal(str(trade['Buy Price']))
+            shares = Decimal(str(trade['Shares']))  # Keep original precision
+            price = Decimal(str(trade['Price']))
             cost = Decimal(str(trade['Cost Basis']))
             pnl = Decimal(str(trade['PnL']))
             reason = trade['Reason']
@@ -287,7 +287,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                 trade_date = trade['Date']
                 if trade_date <= hold_date:
                     ticker = trade['Ticker']
-                    shares = Decimal(str(trade['Shares Bought']))  # Keep original precision
+                    shares = Decimal(str(trade['Shares']))  # Keep original precision
                     cost = Decimal(str(trade['Cost Basis']))
                     reason = trade['Reason']
                     

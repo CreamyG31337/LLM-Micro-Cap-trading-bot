@@ -28,15 +28,28 @@ class Trade:
     
     def __post_init__(self):
         """Convert string values to Decimal for financial fields."""
-        # Convert string values to Decimal for financial fields
-        if isinstance(self.shares, str):
-            self.shares = Decimal(self.shares)
-        if isinstance(self.price, str):
-            self.price = Decimal(self.price)
-        if isinstance(self.cost_basis, str):
-            self.cost_basis = Decimal(self.cost_basis)
-        if isinstance(self.pnl, str):
-            self.pnl = Decimal(self.pnl)
+        # Convert string values to Decimal for financial fields with error handling
+        def safe_decimal_convert(value, default_value=None):
+            """Safely convert value to Decimal, handling errors gracefully."""
+            if value is None:
+                return default_value
+            try:
+                if isinstance(value, str):
+                    # Handle empty strings and 'nan' strings
+                    value = value.strip()
+                    if not value or value.lower() == 'nan' or value.lower() == 'none':
+                        return default_value
+                return Decimal(str(value))
+            except (ValueError, TypeError, ArithmeticError):
+                return default_value
+        
+        # Convert required fields (cannot be None)
+        self.shares = safe_decimal_convert(self.shares, Decimal('0'))
+        self.price = safe_decimal_convert(self.price, Decimal('0'))
+        
+        # Convert optional fields (can be None)
+        self.cost_basis = safe_decimal_convert(self.cost_basis, None) if self.cost_basis is not None else None
+        self.pnl = safe_decimal_convert(self.pnl, None) if self.pnl is not None else None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for CSV/JSON serialization.
@@ -131,16 +144,40 @@ class Trade:
             timestamp = datetime.now()
         
         # Determine action based on reason or other indicators
-        reason = data.get('Reason', '').lower()
+        reason_raw = data.get('Reason', '')
+        # Handle case where Reason might be NaN/float or other non-string type
+        try:
+            if reason_raw is None or (hasattr(reason_raw, '__class__') and 'float' in str(reason_raw.__class__) and str(reason_raw).lower() == 'nan'):
+                reason = ''
+            elif isinstance(reason_raw, str):
+                reason = reason_raw.lower()
+            else:
+                reason = str(reason_raw).lower()
+        except (AttributeError, ValueError):
+            reason = ''
+        # Safe decimal conversion helper (define before use)
+        def safe_decimal_convert(value, default_value=Decimal('0')):
+            """Safely convert value to Decimal, handling errors gracefully."""
+            if value is None:
+                return default_value
+            try:
+                if isinstance(value, str):
+                    value = value.strip()
+                    if not value or value.lower() == 'nan' or value.lower() == 'none':
+                        return default_value
+                return Decimal(str(value))
+            except (ValueError, TypeError, ArithmeticError):
+                return default_value
+        
         if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
             action = 'SELL'
             # For sell trades, use the sell price and shares sold
-            shares = Decimal(str(data.get('Shares Bought', 0)))  # This should be shares sold
-            price = Decimal(str(data.get('Buy Price', 0)))  # This should be sell price
+            shares = safe_decimal_convert(data.get('Shares Bought', 0))  # This should be shares sold
+            price = safe_decimal_convert(data.get('Buy Price', 0))  # This should be sell price
         else:
             action = 'BUY'
-            shares = Decimal(str(data.get('Shares Bought', 0)))
-            price = Decimal(str(data.get('Buy Price', 0)))
+            shares = safe_decimal_convert(data.get('Shares Bought', 0))
+            price = safe_decimal_convert(data.get('Buy Price', 0))
         
         return cls(
             ticker=str(data.get('Ticker', '')),
@@ -148,8 +185,8 @@ class Trade:
             shares=shares,
             price=price,
             timestamp=timestamp,
-            cost_basis=Decimal(str(data.get('Cost Basis', 0))),
-            pnl=Decimal(str(data.get('PnL', 0))),
+            cost_basis=safe_decimal_convert(data.get('Cost Basis', 0)),
+            pnl=safe_decimal_convert(data.get('PnL', 0)),
             reason=data.get('Reason'),
             currency='CAD'  # Default currency
         )

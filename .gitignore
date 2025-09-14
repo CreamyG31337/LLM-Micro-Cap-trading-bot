@@ -212,10 +212,15 @@ my trading/*.csv
 my trading/*.json
 test_data/*.csv
 test_data/*.json
+trading_data/*.csv
+trading_data/*.json
+trading_data/**/*.csv
+trading_data/**/*.json
 
 # Ignore backup folders and files
 my trading/backups/
 test_data/backups/
+trading_data/backups/
 **/backups/
 *.backup_*
 *.backup
@@ -223,6 +228,8 @@ test_data/backups/
 # Allow README files and folder structure to be tracked
 !my trading/README.md
 !test_data/README.md
+!trading_data/README.md
+!trading_data/*/README.md
 Results.png
 
 # Runtime files - should not be tracked

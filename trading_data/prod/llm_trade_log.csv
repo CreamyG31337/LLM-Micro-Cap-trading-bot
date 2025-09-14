@@ -1,4 +1,4 @@
-Date,Ticker,Shares Bought,Buy Price,Cost Basis,PnL,Reason
+Date,Ticker,Shares,Price,Cost Basis,PnL,Reason
 2025-09-08 06:30:00 PDT,CTRN,9.2961,37.65,350.0,0.0,MANUAL BUY MOO - Filled
 2025-09-08 06:30:00 PDT,VEE.TO,2.4987,43.37,108.38,0.0,MANUAL BUY MOO - Filled
 2025-09-08 06:30:00 PDT,GMIN.TO,19.9661,22.54,450.0,0.0,MANUAL BUY MOO - Filled

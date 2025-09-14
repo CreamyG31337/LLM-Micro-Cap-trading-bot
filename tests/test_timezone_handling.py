@@ -132,8 +132,8 @@ class TestTimezoneHandling(unittest.TestCase):
         problematic_data = {
             'Date': '2025-09-12 06:30:00 ',  # Missing timezone, ends with space
             'Ticker': 'HLIT.TO',
-            'Shares Bought': 29.4502,
-            'Buy Price': 14.41,
+            'Shares': 29.4502,
+            'Price': 14.41,
             'Cost Basis': 449.999056,
             'PnL': -25.621674,
             'Reason': 'Limit sell order'

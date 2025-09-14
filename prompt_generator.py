@@ -99,12 +99,14 @@ class PromptGenerator:
         self.portfolio_manager = PortfolioManager(self.repository)
         
     def _get_market_data_table(self, portfolio_tickers: List[str]) -> List[List[str]]:
-        """Fetch market data for portfolio tickers and benchmarks"""
+        """Fetch market data for portfolio tickers and benchmarks
+        Returns rows with: [Ticker, Close, % Chg, Volume, Avg Vol (30d)]
+        """
         rows: List[List[str]] = []
         
-        # Get trading day window
+        # Get a longer historical window so we can compute 30d average volume
         start_d, end_d = self.market_hours.trading_day_window()
-        start_d = start_d - pd.Timedelta(days=4)  # Get more historical data
+        start_d = end_d - pd.Timedelta(days=90)  # ~3 months to ensure >=30 trading days
         
         # Get benchmarks (hardcoded for now, could be moved to config)
         benchmarks = ["SPY", "QQQ", "VTI"]
@@ -115,20 +117,46 @@ class PromptGenerator:
                 result = self.market_data_fetcher.fetch_price_data(ticker, start_d, end_d)
                 data = result.df
                 
-                if data.empty or len(data) < 2:
-                    rows.append([ticker, "—", "—", "—"])
+                if data.empty or len(data) < 2 or "Close" not in data.columns:
+                    rows.append([ticker, "—", "—", "—", "—"])
                     continue
                 
                 price = float(data["Close"].iloc[-1])
                 last_price = float(data["Close"].iloc[-2])
-                volume = float(data["Volume"].iloc[-1])
+                
+                # Last day volume
+                if "Volume" in data.columns and len(data["Volume"]) > 0:
+                    volume = float(data["Volume"].iloc[-1])
+                else:
+                    volume = float("nan")
+                
+                # 30-day average volume (last 30 trading days)
+                avg_vol_cell = "—"
+                if "Volume" in data.columns:
+                    vol_series = data["Volume"].dropna()
+                    if not vol_series.empty:
+                        avg30 = vol_series.tail(30).mean()
+                        if pd.notna(avg30):
+                            # Format volume in thousands (K) to save space
+                            if avg30 >= 1000:
+                                avg_vol_cell = f"{int(avg30/1000):,}K"
+                            else:
+                                avg_vol_cell = f"{int(avg30):,}"
                 
                 percent_change = ((price - last_price) / last_price) * 100
-                rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", f"{int(volume):,}"])
+                # Format current volume in thousands (K) to save space
+                if pd.notna(volume):
+                    if volume >= 1000:
+                        volume_cell = f"{int(volume/1000):,}K"
+                    else:
+                        volume_cell = f"{int(volume):,}"
+                else:
+                    volume_cell = "—"
+                rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", volume_cell, avg_vol_cell])
                 
             except Exception as e:
                 print(f"Warning: Failed to fetch data for {ticker}: {e}")
-                rows.append([ticker, "—", "—", "—"])
+                rows.append([ticker, "—", "—", "—", "—"])
                 
         return rows
         
@@ -187,11 +215,11 @@ class PromptGenerator:
         # Create enhanced portfolio display with colors
         # Color scheme: Cyan=tickers, Yellow=headers/prices, Blue=dates, Green/Red=P&L
         lines = []
-        lines.append(f"{Fore.CYAN}Portfolio Snapshot - {current_date}{Style.RESET_ALL}")
-        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total Value':>11} {'Dollar P&L':>11} {'Total P&L':>10} {'Daily P&L':>10}{Style.RESET_ALL}")
-        # Compute separator length dynamically: sum of column widths + spaces between (9)
-        _col_widths = [10, 25, 8, 8, 10, 10, 11, 11, 10, 10]
-        _sep_len = sum(_col_widths) + 9
+        # Header row only (section title printed above)
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Company':<25} {'Opened':<8} {'Shares':>8} {'Avg Price':>10} {'Current':>10} {'Total Value':>11} {'% Port':>9} {'Total P&L':>16} {'Daily P&L':>16}{Style.RESET_ALL}")
+        # Compute separator length dynamically
+        _col_widths = [10, 25, 8, 8, 10, 10, 11, 9, 16, 16]
+        _sep_len = sum(_col_widths) + (len(_col_widths) - 1)
         lines.append("-" * _sep_len)
         
         # Prepare data for sorting
@@ -263,6 +291,9 @@ class PromptGenerator:
         else:  # sort by value
             portfolio_rows.sort(key=lambda x: x['sort_key'], reverse=True)
 
+        # Compute total for percentage-of-portfolio column
+        grand_total_value = sum(item.get('total_value', 0.0) for item in portfolio_rows) or 0.0
+
         # Process sorted rows
         for item in portfolio_rows:
             row = item['row']
@@ -311,10 +342,26 @@ class PromptGenerator:
                 
                 # Use daily P&L from the row data (already calculated in trading script)
                 daily_pnl_dollar = row.get('daily_pnl', 'N/A')
+                
+                # Calculate proper daily P&L percentage for better color coding
+                daily_pnl_value = 0.0
                 if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
-                    daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
+                    # Extract dollar value from daily_pnl_dollar for percentage calculation
+                    try:
+                        # Remove $ and , and * characters, then convert to float
+                        daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
+                        # Calculate percentage based on current position value
+                        if total_value > 0:
+                            daily_pnl_pct = (daily_pnl_value / total_value) * 100
+                            daily_pnl_pct_str = f"{daily_pnl_pct:+.1f}%"
+                        else:
+                            daily_pnl_pct_str = "0.0%"
+                        daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
+                    except (ValueError, AttributeError):
+                        daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
                 else:
-                    daily_pnl = f"{daily_pnl_pct_str} [$0.00]"
+                    daily_pnl = f"0.0% [$0.00]"
+                    daily_pnl_value = 0.0
 
                 current_price_str = f"${current_price:.2f}"
                 buy_price_str = f"${buy_price:.2f}"
@@ -343,10 +390,18 @@ class PromptGenerator:
             ticker_cell = f"{ticker:<10}"
             company_cell = f"{display_name:<25}"
             opened_cell = f"{open_date:<8}"
-            shares_cell = f"{shares:>8.4f}"
+            shares_cell = f"{shares:>8.1f}"
             buy_price_cell = f"{buy_price_str:>10}"
             current_price_cell = f"{current_price_str:>10}"
             total_value_cell = f"{total_value_str:>11}"
+            # Percent of portfolio cell
+            if grand_total_value > 0:
+                pct_of_port = (total_value / grand_total_value) * 100
+                pct_of_port_str = f"{pct_of_port:.1f}%"
+            else:
+                pct_of_port_str = "0.0%"
+            pct_port_cell = f"{pct_of_port_str:>9}"
+
             total_pnl_cell = f"{total_pnl:>16}"
             daily_pnl_cell = f"{daily_pnl:>16}"
 
@@ -355,9 +410,23 @@ class PromptGenerator:
             if total_pnl != "N/A" and total_pnl.startswith(("+", "-")):
                 total_pnl_cell_colored = f"{Fore.GREEN if total_pnl.startswith('+') else Fore.RED}{total_pnl_cell}{Style.RESET_ALL}"
 
+            # Improved daily P&L coloring based on numeric value, not string prefix
             daily_pnl_cell_colored = daily_pnl_cell
-            if daily_pnl != "N/A" and daily_pnl.startswith(("+", "-")):
-                daily_pnl_cell_colored = f"{Fore.GREEN if daily_pnl.startswith('+') else Fore.RED}{daily_pnl_cell}{Style.RESET_ALL}"
+            if daily_pnl != "N/A":
+                if daily_pnl_value > 0:
+                    daily_pnl_cell_colored = f"{Fore.GREEN}{daily_pnl_cell}{Style.RESET_ALL}"
+                elif daily_pnl_value < 0:
+                    daily_pnl_cell_colored = f"{Fore.RED}{daily_pnl_cell}{Style.RESET_ALL}"
+            
+            # Color current price based on comparison with buy price
+            current_price_cell_colored = current_price_cell
+            if current_price_str != "N/A" and buy_price > 0:
+                if current_price > buy_price:
+                    current_price_cell_colored = f"{Fore.GREEN}{current_price_cell}{Style.RESET_ALL}"
+                elif current_price < buy_price:
+                    current_price_cell_colored = f"{Fore.RED}{current_price_cell}{Style.RESET_ALL}"
+                else:
+                    current_price_cell_colored = f"{Fore.YELLOW}{current_price_cell}{Style.RESET_ALL}"
 
             # Apply colors to other columns
             line = (
@@ -366,13 +435,71 @@ class PromptGenerator:
                 f"{Fore.BLUE}{opened_cell}{Style.RESET_ALL} "
                 f"{shares_cell} "
                 f"{Fore.BLUE}{buy_price_cell}{Style.RESET_ALL} "
-                f"{Fore.YELLOW}{current_price_cell}{Style.RESET_ALL} "
+                f"{current_price_cell_colored} "
                 f"{Fore.YELLOW}{total_value_cell}{Style.RESET_ALL} "
+                f"{Fore.YELLOW}{pct_port_cell}{Style.RESET_ALL} "
                 f"{total_pnl_cell_colored} "
                 f"{daily_pnl_cell_colored}"
             )
             lines.append(line)
         
+        return "\n".join(lines)
+    
+    def _format_fundamentals_table(self, portfolio_tickers: List[str]) -> str:
+        """Format fundamentals data table for portfolio tickers
+        
+        Returns formatted table with sector, industry, country, market cap, P/E, dividend yield
+        """
+        if not portfolio_tickers:
+            return "No holdings to display fundamentals"
+            
+        lines = []
+        # Header row only (section title printed above)
+        lines.append(f"{Fore.YELLOW}{'Ticker':<10} {'Sector':<20} {'Industry':<25} {'Country':<8} {'Mkt Cap':<12} {'P/E':<6} {'Div %':<6} {'52W High':<10} {'52W Low':<10}{Style.RESET_ALL}")
+        
+        # Calculate separator length
+        col_widths = [10, 20, 25, 8, 12, 6, 6, 10, 10]
+        sep_len = sum(col_widths) + (len(col_widths) - 1)
+        lines.append("-" * sep_len)
+        
+        for ticker in portfolio_tickers:
+            try:
+                fundamentals = self.market_data_fetcher.fetch_fundamentals(ticker)
+                
+                # Format each field with proper truncation/padding
+                ticker_cell = f"{ticker:<10}"
+                sector_cell = f"{str(fundamentals.get('sector', 'N/A'))[:19]:<20}"
+                industry_cell = f"{str(fundamentals.get('industry', 'N/A'))[:24]:<25}"
+                country_cell = f"{str(fundamentals.get('country', 'N/A')):<8}"
+                market_cap_cell = f"{str(fundamentals.get('marketCap', 'N/A')):<12}"
+                pe_cell = f"{str(fundamentals.get('trailingPE', 'N/A')):<6}"
+                div_cell = f"{str(fundamentals.get('dividendYield', 'N/A')):<6}"
+                high_52w_cell = f"{str(fundamentals.get('fiftyTwoWeekHigh', 'N/A')):<10}"
+                low_52w_cell = f"{str(fundamentals.get('fiftyTwoWeekLow', 'N/A')):<10}"
+                
+                # Build colored line
+                line = (
+                    f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} "
+                    f"{sector_cell} "
+                    f"{industry_cell} "
+                    f"{Fore.BLUE}{country_cell}{Style.RESET_ALL} "
+                    f"{Fore.YELLOW}{market_cap_cell}{Style.RESET_ALL} "
+                    f"{pe_cell} "
+                    f"{div_cell} "
+                    f"{Fore.GREEN}{high_52w_cell}{Style.RESET_ALL} "
+                    f"{Fore.RED}{low_52w_cell}{Style.RESET_ALL}"
+                )
+                lines.append(line)
+                
+            except Exception as e:
+                # Fallback row for failed fetches
+                ticker_cell = f"{ticker:<10}"
+                error_row = (
+                    f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} "
+                    f"{'N/A':<20} {'N/A':<25} {'N/A':<8} {'N/A':<12} {'N/A':<6} {'N/A':<6} {'N/A':<10} {'N/A':<10}"
+                )
+                lines.append(error_row)
+                
         return "\n".join(lines)
             
     def _get_daily_instructions(self) -> str:
@@ -501,10 +628,11 @@ class PromptGenerator:
         # Market data table with colors for human readability
         # Colors are stripped during copy/paste, so they don't affect LLM context
         print(f"\n{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
-        header = ["Ticker", "Close", "% Chg", "Volume"]
-        colw = [10, 12, 9, 15]
-        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}}{Style.RESET_ALL}")
-        print("-" * (colw[0] + colw[1] + colw[2] + colw[3] + 3))  # Add separator line
+        header = ["Ticker", "Close", "% Chg", "Volume", "Avg Vol (30d)"]
+        colw = [10, 12, 9, 12, 14]
+        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
+        sep_len = sum(colw) + (len(colw) - 1)
+        print("-" * sep_len)  # Add separator line
         for row in market_rows:
             # Build padded cells first, then apply color so ANSI codes don't affect spacing
             ticker_cell = f"{str(row[0]):<{colw[0]}}"
@@ -512,6 +640,7 @@ class PromptGenerator:
             pct_change = str(row[2])
             pct_cell_plain = pct_change.rjust(colw[2])
             volume_cell_plain = str(row[3]).rjust(colw[3])
+            avg_vol_cell_plain = str(row[4]).rjust(colw[4])
 
             # Apply colors to fully padded cells
             close_cell = f"{Fore.YELLOW}{close_cell_plain}{Style.RESET_ALL}"
@@ -520,12 +649,19 @@ class PromptGenerator:
             else:
                 pct_cell = pct_cell_plain
             volume_cell = f"{Fore.BLUE}{volume_cell_plain}{Style.RESET_ALL}"
+            avg_volume_cell = f"{Fore.BLUE}{avg_vol_cell_plain}{Style.RESET_ALL}"
 
-            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell}")
+            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
             
         # Portfolio snapshot with enhanced formatting
         print(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
+        # Table body only (title already printed)
         print(self._format_portfolio_table(llm_portfolio, sort_by="date"))
+        
+        # Company fundamentals table 
+        print(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
+        # Table body only (title already printed)
+        print(self._format_fundamentals_table(portfolio_tickers))
             
         # Financial summary with color-coded labels for quick scanning
         print(f"\n{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")

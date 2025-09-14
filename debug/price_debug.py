@@ -96,7 +96,7 @@ def compare_with_portfolio_data(ticker, portfolio_file="my trading/llm_portfolio
         for _, row in ticker_data.iterrows():
             print(f"Date: {row['Date']}")
             print(f"Shares: {row['Shares']}")
-            print(f"Buy Price: ${row['Buy Price']}")
+            print(f"Price: ${row['Price']}")
             print(f"Current Price: {row['Current Price']}")
             print(f"Total Value: {row['Total Value']}")
             print(f"PnL: {row['PnL']}")
@@ -148,7 +148,7 @@ def suggest_corrections(ticker, debug_data, portfolio_file="my trading/llm_portf
                 print(f"❌ Row with missing data: {row['Date']}")
                 print(f"   Suggested Current Price: ${hist['Close'].iloc[-1]:.2f}")
                 print(f"   Suggested Total Value: ${row['Shares'] * hist['Close'].iloc[-1]:.2f}")
-                print(f"   Suggested PnL: ${(hist['Close'].iloc[-1] - row['Buy Price']) * row['Shares']:.2f}")
+                print(f"   Suggested PnL: ${(hist['Close'].iloc[-1] - row['Price']) * row['Shares']:.2f}")
                 print()
             else:
                 print(f"✅ Row with data: {row['Date']} - Current Price: {row['Current Price']}")

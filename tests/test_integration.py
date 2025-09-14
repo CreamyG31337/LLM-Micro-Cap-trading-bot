@@ -455,7 +455,7 @@ class TestCSVFileCompatibility(unittest.TestCase):
             
             # Verify expected columns exist
             expected_columns = [
-                'Date', 'Ticker', 'Shares Bought', 'Buy Price', 
+                'Date', 'Ticker', 'Shares', 'Price', 
                 'Cost Basis', 'PnL', 'Reason'
             ]
             
@@ -466,8 +466,8 @@ class TestCSVFileCompatibility(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             row = rows[0]
             self.assertEqual(row['Ticker'], 'GOOGL')
-            self.assertEqual(float(row['Shares Bought']), 50.0)
-            self.assertEqual(float(row['Buy Price']), 2000.0)
+            self.assertEqual(float(row['Shares']), 50.0)
+            self.assertEqual(float(row['Price']), 2000.0)
             self.assertEqual(row['Reason'], 'Strong fundamentals')
     
     def test_csv_timestamp_format_consistency(self):
@@ -810,7 +810,7 @@ class TestCommandLineInterface(unittest.TestCase):
         with open(trade_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
-                'Date', 'Ticker', 'Shares Bought', 'Buy Price', 'Cost Basis', 'PnL', 'Reason'
+                'Date', 'Ticker', 'Shares', 'Price', 'Cost Basis', 'PnL', 'Reason'
             ])
             writer.writerow([
                 '2025-01-15 10:00:00 UTC', 'AAPL', '100', '150.00', '15000.00', '0.00', 'Good fundamentals'

@@ -113,7 +113,7 @@ def compare_with_portfolio_data(ticker, portfolio_file="my trading/llm_portfolio
             for _, row in ticker_data.iterrows():
                 print(f"Date: {row['Date']}")
                 print(f"Shares: {row['Shares']}")
-                print(f"Buy Price: ${row['Buy Price']}")
+                print(f"Price: ${row['Price']}")
                 print(f"Current Price: {row['Current Price']}")
                 print(f"Total Value: {row['Total Value']}")
                 print(f"PnL: {row['PnL']}")
@@ -175,7 +175,7 @@ def suggest_corrections(ticker, debug_data, portfolio_file="my trading/llm_portf
                 # Use latest close as current price
                 suggested_price = hist['Close'].iloc[-1]
                 suggested_value = row['Shares'] * suggested_price
-                suggested_pnl = (suggested_price - row['Buy Price']) * row['Shares']
+                suggested_pnl = (suggested_price - row['Price']) * row['Shares']
                 
                 correction = {
                     'date': row['Date'],

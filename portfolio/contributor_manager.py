@@ -172,38 +172,55 @@ class ContributorUI:
                 print_warning("No contributors found")
                 return False
             
-            # Display contributors
-            self._display_contributors(contributors)
+            # Loop until user exits
+            while True:
+                # Refresh contributors list each iteration in case changes were made
+                try:
+                    contributors = self.manager.get_contributors()
+                except FileNotFoundError:
+                    print_warning("No fund contributions file found")
+                    return False
+                
+                if contributors.empty:
+                    print_warning("No contributors found")
+                    return False
+                
+                # Display contributors
+                self._display_contributors(contributors)
+                
+                # Get user selection
+                selected_contributor = self._get_contributor_selection(contributors)
+                if selected_contributor is None:
+                    print_info("Exiting contributor management")
+                    return True
+                
+                # Get updated information
+                current_name = selected_contributor['Contributor']
+                current_email = selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ""
+                
+                new_name, new_email = self._get_updated_info(current_name, current_email)
+                
+                # Check if changes were made
+                if new_name == current_name and new_email == current_email:
+                    print_info("No changes made")
+                    continue  # Continue loop instead of returning
+                
+                # Confirm changes
+                if not self._confirm_changes(current_name, current_email, new_name, new_email):
+                    print_info("Changes cancelled")
+                    continue  # Continue loop instead of returning
+                
+                # Update contributor
+                success = self.manager.update_contributor(current_name, new_name, new_email)
+                if success:
+                    print_success("Contributor information updated successfully")
+                    print()  # Add spacing before next iteration
+                else:
+                    print_error("Failed to update contributor")
             
-            # Get user selection
-            selected_contributor = self._get_contributor_selection(contributors)
-            if selected_contributor is None:
-                print_info("Contributor management cancelled")
-                return False
-            
-            # Get updated information
-            current_name = selected_contributor['Contributor']
-            current_email = selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ""
-            
-            new_name, new_email = self._get_updated_info(current_name, current_email)
-            
-            # Check if changes were made
-            if new_name == current_name and new_email == current_email:
-                print_info("No changes made")
-                return True
-            
-            # Confirm changes
-            if not self._confirm_changes(current_name, current_email, new_name, new_email):
-                print_info("Changes cancelled")
-                return False
-            
-            # Update contributor
-            success = self.manager.update_contributor(current_name, new_name, new_email)
-            if success:
-                print_success("Contributor information updated successfully")
-            
-            return success
-            
+        except KeyboardInterrupt:
+            print_info("\nContributor management cancelled by user")
+            return True
         except Exception as e:
             logger.error(f"Error in interactive contributor management: {e}")
             print_error(f"Failed to manage contributors: {e}")
@@ -223,7 +240,7 @@ class ContributorUI:
             print(f"{idx:<3} {name:<25} {email:<30}")
         
         print("─" * 60)
-        print("Select a contributor by number to edit, or 'cancel' to abort")
+        print("Select a contributor by number to edit, or press Enter to exit")
     
     def _get_contributor_selection(self, contributors: pd.DataFrame) -> Optional[pd.Series]:
         """Get user selection for contributor to edit.
@@ -232,13 +249,18 @@ class ContributorUI:
             contributors: DataFrame of contributors
             
         Returns:
-            Selected contributor series or None if cancelled
+            Selected contributor series or None if exiting
         """
         while True:
             try:
-                selection = input("Enter selection: ").strip().lower()
+                selection = input("Enter selection: ").strip()
                 
-                if selection == 'cancel':
+                # Exit if empty input
+                if not selection:
+                    return None
+                
+                selection_lower = selection.lower()
+                if selection_lower == 'cancel':
                     return None
                 
                 selection_num = int(selection)
@@ -248,7 +270,7 @@ class ContributorUI:
                     print_error(f"Invalid selection. Please enter a number between 1 and {len(contributors)}")
                     
             except ValueError:
-                print_error("Invalid input. Please enter a number or 'cancel'")
+                print_error("Invalid input. Please enter a number or press Enter to exit")
     
     def _get_updated_info(self, current_name: str, current_email: str) -> Tuple[str, str]:
         """Get updated contributor information from user.
@@ -298,5 +320,6 @@ class ContributorUI:
         if new_email != current_email:
             print(f"  Email: {current_email if current_email else '(empty)'} → {new_email if new_email else '(empty)'}")
         
-        confirm = input("\nSave changes? (y/N): ").strip().lower()
-        return confirm in ['y', 'yes']
+        confirm = input("\nSave changes? (Y/n): ").strip().lower()
+        # Default to Yes - only return False if explicitly 'n' or 'no'
+        return confirm not in ['n', 'no']

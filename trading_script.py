@@ -22,6 +22,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Modular startup check - handles path setup and dependency checking
+try:
+    from utils.script_startup import startup_check
+    startup_check("trading_script.py")
+except ImportError:
+    # Fallback for minimal dependency checking if script_startup isn't available
+    try:
+        import pandas
+    except ImportError:
+        print("\n❌ Missing Dependencies (trading_script.py)")
+        print("Required packages not found. Please activate virtual environment:")
+        if os.name == 'nt':  # Windows
+            print("  venv\\Scripts\\activate")
+        else:  # Mac/Linux
+            print("  source venv/bin/activate")
+        print("  python trading_script.py")
+        print("\n💡 TIP: Use 'python run.py' to avoid dependency issues")
+        sys.exit(1)
+
 # Force fallback mode to avoid Windows console encoding issues
 # os.environ["FORCE_FALLBACK"] = "true"
 

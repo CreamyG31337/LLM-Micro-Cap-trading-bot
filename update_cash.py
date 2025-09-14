@@ -15,9 +15,28 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add the project directory to the path so we can import modules
-project_dir = Path(__file__).parent
-sys.path.insert(0, str(project_dir))
+# Modular startup check - handles path setup and dependency checking
+try:
+    from utils.script_startup import startup_check
+    startup_check("update_cash.py")
+except ImportError:
+    # Fallback for minimal dependency checking if script_startup isn't available
+    # Add the project directory to the path so we can import modules
+    project_dir = Path(__file__).parent
+    sys.path.insert(0, str(project_dir))
+    try:
+        import pandas
+    except ImportError:
+        print("\n❌ Missing Dependencies (update_cash.py)")
+        print("Required packages not found. Please activate virtual environment:")
+        import os
+        if os.name == 'nt':  # Windows
+            print("  venv\\Scripts\\activate")
+        else:  # Mac/Linux
+            print("  source venv/bin/activate")
+        print("  python update_cash.py")
+        print("\n💡 TIP: Use 'python run.py' and select option 'u' to avoid dependency issues")
+        sys.exit(1)
 
 try:
     from dual_currency import load_cash_balances, save_cash_balances, CashBalances

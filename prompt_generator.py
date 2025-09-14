@@ -28,6 +28,27 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Modular startup check - handles path setup and dependency checking
+try:
+    from utils.script_startup import startup_check
+    startup_check("prompt_generator.py")
+except ImportError:
+    # Fallback for minimal dependency checking if script_startup isn't available
+    import sys
+    try:
+        import pandas
+    except ImportError:
+        print("\n❌ Missing Dependencies (prompt_generator.py)")
+        print("Required packages not found. Please activate virtual environment:")
+        if os.name == 'nt':  # Windows
+            print("  venv\\Scripts\\activate")
+        else:  # Mac/Linux
+            print("  source venv/bin/activate")
+        print("  python prompt_generator.py")
+        print("\n💡 TIP: Use 'python run.py' and select option 'd' to avoid dependency issues")
+        sys.exit(1)
+
 import pandas as pd
 
 # Import from modular components

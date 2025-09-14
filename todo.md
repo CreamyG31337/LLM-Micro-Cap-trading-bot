@@ -165,3 +165,32 @@ Goal: Add company profile and fundamentals to the daily prompt, prioritizing ite
 - Works for both U.S. and TSX tickers; missing data handled gracefully
 - No significant slowdown in prompt generation (caching enabled)
 - Rich and plain-text modes both render cleanly
+
+---
+
+## Fund Contributor Email Enhancement (2025-09-14)
+
+### Goals:
+- Capture contributor email addresses when adding fund contributions
+- Add menu option to edit contributor names and emails
+- Maintain backward compatibility with existing contributor data
+
+### Tasks:
+- [ ] Update fund_contributions.csv schema to include Email column
+- [ ] Modify log_contribution() method to capture email addresses
+- [ ] Modify log_withdrawal() method to capture email addresses
+- [ ] Add manage_contributors() method for editing contributor info
+- [ ] Add 'Manage Contributors' menu option to trading script
+- [ ] Test new contributor management functionality
+
+### Implementation Details:
+- Email field should be optional for backward compatibility
+- Existing contributors without emails should show as "Not provided"
+- Menu option 'm' will be added for 'Manage Contributors'
+- Contributors should be editable by name lookup
+
+### Acceptance Criteria:
+- Users can add fund contributions with email addresses
+- Users can edit existing contributor names and emails
+- System gracefully handles contributors without email data
+- CSV format remains compatible with existing data

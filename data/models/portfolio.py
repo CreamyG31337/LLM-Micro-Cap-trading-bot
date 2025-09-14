@@ -30,21 +30,31 @@ class Position:
     
     def __post_init__(self):
         """Convert string values to Decimal for financial fields."""
-        # Convert string values to Decimal for financial fields
-        if isinstance(self.shares, str):
-            self.shares = Decimal(self.shares)
-        if isinstance(self.avg_price, str):
-            self.avg_price = Decimal(self.avg_price)
-        if isinstance(self.cost_basis, str):
-            self.cost_basis = Decimal(self.cost_basis)
-        if isinstance(self.current_price, str):
-            self.current_price = Decimal(self.current_price)
-        if isinstance(self.market_value, str):
-            self.market_value = Decimal(self.market_value)
-        if isinstance(self.unrealized_pnl, str):
-            self.unrealized_pnl = Decimal(self.unrealized_pnl)
-        if isinstance(self.stop_loss, str):
-            self.stop_loss = Decimal(self.stop_loss)
+        # Convert string values to Decimal for financial fields with error handling
+        def safe_decimal_convert(value, default_value=None):
+            """Safely convert value to Decimal, handling errors gracefully."""
+            if value is None:
+                return default_value
+            try:
+                if isinstance(value, str):
+                    # Handle empty strings and 'nan' strings
+                    value = value.strip()
+                    if not value or value.lower() == 'nan' or value.lower() == 'none':
+                        return default_value
+                return Decimal(str(value))
+            except (ValueError, TypeError, ArithmeticError):
+                return default_value
+        
+        # Convert required fields (cannot be None)
+        self.shares = safe_decimal_convert(self.shares, Decimal('0'))
+        self.avg_price = safe_decimal_convert(self.avg_price, Decimal('0'))
+        self.cost_basis = safe_decimal_convert(self.cost_basis, Decimal('0'))
+        
+        # Convert optional fields (can be None)
+        self.current_price = safe_decimal_convert(self.current_price, None) if self.current_price is not None else None
+        self.market_value = safe_decimal_convert(self.market_value, None) if self.market_value is not None else None
+        self.unrealized_pnl = safe_decimal_convert(self.unrealized_pnl, None) if self.unrealized_pnl is not None else None
+        self.stop_loss = safe_decimal_convert(self.stop_loss, None) if self.stop_loss is not None else None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for CSV/JSON serialization.

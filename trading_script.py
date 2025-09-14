@@ -51,7 +51,7 @@ from financial.currency_handler import CurrencyHandler
 from financial.pnl_calculator import PnLCalculator
 
 # Display and utilities
-from display.console_output import print_success, print_error, print_warning, print_info, print_header
+from display.console_output import print_success, print_error, print_warning, print_info, print_header, print_environment_banner
 from display.table_formatter import TableFormatter
 from display.terminal_utils import detect_terminal_width, check_table_display_issues
 
@@ -267,7 +267,7 @@ def parse_command_line_arguments() -> argparse.Namespace:
         epilog="""
 Examples:
   python trading_script.py                           # Use default data directory
-  python trading_script.py --data-dir "test_data"   # Use test data directory
+  python trading_script.py --data-dir "trading_data/dev"   # Use test data directory
   python trading_script.py --config config.json     # Use custom configuration
   python trading_script.py --debug                  # Enable debug logging
   python trading_script.py --validate-only          # Only validate data integrity
@@ -349,6 +349,10 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Override settings from command-line arguments
         if args.data_dir:
             settings.set('repository.csv.data_directory', args.data_dir)
+        
+        # Show environment banner (after command-line overrides)
+        data_dir = settings.get_data_directory()
+        print_environment_banner(data_dir)
         
         if args.debug:
             settings.set('logging.level', 'DEBUG')

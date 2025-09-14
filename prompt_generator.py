@@ -688,9 +688,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate LLM trading prompts")
     parser.add_argument("--type", choices=["daily", "weekly"], default="daily",
                        help="Type of prompt to generate (default: daily)")
-    parser.add_argument("--data-dir", help="Data directory (default: my trading)")
+    parser.add_argument("--data-dir", help="Data directory (default: trading_data/prod)")
     
     args = parser.parse_args()
+    
+    # Show environment banner
+    from display.console_output import print_environment_banner
+    print_environment_banner(args.data_dir)
     
     if args.type == "daily":
         generate_daily_prompt(args.data_dir)

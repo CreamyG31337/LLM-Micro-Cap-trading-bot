@@ -40,7 +40,7 @@ class Settings:
             'repository': {
                 'type': 'csv',
                 'csv': {
-                    'data_directory': 'my trading'
+                    'data_directory': 'trading_data/prod'
                 },
                 'database': {
                     'host': 'localhost',

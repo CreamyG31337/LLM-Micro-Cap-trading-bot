@@ -6,14 +6,14 @@ This is a personal fork focused on enhanced portfolio tracking, dual currency su
 
 ## Quick Start
 - **Getting Started Guide**: [Original Setup Instructions](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Start%20Your%20Own/README.md)
-- **Run with test data**: `python trading_script.py --data-dir test_data`
-- **Production data**: Use `my trading/` folder (gitignored)
+- **Run with test data**: `python trading_script.py --data-dir trading_data/dev`
+- **Production data**: Use `trading_data/prod/` folder (gitignored)
 
 ## Repository Structure
 
 - **`trading_script.py`** - Main trading engine with portfolio management and stop-loss automation
-- **`my trading/`** - **Production data folder** (gitignored) - Your real trading data
-- **`test_data/`** - **Test environment** - Safe copies for development and testing
+- **`trading_data/prod/`** - **Production data folder** (gitignored) - Your real trading data
+- **`trading_data/dev/`** - **Test environment** - Safe copies for development and testing
 - **`Scripts and CSV Files/`** - My personal portfolio (updates every trading day)
 - **`Start Your Own/`** - Template files and guide for starting your own experiment  
 - **`Weekly Deep Research (MD|PDF)/`** - Research summaries and performance reports
@@ -64,7 +64,7 @@ For the original concept, methodology, and research documentation, see the [orig
 3. **After hours**: Shows prices but doesn't save to CSV
 4. **Graphing**: Use the CSV data to generate portfolio performance charts
 
-*For performance data and results, see the CSV files in `my trading/` and `test_data/` folders.*
+*For performance data and results, see the CSV files in `trading_data/prod/` and `trading_data/dev/` folders.*
 
 ## Tech Stack
 
@@ -166,8 +166,8 @@ This fork includes all the original functionality plus enhanced features for por
 
 1. **Clone this repository**
 2. **Set up your virtual environment** (see `debug/activate_venv.bat` for Windows)
-3. **Configure your data directories** (use `test_data/` for testing, `my trading/` for production)
-4. **Run the trading script** with `python trading_script.py --data-dir test_data`
+3. **Configure your data directories** (use `trading_data/dev/` for testing, `trading_data/prod/` for production)
+4. **Run the trading script** with `python trading_script.py --data-dir trading_data/dev`
 
 For the original setup guide and methodology, see the [original repository](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment).
 

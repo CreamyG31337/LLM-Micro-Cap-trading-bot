@@ -3,7 +3,7 @@
 from pathlib import Path
 
 # File paths and names
-DEFAULT_DATA_DIR = "my trading"
+DEFAULT_DATA_DIR = "trading_data/prod"
 PORTFOLIO_CSV_NAME = "llm_portfolio_update.csv"
 TRADE_LOG_CSV_NAME = "llm_trade_log.csv"
 CASH_BALANCES_JSON_NAME = "cash_balances.json"
@@ -13,6 +13,9 @@ EXCHANGE_RATES_CSV_NAME = "exchange_rates.csv"
 # Backup configuration
 DEFAULT_BACKUP_DIR = "backups"
 MAX_BACKUP_FILES = 10
+
+# Data directory structure
+TEST_DATA_DIR = "trading_data/dev"
 
 # Market timing constants
 MARKET_OPEN_HOUR = 6  # 6:30 AM PDT

@@ -33,7 +33,12 @@ from decimal import Decimal, getcontext
 import pytz
 
 # Import emoji handling
-from display.console_output import _safe_emoji
+try:
+    from display.console_output import _safe_emoji
+except ImportError:
+    # Fallback if display module not available
+    def _safe_emoji(emoji: str) -> str:
+        return emoji
 
 # Set precision for decimal calculations
 getcontext().prec = 10
@@ -105,7 +110,7 @@ def get_historical_close_price(ticker: str, date_str: str) -> float:
     except:
         return 0.0
 
-def rebuild_portfolio_from_scratch(data_dir: str = "my trading", timezone_str: str = None):
+def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone_str: str = None):
     """Completely rebuild portfolio from trade log"""
     if timezone_str is None:
         timezone_str = DEFAULT_TIMEZONE
@@ -421,13 +426,19 @@ def get_currency(ticker: str) -> str:
 def main():
     """Main function to rebuild portfolio from scratch"""
     # Check if data directory argument provided
-    data_dir = "my trading"
+    data_dir = "trading_data/prod"
     timezone_str = None
     
     if len(sys.argv) > 1:
         data_dir = sys.argv[1]
     if len(sys.argv) > 2:
         timezone_str = sys.argv[2]
+    
+    # Show environment banner
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from display.console_output import print_environment_banner
+    print_environment_banner(data_dir)
     
     success = rebuild_portfolio_from_scratch(data_dir, timezone_str)
     

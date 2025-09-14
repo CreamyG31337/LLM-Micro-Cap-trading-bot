@@ -6,8 +6,8 @@
   ```bash
   .\venv\Scripts\activate
   ```
-- **Use test_data directory** for development (not "my trading" which is production)
-- **Copy CSVs from prod to dev** anytime: Copy files from `my trading/` to `test_data/` for testing
+- **Use trading_data/dev directory** for development (not "trading_data/prod" which is production)
+- **Copy CSVs from prod to dev** anytime: Copy files from `trading_data/prod/` to `trading_data/dev/` for testing
 
 ## Build/Lint/Test Commands
 
@@ -39,7 +39,7 @@ python run_tests.py
 
 ### Development Mode
 ```bash
-python dev_run.py --data-dir "test_data"
+python dev_run.py --data-dir "trading_data/dev"
 ```
 
 ## Committing Code

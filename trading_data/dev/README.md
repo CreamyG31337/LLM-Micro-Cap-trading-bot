@@ -13,10 +13,10 @@ This folder contains **test copies** of your trading data for safe development a
 ### For Testing/Development:
 ```bash
 # Use test data folder
-python trading_script.py --data-dir trading_data/dev
+python trading_script.py --data-dir test_data
 
 # Or with specific file
-python trading_script.py --file trading_data/dev/llm_portfolio_update.csv --data-dir trading_data/dev
+python trading_script.py --file test_data/llm_portfolio_update.csv --data-dir test_data
 ```
 
 ### For Production Trading:
@@ -25,13 +25,13 @@ python trading_script.py --file trading_data/dev/llm_portfolio_update.csv --data
 python trading_script.py
 
 # Or explicitly specify production folder
-python trading_script.py --data-dir "trading_data/prod"
+python trading_script.py --data-dir "my trading"
 ```
 
 ## Important Notes
 
 - ✅ **Safe to modify**: These are copies - experiment freely!
-- 🔄 **Refresh when needed**: Copy fresh data from `trading_data/prod/` folder when you want current data
+- 🔄 **Refresh when needed**: Copy fresh data from `my trading/` folder when you want current data
 - 🚫 **Never use for real trading**: Always switch to production folder for actual trades
 - 📝 **Test new features**: Perfect for testing new functionality without risking production data
 
@@ -39,8 +39,8 @@ python trading_script.py --data-dir "trading_data/prod"
 
 To get fresh copies from production:
 ```bash
-copy "trading_data\prod\*.csv" "trading_data\dev\"
-copy "trading_data\prod\*.json" "trading_data\dev\"
+copy "my trading\*.csv" "test_data\"
+copy "my trading\*.json" "test_data\"
 ```
 
 ---

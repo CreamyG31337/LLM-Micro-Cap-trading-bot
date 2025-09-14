@@ -85,10 +85,10 @@ def get_optimal_table_width(data_dir: Optional[str] = None) -> int:
     """
     terminal_width = detect_terminal_width()
     
-    # Check if using test_data
+    # Check if using test data (dev environment)
     using_test_data = False
     if data_dir:
-        using_test_data = "test_data" in str(data_dir).lower()
+        using_test_data = "dev" in str(data_dir).lower() or "test_data" in str(data_dir).lower()
     
     # If using test_data or terminal is narrow, force a wider minimum
     if using_test_data or terminal_width < 140:
@@ -98,7 +98,7 @@ def get_optimal_table_width(data_dir: Optional[str] = None) -> int:
 
 
 def is_using_test_data(data_dir: Optional[str] = None) -> bool:
-    """Check if the script is currently using the test_data folder.
+    """Check if the script is currently using the test data folder (dev environment).
     
     Args:
         data_dir: Optional data directory path to check
@@ -107,7 +107,7 @@ def is_using_test_data(data_dir: Optional[str] = None) -> bool:
         True if using test data directory
     """
     if data_dir:
-        return "test_data" in str(data_dir).lower()
+        return "dev" in str(data_dir).lower() or "test_data" in str(data_dir).lower()
     return False
 
 

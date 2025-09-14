@@ -69,7 +69,7 @@ def main():
     
     # Add to system
     print("\nAdding to trading system...")
-    success = add_trade_from_email(email_text, "my trading")
+    success = add_trade_from_email(email_text, "trading_data/prod")
     
     if success:
         print("✅ Trade added successfully!")

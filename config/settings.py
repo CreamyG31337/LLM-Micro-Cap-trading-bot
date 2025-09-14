@@ -55,7 +55,9 @@ class Settings:
                 'primary_source': 'yahoo',
                 'fallback_source': 'stooq',
                 'cache_enabled': True,
-                'cache_duration_hours': 24
+                'cache_duration_hours': 24,
+                'fundamentals_cache_persist': True,
+                'fundamentals_cache_ttl_hours': 12
             },
             'timezone': {
                 'name': 'PST',

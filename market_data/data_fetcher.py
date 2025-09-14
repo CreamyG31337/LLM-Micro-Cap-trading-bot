@@ -75,10 +75,23 @@ class MarketDataFetcher:
         self.cache = cache_instance
         self.proxy_map = PROXY_MAP.copy()
         
+        # Access global settings for configurable TTL
+        try:
+            from config.settings import get_settings  # lazy import to avoid cycles
+            self.settings = get_settings()
+        except Exception:
+            self.settings = None
+        
         # In-memory fundamentals cache (TTL-based)
         self._fund_cache: Dict[str, Dict[str, Any]] = {}
         self._fund_cache_meta: Dict[str, Dict[str, Any]] = {}
-        self._fund_cache_ttl = timedelta(minutes=60)
+        ttl_hours = 12
+        try:
+            if self.settings:
+                ttl_hours = int(self.settings.get('market_data.fundamentals_cache_ttl_hours', 12))
+        except Exception:
+            ttl_hours = 12
+        self._fund_cache_ttl = timedelta(hours=ttl_hours)
         
         # Attempt to load fundamentals cache from disk
         try:
@@ -353,8 +366,10 @@ class MarketDataFetcher:
         """Determine the cache file path for fundamentals."""
         try:
             if self.cache and getattr(self.cache, 'settings', None):
-                from config.settings import Settings  # type: ignore
                 data_dir = self.cache.settings.get_data_directory()
+                cache_dir = Path(data_dir) / ".cache"
+            elif getattr(self, 'settings', None):
+                data_dir = self.settings.get_data_directory()
                 cache_dir = Path(data_dir) / ".cache"
             else:
                 # Fallback to current working directory .cache

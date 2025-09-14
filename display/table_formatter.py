@@ -407,15 +407,15 @@ class TableFormatter:
 
             # Combine percentage and dollar amount
             if total_pnl_pct != 'N/A' and unrealized_pnl != 0:
-                total_pnl_display = f"{total_pnl_pct} [${unrealized_pnl:+,.2f}]"
+                total_pnl_display = f"{total_pnl_pct} ${unrealized_pnl:+,.2f}"
             elif total_pnl_pct != 'N/A':
-                total_pnl_display = f"{total_pnl_pct} [$0.00]"
+                total_pnl_display = f"{total_pnl_pct} $0.00"
             else:
                 total_pnl_display = 'N/A'
 
             if daily_pnl_pct != 'N/A':
                 daily_dollar_pnl = 0  # Simplified calculation
-                daily_pnl_display = f"{daily_pnl_pct} [${daily_dollar_pnl:+,.2f}]"
+                daily_pnl_display = f"{daily_pnl_pct} ${daily_dollar_pnl:+,.2f}"
             else:
                 daily_pnl_display = 'N/A'
 
@@ -661,10 +661,13 @@ class TableFormatter:
         
         # Calculate and display overall performance
         if total_contributions > 0:
-            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            net_pnl_vs_contrib = (total_equity - total_contributions)
+            financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
+                                   style=get_pnl_style(net_pnl_vs_contrib))
+            overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
                                    style=get_pnl_style(overall_return_pct))
-        
+
         self.console.print(financial_table)
     
     def _create_rich_financial_and_ownership_tables(self, stats_data: Dict[str, float], 
@@ -694,7 +697,30 @@ class TableFormatter:
         
         # Portfolio Value Section
         financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}")
-        financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        # Cash details (if present in summary_data)
+        cad_cash = summary_data.get('cad_cash', None)
+        usd_cash = summary_data.get('usd_cash', None)
+        usd_to_cad_rate = summary_data.get('usd_to_cad_rate', None)
+        estimated_fx_fee_total_usd = summary_data.get('estimated_fx_fee_total_usd', None)
+        estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad', None)
+        if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
+            financial_table.add_row("💰 Cash Balance (CAD eq)", f"${cash:,.2f}")
+            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}")
+            financial_table.add_row("   • USD Cash", f"${usd_cash:,.2f}")
+            financial_table.add_row("   • USD→CAD rate", f"{usd_to_cad_rate:.4f}")
+            # Totals by currency (cash + positions)
+            usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
+            cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
+            if usd_holdings_total_usd is not None:
+                financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD")
+            if cad_holdings_total_cad is not None:
+                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD")
+            # Estimated FX fee on USD holdings (simple)
+            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
+                approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
+                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="red")
+        else:
+            financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]")
         
         # Add separator
@@ -703,6 +729,11 @@ class TableFormatter:
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
         financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}")
+        
+        # Audit metric: funds not yet allocated into positions (net of cash)
+        unallocated_vs_cost = stats_data.get('unallocated_vs_cost', None)
+        if unallocated_vs_cost is not None:
+            financial_table.add_row("🧾 Unallocated vs Cost", f"${unallocated_vs_cost:,.2f}")
         
         # Add separator
         financial_table.add_row("", "")
@@ -715,9 +746,12 @@ class TableFormatter:
         financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
                                style=get_pnl_style(total_portfolio_pnl))
         
-        # Calculate and display overall performance
+        # Calculate and display performance versus contributions (investor view)
         if total_contributions > 0:
-            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            net_pnl_vs_contrib = (total_equity - total_contributions)
+            financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
+                                   style=get_pnl_style(net_pnl_vs_contrib))
+            overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
                                    style=get_pnl_style(overall_return_pct))
         
@@ -770,13 +804,40 @@ class TableFormatter:
         
         # Portfolio Value Section
         print(f"  Current Portfolio Value: ${total_value:,.2f}")
-        print(f"  Cash Balance: ${cash:,.2f}")
+        # Cash details (if present)
+        cad_cash = summary_data.get('cad_cash')
+        usd_cash = summary_data.get('usd_cash')
+        usd_to_cad_rate = summary_data.get('usd_to_cad_rate')
+        estimated_fx_fee_total_usd = summary_data.get('estimated_fx_fee_total_usd')
+        estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad')
+        if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
+            print(f"  Cash Balance (CAD eq): ${cash:,.2f}")
+            print(f"    • CAD Cash: ${cad_cash:,.2f}")
+            print(f"    • USD Cash: ${usd_cash:,.2f}")
+            print(f"    • USD→CAD rate: {usd_to_cad_rate:.4f}")
+            # Totals by currency (cash + positions)
+            usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
+            cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
+            if usd_holdings_total_usd is not None:
+                print(f"    • Total USD (cash+positions): ${usd_holdings_total_usd:,.2f} USD")
+            if cad_holdings_total_cad is not None:
+                print(f"    • Total CAD (cash+positions): ${cad_holdings_total_cad:,.2f} CAD")
+            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
+                approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
+                print(f"    • Est. USD FX fee on USD holdings (1.5%): {Fore.RED}-${estimated_fx_fee_total_usd:,.2f} USD{Style.RESET_ALL}{approx_cad}")
+        else:
+            print(f"  Cash Balance: ${cash:,.2f}")
         print(f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}")
         print()
         
         # Investment Performance Section  
         print(f"  Total Contributions: ${total_contributions:,.2f}")
         print(f"  Total Cost Basis: ${cost_basis:,.2f}")
+        
+        # Audit metric
+        unallocated_vs_cost = stats_data.get('unallocated_vs_cost', None)
+        if unallocated_vs_cost is not None:
+            print(f"  Unallocated vs Cost: ${unallocated_vs_cost:,.2f}")
         print()
         
         # P&L Section with color coding
@@ -784,9 +845,11 @@ class TableFormatter:
         print(f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}")
         print(f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}")
         
-        # Calculate and display overall performance
+        # Calculate and display performance versus contributions (investor view)
         if total_contributions > 0:
-            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            net_pnl_vs_contrib = total_equity - total_contributions
+            print(f"  Net P&L vs Contributions: {get_pnl_color(net_pnl_vs_contrib)}${net_pnl_vs_contrib:,.2f}{Style.RESET_ALL}")
+            overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
             print(f"  {Fore.CYAN}Overall Return: {get_pnl_color(overall_return_pct)}{overall_return_pct:+.2f}%{Style.RESET_ALL}")
     
     def _create_plain_financial_and_ownership_tables(self, stats_data: Dict[str, float], 
@@ -802,32 +865,43 @@ class TableFormatter:
         # Extract financial values
         total_value = summary_data.get('portfolio_value', 0)
         cash = summary_data.get('cash_balance', 0)
+        cad_cash = summary_data.get('cad_cash', None)
+        usd_cash = summary_data.get('usd_cash', None)
+        usd_to_cad_rate = summary_data.get('usd_to_cad_rate', None)
+        estimated_cashout_fee_cad = summary_data.get('estimated_cashout_fee_cad', 0)
         total_contributions = stats_data.get('total_contributions', 0)
         cost_basis = stats_data.get('total_cost_basis', 0)
         unrealized_pnl = stats_data.get('total_pnl', 0)
         realized_pnl = stats_data.get('total_realized_pnl', 0)
         total_portfolio_pnl = stats_data.get('total_portfolio_pnl', 0)
         total_equity = total_value + cash
+        net_pnl_vs_contrib = total_equity - total_contributions
         
         # Prepare financial data lines
         financial_lines = [
             f"{_safe_emoji('💰')} Financial Overview",
             "─" * 35,
             f"  Current Portfolio Value: ${total_value:,.2f}",
-            f"  Cash Balance: ${cash:,.2f}",
+            # Cash section
+            (f"  Cash Balance (CAD eq): ${cash:,.2f}" if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None else f"  Cash Balance: ${cash:,.2f}"),
+            (f"    • CAD Cash: ${cad_cash:,.2f}" if cad_cash is not None else None),
+            (f"    • USD Cash: ${usd_cash:,.2f} (×{usd_to_cad_rate:.4f} CAD)" if usd_cash is not None and usd_to_cad_rate is not None else None),
+            (f"    • Est. USD→CAD fee (1.5%): -${estimated_cashout_fee_cad:,.2f}" if estimated_cashout_fee_cad and estimated_cashout_fee_cad > 0 else None),
             f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}",
             "",
             f"  Total Contributions: ${total_contributions:,.2f}",
             f"  Total Cost Basis: ${cost_basis:,.2f}",
+            (f"  Unallocated vs Cost: ${stats_data.get('unallocated_vs_cost', 0):,.2f}" if stats_data.get('unallocated_vs_cost', None) is not None else None),
             "",
             f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}",
             f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}",
-            f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}"
+            f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}",
+            f"  Net P&L vs Contributions: {get_pnl_color(net_pnl_vs_contrib)}${net_pnl_vs_contrib:,.2f}{Style.RESET_ALL}"
         ]
         
         # Add overall return if contributions exist
         if total_contributions > 0:
-            overall_return_pct = (total_portfolio_pnl / total_contributions) * 100
+            overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
             financial_lines.append(f"  {Fore.CYAN}Overall Return: {get_pnl_color(overall_return_pct)}{overall_return_pct:+.2f}%{Style.RESET_ALL}")
         
         # Prepare ownership data lines
@@ -853,6 +927,8 @@ class TableFormatter:
         
         # Display side by side
         print("\n")
+        # Filter out None placeholder lines inserted above
+        financial_lines = [line for line in financial_lines if line is not None]
         max_lines = max(len(financial_lines), len(ownership_lines))
         for i in range(max_lines):
             financial_line = financial_lines[i] if i < len(financial_lines) else ""

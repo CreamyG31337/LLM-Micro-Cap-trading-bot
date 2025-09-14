@@ -264,7 +264,7 @@ def format_text_for_console(text: str) -> str:
 
 
 def print_header(title: str, emoji: str = "🔷", width: int = 60) -> None:
-    """Print a formatted header with emoji and cyan color.
+    """Print a formatted header with emoji and enhanced styling.
     
     Args:
         title: The header title to display
@@ -276,18 +276,32 @@ def print_header(title: str, emoji: str = "🔷", width: int = 60) -> None:
     
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         try:
-            console.print(f"{'='*width}", style="cyan")
-            console.print(f"{header_text:^{width}}", style="bold cyan")
-            console.print(f"{'='*width}", style="cyan")
-        except UnicodeEncodeError:
-            # Fallback to plain text if Rich has encoding issues
-            print(f"{'='*width}")
-            print(f"{header_text:^{width}}")
-            print(f"{'='*width}")
+            from rich.panel import Panel
+            from rich.text import Text
+            
+            # Create gradient-style panel with bold text (centered)
+            panel = Panel(
+                Text(header_text, style="bold bright_white", justify="center"),
+                style="bright_cyan",
+                padding=(0, 1)
+            )
+            console.print(panel)
+        except (UnicodeEncodeError, ImportError):
+            # Fallback to simple Rich formatting
+            try:
+                console.print(f"{'='*width}", style="bright_cyan")
+                console.print(f"{header_text:^{width}}", style="bold bright_white on bright_cyan")
+                console.print(f"{'='*width}", style="bright_cyan")
+            except Exception:
+                # Final fallback to plain text
+                print(f"{'='*width}")
+                print(f"{header_text:^{width}}")
+                print(f"{'='*width}")
     else:
-        print(f"{Fore.CYAN}{'='*width}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{header_text:^{width}}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'='*width}{Style.RESET_ALL}")
+        # Enhanced Colorama styling with background
+        print(f"{Fore.CYAN}{Style.BRIGHT}{'='*width}{Style.RESET_ALL}")
+        print(f"{Back.CYAN}{Fore.WHITE}{Style.BRIGHT}{header_text:^{width}}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{Style.BRIGHT}{'='*width}{Style.RESET_ALL}")
 
 
 def print_separator(width: int = 60, char: str = "─") -> None:

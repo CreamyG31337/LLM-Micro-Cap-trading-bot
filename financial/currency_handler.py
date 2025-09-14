@@ -241,13 +241,15 @@ class CurrencyHandler:
         try:
             live_rate = self._get_live_exchange_rate(from_currency, to_currency)
             if live_rate is not None:
-                return money_to_decimal(live_rate)
+                from decimal import Decimal
+                return Decimal(str(live_rate)).quantize(Decimal('0.0001'))
         except Exception as e:
             logger.debug(f"Failed to get live exchange rate: {e}")
         
         # Fall back to default rates
         rate = self.DEFAULT_RATES.get((from_currency, to_currency), 1.0)
-        return money_to_decimal(rate)
+        from decimal import Decimal
+        return Decimal(str(rate)).quantize(Decimal('0.0001'))
     
     def _get_live_exchange_rate(self, from_currency: str, to_currency: str) -> Optional[float]:
         """
@@ -271,7 +273,7 @@ class CurrencyHandler:
                             latest = data['observations'][-1]
                             if 'FXUSDCAD' in latest and 'v' in latest['FXUSDCAD']:
                                 rate = float(latest['FXUSDCAD']['v'])
-                                logger.info(f"Using Bank of Canada rate: {rate}")
+                                logger.debug(f"Using Bank of Canada rate: {rate}")
                                 return rate
                 except Exception as e:
                     logger.debug(f"Bank of Canada API failed: {e}")
@@ -284,7 +286,7 @@ class CurrencyHandler:
                 data = response.json()
                 rate = data['rates'].get(to_currency)
                 if rate:
-                    logger.info(f"Using exchangerate-api.com rate: {rate}")
+                    logger.debug(f"Using exchangerate-api.com rate: {rate}")
                 return rate
             
         except ImportError:

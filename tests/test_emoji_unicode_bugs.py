@@ -143,9 +143,9 @@ class TestPandasUnicodeBugs:
         
         # Create test data that might trigger Unicode issues
         test_data = [
-            {'Ticker': 'AAPL', 'Company': 'Apple Inc.', 'P&L': '+5.0% [$50.00]'},
-            {'Ticker': 'TSLA', 'Company': 'Tesla Inc.', 'P&L': '-10.0% [$-100.00]'},
-            {'Ticker': 'MSFT', 'Company': 'Microsoft Corp.', 'P&L': '+2.0% [$20.00]'}
+            {'Ticker': 'AAPL', 'Company': 'Apple Inc.', 'P&L': '+5.0% $50.00'},
+            {'Ticker': 'TSLA', 'Company': 'Tesla Inc.', 'P&L': '-10.0% $-100.00'},
+            {'Ticker': 'MSFT', 'Company': 'Microsoft Corp.', 'P&L': '+2.0% $20.00'}
         ]
         
         df = pd.DataFrame(test_data)
@@ -178,8 +178,8 @@ class TestPandasUnicodeBugs:
                 'Current': '$155.00',
                 'Total Value': '$1550.00',
                 'Dollar P&L': '$50.00',
-                'Total P&L': '+3.3% [$50.00]',
-                'Daily P&L': '+2.0% [$10.50]',
+                'Total P&L': '+3.3% $50.00',
+                'Daily P&L': '+2.0% $10.50',
                 'Weight': '5.0%',
                 'Stop Loss': 'None',
                 'Cost Basis': '$1500.00'

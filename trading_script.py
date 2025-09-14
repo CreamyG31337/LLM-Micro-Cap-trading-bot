@@ -498,7 +498,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         
         # Calculate additional display metrics
         enhanced_positions = []
-        total_portfolio_value = sum(pos.market_value or 0 for pos in updated_positions)
+        from decimal import Decimal
+        total_portfolio_value = sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
         
         for position in updated_positions:
             pos_dict = position.to_dict()
@@ -560,8 +561,53 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         from pathlib import Path
         os.system('cls' if os.name == 'nt' else 'clear')
         
-        # Display portfolio table
-        print_header("Portfolio Summary", "📊")
+        # Get market time info and environment for header
+        market_time_info = ""
+        try:
+            market_time_info = market_hours.display_market_time_header()
+        except Exception as e:
+            logger.debug(f"Could not get market time header: {e}")
+            # Fallback to simple time display
+            try:
+                tz = market_hours.get_trading_timezone()
+                now = datetime.now(tz)
+                market_time_info = f"{now.strftime('%Y-%m-%d %H:%M:%S')} PDT | 🔴 MARKET CLOSED"
+            except Exception:
+                market_time_info = ""
+        
+        # Determine environment based on data directory
+        env_indicator = ""
+        try:
+            data_path = str(repository.data_dir).lower()
+            if 'dev' in data_path or 'test' in data_path:
+                env_indicator = "🟡 DEV"
+            elif 'prod' in data_path or 'production' in data_path:
+                env_indicator = "🟢 PROD"
+            else:
+                # Check if it's a common dev pattern like ending in _dev, -dev, etc.
+                from pathlib import Path
+                data_dir_name = Path(data_path).name
+                if any(pattern in data_dir_name for pattern in ['dev', 'test', 'debug']):
+                    env_indicator = "🟡 DEV"
+                else:
+                    env_indicator = "🟢 PROD"  # Default to PROD if unclear
+        except Exception:
+            env_indicator = ""
+        
+        # Display portfolio table with market time and environment in header
+        time_part = f"⏰ {market_time_info}" if market_time_info else ""
+        env_part = f"{env_indicator}" if env_indicator else ""
+        
+        if time_part and env_part:
+            header_title = f"Portfolio Summary | {time_part} | {env_part}"
+        elif time_part:
+            header_title = f"Portfolio Summary | {time_part}"
+        elif env_part:
+            header_title = f"Portfolio Summary | {env_part}"
+        else:
+            header_title = "Portfolio Summary"
+            
+        print_header(header_title, "📊")
         table_formatter.create_portfolio_table(enhanced_positions)
         
         # Display additional tables
@@ -584,74 +630,150 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             # Calculate total contributions from fund data
             total_contributions = 0
             if fund_contributions:
+                from decimal import Decimal
                 for contribution in fund_contributions:
-                    amount = float(contribution.get('Amount', contribution.get('amount', 0)))
+                    raw_amount = contribution.get('Amount', contribution.get('amount', 0))
+                    try:
+                        amount = Decimal(str(raw_amount))
+                    except Exception:
+                        amount = Decimal('0')
                     contrib_type = contribution.get('Type', contribution.get('type', 'CONTRIBUTION'))
-                    if contrib_type.upper() == 'CONTRIBUTION':
+                    ctype = str(contrib_type).upper()
+                    if ctype in ('CONTRIBUTION', 'ADJUSTMENT'):
                         total_contributions += amount
-                    elif contrib_type.upper() == 'WITHDRAWAL':
+                    elif ctype in ('WITHDRAWAL', 'FEE', 'FX_FEE', 'MAINTENANCE_FEE', 'BANK_FEE'):
                         total_contributions -= amount
             
             # Get realized P&L from FIFO processor
             realized_summary = trade_processor.get_realized_pnl_summary()
-            total_realized_pnl = float(realized_summary.get('total_realized_pnl', 0))
+            from decimal import Decimal
+            total_realized_pnl = realized_summary.get('total_realized_pnl', Decimal('0'))
             
             stats_data = {
                 'total_contributions': total_contributions,
-                'total_cost_basis': float(portfolio_metrics.get('total_cost_basis', 0)),
-                'total_current_value': float(total_portfolio_value),
-                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)),
+                'total_cost_basis': portfolio_metrics.get('total_cost_basis', Decimal('0')),
+                'total_current_value': total_portfolio_value,
+                'total_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')),
                 'total_realized_pnl': total_realized_pnl,
-                'total_portfolio_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)) + total_realized_pnl
+                'total_portfolio_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')) + total_realized_pnl
             }
             
-            # Load cash balance for summary
-            cash_balance = 0
+            # Load cash balances and compute CAD-equivalent summary
+            from financial.currency_handler import CurrencyHandler
+            from decimal import Decimal
+            cash_balance = Decimal('0')
+            cad_cash = Decimal('0')
+            usd_cash = Decimal('0')
+            usd_to_cad_rate = Decimal('0')
+            estimated_fx_fee_total_usd = Decimal('0')
+            estimated_fx_fee_total_cad = Decimal('0')
             try:
-                cash_file = Path(repository.data_dir) / "cash_balances.json"
-                if cash_file.exists():
-                    with open(cash_file, 'r') as f:
-                        cash_data = json.load(f)
-                        cash_balance = cash_data.get('cad', 0) + cash_data.get('usd', 0)
+                handler = CurrencyHandler(Path(repository.data_dir))
+                balances = handler.load_cash_balances()
+                # Raw balances as Decimal
+                cad_cash = balances.cad
+                usd_cash = balances.usd
+                # Rate and CAD equivalent
+                usd_to_cad_rate = handler.get_exchange_rate('USD','CAD')
+                total_cash_cad_equiv_dec = balances.total_cad_equivalent(usd_to_cad_rate)
+                cash_balance = total_cash_cad_equiv_dec
+                # Compute per-currency holdings
+                usd_positions_value_usd = Decimal('0')
+                cad_positions_value_cad = Decimal('0')
+                try:
+                    for pos in updated_positions:
+                        try:
+                            if pos.market_value is None:
+                                continue
+                            ticker_currency = handler.get_ticker_currency(pos.ticker)
+                            if ticker_currency == 'USD':
+                                usd_positions_value_usd += (pos.market_value or Decimal('0'))
+                            elif ticker_currency == 'CAD':
+                                cad_positions_value_cad += (pos.market_value or Decimal('0'))
+                        except Exception:
+                            continue
+                except Exception:
+                    usd_positions_value_usd = Decimal('0')
+                    cad_positions_value_cad = Decimal('0')
+                total_usd_holdings = usd_cash + usd_positions_value_usd
+                total_cad_holdings = cad_cash + cad_positions_value_cad
+                # Estimated simple FX fee at 1.5% on USD holdings
+                if total_usd_holdings > 0:
+                    estimated_fx_fee_total_usd = (total_usd_holdings * Decimal('0.015')).quantize(Decimal('0.01'))
+                    estimated_fx_fee_total_cad = (estimated_fx_fee_total_usd * usd_to_cad_rate).quantize(Decimal('0.01'))
             except Exception as e:
-                logger.debug(f"Could not load cash balance: {e}")
+                logger.debug(f"Could not load or compute cash balances: {e}")
+                total_cash_cad_equiv_dec = Decimal('0')
+                usd_to_cad_rate = Decimal('0')
+                estimated_fx_fee_total_usd = Decimal('0')
+                estimated_fx_fee_total_cad = Decimal('0')
             
-            # Prepare summary data
+            # Prepare summary data (all Decimal)
             summary_data = {
-                'portfolio_value': float(total_portfolio_value),
-                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', 0)),
-                'cash_balance': float(cash_balance),
-                'fund_contributions': float(stats_data.get('total_contributions', 0))
+                'portfolio_value': total_portfolio_value,
+                'total_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')),
+                'cash_balance': cash_balance,
+                'cad_cash': cad_cash,
+                'usd_cash': usd_cash,
+'usd_to_cad_rate': usd_to_cad_rate,
+                'estimated_fx_fee_total_usd': estimated_fx_fee_total_usd,
+                'estimated_fx_fee_total_cad': estimated_fx_fee_total_cad,
+                'usd_positions_value_usd': usd_positions_value_usd,
+                'cad_positions_value_cad': cad_positions_value_cad,
+                'usd_holdings_total_usd': total_usd_holdings,
+                'cad_holdings_total_cad': total_cad_holdings,
+                'total_equity_cad': total_portfolio_value + cash_balance,
+                'fund_contributions': stats_data.get('total_contributions', Decimal('0'))
             }
+
+            # Enrich stats with audit metrics (Decimal)
+            try:
+                equity = summary_data.get('portfolio_value', Decimal('0')) + summary_data.get('cash_balance', Decimal('0'))
+                stats_data['unallocated_vs_cost'] = stats_data.get('total_contributions', Decimal('0')) - stats_data.get('total_cost_basis', Decimal('0')) - summary_data.get('cash_balance', Decimal('0'))
+                stats_data['net_pnl_vs_contrib'] = equity - stats_data.get('total_contributions', Decimal('0'))
+            except Exception as audit_e:
+                logger.debug(f"Could not compute audit metrics: {audit_e}")
             
             # Calculate ownership information to display alongside financial overview
             ownership_data = {}
             try:
                 if fund_contributions:
+                    # Toggle whether cash is included in ownership allocations via env var
+                    include_cash_in_ownership = True
+                    try:
+                        include_env = os.environ.get('OWNERSHIP_INCLUDE_CASH', '1').strip().lower()
+                        include_cash_in_ownership = include_env not in ('0', 'false', 'no')
+                    except Exception:
+                        include_cash_in_ownership = True
+
+                    base_value_dec = Decimal(str(total_portfolio_value))
+                    fund_total_value_dec = base_value_dec + total_cash_cad_equiv_dec if include_cash_in_ownership else base_value_dec
+
                     ownership_raw = position_calculator.calculate_ownership_percentages(
-                        fund_contributions, Decimal(str(total_portfolio_value))
+                        fund_contributions, fund_total_value_dec
                     )
                     
                     # Calculate total shares in portfolio for proportional ownership
+                    from decimal import Decimal
                     try:
-                        total_shares = sum(float(pos.shares) for pos in updated_positions) if updated_positions else 0
+                        total_shares = sum((pos.shares for pos in updated_positions), start=Decimal('0')) if updated_positions else Decimal('0')
                         logger.debug(f"Calculated total shares: {total_shares}")
                     except Exception as calc_error:
                         logger.warning(f"Could not calculate total shares: {calc_error}")
-                        total_shares = 0
+                        total_shares = Decimal('0')
 
                     for contributor, data in ownership_raw.items():
-                        ownership_pct = float(data.get('ownership_percentage', 0))
+                        ownership_pct = data.get('ownership_percentage', Decimal('0'))
                         # Calculate proportional shares owned by this contributor
                         # Since this is a pooled fund, shares are owned collectively, but we show
                         # proportional ownership based on each contributor's percentage of the fund
-                        contributor_shares = (ownership_pct / 100) * total_shares if total_shares > 0 else 0
+                        contributor_shares = (ownership_pct / Decimal('100')) * total_shares if total_shares > 0 else Decimal('0')
 
                         ownership_data[contributor] = {
                             'shares': contributor_shares,  # Proportional share ownership
-                            'contributed': float(data.get('net_contribution', 0)),
-                            'ownership_pct': ownership_pct,
-                            'current_value': float(data.get('current_value', 0))
+                            'contributed': data.get('net_contribution', Decimal('0')),
+'ownership_pct': ownership_pct,
+                            'current_value': data.get('current_value', Decimal('0'))
                         }
 
                         logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
@@ -670,42 +792,60 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             logger.debug(f"Could not calculate portfolio statistics or financial summary: {e}")
             print_warning(f"Could not display portfolio metrics: {e}")
         
-        # Display market timing information
-        try:
-            market_time_header = market_hours.display_market_time_header()
-            print_info(market_time_header, emoji="⏰")
-        except Exception as e:
-            logger.debug(f"Could not display market time header: {e}")
-            # Fallback to simple market time display
-            tz = market_hours.get_trading_timezone()
-            now = datetime.now(tz)
-            simple_time = now.strftime("%Y-%m-%d %H:%M:%S")
-            print(f"Current time: {simple_time}")
-        
         # Display trading menu
         print()  # Add spacing
-        print_header("Trading Actions", "💰")
+        # Add environment indicator to Trading Actions header too
+        if env_indicator:
+            trading_header_title = f"Trading Actions | {env_indicator}"
+        else:
+            trading_header_title = "Trading Actions"
+        print_header(trading_header_title, "💰")
         # Use fancy Unicode borders if supported, otherwise ASCII fallback
         from display.console_output import _can_handle_unicode, _safe_emoji
+        from colorama import Fore, Style
         
         # Use safe emoji function for consistent Unicode handling
         from display.console_output import _safe_emoji
 
         if _can_handle_unicode():
-            print("┌─────────────────────────────────────────────────────────────────┐")
-            print(f"│ 'b' {_safe_emoji('🛒')} Buy (Limit Order or Market Open Order)                  │")
-            print(f"│ 's' {_safe_emoji('📤')} Sell (Limit Order)                                      │")
-            print(f"│ 'c' {_safe_emoji('💵')} Log Contribution                                        │")
-            print(f"│ 'w' {_safe_emoji('💸')} Log Withdrawal                                          │")
-            print(f"│ 'm' {_safe_emoji('👥')} Manage Contributors                                      │")
-            print(f"│ 'u' {_safe_emoji('🔄')} Update Cash Balances                                    │")
-            print(f"│ 'sync' {_safe_emoji('🔗')} Sync Fund Contributions                              │")
-            print(f"│ 'backup' {_safe_emoji('💾')} Create Backup                                      │")
-            print(f"│ 'restore' {_safe_emoji('🔄')} Restore from Backup                               │")
-            print(f"│ 'r' {_safe_emoji('🔄')} Refresh Portfolio                                       │")
-            print(f"│ Enter {_safe_emoji('➤')}  Continue to Portfolio Processing                       │")
-            print(f"│ 'q' {_safe_emoji('❌')} Quit                                                     │")
-            print("└─────────────────────────────────────────────────────────────────┘")
+            # Define box width and create properly aligned menu
+            box_width = 67
+            border_line = "┌" + "─" * (box_width - 2) + "┐"
+            end_line = "└" + "─" * (box_width - 2) + "┘"
+            
+            def create_menu_line(content):
+                """Create a menu line with proper spacing accounting for emoji width."""
+                # Calculate actual visual width - emojis appear to take 1 extra space
+                visual_len = len(content)
+                emoji_count = 0
+                for char in content:
+                    if ord(char) > 127:  # Likely emoji or Unicode
+                        emoji_count += 1
+                        visual_len += 1  # Each emoji takes 1 extra visual space
+                
+                # Calculate padding to align right border
+                content_space = 1  # Leading space after │
+                border_space = 1   # Trailing space before │
+                padding_needed = box_width - content_space - visual_len - border_space - 1  # -1 for trailing │
+                
+                return f"{Fore.GREEN}{Style.BRIGHT}│{Style.RESET_ALL} {content}{' ' * max(0, padding_needed)}{Fore.GREEN}{Style.BRIGHT}│{Style.RESET_ALL}"
+            
+            # Print lime-colored box
+            print(f"{Fore.GREEN}{Style.BRIGHT}{border_line}{Style.RESET_ALL}")
+            # Create aligned menu with consistent spacing
+            print(create_menu_line(f"{_safe_emoji('🛒')} 'b'       Buy (Limit Order or Market Open Order)"))
+            print(create_menu_line(f"{_safe_emoji('📤')} 's'       Sell (Limit Order)"))
+            print(create_menu_line(f"{_safe_emoji('💵')} 'c'       Log Contribution"))
+            print(create_menu_line(f"{_safe_emoji('💸')} 'w'       Log Withdrawal"))
+            print(create_menu_line(f"{_safe_emoji('👥')} 'm'       Manage Contributors"))
+            print(create_menu_line(f"{_safe_emoji('🔄')} 'u'       Update Cash Balances"))
+            print(create_menu_line(f"{_safe_emoji('🔗')} 'sync'    Sync Fund Contributions"))
+            print(create_menu_line(f"{_safe_emoji('💾')} 'backup'  Create Backup"))
+            print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
+            print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
+            print(create_menu_line(f"{_safe_emoji('🚀')} Enter     Continue to Portfolio Processing"))
+            print(create_menu_line(f"{_safe_emoji('❌')} 'q'       Quit"))
+            print(f"{Fore.GREEN}{Style.BRIGHT}{end_line}{Style.RESET_ALL}")
         else:
             print("+---------------------------------------------------------------+")
             print("| 'b' [B] Buy (Limit Order or Market Open Order)              |")
@@ -783,7 +923,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             updated_snapshot = PortfolioSnapshot(
                 positions=updated_positions,
                 timestamp=datetime.now(),
-                total_value=sum(pos.market_value or 0 for pos in updated_positions)
+                total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
             )
             
             # Check if we should update prices (market hours or no update today)

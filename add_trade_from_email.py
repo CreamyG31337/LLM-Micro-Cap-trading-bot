@@ -57,8 +57,8 @@ Examples:
     
     parser.add_argument(
         '--data-dir', '-d',
-        default='my trading',
-        help='Directory containing trading data files (default: "my trading")'
+        default='trading_data/prod',
+        help='Directory containing trading data files (default: "trading_data/prod")'
     )
     
     parser.add_argument(

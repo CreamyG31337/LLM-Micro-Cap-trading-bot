@@ -145,7 +145,7 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
     """Get available menu options with (key, title, description, args)"""
-    data_folder_name = "test_data" if IS_TEST_MODE else "my trading"
+    data_folder_name = "trading_data/dev" if IS_TEST_MODE else "trading_data/prod"
     return [
         ("1", "🔄 Main Trading Script", 
          f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder)", 

@@ -6,9 +6,11 @@ for quick trade additions.
 
 Usage:
     python quick_add_trade.py
+    python quick_add_trade.py --data-dir trading_data/dev
 """
 
 import sys
+import argparse
 from pathlib import Path
 
 # Add the project root to the Python path
@@ -20,6 +22,15 @@ from utils.email_trade_parser import parse_trade_from_email, add_trade_from_emai
 
 def main():
     """Simple interactive trade adder."""
+    parser = argparse.ArgumentParser(description="Quick trade adder from email notifications")
+    parser.add_argument(
+        '--data-dir', '-d',
+        default='trading_data/prod',
+        help='Directory containing trading data files (default: "trading_data/prod")'
+    )
+    
+    args = parser.parse_args()
+    
     print("🚀 Quick Trade Adder")
     print("=" * 50)
     print("Paste your email trade notification below and press Enter twice when done:")
@@ -69,7 +80,7 @@ def main():
     
     # Add to system
     print("\nAdding to trading system...")
-    success = add_trade_from_email(email_text, "trading_data/prod")
+    success = add_trade_from_email(email_text, args.data_dir)
     
     if success:
         print("✅ Trade added successfully!")

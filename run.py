@@ -288,7 +288,7 @@ def get_script_path(option: str) -> Optional[Path]:
         "d": PROJECT_ROOT / "prompt_generator.py",
         "w": PROJECT_ROOT / "prompt_generator.py",
         "u": PROJECT_ROOT / "update_cash.py",
-        "e": PROJECT_ROOT / "quick_add_trade.py"
+        "e": PROJECT_ROOT / "add_trade_from_email.py"
     }
     
     return script_map.get(option)

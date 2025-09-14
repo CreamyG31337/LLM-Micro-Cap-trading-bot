@@ -27,7 +27,7 @@ from pathlib import Path
 from collections import defaultdict
 import sys
 from datetime import datetime, timedelta
-import yfinance as yf
+import yfinance as yf  # retained for compatibility, core fetching uses MarketDataFetcher
 import time
 from decimal import Decimal, getcontext
 import pytz
@@ -84,30 +84,47 @@ def get_market_close_time(timezone_str: str = None) -> str:
     timezone_abbr = now.strftime('%Z')
     return f"{now.strftime('%Y-%m-%d')} {close_hour:02d}:00:00 {timezone_abbr}"
 
+# Use shared market data fetcher with price cache for efficiency
+from market_data.price_cache import PriceCache
+from market_data.data_fetcher import MarketDataFetcher
+PRICE_CACHE = PriceCache()
+FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)
+
 def get_current_price(ticker: str) -> float:
-    """Get current price from Yahoo Finance"""
+    """Get current price using cached fetcher"""
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        return float(info.get('currentPrice', info.get('regularMarketPrice', 0)))
-    except:
-        return 0.0
+        end = pd.Timestamp.now()
+        start = end - pd.Timedelta(days=5)
+        result = FETCHER.fetch_price_data(ticker, start, end)
+        df = result.df
+        if df is not None and not df.empty and 'Close' in df.columns:
+            return float(df['Close'].iloc[-1])
+    except Exception:
+        pass
+    return 0.0
 
 def get_historical_close_price(ticker: str, date_str: str) -> float:
-    """Get the historical close price for a ticker on a given calendar date (YYYY-MM-DD)."""
+    """Get the historical close price using cached fetcher."""
     try:
         date_obj = pd.to_datetime(date_str).date()
         next_date = date_obj + timedelta(days=1)
-        stock = yf.Ticker(ticker)
-        hist = stock.history(start=str(date_obj), end=str(next_date), interval='1d')
-        if hist is not None and not hist.empty and 'Close' in hist.columns:
-            return float(hist['Close'].iloc[0])
-        # Fallback to previous available close before the date
-        fallback = stock.history(end=str(date_obj), period='5d', interval='1d')
-        if fallback is not None and not fallback.empty and 'Close' in fallback.columns:
-            return float(fallback['Close'].iloc[-1])
+        # Fetch the exact day range
+        result = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj), pd.Timestamp(next_date))
+        df = result.df
+        if df is not None and not df.empty and 'Close' in df.columns:
+            # Find row matching the date
+            day_rows = df[df.index.date == date_obj]
+            if not day_rows.empty:
+                return float(day_rows['Close'].iloc[0])
+            # If only one row in range, use it
+            return float(df['Close'].iloc[0])
+        # Fallback: fetch previous 5 days and return last close
+        result2 = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj) - pd.Timedelta(days=7), pd.Timestamp(date_obj))
+        df2 = result2.df
+        if df2 is not None and not df2.empty and 'Close' in df2.columns:
+            return float(df2['Close'].iloc[-1])
         return 0.0
-    except:
+    except Exception:
         return 0.0
 
 def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone_str: str = None):

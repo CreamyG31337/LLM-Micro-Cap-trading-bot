@@ -331,8 +331,9 @@ class CSVRepository(BaseRepository):
             # Reorder columns
             df = df[expected_columns]
             
-            # Append to existing file or create new one
+            # Ensure file ends with proper newline before appending
             if self.trade_log_file.exists():
+                self._ensure_file_ends_with_newline(self.trade_log_file)
                 df.to_csv(self.trade_log_file, mode='a', header=False, index=False, lineterminator='\n')
             else:
                 df.to_csv(self.trade_log_file, index=False, lineterminator='\n')
@@ -342,6 +343,28 @@ class CSVRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to save trade: {e}")
             raise RepositoryError(f"Failed to save trade: {e}") from e
+    
+    def _ensure_file_ends_with_newline(self, file_path: Path) -> None:
+        """Ensure a file ends with exactly one newline before appending.
+        
+        Args:
+            file_path: Path to the file to check
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # If file doesn't end with newline, add one
+            if content and not content.endswith('\n'):
+                with open(file_path, 'a', encoding='utf-8') as f:
+                    f.write('\n')
+            # If file ends with multiple newlines, fix it
+            elif content.endswith('\n\n'):
+                content = content.rstrip('\n') + '\n'
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+        except Exception as e:
+            logger.warning(f"Failed to ensure proper newline in {file_path}: {e}")
     
     def get_positions_by_ticker(self, ticker: str) -> List[Position]:
         """Get all positions for a specific ticker across time.

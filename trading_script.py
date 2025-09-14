@@ -540,6 +540,19 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             
             enhanced_positions.append(pos_dict)
         
+        # Sort positions by weight percentage (highest first)
+        def get_weight_value(pos_dict):
+            """Extract numeric weight value for sorting."""
+            weight_str = pos_dict.get('position_weight', '0.0%')
+            if weight_str == 'N/A':
+                return -1  # Put N/A values at the end
+            try:
+                return float(weight_str.replace('%', ''))
+            except (ValueError, AttributeError):
+                return -1
+        
+        enhanced_positions.sort(key=get_weight_value, reverse=True)
+        
         # Clear screen before displaying portfolio
         import os
         import json

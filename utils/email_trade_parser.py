@@ -323,7 +323,7 @@ def parse_trade_from_email(email_text: str) -> Optional[Trade]:
     return parser.parse_email_trade(email_text)
 
 
-def add_trade_from_email(email_text: str, data_dir: str = "my trading") -> bool:
+def add_trade_from_email(email_text: str, data_dir: str = "trading_data/prod") -> bool:
     """Parse email text and add the trade to the trading system.
     
     Args:

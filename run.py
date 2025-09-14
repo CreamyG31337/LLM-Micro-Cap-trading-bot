@@ -33,8 +33,8 @@ from display.console_output import _safe_emoji
 # Project structure
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / "venv"
-MY_TRADING_DIR = PROJECT_ROOT / "my trading"
-TEST_DATA_DIR = PROJECT_ROOT / "test_data"
+MY_TRADING_DIR = PROJECT_ROOT / "trading_data" / "prod"
+TEST_DATA_DIR = PROJECT_ROOT / "trading_data" / "dev"
 SCRIPTS_DIR = PROJECT_ROOT / "Scripts and CSV Files"
 START_YOUR_OWN_DIR = PROJECT_ROOT / "Start Your Own"
 

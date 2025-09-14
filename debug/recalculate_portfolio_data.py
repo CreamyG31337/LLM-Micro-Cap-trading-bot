@@ -20,7 +20,7 @@ from datetime import datetime
 # Import emoji handling
 from display.console_output import _safe_emoji
 
-def recalculate_portfolio_data(data_dir: str = "my trading"):
+def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
     """Update existing portfolio rows with correct data from trade log - preserves all historical price tracking"""
     
     data_path = Path(data_dir)
@@ -322,9 +322,16 @@ def main():
     print("=" * 50)
     
     # Check if data directory argument provided
-    data_dir = "my trading"
+    data_dir = "trading_data/prod"
     if len(sys.argv) > 1:
         data_dir = sys.argv[1]
+    
+    # Show environment banner
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from display.console_output import print_environment_banner
+    print_environment_banner(data_dir)
     
     print(f"📁 Using data directory: {data_dir}")
     

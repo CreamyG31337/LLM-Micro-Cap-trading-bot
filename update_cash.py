@@ -61,9 +61,12 @@ def main():
     parser.add_argument("--data-dir", type=str, help="Data directory path")
     args = parser.parse_args()
     
-    from display.console_output import _safe_emoji
+    from display.console_output import _safe_emoji, print_environment_banner
     print(f"{_safe_emoji('💰')} Cash Balance Update Utility")
     print("=" * 40)
+    
+    # Show environment banner
+    print_environment_banner(args.data_dir)
     
     # Set up data directory
     if args.data_dir:

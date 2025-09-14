@@ -7,6 +7,7 @@ any repository type and provide consistent messaging across the trading system.
 
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 
@@ -394,3 +395,84 @@ def has_color_support() -> bool:
         True if either Rich or colorama is available
     """
     return (_HAS_RICH and console and not _FORCE_FALLBACK) or not _FORCE_COLORAMA_ONLY
+
+
+def detect_environment(data_dir: Optional[str] = None) -> str:
+    """Detect the current environment based on data directory.
+    
+    Args:
+        data_dir: Optional data directory path to check
+        
+    Returns:
+        Environment name: 'PRODUCTION', 'DEVELOPMENT', or 'UNKNOWN'
+    """
+    if not data_dir:
+        return 'UNKNOWN'
+    
+    data_path = Path(data_dir).resolve()
+    
+    # Check for development environment
+    if 'dev' in str(data_path).lower() or 'test' in str(data_path).lower():
+        return 'DEVELOPMENT'
+    
+    # Check for production environment
+    if 'prod' in str(data_path).lower() or 'production' in str(data_path).lower():
+        return 'PRODUCTION'
+    
+    # Check for legacy test_data directory
+    if 'test_data' in str(data_path).lower():
+        return 'DEVELOPMENT'
+    
+    # Check for legacy my trading directory
+    if 'my trading' in str(data_path).lower():
+        return 'PRODUCTION'
+    
+    return 'UNKNOWN'
+
+
+def get_environment_banner(data_dir: Optional[str] = None) -> str:
+    """Get a formatted environment banner.
+    
+    Args:
+        data_dir: Optional data directory path to check
+        
+    Returns:
+        Formatted environment banner string
+    """
+    env = detect_environment(data_dir)
+    
+    if env == 'DEVELOPMENT':
+        return "🔧 DEVELOPMENT ENVIRONMENT 🔧"
+    elif env == 'PRODUCTION':
+        return "🚨 PRODUCTION ENVIRONMENT 🚨"
+    else:
+        return "❓ UNKNOWN ENVIRONMENT ❓"
+
+
+def print_environment_banner(data_dir: Optional[str] = None) -> None:
+    """Print a prominent environment banner.
+    
+    Args:
+        data_dir: Optional data directory path to check
+    """
+    env = detect_environment(data_dir)
+    banner = get_environment_banner(data_dir)
+    
+    if env == 'DEVELOPMENT':
+        print_warning(f"\n{'=' * 60}")
+        print_warning(f"  {banner}")
+        print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
+        print_warning(f"  ⚠️  Safe to modify - This is test data")
+        print_warning(f"{'=' * 60}\n")
+    elif env == 'PRODUCTION':
+        print_error(f"\n{'=' * 60}")
+        print_error(f"  {banner}")
+        print_error(f"  📁 Data Directory: {data_dir or 'Not specified'}")
+        print_error(f"  ⚠️  CAUTION: This is LIVE PRODUCTION DATA")
+        print_error(f"{'=' * 60}\n")
+    else:
+        print_warning(f"\n{'=' * 60}")
+        print_warning(f"  {banner}")
+        print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
+        print_warning(f"  ⚠️  Environment could not be determined")
+        print_warning(f"{'=' * 60}\n")

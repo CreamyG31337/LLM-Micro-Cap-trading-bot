@@ -33,6 +33,38 @@
 
 ## Daily Prompt Enhancements — Portfolio Manager Requests (2025-09-14)
 
+---
+
+## Email Trade Ingestion Improvements (Option 'e') — Plan (2025-09-14)
+
+Goals:
+- Allow entering multiple email trades in one session with per-trade confirmation
+- Append parsed trades to trade log (canonical), not directly to portfolio snapshot
+- After user is done, offer to rebuild portfolio from trade log
+- Use caching to minimize repeated API calls (company names, prices)
+
+Tasks:
+- [x] Add multi-email interactive mode to add_trade_from_email.py with END/DONE flow
+- [x] Confirm each parsed trade before saving; display parsed details clearly
+- [x] Save to trade log only; avoid immediate portfolio mutation to preserve invariants
+- [x] Prompt to rebuild portfolio after session; wire to debug/rebuild_portfolio_from_scratch.py
+- [x] Convert rebuild script to use cached MarketDataFetcher + PriceCache
+- [x] Add company name caching using PriceCache; persist cache for reuse
+- [x] Add idempotency: prevent duplicate trades by de-duplicating on (timestamp,ticker,action,shares,price)
+- [ ] Optional: CLI flag to auto-rebuild after N trades without prompt
+- [ ] Optional: Batch prefetch prices for tickers present in the session to accelerate rebuild
+
+Documentation & Tests:
+- [x] Add docs/EMAIL_INGEST.md covering workflow, idempotency, caching, and usage
+- [ ] Add unit tests for is_duplicate_trade() with edge cases (timestamps, rounding)
+- [ ] Add integration test for add_trade_from_email multi-email flow (mock input)
+
+Acceptance:
+- User can paste multiple emails and save multiple trades in one run
+- Trade log shows appended entries; portfolio not directly modified during ingestion
+- Rebuild prompt runs and regenerates portfolio correctly
+- Company names and price/history requests hit caches on subsequent runs
+
 Goal: Add company profile and fundamentals to the daily prompt, prioritizing items available via API or straightforward computation. Place fields into existing tables when they fit; otherwise, introduce a third "Fundamentals" table with both rich and plain-text fallbacks.
 
 ### Placement plan (initial)

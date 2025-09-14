@@ -240,7 +240,11 @@ def validate_ticker_format(ticker: str) -> bool:
 
 
 def get_company_name(ticker: str) -> str:
-    """Get company name for ticker symbol via yfinance.
+    """Get company name for ticker symbol with caching.
+    
+    Order of resolution:
+    1) Read from persisted name cache (PriceCache)
+    2) Fetch via yfinance and persist to cache
     
     Args:
         ticker: Ticker symbol
@@ -248,16 +252,39 @@ def get_company_name(ticker: str) -> str:
     Returns:
         Company name or 'Unknown' if not found
     """
+    if not ticker:
+        return 'Unknown'
+    
+    try:
+        from market_data.price_cache import PriceCache
+        pc = PriceCache()
+        key = ticker.upper().strip()
+        cached = pc.get_company_name(key)
+        if cached:
+            return cached
+    except Exception:
+        pc = None
+        key = ticker.upper().strip()
+    
+    # Fallback to yfinance lookup
+    name = 'Unknown'
     try:
         import yfinance as yf
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(key)
         info = stock.info
-        
         if info and info.get('longName'):
-            return info.get('longName')
+            name = info.get('longName')
         elif info and info.get('shortName'):
-            return info.get('shortName')
-        else:
-            return 'Unknown'
-    except:
-        return 'Unknown'
+            name = info.get('shortName')
+    except Exception:
+        pass
+    
+    # Persist to cache if available
+    try:
+        if name != 'Unknown' and pc is not None:
+            pc.cache_company_name(key, name)
+            pc.save_persistent_cache()
+    except Exception:
+        pass
+    
+    return name

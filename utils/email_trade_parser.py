@@ -324,34 +324,120 @@ def parse_trade_from_email(email_text: str) -> Optional[Trade]:
     return parser.parse_email_trade(email_text)
 
 
+def is_duplicate_trade(trade: Trade, repository) -> bool:
+    """Check if a trade already exists in the trade log (idempotent guard).
+    
+    A trade is considered duplicate if another trade exists with:
+    - Same ticker (case-insensitive)
+    - Same action (BUY/SELL)
+    - Shares equal within 1e-6
+    - Price equal within 1e-6
+    - Timestamp within ±5 minutes
+    """
+    try:
+        from decimal import Decimal
+        from datetime import timedelta
+        # Load existing trades via repository for consistent parsing
+        existing = repository.get_trade_history()
+        if not existing:
+            return False
+        t_ticker = trade.ticker.upper().strip()
+        t_action = trade.action.upper().strip()
+        t_shares = Decimal(str(trade.shares))
+        t_price = Decimal(str(trade.price))
+        t_time = trade.timestamp
+        eps = Decimal('0.000001')
+        for ex in existing:
+            if ex.ticker.upper().strip() != t_ticker:
+                continue
+            if ex.action.upper().strip() != t_action:
+                continue
+            try:
+                e_shares = Decimal(str(ex.shares))
+                e_price = Decimal(str(ex.price))
+            except Exception:
+                continue
+            if abs(e_shares - t_shares) > eps:
+                continue
+            if abs(e_price - t_price) > eps:
+                continue
+            try:
+                dt = ex.timestamp
+                if dt.tzinfo is None and t_time.tzinfo is not None:
+                    # Assume same TZ if missing
+                    dt = dt.replace(tzinfo=t_time.tzinfo)
+                delta = abs((dt - t_time).total_seconds())
+            except Exception:
+                # Fallback: consider duplicate on matching all other fields
+                delta = 0
+            if delta <= 300:  # within 5 minutes
+                return True
+        return False
+    except Exception as e:
+        logger.debug(f"Duplicate check failed: {e}")
+        return False
+
+
 def add_trade_from_email(email_text: str, data_dir: str = "trading_data/prod") -> bool:
     """Parse email text and add the trade to the trading system.
-    
+
     Args:
         email_text: Raw email text containing trade information
         data_dir: Directory containing trading data files
-        
+
     Returns:
         True if trade was successfully added, False otherwise
     """
     try:
-        # Parse the trade
+        # Parse the trade (may have incomplete cost_basis for sells)
         trade = parse_trade_from_email(email_text)
         if not trade:
             print("Failed to parse trade from email text")
             return False
-        
+
         # Import here to avoid circular imports
         from data.repositories.csv_repository import CSVRepository
         from portfolio.trade_processor import TradeProcessor
-        
+
         # Initialize repository and processor
         repository = CSVRepository(data_dir)
+
+        # Idempotency guard: skip exact duplicates
+        if is_duplicate_trade(trade, repository):
+            print("ℹ️  Duplicate trade detected; skipping insert.")
+            return True
+
         processor = TradeProcessor(repository)
-        
+
+        # For sell trades, fix the cost_basis and PnL calculation
+        if trade.action == 'SELL':
+            # Get current position to calculate correct cost basis
+            current_position = processor._get_current_position(trade.ticker)
+            if current_position and current_position.shares >= trade.shares:
+                # Calculate actual cost basis from existing position
+                cost_basis = current_position.avg_price * trade.shares
+                proceeds = trade.price * trade.shares
+                pnl = proceeds - cost_basis
+
+                # Update trade with correct values
+                trade = Trade(
+                    ticker=trade.ticker,
+                    action=trade.action,
+                    shares=trade.shares,
+                    price=trade.price,
+                    timestamp=trade.timestamp,
+                    cost_basis=cost_basis,
+                    pnl=pnl,
+                    reason=trade.reason,
+                    currency=trade.currency
+                )
+                logger.info(f"Corrected sell trade cost basis: {cost_basis}, PnL: {pnl}")
+            else:
+                logger.warning(f"No sufficient position found for sell trade: {trade.ticker}")
+
         # Save the trade to the repository
         repository.save_trade(trade)
-        
+
         # Update portfolio position using the proper method that handles multiple trades per day
         if trade.action == 'BUY':
             processor._update_position_after_buy(trade, None)
@@ -360,10 +446,10 @@ def add_trade_from_email(email_text: str, data_dir: str = "trading_data/prod") -
         else:
             print(f"Unsupported action: {trade.action}")
             return False
-        
+
         print(f"Successfully added trade: {trade.ticker} {trade.action} {trade.shares} @ {trade.price}")
         return True
-        
+
     except Exception as e:
         print(f"Error adding trade from email: {e}")
         logger.error(f"Error adding trade from email: {e}")

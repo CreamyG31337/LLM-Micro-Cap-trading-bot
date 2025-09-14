@@ -233,8 +233,8 @@ class TestPortfolioDisplayBugs:
             {
                 'Ticker': 'TEST',
                 'Company': 'Test Company',
-                'Total P&L': '+5.0% [$50.00]',
-                'Daily P&L': '+2.0% [$10.50]'
+                'Total P&L': '+5.0% $50.00',
+                'Daily P&L': '+2.0% $10.50'
             }
         ]
         
@@ -356,8 +356,8 @@ class TestPandasUnicodeBugs:
         pd.set_option('display.unicode.east_asian_width', False)
         
         test_data = [
-            {'Ticker': 'AAPL', 'P&L': '+5.0% [$50.00]'},
-            {'Ticker': 'TSLA', 'P&L': '-10.0% [$-100.00]'}
+            {'Ticker': 'AAPL', 'P&L': '+5.0% $50.00'},
+            {'Ticker': 'TSLA', 'P&L': '-10.0% $-100.00'}
         ]
         
         df = pd.DataFrame(test_data)

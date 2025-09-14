@@ -336,9 +336,9 @@ class PromptGenerator:
                     except:
                         daily_pnl_pct_str = "N/A"
 
-                # Combine P&L values with brackets around dollar amounts
+                # Combine P&L values with dollar amounts
                 dollar_pnl_str = f"${dollar_pnl:+,.2f}" if dollar_pnl != 0 else "$0.00"
-                total_pnl = f"{total_pnl_pct_str} [{dollar_pnl_str}]"
+                total_pnl = f"{total_pnl_pct_str} {dollar_pnl_str}"
                 
                 # Use daily P&L from the row data (already calculated in trading script)
                 daily_pnl_dollar = row.get('daily_pnl', 'N/A')
@@ -356,11 +356,11 @@ class PromptGenerator:
                             daily_pnl_pct_str = f"{daily_pnl_pct:+.1f}%"
                         else:
                             daily_pnl_pct_str = "0.0%"
-                        daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
+                        daily_pnl = f"{daily_pnl_pct_str} {daily_pnl_dollar}"
                     except (ValueError, AttributeError):
-                        daily_pnl = f"{daily_pnl_pct_str} [{daily_pnl_dollar}]"
+                        daily_pnl = f"{daily_pnl_pct_str} {daily_pnl_dollar}"
                 else:
-                    daily_pnl = f"0.0% [$0.00]"
+                    daily_pnl = f"0.0% $0.00"
                     daily_pnl_value = 0.0
 
                 current_price_str = f"${current_price:.2f}"

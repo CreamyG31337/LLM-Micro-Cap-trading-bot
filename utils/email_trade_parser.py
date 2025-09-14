@@ -119,7 +119,8 @@ class EmailTradeParser:
             
             # Calculate cost basis if not provided
             if not total_cost:
-                total_cost = float(shares) * float(price)
+                # Use Decimal arithmetic to avoid floating point precision errors
+                total_cost = Decimal(str(shares)) * Decimal(str(price))
             
             # Create Trade object
             trade = Trade(
@@ -128,7 +129,7 @@ class EmailTradeParser:
                 shares=Decimal(str(shares)),
                 price=Decimal(str(price)),
                 timestamp=timestamp,
-                cost_basis=Decimal(str(total_cost)),
+                cost_basis=total_cost if isinstance(total_cost, Decimal) else Decimal(str(total_cost)),
                 reason=f"EMAIL TRADE - {action}",
                 currency=currency
             )
@@ -348,10 +349,10 @@ def add_trade_from_email(email_text: str, data_dir: str = "trading_data/prod") -
         repository = CSVRepository(data_dir)
         processor = TradeProcessor(repository)
         
-        # Save the trade directly to the repository with the correct timestamp
+        # Save the trade to the repository
         repository.save_trade(trade)
         
-        # Update portfolio position
+        # Update portfolio position using the proper method that handles multiple trades per day
         if trade.action == 'BUY':
             processor._update_position_after_buy(trade, None)
         elif trade.action == 'SELL':

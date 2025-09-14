@@ -20,6 +20,21 @@ from datetime import datetime
 # Import emoji handling
 from display.console_output import _safe_emoji
 
+def get_company_name(ticker: str) -> str:
+    """Get company name for ticker using yfinance lookup"""
+    try:
+        from utils.ticker_utils import get_company_name as lookup_company_name
+        return lookup_company_name(ticker)
+    except Exception as e:
+        print(f"Warning: Could not lookup company name for {ticker}: {e}")
+        return 'Unknown'
+
+def get_currency(ticker: str) -> str:
+    """Get currency for ticker"""
+    if '.TO' in ticker or '.V' in ticker:
+        return 'CAD'
+    return 'USD'
+
 def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
     """Update existing portfolio rows with correct data from trade log - preserves all historical price tracking"""
     
@@ -113,12 +128,11 @@ def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
                 
                 if not sell_exists:
                     # Get company/currency info
-                    company = 'Unknown'
-                    currency = 'USD'
+                    company = get_company_name(ticker)
+                    currency = get_currency(ticker)
                     for _, row in portfolio_df.iterrows():
                         if row['Ticker'] == ticker:
-                            company = row.get('Company', 'Unknown')
-                            currency = row.get('Currency', 'USD')
+                            currency = row.get('Currency', get_currency(ticker))
                             break
                     
                     missing_trades.append({
@@ -156,12 +170,11 @@ def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
                 
                 if not buy_exists:
                     # Get company/currency info
-                    company = 'Unknown'
-                    currency = 'USD'
+                    company = get_company_name(ticker)
+                    currency = get_currency(ticker)
                     for _, row in portfolio_df.iterrows():
                         if row['Ticker'] == ticker:
-                            company = row.get('Company', 'Unknown')
-                            currency = row.get('Currency', 'USD')
+                            currency = row.get('Currency', get_currency(ticker))
                             break
                     
                     # Calculate values

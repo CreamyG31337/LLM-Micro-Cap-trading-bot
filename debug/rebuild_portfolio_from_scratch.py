@@ -402,20 +402,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         return False
 
 def get_company_name(ticker: str) -> str:
-    """Get company name for ticker"""
-    company_names = {
-        'CTRN': 'Citi Trends, Inc.',
-        'VEE.TO': 'Vanguard FTSE Emerging Markets All Cap Index ETF',
-        'GMIN.TO': 'G Mining Ventures Corp.',
-        'CRWD': 'CrowdStrike Holdings, Inc.',
-        'PLTR': 'Palantir Technologies Inc.',
-        'SMH': 'VanEck Semiconductor ETF',
-        'XMA.TO': 'iShares S&P/TSX Capped Materials Index ETF',
-        'HLIT.TO': 'Global X Lithium Producers Index ETF',
-        'WEB.V': 'Westbridge Renewable Energy Corp.',
-        'ZCH.TO': 'BMO MSCI China Selection Equity Index ETF'
-    }
-    return company_names.get(ticker, 'Unknown')
+    """Get company name for ticker using yfinance lookup"""
+    try:
+        from utils.ticker_utils import get_company_name as lookup_company_name
+        return lookup_company_name(ticker)
+    except Exception as e:
+        print(f"Warning: Could not lookup company name for {ticker}: {e}")
+        return 'Unknown'
 
 def get_currency(ticker: str) -> str:
     """Get currency for ticker"""

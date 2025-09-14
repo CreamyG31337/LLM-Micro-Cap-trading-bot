@@ -480,8 +480,8 @@ class TradeProcessor:
             latest_snapshot.add_position(updated_position)
             latest_snapshot.timestamp = trade.timestamp
             
-            # Save updated snapshot
-            self.repository.save_portfolio_snapshot(latest_snapshot)
+            # Save updated snapshot using the method that handles multiple trades per day
+            self.repository.update_daily_portfolio_snapshot(latest_snapshot)
             
             logger.info(f"Position updated after buy: {trade.ticker}")
             
@@ -535,8 +535,8 @@ class TradeProcessor:
             # Update snapshot timestamp
             latest_snapshot.timestamp = trade.timestamp
             
-            # Save updated snapshot
-            self.repository.save_portfolio_snapshot(latest_snapshot)
+            # Save updated snapshot using the method that handles multiple trades per day
+            self.repository.update_daily_portfolio_snapshot(latest_snapshot)
             
         except Exception as e:
             logger.error(f"Failed to update position after sell trade: {e}")

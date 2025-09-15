@@ -232,6 +232,9 @@ trading_data/backups/
 !trading_data/*/README.md
 Results.png
 
+# Ignore generated graphs folder
+graphs/
+
 # Runtime files - should not be tracked
 .script_timestamp
 .script_hash

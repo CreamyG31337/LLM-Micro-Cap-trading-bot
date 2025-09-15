@@ -643,6 +643,94 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         else:
             header_title = "Portfolio Summary"
             
+        # UPDATE CSV BEFORE DISPLAYING - This ensures the portfolio data is current
+        try:
+            # Create updated snapshot with current prices
+            updated_snapshot = PortfolioSnapshot(
+                positions=updated_positions,
+                timestamp=datetime.now(),
+                total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
+            )
+            
+            # Check if we should update prices (market hours or no update today)
+            should_update_prices = False
+            
+            # Check if market is open
+            if market_hours.is_market_open():
+                should_update_prices = True
+                logger.debug("Market is open - updating portfolio prices")
+            else:
+                # Market is closed - check if we need to update based on data freshness
+                latest_snapshot = portfolio_manager.get_latest_portfolio()
+                if latest_snapshot:
+                    latest_timestamp = latest_snapshot.timestamp
+                    # Use timezone-aware datetime for comparison to avoid timezone mismatch errors
+                    from utils.timezone_utils import get_current_trading_time
+                    now = get_current_trading_time()
+                    hours_since_update = (now - latest_timestamp).total_seconds() / 3600
+                    
+                    # Update if:
+                    # 1. No data from today at all
+                    # 2. Data is from today but older than 4 hours (likely pre-market/stale)
+                    # 3. Market has closed since last update and we can get closing prices
+                    # 4. New trades were added today that need HOLD entries
+                    
+                    # Check if there are new trades that only have BUY entries (no HOLD entries)
+                    today_buy_tickers = set()
+                    today_hold_tickers = set()
+                    
+                    # Get today's entries from the CSV to check for missing HOLD entries
+                    try:
+                        import pandas as pd
+                        df = pd.read_csv(repository.portfolio_file)
+                        df['Date'] = df['Date'].apply(repository._parse_csv_timestamp)
+                        df['Date_Only'] = df['Date'].dt.date
+                        today_data = df[df['Date_Only'] == now.date()]
+                        
+                        for _, row in today_data.iterrows():
+                            ticker = row['Ticker']
+                            action = row['Action']
+                            if action == 'BUY':
+                                today_buy_tickers.add(ticker)
+                            elif action == 'HOLD':
+                                today_hold_tickers.add(ticker)
+                        
+                        # Check if there are BUY entries without corresponding HOLD entries
+                        missing_hold_entries = today_buy_tickers - today_hold_tickers
+                        if missing_hold_entries:
+                            should_update_prices = True
+                            logger.debug(f"New trades found without HOLD entries: {missing_hold_entries} - updating to create HOLD entries")
+                    except Exception as e:
+                        logger.warning(f"Could not check for missing HOLD entries: {e}")
+                    
+                    if latest_timestamp.date() < now.date():
+                        should_update_prices = True
+                        logger.debug(f"Portfolio not updated today (last: {latest_timestamp.date()}) - updating prices")
+                    elif hours_since_update > 4:
+                        should_update_prices = True
+                        logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating prices")
+                    else:
+                        # Data is from today but recent - only skip if it's very fresh (< 1 hour)
+                        if hours_since_update < 1:
+                            logger.debug(f"Portfolio data is very recent ({latest_timestamp.strftime('%H:%M')}, {hours_since_update:.1f}h ago) - skipping update")
+                        else:
+                            should_update_prices = True
+                            logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating to get current prices")
+                else:
+                    should_update_prices = True
+                    logger.info("No existing portfolio data - creating initial snapshot")
+            
+            if should_update_prices:
+                # Use the new daily update method
+                repository.update_daily_portfolio_snapshot(updated_snapshot)
+                print_success("Portfolio snapshot updated successfully")
+            else:
+                print_info("Portfolio prices not updated (market closed and already updated today)")
+                
+        except Exception as e:
+            logger.warning(f"Could not save portfolio snapshot: {e}")
+            print_warning(f"Could not save portfolio snapshot: {e}")
+        
         print_header(header_title, "📊")
         table_formatter.create_portfolio_table(enhanced_positions)
         
@@ -879,8 +967,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('💾')} 'backup'  Create Backup"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
             print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
-            print(create_menu_line(f"{_safe_emoji('🚀')} Enter     Continue to Portfolio Processing"))
-            print(create_menu_line(f"{_safe_emoji('❌')} 'q'       Quit"))
+            print(create_menu_line(f"{_safe_emoji('❌')} Enter     Quit"))
             print(f"{Fore.GREEN}{Style.BRIGHT}{end_line}{Style.RESET_ALL}")
         else:
             print("+---------------------------------------------------------------+")
@@ -894,8 +981,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'backup' [B] Create Backup                                  |")
             print("| 'restore' ~ Restore from Backup                             |")
             print("| 'r' ~ Refresh Portfolio                                     |")
-            print("| Enter -> Continue to Portfolio Processing                   |")
-            print("| 'q' X Quit                                                  |")
+            print("| Enter -> Quit                                               |")
             print("+---------------------------------------------------------------+")
         print()
         
@@ -903,11 +989,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         try:
             action = input("Select an action: ").strip().lower()
             
-            if action == 'q':
+            if action == '' or action == 'enter':
                 print_info("Exiting trading system...")
-                return
-            elif action == '' or action == 'enter':
-                print_info("Continuing to portfolio processing...")
                 return
             elif action == 'r':
                 verify_script_before_action()
@@ -952,65 +1035,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Error in trading menu: {e}")
             print_warning("Error in trading menu")
-        
-        # Save updated portfolio snapshot (following daily update rules)
-        try:
-            # Create updated snapshot with current prices
-            updated_snapshot = PortfolioSnapshot(
-                positions=updated_positions,
-                timestamp=datetime.now(),
-                total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
-            )
-            
-            # Check if we should update prices (market hours or no update today)
-            should_update_prices = False
-            
-            # Check if market is open
-            if market_hours.is_market_open():
-                should_update_prices = True
-                logger.info("Market is open - updating portfolio prices")
-            else:
-                # Market is closed - check if we need to update based on data freshness
-                latest_snapshot = portfolio_manager.get_latest_portfolio()
-                if latest_snapshot:
-                    latest_timestamp = latest_snapshot.timestamp
-                    # Use timezone-aware datetime for comparison to avoid timezone mismatch errors
-                    from utils.timezone_utils import get_current_trading_time
-                    now = get_current_trading_time()
-                    hours_since_update = (now - latest_timestamp).total_seconds() / 3600
-                    
-                    # Update if:
-                    # 1. No data from today at all
-                    # 2. Data is from today but older than 4 hours (likely pre-market/stale)
-                    # 3. Market has closed since last update and we can get closing prices
-                    
-                    if latest_timestamp.date() < now.date():
-                        should_update_prices = True
-                        logger.info(f"Portfolio not updated today (last: {latest_timestamp.date()}) - updating prices")
-                    elif hours_since_update > 4:
-                        should_update_prices = True
-                        logger.info(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating prices")
-                    else:
-                        # Data is from today but recent - only skip if it's very fresh (< 1 hour)
-                        if hours_since_update < 1:
-                            logger.info(f"Portfolio data is very recent ({latest_timestamp.strftime('%H:%M')}, {hours_since_update:.1f}h ago) - skipping update")
-                        else:
-                            should_update_prices = True
-                            logger.info(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating to get current prices")
-                else:
-                    should_update_prices = True
-                    logger.info("No existing portfolio data - creating initial snapshot")
-            
-            if should_update_prices:
-                # Use the new daily update method
-                repository.update_daily_portfolio_snapshot(updated_snapshot)
-                print_success("Portfolio snapshot updated successfully")
-            else:
-                print_info("Portfolio prices not updated (market closed and already updated today)")
-                
-        except Exception as e:
-            logger.warning(f"Could not save portfolio snapshot: {e}")
-            print_warning(f"Could not save portfolio snapshot: {e}")
         
         print_success("Portfolio workflow completed successfully")
         

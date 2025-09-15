@@ -93,7 +93,7 @@ class TradingInterface:
                 return datetime.now()
     
     def log_contribution(self) -> bool:
-        """Handle contribution logging action.
+        """Handle contribution logging action with enhanced contributor selection.
         
         Returns:
             bool: True if successful, False otherwise
@@ -101,40 +101,78 @@ class TradingInterface:
         try:
             print_info("Log Fund Contribution", "💵")
             
-            # Get contributor name
-            contributor = input("Enter contributor name: ").strip()
-            if not contributor:
-                print_error("Contributor name cannot be empty")
+            # Get existing contributors
+            contributors = self._get_existing_contributors()
+            if contributors is None:
                 return False
             
-            # Get contributor email (optional)
-            email = input("Enter contributor email (optional): ").strip()
-            if email and '@' not in email:
-                print_warning("Email format may be invalid, but continuing...")
+            if contributors.empty:
+                print_warning("No contributors found. Please add contributors first using the 'Manage Contributors' option.")
+                return False
+            
+            # Display contributors with numbers
+            print("\n📋 Select Contributor:")
+            print("─" * 50)
+            for i, (_, contributor) in enumerate(contributors.iterrows(), 1):
+                name = contributor['Contributor']
+                email = contributor['Email'] if pd.notna(contributor['Email']) and contributor['Email'] else "No email"
+                print(f"  {i:2d}. {name:<20} ({email})")
+            print("─" * 50)
+            
+            # Get contributor selection
+            while True:
+                try:
+                    selection = input(f"\nSelect contributor (1-{len(contributors)}): ").strip()
+                    if not selection:
+                        print_error("Selection cannot be empty")
+                        continue
+                    
+                    choice = int(selection)
+                    if 1 <= choice <= len(contributors):
+                        selected_contributor = contributors.iloc[choice - 1]
+                        break
+                    else:
+                        print_error(f"Please enter a number between 1 and {len(contributors)}")
+                except ValueError:
+                    print_error("Please enter a valid number")
+                except KeyboardInterrupt:
+                    print_info("\nOperation cancelled")
+                    return False
             
             # Get contribution amount
-            try:
-                amount_str = input("Enter contribution amount: $").strip()
-                amount = float(amount_str)
-                if amount <= 0:
-                    print_error("Contribution amount must be positive")
+            while True:
+                try:
+                    amount_str = input("Enter contribution amount: $").strip()
+                    if not amount_str:
+                        print_error("Amount cannot be empty")
+                        continue
+                    
+                    amount = float(amount_str)
+                    if amount <= 0:
+                        print_error("Contribution amount must be positive")
+                        continue
+                    break
+                except ValueError:
+                    print_error("Invalid amount format. Please enter a number.")
+                except KeyboardInterrupt:
+                    print_info("\nOperation cancelled")
                     return False
-            except ValueError:
-                print_error("Invalid amount format")
-                return False
+            
+            # Get optional notes
+            notes = input("Enter notes (optional): ").strip()
             
             # Save contribution to CSV
             contribution_data = {
                 'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'Contributor': contributor,
+                'Contributor': selected_contributor['Contributor'],
                 'Amount': amount,
                 'Type': 'CONTRIBUTION',
-                'Notes': '',
-                'Email': email
+                'Notes': notes,
+                'Email': selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ''
             }
             
             self._save_contribution(contribution_data)
-            print_success(f"Contribution of ${amount:,.2f} logged for {contributor}")
+            print_success(f"Contribution of ${amount:,.2f} logged for {selected_contributor['Contributor']}")
             return True
             
         except Exception as e:
@@ -143,7 +181,7 @@ class TradingInterface:
             return False
     
     def log_withdrawal(self) -> bool:
-        """Handle withdrawal logging action.
+        """Handle withdrawal logging action with enhanced contributor selection.
         
         Returns:
             bool: True if successful, False otherwise
@@ -151,40 +189,78 @@ class TradingInterface:
         try:
             print_info("Log Fund Withdrawal", "💸")
             
-            # Get contributor name
-            contributor = input("Enter contributor name: ").strip()
-            if not contributor:
-                print_error("Contributor name cannot be empty")
+            # Get existing contributors
+            contributors = self._get_existing_contributors()
+            if contributors is None:
                 return False
             
-            # Get contributor email (optional)
-            email = input("Enter contributor email (optional): ").strip()
-            if email and '@' not in email:
-                print_warning("Email format may be invalid, but continuing...")
+            if contributors.empty:
+                print_warning("No contributors found. Please add contributors first using the 'Manage Contributors' option.")
+                return False
+            
+            # Display contributors with numbers
+            print("\n📋 Select Contributor:")
+            print("─" * 50)
+            for i, (_, contributor) in enumerate(contributors.iterrows(), 1):
+                name = contributor['Contributor']
+                email = contributor['Email'] if pd.notna(contributor['Email']) and contributor['Email'] else "No email"
+                print(f"  {i:2d}. {name:<20} ({email})")
+            print("─" * 50)
+            
+            # Get contributor selection
+            while True:
+                try:
+                    selection = input(f"\nSelect contributor (1-{len(contributors)}): ").strip()
+                    if not selection:
+                        print_error("Selection cannot be empty")
+                        continue
+                    
+                    choice = int(selection)
+                    if 1 <= choice <= len(contributors):
+                        selected_contributor = contributors.iloc[choice - 1]
+                        break
+                    else:
+                        print_error(f"Please enter a number between 1 and {len(contributors)}")
+                except ValueError:
+                    print_error("Please enter a valid number")
+                except KeyboardInterrupt:
+                    print_info("\nOperation cancelled")
+                    return False
             
             # Get withdrawal amount
-            try:
-                amount_str = input("Enter withdrawal amount: $").strip()
-                amount = float(amount_str)
-                if amount <= 0:
-                    print_error("Withdrawal amount must be positive")
+            while True:
+                try:
+                    amount_str = input("Enter withdrawal amount: $").strip()
+                    if not amount_str:
+                        print_error("Amount cannot be empty")
+                        continue
+                    
+                    amount = float(amount_str)
+                    if amount <= 0:
+                        print_error("Withdrawal amount must be positive")
+                        continue
+                    break
+                except ValueError:
+                    print_error("Invalid amount format. Please enter a number.")
+                except KeyboardInterrupt:
+                    print_info("\nOperation cancelled")
                     return False
-            except ValueError:
-                print_error("Invalid amount format")
-                return False
+            
+            # Get optional notes
+            notes = input("Enter notes (optional): ").strip()
             
             # Save withdrawal to CSV (as negative contribution)
             withdrawal_data = {
                 'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'Contributor': contributor,
+                'Contributor': selected_contributor['Contributor'],
                 'Amount': amount,
                 'Type': 'WITHDRAWAL',
-                'Notes': '',
-                'Email': email
+                'Notes': notes,
+                'Email': selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ''
             }
             
             self._save_contribution(withdrawal_data)
-            print_success(f"Withdrawal of ${amount:,.2f} logged for {contributor}")
+            print_success(f"Withdrawal of ${amount:,.2f} logged for {selected_contributor['Contributor']}")
             return True
             
         except Exception as e:
@@ -481,6 +557,29 @@ class TradingInterface:
             logger.error(f"Error managing contributors: {e}")
             print_error(f"Failed to manage contributors: {e}")
             return False
+    
+    def _get_existing_contributors(self) -> Optional[pd.DataFrame]:
+        """Get existing contributors from the fund contributions file.
+        
+        Returns:
+            DataFrame of contributors or None if error
+        """
+        try:
+            from portfolio.contributor_manager import ContributorManager
+            contributor_manager = ContributorManager(self.repository)
+            contributors = contributor_manager.get_contributors()
+            
+            if contributors.empty:
+                return pd.DataFrame()
+            
+            # Get unique contributors (in case there are multiple entries per contributor)
+            unique_contributors = contributors[['Contributor', 'Email']].drop_duplicates()
+            return unique_contributors.sort_values('Contributor')
+            
+        except Exception as e:
+            logger.error(f"Error getting contributors: {e}")
+            print_error(f"Failed to load contributors: {e}")
+            return None
     
     def _save_contribution(self, contribution_data: Dict[str, Any]) -> None:
         """Save contribution data to CSV file.

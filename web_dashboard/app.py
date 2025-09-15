@@ -152,13 +152,41 @@ def create_performance_chart(portfolio_df: pd.DataFrame) -> str:
             if portfolio_df.empty:
                 return json.dumps({})
             
+            # Load exchange rates for currency conversion
+            from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
+            from pathlib import Path
+            from decimal import Decimal
+            
+            exchange_rates = load_exchange_rates(Path("trading_data/prod"))
+            
             # Group by date and calculate daily totals
             daily_totals = []
             for date, group in portfolio_df.groupby(portfolio_df['Date'].dt.date):
                 current_positions = group[group['Total Value'] > 0]
                 if not current_positions.empty:
-                    total_value = current_positions['Total Value'].sum()
-                    total_cost_basis = current_positions['Cost Basis'].sum()
+                    # Calculate totals with proper currency conversion
+                    total_value_cad = Decimal('0')
+                    total_cost_basis_cad = Decimal('0')
+                    
+                    for _, pos in current_positions.iterrows():
+                        ticker = pos['Ticker']
+                        value = Decimal(str(pos['Total Value']))
+                        cost_basis = Decimal(str(pos['Cost Basis']))
+                        
+                        # Convert USD to CAD if needed
+                        if is_us_ticker(ticker):
+                            value_cad = convert_usd_to_cad(value, exchange_rates)
+                            cost_basis_cad = convert_usd_to_cad(cost_basis, exchange_rates)
+                        else:
+                            value_cad = value
+                            cost_basis_cad = cost_basis
+                        
+                        total_value_cad += value_cad
+                        total_cost_basis_cad += cost_basis_cad
+                    
+                    # Convert back to float for compatibility
+                    total_value = float(total_value_cad)
+                    total_cost_basis = float(total_cost_basis_cad)
                     performance_pct = ((total_value - total_cost_basis) / total_cost_basis * 100) if total_cost_basis > 0 else 0
                     
                     daily_totals.append({

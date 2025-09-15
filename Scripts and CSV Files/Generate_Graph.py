@@ -108,6 +108,13 @@ def load_portfolio_totals() -> pd.DataFrame:
     
     print(f"📅 Date range: {llm_df['Date_Only'].min()} to {llm_df['Date_Only'].max()}")
     
+    # Load exchange rates for currency conversion
+    from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
+    from pathlib import Path
+    from decimal import Decimal
+    
+    exchange_rates = load_exchange_rates(Path("trading_data/prod"))
+    
     # Group by date and calculate portfolio totals
     # For each date, we want the FINAL state (latest timestamp) for each ticker
     daily_totals = []
@@ -126,10 +133,35 @@ def load_portfolio_totals() -> pd.DataFrame:
                 latest_positions.append(latest_entry)
         
         if latest_positions:
-            # Calculate TRUE performance metrics
-            total_cost_basis = sum(pos['Cost Basis'] for pos in latest_positions)
-            total_market_value = sum(pos['Total Value'] for pos in latest_positions)
-            total_pnl = sum(pos['PnL'] for pos in latest_positions)
+            # Calculate TRUE performance metrics with proper currency conversion
+            total_cost_basis_cad = Decimal('0')
+            total_market_value_cad = Decimal('0')
+            total_pnl_cad = Decimal('0')
+            
+            for pos in latest_positions:
+                ticker = pos['Ticker']
+                cost_basis = Decimal(str(pos['Cost Basis']))
+                market_value = Decimal(str(pos['Total Value']))
+                pnl = Decimal(str(pos['PnL']))
+                
+                # Convert USD to CAD if needed
+                if is_us_ticker(ticker):
+                    cost_basis_cad = convert_usd_to_cad(cost_basis, exchange_rates)
+                    market_value_cad = convert_usd_to_cad(market_value, exchange_rates)
+                    pnl_cad = convert_usd_to_cad(pnl, exchange_rates)
+                else:
+                    cost_basis_cad = cost_basis
+                    market_value_cad = market_value
+                    pnl_cad = pnl
+                
+                total_cost_basis_cad += cost_basis_cad
+                total_market_value_cad += market_value_cad
+                total_pnl_cad += pnl_cad
+            
+            # Convert back to float for compatibility
+            total_cost_basis = float(total_cost_basis_cad)
+            total_market_value = float(total_market_value_cad)
+            total_pnl = float(total_pnl_cad)
             
             # Performance percentage (how much your investments have grown/declined)
             performance_pct = (total_pnl / total_cost_basis) * 100 if total_cost_basis > 0 else 0.0
@@ -289,8 +321,80 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
     return pd.Timestamp(row["Date"]), float(row["Total Equity"]), float(row["Drawdown %"])
 
 
+def refresh_portfolio_data(data_dir_path):
+    """Refresh portfolio data to ensure we have current prices before graphing."""
+    try:
+        print(f"🔄 Refreshing portfolio data to ensure current prices...")
+        
+        # Import the trading system components
+        import sys
+        sys.path.append(str(Path(__file__).parent.parent))
+        
+        from config.settings import get_settings
+        from data.repositories.repository_factory import get_repository_container, configure_repositories
+        from portfolio.portfolio_manager import PortfolioManager
+        from market_data.data_fetcher import MarketDataFetcher
+        from market_data.price_cache import PriceCache
+        
+        # Configure settings and repository
+        settings = get_settings()
+        if data_dir_path:
+            settings._data_directory = str(data_dir_path)
+        
+        repo_config = settings.get_repository_config()
+        configure_repositories({'default': repo_config})
+        repository = get_repository_container().get_repository('default')
+        
+        # Initialize components
+        portfolio_manager = PortfolioManager(repository)
+        price_cache = PriceCache()
+        market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
+        
+        # Get current portfolio and refresh prices
+        latest_snapshot = portfolio_manager.get_latest_snapshot()
+        if latest_snapshot and latest_snapshot.positions:
+            print(f"💰 Refreshing prices for {len(latest_snapshot.positions)} positions...")
+            
+            # Update prices for all positions
+            updated_positions = []
+            for position in latest_snapshot.positions:
+                try:
+                    current_price = market_data_fetcher.get_current_price(position.ticker)
+                    if current_price:
+                        # Update position with current market data
+                        position.current_price = current_price
+                        position.market_value = current_price * position.shares
+                        position.unrealized_pnl = position.market_value - position.cost_basis
+                        updated_positions.append(position)
+                        print(f"✅ {position.ticker}: ${current_price:.2f}")
+                    else:
+                        print(f"⚠️  {position.ticker}: Could not fetch current price")
+                        updated_positions.append(position)  # Keep existing data
+                except Exception as e:
+                    print(f"⚠️  {position.ticker}: Error fetching price - {e}")
+                    updated_positions.append(position)  # Keep existing data
+            
+            # Save updated snapshot
+            if updated_positions:
+                from datetime import datetime
+                updated_snapshot = latest_snapshot
+                updated_snapshot.positions = updated_positions
+                updated_snapshot.timestamp = datetime.now()
+                
+                portfolio_manager.save_snapshot(updated_snapshot)
+                print(f"✅ Portfolio data refreshed successfully")
+        else:
+            print(f"⚠️  No portfolio positions found to refresh")
+            
+    except Exception as e:
+        print(f"⚠️  Failed to refresh portfolio data: {e}")
+        print(f"📊 Continuing with existing data...")
+
 def main() -> dict:
     """Generate and display the comparison graph; return metrics."""
+    # First, try to refresh portfolio data to get current prices
+    refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() else None)
+    
     llm_totals = load_portfolio_totals()
 
     start_date = llm_totals["Date"].min()
@@ -397,6 +501,34 @@ def main() -> dict:
     actual_return = current_performance
     
     plt.title(f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs S&P 500)")
+    # Add weekend/holiday shading for market closure clarity
+    def add_market_closure_shading(start_date, end_date):
+        """Add light gray shading for weekends and holidays when markets are closed."""
+        import matplotlib.dates as mdates
+        from datetime import timedelta
+        
+        current_date = start_date.date()
+        end_date_only = end_date.date()
+        
+        while current_date <= end_date_only:
+            # Check if it's a weekend (Saturday=5, Sunday=6)
+            weekday = pd.to_datetime(current_date).weekday()
+            
+            if weekday >= 5:  # Weekend (Sat/Sun)
+                shade_start = pd.to_datetime(current_date)
+                shade_end = shade_start + pd.Timedelta(days=1)
+                
+                plt.axvspan(shade_start, shade_end, 
+                           color='lightgray', alpha=0.15, zorder=0,
+                           label='Weekend' if current_date == start_date.date() or weekday == 5 else "")
+            
+            # TODO: Add major market holidays (New Year's, July 4th, Christmas, etc.)
+            # For now, just handle weekends which are the most common
+            
+            current_date += timedelta(days=1)
+    
+    add_market_closure_shading(llm_totals["Date"].min(), llm_totals["Date"].max())
+    
     # Add break-even reference line
     plt.axhline(y=100, color='gray', linestyle=':', alpha=0.7, linewidth=1.5, label='Break-even')
     

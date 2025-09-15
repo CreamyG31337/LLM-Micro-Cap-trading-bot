@@ -18,6 +18,7 @@ from data.repositories.base_repository import BaseRepository, RepositoryError
 from data.models.portfolio import Position, PortfolioSnapshot
 from data.models.trade import Trade
 from financial.calculations import money_to_decimal, calculate_cost_basis, calculate_position_value
+from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker, is_canadian_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +225,7 @@ class PositionCalculator:
     
     def calculate_portfolio_metrics(self, snapshot: Optional[PortfolioSnapshot] = None,
                                    current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
-        """Calculate comprehensive portfolio-level metrics.
+        """Calculate comprehensive portfolio-level metrics with currency conversion.
         
         Args:
             snapshot: Portfolio snapshot to analyze (uses latest if None)
@@ -244,15 +245,26 @@ class PositionCalculator:
             
             logger.debug(f"Calculating portfolio metrics for {len(snapshot.positions)} positions")
             
-            # Initialize metrics
-            total_cost_basis = Decimal('0')
-            total_market_value = Decimal('0')
-            total_unrealized_pnl = Decimal('0')
+            # Load exchange rates for currency conversion
+            exchange_rates = {}
+            if hasattr(self.repository, 'data_dir'):
+                exchange_rates = load_exchange_rates(Path(self.repository.data_dir))
+            
+            # Initialize metrics (all in CAD equivalent)
+            total_cost_basis_cad = Decimal('0')
+            total_market_value_cad = Decimal('0')
+            total_unrealized_pnl_cad = Decimal('0')
             positions_with_gains = 0
             positions_with_losses = 0
-            largest_position_value = Decimal('0')
+            largest_position_value_cad = Decimal('0')
             largest_position_ticker = None
             position_metrics = []
+            
+            # Track separate USD and CAD totals for debugging
+            total_cost_basis_usd = Decimal('0')
+            total_cost_basis_cad_only = Decimal('0')
+            total_market_value_usd = Decimal('0')
+            total_market_value_cad_only = Decimal('0')
             
             # Calculate metrics for each position
             for position in snapshot.positions:
@@ -267,37 +279,75 @@ class PositionCalculator:
                 pos_metrics = self.calculate_position_metrics(position, current_price)
                 position_metrics.append(pos_metrics)
                 
-                # Aggregate portfolio metrics
-                total_cost_basis += position.cost_basis
+                # Determine currency and convert to CAD equivalent
+                is_us = is_us_ticker(position.ticker)
+                is_cad = is_canadian_ticker(position.ticker)
                 
+                # Convert cost basis to CAD
+                if is_us:
+                    cost_basis_cad = convert_usd_to_cad(position.cost_basis, exchange_rates)
+                    total_cost_basis_usd += position.cost_basis
+                elif is_cad:
+                    cost_basis_cad = position.cost_basis
+                    total_cost_basis_cad_only += position.cost_basis
+                else:
+                    # Default to CAD if currency can't be determined
+                    cost_basis_cad = position.cost_basis
+                    total_cost_basis_cad_only += position.cost_basis
+                
+                total_cost_basis_cad += cost_basis_cad
+                
+                # Convert market value to CAD
                 if pos_metrics['market_value']:
                     market_value = pos_metrics['market_value']
-                    total_market_value += market_value
+                    
+                    if is_us:
+                        market_value_cad = convert_usd_to_cad(market_value, exchange_rates)
+                        total_market_value_usd += market_value
+                    elif is_cad:
+                        market_value_cad = market_value
+                        total_market_value_cad_only += market_value
+                    else:
+                        # Default to CAD if currency can't be determined
+                        market_value_cad = market_value
+                        total_market_value_cad_only += market_value
+                    
+                    total_market_value_cad += market_value_cad
                     
                     # Track largest position
-                    if market_value > largest_position_value:
-                        largest_position_value = market_value
+                    if market_value_cad > largest_position_value_cad:
+                        largest_position_value_cad = market_value_cad
                         largest_position_ticker = position.ticker
                 
+                # Convert P&L to CAD
                 if pos_metrics['unrealized_pnl']:
                     pnl = pos_metrics['unrealized_pnl']
-                    total_unrealized_pnl += pnl
+                    
+                    if is_us:
+                        pnl_cad = convert_usd_to_cad(pnl, exchange_rates)
+                    elif is_cad:
+                        pnl_cad = pnl
+                    else:
+                        # Default to CAD if currency can't be determined
+                        pnl_cad = pnl
+                    
+                    total_unrealized_pnl_cad += pnl_cad
                     
                     # Count gains/losses
-                    if pnl > 0:
+                    if pnl_cad > 0:
                         positions_with_gains += 1
-                    elif pnl < 0:
+                    elif pnl_cad < 0:
                         positions_with_losses += 1
             
             # Calculate portfolio-level percentages
             total_unrealized_pnl_percentage = Decimal('0')
-            if total_cost_basis > 0:
-                total_unrealized_pnl_percentage = (total_unrealized_pnl / total_cost_basis * 100)
+            if total_cost_basis_cad > 0:
+                total_unrealized_pnl_percentage = (total_unrealized_pnl_cad / total_cost_basis_cad * 100)
             
             # Calculate position weights
             for pos_metrics in position_metrics:
-                if pos_metrics['market_value'] and total_market_value > 0:
-                    weight = (pos_metrics['market_value'] / total_market_value * 100)
+                if pos_metrics['market_value'] and total_market_value_cad > 0:
+                    weight = (pos_metrics['market_value'] / total_market_value_cad * 100)
                     pos_metrics['portfolio_weight_percentage'] = weight.quantize(Decimal('0.1'))
                 else:
                     pos_metrics['portfolio_weight_percentage'] = Decimal('0')
@@ -308,21 +358,32 @@ class PositionCalculator:
             
             metrics = {
                 'total_positions': len(snapshot.positions),
-                'total_cost_basis': total_cost_basis,
-                'total_market_value': total_market_value,
-                'total_unrealized_pnl': total_unrealized_pnl,
+                'total_cost_basis': total_cost_basis_cad,  # Now in CAD equivalent
+                'total_market_value': total_market_value_cad,  # Now in CAD equivalent
+                'total_unrealized_pnl': total_unrealized_pnl_cad,  # Now in CAD equivalent
                 'total_unrealized_pnl_percentage': total_unrealized_pnl_percentage,
                 'positions_with_gains': positions_with_gains,
                 'positions_with_losses': positions_with_losses,
                 'win_rate_percentage': Decimal(str(win_rate)).quantize(Decimal('0.1')),
-                'largest_position_value': largest_position_value,
+                'largest_position_value': largest_position_value_cad,  # Now in CAD equivalent
                 'largest_position_ticker': largest_position_ticker,
                 'snapshot_timestamp': snapshot.timestamp,
-                'position_metrics': position_metrics
+                'position_metrics': position_metrics,
+                # Debug information for currency breakdown
+                'debug_currency_breakdown': {
+                    'total_cost_basis_usd': total_cost_basis_usd,
+                    'total_cost_basis_cad_only': total_cost_basis_cad_only,
+                    'total_cost_basis_cad_equivalent': total_cost_basis_cad,
+                    'total_market_value_usd': total_market_value_usd,
+                    'total_market_value_cad_only': total_market_value_cad_only,
+                    'total_market_value_cad_equivalent': total_market_value_cad
+                }
             }
             
             logger.debug(f"Portfolio metrics calculated: {len(snapshot.positions)} positions, "
-                       f"${total_market_value} total value, {total_unrealized_pnl_percentage}% P&L")
+                       f"${total_market_value_cad} CAD total value, {total_unrealized_pnl_percentage}% P&L")
+            logger.debug(f"Currency breakdown - USD: ${total_cost_basis_usd} -> ${total_cost_basis_cad - total_cost_basis_cad_only:.2f} CAD, "
+                       f"CAD: ${total_cost_basis_cad_only}")
             
             return metrics
             

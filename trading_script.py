@@ -518,7 +518,24 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         # Calculate additional display metrics
         enhanced_positions = []
         from decimal import Decimal
-        total_portfolio_value = sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
+        
+        # Calculate total portfolio value with proper currency conversion
+        total_portfolio_value = Decimal('0')
+        from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
+        from pathlib import Path
+        
+        # Load exchange rates for currency conversion
+        exchange_rates = load_exchange_rates(Path(repository.data_dir))
+        
+        for pos in updated_positions:
+            if pos.market_value is not None:
+                if is_us_ticker(pos.ticker):
+                    # Convert USD to CAD
+                    market_value_cad = convert_usd_to_cad(pos.market_value, exchange_rates)
+                else:
+                    # Already in CAD
+                    market_value_cad = pos.market_value
+                total_portfolio_value += market_value_cad
         
         for position in updated_positions:
             pos_dict = position.to_dict()
@@ -953,16 +970,33 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 should_update_prices = True
                 logger.info("Market is open - updating portfolio prices")
             else:
-                # Check if portfolio was updated today
+                # Market is closed - check if we need to update based on data freshness
                 latest_snapshot = portfolio_manager.get_latest_portfolio()
                 if latest_snapshot:
-                    latest_date = latest_snapshot.timestamp.date()
-                    today = datetime.now().date()
-                    if latest_date < today:
+                    latest_timestamp = latest_snapshot.timestamp
+                    # Use timezone-aware datetime for comparison to avoid timezone mismatch errors
+                    from utils.timezone_utils import get_current_trading_time
+                    now = get_current_trading_time()
+                    hours_since_update = (now - latest_timestamp).total_seconds() / 3600
+                    
+                    # Update if:
+                    # 1. No data from today at all
+                    # 2. Data is from today but older than 4 hours (likely pre-market/stale)
+                    # 3. Market has closed since last update and we can get closing prices
+                    
+                    if latest_timestamp.date() < now.date():
                         should_update_prices = True
-                        logger.info("Portfolio not updated today - updating prices outside market hours")
+                        logger.info(f"Portfolio not updated today (last: {latest_timestamp.date()}) - updating prices")
+                    elif hours_since_update > 4:
+                        should_update_prices = True
+                        logger.info(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating prices")
                     else:
-                        logger.info("Portfolio already updated today and market is closed - skipping price update")
+                        # Data is from today but recent - only skip if it's very fresh (< 1 hour)
+                        if hours_since_update < 1:
+                            logger.info(f"Portfolio data is very recent ({latest_timestamp.strftime('%H:%M')}, {hours_since_update:.1f}h ago) - skipping update")
+                        else:
+                            should_update_prices = True
+                            logger.info(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating to get current prices")
                 else:
                     should_update_prices = True
                     logger.info("No existing portfolio data - creating initial snapshot")

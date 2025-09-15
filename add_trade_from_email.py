@@ -34,7 +34,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Interactive mode - paste email text when prompted
+  # Multi-email mode (default) - paste multiple emails separated by blank lines
   python add_trade_from_email.py
 
   # Parse from command line text
@@ -43,8 +43,11 @@ Examples:
   # Parse from file
   python add_trade_from_email.py --file email.txt
 
+  # Interactive mode - single email input
+  python add_trade_from_email.py --interactive
+
   # Test mode - just parse without adding to system
-  python add_trade_from_email.py --test --text "Your order has been filled..."
+  python add_trade_from_email.py --test --multi
         """
     )
     
@@ -79,7 +82,7 @@ Examples:
     parser.add_argument(
         '--multi', '-m',
         action='store_true',
-        help='Multi-email mode - add multiple emails in one session with confirmations'
+        help='Multi-email mode - paste multiple emails separated by blank lines, press Enter 3 times when done'
     )
     
     args = parser.parse_args()
@@ -113,42 +116,72 @@ Examples:
     
     # Multi-email interactive mode by default when no --text/--file provided
     if args.multi or (not args.text and not args.file and not args.interactive):
-        print("📧 Multi-email mode: Enter one trade email at a time.")
-        print("Type END on a line by itself to finish an email. Type DONE to stop adding emails.")
-        saved_count = 0
-        while True:
-            print("\nPaste email (END to finish, DONE to stop):")
-            lines = []
+        print("📧 Multi-email mode: Paste multiple trade emails separated by blank lines.")
+        print("Press Enter 3 times when you're done pasting all emails.")
+        print("=" * 60)
+        
+        # Collect all input lines
+        all_lines = []
+        empty_line_count = 0
+        
+        try:
             while True:
-                try:
-                    line = input()
-                except EOFError:
-                    line = 'DONE'
-                except KeyboardInterrupt:
-                    print("\nCancelled.")
-                    return 0
-                if line.strip().upper() == 'DONE':
-                    # Stop the session
-                    break
-                if line.strip().upper() == 'END':
-                    # End of this email
-                    break
-                lines.append(line)
-            if not lines and (line.strip().upper() == 'DONE'):
-                break
-            email_text_block = "\n".join(lines)
-            if not email_text_block.strip():
-                print("No email text provided, skipping.")
-                if line.strip().upper() == 'DONE':
-                    break
+                line = input()
+                all_lines.append(line)
+                
+                # Count consecutive empty lines
+                if line.strip() == "":
+                    empty_line_count += 1
+                    if empty_line_count >= 2:
+                        # Two consecutive empty lines means we're done
+                        break
                 else:
-                    continue
-            print("\nParsing email trade...")
-            trade = parse_trade_from_email(email_text_block)
+                    empty_line_count = 0
+                    
+        except EOFError:
+            # User pressed Ctrl+D/Ctrl+Z
+            pass
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            return 0
+        
+        # Split emails by double newlines (empty lines)
+        email_blocks = []
+        current_block = []
+        
+        for line in all_lines:
+            if line.strip() == "":
+                if current_block:  # Only add if we have content
+                    email_blocks.append("\n".join(current_block))
+                    current_block = []
+            else:
+                current_block.append(line)
+        
+        # Add the last block if it exists
+        if current_block:
+            email_blocks.append("\n".join(current_block))
+        
+        if not email_blocks:
+            print("No email content provided.")
+            return 0
+        
+        print(f"\n📊 Found {len(email_blocks)} email(s) to process...")
+        saved_count = 0
+        
+        for i, email_text in enumerate(email_blocks, 1):
+            if not email_text.strip():
+                continue
+                
+            print(f"\n--- Processing email {i}/{len(email_blocks)} ---")
+            print("Parsing email trade...")
+            
+            trade = parse_trade_from_email(email_text)
             if not trade:
                 print("❌ Failed to parse trade from email text")
                 continue
+                
             _print_trade(trade)
+            
             if args.test:
                 print("🧪 Test mode - not saving trade")
             else:
@@ -161,11 +194,10 @@ Examples:
                         print("❌ Failed to save trade.")
                 else:
                     print("Trade not saved.")
-            if line.strip().upper() == 'DONE':
-                break
-        # After loop, optionally rebuild
+        
+        # After processing all emails, optionally rebuild
         if saved_count > 0 and not args.test:
-            resp = input("\nRebuild portfolio CSV from trade log now? (Y/n): ").strip().lower()
+            resp = input(f"\nRebuild portfolio CSV from trade log now? ({saved_count} trades added) (Y/n): ").strip().lower()
             if resp in ('', 'y', 'yes'):
                 print("\n🔄 Rebuilding portfolio from trade log...")
                 ok = rebuild_portfolio_from_scratch(args.data_dir)
@@ -173,6 +205,9 @@ Examples:
                     print("✅ Portfolio rebuilt successfully.")
                 else:
                     print("❌ Failed to rebuild portfolio.")
+        elif saved_count == 0 and not args.test:
+            print("\nℹ️  No trades were added to the system.")
+        
         return 0
     
     # Single-email paths

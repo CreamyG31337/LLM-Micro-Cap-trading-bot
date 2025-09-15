@@ -168,6 +168,67 @@ Goal: Add company profile and fundamentals to the daily prompt, prioritizing ite
 
 ---
 
+## Performance Graph Enhancement Ideas (2025-09-15)
+
+### Quick Visual Wins
+- [ ] Add weekend/holiday shading and market-open bands for clearer temporal context
+- [ ] Shade "outperformance region" between portfolio and benchmark when portfolio is above/below SPX
+- [ ] Add a second small subplot for drawdown (area below zero), or a panel of daily returns bars (green/red)
+- [ ] Place a horizontal zero line for performance (100 index) and horizontal max drawdown line for context
+- [ ] Improve legend to show final returns inline (e.g., Portfolio +0.54%, S&P +X.YZ%)
+- [ ] Auto-avoid label clipping: dynamic offsets and use annotate with bbox for all callouts
+- [ ] Tight titles: title = Performance, subtitle = invested amount and timeframe
+
+### Analytics and Truth-in-Performance
+- [ ] Time-weighted return (TWR) as primary performance metric (neutralizes cash flows)
+- [ ] Money-weighted return (IRR/XIRR) as a secondary metric
+- [ ] Cumulative contributions line/series and a PnL-only line (market value − contributions)
+- [ ] Rolling metrics: 3/5/10-day rolling return, volatility; simple Sharpe/Sortino (pick a risk-free)
+- [ ] Peak/valley markers for max drawdown and time-to-recover from drawdown (TTR)
+- [ ] Per-position contribution to portfolio PnL (stacked bar inset or table export)
+- [ ] Optional second benchmark (e.g., equal-weighted index, sector ETF) for context
+
+### Data Handling and Correctness
+- [ ] Lock all calculations to Decimal (only cast to float right at plotting) to respect your precision rule
+- [ ] Cache S&P data locally (CSV in trading_data cache) to avoid repeated downloads and reduce flakiness
+- [ ] Robust yfinance fallback (retry, then flat-line placeholder with a warning)
+- [ ] Optional timezone normalization and weekend-forward-fill toggle
+- [ ] Strict alignment: reindex benchmark to portfolio dates with forward-fill, baseline both at portfolio start
+
+### Interactivity and Exports
+- [ ] Optional interactive Plotly export (hover tooltips for points and annotations)
+- [ ] Export both PNG and SVG (sharp in docs) plus a thumbnail (1200x675 social)
+- [ ] Emit a CSV of computed series (Date, Performance_Index, Drawdown, SPX_Index, Contributions, PnL)
+- [ ] Optional PDF report with a one-page summary (metrics + charts)
+
+### CLI Ergonomics
+- [ ] --start-date, --end-date, --benchmark ^GSPC, --no-weekends, --no-annotations
+- [ ] --format png|svg|pdf, --dpi 200/300, --figsize 16x9, --output-dir Results/
+- [ ] --metrics-only (no chart; prints JSON/CSV of metrics)
+- [ ] --second-benchmark TICKER for dual benchmarks
+
+### Readability Polish
+- [ ] Consistent color semantics: portfolio=blue, benchmark=orange, drawdown=red
+- [ ] Dynamic y-limits with margins so annotations never hug edges
+- [ ] Smart date formatting (monthly ticks if long span; daily if short)
+- [ ] Show market-closure notes in footer when forward-filling was applied
+
+### Validation and Tests
+- [ ] Add a tiny test portfolio fixture with known TWR/Drawdown to snapshot-test outputs
+- [ ] Unit tests for date alignment, baseline normalization, forward-fill logic, Decimal math
+
+### Nice-to-Haves
+- [ ] Regime shading (bull/bear bands) based on moving averages of benchmark
+- [ ] Label significant events (big buys/sells) as small markers with hover (in interactive mode)
+- [ ] Option to show cumulative alpha (portfolio minus benchmark) as a line or separate subplot
+
+### Implementation Bundles:
+- **"Metrics + Drawdown"**: Add TWR as the performance line, plus a PnL line, and a drawdown subplot
+- **"Benchmarks + Cache"**: Add a second benchmark flag and caching for SPX
+- **"Exports + CLI flags"**: Export SVG + CSV alongside PNG with CLI options
+
+---
+
 ## Fund Contributor Email Enhancement (2025-09-14)
 
 ### Goals:

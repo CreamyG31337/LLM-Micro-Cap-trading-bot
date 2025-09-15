@@ -9,88 +9,61 @@ in the CSV files and provides functions to calculate the current week and day.
 The experiment timeline is calculated from the actual first trade date.
 """
 
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Tuple, Optional
 import pandas as pd
 
-# Import timezone parsing function from trading_script
-try:
-    from trading_script import parse_csv_timestamp
-    _HAS_TIMEZONE_PARSING = True
-except ImportError:
-    _HAS_TIMEZONE_PARSING = False
+# Import timezone parsing function
+from utils.timezone_utils import parse_csv_timestamp
 
-def _get_experiment_start_date() -> datetime:
+def _get_experiment_start_date(data_dir: Path | str) -> datetime:
     """
     Calculate the experiment start date from the first trade in the trade log CSV.
+    
+    Args:
+        data_dir: Directory containing the trade log CSV file
     
     Returns:
         datetime: The date of the first trade
     """
-    # Try production trade log first, then test data
-    trade_log_paths = [
-        Path("my trading/llm_trade_log.csv"),
-        Path("test_data/llm_trade_log.csv")
-    ]
+    trade_log_path = Path(data_dir) / "llm_trade_log.csv"
     
-    for trade_log_path in trade_log_paths:
-        if trade_log_path.exists():
-            try:
-                df = pd.read_csv(trade_log_path)
-                if not df.empty and 'Date' in df.columns:
-                    # Filter out test data (look for real trades, not test data)
-                    real_trades = df[~df['Reason'].str.contains('TEST', case=False, na=False)]
-                    if not real_trades.empty:
-                        if _HAS_TIMEZONE_PARSING:
-                            first_trade_date = parse_csv_timestamp(real_trades['Date'].iloc[0])
-                        else:
-                            # Fallback: manually normalize common TZ abbreviations to offsets to avoid warnings
-                            ts_raw = str(real_trades['Date'].iloc[0])
-                            for abbr, offset in {
-                                " PST": "-08:00",
-                                " PDT": "-07:00",
-                                " MST": "-07:00",
-                                " MDT": "-06:00",
-                                " CST": "-06:00",
-                                " CDT": "-05:00",
-                                " EST": "-05:00",
-                                " EDT": "-04:00",
-                            }.items():
-                                if abbr in ts_raw:
-                                    ts_raw = ts_raw.replace(abbr, offset)
-                                    break
-                            first_trade_date = pd.to_datetime(ts_raw)
-                        return first_trade_date.to_pydatetime()
-            except Exception:
-                continue
+    if trade_log_path.exists():
+        try:
+            df = pd.read_csv(trade_log_path)
+            if not df.empty and 'Date' in df.columns:
+                # Filter out test data (look for real trades, not test data)
+                real_trades = df[~df['Reason'].str.contains('TEST', case=False, na=False)]
+                if not real_trades.empty:
+                    first_trade_date = parse_csv_timestamp(real_trades['Date'].iloc[0])
+                    return first_trade_date.to_pydatetime()
+        except Exception as e:
+            raise RuntimeError(f"Failed to read trade log from {trade_log_path}: {e}")
     
-    # Ultimate fallback: return current date minus 1 day
-    return datetime.now() - timedelta(days=1)
+    raise FileNotFoundError(f"Trade log not found: {trade_log_path}")
 
-# Calculate the actual experiment start date from CSV data
-EXPERIMENT_START_DATE = _get_experiment_start_date()
-
-def get_experiment_timeline() -> Tuple[int, int]:
+def get_experiment_timeline(data_dir: Path | str) -> Tuple[int, int]:
     """
     Calculate the current week and day of the experiment.
+    
+    Args:
+        data_dir: Directory containing the trade log CSV file
     
     Returns:
         Tuple[int, int]: (week_number, day_number)
     """
+    experiment_start_date = _get_experiment_start_date(data_dir)
     today = datetime.now()
     
-    # Handle timezone-aware vs timezone-naive datetime comparison
-    if EXPERIMENT_START_DATE.tzinfo is not None:
-        # Start date is timezone-aware, make today timezone-aware too
-        from trading_script import get_trading_timezone
-        tz = get_trading_timezone()
-        today = today.replace(tzinfo=tz)
-    elif today.tzinfo is not None:
-        # Today is timezone-aware, make start date timezone-aware too
+    # Convert both to naive datetimes for simple comparison
+    if experiment_start_date.tzinfo is not None:
+        experiment_start_date = experiment_start_date.replace(tzinfo=None)
+    if today.tzinfo is not None:
         today = today.replace(tzinfo=None)
     
-    days_since_start = (today - EXPERIMENT_START_DATE).days
+    days_since_start = (today - experiment_start_date).days
     
     # Ensure we don't go below week 1, day 1
     if days_since_start < 0:
@@ -102,36 +75,49 @@ def get_experiment_timeline() -> Tuple[int, int]:
     
     return week_num, day_num
 
-def get_experiment_start_date() -> datetime:
-    """Get the experiment start date."""
-    return EXPERIMENT_START_DATE
+def get_experiment_start_date(data_dir: Path | str) -> datetime:
+    """Get the experiment start date.
+    
+    Args:
+        data_dir: Directory containing the trade log CSV file
+    
+    Returns:
+        datetime: The experiment start date
+    """
+    return _get_experiment_start_date(data_dir)
 
-def get_days_since_start() -> int:
-    """Get the number of days since the experiment started."""
+def get_days_since_start(data_dir: Path | str) -> int:
+    """Get the number of days since the experiment started.
+    
+    Args:
+        data_dir: Directory containing the trade log CSV file
+    
+    Returns:
+        int: Number of days since start
+    """
+    experiment_start_date = _get_experiment_start_date(data_dir)
     today = datetime.now()
     
-    # Handle timezone-aware vs timezone-naive datetime comparison
-    if EXPERIMENT_START_DATE.tzinfo is not None:
-        # Start date is timezone-aware, make today timezone-aware too
-        from trading_script import get_trading_timezone
-        tz = get_trading_timezone()
-        today = today.replace(tzinfo=tz)
-    elif today.tzinfo is not None:
-        # Today is timezone-aware, make start date timezone-aware too
+    # Convert both to naive datetimes for simple comparison
+    if experiment_start_date.tzinfo is not None:
+        experiment_start_date = experiment_start_date.replace(tzinfo=None)
+    if today.tzinfo is not None:
         today = today.replace(tzinfo=None)
     
-    return max(0, (today - EXPERIMENT_START_DATE).days)
-
-def update_experiment_start_date(new_date: datetime) -> None:
-    """Update the experiment start date (for configuration changes)."""
-    global EXPERIMENT_START_DATE
-    EXPERIMENT_START_DATE = new_date
+    return max(0, (today - experiment_start_date).days)
 
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Experiment configuration and timeline calculation")
+    parser.add_argument("--data-dir", help="Data directory containing trade log (required)", required=True)
+    
+    args = parser.parse_args()
+    
     # Test the timeline calculation
-    week, day = get_experiment_timeline()
-    days_since = get_days_since_start()
-    start_date = get_experiment_start_date()
+    week, day = get_experiment_timeline(args.data_dir)
+    days_since = get_days_since_start(args.data_dir)
+    start_date = get_experiment_start_date(args.data_dir)
     
     print(f"Experiment started: {start_date.strftime('%Y-%m-%d')}")
     print(f"Days since start: {days_since}")

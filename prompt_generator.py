@@ -94,11 +94,7 @@ except ImportError:
     _HAS_DUAL_CURRENCY = False
 
 # Import experiment configuration
-try:
-    from experiment_config import get_experiment_timeline
-    _HAS_EXPERIMENT_CONFIG = True
-except ImportError:
-    _HAS_EXPERIMENT_CONFIG = False
+from experiment_config import get_experiment_timeline
 
 
 class PromptGenerator:
@@ -634,12 +630,8 @@ class PromptGenerator:
         today = self.market_hours.last_trading_date_str()
         
         # Calculate experiment timeline
-        if _HAS_EXPERIMENT_CONFIG:
-            week_num, day_num = get_experiment_timeline()
-            timeline_text = f"Week {week_num} Day {day_num}"
-        else:
-            # Fallback to simple date if experiment config not available
-            timeline_text = today
+        week_num, day_num = get_experiment_timeline(self.data_dir)
+        timeline_text = f"Week {week_num} Day {day_num}"
         
         # Generate the prompt with optimized formatting for both humans and LLMs
         # Design: Clean headers, colored data, minimal separators to save context space
@@ -702,49 +694,79 @@ class PromptGenerator:
     def generate_weekly_research_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display weekly deep research prompt"""
         if data_dir:
-            # Import here to avoid circular imports
-            try:
-                from config.settings import set_data_dir
-            except ImportError:
-                # Fallback if not available
-                pass
-            else:
-                set_data_dir(Path(data_dir))
-            
-        # Load portfolio data
-        portfolio_file = self.data_dir / "llm_portfolio_update.csv"
-        
-        if not portfolio_file.exists():
-            print(f"❌ Portfolio file not found: {portfolio_file}")
-            print("Please run the main trading script first to create portfolio data.")
-            return
+            self.data_dir = Path(data_dir)
+            # Reinitialize repository with new data dir
+            from data.repositories.csv_repository import CSVRepository
+            self.repository = CSVRepository(self.data_dir)
+            self.portfolio_manager = PortfolioManager(self.repository)
             
         try:
-            # Import here to avoid circular imports
-            try:
-                from trading_script import load_latest_portfolio_state
-            except ImportError:
-                print("❌ Required module trading_script not found")
+            # Load portfolio data using the same approach as daily prompt
+            latest_snapshot = self.portfolio_manager.get_latest_portfolio()
+            if latest_snapshot is None:
+                print(f"❌ No portfolio data found in {self.data_dir}")
+                print("Please run the main trading script first to create portfolio data.")
                 return
-
-            llm_portfolio, cash = load_latest_portfolio_state(str(portfolio_file))
+            
+            # Convert to DataFrame with enhanced data (same as daily prompt)
+            portfolio_data = []
+            for position in latest_snapshot.positions:
+                # Use the same to_dict() method as main trading script
+                pos_dict = position.to_dict()
+                
+                # Get open date from trade log (same logic as daily prompt)
+                try:
+                    trades = self.repository.get_trade_history(position.ticker)
+                    if trades:
+                        # Find first BUY trade for this ticker
+                        buy_trades = [t for t in trades if t.action.upper() == 'BUY']
+                        if buy_trades:
+                            first_buy = min(buy_trades, key=lambda t: t.timestamp)
+                            pos_dict['opened_date'] = first_buy.timestamp.strftime('%m-%d-%y')
+                        else:
+                            pos_dict['opened_date'] = "N/A"
+                    else:
+                        pos_dict['opened_date'] = "N/A"
+                except Exception:
+                    pos_dict['opened_date'] = "N/A"
+                
+                # Calculate daily P&L using shared function
+                from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+                snapshots = self.portfolio_manager.load_portfolio()
+                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, snapshots)
+                
+                portfolio_data.append(pos_dict)
+            
+            llm_portfolio = pd.DataFrame(portfolio_data)
+            
+            # Load cash balance (same approach as daily prompt)
+            cash = 0.0
+            try:
+                import json
+                cash_file = self.data_dir / "cash_balances.json"
+                if cash_file.exists():
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cash = cash_data.get('cad', 0) + cash_data.get('usd', 0)
+            except Exception:
+                cash = 0.0
         except Exception as e:
             print(f"❌ Error loading portfolio data: {e}")
             return
             
+        # Get portfolio tickers for additional data tables
+        portfolio_tickers = []
+        if not llm_portfolio.empty and 'ticker' in llm_portfolio.columns:
+            portfolio_tickers = llm_portfolio['ticker'].tolist()
+            
+        # Fetch market data (same as daily prompt)
+        market_rows = self._get_market_data_table(portfolio_tickers)
+        
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
         
         # Calculate experiment timeline using proper configuration
-        if _HAS_EXPERIMENT_CONFIG:
-            week_num, day_num = get_experiment_timeline()
-        else:
-            # Fallback calculation if experiment config not available
-            today = datetime.now()
-            start_date = datetime(2024, 6, 30)  # Fallback start date
-            days_since_start = (today - start_date).days
-            week_num = max(1, days_since_start // 7)
-            day_num = days_since_start % 7 + 1
+        week_num, day_num = get_experiment_timeline(self.data_dir)
         
         # Generate the deep research prompt with same color scheme as daily prompt
         # Weekly prompts need more comprehensive analysis, so colors help organize complex data
@@ -803,12 +825,75 @@ Context""")
         print(f"{Fore.GREEN}Cash Available{Style.RESET_ALL}")
         print(cash_display)
         print()
+        
+        # Market data table with colors for human readability (same as daily prompt)
+        print(f"{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
+        header = ["Ticker", "Close", "% Chg", "Volume", "Avg Vol (30d)"]
+        colw = [10, 12, 9, 12, 14]
+        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
+        sep_len = sum(colw) + (len(colw) - 1)
+        print("-" * sep_len)
+        for row in market_rows:
+            # Build padded cells first, then apply color so ANSI codes don't affect spacing
+            ticker_cell = f"{str(row[0]):<{colw[0]}}"
+            close_cell_plain = str(row[1]).rjust(colw[1])
+            pct_change = str(row[2])
+            pct_cell_plain = pct_change.rjust(colw[2])
+            volume_cell_plain = str(row[3]).rjust(colw[3])
+            avg_vol_cell_plain = str(row[4]).rjust(colw[4])
+
+            # Apply colors to fully padded cells
+            close_cell = f"{Fore.YELLOW}{close_cell_plain}{Style.RESET_ALL}"
+            if pct_change != "—" and pct_change.startswith(('+', '-')):
+                pct_cell = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_cell_plain}{Style.RESET_ALL}"
+            else:
+                pct_cell = pct_cell_plain
+            volume_cell = f"{Fore.BLUE}{volume_cell_plain}{Style.RESET_ALL}"
+            avg_volume_cell = f"{Fore.BLUE}{avg_vol_cell_plain}{Style.RESET_ALL}"
+
+            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
+        
+        print()
         print(f"{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
         print(self._format_portfolio_table(llm_portfolio, sort_by="value"))
+        
+        # Company fundamentals table (same as daily prompt)
+        print(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
+        print(self._format_fundamentals_table(portfolio_tickers))
+        
         print()
-        print(f"{Fore.CYAN}[ Snapshot ]{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[ Portfolio Metrics ]{Style.RESET_ALL}")
         print(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")
         print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
+        
+        # Calculate portfolio diversification metrics
+        if not llm_portfolio.empty:
+            num_positions = len(llm_portfolio)
+            # Calculate concentration (largest position weight)
+            total_value = llm_portfolio['market_value'].sum() if 'market_value' in llm_portfolio.columns else 0
+            if total_value > 0:
+                max_position_weight = (llm_portfolio['market_value'].max() / total_value) * 100 if 'market_value' in llm_portfolio.columns else 0
+                print(f"{Fore.BLUE}Number of Positions:{Style.RESET_ALL} {num_positions}")
+                print(f"{Fore.BLUE}Largest Position Weight:{Style.RESET_ALL} {max_position_weight:.1f}%")
+                
+                # Calculate sector/geographic diversification if we have the data
+                sectors = set()
+                countries = set()
+                for ticker in portfolio_tickers:
+                    try:
+                        fundamentals = self.market_data_fetcher.fetch_fundamentals(ticker)
+                        if fundamentals.get('sector'):
+                            sectors.add(fundamentals['sector'])
+                        if fundamentals.get('country'):
+                            countries.add(fundamentals['country'])
+                    except:
+                        pass
+                
+                if sectors:
+                    print(f"{Fore.BLUE}Sector Diversification:{Style.RESET_ALL} {len(sectors)} sectors ({', '.join(list(sectors)[:3])}{'...' if len(sectors) > 3 else ''})")
+                if countries:
+                    print(f"{Fore.BLUE}Geographic Diversification:{Style.RESET_ALL} {len(countries)} countries ({', '.join(list(countries))})")
+        
         print()
         print("Last Analyst Thesis For Current Holdings")
         print("(Previous research summary would go here - this could be enhanced to track thesis history)")

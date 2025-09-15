@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Performance Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            transition: transform 0.2s ease-in-out;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .performance-positive {
+            color: #10b981;
+        }
+        .performance-negative {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold">📈 Portfolio Performance Dashboard</h1>
+                    <p class="text-blue-100 mt-2">Real-time trading bot performance tracking</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-blue-100">Last Updated</div>
+                    <div id="last-updated" class="font-mono text-lg">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8">
+        <!-- Performance Metrics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                        <i class="fas fa-dollar-sign text-2xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Value</p>
+                        <p class="text-2xl font-bold text-gray-900" id="total-value">$0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100 text-green-600">
+                        <i class="fas fa-chart-line text-2xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Performance</p>
+                        <p class="text-2xl font-bold" id="performance-pct">0.00%</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                        <i class="fas fa-coins text-2xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Unrealized P&L</p>
+                        <p class="text-2xl font-bold" id="unrealized-pnl">$0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-orange-100 text-orange-600">
+                        <i class="fas fa-exchange-alt text-2xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Trades</p>
+                        <p class="text-2xl font-bold text-gray-900" id="total-trades">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Chart -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">📊 Performance Over Time</h2>
+            <div id="performance-chart" style="height: 500px;"></div>
+        </div>
+
+        <!-- Current Positions and Recent Trades -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Current Positions -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">💼 Current Positions</h2>
+                <div id="positions-container">
+                    <div class="text-center text-gray-500 py-8">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading positions...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Trades -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">📋 Recent Trades</h2>
+                <div id="trades-container">
+                    <div class="text-center text-gray-500 py-8">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading trades...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cash Balances -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mt-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">💰 Cash Balances</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-blue-50 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-lg font-medium text-gray-700">CAD Balance</span>
+                        <span class="text-2xl font-bold text-blue-600" id="cad-balance">$0.00</span>
+                    </div>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-lg font-medium text-gray-700">USD Balance</span>
+                        <span class="text-2xl font-bold text-green-600" id="usd-balance">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-gray-400">Powered by LLM Micro-Cap Trading Bot</p>
+            <p class="text-sm text-gray-500 mt-2">Data updates automatically from your trading bot</p>
+        </div>
+    </footer>
+
+    <script>
+        // Global variables
+        let portfolioData = {};
+        let performanceChart = null;
+
+        // Load portfolio data
+        async function loadPortfolioData() {
+            try {
+                const response = await fetch('/api/portfolio');
+                portfolioData = await response.json();
+                updateDashboard();
+            } catch (error) {
+                console.error('Error loading portfolio data:', error);
+                showError('Failed to load portfolio data');
+            }
+        }
+
+        // Load performance chart
+        async function loadPerformanceChart() {
+            try {
+                const response = await fetch('/api/performance-chart');
+                const chartData = await response.json();
+                
+                if (chartData && chartData.data) {
+                    Plotly.newPlot('performance-chart', chartData.data, chartData.layout, {responsive: true});
+                } else {
+                    document.getElementById('performance-chart').innerHTML = 
+                        '<div class="text-center text-gray-500 py-8"><p>No performance data available</p></div>';
+                }
+            } catch (error) {
+                console.error('Error loading performance chart:', error);
+                document.getElementById('performance-chart').innerHTML = 
+                    '<div class="text-center text-red-500 py-8"><p>Error loading chart</p></div>';
+            }
+        }
+
+        // Load recent trades
+        async function loadRecentTrades() {
+            try {
+                const response = await fetch('/api/recent-trades');
+                const trades = await response.json();
+                displayRecentTrades(trades);
+            } catch (error) {
+                console.error('Error loading recent trades:', error);
+                document.getElementById('trades-container').innerHTML = 
+                    '<div class="text-center text-red-500 py-8"><p>Error loading trades</p></div>';
+            }
+        }
+
+        // Update dashboard with loaded data
+        function updateDashboard() {
+            const metrics = portfolioData.metrics || {};
+            const positions = portfolioData.positions || [];
+            const cashBalances = portfolioData.cash_balances || {};
+
+            // Update metrics
+            document.getElementById('total-value').textContent = `$${metrics.total_value?.toLocaleString() || '0.00'}`;
+            document.getElementById('performance-pct').textContent = `${metrics.performance_pct?.toFixed(2) || '0.00'}%`;
+            document.getElementById('unrealized-pnl').textContent = `$${metrics.unrealized_pnl?.toLocaleString() || '0.00'}`;
+            document.getElementById('total-trades').textContent = metrics.total_trades || '0';
+
+            // Update performance percentage color
+            const perfElement = document.getElementById('performance-pct');
+            if (metrics.performance_pct > 0) {
+                perfElement.className = 'text-2xl font-bold performance-positive';
+            } else if (metrics.performance_pct < 0) {
+                perfElement.className = 'text-2xl font-bold performance-negative';
+            } else {
+                perfElement.className = 'text-2xl font-bold text-gray-900';
+            }
+
+            // Update unrealized P&L color
+            const pnlElement = document.getElementById('unrealized-pnl');
+            if (metrics.unrealized_pnl > 0) {
+                pnlElement.className = 'text-2xl font-bold performance-positive';
+            } else if (metrics.unrealized_pnl < 0) {
+                pnlElement.className = 'text-2xl font-bold performance-negative';
+            } else {
+                pnlElement.className = 'text-2xl font-bold text-gray-900';
+            }
+
+            // Update cash balances
+            document.getElementById('cad-balance').textContent = `$${cashBalances.CAD?.toFixed(2) || '0.00'}`;
+            document.getElementById('usd-balance').textContent = `$${cashBalances.USD?.toFixed(2) || '0.00'}`;
+
+            // Update last updated time
+            document.getElementById('last-updated').textContent = new Date().toLocaleString();
+
+            // Display positions
+            displayPositions(positions);
+        }
+
+        // Display current positions
+        function displayPositions(positions) {
+            const container = document.getElementById('positions-container');
+            
+            if (positions.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No current positions</p></div>';
+                return;
+            }
+
+            let html = '<div class="space-y-3">';
+            positions.forEach(position => {
+                const pnlClass = position.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+                const pnlPctClass = position.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600';
+                
+                html += `
+                    <div class="border rounded-lg p-4 hover:bg-gray-50">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-lg">${position.ticker}</h3>
+                                <p class="text-sm text-gray-600">${position.shares} shares @ $${position.price}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold">$${position.market_value.toLocaleString()}</p>
+                                <p class="text-sm ${pnlClass}">${position.pnl >= 0 ? '+' : ''}$${position.pnl.toFixed(2)}</p>
+                                <p class="text-xs ${pnlPctClass}">${position.pnl_pct >= 0 ? '+' : ''}${position.pnl_pct.toFixed(2)}%</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Display recent trades
+        function displayRecentTrades(trades) {
+            const container = document.getElementById('trades-container');
+            
+            if (trades.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No recent trades</p></div>';
+                return;
+            }
+
+            let html = '<div class="space-y-3">';
+            trades.forEach(trade => {
+                const pnlClass = trade.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+                const actionClass = trade.reason.includes('BUY') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                
+                html += `
+                    <div class="border rounded-lg p-4 hover:bg-gray-50">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold">${trade.ticker}</h3>
+                                <p class="text-sm text-gray-600">${trade.date}</p>
+                                <p class="text-xs ${actionClass} px-2 py-1 rounded-full inline-block mt-1">${trade.reason}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm">${trade.shares} @ $${trade.price}</p>
+                                <p class="font-bold">$${trade.cost_basis.toFixed(2)}</p>
+                                ${trade.pnl !== 0 ? `<p class="text-sm ${pnlClass}">${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Show error message
+        function showError(message) {
+            console.error(message);
+            // You could add a toast notification here
+        }
+
+        // Initialize dashboard
+        async function initDashboard() {
+            await Promise.all([
+                loadPortfolioData(),
+                loadPerformanceChart(),
+                loadRecentTrades()
+            ]);
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(initDashboard, 5 * 60 * 1000);
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+</body>
+</html>

@@ -118,7 +118,10 @@ class MarketHours:
     
     def last_trading_date(self, today: Optional[datetime] = None) -> pd.Timestamp:
         """
-        Return last trading date (Mon–Fri), mapping Sat/Sun -> Fri.
+        Return last trading date (Mon–Fri), considering market hours.
+        
+        On Monday before market open (6:30 AM PT), returns Friday.
+        On Monday after market open, returns Monday.
         
         Args:
             today: Optional date to calculate from (defaults to now)
@@ -128,13 +131,20 @@ class MarketHours:
         """
         dt = pd.Timestamp(today or self._effective_now())
         
-        # If it's Monday-Friday, return as-is
-        if dt.weekday() < 5:
-            return dt
-        
         # If it's Saturday (5) or Sunday (6), go back to Friday
-        days_back = dt.weekday() - 4  # Friday is weekday 4
-        return dt - pd.Timedelta(days=days_back)
+        if dt.weekday() >= 5:
+            days_back = dt.weekday() - 4  # Friday is weekday 4
+            return dt - pd.Timedelta(days=days_back)
+        
+        # If it's Monday before market open, return Friday instead
+        if dt.weekday() == 0:  # Monday = 0
+            market_open = self.get_market_open_time(dt)
+            if dt < market_open:
+                # Before market open on Monday, use Friday's data
+                return dt - pd.Timedelta(days=3)  # Go back 3 days to Friday
+        
+        # For Tuesday-Friday, or Monday after market open, return as-is
+        return dt
     
     def last_trading_date_str(self, today: Optional[datetime] = None) -> str:
         """

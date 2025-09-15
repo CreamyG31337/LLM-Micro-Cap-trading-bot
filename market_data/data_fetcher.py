@@ -93,11 +93,69 @@ class MarketDataFetcher:
             ttl_hours = 12
         self._fund_cache_ttl = timedelta(hours=ttl_hours)
         
+        # Load fundamentals overrides (one-time load)
+        self._fundamentals_overrides: Dict[str, Dict[str, Any]] = {}
+        self._load_fundamentals_overrides()
+        
         # Attempt to load fundamentals cache from disk
         try:
             self._load_fundamentals_cache()
         except Exception as e:
             logging.getLogger(__name__).debug(f"Could not load fundamentals cache: {e}")
+    
+    def _load_fundamentals_overrides(self) -> None:
+        """Load fundamentals overrides from JSON file to correct misleading API data."""
+        try:
+            # Look for overrides file in config directory
+            project_root = Path(__file__).parent.parent
+            overrides_path = project_root / "config" / "fundamentals_overrides.json"
+            
+            if not overrides_path.exists():
+                logger.debug(f"Fundamentals overrides file not found: {overrides_path}")
+                return
+                
+            import json
+            with open(overrides_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            # Extract ticker overrides (skip metadata fields starting with _)
+            for ticker, overrides in data.items():
+                if not ticker.startswith('_'):
+                    self._fundamentals_overrides[ticker.upper()] = overrides
+                    
+            logger.debug(f"Loaded fundamentals overrides for {len(self._fundamentals_overrides)} tickers")
+            
+        except Exception as e:
+            logger.debug(f"Failed to load fundamentals overrides: {e}")
+    
+    def _apply_fundamentals_overrides(self, ticker_key: str, fundamentals: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply overrides to fundamentals data if they exist for the ticker.
+        
+        Args:
+            ticker_key: Uppercase ticker symbol
+            fundamentals: Base fundamentals data from API
+            
+        Returns:
+            Fundamentals data with overrides applied
+        """
+        overrides = self._fundamentals_overrides.get(ticker_key)
+        if not overrides:
+            return fundamentals
+            
+        # Create a copy to avoid modifying the original
+        result = fundamentals.copy()
+        
+        # Apply each override field
+        for field, value in overrides.items():
+            # Skip metadata fields  
+            if field.startswith('_') or field == 'description_note':
+                continue
+                
+            # Apply the override value
+            result[field] = str(value) if value is not None else 'N/A'
+            
+        logger.debug(f"Applied {len([k for k in overrides.keys() if not k.startswith('_') and k != 'description_note'])} overrides for {ticker_key}")
+        return result
     
     def fetch_price_data(
         self,
@@ -444,6 +502,7 @@ class MarketDataFetcher:
             dividendYield, fiftyTwoWeekHigh, fiftyTwoWeekLow, or "N/A" if unavailable
         """
         ticker_key = ticker.upper().strip()
+        
         # Check in-memory TTL cache first
         meta = self._fund_cache_meta.get(ticker_key)
         if meta:
@@ -452,7 +511,8 @@ class MarketDataFetcher:
             if ts and (datetime.now() - ts) < ttl:
                 cached = self._fund_cache.get(ticker_key)
                 if cached:
-                    return cached
+                    # Apply overrides to cached data before returning
+                    return self._apply_fundamentals_overrides(ticker_key, cached)
             else:
                 # Expired
                 self._fund_cache.pop(ticker_key, None)
@@ -631,4 +691,5 @@ class MarketDataFetcher:
         except Exception as e:
             logging.getLogger(__name__).debug(f"Could not save fundamentals cache: {e}")
         
-        return fundamentals
+        # Apply overrides before returning
+        return self._apply_fundamentals_overrides(ticker_key, fundamentals)

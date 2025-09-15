@@ -1,0 +1,73 @@
+{
+  "_comment": "Fundamentals Override File - Corrects misleading or missing API data for better LLM analysis",
+  "_format_notes": {
+    "description": "This file overrides fundamental data fetched from APIs when the data is incorrect or misleading",
+    "usage": "Data here takes precedence over API responses. Only include fields that need correction.",
+    "supported_fields": [
+      "sector", "industry", "country", "marketCap", "trailingPE", 
+      "dividendYield", "fiftyTwoWeekHigh", "fiftyTwoWeekLow"
+    ],
+    "country_guidelines": "Use descriptive 8-letter max abbreviations that help LLM understand geographic exposure"
+  },
+  
+  "VEE.TO": {
+    "sector": "Emerging Markets",
+    "industry": "International Equity ETF",
+    "country": "Emerging",
+    "description_note": "Emerging markets ETF with exposure to China, India, Taiwan, Brazil, Middle East, Mexico - NOT Canadian stocks despite being listed on TSX"
+  },
+  
+  "XMA.TO": {
+    "sector": "Materials",
+    "industry": "Canadian Materials ETF", 
+    "country": "Canada",
+    "description_note": "TSX-listed materials sector ETF focused on Canadian mining, forestry, and commodity companies"
+  },
+
+  "GMIN.TO": {
+    "country": "Global",
+    "description_note": "Mining company with global operations - not just Canada despite TSX listing"
+  },
+
+  "WEB.V": {
+    "sector": "Renewable Energy",
+    "industry": "Clean Energy Development",
+    "country": "Canada", 
+    "description_note": "Canadian renewable energy developer"
+  },
+
+  "SMH": {
+    "sector": "Technology",
+    "industry": "Semiconductor ETF",
+    "country": "Global",
+    "description_note": "Global semiconductor ETF with heavy exposure to Taiwan, South Korea, US chip companies"
+  },
+
+  "URNM": {
+    "sector": "Energy",
+    "industry": "Uranium Mining ETF",
+    "country": "Global",
+    "description_note": "Global uranium mining ETF with exposure to Kazakhstan, Canada, Australia, Africa"
+  },
+
+  "URNJ": {
+    "sector": "Energy", 
+    "industry": "Junior Uranium ETF",
+    "country": "Global",
+    "description_note": "Global junior uranium miners ETF - smaller cap uranium exploration companies worldwide"
+  },
+
+  "_examples": {
+    "EXAMPLE.TO": {
+      "sector": "Example Sector",
+      "industry": "Example Industry", 
+      "country": "Example",
+      "marketCap": "1.5B",
+      "trailingPE": "25.3",
+      "dividendYield": "2.1%",
+      "fiftyTwoWeekHigh": "50.00",
+      "fiftyTwoWeekLow": "30.00",
+      "description_note": "This is an example entry showing all possible override fields"
+    }
+  }
+}

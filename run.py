@@ -156,8 +156,8 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          ["--data-dir", str(DATA_DIR)]),
         
         ("3", "📊 Generate Performance Graph", 
-         "Create performance comparison charts from your trading data", 
-         []),
+         f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
         
         ("4", "📈 Process Portfolio (Scripts folder)", 
          "Process portfolio using the Scripts and CSV Files folder", 

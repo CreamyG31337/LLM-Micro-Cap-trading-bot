@@ -28,6 +28,15 @@ Provides sophisticated table formatting with Rich tables and fallback support:
 - **Performance Summary**: P&L and performance metrics
 - **Market Data**: Price and market information display
 
+### Portfolio Table Layout
+The portfolio snapshot table is optimized for standard display environments:
+
+- **Target Resolution**: 1920x1080 with 125% scaling (Windows 11)
+- **Terminal Width**: ~157 characters for optimal readability
+- **Responsive Design**: Adapts to different terminal sizes and capabilities
+- **Column Optimization**: Daily P&L and Stop Loss columns balanced for readability
+- **Rich Formatting**: Beautiful tables with color coding and styling
+
 ### Usage Example
 ```python
 from display.table_formatter import TableFormatter

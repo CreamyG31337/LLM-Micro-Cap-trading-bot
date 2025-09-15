@@ -39,12 +39,12 @@ class EmailTradeParser:
                 r'(\d+\.?\d*)\s*shares?',
             ],
             'price': [
-                r'Average price:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Price:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Fill price:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Executed at:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'\$([0-9,]+\.?[0-9]*)',
-                r'price:\s*\$?([0-9,]+\.?[0-9]*)',  # Case insensitive
+                r'Average price:\s*.*?\$([0-9,]+\.?[0-9]*)',
+                r'Price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
+                r'Fill price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
+                r'Executed at:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
+                r'[A-Z]*\$([0-9,]+\.?[0-9]*)',
+                r'price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',  # Case insensitive
             ],
             'total_cost': [
                 r'Total cost:\s*\$?([0-9,]+\.?[0-9]*)',
@@ -108,7 +108,7 @@ class EmailTradeParser:
             action = self._normalize_action(action)
             
             # Normalize ticker symbol based on currency and price context
-            symbol = normalize_ticker_symbol(symbol, currency, float(price))
+            symbol = normalize_ticker_symbol(symbol, currency, price)
             
             # Use provided timestamp or current time
             if not timestamp:
@@ -118,18 +118,24 @@ class EmailTradeParser:
                 timestamp = self._convert_to_pdt(timestamp)
             
             # Calculate cost basis if not provided
+            calculated_cost = shares * price
             if not total_cost:
-                # Use Decimal arithmetic to avoid floating point precision errors
-                total_cost = Decimal(str(shares)) * Decimal(str(price))
+                # Use calculated cost if not provided in email
+                total_cost = calculated_cost
+            else:
+                # Verify email total matches calculated total
+                if abs(total_cost - calculated_cost) > Decimal('0.01'):
+                    print(f"⚠️  Warning: Email total cost (${total_cost}) doesn't match calculated cost (${calculated_cost}) for {symbol}")
+                    logger.warning(f"Email total cost ({total_cost}) doesn't match calculated cost ({calculated_cost}) for {symbol}")
             
             # Create Trade object
             trade = Trade(
                 ticker=symbol,
                 action=action,
-                shares=Decimal(str(shares)),
-                price=Decimal(str(price)),
+                shares=shares,
+                price=price,
                 timestamp=timestamp,
-                cost_basis=total_cost if isinstance(total_cost, Decimal) else Decimal(str(total_cost)),
+                cost_basis=total_cost,
                 reason=f"EMAIL TRADE - {action}",
                 currency=currency
             )
@@ -160,26 +166,26 @@ class EmailTradeParser:
                 return symbol.upper()
         return None
     
-    def _extract_shares(self, text: str) -> Optional[float]:
+    def _extract_shares(self, text: str) -> Optional[Decimal]:
         """Extract number of shares from text."""
         for pattern in self.patterns['shares']:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 shares_str = match.group(1).replace(',', '')
                 try:
-                    return float(shares_str)
+                    return Decimal(shares_str)
                 except ValueError:
                     continue
         return None
     
-    def _extract_price(self, text: str) -> Optional[float]:
+    def _extract_price(self, text: str) -> Optional[Decimal]:
         """Extract price per share from text."""
         for pattern in self.patterns['price']:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 price_str = match.group(1).replace(',', '')
                 try:
-                    return float(price_str)
+                    return Decimal(price_str)
                 except ValueError:
                     continue
         return None
@@ -196,14 +202,14 @@ class EmailTradeParser:
             return 'CAD'
     
     
-    def _extract_total_cost(self, text: str) -> Optional[float]:
+    def _extract_total_cost(self, text: str) -> Optional[Decimal]:
         """Extract total cost from text."""
         for pattern in self.patterns['total_cost']:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 cost_str = match.group(1).replace(',', '')
                 try:
-                    return float(cost_str)
+                    return Decimal(cost_str)
                 except ValueError:
                     continue
         return None

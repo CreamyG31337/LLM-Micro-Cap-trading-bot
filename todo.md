@@ -390,6 +390,37 @@ Move from static Python charts to a modern web dashboard with real-time interact
 
 ---
 
+## Portfolio Maintenance Architecture (2025-09-15)
+
+### Current State: Rebuild Script as Temporary Solution
+The `debug/rebuild_portfolio_from_scratch.py` script is currently necessary because the main application doesn't maintain the portfolio CSV properly during normal operations. This creates data inconsistencies that require periodic rebuilding.
+
+### Long-term Goal: Eliminate Need for Rebuild Script
+The application should maintain portfolio data integrity in real-time, eliminating the need for manual rebuilds.
+
+### Tasks:
+- [ ] **Improve Portfolio CSV Maintenance**: Ensure the main trading script properly updates portfolio CSV during all operations
+- [ ] **Real-time Data Consistency**: Fix any data inconsistencies that occur during normal trading operations
+- [ ] **Automatic Validation**: Add built-in validation to catch and prevent data corruption
+- [ ] **Incremental Updates**: Make portfolio updates incremental rather than requiring full rebuilds
+- [ ] **Error Recovery**: Add automatic error recovery for common data issues
+- [ ] **Deprecate Rebuild Script**: Once portfolio maintenance is robust, mark rebuild script as deprecated
+
+### Technical Requirements:
+- Portfolio CSV should always reflect current state without manual intervention
+- All trade operations should maintain data integrity
+- System should handle edge cases gracefully (weekends, holidays, API failures)
+- Performance should not degrade with portfolio size
+- Data validation should catch issues before they require rebuilds
+
+### Success Criteria:
+- Portfolio CSV remains consistent through all normal operations
+- No manual rebuilds required for data integrity
+- Rebuild script becomes optional maintenance tool only
+- System handles all edge cases automatically
+
+---
+
 ## Fund Contributor Email Enhancement (2025-09-14)
 
 ### Goals:

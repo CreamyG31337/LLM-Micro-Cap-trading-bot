@@ -82,7 +82,7 @@ Examples:
     parser.add_argument(
         '--multi', '-m',
         action='store_true',
-        help='Multi-email mode - paste multiple emails separated by blank lines, press Enter 3 times when done'
+        help='Multi-email mode - paste multiple emails separated by blank lines, press Enter 4 times when done'
     )
     
     args = parser.parse_args()
@@ -117,7 +117,7 @@ Examples:
     # Multi-email interactive mode by default when no --text/--file provided
     if args.multi or (not args.text and not args.file and not args.interactive):
         print("📧 Multi-email mode: Paste multiple trade emails separated by blank lines.")
-        print("Press Enter 3 times when you're done pasting all emails.")
+        print("Press Enter 4 times when you're done pasting all emails.")
         print("=" * 60)
         
         # Collect all input lines
@@ -132,8 +132,8 @@ Examples:
                 # Count consecutive empty lines
                 if line.strip() == "":
                     empty_line_count += 1
-                    if empty_line_count >= 2:
-                        # Two consecutive empty lines means we're done
+                    if empty_line_count >= 3:
+                        # Three consecutive empty lines means we're done
                         break
                 else:
                     empty_line_count = 0

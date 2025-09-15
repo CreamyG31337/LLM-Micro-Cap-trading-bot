@@ -7,7 +7,8 @@ to intelligently detect Canadian vs US stocks.
 
 import re
 import logging
-from typing import Optional
+from typing import Optional, Union
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,10 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
     
     try:
         import yfinance as yf
+        import logging
+        
+        # Suppress all yfinance logging and warnings
+        logging.getLogger("yfinance").setLevel(logging.CRITICAL)
         
         # Test all variants
         variants_to_test = [
@@ -93,7 +98,8 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
                             'exchange': exchange,
                             'name': name
                         })
-            except:
+            except Exception as e:
+                # Silently skip invalid tickers - don't show 404 errors to user
                 continue
         
         # If no valid matches found, return original
@@ -140,7 +146,7 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
         return ticker
 
 
-def normalize_ticker_symbol(ticker: str, currency: str = "CAD", buy_price: float = None) -> str:
+def normalize_ticker_symbol(ticker: str, currency: str = "CAD", buy_price: Union[float, Decimal, None] = None) -> str:
     """Normalize ticker symbol using intelligent detection.
     
     Args:
@@ -270,6 +276,11 @@ def get_company_name(ticker: str) -> str:
     name = 'Unknown'
     try:
         import yfinance as yf
+        import logging
+        
+        # Suppress all yfinance logging and warnings
+        logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+        
         stock = yf.Ticker(key)
         info = stock.info
         if info and info.get('longName'):
@@ -277,6 +288,7 @@ def get_company_name(ticker: str) -> str:
         elif info and info.get('shortName'):
             name = info.get('shortName')
     except Exception:
+        # Silently handle API errors - don't show 404 errors to user
         pass
     
     # Persist to cache if available

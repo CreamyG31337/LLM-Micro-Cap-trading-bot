@@ -2,11 +2,34 @@
 """
 Rebuild Portfolio from Trade Log - Complete Recreation
 
+PURPOSE:
 This script completely rebuilds the portfolio CSV from scratch based on the trade log.
-It processes every trade chronologically and creates the proper portfolio entries:
-- BUY entries for each purchase
-- HOLD entries for price tracking between trades (with Yahoo API prices)
-- SELL entries for each sale
+It's designed to fix data inconsistencies, recover from corruption, or create a fresh
+portfolio when the existing one has issues.
+
+WHAT IT DOES:
+1. Reads the trade log (llm_trade_log.csv) chronologically
+2. Processes each trade and creates corresponding portfolio entries:
+   - BUY entries for each purchase with exact trade details
+   - HOLD entries for price tracking between trades (using Yahoo Finance API)
+   - SELL entries for each sale with proper FIFO calculations
+3. Recalculates all positions, cost basis, and P&L from scratch
+4. Generates a clean, consistent portfolio CSV with proper formatting
+
+WHEN TO USE:
+- Portfolio CSV is corrupted or has inconsistent data
+- Need to recover from a backup or data loss
+- Want to verify calculations are correct
+- Adding new features that require a fresh start
+- Debugging portfolio display issues
+
+TECHNICAL DETAILS:
+- **Price Caching**: Uses PriceCache with MarketDataFetcher to minimize API calls and improve performance
+- **Efficient API Usage**: Caches price data in memory to avoid redundant API requests for the same ticker/date
+- **Timezone Handling**: Handles timezone-aware timestamps correctly throughout the process
+- **FIFO Implementation**: Implements proper FIFO lot tracking for accurate P&L calculations
+- **Weekend Handling**: Skips weekends when adding HOLD entries (no market data available)
+- **Data Preservation**: Preserves all original trade data while rebuilding portfolio structure
 
 Usage:
     python debug/rebuild_portfolio_from_scratch.py
@@ -22,10 +45,15 @@ Configuration:
     - For other global markets, see comments in MARKET_CLOSE_TIMES section
 """
 
-import pandas as pd
-from pathlib import Path
-from collections import defaultdict
 import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+import pandas as pd
+from collections import defaultdict
 from datetime import datetime, timedelta
 import yfinance as yf  # retained for compatibility, core fetching uses MarketDataFetcher
 import time
@@ -85,33 +113,74 @@ def get_market_close_time(timezone_str: str = None) -> str:
     return f"{now.strftime('%Y-%m-%d')} {close_hour:02d}:00:00 {timezone_abbr}"
 
 # Use shared market data fetcher with price cache for efficiency
+# This setup minimizes API calls by caching price data in memory
 from market_data.price_cache import PriceCache
 from market_data.data_fetcher import MarketDataFetcher
-PRICE_CACHE = PriceCache()
-FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)
+from market_data.market_hours import MarketHours
+PRICE_CACHE = PriceCache()  # In-memory price cache to avoid redundant API calls
+FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)  # Fetcher uses the cache
+MARKET_HOURS = MarketHours()  # For weekend detection
 
 def get_current_price(ticker: str) -> float:
-    """Get current price using cached fetcher"""
+    """
+    Get current price for a ticker using the cached market data fetcher.
+    
+    This function attempts to fetch the most recent available price for a ticker,
+    falling back to historical data if current data isn't available. It uses
+    the shared MarketDataFetcher with price caching for efficiency.
+    
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
+        
+    Returns:
+        Current price as float, or 0.0 if no data available
+        
+    Note:
+        Uses a 5-day lookback window to find the most recent price data.
+        Returns 0.0 if no valid price data is found to prevent calculation errors.
+    """
     try:
         end = pd.Timestamp.now()
         start = end - pd.Timedelta(days=5)
         result = FETCHER.fetch_price_data(ticker, start, end)
         df = result.df
-        if df is not None and not df.empty and 'Close' in df.columns:
+        if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
             return float(df['Close'].iloc[-1])
     except Exception:
         pass
     return 0.0
 
 def get_historical_close_price(ticker: str, date_str: str) -> float:
-    """Get the historical close price using cached fetcher."""
+    """
+    Get historical close price for a ticker on a specific date.
+    
+    This function fetches the closing price for a ticker on the specified date,
+    with intelligent fallback to nearby trading days if the exact date isn't available.
+    It handles timezone-aware date parsing and uses the cached market data fetcher.
+    
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
+        date_str: Date string in format 'YYYY-MM-DD HH:MM:SS TZ' or similar
+        
+    Returns:
+        Historical close price as float, or 0.0 if no data available
+        
+    Note:
+        Uses a 3-day window around the target date to find the closest available
+        trading day. This handles cases where the target date falls on weekends
+        or holidays when markets are closed.
+    """
     try:
-        date_obj = pd.to_datetime(date_str).date()
+        from utils.timezone_utils import parse_csv_timestamp
+        date_obj = parse_csv_timestamp(date_str)
+        if not date_obj:
+            return None
+        date_obj = date_obj.date()
         next_date = date_obj + timedelta(days=1)
         # Fetch the exact day range
         result = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj), pd.Timestamp(next_date))
         df = result.df
-        if df is not None and not df.empty and 'Close' in df.columns:
+        if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
             # Find row matching the date
             day_rows = df[df.index.date == date_obj]
             if not day_rows.empty:
@@ -121,14 +190,42 @@ def get_historical_close_price(ticker: str, date_str: str) -> float:
         # Fallback: fetch previous 5 days and return last close
         result2 = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj) - pd.Timedelta(days=7), pd.Timestamp(date_obj))
         df2 = result2.df
-        if df2 is not None and not df2.empty and 'Close' in df2.columns:
+        if df2 is not None and not df2.empty and 'Close' in df2.columns and result2.source != "empty":
             return float(df2['Close'].iloc[-1])
         return 0.0
     except Exception:
         return 0.0
 
 def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone_str: str = None):
-    """Completely rebuild portfolio from trade log"""
+    """
+    Completely rebuild portfolio CSV from trade log with full recalculation.
+    
+    This is the main function that orchestrates the complete portfolio rebuild process.
+    It reads the trade log, processes all trades chronologically, and generates a
+    fresh portfolio CSV with proper HOLD entries for price tracking.
+    
+    PROCESS OVERVIEW:
+    1. Load and validate trade log data
+    2. Process all trades chronologically (BUY/SELL entries)
+    3. Generate HOLD entries for price tracking between trades
+    4. Recalculate all positions, cost basis, and P&L from scratch
+    5. Write clean portfolio CSV with proper formatting
+    
+    Args:
+        data_dir: Directory containing trade log and portfolio files
+        timezone_str: Timezone for market close time calculations (defaults to DEFAULT_TIMEZONE)
+        
+    Returns:
+        None (writes portfolio CSV to disk)
+        
+    Raises:
+        FileNotFoundError: If trade log file doesn't exist
+        ValueError: If trade log data is invalid or empty
+        
+    Note:
+        This function completely overwrites the existing portfolio CSV.
+        Make sure to backup your data before running if needed.
+    """
     if timezone_str is None:
         timezone_str = DEFAULT_TIMEZONE
     
@@ -246,17 +343,23 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         
         # First, collect all unique calendar dates from trade dates
         for trade_date in trade_dates:
-            date_obj = pd.to_datetime(trade_date)
-            calendar_date = date_obj.strftime('%Y-%m-%d')
-            unique_calendar_dates.add(calendar_date)
+            from utils.timezone_utils import parse_csv_timestamp
+            date_obj = parse_csv_timestamp(trade_date)
+            if date_obj:
+                calendar_date = date_obj.strftime('%Y-%m-%d')
+                unique_calendar_dates.add(calendar_date)
         
         # Convert to sorted list
         unique_calendar_dates = sorted(list(unique_calendar_dates))
         
         # Generate all dates between first trade and today
         if unique_calendar_dates:
-            first_date = pd.to_datetime(unique_calendar_dates[0])
-            last_date = pd.to_datetime(unique_calendar_dates[-1])
+            from utils.timezone_utils import parse_csv_timestamp
+            first_date = parse_csv_timestamp(unique_calendar_dates[0])
+            last_date = parse_csv_timestamp(unique_calendar_dates[-1])
+            if not first_date or not last_date:
+                print("Error: Could not parse trade dates")
+                return False
             today = datetime.now()
             
             # Check if market is open today (before market close time)
@@ -284,15 +387,29 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
             print(f"   Processing {hold_date}...")
             
             # Check if this date already has trade entries
-            hold_date_obj = pd.to_datetime(hold_date)
+            from utils.timezone_utils import parse_csv_timestamp
+            hold_date_obj = parse_csv_timestamp(hold_date)
+            if not hold_date_obj:
+                continue
+            
+            # WEEKEND HANDLING: Skip weekends (Saturday/Sunday) as there's no market data available
+            # This prevents "Could not get price" warnings for weekend dates when trying to fetch
+            # historical prices for HOLD entries. The portfolio will show the last available
+            # trading day's price for positions held over weekends.
+            if not MARKET_HOURS.is_trading_day(hold_date_obj):
+                print(f"     Skipping {hold_date_obj.strftime('%Y-%m-%d')} (weekend)")
+                continue
+                
             date_str = hold_date_obj.strftime('%Y-%m-%d')
             
             # Get list of tickers that were traded on this exact date
             traded_tickers_on_date = set()
             for _, trade in trade_df.iterrows():
-                trade_date = pd.to_datetime(trade['Date']).strftime('%Y-%m-%d')
-                if trade_date == date_str:
-                    traded_tickers_on_date.add(trade['Ticker'])
+                trade_date_obj = parse_csv_timestamp(trade['Date'])
+                if trade_date_obj:
+                    trade_date = trade_date_obj.strftime('%Y-%m-%d')
+                    if trade_date == date_str:
+                        traded_tickers_on_date.add(trade['Ticker'])
             
             print(f"     Tickers traded on {date_str}: {traded_tickers_on_date}")
             
@@ -328,7 +445,12 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     
                     # Determine the correct price for this hold date
                     tz = pytz.timezone(timezone_str)
-                    hold_date_obj_tz = tz.localize(hold_date_obj)
+                    if hold_date_obj.tzinfo is None:
+                        # Naive datetime - localize it
+                        hold_date_obj_tz = tz.localize(hold_date_obj)
+                    else:
+                        # Already timezone-aware - convert to target timezone
+                        hold_date_obj_tz = hold_date_obj.astimezone(tz)
                     if hold_date_obj_tz.date() == current_time.date():
                         # Today
                         if current_time.hour < market_close_hour:

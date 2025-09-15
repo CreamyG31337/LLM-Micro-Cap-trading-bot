@@ -207,6 +207,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs email trade parser",
          ["--data-dir", str(DATA_DIR)]),
         
+        ("r", "🔧 Rebuild Portfolio",
+         f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder)",
+         ["--data-dir", str(DATA_DIR)]),
+        
         ("c", "⚙️  Configure", 
          "Configuration options and setup", 
          []),
@@ -298,7 +302,8 @@ def get_script_path(option: str) -> Optional[Path]:
         "u": PROJECT_ROOT / "update_cash.py",
         "m": PROJECT_ROOT / "menu_actions.py",
         "x": PROJECT_ROOT / "get_emails.py",
-        "e": PROJECT_ROOT / "add_trade_from_email.py"
+        "e": PROJECT_ROOT / "add_trade_from_email.py",
+        "r": PROJECT_ROOT / "debug" / "rebuild_portfolio_from_scratch.py"
     }
     
     return script_map.get(option)
@@ -367,8 +372,11 @@ def main() -> None:
                 
                 # Special handling for email trade parser
                 elif choice == "e":
-                    # Email trade parser - no additional args needed, uses quick_add_trade.py
+                    # Email trade parser - no additional args needed, uses add_trade_from_email.py
                     pass
+                elif choice == "r":
+                    # Rebuild portfolio - pass data directory as positional argument
+                    args = [str(DATA_DIR)]
                 
                 # Run the script
                 return_code = run_with_venv(script_path, args)

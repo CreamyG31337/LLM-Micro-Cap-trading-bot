@@ -110,6 +110,28 @@ class ContributorManager:
             return True  # Empty email is okay
         
         return '@' in email and '.' in email.split('@')[1]
+        
+    def get_emails_as_string(self) -> str:
+        """Get all contributor email addresses as a semicolon-separated string.
+        
+        Returns:
+            str: Semicolon-separated list of email addresses
+            
+        Raises:
+            FileNotFoundError: If fund contributions file doesn't exist
+        """
+        try:
+            contributors = self.get_contributors()
+            
+            # Filter out empty or NaN emails and join with semicolon
+            valid_emails = contributors['Email'].dropna().astype(str)
+            valid_emails = valid_emails[valid_emails != '']
+            
+            return ';'.join(valid_emails)
+            
+        except Exception as e:
+            logger.error(f"Error getting emails as string: {e}")
+            return ""
     
     def save_contribution(self, contribution_data: Dict[str, Any]) -> bool:
         """Save contribution data to CSV file.

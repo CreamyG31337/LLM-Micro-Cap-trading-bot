@@ -128,6 +128,7 @@ class MenuActionSystem:
         
         action_map = {
             'manage_contributors': self._manage_contributors,
+            'get_contributor_emails': self._get_contributor_emails,
             'log_contribution': self._log_contribution,
             'log_withdrawal': self._log_withdrawal,
             'update_cash_balances': self._update_cash_balances,
@@ -150,6 +151,23 @@ class MenuActionSystem:
     def _manage_contributors(self, **kwargs) -> bool:
         """Execute contributor management action."""
         return self.contributor_ui.manage_contributors_interactive()
+    
+    def _get_contributor_emails(self, **kwargs) -> bool:
+        """Execute get contributor emails action."""
+        try:
+            emails = self.contributor_manager.get_emails_as_string()
+            if emails:
+                print_info("Contributor Email Addresses (ready to copy):", "📧")
+                print()
+                print(f"📋 {emails}")
+                print()
+                print_success("Email addresses displayed above - you can copy and paste them into your mail program")
+            else:
+                print_warning("No email addresses found or all emails are empty")
+            return True
+        except Exception as e:
+            print_error(f"Failed to get contributor emails: {e}")
+            return False
     
     def _log_contribution(self, **kwargs) -> bool:
         """Execute contribution logging action."""
@@ -274,6 +292,16 @@ def log_withdrawal_main():
         action_name="log_withdrawal",
         title="Log Withdrawal", 
         emoji="💸"
+    )
+    script_func()
+
+
+def get_contributor_emails_main():
+    """Standalone script for getting contributor emails."""
+    script_func = create_standalone_action_script(
+        action_name="get_contributor_emails",
+        title="Get Contributor Emails",
+        emoji="📧"
     )
     script_func()
 

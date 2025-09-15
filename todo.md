@@ -229,6 +229,167 @@ Goal: Add company profile and fundamentals to the daily prompt, prioritizing ite
 
 ---
 
+## Interactive Web Dashboard Migration (Vercel + Supabase) (2025-09-15)
+
+### Vision: Advanced Interactive Portfolio Analytics
+Move from static Python charts to a modern web dashboard with real-time interactivity, user authentication, and cloud deployment.
+
+### Core Interactive Features
+- [ ] **Toggle Individual Holdings**: Interactive chart where users can show/hide specific tickers
+- [ ] **Multi-timeframe Analysis**: Switch between 1D, 1W, 1M, 3M, YTD, 1Y views
+- [ ] **Benchmark Switching**: Toggle between S&P 500, Russell 2000, sector ETFs, custom benchmarks
+- [ ] **Performance Attribution**: See which holdings contributed most to gains/losses
+- [ ] **Risk Metrics Dashboard**: Real-time Sharpe ratio, volatility, beta calculations
+- [ ] **Portfolio Rebalancing Simulator**: "What-if" scenarios for position sizing changes
+
+### Technology Stack
+
+#### Frontend (Next.js + Vercel)
+- [ ] **Next.js 14** with App Router for modern React framework
+- [ ] **Recharts or Chart.js** for interactive financial charts with hover/zoom/pan
+- [ ] **Tailwind CSS** for responsive design and dark/light theme toggle
+- [ ] **shadcn/ui** components for professional dashboard UI
+- [ ] **React Query (TanStack Query)** for data fetching and caching
+- [ ] **Zustand** for client-side state management (chart settings, filters)
+
+#### Backend (Supabase)
+- [ ] **Supabase Database**: PostgreSQL with real-time subscriptions
+- [ ] **Row Level Security (RLS)**: Multi-user support with private portfolio data
+- [ ] **Supabase Auth**: Google/GitHub OAuth + email/password authentication
+- [ ] **Edge Functions**: Serverless functions for complex calculations (TWR, risk metrics)
+- [ ] **Supabase Storage**: File uploads for trade logs, CSV imports
+
+#### Data Pipeline
+- [ ] **Real-time Price Updates**: Schedule Edge Functions to update prices every 15min during market hours
+- [ ] **Market Data APIs**: Integrate with Alpha Vantage, Polygon.io, or IEX Cloud
+- [ ] **Currency Conversion**: Auto-convert USD/CAD positions with live FX rates
+- [ ] **Historical Data**: Import existing CSV data to Supabase tables
+
+### Database Schema Design
+
+#### Core Tables
+- [ ] **users**: User profiles and settings
+- [ ] **portfolios**: Multiple portfolios per user (Paper, Real, Archive)
+- [ ] **positions**: Current holdings with cost basis, shares, market value
+- [ ] **trades**: Complete trade history with FIFO processing
+- [ ] **market_data**: Cached price/volume data to reduce API calls
+- [ ] **benchmarks**: S&P 500, sector indices for comparison
+- [ ] **cash_flows**: Deposits, withdrawals, dividend payments
+
+#### Advanced Tables
+- [ ] **portfolio_snapshots**: Daily portfolio valuations for time series
+- [ ] **risk_metrics**: Pre-calculated Sharpe, beta, volatility by date
+- [ ] **alerts**: Price alerts, rebalancing suggestions, performance notifications
+- [ ] **watchlists**: Tickers users want to track for future investment
+
+### Interactive Chart Features
+
+#### Core Interactivity
+- [ ] **Holding Toggle Checkboxes**: Show/hide individual tickers with smooth animation
+- [ ] **Performance Mode Switching**: Total return vs individual position returns
+- [ ] **Benchmark Overlay**: Multiple benchmarks on same chart with different colors
+- [ ] **Date Range Picker**: Custom start/end dates with preset shortcuts
+- [ ] **Zoom and Pan**: Mouse wheel zoom, drag to pan time series
+- [ ] **Hover Tooltips**: Show exact values, dates, holding details on mouseover
+
+#### Advanced Interactions
+- [ ] **Crossfilter Integration**: Selecting a date highlights all positions on that date
+- [ ] **Performance Attribution Bars**: Stacked bars showing which holdings drove daily returns
+- [ ] **Correlation Matrix**: Heatmap showing how holdings move relative to each other
+- [ ] **Risk-Return Scatter**: Plot holdings by volatility vs return with bubble sizes = position size
+- [ ] **Drawdown Waterfall**: Visualize how each holding contributed to portfolio drawdowns
+- [ ] **Sector/Geography Breakdown**: Pie charts and treemaps for portfolio composition
+
+### User Experience Features
+
+#### Portfolio Management
+- [ ] **Multiple Portfolio Support**: Paper trading, different strategies, archived portfolios
+- [ ] **CSV Import/Export**: Upload trade logs, export performance reports
+- [ ] **Trade Entry Interface**: Clean forms for adding new trades with auto-completion
+- [ ] **Position Sizing Calculator**: Suggest position sizes based on portfolio % or risk parity
+- [ ] **Rebalancing Alerts**: Notify when positions drift from target allocations
+
+#### Reporting and Analytics
+- [ ] **PDF Performance Reports**: Monthly/quarterly reports with charts and key metrics
+- [ ] **Email Digest**: Weekly performance summary with top movers
+- [ ] **Custom Dashboards**: User-configurable widgets and chart layouts
+- [ ] **Benchmark Comparison Tables**: Side-by-side performance vs multiple indices
+- [ ] **Tax Reporting**: Realized gains/losses with wash sale detection
+
+#### Social/Collaboration
+- [ ] **Portfolio Sharing**: Public/private portfolio links with configurable privacy
+- [ ] **Community Leaderboards**: Anonymous performance rankings (opt-in)
+- [ ] **Discussion Integration**: Comments on trades, market observations
+
+### Migration Strategy
+
+#### Phase 1: Core Infrastructure
+- [ ] Set up Vercel project with Next.js 14
+- [ ] Configure Supabase project with authentication
+- [ ] Design and implement core database schema
+- [ ] Migrate existing CSV data to Supabase tables
+- [ ] Build basic user registration/login flow
+
+#### Phase 2: Basic Dashboard
+- [ ] Create main portfolio overview page
+- [ ] Implement basic interactive chart with Recharts
+- [ ] Add portfolio performance metrics display
+- [ ] Build trade entry and editing interface
+- [ ] Implement CSV import for historical data
+
+#### Phase 3: Advanced Analytics
+- [ ] Add individual holding toggle functionality
+- [ ] Implement multiple benchmark comparisons
+- [ ] Build risk metrics calculations (Edge Functions)
+- [ ] Add performance attribution analysis
+- [ ] Create advanced chart types (correlation, scatter)
+
+#### Phase 4: Polish and Scale
+- [ ] Implement real-time price updates
+- [ ] Add mobile-responsive design
+- [ ] Build PDF reporting system
+- [ ] Optimize performance and caching
+- [ ] Add comprehensive error handling and monitoring
+
+### Technical Considerations
+
+#### Performance Optimization
+- [ ] **Chart Data Virtualization**: Handle large time series efficiently
+- [ ] **Incremental Static Regeneration**: Cache heavy calculations at build time
+- [ ] **Edge Caching**: Cache market data and calculations globally
+- [ ] **Lazy Loading**: Load chart components only when needed
+- [ ] **Database Indexing**: Optimize queries for time series and user filtering
+
+#### Security and Privacy
+- [ ] **End-to-end Encryption**: Sensitive portfolio data encrypted at rest
+- [ ] **API Rate Limiting**: Prevent abuse of market data endpoints
+- [ ] **Input Validation**: Sanitize all user inputs and CSV uploads
+- [ ] **Audit Logging**: Track all portfolio modifications for debugging
+- [ ] **GDPR Compliance**: Data export and deletion capabilities
+
+#### Monitoring and Reliability
+- [ ] **Error Tracking**: Sentry integration for bug monitoring
+- [ ] **Performance Monitoring**: Vercel Analytics and Core Web Vitals
+- [ ] **Uptime Monitoring**: Health checks for critical functions
+- [ ] **Backup Strategy**: Regular database backups with point-in-time recovery
+- [ ] **Market Data Fallbacks**: Multiple data sources to handle API outages
+
+### Success Metrics
+- Users can toggle individual holdings on/off with sub-second response time
+- Charts handle 1000+ data points smoothly on mobile devices
+- 99.9% uptime during market hours
+- Support for 10+ concurrent users without performance degradation
+- Real-time updates reflect within 30 seconds of market data changes
+
+### Timeline Estimate
+- **Phase 1 (Infrastructure)**: 2-3 weeks
+- **Phase 2 (Basic Dashboard)**: 3-4 weeks
+- **Phase 3 (Advanced Analytics)**: 4-6 weeks
+- **Phase 4 (Polish)**: 2-3 weeks
+- **Total**: 11-16 weeks for full migration
+
+---
+
 ## Fund Contributor Email Enhancement (2025-09-14)
 
 ### Goals:

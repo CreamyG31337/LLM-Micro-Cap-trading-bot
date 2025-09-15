@@ -129,10 +129,10 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="yellow", width=12, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=16, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=15, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=9, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
         
         def format_shares(shares_value):

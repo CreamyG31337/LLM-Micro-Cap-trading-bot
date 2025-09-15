@@ -175,24 +175,13 @@ class ContributorUI:
         self.manager = contributor_manager
     
     def manage_contributors_interactive(self) -> bool:
-        """Interactive contributor management interface.
+        """Interactive contributor management interface with add/edit functionality.
         
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             print_info("Manage Contributors", "👥")
-            
-            # Get contributors
-            try:
-                contributors = self.manager.get_contributors()
-            except FileNotFoundError:
-                print_warning("No fund contributions file found")
-                return False
-            
-            if contributors.empty:
-                print_warning("No contributors found")
-                return False
             
             # Loop until user exits
             while True:
@@ -201,44 +190,23 @@ class ContributorUI:
                     contributors = self.manager.get_contributors()
                 except FileNotFoundError:
                     print_warning("No fund contributions file found")
-                    return False
+                    contributors = pd.DataFrame()
                 
-                if contributors.empty:
-                    print_warning("No contributors found")
-                    return False
-                
-                # Display contributors
-                self._display_contributors(contributors)
+                # Display contributors and options
+                self._display_contributors_and_options(contributors)
                 
                 # Get user selection
-                selected_contributor = self._get_contributor_selection(contributors)
-                if selected_contributor is None:
+                action = self._get_management_action(contributors)
+                if action is None:
                     print_info("Exiting contributor management")
                     return True
                 
-                # Get updated information
-                current_name = selected_contributor['Contributor']
-                current_email = selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ""
-                
-                new_name, new_email = self._get_updated_info(current_name, current_email)
-                
-                # Check if changes were made
-                if new_name == current_name and new_email == current_email:
-                    print_info("No changes made")
-                    continue  # Continue loop instead of returning
-                
-                # Confirm changes
-                if not self._confirm_changes(current_name, current_email, new_name, new_email):
-                    print_info("Changes cancelled")
-                    continue  # Continue loop instead of returning
-                
-                # Update contributor
-                success = self.manager.update_contributor(current_name, new_name, new_email)
-                if success:
-                    print_success("Contributor information updated successfully")
-                    print()  # Add spacing before next iteration
-                else:
-                    print_error("Failed to update contributor")
+                if action == "add":
+                    self._add_new_contributor()
+                elif action == "edit":
+                    selected_contributor = self._get_contributor_selection(contributors)
+                    if selected_contributor is not None:
+                        self._edit_contributor(selected_contributor)
             
         except KeyboardInterrupt:
             print_info("\nContributor management cancelled by user")
@@ -247,6 +215,30 @@ class ContributorUI:
             logger.error(f"Error in interactive contributor management: {e}")
             print_error(f"Failed to manage contributors: {e}")
             return False
+    
+    def _display_contributors_and_options(self, contributors: pd.DataFrame) -> None:
+        """Display contributors and management options."""
+        print("\n📋 Current Contributors:")
+        print("─" * 60)
+        print(f"{'#':<3} {'Name':<25} {'Email':<30}")
+        print("─" * 60)
+        
+        if contributors.empty:
+            print("  No contributors found")
+        else:
+            for i, row in contributors.iterrows():
+                idx = i + 1
+                name = row['Contributor']
+                email = row['Email'] if row['Email'] and pd.notna(row['Email']) else "Not provided"
+                print(f"{idx:<3} {name:<25} {email:<30}")
+        
+        print("─" * 60)
+        print("Options:")
+        print("  a - Add new contributor")
+        if not contributors.empty:
+            print("  e - Edit existing contributor")
+        print("  q - Quit")
+        print("─" * 60)
     
     def _display_contributors(self, contributors: pd.DataFrame) -> None:
         """Display contributors in a formatted table."""
@@ -263,6 +255,109 @@ class ContributorUI:
         
         print("─" * 60)
         print("Select a contributor by number to edit, or press Enter to exit")
+    
+    def _get_management_action(self, contributors: pd.DataFrame) -> Optional[str]:
+        """Get user action selection.
+        
+        Args:
+            contributors: DataFrame of contributors
+            
+        Returns:
+            Action string or None if exiting
+        """
+        while True:
+            try:
+                choice = input("\nSelect action: ").strip().lower()
+                
+                if choice in ['q', 'quit', '']:
+                    return None
+                elif choice == 'a':
+                    return "add"
+                elif choice == 'e' and not contributors.empty:
+                    return "edit"
+                elif choice == 'e' and contributors.empty:
+                    print_error("No contributors to edit. Add a contributor first.")
+                    continue
+                else:
+                    print_error("Invalid choice. Please enter 'a', 'e', or 'q'")
+            except KeyboardInterrupt:
+                return None
+    
+    def _add_new_contributor(self) -> None:
+        """Add a new contributor."""
+        try:
+            print_info("Add New Contributor", "➕")
+            
+            # Get contributor name
+            while True:
+                name = input("Enter contributor name: ").strip()
+                if not name:
+                    print_error("Name cannot be empty")
+                    continue
+                break
+            
+            # Get contributor email
+            email = input("Enter contributor email (optional): ").strip()
+            if email and '@' not in email:
+                print_warning("Email format may be invalid, but continuing...")
+            
+            # Create a dummy contribution to add the contributor
+            contribution_data = {
+                'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'Contributor': name,
+                'Amount': 0.01,  # Minimal amount to create the contributor
+                'Type': 'CONTRIBUTION',
+                'Notes': 'Initial contributor setup',
+                'Email': email
+            }
+            
+            success = self.manager.save_contribution(contribution_data)
+            if success:
+                print_success(f"Contributor '{name}' added successfully")
+            else:
+                print_error("Failed to add contributor")
+                
+        except KeyboardInterrupt:
+            print_info("\nAdd contributor cancelled")
+        except Exception as e:
+            logger.error(f"Error adding contributor: {e}")
+            print_error(f"Failed to add contributor: {e}")
+    
+    def _edit_contributor(self, selected_contributor: pd.Series) -> None:
+        """Edit an existing contributor.
+        
+        Args:
+            selected_contributor: Contributor to edit
+        """
+        try:
+            # Get updated information
+            current_name = selected_contributor['Contributor']
+            current_email = selected_contributor['Email'] if pd.notna(selected_contributor['Email']) else ""
+            
+            new_name, new_email = self._get_updated_info(current_name, current_email)
+            
+            # Check if changes were made
+            if new_name == current_name and new_email == current_email:
+                print_info("No changes made")
+                return
+            
+            # Confirm changes
+            if not self._confirm_changes(current_name, current_email, new_name, new_email):
+                print_info("Changes cancelled")
+                return
+            
+            # Update contributor
+            success = self.manager.update_contributor(current_name, new_name, new_email)
+            if success:
+                print_success("Contributor information updated successfully")
+            else:
+                print_error("Failed to update contributor")
+                
+        except KeyboardInterrupt:
+            print_info("\nEdit contributor cancelled")
+        except Exception as e:
+            logger.error(f"Error editing contributor: {e}")
+            print_error(f"Failed to edit contributor: {e}")
     
     def _get_contributor_selection(self, contributors: pd.DataFrame) -> Optional[pd.Series]:
         """Get user selection for contributor to edit.

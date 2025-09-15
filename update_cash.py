@@ -95,7 +95,7 @@ def main():
     
     if not data_dir.exists():
         print(f"_safe_emoji('❌') Data directory not found: {data_dir}")
-        print("Make sure you have a 'my trading' directory with your trading data.")
+        print(f"Make sure the data directory exists: {data_dir}")
         sys.exit(1)
     
     try:

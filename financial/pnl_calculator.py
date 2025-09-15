@@ -500,8 +500,9 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
     SHARED FUNCTION: Used by both trading_script.py and prompt_generator.py
 
     Calculate daily P&L for a position by comparing current_price with yesterday's closing price.
-    Since snapshots may be created before market open, we compare current live price with
-    the most recent historical snapshot that has different prices.
+    
+    For new trades (first day), we compare current price with the buy price to show intraday P&L.
+    For existing positions, we compare with the previous day's closing price.
 
     Args:
         current_position: Current position object with current_price
@@ -511,13 +512,35 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
         str: Formatted daily P&L string (e.g., "$123.45", "$0.00")
     """
     try:
-        if not portfolio_snapshots or len(portfolio_snapshots) < 2:
+        if not portfolio_snapshots or len(portfolio_snapshots) < 1:
             return "$0.00"
 
-        # Find the most recent snapshot that has a different price than current
-        # This handles the case where snapshots are created before market open
         current_price = current_position.current_price
+        if current_price is None:
+            return "$0.00"
 
+        # For new trades (first day), compare current price with buy price for intraday P&L
+        # For existing positions, compare with previous day's closing price
+        
+        # Check if this is a new position (doesn't exist in any previous snapshot)
+        ticker_exists_in_previous_days = False
+        for i in range(len(portfolio_snapshots) - 1):  # Check all snapshots except the latest
+            previous_snapshot = portfolio_snapshots[i]
+            if any(pos.ticker == current_position.ticker for pos in previous_snapshot.positions):
+                ticker_exists_in_previous_days = True
+                break
+        
+        if not ticker_exists_in_previous_days:
+            # This is a new trade on its first day - compare with buy price for intraday P&L
+            buy_price = current_position.avg_price
+            if buy_price and abs(current_price - buy_price) > 0.01:
+                daily_price_change = current_price - buy_price
+                daily_pnl_amount = daily_price_change * current_position.shares
+                return f"${daily_pnl_amount:.2f}"
+            else:
+                return "$0.00"
+        
+        # For existing positions, find the previous day's closing price
         for i in range(1, len(portfolio_snapshots)):
             previous_snapshot = portfolio_snapshots[-(i+1)]
 
@@ -528,16 +551,16 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
                     prev_position = prev_pos
                     break
 
-            if prev_position and prev_position.current_price is not None and current_price is not None:
+            if prev_position and prev_position.current_price is not None:
                 prev_price = prev_position.current_price
 
-                # If we found a snapshot with a different price, calculate P&L
+                # Calculate P&L from previous day's closing price
                 if abs(current_price - prev_price) > 0.01:  # More than 1 cent difference
                     daily_price_change = current_price - prev_price
                     daily_pnl_amount = daily_price_change * current_position.shares
                     return f"${daily_pnl_amount:.2f}"
 
-        # If all recent snapshots have the same price (e.g., created before market open), show $0.00
+        # If no previous day data found, show $0.00
         return "$0.00"
 
     except Exception as e:

@@ -1,3 +1,6 @@
+import matplotlib
+# Use Agg backend to prevent GUI windows and threading issues
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import yfinance as yf
@@ -88,8 +91,10 @@ else:
         print("   Example: python Generate_Graph.py --data-dir 'trading_data/prod'")
         sys.exit(1)
 
-# Save path in project root
-RESULTS_PATH = Path("Results.png")  # NEW
+# Save path in graphs folder with timestamp
+from datetime import datetime
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+RESULTS_PATH = Path(f"graphs/portfolio_performance_{timestamp}.png")
 
 
 def load_portfolio_totals() -> pd.DataFrame:
@@ -206,6 +211,9 @@ def load_portfolio_totals() -> pd.DataFrame:
         
         print(f"📈 Investment Performance: {start_performance:+.2f}% → {end_performance:+.2f}%")
         print(f"💰 Total Capital Deployed: ${start_invested:,.2f} → ${end_invested:,.2f}")
+        
+        # Create continuous timeline including weekends
+        llm_totals = create_continuous_timeline(llm_totals)
         return llm_totals
     else:
         # Fallback if no data
@@ -213,6 +221,42 @@ def load_portfolio_totals() -> pd.DataFrame:
     
     print(f"📊 Final dataset: {len(out)} data points from {out['Date'].min().date()} to {out['Date'].max().date()}")
     return out
+
+
+def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
+    """Create a continuous timeline including weekends and holidays with forward-filled values."""
+    if df.empty:
+        return df
+    
+    # Get the date range
+    start_date = df['Date'].min().date()
+    end_date = df['Date'].max().date()
+    
+    # Create complete date range (every single day)
+    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+    
+    # Create DataFrame with complete date range
+    continuous_df = pd.DataFrame({'Date': date_range})
+    continuous_df['Date_Only'] = continuous_df['Date'].dt.date
+    
+    # Convert original df date for merging
+    df_for_merge = df.copy()
+    df_for_merge['Date_Only'] = df_for_merge['Date'].dt.date
+    
+    # Merge and forward-fill missing values (weekends/holidays keep previous trading day values)
+    merged = continuous_df.merge(df_for_merge.drop('Date', axis=1), on='Date_Only', how='left')
+    
+    # Forward fill all numeric columns (portfolio values don't change on weekends)
+    numeric_cols = ['Cost_Basis', 'Market_Value', 'Unrealized_PnL', 'Performance_Pct', 'Performance_Index', 'Total Equity']
+    for col in numeric_cols:
+        if col in merged.columns:
+            merged[col] = merged[col].ffill()
+    
+    # Drop the helper column
+    merged = merged.drop('Date_Only', axis=1)
+    
+    print(f"📅 Created continuous timeline: {len(df)} trading days → {len(merged)} total days (including weekends)")
+    return merged
 
 
 def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
@@ -503,24 +547,30 @@ def main() -> dict:
     plt.title(f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs S&P 500)")
     # Add weekend/holiday shading for market closure clarity
     def add_market_closure_shading(start_date, end_date):
-        """Add light gray shading for weekends and holidays when markets are closed."""
+        """Add light gray shading for weekends when markets are closed."""
         import matplotlib.dates as mdates
         from datetime import timedelta
         
         current_date = start_date.date()
         end_date_only = end_date.date()
+        weekend_labeled = False  # Track if we've added the legend label
         
         while current_date <= end_date_only:
-            # Check if it's a weekend (Saturday=5, Sunday=6)
+            # Check if it's a weekend (Monday=0, ..., Friday=4, Saturday=5, Sunday=6)
             weekday = pd.to_datetime(current_date).weekday()
             
-            if weekday >= 5:  # Weekend (Sat/Sun)
+            if weekday >= 5:  # Weekend (Sat=5, Sun=6)
                 shade_start = pd.to_datetime(current_date)
                 shade_end = shade_start + pd.Timedelta(days=1)
                 
+                # Add shading for this weekend day
+                label = 'Weekend (Market Closed)' if not weekend_labeled else ""
                 plt.axvspan(shade_start, shade_end, 
-                           color='lightgray', alpha=0.15, zorder=0,
-                           label='Weekend' if current_date == start_date.date() or weekday == 5 else "")
+                           color='lightgray', alpha=0.2, zorder=0,
+                           label=label)
+                
+                if not weekend_labeled:
+                    weekend_labeled = True
             
             # TODO: Add major market holidays (New Year's, July 4th, Christmas, etc.)
             # For now, just handle weekends which are the most common
@@ -550,8 +600,9 @@ def main() -> dict:
                 format='png',
                 pad_inches=0.1)  # Minimal padding
     print(f"📊 Saved chart to: {RESULTS_PATH.resolve()}")
-
-    plt.show()
+    
+    # Close the figure to free memory and prevent threading issues
+    plt.close()
 
     return {
         "peak_performance_date": peak_date,

@@ -74,12 +74,12 @@ class PortfolioManager:
             PortfolioManagerError: If loading fails
         """
         try:
-            logger.info("Loading latest portfolio snapshot")
+            logger.debug("Loading latest portfolio snapshot")
             snapshot = self.repository.get_latest_portfolio_snapshot()
             if snapshot:
-                logger.info(f"Loaded latest portfolio with {len(snapshot.positions)} positions")
+                logger.debug(f"Loaded latest portfolio with {len(snapshot.positions)} positions")
             else:
-                logger.info("No portfolio data found")
+                logger.debug("No portfolio data found")
             return snapshot
             
         except RepositoryError as e:

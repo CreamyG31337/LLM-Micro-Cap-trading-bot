@@ -182,6 +182,7 @@ class CSVRepository(BaseRepository):
         """Update today's portfolio snapshot or create new one if it doesn't exist.
         
         This method follows the rule: only add new rows once per day, update prices in existing rows.
+        For new trades added on the same day, it creates HOLD entries with current prices.
         
         Args:
             snapshot: PortfolioSnapshot to save or update
@@ -205,9 +206,12 @@ class CSVRepository(BaseRepository):
                     # Check if today's data exists
                     today_data = existing_df[existing_df['Date_Only'] == today]
                     if not today_data.empty:
-                        logger.info(f"Today's portfolio snapshot already exists, updating prices only")
+                        logger.debug(f"Today's portfolio snapshot already exists, updating prices and adding new positions")
                         
-                        # Update prices in today's existing rows only
+                        # Get list of existing tickers for today
+                        existing_tickers = set(today_data['Ticker'].tolist())
+                        
+                        # Update prices in today's existing rows
                         for _, position_row in today_data.iterrows():
                             ticker = position_row['Ticker']
                             
@@ -227,10 +231,27 @@ class CSVRepository(BaseRepository):
                                 existing_df.loc[mask, 'PnL'] = float((updated_position.unrealized_pnl or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
                                 logger.debug(f"Updated prices for {ticker}")
                         
+                        # Add HOLD entries for new positions that don't exist in today's data
+                        new_positions = []
+                        for pos in snapshot.positions:
+                            if pos.ticker not in existing_tickers:
+                                # Create HOLD entry for new position
+                                hold_entry = pos.to_csv_dict()
+                                hold_entry['Date'] = self._format_timestamp_for_csv(snapshot.timestamp)
+                                hold_entry['Action'] = 'HOLD'
+                                new_positions.append(hold_entry)
+                                logger.debug(f"Adding HOLD entry for new position: {pos.ticker}")
+                        
+                        if new_positions:
+                            # Add new HOLD entries to the DataFrame
+                            new_df = pd.DataFrame(new_positions)
+                            existing_df = pd.concat([existing_df, new_df], ignore_index=True)
+                            logger.debug(f"Added {len(new_positions)} new HOLD entries for today")
+                        
                         # Save the updated DataFrame
                         existing_df = existing_df.drop('Date_Only', axis=1)  # Remove helper column
                         existing_df.to_csv(self.portfolio_file, index=False)
-                        logger.info(f"Updated today's portfolio snapshot with current prices")
+                        logger.debug(f"Updated today's portfolio snapshot with current prices and new positions")
                         return
             
             # If today's snapshot doesn't exist, create new rows

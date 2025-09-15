@@ -199,6 +199,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Edit contributor names and email addresses (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(DATA_DIR)]),
         
+        ("x", "📧 Get Contributor Emails", 
+         f"Output all contributor email addresses (semicolon-separated for mail programs) (uses '{data_folder_name}' folder)", 
+         ["--data-dir", str(DATA_DIR)]),
+        
         ("e", "📧 Add Trade from Email",
          f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs email trade parser",
          ["--data-dir", str(DATA_DIR)]),
@@ -293,6 +297,7 @@ def get_script_path(option: str) -> Optional[Path]:
         "w": PROJECT_ROOT / "prompt_generator.py",
         "u": PROJECT_ROOT / "update_cash.py",
         "m": PROJECT_ROOT / "menu_actions.py",
+        "x": PROJECT_ROOT / "get_emails.py",
         "e": PROJECT_ROOT / "add_trade_from_email.py"
     }
     

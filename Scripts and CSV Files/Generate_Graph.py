@@ -183,10 +183,14 @@ def load_portfolio_totals() -> pd.DataFrame:
     return out
 
 
-def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
-    """Download S&P 500 prices and normalise to a $100 baseline."""
+def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
+    """Download S&P 500 prices, normalize to $100 baseline, and forward-fill for weekends."""
     try:
-        sp500 = yf.download("^GSPC", start=start_date, end=end_date + pd.Timedelta(days=1),
+        # Download with a few extra days buffer to ensure we get all needed data
+        download_start = start_date - pd.Timedelta(days=5)
+        download_end = end_date + pd.Timedelta(days=5)
+        
+        sp500 = yf.download("^GSPC", start=download_start, end=download_end,
                             progress=False, auto_adjust=False)
         sp500 = sp500.reset_index()
         if isinstance(sp500.columns, pd.MultiIndex):
@@ -195,73 +199,83 @@ def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataF
         if sp500.empty:
             print("⚠️  No S&P 500 data available, creating flat baseline")
             return pd.DataFrame({
-                'Date': [start_date, end_date],
-                'SPX Value ($100 Invested)': [100.0, 100.0]
+                'Date': portfolio_dates,
+                'SPX Value ($100 Invested)': [100.0] * len(portfolio_dates)
             })
         
-        # Use the first available price as baseline for $100 investment
-        first_close = sp500["Close"].iloc[0]
-        scaling_factor = 100.0 / first_close
+        # Find the S&P 500 price on the portfolio start date for fair comparison
+        sp500_temp = sp500.copy()
+        sp500_temp['Date_Only'] = pd.to_datetime(sp500_temp['Date']).dt.date
+        
+        portfolio_start_date = start_date.date()
+        baseline_data = sp500_temp[sp500_temp['Date_Only'] == portfolio_start_date]
+        
+        if len(baseline_data) > 0:
+            # Use S&P 500 price on portfolio start date
+            baseline_close = baseline_data["Close"].iloc[0]
+            print(f"🎯 Using S&P 500 close on {portfolio_start_date}: ${baseline_close:.2f} as baseline")
+        else:
+            # If no exact date match (weekend/holiday), use the closest previous trading day
+            available_dates = sp500_temp[sp500_temp['Date_Only'] <= portfolio_start_date]
+            if len(available_dates) > 0:
+                baseline_close = available_dates["Close"].iloc[-1]
+                baseline_date = available_dates['Date_Only'].iloc[-1]
+                print(f"🎯 Using S&P 500 close on {baseline_date} (closest to {portfolio_start_date}): ${baseline_close:.2f} as baseline")
+            else:
+                # Fallback to first available price
+                baseline_close = sp500["Close"].iloc[0]
+                print(f"⚠️  Fallback: Using first available S&P 500 price: ${baseline_close:.2f} as baseline")
+        
+        scaling_factor = 100.0 / baseline_close
         sp500["SPX Value ($100 Invested)"] = sp500["Close"] * scaling_factor
         
-        print(f"📈 Downloaded S&P 500 data: {len(sp500)} data points")
-        return sp500[["Date", "SPX Value ($100 Invested)"]]
+        # Create a complete date range matching portfolio dates
+        sp500_clean = sp500[["Date", "SPX Value ($100 Invested)"]].copy()
+        sp500_clean['Date'] = pd.to_datetime(sp500_clean['Date']).dt.date
+        
+        # Create a DataFrame with all portfolio dates and merge with S&P 500 data
+        portfolio_date_range = pd.DataFrame({
+            'Date': [pd.to_datetime(d).date() for d in portfolio_dates]
+        })
+        
+        # Merge and forward-fill missing values (weekends, holidays)
+        merged = portfolio_date_range.merge(sp500_clean, on='Date', how='left')
+        merged['SPX Value ($100 Invested)'] = merged['SPX Value ($100 Invested)'].ffill()
+        
+        # If we still have NaN values at the beginning, backfill
+        merged['SPX Value ($100 Invested)'] = merged['SPX Value ($100 Invested)'].bfill()
+        
+        # Convert dates back to datetime for plotting
+        merged['Date'] = pd.to_datetime(merged['Date'])
+        
+        print(f"📈 S&P 500 data: {len(sp500_clean)} trading days → {len(merged)} total days (with weekends)")
+        return merged[["Date", "SPX Value ($100 Invested)"]]
         
     except Exception as e:
         print(f"⚠️  Error downloading S&P 500 data: {e}")
         print("📊 Creating flat S&P 500 baseline for comparison")
         return pd.DataFrame({
-            'Date': [start_date, end_date],
-            'SPX Value ($100 Invested)': [100.0, 100.0]
+            'Date': portfolio_dates,
+            'SPX Value ($100 Invested)': [100.0] * len(portfolio_dates)
         })
 
 
-def find_largest_gain(df: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp, float]:
+def find_peak_performance(df: pd.DataFrame) -> tuple[pd.Timestamp, float]:
     """
-    Largest rise from a local minimum to the subsequent peak.
-    Returns (start_date, end_date, gain_pct).
+    Find the highest performance point (peak gain from baseline 100).
+    Returns (peak_date, peak_gain_pct).
     """
     df = df.sort_values("Date")
-    min_val = float(df["Performance_Index"].iloc[0])
-    min_date = pd.Timestamp(df["Date"].iloc[0])
-    peak_val = min_val
-    peak_date = min_date
-    best_gain = 0.0
-    best_start = min_date
-    best_end = peak_date
-
-    # iterate rows 1..end
-    for date, val in df[["Date", "Performance_Index"]].iloc[1:].itertuples(index=False):
-        val = float(val)
-        date = pd.Timestamp(date)
-
-        # extend peak while rising
-        if val > peak_val:
-            peak_val = val
-            peak_date = date
-            continue
-
-        # fall → close previous run
-        if val < peak_val:
-            gain = (peak_val - min_val) / 100.0 * 100.0  # Convert to percentage from base 100
-            if gain > best_gain:
-                best_gain = gain
-                best_start = min_date
-                best_end = peak_date
-            # reset min/peak at this valley
-            min_val = val
-            min_date = date
-            peak_val = val
-            peak_date = date
-
-    # final run (if last segment ends on a rise)
-    gain = (peak_val - min_val) / 100.0 * 100.0  # Convert to percentage from base 100
-    if gain > best_gain:
-        best_gain = gain
-        best_start = min_date
-        best_end = peak_date
-
-    return best_start, best_end, best_gain
+    
+    # Find the maximum performance index value
+    max_idx = df["Performance_Index"].idxmax()
+    peak_date = pd.Timestamp(df.loc[max_idx, "Date"])
+    peak_value = float(df.loc[max_idx, "Performance_Index"])
+    
+    # Calculate gain percentage from baseline (100)
+    peak_gain_pct = peak_value - 100.0
+    
+    return peak_date, peak_gain_pct
 
 
 def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
@@ -281,14 +295,15 @@ def main() -> dict:
 
     start_date = llm_totals["Date"].min()
     end_date = llm_totals["Date"].max()
-    sp500 = download_sp500(start_date, end_date)
+    portfolio_dates = llm_totals["Date"]
+    sp500 = download_sp500(start_date, end_date, portfolio_dates)
 
     # metrics
-    largest_start, largest_end, largest_gain = find_largest_gain(llm_totals)
+    peak_date, peak_gain = find_peak_performance(llm_totals)
     dd_date, dd_value, dd_pct = compute_drawdown(llm_totals)
 
-    # plotting
-    plt.figure(figsize=(10, 6))
+    # plotting - optimized for financial time series (wide landscape)
+    plt.figure(figsize=(16, 9))  # 16:9 aspect ratio, perfect for time series
     plt.style.use("seaborn-v0_8-whitegrid")
 
     # Show ACTUAL investment performance vs S&P 500 performance
@@ -312,19 +327,23 @@ def main() -> dict:
         alpha=0.8,
     )
 
-    # annotate largest gain
-    largest_peak_value = float(
-        llm_totals.loc[llm_totals["Date"] == largest_end, "Performance_Index"].iloc[0]
+    # annotate peak performance - position text within plot area
+    peak_value = float(
+        llm_totals.loc[llm_totals["Date"] == peak_date, "Performance_Index"].iloc[0]
     )
-    plt.text(
-        largest_end,
-        largest_peak_value + 5,
-        f"+{largest_gain:.1f}% largest gain",
+    plt.annotate(
+        f"+{peak_gain:.2f}% peak",
+        xy=(peak_date, peak_value),
+        xytext=(10, 10),  # Offset from the point
+        textcoords='offset points',
         color="green",
         fontsize=9,
+        fontweight='bold',
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7),
+        arrowprops=dict(arrowstyle="->", color="green", alpha=0.7)
     )
 
-    # annotate final P/Ls
+    # annotate final P/Ls - position within plot area
     final_date = llm_totals["Date"].iloc[-1]
     final_llm = float(llm_totals["Performance_Index"].iloc[-1])
     final_spx = float(sp500["SPX Value ($100 Invested)"].iloc[-1].item())
@@ -332,17 +351,44 @@ def main() -> dict:
     portfolio_return = final_llm - 100.0
     sp500_return = final_spx - 100.0
     
-    plt.text(final_date, final_llm + 5, f"{portfolio_return:+.1f}%", color="blue", fontsize=10, weight="bold")
-    plt.text(final_date, final_spx + 5, f"{sp500_return:+.1f}%", color="orange", fontsize=10, weight="bold")
+    # Portfolio performance annotation
+    plt.annotate(
+        f"{portfolio_return:+.1f}%",
+        xy=(final_date, final_llm),
+        xytext=(-40, 10),  # Left offset to avoid edge
+        textcoords='offset points',
+        color="blue",
+        fontsize=10,
+        fontweight='bold',
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7),
+        arrowprops=dict(arrowstyle="->", color="blue", alpha=0.7)
+    )
+    
+    # S&P 500 performance annotation  
+    plt.annotate(
+        f"{sp500_return:+.1f}%",
+        xy=(final_date, final_spx),
+        xytext=(-40, -15),  # Left and down offset
+        textcoords='offset points',
+        color="orange",
+        fontsize=10,
+        fontweight='bold',
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.7),
+        arrowprops=dict(arrowstyle="->", color="orange", alpha=0.7)
+    )
 
-    # annotate max drawdown (use normalized values)
+    # annotate max drawdown - position within plot area
     dd_normalized = llm_totals.loc[llm_totals["Date"] == dd_date, "Performance_Index"].iloc[0] if len(llm_totals.loc[llm_totals["Date"] == dd_date]) > 0 else 100
-    plt.text(
-        dd_date + pd.Timedelta(days=0.2),
-        dd_normalized - 5,
+    plt.annotate(
         f"{dd_pct:.1f}% max drawdown",
+        xy=(dd_date, dd_normalized),
+        xytext=(15, -20),  # Right and down offset
+        textcoords='offset points',
         color="red",
         fontsize=9,
+        fontweight='bold',
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7),
+        arrowprops=dict(arrowstyle="->", color="red", alpha=0.7)
     )
 
     # Chart formatting - show TRUE performance, not misleading portfolio value growth
@@ -351,23 +397,33 @@ def main() -> dict:
     actual_return = current_performance
     
     plt.title(f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs S&P 500)")
+    # Add break-even reference line
+    plt.axhline(y=100, color='gray', linestyle=':', alpha=0.7, linewidth=1.5, label='Break-even')
+    
     plt.xlabel("Date")
     plt.ylabel("Performance Index (100 = Break-even)")
-    plt.xticks(rotation=15)
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
+    plt.xticks(rotation=45)  # Better rotation for dates
+    plt.legend(loc='upper left', frameon=True, fancybox=True, shadow=True)
+    plt.grid(True, alpha=0.3)
+    
+    # Better layout management
+    plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.88, hspace=0.2, wspace=0.2)
 
-    # --- Auto-save to project root ---
-    plt.savefig(RESULTS_PATH, dpi=300, bbox_inches="tight")
-    print(f"Saved chart to: {RESULTS_PATH.resolve()}")
+    # --- Auto-save to project root with optimized settings ---
+    plt.savefig(RESULTS_PATH, 
+                dpi=300, 
+                bbox_inches="tight",
+                facecolor='white',
+                edgecolor='none',
+                format='png',
+                pad_inches=0.1)  # Minimal padding
+    print(f"📊 Saved chart to: {RESULTS_PATH.resolve()}")
 
     plt.show()
 
     return {
-        "largest_run_start": largest_start,
-        "largest_run_end": largest_end,
-        "largest_run_gain_pct": largest_gain,
+        "peak_performance_date": peak_date,
+        "peak_performance_pct": peak_gain,
         "max_drawdown_date": dd_date,
         "max_drawdown_equity": dd_value,
         "max_drawdown_pct": dd_pct,
@@ -378,11 +434,10 @@ if __name__ == "__main__":
     print("generating graph...")
 
     metrics = main()
-    ls = metrics["largest_run_start"].date()
-    le = metrics["largest_run_end"].date()
-    lg = metrics["largest_run_gain_pct"]
+    peak_d = metrics["peak_performance_date"].date()
+    peak_p = metrics["peak_performance_pct"]
     dd_d = metrics["max_drawdown_date"].date()
     dd_e = metrics["max_drawdown_equity"]
     dd_p = metrics["max_drawdown_pct"]
-    print(f"Largest run: {ls} → {le}, +{lg:.2f}%")
-    print(f"Max drawdown: {dd_p:.2f}% on {dd_d} (equity {dd_e:.2f})")
+    print(f"Peak performance: +{peak_p:.2f}% on {peak_d}")
+    print(f"Max drawdown: {dd_p:.2f}% on {dd_d} (equity ${dd_e:.2f})")

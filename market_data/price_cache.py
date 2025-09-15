@@ -95,9 +95,17 @@ class PriceCache:
         # Filter data by date range if specified
         df = entry.data.copy()
         if start_date:
-            df = df[df.index >= pd.Timestamp(start_date)]
+            start_ts = pd.Timestamp(start_date)
+            # Make timezone-aware if the index is timezone-aware
+            if df.index.tz is not None and start_ts.tz is None:
+                start_ts = start_ts.tz_localize(df.index.tz)
+            df = df[df.index >= start_ts]
         if end_date:
-            df = df[df.index <= pd.Timestamp(end_date)]
+            end_ts = pd.Timestamp(end_date)
+            # Make timezone-aware if the index is timezone-aware
+            if df.index.tz is not None and end_ts.tz is None:
+                end_ts = end_ts.tz_localize(df.index.tz)
+            df = df[df.index <= end_ts]
         
         if df.empty:
             return None

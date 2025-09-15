@@ -147,7 +147,7 @@ class TradingInterface:
                         print_error("Amount cannot be empty")
                         continue
                     
-                    amount = float(amount_str)
+                    amount = Decimal(amount_str)
                     if amount <= 0:
                         print_error("Contribution amount must be positive")
                         continue
@@ -235,7 +235,7 @@ class TradingInterface:
                         print_error("Amount cannot be empty")
                         continue
                     
-                    amount = float(amount_str)
+                    amount = Decimal(amount_str)
                     if amount <= 0:
                         print_error("Withdrawal amount must be positive")
                         continue
@@ -298,7 +298,7 @@ class TradingInterface:
             
             try:
                 balance_str = input(f"Enter new {currency} balance: $").strip()
-                balance = float(balance_str)
+                balance = Decimal(balance_str)
                 if balance < 0:
                     print_error("Cash balance cannot be negative")
                     return False
@@ -386,6 +386,21 @@ class TradingInterface:
             
             # Get timestamp for the trade
             trade_timestamp = self._get_trade_timestamp()
+
+            # Show trade summary and ask for confirmation
+            print_info("Trade Summary:")
+            print(f"  Action: BUY {shares} shares of {ticker}")
+            print(f"  Price: ${price} ({order_type.title()} order)")
+            if stop_loss:
+                print(f"  Stop Loss: ${stop_loss}")
+            print(f"  Total Cost: ${shares * price}")
+            print(f"  Timestamp: {trade_timestamp}")
+            
+            # Ask for confirmation
+            confirm = input("\nExecute this trade? (y/N): ").strip().lower()
+            if confirm not in ('y', 'yes'):
+                print_info("Trade cancelled")
+                return False
 
             # Execute trade
             trade = self.trade_processor.execute_buy_trade(
@@ -499,6 +514,19 @@ class TradingInterface:
             
             # Get timestamp for the trade
             trade_timestamp = self._get_trade_timestamp()
+
+            # Show trade summary and ask for confirmation
+            print_info("Trade Summary:")
+            print(f"  Action: SELL {shares} shares of {ticker}")
+            print(f"  Price: ${price} (Limit order)")
+            print(f"  Total Proceeds: ${shares * price}")
+            print(f"  Timestamp: {trade_timestamp}")
+            
+            # Ask for confirmation
+            confirm = input("\nExecute this trade? (y/N): ").strip().lower()
+            if confirm not in ('y', 'yes'):
+                print_info("Trade cancelled")
+                return False
 
             # Execute trade with custom timestamp
             trade = self.trade_processor.execute_sell_trade(

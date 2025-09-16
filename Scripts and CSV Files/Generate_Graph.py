@@ -19,6 +19,18 @@ def parse_arguments():
         default=None,
         help='Data directory path (overrides default search logic)'
     )
+    parser.add_argument(
+        '--show-graph',
+        action='store_true',
+        default=True,
+        help='Automatically open the generated graph (default: True, useful for development)'
+    )
+    parser.add_argument(
+        '--no-show-graph',
+        action='store_true',
+        default=False,
+        help='Disable automatic graph opening (useful for server/headless environments)'
+    )
     return parser.parse_args()
 
 # Parse arguments early
@@ -95,6 +107,58 @@ else:
 from datetime import datetime
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 RESULTS_PATH = Path(f"graphs/portfolio_performance_{timestamp}.png")
+
+
+def should_open_graph(args) -> bool:
+    """Determine if we should automatically open the graph based on arguments and environment."""
+    # Explicit command line arguments take precedence
+    if args.no_show_graph:
+        return False
+    if args.show_graph:
+        return True
+    
+    # Environment detection as fallback
+    import os
+    
+    # Check for headless/server environment indicators
+    headless_indicators = [
+        'DISPLAY' not in os.environ,  # No X11 display (Linux)
+        os.environ.get('SSH_CONNECTION') is not None,  # SSH connection
+        os.environ.get('VERCEL') is not None,  # Vercel deployment
+        os.environ.get('HEROKU') is not None,  # Heroku deployment
+        os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None,  # AWS Lambda
+        os.environ.get('GITHUB_ACTIONS') is not None,  # GitHub Actions
+        os.environ.get('CI') is not None,  # General CI environment
+    ]
+    
+    # If any headless indicator is present, don't open graph
+    if any(headless_indicators):
+        return False
+    
+    # Default to opening graph for local development
+    return True
+
+
+def open_graph_file(file_path: Path) -> None:
+    """Open the graph file using the system's default image viewer."""
+    import os
+    import platform
+    import subprocess
+    
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(str(file_path))
+        elif system == "Darwin":  # macOS
+            subprocess.run(["open", str(file_path)], check=True)
+        else:  # Linux and other Unix-like systems
+            subprocess.run(["xdg-open", str(file_path)], check=True)
+        
+        print(f"📖 Opened graph in default viewer")
+        
+    except Exception as e:
+        print(f"⚠️  Could not open graph automatically: {e}")
+        print(f"📁 Graph saved at: {file_path.resolve()}")
 
 
 def load_portfolio_totals() -> pd.DataFrame:
@@ -224,7 +288,12 @@ def load_portfolio_totals() -> pd.DataFrame:
 
 
 def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
-    """Create a continuous timeline including weekends and holidays with forward-filled values."""
+    """Create a continuous timeline with proper market timing representation.
+    
+    - Grid lines represent midnight (00:00)
+    - Trading data points represent market close time (~13:00 PST)
+    - Weekend/holiday values are forward-filled from last trading day
+    """
     if df.empty:
         return df
     
@@ -232,7 +301,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     start_date = df['Date'].min().date()
     end_date = df['Date'].max().date()
     
-    # Create complete date range (every single day)
+    # Create complete date range (every single day at midnight for grid reference)
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
     
     # Create DataFrame with complete date range
@@ -252,10 +321,29 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
         if col in merged.columns:
             merged[col] = merged[col].ffill()
     
+    
+    # Adjust timestamps to represent market close time for trading days
+    # For weekends, use market close time of the weekend day to keep lines flat
+    from datetime import timedelta
+    
+    for idx, row in merged.iterrows():
+        date_only = row['Date'].date()
+        weekday = pd.to_datetime(date_only).weekday()
+        
+        if weekday < 5:  # Trading day (Mon-Fri = 0-4)
+            # Set to market close time: 1:00 PM PST (13:00)
+            market_close_time = pd.to_datetime(date_only) + timedelta(hours=13)
+            merged.at[idx, 'Date'] = market_close_time
+        else:  # Weekend (Sat-Sun = 5-6)
+            # Also use market close time for weekend days to keep lines flat
+            # This prevents diagonal lines from weekend midnight to Monday market close
+            weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
+            merged.at[idx, 'Date'] = weekend_market_close
+    
     # Drop the helper column
     merged = merged.drop('Date_Only', axis=1)
     
-    print(f"📅 Created continuous timeline: {len(df)} trading days → {len(merged)} total days (including weekends)")
+    print(f"📅 Created continuous timeline: {len(df)} trading days → {len(merged)} total days (with market timing)")
     return merged
 
 
@@ -321,8 +409,24 @@ def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_d
         # If we still have NaN values at the beginning, backfill
         merged['SPX Value ($100 Invested)'] = merged['SPX Value ($100 Invested)'].bfill()
         
-        # Convert dates back to datetime for plotting
+        # Convert dates back to datetime and apply same market timing as portfolio
         merged['Date'] = pd.to_datetime(merged['Date'])
+        
+        # Apply market timing: trading days at market close (13:00 PST), weekends at midnight
+        from datetime import timedelta
+        for idx, row in merged.iterrows():
+            date_only = row['Date'].date()
+            weekday = pd.to_datetime(date_only).weekday()
+            
+            if weekday < 5:  # Trading day (Mon-Fri = 0-4)
+                # Set to market close time: 1:00 PM PST (13:00) to match portfolio timing
+                market_close_time = pd.to_datetime(date_only) + timedelta(hours=13)
+                merged.at[idx, 'Date'] = market_close_time
+            else:  # Weekend (Sat-Sun = 5-6)
+                # Also use market close time for weekend days to match portfolio timing
+                # This prevents misaligned dots and keeps both series consistent
+                weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
+                merged.at[idx, 'Date'] = weekend_market_close
         
         print(f"📈 S&P 500 data: {len(sp500_clean)} trading days → {len(merged)} total days (with weekends)")
         return merged[["Date", "SPX Value ($100 Invested)"]]
@@ -434,7 +538,7 @@ def refresh_portfolio_data(data_dir_path):
         print(f"⚠️  Failed to refresh portfolio data: {e}")
         print(f"📊 Continuing with existing data...")
 
-def main() -> dict:
+def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
     # First, try to refresh portfolio data to get current prices
     refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() else None)
@@ -547,7 +651,10 @@ def main() -> dict:
     plt.title(f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs S&P 500)")
     # Add weekend/holiday shading for market closure clarity
     def add_market_closure_shading(start_date, end_date):
-        """Add light gray shading for weekends when markets are closed."""
+        """Add light gray shading for weekends when markets are closed.
+        
+        Shades Saturday 00:00 through Sunday 23:59 to clearly show when markets are closed.
+        """
         import matplotlib.dates as mdates
         from datetime import timedelta
         
@@ -556,26 +663,30 @@ def main() -> dict:
         weekend_labeled = False  # Track if we've added the legend label
         
         while current_date <= end_date_only:
-            # Check if it's a weekend (Monday=0, ..., Friday=4, Saturday=5, Sunday=6)
+            # Check if it's Saturday (start of weekend)
             weekday = pd.to_datetime(current_date).weekday()
             
-            if weekday >= 5:  # Weekend (Sat=5, Sun=6)
-                shade_start = pd.to_datetime(current_date)
-                shade_end = shade_start + pd.Timedelta(days=1)
+            if weekday == 5:  # Saturday (start of weekend)
+                # Shade from Saturday 00:00 to Monday 00:00 (covers entire weekend)
+                weekend_start = pd.to_datetime(current_date)  # Saturday midnight
+                weekend_end = weekend_start + pd.Timedelta(days=2)  # Monday midnight
                 
-                # Add shading for this weekend day
+                # Add shading for entire weekend period
                 label = 'Weekend (Market Closed)' if not weekend_labeled else ""
-                plt.axvspan(shade_start, shade_end, 
+                plt.axvspan(weekend_start, weekend_end, 
                            color='lightgray', alpha=0.2, zorder=0,
                            label=label)
                 
                 if not weekend_labeled:
                     weekend_labeled = True
+                
+                # Skip Sunday since we already covered the full weekend
+                current_date += timedelta(days=2)
+            else:
+                current_date += timedelta(days=1)
             
             # TODO: Add major market holidays (New Year's, July 4th, Christmas, etc.)
             # For now, just handle weekends which are the most common
-            
-            current_date += timedelta(days=1)
     
     add_market_closure_shading(llm_totals["Date"].min(), llm_totals["Date"].max())
     
@@ -603,6 +714,13 @@ def main() -> dict:
     
     # Close the figure to free memory and prevent threading issues
     plt.close()
+    
+    # Open graph if requested and environment supports it
+    # NOTE: Change default behavior for server/headless deployments
+    if should_open_graph(args):
+        open_graph_file(RESULTS_PATH)
+    else:
+        print(f"📁 Graph ready at: {RESULTS_PATH.resolve()}")
 
     return {
         "peak_performance_date": peak_date,
@@ -616,7 +734,7 @@ def main() -> dict:
 if __name__ == "__main__":
     print("generating graph...")
 
-    metrics = main()
+    metrics = main(args)
     peak_d = metrics["peak_performance_date"].date()
     peak_p = metrics["peak_performance_pct"]
     dd_d = metrics["max_drawdown_date"].date()

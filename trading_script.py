@@ -1006,11 +1006,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     from decimal import Decimal
                     try:
                         total_shares = sum((pos.shares for pos in updated_positions), start=Decimal('0')) if updated_positions else Decimal('0')
-                        total_shares = float(total_shares)
                         logger.debug(f"Calculated total shares: {total_shares}")
                     except Exception as calc_error:
                         logger.warning(f"Could not calculate total shares: {calc_error}")
-                        total_shares = 0.0
+                        total_shares = Decimal('0')
 
                     for contributor, data in ownership_raw.items():
                         ownership_pct = data.get('ownership_percentage', Decimal('0'))
@@ -1018,7 +1017,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         # Since this is a pooled fund, shares are owned collectively, but we show
                         # proportional ownership based on each contributor's percentage of the fund
                         contributor_shares = (ownership_pct / Decimal('100')) * total_shares if total_shares > 0 else Decimal('0')
-                        contributor_shares = float(contributor_shares)
 
                         # Convert Decimal to float for JSON serialization
                         # WARNING: Float conversion introduces precision loss but is required for JSON compatibility
@@ -1026,7 +1024,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         ownership_data[contributor] = {
                             'shares': float(contributor_shares),  # Proportional share ownership
                             'contributed': float(data.get('net_contribution', Decimal('0'))),
-'ownership_pct': float(ownership_pct),
+                            'ownership_pct': float(ownership_pct),
                             'current_value': float(data.get('current_value', Decimal('0')))
                         }
 

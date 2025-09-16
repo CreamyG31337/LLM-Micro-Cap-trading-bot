@@ -74,6 +74,11 @@ class Settings:
                 'directory': 'backups',
                 'max_backups': 10,
                 'auto_backup_on_save': True
+            },
+            'fund': {
+                'name': 'Project Chimera',
+                'description': 'AI-Powered Micro-Cap Investment Fund',
+                'display_currency': 'CAD'
             }
         }
     
@@ -101,6 +106,17 @@ class Settings:
         
         if os.getenv('TRADING_DB_PASSWORD'):
             self._config['repository']['database']['password'] = os.getenv('TRADING_DB_PASSWORD')
+        
+        # Fund configuration
+        if os.getenv('FUND_NAME'):
+            if 'fund' not in self._config:
+                self._config['fund'] = {}
+            self._config['fund']['name'] = os.getenv('FUND_NAME')
+        
+        if os.getenv('FUND_DESCRIPTION'):
+            if 'fund' not in self._config:
+                self._config['fund'] = {}
+            self._config['fund']['description'] = os.getenv('FUND_DESCRIPTION')
         
         # Development mode
         if os.getenv('TRADING_BOT_DEV', 'false').lower() == 'true':
@@ -261,6 +277,22 @@ class Settings:
             Backup configuration dictionary
         """
         return self.get('backup', {})
+    
+    def get_fund_name(self) -> str:
+        """Get fund name.
+        
+        Returns:
+            Fund name for display purposes
+        """
+        return self.get('fund.name', 'Your Investments')
+    
+    def get_fund_config(self) -> Dict[str, Any]:
+        """Get fund configuration.
+        
+        Returns:
+            Fund configuration dictionary
+        """
+        return self.get('fund', {'name': 'Your Investments', 'description': 'Investment Portfolio', 'display_currency': 'CAD'})
 
 
 # Global settings instance

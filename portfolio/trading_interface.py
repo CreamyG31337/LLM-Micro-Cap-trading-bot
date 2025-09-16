@@ -307,8 +307,10 @@ class TradingInterface:
                 return False
             
             # Update and save balances
-            current_balances[currency] = balance
-            
+            # Convert Decimal to float for JSON serialization compatibility
+            # Note: This introduces potential precision loss, but is necessary for JSON storage
+            current_balances[currency] = float(balance)
+
             import json
             with open(cash_file, 'w') as f:
                 json.dump(current_balances, f, indent=2)

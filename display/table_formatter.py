@@ -138,25 +138,33 @@ class TableFormatter:
         
         def format_shares(shares_value):
             """Format shares with up to 6 significant digits, adjusting decimals based on magnitude."""
+            from decimal import Decimal
+            
             if shares_value == 0:
                 return "0"
             
-            shares = float(shares_value)
-            if shares >= 1000:
+            # Ensure we're working with a Decimal, not float
+            if isinstance(shares_value, float):
+                shares = Decimal(str(shares_value))  # Convert float to Decimal via string to avoid precision issues
+            else:
+                shares = Decimal(str(shares_value))
+            
+            shares_float = float(shares)  # Only convert to float for final formatting
+            if shares_float >= 1000:
                 # For 1000+: show no decimals (e.g., 1234)
-                return f"{shares:.0f}"
-            elif shares >= 100:
+                return f"{shares_float:.0f}"
+            elif shares_float >= 100:
                 # For 100-999: show 3 decimals max (e.g., 123.456)
-                return f"{shares:.3f}".rstrip('0').rstrip('.')
-            elif shares >= 10:
+                return f"{shares_float:.3f}".rstrip('0').rstrip('.')
+            elif shares_float >= 10:
                 # For 10-99: show 4 decimals max (e.g., 12.3456)
-                return f"{shares:.4f}".rstrip('0').rstrip('.')
-            elif shares >= 1:
+                return f"{shares_float:.4f}".rstrip('0').rstrip('.')
+            elif shares_float >= 1:
                 # For 1-9: show 5 decimals max (e.g., 1.23456)
-                return f"{shares:.5f}".rstrip('0').rstrip('.')
+                return f"{shares_float:.5f}".rstrip('0').rstrip('.')
             else:
                 # For <1: show 6 decimals max (e.g., 0.123456)
-                return f"{shares:.6f}".rstrip('0').rstrip('.')
+                return f"{shares_float:.6f}".rstrip('0').rstrip('.')
         
         for position in portfolio_data:
             # Truncate long company names for display
@@ -164,53 +172,87 @@ class TableFormatter:
             display_name = (company_name[:company_max_width-3] + "..." 
                           if len(company_name) > company_max_width else company_name)
             
-            # Calculate total value
-            shares = float(position.get('shares', 0))
-            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
-            total_value = shares * current_price if current_price > 0 else 0
-            total_value_display = f"${total_value:.2f}" if total_value > 0 else "N/A"
+            # Calculate total value (handle Decimals properly)
+            from decimal import Decimal
+            
+            shares_raw = position.get('shares', 0)
+            current_price_raw = position.get('current_price', 0)
+            
+            # Ensure we're working with Decimals, not floats
+            if isinstance(shares_raw, float):
+                shares = Decimal(str(shares_raw))
+            else:
+                shares = Decimal(str(shares_raw)) if shares_raw != 0 else Decimal('0')
+            
+            if isinstance(current_price_raw, float):
+                current_price = Decimal(str(current_price_raw)) if current_price_raw > 0 else Decimal('0')
+            else:
+                current_price = Decimal(str(current_price_raw)) if current_price_raw and current_price_raw > 0 else Decimal('0')
+            
+            total_value = shares * current_price if current_price > 0 else Decimal('0')
+            total_value_display = f"${float(total_value):.2f}" if total_value > 0 else "N/A"
 
-            # Calculate P&L values
-            unrealized_pnl = position.get('unrealized_pnl', 0) or 0
-            cost_basis = position.get('cost_basis', 0) or 0
-            avg_price = position.get('avg_price', 0) or 0
+            # Calculate P&L values (handle Decimals properly)
+            unrealized_pnl_raw = position.get('unrealized_pnl', 0) or 0
+            cost_basis_raw = position.get('cost_basis', 0) or 0
+            avg_price_raw = position.get('avg_price', 0) or 0
+            
+            # Convert to Decimal if needed
+            if isinstance(unrealized_pnl_raw, float):
+                unrealized_pnl = Decimal(str(unrealized_pnl_raw))
+            else:
+                unrealized_pnl = Decimal(str(unrealized_pnl_raw)) if unrealized_pnl_raw != 0 else Decimal('0')
+            
+            if isinstance(cost_basis_raw, float):
+                cost_basis = Decimal(str(cost_basis_raw))
+            else:
+                cost_basis = Decimal(str(cost_basis_raw)) if cost_basis_raw != 0 else Decimal('0')
+            
+            if isinstance(avg_price_raw, float):
+                avg_price = Decimal(str(avg_price_raw))
+            else:
+                avg_price = Decimal(str(avg_price_raw)) if avg_price_raw != 0 else Decimal('0')
             
             # Calculate total P&L percentage with color coding (dollar amount first, then percentage)
             if cost_basis > 0:
-                total_pnl_pct = (unrealized_pnl / cost_basis) * 100
+                total_pnl_pct = float((unrealized_pnl / cost_basis) * 100)
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%[/green]"
+                    total_pnl_display = f"[green]${float(unrealized_pnl):,.2f} +{total_pnl_pct:.1f}%[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/red]"
+                    total_pnl_display = f"[red]${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
             elif avg_price > 0 and current_price > 0:
-                total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                total_pnl_pct = float(((current_price - avg_price) / avg_price) * 100)
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"[green]${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%[/green]"
+                    total_pnl_display = f"[green]${float(unrealized_pnl):,.2f} +{total_pnl_pct:.1f}%[/green]"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"[red]${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/red]"
+                    total_pnl_display = f"[red]${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
             else:
                 total_pnl_display = 'N/A'
 
             # Daily P&L (already calculated in trading_script.py as dollar amount)
             daily_pnl_dollar = position.get('daily_pnl', 'N/A')
             if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
-                # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
-                daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
+                # Extract numeric value from daily_pnl_dollar (remove $ and convert to Decimal)
+                daily_pnl_str = daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', '')
+                try:
+                    daily_pnl_value = Decimal(daily_pnl_str)
+                except:
+                    daily_pnl_value = Decimal('0')
 
                 # Calculate daily P&L percentage based on the dollar amount and total position value
-                total_position_value = shares * current_price if current_price > 0 else 0
-                daily_pnl_pct = (daily_pnl_value / total_position_value * 100) if total_position_value > 0 else 0
+                total_position_value = shares * current_price if current_price > 0 else Decimal('0')
+                daily_pnl_pct = float((daily_pnl_value / total_position_value * 100)) if total_position_value > 0 else 0
 
                 if daily_pnl_pct > 0:
-                    daily_pnl_display = f"[green]${daily_pnl_value:,.2f} +{daily_pnl_pct:.1f}%[/green]"
+                    daily_pnl_display = f"[green]${float(daily_pnl_value):,.2f} +{daily_pnl_pct:.1f}%[/green]"
                 elif daily_pnl_pct < 0:
-                    daily_pnl_display = f"[red]${abs(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%[/red]"
+                    daily_pnl_display = f"[red]${float(abs(daily_pnl_value)):,.2f} {daily_pnl_pct:.1f}%[/red]"
                 else:
-                    daily_pnl_display = f"${daily_pnl_value:,.2f} {daily_pnl_pct:.1f}%"
+                    daily_pnl_display = f"${float(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%"
             else:
                 # When daily P&L is $0.00, percentage should also be 0.00%
                 daily_pnl_display = "$0.00 0.0%"
@@ -223,15 +265,15 @@ class TableFormatter:
                 display_name,
                 position.get('opened_date', 'N/A'),
                 format_shares(position.get('shares', 0)),
-                f"${float(position.get('avg_price', 0)):.2f}",  # Fixed field name
-                f"${float(position.get('current_price', 0)):.2f}" if position.get('current_price', 0) > 0 else "N/A",
+                f"${float(avg_price):.2f}",  # Use the Decimal-converted avg_price
+                f"${float(current_price):.2f}" if current_price > 0 else "N/A",
                 total_value_display,  # Total Value (shares * current price)
                 total_pnl_display,  # Combined Total P&L: percentage [dollar amount]
                 daily_pnl_display,  # Combined Daily P&L: percentage [dollar amount]
                 position.get('five_day_pnl', 'N/A'),  # 5-day P&L from enhanced data
                 weight_display,  # Position weight from enhanced data
-                f"${float(position.get('stop_loss', 0)):.2f}" if position.get('stop_loss', 0) > 0 else "None",
-                f"${float(position.get('cost_basis', 0)):.2f}"
+                f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
+                f"${float(cost_basis):.2f}"
             )
         
         self.console.print(table)
@@ -243,54 +285,91 @@ class TableFormatter:
         
         def format_shares_plain(shares_value):
             """Format shares with up to 6 significant digits, adjusting decimals based on magnitude."""
+            from decimal import Decimal
+            
             if shares_value == 0:
                 return "0"
             
-            shares = float(shares_value)
-            if shares >= 1000:
+            # Ensure we're working with a Decimal, not float
+            if isinstance(shares_value, float):
+                shares = Decimal(str(shares_value))  # Convert float to Decimal via string to avoid precision issues
+            else:
+                shares = Decimal(str(shares_value))
+            
+            shares_float = float(shares)  # Only convert to float for final formatting
+            if shares_float >= 1000:
                 # For 1000+: show no decimals (e.g., 1234)
-                return f"{shares:.0f}"
-            elif shares >= 100:
+                return f"{shares_float:.0f}"
+            elif shares_float >= 100:
                 # For 100-999: show 3 decimals max (e.g., 123.456)
-                return f"{shares:.3f}".rstrip('0').rstrip('.')
-            elif shares >= 10:
+                return f"{shares_float:.3f}".rstrip('0').rstrip('.')
+            elif shares_float >= 10:
                 # For 10-99: show 4 decimals max (e.g., 12.3456)
-                return f"{shares:.4f}".rstrip('0').rstrip('.')
-            elif shares >= 1:
+                return f"{shares_float:.4f}".rstrip('0').rstrip('.')
+            elif shares_float >= 1:
                 # For 1-9: show 5 decimals max (e.g., 1.23456)
-                return f"{shares:.5f}".rstrip('0').rstrip('.')
+                return f"{shares_float:.5f}".rstrip('0').rstrip('.')
             else:
                 # For <1: show 6 decimals max (e.g., 0.123456)
-                return f"{shares:.6f}".rstrip('0').rstrip('.')
+                return f"{shares_float:.6f}".rstrip('0').rstrip('.')
         
         # Convert to DataFrame for better plain text formatting
         df_data = []
         for position in portfolio_data:
-            # Calculate values
-            shares = float(position.get('shares', 0))
-            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
-            avg_price = float(position.get('avg_price', 0)) or 0
-            cost_basis = float(position.get('cost_basis', 0)) or 0
-            unrealized_pnl = float(position.get('unrealized_pnl', 0)) or 0
-            total_value = shares * current_price if current_price > 0 else 0
+            # Calculate values (handle Decimals properly)
+            from decimal import Decimal
+            
+            shares_raw = position.get('shares', 0)
+            current_price_raw = position.get('current_price', 0)
+            avg_price_raw = position.get('avg_price', 0)
+            cost_basis_raw = position.get('cost_basis', 0)
+            unrealized_pnl_raw = position.get('unrealized_pnl', 0)
+            
+            # Convert to Decimal if needed
+            if isinstance(shares_raw, float):
+                shares = Decimal(str(shares_raw))
+            else:
+                shares = Decimal(str(shares_raw)) if shares_raw != 0 else Decimal('0')
+            
+            if isinstance(current_price_raw, float):
+                current_price = Decimal(str(current_price_raw)) if current_price_raw > 0 else Decimal('0')
+            else:
+                current_price = Decimal(str(current_price_raw)) if current_price_raw and current_price_raw > 0 else Decimal('0')
+            
+            if isinstance(avg_price_raw, float):
+                avg_price = Decimal(str(avg_price_raw))
+            else:
+                avg_price = Decimal(str(avg_price_raw)) if avg_price_raw != 0 else Decimal('0')
+            
+            if isinstance(cost_basis_raw, float):
+                cost_basis = Decimal(str(cost_basis_raw))
+            else:
+                cost_basis = Decimal(str(cost_basis_raw)) if cost_basis_raw != 0 else Decimal('0')
+            
+            if isinstance(unrealized_pnl_raw, float):
+                unrealized_pnl = Decimal(str(unrealized_pnl_raw))
+            else:
+                unrealized_pnl = Decimal(str(unrealized_pnl_raw)) if unrealized_pnl_raw != 0 else Decimal('0')
+            
+            total_value = shares * current_price if current_price > 0 else Decimal('0')
             
             # Calculate P&L percentage with color coding (dollar amount first, then percentage)
             if cost_basis > 0:
-                total_pnl_pct = (unrealized_pnl / cost_basis) * 100
+                total_pnl_pct = float((unrealized_pnl / cost_basis) * 100)
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}${float(unrealized_pnl):,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
             elif avg_price > 0 and current_price > 0:
-                total_pnl_pct = ((current_price - avg_price) / avg_price) * 100
+                total_pnl_pct = float(((current_price - avg_price) / avg_price) * 100)
                 if total_pnl_pct > 0:
-                    total_pnl_display = f"{Fore.GREEN}${unrealized_pnl:,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.GREEN}${float(unrealized_pnl):,.2f} +{total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 elif total_pnl_pct < 0:
-                    total_pnl_display = f"{Fore.RED}${abs(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
+                    total_pnl_display = f"{Fore.RED}${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%{Style.RESET_ALL}"
                 else:
-                    total_pnl_display = f"${unrealized_pnl:,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
             else:
                 total_pnl_display = 'N/A'
             
@@ -298,15 +377,19 @@ class TableFormatter:
             daily_pnl_dollar = position.get('daily_pnl', 'N/A')
             if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
                 if avg_price > 0 and current_price > 0:
-                    daily_pnl_pct = ((current_price - avg_price) / avg_price) * 100
-                    # Extract numeric value from daily_pnl_dollar (remove $ and convert to float)
-                    daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
+                    daily_pnl_pct = float(((current_price - avg_price) / avg_price) * 100)
+                    # Extract numeric value from daily_pnl_dollar (remove $ and convert to Decimal)
+                    daily_pnl_str = daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', '')
+                    try:
+                        daily_pnl_value = Decimal(daily_pnl_str)
+                    except:
+                        daily_pnl_value = Decimal('0')
                     if daily_pnl_pct > 0:
-                        daily_pnl_display = f"{Fore.GREEN}${daily_pnl_value:,.2f} +{daily_pnl_pct:.1f}%{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.GREEN}${float(daily_pnl_value):,.2f} +{daily_pnl_pct:.1f}%{Style.RESET_ALL}"
                     elif daily_pnl_pct < 0:
-                        daily_pnl_display = f"{Fore.RED}${abs(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%{Style.RESET_ALL}"
+                        daily_pnl_display = f"{Fore.RED}${float(abs(daily_pnl_value)):,.2f} {daily_pnl_pct:.1f}%{Style.RESET_ALL}"
                     else:
-                        daily_pnl_display = f"${daily_pnl_value:,.2f} {daily_pnl_pct:.1f}%"
+                        daily_pnl_display = f"${float(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%"
                 else:
                     daily_pnl_display = f"N/A {daily_pnl_dollar}"
             else:
@@ -317,15 +400,15 @@ class TableFormatter:
                 'Company': position.get('company', 'N/A'),
                 'Opened': position.get('opened_date', 'N/A'),
                 'Shares': format_shares_plain(shares),
-                'Price': f"${avg_price:.2f}",
-                'Current': f"${current_price:.2f}" if current_price > 0 else "N/A",
-                'Total Value': f"${total_value:.2f}" if total_value > 0 else "N/A",
-                'Dollar P&L': f"${abs(unrealized_pnl):,.2f}" if unrealized_pnl != 0 else "$0.00",
+                'Price': f"${float(avg_price):.2f}",
+                'Current': f"${float(current_price):.2f}" if current_price > 0 else "N/A",
+                'Total Value': f"${float(total_value):.2f}" if total_value > 0 else "N/A",
+                'Dollar P&L': f"${float(abs(unrealized_pnl)):,.2f}" if unrealized_pnl != 0 else "$0.00",
                 'Total P&L': total_pnl_display,
                 'Daily P&L': daily_pnl_display,
                 'Weight': position.get('position_weight', 'N/A'),
-                'Stop Loss': f"${float(position.get('stop_loss', 0)):.2f}" if position.get('stop_loss', 0) > 0 else "None",
-                'Cost Basis': f"${cost_basis:.2f}"
+                'Stop Loss': f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
+                'Cost Basis': f"${float(cost_basis):.2f}"
             })
 
         if df_data and _HAS_PANDAS:
@@ -396,10 +479,24 @@ class TableFormatter:
         """
         
         for position in portfolio_data:
-            # Calculate total value for HTML
-            shares = float(position.get('shares', 0))
-            current_price = float(position.get('current_price', 0)) if position.get('current_price', 0) > 0 else 0
-            total_value = shares * current_price if current_price > 0 else 0
+            # Calculate total value for HTML (handle Decimals properly)
+            from decimal import Decimal
+            
+            shares_raw = position.get('shares', 0)
+            current_price_raw = position.get('current_price', 0)
+            
+            # Convert to Decimal if needed
+            if isinstance(shares_raw, float):
+                shares = Decimal(str(shares_raw))
+            else:
+                shares = Decimal(str(shares_raw)) if shares_raw != 0 else Decimal('0')
+            
+            if isinstance(current_price_raw, float):
+                current_price = Decimal(str(current_price_raw)) if current_price_raw > 0 else Decimal('0')
+            else:
+                current_price = Decimal(str(current_price_raw)) if current_price_raw and current_price_raw > 0 else Decimal('0')
+            
+            total_value = shares * current_price if current_price > 0 else Decimal('0')
 
             # Create combined P&L values for HTML
             unrealized_pnl = position.get('unrealized_pnl', 0)
@@ -425,15 +522,15 @@ class TableFormatter:
                         <td>{position.get('ticker', 'N/A')}</td>
                         <td>{position.get('company_name', 'N/A')}</td>
                         <td>{position.get('opened_date', 'N/A')}</td>
-                        <td>{float(position.get('shares', 0)):.4f}</td>
-                        <td>${float(position.get('avg_price', 0)):.2f}</td>
-                        <td>${float(position.get('current_price', 0)):.2f}</td>
-                        <td>${total_value:.2f}</td>
+                        <td>{float(shares):.4f}</td>
+                        <td>${float(Decimal(str(position.get('avg_price', 0)))):.2f}</td>
+                        <td>${float(current_price):.2f}</td>
+                        <td>${float(total_value):.2f}</td>
                         <td>{total_pnl_display}</td>
                         <td>{daily_pnl_display}</td>
                         <td>{position.get('position_weight', 'N/A')}</td>
-                        <td>${float(position.get('stop_loss', 0)):.2f}</td>
-                        <td>${float(position.get('cost_basis', 0)):.2f}</td>
+                        <td>${float(Decimal(str(position.get('stop_loss', 0)))):.2f}</td>
+                        <td>${float(Decimal(str(position.get('cost_basis', 0)))):.2f}</td>
                     </tr>
             """
         

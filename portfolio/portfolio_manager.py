@@ -353,9 +353,9 @@ class PortfolioManager:
                 'positions': [
                     {
                         'ticker': pos.ticker,
-                        'shares': float(pos.shares),
-                        'market_value': float(pos.market_value) if pos.market_value else 0.0,
-                        'unrealized_pnl': float(pos.unrealized_pnl) if pos.unrealized_pnl else 0.0,
+                        'shares': pos.shares,
+                        'market_value': pos.market_value if pos.market_value else Decimal('0'),
+                        'unrealized_pnl': pos.unrealized_pnl if pos.unrealized_pnl else Decimal('0'),
                         'company': pos.company
                     }
                     for pos in latest.positions

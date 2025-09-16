@@ -102,7 +102,7 @@ class PositionCalculator:
                 'position_value': position_value.quantize(Decimal('0.01')),  # 2 decimal places for currency
                 'risk_amount': risk_amount.quantize(Decimal('0.01')),
                 'risk_per_share': abs(entry_price - stop_loss_price).quantize(Decimal('0.01')) if stop_loss_price else Decimal('0'),
-                'capital_allocation_percentage': (position_value / available_capital * 100).quantize(Decimal('0.1')),
+                'capital_allocation_percentage': (position_value / available_capital * Decimal('100')).quantize(Decimal('0.1')),
                 'entry_price': entry_price,
                 'stop_loss_price': stop_loss_price
             }
@@ -177,11 +177,11 @@ class PositionCalculator:
             if price:
                 market_value = calculate_position_value(price, shares)
                 unrealized_pnl = market_value - cost_basis
-                unrealized_pnl_percentage = (unrealized_pnl / cost_basis * 100) if cost_basis > 0 else Decimal('0')
+                unrealized_pnl_percentage = (unrealized_pnl / cost_basis * Decimal('100')) if cost_basis > 0 else Decimal('0')
                 
                 # Price change metrics
                 price_change = price - avg_price
-                price_change_percentage = (price_change / avg_price * 100) if avg_price > 0 else Decimal('0')
+                price_change_percentage = (price_change / avg_price * Decimal('100')) if avg_price > 0 else Decimal('0')
             else:
                 market_value = None
                 unrealized_pnl = None
@@ -342,19 +342,22 @@ class PositionCalculator:
             # Calculate portfolio-level percentages
             total_unrealized_pnl_percentage = Decimal('0')
             if total_cost_basis_cad > 0:
-                total_unrealized_pnl_percentage = (total_unrealized_pnl_cad / total_cost_basis_cad * 100)
+                total_unrealized_pnl_percentage = (total_unrealized_pnl_cad / total_cost_basis_cad * Decimal('100'))
             
             # Calculate position weights
             for pos_metrics in position_metrics:
                 if pos_metrics['market_value'] and total_market_value_cad > 0:
-                    weight = (pos_metrics['market_value'] / total_market_value_cad * 100)
-                    pos_metrics['portfolio_weight_percentage'] = weight.quantize(Decimal('0.1'))
+                    weight = (pos_metrics['market_value'] / total_market_value_cad * Decimal('100'))
+                    # Convert Decimal to float for JSON serialization
+                    # WARNING: Float conversion may introduce precision loss but required for JSON compatibility
+                    pos_metrics['portfolio_weight_percentage'] = float(weight.quantize(Decimal('0.1')))
                 else:
-                    pos_metrics['portfolio_weight_percentage'] = Decimal('0')
+                    # Convert Decimal to float for JSON serialization
+                    pos_metrics['portfolio_weight_percentage'] = 0.0
             
             # Win rate calculation
             total_positions_with_pnl = positions_with_gains + positions_with_losses
-            win_rate = (positions_with_gains / total_positions_with_pnl * 100) if total_positions_with_pnl > 0 else 0
+            win_rate = (Decimal(positions_with_gains) / Decimal(total_positions_with_pnl) * Decimal('100')) if total_positions_with_pnl > 0 else Decimal('0')
             
             metrics = {
                 'total_positions': len(snapshot.positions),
@@ -364,7 +367,9 @@ class PositionCalculator:
                 'total_unrealized_pnl_percentage': total_unrealized_pnl_percentage,
                 'positions_with_gains': positions_with_gains,
                 'positions_with_losses': positions_with_losses,
-                'win_rate_percentage': Decimal(str(win_rate)).quantize(Decimal('0.1')),
+                # Convert Decimal to float for JSON serialization compatibility
+                # WARNING: Float conversion may introduce precision loss but is required for JSON storage
+                'win_rate_percentage': float(Decimal(str(win_rate)).quantize(Decimal('0.1'))),
                 'largest_position_value': largest_position_value_cad,  # Now in CAD equivalent
                 'largest_position_ticker': largest_position_ticker,
                 'snapshot_timestamp': snapshot.timestamp,
@@ -448,7 +453,7 @@ class PositionCalculator:
             ownership_details = {}
             for contributor, data in contributor_data.items():
                 if data['net_contribution'] > 0:
-                    ownership_percentage = (data['net_contribution'] / total_net_contributions * 100)
+                    ownership_percentage = (data['net_contribution'] / total_net_contributions * Decimal('100'))
                     current_value = (current_fund_value * data['net_contribution'] / total_net_contributions)
                     
                     ownership_details[contributor] = {
@@ -459,7 +464,7 @@ class PositionCalculator:
                         'current_value': current_value.quantize(Decimal('0.01')),
                         'gain_loss': (current_value - data['net_contribution']).quantize(Decimal('0.01')),
                         'gain_loss_percentage': (
-                            (current_value - data['net_contribution']) / data['net_contribution'] * 100
+                            (current_value - data['net_contribution']) / data['net_contribution'] * Decimal('100')
                         ).quantize(Decimal('0.1')) if data['net_contribution'] > 0 else Decimal('0')
                     }
             
@@ -506,19 +511,19 @@ class PositionCalculator:
             
             # Calculate liquidation requirements
             liquidation_percentage = withdrawal_amount / current_portfolio_value
-            positions_to_liquidate = liquidation_percentage * 100
+            positions_to_liquidate = liquidation_percentage * Decimal('100')
             
             # Calculate remaining ownership after withdrawal
             remaining_value = current_value - withdrawal_amount
             new_total_value = current_portfolio_value - withdrawal_amount
-            new_ownership_percentage = (remaining_value / new_total_value * 100) if new_total_value > 0 else 0
+            new_ownership_percentage = (remaining_value / new_total_value * Decimal('100')) if new_total_value > 0 else Decimal('0')
             
             result = {
                 'contributor': contributor,
                 'withdrawal_amount': withdrawal_amount,
                 'current_ownership_percentage': contributor_data['ownership_percentage'],
                 'current_value': current_value,
-                'liquidation_percentage': (liquidation_percentage * 100).quantize(Decimal('0.1')),
+                'liquidation_percentage': (liquidation_percentage * Decimal('100')).quantize(Decimal('0.1')),
                 'positions_to_liquidate_percentage': positions_to_liquidate.quantize(Decimal('0.1')),
                 'remaining_value': remaining_value.quantize(Decimal('0.01')),
                 'new_ownership_percentage': Decimal(str(new_ownership_percentage)).quantize(Decimal('0.1')),
@@ -661,7 +666,7 @@ class PositionCalculator:
                 'risk_metrics': {
                     'largest_position_percentage': (
                         portfolio_metrics['largest_position_value'] / 
-                        portfolio_metrics['total_market_value'] * 100
+                        portfolio_metrics['total_market_value'] * Decimal('100')
                     ).quantize(Decimal('0.1')) if portfolio_metrics['total_market_value'] > 0 else Decimal('0'),
                     'positions_at_risk': len([
                         p for p in position_metrics 

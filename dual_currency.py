@@ -163,6 +163,8 @@ def prompt_for_dual_currency_cash() -> CashBalances:
 def save_cash_balances(balances: CashBalances, data_dir: Path) -> None:
     """Save cash balances to JSON file"""
     cash_file = data_dir / "cash_balances.json"
+    # Note: CashBalances uses float values which are JSON serializable
+    # This avoids the Decimal serialization issues while maintaining reasonable precision for cash amounts
     data = {
         "cad": balances.cad,
         "usd": balances.usd

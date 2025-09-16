@@ -115,6 +115,9 @@ class Trade:
             from utils.timezone_utils import format_timestamp_for_csv
             date_str = format_timestamp_for_csv(self.timestamp)
         
+        # Convert Decimal to float for CSV storage compatibility
+        # WARNING: Float conversion may introduce precision loss but is required for pandas CSV operations
+        # All internal calculations use Decimal for accuracy, only converted here for file storage
         return {
             'Date': date_str,
             'Ticker': self.ticker,

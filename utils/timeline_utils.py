@@ -157,8 +157,25 @@ def _get_experiment_start_date(data_dir: Path | str) -> datetime:
         if real_trades.empty:
             raise ValueError("No real trades found in trade log")
         
-        # Get the first trade date
-        first_trade_date = pd.to_datetime(real_trades['Date']).min()
+        # Get the first trade date - robust timezone handling without warnings
+        try:
+            # 1) Strip common tz abbreviations (PDT, PST, MDT, etc.) that pandas warns about
+            date_series = real_trades['Date'].astype(str)
+            cleaned = date_series.str.replace(r"\s(ADT|AST|EDT|EST|CDT|CST|MDT|MST|PDT|PST)", "", regex=True)
+            # 2) Parse to naive datetimes
+            first_trade_date = pd.to_datetime(cleaned, errors='coerce').min()
+            # 3) Localize to trading timezone for consistency
+            if pd.notna(first_trade_date):
+                from utils.timezone_utils import get_trading_timezone
+                tz = get_trading_timezone()
+                if first_trade_date.tzinfo is None:
+                    first_trade_date = tz.localize(first_trade_date)
+        except Exception as _tz_e:
+            # Fallback: try default parse, suppressing warnings
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
+                first_trade_date = pd.to_datetime(real_trades['Date'], errors='coerce').min()
         
         # Convert to datetime object
         if pd.isna(first_trade_date):

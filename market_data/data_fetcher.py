@@ -401,7 +401,9 @@ class MarketDataFetcher:
         return df
     
     def _normalize_ohlcv(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Normalize OHLCV DataFrame to standard format."""
+        """Normalize OHLCV DataFrame to standard format with Decimal conversion."""
+        from decimal import Decimal
+        
         # Ensure required columns exist
         required_cols = ["Open", "High", "Low", "Close", "Volume"]
         existing_cols = [col for col in required_cols if col in df.columns]
@@ -412,7 +414,19 @@ class MarketDataFetcher:
             
         # Return only the columns we need
         cols = existing_cols + (["Adj Close"] if "Adj Close" in df.columns else [])
-        return df[cols]
+        result_df = df[cols].copy()
+        
+        # Convert all price columns to Decimal for precision
+        price_cols = [col for col in cols if col != "Volume"]
+        for col in price_cols:
+            if col in result_df.columns:
+                # Convert float to Decimal string to avoid precision errors
+                result_df[col] = result_df[col].apply(
+                    lambda x: Decimal(str(round(x, 6))) if pd.notna(x) and x != 0 else Decimal('0')
+                )
+        
+        # Volume stays as int/float since it's not monetary
+        return result_df
     
     def _cache_result(self, ticker: str, result: FetchResult) -> None:
         """Cache the fetch result if cache is available."""
@@ -569,6 +583,7 @@ class MarketDataFetcher:
                 try:
                     pr = self.fetch_price_data(ticker, period='5d')
                     if not pr.df.empty and 'Close' in pr.df.columns:
+                        # Price is now Decimal from _normalize_ohlcv, convert to float for display only
                         price = float(pr.df['Close'].iloc[-1])
                 except Exception:
                     price = None
@@ -643,8 +658,10 @@ class MarketDataFetcher:
                     hist = self.fetch_price_data(ticker, period='1y')
                     if not hist.df.empty:
                         if not high_52w and 'High' in hist.df.columns:
+                            # High/Low are now Decimals from _normalize_ohlcv, convert to float for display only
                             high_52w = float(hist.df['High'].max())
                         if not low_52w and 'Low' in hist.df.columns:
+                            # High/Low are now Decimals from _normalize_ohlcv, convert to float for display only
                             low_52w = float(hist.df['Low'].min())
                 except Exception:
                     pass

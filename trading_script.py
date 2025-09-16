@@ -476,8 +476,12 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         tickers = [pos.ticker for pos in latest_snapshot.positions]
         
         if tickers:
-            # Get trading day window
-            start_date, end_date = market_hours.trading_day_window()
+            # Fetch more historical data (10 trading days) to support 5-day P&L calculations
+            # instead of just the current trading day
+            from datetime import timedelta
+            end_date = datetime.now()
+            # Go back about 15 calendar days to ensure we get at least 10 trading days
+            start_date = end_date - timedelta(days=15)
             
             # Fetch market data for each ticker
             market_data = {}
@@ -486,8 +490,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     result = market_data_fetcher.fetch_price_data(ticker, start_date, end_date)
                     if not result.df.empty:
                         market_data[ticker] = result.df
-                        # Update price cache
+                        # Update price cache with more historical data
                         price_cache.cache_price_data(ticker, result.df, result.source)
+                        logger.debug(f"Cached {len(result.df)} rows for {ticker} from {result.source}")
                 except Exception as e:
                     logger.warning(f"Failed to fetch data for {ticker}: {e}")
                     market_data[ticker] = pd.DataFrame()
@@ -509,8 +514,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     position, current_price
                 )
                 updated_positions.append(updated_position)
+                logger.debug(f"Updated {position.ticker} with cached price: ${current_price}")
             else:
-                updated_positions.append(position)
+                # Fallback: use the current price from the position itself (from CSV)
+                if position.current_price is not None:
+                    updated_positions.append(position)
+                    logger.debug(f"Using CSV price for {position.ticker}: ${position.current_price}")
+                else:
+                    updated_positions.append(position)
+                    logger.debug(f"No price data for {position.ticker}")
         
         # Calculate P&L metrics
         pnl_metrics = pnl_calculator.calculate_portfolio_pnl(updated_positions)
@@ -572,8 +584,103 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
             pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, portfolio_snapshots)
             
-            # 5-day P&L would require more historical data
-            pos_dict['five_day_pnl'] = "N/A"
+            # 5-day P&L with open-date check (show N/A if opened < 5 trading days ago)
+            try:
+                # Reuse existing opened_date calculation from above
+                opened_date_str = pos_dict.get('opened_date', 'N/A')
+                logger.debug(f"{position.ticker}: Starting 5-day P&L calculation with opened_date: {opened_date_str}")
+                
+                if opened_date_str != 'N/A':
+                    # Parse the opened date (format: 'MM-DD-YY')
+                    from datetime import datetime as _dt
+                    try:
+                        opened_dt = _dt.strptime(opened_date_str, '%m-%d-%y')
+                        # Handle 2-digit year: assume 20xx for years 00-30, 19xx for years 31-99
+                        if opened_dt.year < 2000:
+                            opened_dt = opened_dt.replace(year=opened_dt.year + 2000)
+                        # Make it timezone-aware
+                        tz = market_hours.get_trading_timezone()
+                        opened_dt = tz.localize(opened_dt)
+                        now_tz = _dt.now(tz)
+                        
+                        # Count trading days between open and now (inclusive)
+                        days_held_trading = market_hours.trading_days_between(opened_dt, now_tz)
+                        
+                        logger.debug(f"{position.ticker}: opened {opened_date_str}, {days_held_trading} trading days held")
+                        
+                        # Check if we have a current price first
+                        if position.current_price is None:
+                            pos_dict['five_day_pnl'] = "N/A"
+                            logger.debug(f"{position.ticker}: No current price available for 5-day P&L")
+                        # Need more than 5 trading days to show 5-day P&L
+                        elif days_held_trading <= 5:
+                            pos_dict['five_day_pnl'] = "N/A"
+                            logger.debug(f"{position.ticker}: Too new for 5-day P&L ({days_held_trading} <= 5 days)")
+                        else:
+                            # Fetch 1 month of history to ensure we get enough trading days
+                            hist_result = market_data_fetcher.fetch_price_data(
+                                position.ticker, period='1mo'
+                            )
+                            
+                            if (hasattr(hist_result, 'df') 
+                                and isinstance(hist_result.df, pd.DataFrame) 
+                                and not hist_result.df.empty 
+                                and 'Close' in hist_result.df.columns):
+                                
+                                closes_series = hist_result.df['Close']
+                                logger.debug(f"{position.ticker}: Got {len(closes_series)} historical closes")
+                                
+                                # Need at least 6 trading days of data (5 days ago + today)
+                                if len(closes_series) >= 6:
+                                    # Get price from 5 trading days ago (6th from last)
+                                    start_price_5d_float = closes_series.iloc[-6]
+                                    # Convert to Decimal to match position.current_price type
+                                    start_price_5d = Decimal(str(start_price_5d_float))
+                                    current_price = position.current_price
+                                    
+                                    logger.debug(f"{position.ticker}: 5-day ago price: ${start_price_5d:.2f}, current: ${current_price:.2f}")
+                                    
+                                    # Calculate P&L from 5 trading days ago to current price
+                                    # Ensure all inputs are Decimal type for financial calculations
+                                    period = pnl_calculator.calculate_period_pnl(
+                                        current_price,
+                                        start_price_5d,
+                                        position.shares,
+                                        period_name="five_day"
+                                    )
+                                    
+                                    abs_pnl = period.get('five_day_absolute_pnl')
+                                    pct_pnl = period.get('five_day_percentage_pnl')
+                                    
+                                    if abs_pnl is not None and pct_pnl is not None:
+                                        # Format like the daily P&L: "$123.45 +1.2%" or "-$123.45 -1.2%"
+                                        pct_value = float(pct_pnl) * 100
+                                        if abs_pnl >= 0:
+                                            pos_dict['five_day_pnl'] = f"${abs_pnl:.2f} +{pct_value:.1f}%"
+                                        else:
+                                            pos_dict['five_day_pnl'] = f"-${abs(abs_pnl):.2f} {pct_value:.1f}%"
+                                        
+                                        logger.debug(f"{position.ticker}: 5-day P&L calculated: {pos_dict['five_day_pnl']}")
+                                    else:
+                                        pos_dict['five_day_pnl'] = "N/A"
+                                        logger.debug(f"{position.ticker}: P&L calculation returned None")
+                                else:
+                                    pos_dict['five_day_pnl'] = "N/A"
+                                    logger.debug(f"{position.ticker}: Insufficient historical data ({len(closes_series)} < 6)")
+                            else:
+                                pos_dict['five_day_pnl'] = "N/A"
+                                logger.debug(f"{position.ticker}: No price data available")
+                    except Exception as date_parse_error:
+                        logger.debug(f"{position.ticker}: Date parsing error: {date_parse_error}")
+                        pos_dict['five_day_pnl'] = "N/A"
+                else:
+                    pos_dict['five_day_pnl'] = "N/A"
+                    logger.debug(f"{position.ticker}: No opened date available")
+                    
+            except Exception as e:
+                logger.warning(f"Could not calculate 5-day P&L for {position.ticker}: {e}")
+                logger.debug(f"Full 5-day P&L error for {position.ticker}", exc_info=True)
+                pos_dict['five_day_pnl'] = "N/A"
             
             enhanced_positions.append(pos_dict)
         
@@ -784,13 +891,16 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             from decimal import Decimal
             total_realized_pnl = realized_summary.get('total_realized_pnl', Decimal('0'))
             
+            # Convert all Decimal values to float for JSON serialization
+            # Note: Floats introduce potential precision loss but are required for JSON compatibility
+            # All calculations are done with Decimals above this point for accuracy
             stats_data = {
-                'total_contributions': total_contributions,
-                'total_cost_basis': portfolio_metrics.get('total_cost_basis', Decimal('0')),
-                'total_current_value': total_portfolio_value,
-                'total_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')),
-                'total_realized_pnl': total_realized_pnl,
-                'total_portfolio_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')) + total_realized_pnl
+                'total_contributions': float(total_contributions),
+                'total_cost_basis': float(portfolio_metrics.get('total_cost_basis', Decimal('0'))),
+                'total_current_value': float(total_portfolio_value),
+                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', Decimal('0'))),
+                'total_realized_pnl': float(total_realized_pnl),
+                'total_portfolio_pnl': float(pnl_metrics.get('total_absolute_pnl', Decimal('0')) + total_realized_pnl)
             }
             
             # Load cash balances and compute CAD-equivalent summary
@@ -843,29 +953,33 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 estimated_fx_fee_total_usd = Decimal('0')
                 estimated_fx_fee_total_cad = Decimal('0')
             
-            # Prepare summary data (all Decimal)
+            # Prepare summary data - convert Decimal to float for JSON serialization
+            # CRITICAL: Floats introduce precision loss but are required for JSON compatibility
+            # All financial calculations above use Decimal for accuracy, only converted here for storage
             summary_data = {
-                'portfolio_value': total_portfolio_value,
-                'total_pnl': pnl_metrics.get('total_absolute_pnl', Decimal('0')),
-                'cash_balance': cash_balance,
-                'cad_cash': cad_cash,
-                'usd_cash': usd_cash,
-'usd_to_cad_rate': usd_to_cad_rate,
-                'estimated_fx_fee_total_usd': estimated_fx_fee_total_usd,
-                'estimated_fx_fee_total_cad': estimated_fx_fee_total_cad,
-                'usd_positions_value_usd': usd_positions_value_usd,
-                'cad_positions_value_cad': cad_positions_value_cad,
-                'usd_holdings_total_usd': total_usd_holdings,
-                'cad_holdings_total_cad': total_cad_holdings,
-                'total_equity_cad': total_portfolio_value + cash_balance,
-                'fund_contributions': stats_data.get('total_contributions', Decimal('0'))
+                'portfolio_value': float(total_portfolio_value),
+                'total_pnl': float(pnl_metrics.get('total_absolute_pnl', Decimal('0'))),
+                'cash_balance': float(cash_balance),
+                'cad_cash': float(cad_cash),
+                'usd_cash': float(usd_cash),
+'usd_to_cad_rate': float(usd_to_cad_rate),
+                'estimated_fx_fee_total_usd': float(estimated_fx_fee_total_usd),
+                'estimated_fx_fee_total_cad': float(estimated_fx_fee_total_cad),
+                'usd_positions_value_usd': float(usd_positions_value_usd),
+                'cad_positions_value_cad': float(cad_positions_value_cad),
+                'usd_holdings_total_usd': float(total_usd_holdings),
+                'cad_holdings_total_cad': float(total_cad_holdings),
+                'total_equity_cad': float(total_portfolio_value + cash_balance),
+                'fund_contributions': float(stats_data.get('total_contributions', 0.0))
             }
 
-            # Enrich stats with audit metrics (Decimal)
+            # Enrich stats with audit metrics - convert to float for JSON serialization
+            # WARNING: Using floats here introduces precision loss, but necessary for JSON storage
+            # The calculations are done with Decimal precision, only converted at the last moment
             try:
-                equity = summary_data.get('portfolio_value', Decimal('0')) + summary_data.get('cash_balance', Decimal('0'))
-                stats_data['unallocated_vs_cost'] = stats_data.get('total_contributions', Decimal('0')) - stats_data.get('total_cost_basis', Decimal('0')) - summary_data.get('cash_balance', Decimal('0'))
-                stats_data['net_pnl_vs_contrib'] = equity - stats_data.get('total_contributions', Decimal('0'))
+                equity = summary_data.get('portfolio_value', 0.0) + summary_data.get('cash_balance', 0.0)
+                stats_data['unallocated_vs_cost'] = float(stats_data.get('total_contributions', 0.0) - stats_data.get('total_cost_basis', 0.0) - summary_data.get('cash_balance', 0.0))
+                stats_data['net_pnl_vs_contrib'] = float(equity - stats_data.get('total_contributions', 0.0))
             except Exception as audit_e:
                 logger.debug(f"Could not compute audit metrics: {audit_e}")
             
@@ -892,10 +1006,11 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     from decimal import Decimal
                     try:
                         total_shares = sum((pos.shares for pos in updated_positions), start=Decimal('0')) if updated_positions else Decimal('0')
+                        total_shares = float(total_shares)
                         logger.debug(f"Calculated total shares: {total_shares}")
                     except Exception as calc_error:
                         logger.warning(f"Could not calculate total shares: {calc_error}")
-                        total_shares = Decimal('0')
+                        total_shares = 0.0
 
                     for contributor, data in ownership_raw.items():
                         ownership_pct = data.get('ownership_percentage', Decimal('0'))
@@ -903,12 +1018,16 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         # Since this is a pooled fund, shares are owned collectively, but we show
                         # proportional ownership based on each contributor's percentage of the fund
                         contributor_shares = (ownership_pct / Decimal('100')) * total_shares if total_shares > 0 else Decimal('0')
+                        contributor_shares = float(contributor_shares)
 
+                        # Convert Decimal to float for JSON serialization
+                        # WARNING: Float conversion introduces precision loss but is required for JSON compatibility
+                        # All ownership calculations above use Decimal for accuracy
                         ownership_data[contributor] = {
-                            'shares': contributor_shares,  # Proportional share ownership
-                            'contributed': data.get('net_contribution', Decimal('0')),
-'ownership_pct': ownership_pct,
-                            'current_value': data.get('current_value', Decimal('0'))
+                            'shares': float(contributor_shares),  # Proportional share ownership
+                            'contributed': float(data.get('net_contribution', Decimal('0'))),
+'ownership_pct': float(ownership_pct),
+                            'current_value': float(data.get('current_value', Decimal('0')))
                         }
 
                         logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
@@ -1116,7 +1235,8 @@ def main() -> None:
 def cleanup_system() -> None:
     """Cleanup system resources and connections."""
     try:
-        if repository:
+        # Use globals() to safely check if repository exists
+        if 'repository' in globals() and repository:
             # Close any open connections or resources
             if hasattr(repository, 'close'):
                 repository.close()

@@ -7,13 +7,50 @@ precision issues.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Union
+from typing import Union, List
 
-# Type alias for numeric inputs
+# Type alias for numeric inputs that will be converted to Decimal
+# Note: floats should be avoided in new code, this alias is for legacy compatibility
 NumericInput = Union[float, int, str, Decimal]
 
+# Type alias for validated financial values (should always be Decimal)
+FinancialDecimal = Decimal
 
-def money_to_decimal(value: NumericInput) -> Decimal:
+
+def validate_no_float_usage(*args, function_name: str = "financial_function") -> None:
+    """Validate that no float values are being passed to financial functions.
+    
+    This is a runtime validation to help catch float usage during development
+    and testing. Should be removed or made optional in production.
+    
+    Args:
+        *args: Arguments to validate
+        function_name: Name of the function for error messages
+        
+    Raises:
+        ValueError: If any argument is a float
+    """
+    for i, arg in enumerate(args):
+        if isinstance(arg, float):
+            raise ValueError(
+                f"Float usage detected in {function_name} (argument {i}): {arg}. "
+                f"Use Decimal instead to avoid precision issues."
+            )
+        elif hasattr(arg, '__iter__') and not isinstance(arg, (str, bytes)):
+            # Check list/tuple arguments
+            try:
+                for j, item in enumerate(arg):
+                    if isinstance(item, float):
+                        raise ValueError(
+                            f"Float usage detected in {function_name} (argument {i}[{j}]): {item}. "
+                            f"Use Decimal instead to avoid precision issues."
+                        )
+            except (TypeError, AttributeError):
+                # Skip non-iterable arguments
+                pass
+
+
+def money_to_decimal(value: NumericInput) -> FinancialDecimal:
     """
     Convert monetary values to Decimal for precise calculations.
     
@@ -34,7 +71,7 @@ def money_to_decimal(value: NumericInput) -> Decimal:
     return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
-def calculate_cost_basis(price: NumericInput, shares: NumericInput) -> Decimal:
+def calculate_cost_basis(price: NumericInput, shares: NumericInput) -> FinancialDecimal:
     """
     Calculate cost basis with precise decimal arithmetic.
     
@@ -51,12 +88,15 @@ def calculate_cost_basis(price: NumericInput, shares: NumericInput) -> Decimal:
         >>> calculate_cost_basis(15.333, 50)
         Decimal('766.65')
     """
+    # Runtime validation to catch float usage during development
+    validate_no_float_usage(price, shares, function_name="calculate_cost_basis")
+    
     price_dec = money_to_decimal(price)
     shares_dec = Decimal(str(shares))
     return (price_dec * shares_dec).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
-def calculate_position_value(price: NumericInput, shares: NumericInput) -> Decimal:
+def calculate_position_value(price: NumericInput, shares: NumericInput) -> FinancialDecimal:
     """
     Calculate position value with precise decimal arithmetic.
     
@@ -81,7 +121,7 @@ def calculate_position_value(price: NumericInput, shares: NumericInput) -> Decim
     return (price_dec * shares_dec).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
-def calculate_pnl(current_price: NumericInput, buy_price: NumericInput, shares: NumericInput) -> Decimal:
+def calculate_pnl(current_price: NumericInput, buy_price: NumericInput, shares: NumericInput) -> FinancialDecimal:
     """
     Calculate profit/loss with precise decimal arithmetic.
     
@@ -99,6 +139,9 @@ def calculate_pnl(current_price: NumericInput, buy_price: NumericInput, shares: 
         >>> calculate_pnl(8.50, 10.00, 100)
         Decimal('-150.00')
     """
+    # Runtime validation to catch float usage during development
+    validate_no_float_usage(current_price, buy_price, shares, function_name="calculate_pnl")
+    
     current_dec = money_to_decimal(current_price)
     buy_dec = money_to_decimal(buy_price)
     shares_dec = Decimal(str(shares))
@@ -154,7 +197,7 @@ def validate_money_precision(value: float, tolerance: float = 0.005) -> bool:
     return abs(value - float_value) < tolerance
 
 
-def calculate_percentage_change(old_value: NumericInput, new_value: NumericInput) -> Decimal:
+def calculate_percentage_change(old_value: NumericInput, new_value: NumericInput) -> FinancialDecimal:
     """
     Calculate percentage change between two values.
     
@@ -182,7 +225,7 @@ def calculate_percentage_change(old_value: NumericInput, new_value: NumericInput
     return percentage
 
 
-def calculate_weighted_average_price(prices: list[NumericInput], quantities: list[NumericInput]) -> Decimal:
+def calculate_weighted_average_price(prices: List[NumericInput], quantities: List[NumericInput]) -> FinancialDecimal:
     """
     Calculate weighted average price given prices and quantities.
     
@@ -203,6 +246,9 @@ def calculate_weighted_average_price(prices: list[NumericInput], quantities: lis
     """
     if len(prices) != len(quantities):
         raise ValueError("Prices and quantities lists must have the same length")
+    
+    # Runtime validation to catch float usage during development
+    validate_no_float_usage(prices, quantities, function_name="calculate_weighted_average_price")
     
     total_value = Decimal('0')
     total_quantity = Decimal('0')

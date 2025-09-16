@@ -226,9 +226,14 @@ class CSVRepository(BaseRepository):
                                 # Update only price-related fields for today's rows only
                                 from decimal import ROUND_HALF_UP
                                 mask = (existing_df['Date_Only'] == today) & (existing_df['Ticker'] == ticker)
-                                existing_df.loc[mask, 'Current Price'] = float((updated_position.current_price or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
-                                existing_df.loc[mask, 'Total Value'] = float((updated_position.market_value or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
-                                existing_df.loc[mask, 'PnL'] = float((updated_position.unrealized_pnl or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                # Convert Decimals to float only for CSV storage, maintaining precision
+                                current_price_float = float((updated_position.current_price or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                market_value_float = float((updated_position.market_value or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                unrealized_pnl_float = float((updated_position.unrealized_pnl or Decimal('0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+                                
+                                existing_df.loc[mask, 'Current Price'] = current_price_float
+                                existing_df.loc[mask, 'Total Value'] = market_value_float
+                                existing_df.loc[mask, 'PnL'] = unrealized_pnl_float
                                 logger.debug(f"Updated prices for {ticker}")
                         
                         # Add HOLD entries for new positions that don't exist in today's data

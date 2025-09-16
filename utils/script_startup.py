@@ -40,19 +40,19 @@ def ensure_dependencies(required_packages: List[str], script_name: str) -> None:
 
 def _show_dependency_error(missing_packages: List[str], script_name: str) -> None:
     """Show a helpful error message when dependencies are missing."""
-    print(f"\n❌ Missing Dependencies ({script_name})")
+    print(f"\n[ERROR] Missing Dependencies ({script_name})")
     print("=" * 60)
     
     print(f"\nThe following required packages are not available:")
     for pkg in missing_packages:
-        print(f"  • {pkg}")
+        print(f"  - {pkg}")
     
     # Check if virtual environment exists
     venv_exists = _check_venv_exists()
     venv_active = _is_venv_active()
     
     if not venv_active and venv_exists:
-        print(f"\n🔧 SOLUTION:")
+        print(f"\n[SOLUTION]:")
         print(f"It looks like you have a virtual environment but it's not activated.")
         print(f"Please activate it first:")
         if os.name == 'nt':  # Windows
@@ -62,7 +62,7 @@ def _show_dependency_error(missing_packages: List[str], script_name: str) -> Non
         print(f"  python {script_name}")
         
     elif not venv_exists:
-        print(f"\n🔧 SOLUTION:")
+        print(f"\n[SOLUTION]:")
         print(f"Virtual environment not found. Please create and set it up:")
         print(f"  python -m venv venv")
         if os.name == 'nt':  # Windows
@@ -73,11 +73,11 @@ def _show_dependency_error(missing_packages: List[str], script_name: str) -> Non
         print(f"  python {script_name}")
         
     else:
-        print(f"\n🔧 SOLUTION:")
+        print(f"\n[SOLUTION]:")
         print(f"Install the missing packages:")
         print(f"  pip install {' '.join(missing_packages)}")
     
-    print(f"\n💡 TIP:")
+    print(f"\n[TIP]:")
     print(f"Use the master control script to avoid these issues:")
     print(f"  python run.py")
     print("=" * 60)
@@ -156,7 +156,7 @@ def startup_check(script_name: Optional[str] = None, packages: Optional[List[str
 
 if __name__ == "__main__":
     # Test the startup utility
-    print("🔍 Testing Script Startup Utility")
+    print("[TEST] Testing Script Startup Utility")
     print(f"Virtual environment exists: {_check_venv_exists()}")
     print(f"Virtual environment active: {_is_venv_active()}")
     

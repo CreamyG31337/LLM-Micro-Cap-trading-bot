@@ -88,17 +88,35 @@ class Position:
         Returns:
             Position instance
         """
+        # Safely convert to Decimal, handling both float and string inputs
+        def safe_decimal(value, default=Decimal('0')):
+            if value is None or value == '' or str(value).lower() in ('nan', 'none'):
+                return default
+            try:
+                return Decimal(str(value))
+            except (ValueError, TypeError, ArithmeticError):
+                return default
+        
+        def safe_optional_decimal(value):
+            if value is None or value == '' or str(value).lower() in ('nan', 'none', '0', '0.0'):
+                return None
+            try:
+                result = Decimal(str(value))
+                return result if result != Decimal('0') else None
+            except (ValueError, TypeError, ArithmeticError):
+                return None
+        
         return cls(
             ticker=str(data.get('ticker', '')),
-            shares=Decimal(str(data.get('shares', 0))),
-            avg_price=Decimal(str(data.get('avg_price', 0))),
-            cost_basis=Decimal(str(data.get('cost_basis', 0))),
+            shares=safe_decimal(data.get('shares', 0)),
+            avg_price=safe_decimal(data.get('avg_price', 0)),
+            cost_basis=safe_decimal(data.get('cost_basis', 0)),
             currency=str(data.get('currency', 'CAD')),
             company=data.get('company'),
-            current_price=Decimal(str(data['current_price'])) if data.get('current_price') else None,
-            market_value=Decimal(str(data['market_value'])) if data.get('market_value') else None,
-            unrealized_pnl=Decimal(str(data['unrealized_pnl'])) if data.get('unrealized_pnl') else None,
-            stop_loss=Decimal(str(data['stop_loss'])) if data.get('stop_loss') else None,
+            current_price=safe_optional_decimal(data.get('current_price')),
+            market_value=safe_optional_decimal(data.get('market_value')),
+            unrealized_pnl=safe_optional_decimal(data.get('unrealized_pnl')),
+            stop_loss=safe_optional_decimal(data.get('stop_loss')),
             position_id=data.get('position_id')
         )
     
@@ -110,6 +128,9 @@ class Position:
         """
         from decimal import ROUND_HALF_UP
         
+        # Convert Decimal to float for CSV storage compatibility
+        # WARNING: Float conversion may introduce precision loss but is required for pandas CSV operations
+        # All internal calculations use Decimal for accuracy, only converted here for file storage
         return {
             'Ticker': self.ticker,
             'Shares': float(self.shares.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)),  # 4 decimal places for shares
@@ -133,14 +154,23 @@ class Position:
         Returns:
             Position instance
         """
-        shares = Decimal(str(data.get('Shares', 0)))
-        avg_price = Decimal(str(data.get('Average Price', 0)))
-        current_price = Decimal(str(data['Current Price'])) if data.get('Current Price') else None
+        # Safely convert to Decimal, handling both float and string inputs from CSV
+        def safe_decimal(value, default=Decimal('0')):
+            if value is None or value == '' or str(value).lower() in ('nan', 'none'):
+                return default
+            try:
+                return Decimal(str(value))
+            except (ValueError, TypeError, ArithmeticError):
+                return default
+        
+        shares = safe_decimal(data.get('Shares', 0))
+        avg_price = safe_decimal(data.get('Average Price', 0))
+        current_price = safe_decimal(data.get('Current Price')) if data.get('Current Price') not in (None, '', 0, '0', '0.0') else None
 
         # Calculate proper unrealized P&L instead of using the potentially incorrect CSV value
         unrealized_pnl = None
         market_value = None
-        if current_price is not None:
+        if current_price is not None and current_price != Decimal('0'):
             unrealized_pnl = (current_price - avg_price) * shares
             market_value = current_price * shares
 
@@ -148,13 +178,13 @@ class Position:
             ticker=str(data.get('Ticker', '')),
             shares=shares,
             avg_price=avg_price,
-            cost_basis=Decimal(str(data.get('Cost Basis', 0))),
+            cost_basis=safe_decimal(data.get('Cost Basis', 0)),
             currency=str(data.get('Currency', 'CAD')),
             company=data.get('Company'),
             current_price=current_price,
             market_value=market_value,
             unrealized_pnl=unrealized_pnl,
-            stop_loss=Decimal(str(data['Stop Loss'])) if data.get('Stop Loss') else None
+            stop_loss=safe_decimal(data.get('Stop Loss')) if data.get('Stop Loss') not in (None, '', 0, '0', '0.0') else None
         )
 
 

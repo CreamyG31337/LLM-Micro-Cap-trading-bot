@@ -44,7 +44,7 @@ try:
     from portfolio.position_calculator import PositionCalculator
     from data.repositories.csv_repository import CSVRepository
 except ImportError as e:
-    print(f"_safe_emoji('❌') Error importing required modules: {e}")
+    print(f"{_safe_emoji('❌')} Error importing required modules: {e}")
     print("Make sure you're running this script from the project directory.")
     sys.exit(1)
 
@@ -94,21 +94,21 @@ def main():
         data_dir = Path(DEFAULT_DATA_DIR)
     
     if not data_dir.exists():
-        print(f"_safe_emoji('❌') Data directory not found: {data_dir}")
+        print(f"{_safe_emoji('❌')} Data directory not found: {data_dir}")
         print(f"Make sure the data directory exists: {data_dir}")
         sys.exit(1)
     
     try:
         # Load current balances
         cash_balances = load_cash_balances(data_dir)
-        print(f"\n_safe_emoji('💰') Current Cash Balances:")
+        print(f"\n{_safe_emoji('💰')} Current Cash Balances:")
         print(f"   CAD: ${cash_balances.cad:,.2f}")
         print(f"   USD: ${cash_balances.usd:,.2f}")
         print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
-        
+
         # Display fund contributions total
         fund_total = calculate_fund_contributions_total(data_dir)
-        print(f"_safe_emoji('💵') Fund contributions total: ${fund_total:,.2f}")
+        print(f"{_safe_emoji('💵')} Fund contributions total: ${fund_total:,.2f}")
         
         while True:
             # Get user input
@@ -127,14 +127,14 @@ def main():
                 break
                 
             elif action == 'v':
-                print(f"\n_safe_emoji('💰') Current Cash Balances:")
+                print(f"\n{_safe_emoji('💰')} Current Cash Balances:")
                 print(f"   CAD: ${cash_balances.cad:,.2f}")
                 print(f"   USD: ${cash_balances.usd:,.2f}")
                 print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
-                
+
                 # Display fund contributions total
                 fund_total = calculate_fund_contributions_total(data_dir)
-                print(f"_safe_emoji('💵') Fund contributions total: ${fund_total:,.2f}")
+                print(f"{_safe_emoji('💵')} Fund contributions total: ${fund_total:,.2f}")
                 continue
                 
             elif action == 'c':
@@ -142,16 +142,16 @@ def main():
                     amount = float(input("Enter CAD amount (positive to add, negative to remove): $"))
                     if amount >= 0:
                         cash_balances.add_cad(amount)
-                        print(f"_safe_emoji('✅') Added ${amount:,.2f} CAD")
+                        print(f"{_safe_emoji('✅')} Added ${amount:,.2f} CAD")
                     else:
                         if cash_balances.can_afford_cad(abs(amount)):
                             cash_balances.spend_cad(abs(amount))
-                            print(f"_safe_emoji('✅') Removed ${abs(amount):,.2f} CAD")
+                            print(f"{_safe_emoji('✅')} Removed ${abs(amount):,.2f} CAD")
                         else:
-                            print(f"_safe_emoji('❌') Cannot remove ${abs(amount):,.2f} CAD - insufficient balance")
+                            print(f"{_safe_emoji('❌')} Cannot remove ${abs(amount):,.2f} CAD - insufficient balance")
                             continue
                 except ValueError:
-                    print("_safe_emoji('❌') Invalid amount entered")
+                    print(f"{_safe_emoji('❌')} Invalid amount entered")
                     continue
                     
             elif action == 'u':
@@ -159,16 +159,16 @@ def main():
                     amount = float(input("Enter USD amount (positive to add, negative to remove): $"))
                     if amount >= 0:
                         cash_balances.add_usd(amount)
-                        print(f"_safe_emoji('✅') Added ${amount:,.2f} USD")
+                        print(f"{_safe_emoji('✅')} Added ${amount:,.2f} USD")
                     else:
                         if cash_balances.can_afford_usd(abs(amount)):
                             cash_balances.spend_usd(abs(amount))
-                            print(f"_safe_emoji('✅') Removed ${abs(amount):,.2f} USD")
+                            print(f"{_safe_emoji('✅')} Removed ${abs(amount):,.2f} USD")
                         else:
-                            print(f"_safe_emoji('❌') Cannot remove ${abs(amount):,.2f} USD - insufficient balance")
+                            print(f"{_safe_emoji('❌')} Cannot remove ${abs(amount):,.2f} USD - insufficient balance")
                             continue
                 except ValueError:
-                    print("_safe_emoji('❌') Invalid amount entered")
+                    print(f"{_safe_emoji('❌')} Invalid amount entered")
                     continue
                     
             elif action == 's':
@@ -176,13 +176,13 @@ def main():
                     cad_amount = float(input("Enter exact CAD balance: $"))
                     usd_amount = float(input("Enter exact USD balance: $"))
                     if cad_amount < 0 or usd_amount < 0:
-                        print("_safe_emoji('❌') Balances cannot be negative")
+                        print(f"{_safe_emoji('❌')} Balances cannot be negative")
                         continue
                     cash_balances.cad = cad_amount
                     cash_balances.usd = usd_amount
-                    print(f"_safe_emoji('✅') Set balances to CAD ${cad_amount:,.2f} and USD ${usd_amount:,.2f}")
+                    print(f"{_safe_emoji('✅')} Set balances to CAD ${cad_amount:,.2f} and USD ${usd_amount:,.2f}")
                 except ValueError:
-                    print("_safe_emoji('❌') Invalid amounts entered")
+                    print(f"{_safe_emoji('❌')} Invalid amounts entered")
                     continue
                     
             elif action == 'n':
@@ -190,27 +190,27 @@ def main():
                 print(f"\n🔧 Negative Balance Mode: Always enabled")
                 print("All trades can proceed even with insufficient funds,")
                 print("resulting in negative balances that can be corrected later.")
-                print("_safe_emoji('✅') Negative balance mode is permanently enabled")
-                    
+                print(f"{_safe_emoji('✅')} Negative balance mode is permanently enabled")
+
             else:
-                print("_safe_emoji('❌') Invalid option")
+                print(f"{_safe_emoji('❌')} Invalid option")
                 continue
             
             # Save the updated balances after each successful operation
             save_cash_balances(cash_balances, data_dir)
             
             # Show updated balances
-            print(f"\n_safe_emoji('💰') Updated Cash Balances:")
+            print(f"\n{_safe_emoji('💰')} Updated Cash Balances:")
             print(f"   CAD: ${cash_balances.cad:,.2f}")
             print(f"   USD: ${cash_balances.usd:,.2f}")
             print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
-            
+
             # Display fund contributions total
             fund_total = calculate_fund_contributions_total(data_dir)
-            print(f"_safe_emoji('💵') Fund contributions total: ${fund_total:,.2f}")
+            print(f"{_safe_emoji('💵')} Fund contributions total: ${fund_total:,.2f}")
             
     except Exception as e:
-        print(f"_safe_emoji('❌') Error updating cash balances: {e}")
+        print(f"{_safe_emoji('❌')} Error updating cash balances: {e}")
         sys.exit(1)
 
 

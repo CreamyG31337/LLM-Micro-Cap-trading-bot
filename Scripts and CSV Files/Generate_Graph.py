@@ -31,6 +31,13 @@ def parse_arguments():
         default=False,
         help='Disable automatic graph opening (useful for server/headless environments)'
     )
+    parser.add_argument(
+        '--benchmark',
+        type=str,
+        default='qqq',
+        choices=['sp500', 'qqq', 'russell2000', 'vti', 'all'],
+        help='Benchmark to compare against (default: qqq - Nasdaq-100, all: show all benchmarks)'
+    )
     return parser.parse_args()
 
 # Parse arguments early
@@ -347,67 +354,103 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     return merged
 
 
-def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
-    """Download S&P 500 prices, normalize to $100 baseline, and forward-fill for weekends."""
+def get_benchmark_config(benchmark_name: str) -> dict:
+    """Get benchmark configuration including ticker, display name, and column name."""
+    configs = {
+        'sp500': {
+            'ticker': '^GSPC',
+            'display_name': 'S&P 500',
+            'column_name': 'SPX Value ($100 Invested)',
+            'short_name': 'SPX'
+        },
+        'russell2000': {
+            'ticker': '^RUT',
+            'display_name': 'Russell 2000',
+            'column_name': 'RUT Value ($100 Invested)',
+            'short_name': 'RUT'
+        },
+        'qqq': {
+            'ticker': 'QQQ',
+            'display_name': 'Nasdaq-100 (QQQ)',
+            'column_name': 'QQQ Value ($100 Invested)',
+            'short_name': 'QQQ'
+        },
+        'vti': {
+            'ticker': 'VTI',
+            'display_name': 'Total Stock Market (VTI)',
+            'column_name': 'VTI Value ($100 Invested)',
+            'short_name': 'VTI'
+        }
+    }
+    return configs.get(benchmark_name, configs['sp500'])
+
+
+def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
+    """Download benchmark prices, normalize to $100 baseline, and forward-fill for weekends."""
+    config = get_benchmark_config(benchmark_name)
+    ticker = config['ticker']
+    display_name = config['display_name']
+    column_name = config['column_name']
+    
     try:
         # Download with a few extra days buffer to ensure we get all needed data
         download_start = start_date - pd.Timedelta(days=5)
         download_end = end_date + pd.Timedelta(days=5)
         
-        sp500 = yf.download("^GSPC", start=download_start, end=download_end,
-                            progress=False, auto_adjust=False)
-        sp500 = sp500.reset_index()
-        if isinstance(sp500.columns, pd.MultiIndex):
-            sp500.columns = sp500.columns.get_level_values(0)
+        benchmark_data = yf.download(ticker, start=download_start, end=download_end,
+                                   progress=False, auto_adjust=False)
+        benchmark_data = benchmark_data.reset_index()
+        if isinstance(benchmark_data.columns, pd.MultiIndex):
+            benchmark_data.columns = benchmark_data.columns.get_level_values(0)
         
-        if sp500.empty:
-            print("⚠️  No S&P 500 data available, creating flat baseline")
+        if benchmark_data.empty:
+            print(f"⚠️  No {display_name} data available, creating flat baseline")
             return pd.DataFrame({
                 'Date': portfolio_dates,
-                'SPX Value ($100 Invested)': [100.0] * len(portfolio_dates)
+                column_name: [100.0] * len(portfolio_dates)
             })
         
-        # Find the S&P 500 price on the portfolio start date for fair comparison
-        sp500_temp = sp500.copy()
-        sp500_temp['Date_Only'] = pd.to_datetime(sp500_temp['Date']).dt.date
+        # Find the benchmark price on the portfolio start date for fair comparison
+        benchmark_temp = benchmark_data.copy()
+        benchmark_temp['Date_Only'] = pd.to_datetime(benchmark_temp['Date']).dt.date
         
         portfolio_start_date = start_date.date()
-        baseline_data = sp500_temp[sp500_temp['Date_Only'] == portfolio_start_date]
+        baseline_data = benchmark_temp[benchmark_temp['Date_Only'] == portfolio_start_date]
         
         if len(baseline_data) > 0:
-            # Use S&P 500 price on portfolio start date
+            # Use benchmark price on portfolio start date
             baseline_close = baseline_data["Close"].iloc[0]
-            print(f"🎯 Using S&P 500 close on {portfolio_start_date}: ${baseline_close:.2f} as baseline")
+            print(f"🎯 Using {display_name} close on {portfolio_start_date}: ${baseline_close:.2f} as baseline")
         else:
             # If no exact date match (weekend/holiday), use the closest previous trading day
-            available_dates = sp500_temp[sp500_temp['Date_Only'] <= portfolio_start_date]
+            available_dates = benchmark_temp[benchmark_temp['Date_Only'] <= portfolio_start_date]
             if len(available_dates) > 0:
                 baseline_close = available_dates["Close"].iloc[-1]
                 baseline_date = available_dates['Date_Only'].iloc[-1]
-                print(f"🎯 Using S&P 500 close on {baseline_date} (closest to {portfolio_start_date}): ${baseline_close:.2f} as baseline")
+                print(f"🎯 Using {display_name} close on {baseline_date} (closest to {portfolio_start_date}): ${baseline_close:.2f} as baseline")
             else:
                 # Fallback to first available price
-                baseline_close = sp500["Close"].iloc[0]
-                print(f"⚠️  Fallback: Using first available S&P 500 price: ${baseline_close:.2f} as baseline")
+                baseline_close = benchmark_data["Close"].iloc[0]
+                print(f"⚠️  Fallback: Using first available {display_name} price: ${baseline_close:.2f} as baseline")
         
         scaling_factor = 100.0 / baseline_close
-        sp500["SPX Value ($100 Invested)"] = sp500["Close"] * scaling_factor
+        benchmark_data[column_name] = benchmark_data["Close"] * scaling_factor
         
         # Create a complete date range matching portfolio dates
-        sp500_clean = sp500[["Date", "SPX Value ($100 Invested)"]].copy()
-        sp500_clean['Date'] = pd.to_datetime(sp500_clean['Date']).dt.date
+        benchmark_clean = benchmark_data[["Date", column_name]].copy()
+        benchmark_clean['Date'] = pd.to_datetime(benchmark_clean['Date']).dt.date
         
-        # Create a DataFrame with all portfolio dates and merge with S&P 500 data
+        # Create a DataFrame with all portfolio dates and merge with benchmark data
         portfolio_date_range = pd.DataFrame({
             'Date': [pd.to_datetime(d).date() for d in portfolio_dates]
         })
         
         # Merge and forward-fill missing values (weekends, holidays)
-        merged = portfolio_date_range.merge(sp500_clean, on='Date', how='left')
-        merged['SPX Value ($100 Invested)'] = merged['SPX Value ($100 Invested)'].ffill()
+        merged = portfolio_date_range.merge(benchmark_clean, on='Date', how='left')
+        merged[column_name] = merged[column_name].ffill()
         
         # If we still have NaN values at the beginning, backfill
-        merged['SPX Value ($100 Invested)'] = merged['SPX Value ($100 Invested)'].bfill()
+        merged[column_name] = merged[column_name].bfill()
         
         # Convert dates back to datetime and apply same market timing as portfolio
         merged['Date'] = pd.to_datetime(merged['Date'])
@@ -428,16 +471,21 @@ def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_d
                 weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
                 merged.at[idx, 'Date'] = weekend_market_close
         
-        print(f"📈 S&P 500 data: {len(sp500_clean)} trading days → {len(merged)} total days (with weekends)")
-        return merged[["Date", "SPX Value ($100 Invested)"]]
+        print(f"📈 {display_name} data: {len(benchmark_clean)} trading days → {len(merged)} total days (with weekends)")
+        return merged[["Date", column_name]]
         
     except Exception as e:
-        print(f"⚠️  Error downloading S&P 500 data: {e}")
-        print("📊 Creating flat S&P 500 baseline for comparison")
+        print(f"⚠️  Error downloading {display_name} data: {e}")
+        print(f"📊 Creating flat {display_name} baseline for comparison")
         return pd.DataFrame({
             'Date': portfolio_dates,
-            'SPX Value ($100 Invested)': [100.0] * len(portfolio_dates)
+            column_name: [100.0] * len(portfolio_dates)
         })
+
+
+def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
+    """Legacy function for backward compatibility - downloads S&P 500 benchmark."""
+    return download_benchmark('sp500', start_date, end_date, portfolio_dates)
 
 
 def find_peak_performance(df: pd.DataFrame) -> tuple[pd.Timestamp, float]:
@@ -540,6 +588,16 @@ def refresh_portfolio_data(data_dir_path):
 
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
+    # Get fund name from config
+    try:
+        sys.path.append(str(Path(__file__).parent.parent))
+        from config.settings import get_settings
+        settings = get_settings()
+        fund_name = settings.get_fund_name()
+    except Exception as e:
+        print(f"⚠️  Could not load fund name from config: {e}")
+        fund_name = "Your Investments"  # Fallback
+    
     # First, try to refresh portfolio data to get current prices
     refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() else None)
     
@@ -548,7 +606,21 @@ def main(args) -> dict:
     start_date = llm_totals["Date"].min()
     end_date = llm_totals["Date"].max()
     portfolio_dates = llm_totals["Date"]
-    sp500 = download_sp500(start_date, end_date, portfolio_dates)
+    
+    # Handle multiple benchmarks for 'all' option
+    if args.benchmark == 'all':
+        benchmark_names = ['qqq', 'sp500', 'russell2000', 'vti']
+        benchmark_data_dict = {}
+        benchmark_configs = {}
+        
+        for bench_name in benchmark_names:
+            print(f"📥 Downloading {bench_name.upper()} benchmark data...")
+            benchmark_configs[bench_name] = get_benchmark_config(bench_name)
+            benchmark_data_dict[bench_name] = download_benchmark(bench_name, start_date, end_date, portfolio_dates)
+    else:
+        # Single benchmark configuration
+        benchmark_config = get_benchmark_config(args.benchmark)
+        benchmark_data = download_benchmark(args.benchmark, start_date, end_date, portfolio_dates)
 
     # metrics
     peak_date, peak_gain = find_peak_performance(llm_totals)
@@ -558,26 +630,49 @@ def main(args) -> dict:
     plt.figure(figsize=(16, 9))  # 16:9 aspect ratio, perfect for time series
     plt.style.use("seaborn-v0_8-whitegrid")
 
-    # Show ACTUAL investment performance vs S&P 500 performance
+    # Show ACTUAL investment performance vs benchmark(s)
     current_performance = llm_totals["Performance_Pct"].iloc[-1]
     plt.plot(
         llm_totals["Date"],
         llm_totals["Performance_Index"],
-        label=f"Your Investments ({current_performance:+.2f}%)",
+        label=f"{fund_name} ({current_performance:+.2f}%)",
         marker="o",
         color="blue",
-        linewidth=2.5,
+        linewidth=3,  # Slightly thicker for your portfolio
+        zorder=10  # Ensure portfolio line is on top
     )
-    plt.plot(
-        sp500["Date"],
-        sp500["SPX Value ($100 Invested)"],
-        label="S&P 500 Benchmark",
-        marker="s",
-        color="orange",
-        linestyle="--",
-        linewidth=2,
-        alpha=0.8,
-    )
+    
+    if args.benchmark == 'all':
+        # Plot all benchmarks with different colors and styles
+        benchmark_colors = ['orange', 'green', 'red', 'purple']
+        benchmark_styles = ['--', '-.', ':', (0, (3, 1, 1, 1))]  # Different line styles
+        benchmark_markers = ['s', '^', 'v', 'D']
+        
+        for i, (bench_name, bench_data) in enumerate(benchmark_data_dict.items()):
+            bench_config = benchmark_configs[bench_name]
+            plt.plot(
+                bench_data["Date"],
+                bench_data[bench_config['column_name']],
+                label=f"{bench_config['display_name']}",
+                marker=benchmark_markers[i],
+                color=benchmark_colors[i],
+                linestyle=benchmark_styles[i],
+                linewidth=2,
+                alpha=0.8,
+                markersize=4
+            )
+    else:
+        # Single benchmark plot
+        plt.plot(
+            benchmark_data["Date"],
+            benchmark_data[benchmark_config['column_name']],
+            label=f"{benchmark_config['display_name']} Benchmark",
+            marker="s",
+            color="orange",
+            linestyle="--",
+            linewidth=2,
+            alpha=0.8,
+        )
 
     # annotate peak performance - position text within plot area
     peak_value = float(
@@ -598,36 +693,41 @@ def main(args) -> dict:
     # annotate final P/Ls - position within plot area
     final_date = llm_totals["Date"].iloc[-1]
     final_llm = float(llm_totals["Performance_Index"].iloc[-1])
-    final_spx = float(sp500["SPX Value ($100 Invested)"].iloc[-1].item())
-    
     portfolio_return = final_llm - 100.0
-    sp500_return = final_spx - 100.0
     
-    # Portfolio performance annotation
+    # Portfolio performance annotation (always show)
     plt.annotate(
         f"{portfolio_return:+.1f}%",
         xy=(final_date, final_llm),
-        xytext=(-40, 10),  # Left offset to avoid edge
+        xytext=(-40, 20),  # Left and up offset
         textcoords='offset points',
         color="blue",
-        fontsize=10,
+        fontsize=11,
         fontweight='bold',
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7),
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.8),
         arrowprops=dict(arrowstyle="->", color="blue", alpha=0.7)
     )
     
-    # S&P 500 performance annotation  
-    plt.annotate(
-        f"{sp500_return:+.1f}%",
-        xy=(final_date, final_spx),
-        xytext=(-40, -15),  # Left and down offset
-        textcoords='offset points',
-        color="orange",
-        fontsize=10,
-        fontweight='bold',
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.7),
-        arrowprops=dict(arrowstyle="->", color="orange", alpha=0.7)
-    )
+    if args.benchmark == 'all':
+        # For multiple benchmarks, show performance in legend instead of individual annotations
+        # This keeps the chart clean and readable
+        pass  # Performance is shown in the legend
+    else:
+        # Single benchmark performance annotation
+        final_benchmark = float(benchmark_data[benchmark_config['column_name']].iloc[-1].item())
+        benchmark_return = final_benchmark - 100.0
+        
+        plt.annotate(
+            f"{benchmark_return:+.1f}%",
+            xy=(final_date, final_benchmark),
+            xytext=(-40, -15),  # Left and down offset
+            textcoords='offset points',
+            color="orange",
+            fontsize=10,
+            fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.7),
+            arrowprops=dict(arrowstyle="->", color="orange", alpha=0.7)
+        )
 
     # annotate max drawdown - position within plot area
     dd_normalized = llm_totals.loc[llm_totals["Date"] == dd_date, "Performance_Index"].iloc[0] if len(llm_totals.loc[llm_totals["Date"] == dd_date]) > 0 else 100
@@ -648,7 +748,12 @@ def main(args) -> dict:
     current_value = llm_totals['Market_Value'].iloc[-1] 
     actual_return = current_performance
     
-    plt.title(f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs S&P 500)")
+    if args.benchmark == 'all':
+        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs All Major Benchmarks)"
+    else:
+        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs {benchmark_config['display_name']})"
+    
+    plt.title(chart_title)
     # Add weekend/holiday shading for market closure clarity
     def add_market_closure_shading(start_date, end_date):
         """Add light gray shading for weekends when markets are closed.

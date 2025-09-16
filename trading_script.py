@@ -630,18 +630,29 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception:
             env_indicator = ""
         
-        # Display portfolio table with market time and environment in header
+        # Get experiment timeline for header
+        timeline_info = ""
+        try:
+            from utils.timeline_utils import format_timeline_display
+            timeline_info = format_timeline_display(repository.data_dir)
+        except Exception as e:
+            logger.debug(f"Could not get experiment timeline: {e}")
+        
+        # Display portfolio table with market time, timeline, and environment in header
         time_part = f"⏰ {market_time_info}" if market_time_info else ""
+        timeline_part = f"📅 {timeline_info}" if timeline_info else ""
         env_part = f"{env_indicator}" if env_indicator else ""
         
-        if time_part and env_part:
-            header_title = f"Portfolio Summary | {time_part} | {env_part}"
-        elif time_part:
-            header_title = f"Portfolio Summary | {time_part}"
-        elif env_part:
-            header_title = f"Portfolio Summary | {env_part}"
-        else:
-            header_title = "Portfolio Summary"
+        # Build header with all available information
+        header_parts = ["Portfolio Summary"]
+        if time_part:
+            header_parts.append(time_part)
+        if timeline_part:
+            header_parts.append(timeline_part)
+        if env_part:
+            header_parts.append(env_part)
+        
+        header_title = " | ".join(header_parts)
             
         # UPDATE CSV BEFORE DISPLAYING - This ensures the portfolio data is current
         try:

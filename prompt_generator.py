@@ -94,7 +94,7 @@ except ImportError:
     _HAS_DUAL_CURRENCY = False
 
 # Import experiment configuration
-from experiment_config import get_experiment_timeline
+from utils.timeline_utils import get_experiment_timeline, format_timeline_display
 
 
 class PromptGenerator:
@@ -189,6 +189,153 @@ class PromptGenerator:
                 return f"${cash:,.2f}", cash
         else:
             return f"${cash:,.2f}", cash
+    
+    def _calculate_financial_overview_data(self, latest_snapshot) -> dict:
+        """Calculate comprehensive financial overview data for prompts"""
+        try:
+            # Import required modules
+            from decimal import Decimal
+            import pandas as pd
+            
+            # Get portfolio statistics using the same method as main trading script
+            # We need to use the position calculator, not the portfolio manager
+            from portfolio.position_calculator import PositionCalculator
+            position_calculator = PositionCalculator(self.repository)
+            stats_data = position_calculator.calculate_portfolio_metrics(latest_snapshot)
+            
+            # Load fund contributions data (same as main trading script)
+            fund_contributions = []
+            try:
+                fund_file = self.data_dir / "fund_contributions.csv"
+                if fund_file.exists():
+                    df = pd.read_csv(fund_file)
+                    fund_contributions = df.to_dict('records')
+            except Exception as e:
+                pass  # Fund contributions not available
+            
+            # Calculate total contributions from fund data (same as main trading script)
+            total_contributions = Decimal('0')
+            if fund_contributions:
+                for contribution in fund_contributions:
+                    raw_amount = contribution.get('Amount', contribution.get('amount', 0))
+                    try:
+                        amount = Decimal(str(raw_amount))
+                    except Exception:
+                        amount = Decimal('0')
+                    contrib_type = contribution.get('Type', contribution.get('type', 'CONTRIBUTION'))
+                    ctype = str(contrib_type).upper()
+                    if ctype in ('CONTRIBUTION', 'ADJUSTMENT'):
+                        total_contributions += amount
+                    elif ctype in ('WITHDRAWAL', 'FEE', 'FX_FEE', 'MAINTENANCE_FEE', 'BANK_FEE'):
+                        total_contributions -= amount
+            
+            # Get realized P&L from FIFO processor (same as main trading script)
+            from portfolio.fifo_trade_processor import FIFOTradeProcessor
+            trade_processor = FIFOTradeProcessor(self.repository)
+            realized_summary = trade_processor.get_realized_pnl_summary()
+            total_realized_pnl = realized_summary.get('total_realized_pnl', Decimal('0'))
+            
+            # Get portfolio metrics from position calculator
+            total_portfolio_value = stats_data.get('total_market_value', Decimal('0'))
+            cost_basis = stats_data.get('total_cost_basis', Decimal('0'))
+            unrealized_pnl = stats_data.get('total_unrealized_pnl', Decimal('0'))
+            
+            # Load cash balance
+            cash_balance = Decimal('0')
+            cad_cash = None
+            usd_cash = None
+            usd_to_cad_rate = None
+            estimated_fx_fee_total_usd = None
+            estimated_fx_fee_total_cad = None
+            
+            try:
+                import json
+                cash_file = self.data_dir / "cash_balances.json"
+                if cash_file.exists():
+                    with open(cash_file, 'r') as f:
+                        cash_data = json.load(f)
+                        cad_cash = Decimal(str(cash_data.get('cad', 0)))
+                        usd_cash = Decimal(str(cash_data.get('usd', 0)))
+                        cash_balance = cad_cash + usd_cash
+                        
+                        # Get exchange rate and calculate FX fees
+                        if _HAS_DUAL_CURRENCY:
+                            try:
+                                from dual_currency import load_cash_balances
+                                _, _, usd_to_cad_rate = load_cash_balances(self.data_dir)
+                                if usd_cash and usd_to_cad_rate:
+                                    # Calculate estimated FX fee (1.5% on USD holdings)
+                                    estimated_fx_fee_total_usd = usd_cash * Decimal('0.015')
+                                    estimated_fx_fee_total_cad = estimated_fx_fee_total_usd * usd_to_cad_rate
+                            except Exception:
+                                pass
+            except Exception as e:
+                pass  # Cash balances not available
+            
+            # Calculate currency breakdown
+            usd_positions_value = Decimal('0')
+            cad_positions_value = Decimal('0')
+            for position in latest_snapshot.positions:
+                if hasattr(position, 'currency') and position.currency == 'USD':
+                    usd_positions_value += position.market_value or Decimal('0')
+                else:
+                    cad_positions_value += position.market_value or Decimal('0')
+            
+            # Calculate total equity
+            total_equity = total_portfolio_value + cash_balance
+            
+            # Calculate total portfolio P&L (unrealized + realized)
+            total_portfolio_pnl = unrealized_pnl + total_realized_pnl
+            
+            # Calculate overall return
+            overall_return_pct = Decimal('0')
+            if total_contributions > 0:
+                net_pnl_vs_contrib = total_equity - total_contributions
+                overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
+            
+            # Calculate unallocated vs cost (audit metric)
+            unallocated_vs_cost = total_contributions - cost_basis - cash_balance
+            
+            return {
+                'total_portfolio_value': float(total_portfolio_value),
+                'cash_balance': float(cash_balance),
+                'cad_cash': float(cad_cash) if cad_cash is not None else None,
+                'usd_cash': float(usd_cash) if usd_cash is not None else None,
+                'usd_to_cad_rate': float(usd_to_cad_rate) if usd_to_cad_rate is not None else None,
+                'estimated_fx_fee_total_usd': float(estimated_fx_fee_total_usd) if estimated_fx_fee_total_usd is not None else None,
+                'estimated_fx_fee_total_cad': float(estimated_fx_fee_total_cad) if estimated_fx_fee_total_cad is not None else None,
+                'usd_positions_value': float(usd_positions_value),
+                'cad_positions_value': float(cad_positions_value),
+                'total_equity': float(total_equity),
+                'total_contributions': float(total_contributions),
+                'cost_basis': float(cost_basis),
+                'unrealized_pnl': float(unrealized_pnl),
+                'realized_pnl': float(total_realized_pnl),
+                'total_portfolio_pnl': float(total_portfolio_pnl),
+                'overall_return_pct': float(overall_return_pct),
+                'unallocated_vs_cost': float(unallocated_vs_cost)
+            }
+        except Exception as e:
+            # Return minimal data if calculation fails
+            return {
+                'total_portfolio_value': 0,
+                'cash_balance': 0,
+                'cad_cash': None,
+                'usd_cash': None,
+                'usd_to_cad_rate': None,
+                'estimated_fx_fee_total_usd': None,
+                'estimated_fx_fee_total_cad': None,
+                'usd_positions_value': 0,
+                'cad_positions_value': 0,
+                'total_equity': 0,
+                'total_contributions': 0,
+                'cost_basis': 0,
+                'unrealized_pnl': 0,
+                'realized_pnl': 0,
+                'total_portfolio_pnl': 0,
+                'overall_return_pct': 0,
+                'unallocated_vs_cost': 0
+            }
     
     def _format_portfolio_table(self, portfolio_df: pd.DataFrame, sort_by: str = "date") -> str:
         """Format portfolio data with enhanced date range and P&L information
@@ -623,6 +770,9 @@ class PromptGenerator:
         # Fetch market data
         market_rows = self._get_market_data_table(portfolio_tickers)
         
+        # Calculate comprehensive financial overview data
+        financial_data = self._calculate_financial_overview_data(latest_snapshot)
+        
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
         
@@ -630,8 +780,7 @@ class PromptGenerator:
         today = self.market_hours.last_trading_date_str()
         
         # Calculate experiment timeline
-        week_num, day_num = get_experiment_timeline(self.data_dir)
-        timeline_text = f"Week {week_num} Day {day_num}"
+        timeline_text = format_timeline_display(self.data_dir)
         
         # Generate the prompt with optimized formatting for both humans and LLMs
         # Design: Clean headers, colored data, minimal separators to save context space
@@ -676,10 +825,42 @@ class PromptGenerator:
         # Table body only (title already printed)
         print(self._format_fundamentals_table(portfolio_tickers))
             
-        # Financial summary with color-coded labels for quick scanning
-        print(f"\n{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
-        print(f"{Fore.GREEN}Latest LLM Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
-        print(f"{Fore.BLUE}Maximum Drawdown:{Style.RESET_ALL} 0.00% (new portfolio)")
+        # Enhanced financial summary with comprehensive fund information
+        print(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
+        
+        # Portfolio Value Section
+        print(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
+        print(f"{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
+        print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${financial_data['total_equity']:,.2f}")
+        
+        # Investment Performance Section
+        print(f"\n{Fore.YELLOW}Investment Performance:{Style.RESET_ALL}")
+        print(f"  Total Contributions: ${financial_data['total_contributions']:,.2f}")
+        print(f"  Total Cost Basis: ${financial_data['cost_basis']:,.2f}")
+        if financial_data['unallocated_vs_cost'] is not None:
+            print(f"  Unallocated vs Cost: ${financial_data['unallocated_vs_cost']:,.2f}")
+        
+        # P&L Section with color coding
+        def get_pnl_color(value):
+            return Fore.GREEN if value >= 0 else Fore.RED
+        
+        print(f"\n{Fore.YELLOW}P&L Breakdown:{Style.RESET_ALL}")
+        print(f"  Unrealized P&L: {get_pnl_color(financial_data['unrealized_pnl'])}${financial_data['unrealized_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Realized P&L: {get_pnl_color(financial_data['realized_pnl'])}${financial_data['realized_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Total Portfolio P&L: {get_pnl_color(financial_data['total_portfolio_pnl'])}${financial_data['total_portfolio_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Overall Return: {get_pnl_color(financial_data['overall_return_pct'])}{financial_data['overall_return_pct']:+.2f}%{Style.RESET_ALL}")
+        
+        # Currency breakdown (if available)
+        if financial_data['cad_cash'] is not None and financial_data['usd_cash'] is not None:
+            print(f"\n{Fore.BLUE}Currency Breakdown:{Style.RESET_ALL}")
+            print(f"  CAD Cash: ${financial_data['cad_cash']:,.2f}")
+            print(f"  USD Cash: ${financial_data['usd_cash']:,.2f}")
+            if financial_data['usd_to_cad_rate'] is not None:
+                print(f"  USD→CAD Rate: {financial_data['usd_to_cad_rate']:.4f}")
+            if financial_data['estimated_fx_fee_total_usd'] is not None:
+                print(f"  Est. USD FX Fee (1.5%): -${financial_data['estimated_fx_fee_total_usd']:,.2f} USD")
+        
+        print(f"\n{Fore.BLUE}Maximum Drawdown:{Style.RESET_ALL} 0.00% (new portfolio)")
             
                     
         # Instructions section - the core trading guidance
@@ -762,15 +943,18 @@ class PromptGenerator:
         # Fetch market data (same as daily prompt)
         market_rows = self._get_market_data_table(portfolio_tickers)
         
+        # Calculate comprehensive financial overview data
+        financial_data = self._calculate_financial_overview_data(latest_snapshot)
+        
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
         
         # Calculate experiment timeline using proper configuration
-        week_num, day_num = get_experiment_timeline(self.data_dir)
+        timeline_text = format_timeline_display(self.data_dir)
         
         # Generate the deep research prompt with same color scheme as daily prompt
         # Weekly prompts need more comprehensive analysis, so colors help organize complex data
-        print(f"\n🔬 Weekly Deep Research - Week {week_num} Day {day_num}")
+        print(f"\n🔬 Weekly Deep Research - {timeline_text}")
         print("Copy everything below and paste into your LLM for deep research:")
         
         # System Message
@@ -820,7 +1004,7 @@ Required Sections For Your Reply
 User Message
 Context""")
         
-        print(f"It is Week {week_num} Day {day_num} of a 6-month live experiment.")
+        print(f"It is {timeline_text} of a 6-month live experiment.")
         print()
         print(f"{Fore.GREEN}Cash Available{Style.RESET_ALL}")
         print(cash_display)
@@ -862,9 +1046,39 @@ Context""")
         print(self._format_fundamentals_table(portfolio_tickers))
         
         print()
-        print(f"{Fore.CYAN}[ Portfolio Metrics ]{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
+        
+        # Portfolio Value Section
+        print(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
         print(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")
         print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
+        
+        # Investment Performance Section
+        print(f"\n{Fore.YELLOW}Investment Performance:{Style.RESET_ALL}")
+        print(f"  Total Contributions: ${financial_data['total_contributions']:,.2f}")
+        print(f"  Total Cost Basis: ${financial_data['cost_basis']:,.2f}")
+        if financial_data['unallocated_vs_cost'] is not None:
+            print(f"  Unallocated vs Cost: ${financial_data['unallocated_vs_cost']:,.2f}")
+        
+        # P&L Section with color coding
+        def get_pnl_color(value):
+            return Fore.GREEN if value >= 0 else Fore.RED
+        
+        print(f"\n{Fore.YELLOW}P&L Breakdown:{Style.RESET_ALL}")
+        print(f"  Unrealized P&L: {get_pnl_color(financial_data['unrealized_pnl'])}${financial_data['unrealized_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Realized P&L: {get_pnl_color(financial_data['realized_pnl'])}${financial_data['realized_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Total Portfolio P&L: {get_pnl_color(financial_data['total_portfolio_pnl'])}${financial_data['total_portfolio_pnl']:,.2f}{Style.RESET_ALL}")
+        print(f"  Overall Return: {get_pnl_color(financial_data['overall_return_pct'])}{financial_data['overall_return_pct']:+.2f}%{Style.RESET_ALL}")
+        
+        # Currency breakdown (if available)
+        if financial_data['cad_cash'] is not None and financial_data['usd_cash'] is not None:
+            print(f"\n{Fore.BLUE}Currency Breakdown:{Style.RESET_ALL}")
+            print(f"  CAD Cash: ${financial_data['cad_cash']:,.2f}")
+            print(f"  USD Cash: ${financial_data['usd_cash']:,.2f}")
+            if financial_data['usd_to_cad_rate'] is not None:
+                print(f"  USD→CAD Rate: {financial_data['usd_to_cad_rate']:.4f}")
+            if financial_data['estimated_fx_fee_total_usd'] is not None:
+                print(f"  Est. USD FX Fee (1.5%): -${financial_data['estimated_fx_fee_total_usd']:,.2f} USD")
         
         # Calculate portfolio diversification metrics
         if not llm_portfolio.empty:

@@ -234,6 +234,34 @@ def show_menu() -> None:
     
     print_colored("\n" + "=" * 80, Colors.HEADER)
 
+def handle_benchmark_selection() -> str:
+    """Handle benchmark selection submenu"""
+    print_colored("\n📊 BENCHMARK SELECTION", Colors.HEADER + Colors.BOLD)
+    print_colored("=" * 40, Colors.HEADER)
+    
+    benchmark_options = [
+        ("1", "📈 QQQ (Nasdaq-100)", "Technology-focused benchmark - ideal for growth/tech portfolios", "qqq"),
+        ("2", "📊 S&P 500", "Broad market benchmark - 500 largest US companies", "sp500"),
+        ("3", "📉 Russell 2000", "Small-cap benchmark - smaller US companies", "russell2000"),
+        ("4", "📋 VTI (Total Market)", "Complete US stock market benchmark", "vti"),
+        ("5", "📊 All Benchmarks", "Show all benchmarks on one chart for comprehensive comparison", "all"),
+        ("6", "🔙 Back to Main Menu", "Return without generating graph", "back")
+    ]
+    
+    for key, title, description, _ in benchmark_options:
+        print(f"{Colors.CYAN}{Colors.BOLD}[{key}] {title} - {Colors.ENDC}{description}")
+    
+    while True:
+        choice = input(f"\n{Colors.YELLOW}Select benchmark (1-6): {Colors.ENDC}").strip()
+        
+        if choice in ["1", "2", "3", "4", "5", "6"]:
+            selected = next((opt for opt in benchmark_options if opt[0] == choice), None)
+            if selected:
+                return selected[3]  # Return the benchmark code
+        
+        print_colored(f"{_safe_emoji('❌')} Invalid choice. Please select 1-6.", Colors.RED)
+
+
 def handle_configuration() -> None:
     """Handle configuration menu"""
     print_colored("\n⚙️  CONFIGURATION OPTIONS", Colors.HEADER + Colors.BOLD)
@@ -362,6 +390,14 @@ def main() -> None:
                     dry_run = input(f"{Colors.YELLOW}Run in dry-run mode? (y/N): {Colors.ENDC}").strip().lower()
                     if dry_run == "y":
                         args.append("--dry-run")
+                
+                # Special handling for graph generation with benchmark selection
+                elif choice == "3":
+                    benchmark = handle_benchmark_selection()
+                    if benchmark == "back":
+                        continue  # Return to main menu
+                    args.extend(["--benchmark", benchmark])
+                    print_colored(f"\n📊 Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
                 
                 # Special handling for prompt generator
                 elif choice == "d":

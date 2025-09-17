@@ -424,21 +424,50 @@ def detect_environment(data_dir: Optional[str] = None) -> str:
         return 'UNKNOWN'
     
     data_path = Path(data_dir).resolve()
+    path_str = str(data_path).lower()
     
+    # Check for new fund-based structure
+    if 'trading_data/funds/' in path_str or 'trading_data\\funds\\' in path_str:
+        # Extract fund name from path
+        fund_name = data_path.name.lower()
+        
+        # Check for development/test funds
+        if fund_name in ['test', 'dev', 'development', 'debug']:
+            return 'DEVELOPMENT'
+        
+        # Check for production funds (default for most fund types)
+        if fund_name in ['project chimera', 'production', 'prod', 'main']:
+            return 'PRODUCTION'
+        
+        # For other fund types, determine based on fund configuration
+        try:
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            if fund_info.get("exists") and fund_info.get("config"):
+                fund_type = fund_info["config"].get("fund", {}).get("fund_type", "").lower()
+                if fund_type in ['test', 'development', 'debug']:
+                    return 'DEVELOPMENT'
+                # Default to production for investment, rrsp, tfsa, etc.
+                return 'PRODUCTION'
+        except:
+            # If we can't determine from config, default to production for fund structure
+            return 'PRODUCTION'
+    
+    # Legacy environment detection
     # Check for development environment
-    if 'dev' in str(data_path).lower() or 'test' in str(data_path).lower():
+    if 'dev' in path_str or 'test' in path_str:
         return 'DEVELOPMENT'
     
     # Check for production environment
-    if 'prod' in str(data_path).lower() or 'production' in str(data_path).lower():
+    if 'prod' in path_str or 'production' in path_str:
         return 'PRODUCTION'
     
     # Check for legacy test_data directory
-    if 'test_data' in str(data_path).lower():
+    if 'test_data' in path_str:
         return 'DEVELOPMENT'
     
     # Check for legacy my trading directory
-    if 'my trading' in str(data_path).lower():
+    if 'my trading' in path_str:
         return 'PRODUCTION'
     
     return 'UNKNOWN'
@@ -472,21 +501,56 @@ def print_environment_banner(data_dir: Optional[str] = None) -> None:
     env = detect_environment(data_dir)
     banner = get_environment_banner(data_dir)
     
+    # Try to get fund information for better context
+    fund_name = "Unknown Fund"
+    fund_type = ""
+    try:
+        # Extract fund name from data directory if it's a fund-based path
+        if data_dir and ('trading_data/funds/' in data_dir or 'trading_data\\funds\\' in data_dir):
+            from pathlib import Path
+            fund_name = Path(data_dir).name
+            
+            # Try to get fund config for this specific fund
+            from utils.fund_manager import get_fund_manager
+            fm = get_fund_manager()
+            fund_config = fm.get_fund_config(fund_name)
+            if fund_config:
+                fund_type = fund_config.get("fund", {}).get("fund_type", "")
+        else:
+            # Fallback to current active fund
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            if fund_info.get("exists"):
+                fund_name = fund_info.get("name", "Unknown Fund")
+                if fund_info.get("config"):
+                    fund_type = fund_info["config"].get("fund", {}).get("fund_type", "")
+    except:
+        pass
+    
     if env == 'DEVELOPMENT':
         print_warning(f"\n{'=' * 60}")
         print_warning(f"  {banner}")
+        print_warning(f"  🏦 Fund: {fund_name}")
+        if fund_type:
+            print_warning(f"  📋 Type: {fund_type.upper()}")
         print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
         print_warning(f"  ⚠️  Safe to modify - This is test data")
         print_warning(f"{'=' * 60}\n")
     elif env == 'PRODUCTION':
         print_error(f"\n{'=' * 60}")
         print_error(f"  {banner}")
+        print_error(f"  🏦 Fund: {fund_name}")
+        if fund_type:
+            print_error(f"  📋 Type: {fund_type.upper()}")
         print_error(f"  📁 Data Directory: {data_dir or 'Not specified'}")
         print_error(f"  ⚠️  CAUTION: This is LIVE PRODUCTION DATA")
         print_error(f"{'=' * 60}\n")
     else:
         print_warning(f"\n{'=' * 60}")
         print_warning(f"  {banner}")
+        print_warning(f"  🏦 Fund: {fund_name}")
+        if fund_type:
+            print_warning(f"  📋 Type: {fund_type.upper()}")
         print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
         print_warning(f"  ⚠️  Environment could not be determined")
         print_warning(f"{'=' * 60}\n")

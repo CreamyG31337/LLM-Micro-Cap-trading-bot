@@ -1,0 +1,13 @@
+guiding_thesis:
+  title: "{fund_name} RRSP Investment Thesis"
+  overview: "This portfolio is a balanced, long-term RRSP designed for capital preservation and steady, tax-deferred growth in the decade leading up to retirement. The core philosophy is to build a resilient, all-weather portfolio that generates reliable income, outpaces inflation, and participates in economic growth without taking on excessive risk. The strategy is structured across three distinct pillars."
+  pillars:
+    - name: "Pillar 1: The Core Dividend Foundation"
+      allocation: "~50%"
+      thesis: "This pillar is the bedrock of the portfolio, focused on high-quality, wide-moat, blue-chip companies with long and uninterrupted histories of paying and growing their dividends. The goal is to own a basket of 'Dividend Aristocrats' and other stable businesses (e.g., regulated utilities, consumer staples, railways, major banks) that provide a consistent and rising stream of income. This income will be reinvested to compound growth, and the underlying stability of these companies provides a powerful defense during market downturns."
+    - name: "Pillar 2: The Inflation & Interest Rate Hedge"
+      allocation: "~30%"
+      thesis: "This pillar is designed to explicitly protect the portfolio's purchasing power from the erosive effects of inflation and to perform well in various interest rate environments. It will be allocated to real assets, including global infrastructure (pipelines, airports, cell towers), precious metals (gold), and potentially real estate investment trusts (REITs). These assets have historically performed well during inflationary periods and provide valuable diversification away from traditional stocks and bonds."
+    - name: "Pillar 3: Strategic Growth & Innovation"
+      allocation: "~20%"
+      thesis: "This pillar ensures the portfolio continues to grow and doesn't become overly conservative. The focus is on participating in long-term secular growth trends, but through established, profitable, large-cap leaders rather than speculative ventures. This includes exposure to the technology and healthcare sectors, likely through diversified, low-cost ETFs (like a Nasdaq 100 fund) and individual blue-chip innovators with strong balance sheets and proven business models."

@@ -1,0 +1,13 @@
+guiding_thesis:
+  title: "{fund_name} Investment Thesis"
+  overview: "The {fund_name} portfolio is designed to achieve specific investment objectives through a structured approach."
+  pillars:
+    - name: "Core Holdings"
+      allocation: "~70%"
+      thesis: "Stable, dividend-paying investments that form the foundation of the portfolio."
+    - name: "Growth Opportunities"
+      allocation: "~20%"
+      thesis: "Higher-growth investments with potential for capital appreciation."
+    - name: "Diversification & Risk Management"
+      allocation: "~10%"
+      thesis: "Defensive positions and alternative investments to reduce overall portfolio risk."

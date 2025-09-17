@@ -66,23 +66,50 @@ if args.data_dir:
         print(f"   Looked for: {[pf.name for pf in portfolio_files]}")
         sys.exit(1)
 else:
-    # Legacy search logic - check multiple locations
+    # Search logic - check multiple locations including fund directories
     search_locations = [
-        # 1. trading_data/prod (main production directory)
-        SCRIPT_DIR.parent / "trading_data" / "prod",
-        # 2. my trading (legacy location)
-        SCRIPT_DIR.parent / "my trading", 
+        # 1. Active fund directory (if fund management is available)
+        None,  # Will be populated dynamically
+        # 2. trading_data/funds/* (all fund directories)
+        None,  # Will be populated dynamically
         # 3. Scripts and CSV Files (current directory)
         SCRIPT_DIR,
         # 4. Start Your Own directory
-        SCRIPT_DIR.parent / "Start Your Own"
+        SCRIPT_DIR.parent / "Start Your Own",
+        # 5. Legacy locations (for backward compatibility)
+        SCRIPT_DIR.parent / "my trading",
+        SCRIPT_DIR.parent / "trading_data" / "prod"
     ]
+    
+    # Try to get active fund directory first
+    try:
+        from utils.fund_manager import get_fund_manager
+        fm = get_fund_manager()
+        active_fund = fm.get_active_fund()
+        if active_fund:
+            active_fund_dir = fm.get_fund_data_directory()
+            if active_fund_dir:
+                search_locations[0] = Path(active_fund_dir)
+                print(f"{_safe_emoji('📁')} Using active fund directory: {active_fund_dir}")
+    except ImportError:
+        pass  # Fund management not available
+    
+    # Add all fund directories
+    try:
+        funds_dir = SCRIPT_DIR.parent / "trading_data" / "funds"
+        if funds_dir.exists():
+            for fund_dir in funds_dir.iterdir():
+                if fund_dir.is_dir():
+                    search_locations[1] = fund_dir
+                    break  # Use first fund found
+    except Exception:
+        pass
     
     PORTFOLIO_CSV = None
     DATA_DIR = None
     
     for search_dir in search_locations:
-        if not search_dir.exists():
+        if search_dir is None or not search_dir.exists():
             continue
             
         # Try different file names in each location
@@ -96,7 +123,7 @@ else:
             if pf.exists():
                 PORTFOLIO_CSV = str(pf)
                 DATA_DIR = search_dir
-                print(f"📁 Found portfolio data at: {PORTFOLIO_CSV}")
+                print(f"{_safe_emoji('📁')} Found portfolio data at: {PORTFOLIO_CSV}")
                 break
         
         if PORTFOLIO_CSV:
@@ -161,35 +188,38 @@ def open_graph_file(file_path: Path) -> None:
         else:  # Linux and other Unix-like systems
             subprocess.run(["xdg-open", str(file_path)], check=True)
         
-        print(f"📖 Opened graph in default viewer")
+        print(f"{_safe_emoji('📖')} Opened graph in default viewer")
         
     except Exception as e:
         print(f"⚠️  Could not open graph automatically: {e}")
-        print(f"📁 Graph saved at: {file_path.resolve()}")
+        print(f"{_safe_emoji('📁')} Graph saved at: {file_path.resolve()}")
 
 
 def load_portfolio_totals() -> pd.DataFrame:
     """Load portfolio equity history and calculate daily totals from individual positions."""
     llm_df = pd.read_csv(PORTFOLIO_CSV)
     
-    print(f"📊 Loaded portfolio data with {len(llm_df)} rows")
-    print(f"📊 Columns: {list(llm_df.columns)}")
+    print(f"{_safe_emoji('📊')} Loaded portfolio data with {len(llm_df)} rows")
+    print(f"{_safe_emoji('📊')} Columns: {list(llm_df.columns)}")
     
     # Convert date and clean data for modern format
     llm_df["Date"] = pd.to_datetime(llm_df["Date"], errors="coerce")
     llm_df["Total Value"] = pd.to_numeric(llm_df["Total Value"], errors="coerce")
     
     # Convert dates to date-only (remove time component) for proper daily aggregation
+    # Filter out NaN dates first to avoid mixed type issues
+    llm_df = llm_df.dropna(subset=['Date'])
     llm_df['Date_Only'] = llm_df['Date'].dt.date
     
-    print(f"📅 Date range: {llm_df['Date_Only'].min()} to {llm_df['Date_Only'].max()}")
+    print(f"{_safe_emoji('📅')} Date range: {llm_df['Date_Only'].min()} to {llm_df['Date_Only'].max()}")
     
     # Load exchange rates for currency conversion
     from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
     from pathlib import Path
     from decimal import Decimal
     
-    exchange_rates = load_exchange_rates(Path("trading_data/prod"))
+    # Use the data directory from the portfolio file for exchange rates
+    exchange_rates = load_exchange_rates(Path(DATA_DIR) if 'DATA_DIR' in globals() else Path("trading_data/funds/Project Chimera"))
     
     # Group by date and calculate portfolio totals
     # For each date, we want the FINAL state (latest timestamp) for each ticker
@@ -254,17 +284,17 @@ def load_portfolio_totals() -> pd.DataFrame:
                 "Performance_Pct": performance_pct     # True percentage return
             })
             
-            print(f"📊 {date_only}: Invested ${total_cost_basis:,.2f} → Worth ${total_market_value:,.2f} ({performance_pct:+.2f}%)")
+            print(f"{_safe_emoji('📊')} {date_only}: Invested ${total_cost_basis:,.2f} -> Worth ${total_market_value:,.2f} ({performance_pct:+.2f}%)")
     
     if len(daily_totals) == 0:
-        print("⚠️  No valid portfolio data found. Creating baseline entry.")
+        print(f"{_safe_emoji('⚠️')}  No valid portfolio data found. Creating baseline entry.")
         llm_totals = pd.DataFrame({
             "Date": [pd.Timestamp.now()], 
             "Total Equity": [100.0]
         })
     else:
         llm_totals = pd.DataFrame(daily_totals)
-        print(f"📈 Calculated {len(llm_totals)} daily portfolio totals")
+        print(f"{_safe_emoji('📈')} Calculated {len(llm_totals)} daily portfolio totals")
 
     # Convert to DataFrame and sort by date
     if daily_totals:
@@ -280,8 +310,8 @@ def load_portfolio_totals() -> pd.DataFrame:
         start_performance = llm_totals["Performance_Pct"].iloc[0]
         end_performance = llm_totals["Performance_Pct"].iloc[-1]
         
-        print(f"📈 Investment Performance: {start_performance:+.2f}% → {end_performance:+.2f}%")
-        print(f"💰 Total Capital Deployed: ${start_invested:,.2f} → ${end_invested:,.2f}")
+        print(f"{_safe_emoji('📈')} Investment Performance: {start_performance:+.2f}% -> {end_performance:+.2f}%")
+        print(f"{_safe_emoji('💰')} Total Capital Deployed: ${start_invested:,.2f} -> ${end_invested:,.2f}")
         
         # Create continuous timeline including weekends
         llm_totals = create_continuous_timeline(llm_totals)
@@ -290,7 +320,7 @@ def load_portfolio_totals() -> pd.DataFrame:
         # Fallback if no data
         return pd.DataFrame({"Date": [pd.Timestamp.now()], "Performance_Pct": [0.0], "Performance_Index": [100.0]})
     
-    print(f"📊 Final dataset: {len(out)} data points from {out['Date'].min().date()} to {out['Date'].max().date()}")
+    print(f"{_safe_emoji('📊')} Final dataset: {len(out)} data points from {out['Date'].min().date()} to {out['Date'].max().date()}")
     return out
 
 
@@ -304,9 +334,9 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     
-    # Get the date range
-    start_date = df['Date'].min().date()
-    end_date = df['Date'].max().date()
+    # Get the date range - ensure we have proper datetime objects
+    start_date = pd.to_datetime(df['Date'].min()).date()
+    end_date = pd.to_datetime(df['Date'].max()).date()
     
     # Create complete date range (every single day at midnight for grid reference)
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -350,7 +380,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     # Drop the helper column
     merged = merged.drop('Date_Only', axis=1)
     
-    print(f"📅 Created continuous timeline: {len(df)} trading days → {len(merged)} total days (with market timing)")
+    print(f"{_safe_emoji('📅')} Created continuous timeline: {len(df)} trading days -> {len(merged)} total days (with market timing)")
     return merged
 
 
@@ -404,7 +434,7 @@ def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: 
             benchmark_data.columns = benchmark_data.columns.get_level_values(0)
         
         if benchmark_data.empty:
-            print(f"⚠️  No {display_name} data available, creating flat baseline")
+            print(f"{_safe_emoji('⚠️')}  No {display_name} data available, creating flat baseline")
             return pd.DataFrame({
                 'Date': portfolio_dates,
                 column_name: [100.0] * len(portfolio_dates)
@@ -414,24 +444,26 @@ def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: 
         benchmark_temp = benchmark_data.copy()
         benchmark_temp['Date_Only'] = pd.to_datetime(benchmark_temp['Date']).dt.date
         
-        portfolio_start_date = start_date.date()
+        portfolio_start_date = pd.to_datetime(start_date).date()
+        # Ensure both sides of comparison are datetime.date objects
+        benchmark_temp['Date_Only'] = pd.to_datetime(benchmark_temp['Date_Only']).dt.date
         baseline_data = benchmark_temp[benchmark_temp['Date_Only'] == portfolio_start_date]
         
         if len(baseline_data) > 0:
             # Use benchmark price on portfolio start date
             baseline_close = baseline_data["Close"].iloc[0]
-            print(f"🎯 Using {display_name} close on {portfolio_start_date}: ${baseline_close:.2f} as baseline")
+            print(f"{_safe_emoji('🎯')} Using {display_name} close on {portfolio_start_date}: ${baseline_close:.2f} as baseline")
         else:
             # If no exact date match (weekend/holiday), use the closest previous trading day
             available_dates = benchmark_temp[benchmark_temp['Date_Only'] <= portfolio_start_date]
             if len(available_dates) > 0:
                 baseline_close = available_dates["Close"].iloc[-1]
                 baseline_date = available_dates['Date_Only'].iloc[-1]
-                print(f"🎯 Using {display_name} close on {baseline_date} (closest to {portfolio_start_date}): ${baseline_close:.2f} as baseline")
+                print(f"{_safe_emoji('🎯')} Using {display_name} close on {baseline_date} (closest to {portfolio_start_date}): ${baseline_close:.2f} as baseline")
             else:
                 # Fallback to first available price
                 baseline_close = benchmark_data["Close"].iloc[0]
-                print(f"⚠️  Fallback: Using first available {display_name} price: ${baseline_close:.2f} as baseline")
+                print(f"{_safe_emoji('⚠️')}  Fallback: Using first available {display_name} price: ${baseline_close:.2f} as baseline")
         
         scaling_factor = 100.0 / baseline_close
         benchmark_data[column_name] = benchmark_data["Close"] * scaling_factor
@@ -471,12 +503,12 @@ def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: 
                 weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
                 merged.at[idx, 'Date'] = weekend_market_close
         
-        print(f"📈 {display_name} data: {len(benchmark_clean)} trading days → {len(merged)} total days (with weekends)")
+        print(f"{_safe_emoji('📈')} {display_name} data: {len(benchmark_clean)} trading days -> {len(merged)} total days (with weekends)")
         return merged[["Date", column_name]]
         
     except Exception as e:
-        print(f"⚠️  Error downloading {display_name} data: {e}")
-        print(f"📊 Creating flat {display_name} baseline for comparison")
+        print(f"{_safe_emoji('⚠️')}  Error downloading {display_name} data: {e}")
+        print(f"{_safe_emoji('📊')} Creating flat {display_name} baseline for comparison")
         return pd.DataFrame({
             'Date': portfolio_dates,
             column_name: [100.0] * len(portfolio_dates)
@@ -520,7 +552,7 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
 def refresh_portfolio_data(data_dir_path):
     """Refresh portfolio data to ensure we have current prices before graphing."""
     try:
-        print(f"🔄 Refreshing portfolio data to ensure current prices...")
+        print(f"{_safe_emoji('🔄')} Refreshing portfolio data to ensure current prices...")
         
         # Import the trading system components
         import sys
@@ -547,9 +579,9 @@ def refresh_portfolio_data(data_dir_path):
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
         # Get current portfolio and refresh prices
-        latest_snapshot = portfolio_manager.get_latest_snapshot()
+        latest_snapshot = portfolio_manager.get_latest_portfolio()
         if latest_snapshot and latest_snapshot.positions:
-            print(f"💰 Refreshing prices for {len(latest_snapshot.positions)} positions...")
+            print(f"{_safe_emoji('💰')} Refreshing prices for {len(latest_snapshot.positions)} positions...")
             
             # Update prices for all positions
             updated_positions = []
@@ -562,12 +594,12 @@ def refresh_portfolio_data(data_dir_path):
                         position.market_value = current_price * position.shares
                         position.unrealized_pnl = position.market_value - position.cost_basis
                         updated_positions.append(position)
-                        print(f"✅ {position.ticker}: ${current_price:.2f}")
+                        print(f"{_safe_emoji('✅')} {position.ticker}: ${current_price:.2f}")
                     else:
-                        print(f"⚠️  {position.ticker}: Could not fetch current price")
+                        print(f"{_safe_emoji('⚠️')}  {position.ticker}: Could not fetch current price")
                         updated_positions.append(position)  # Keep existing data
                 except Exception as e:
-                    print(f"⚠️  {position.ticker}: Error fetching price - {e}")
+                    print(f"{_safe_emoji('⚠️')}  {position.ticker}: Error fetching price - {e}")
                     updated_positions.append(position)  # Keep existing data
             
             # Save updated snapshot
@@ -578,13 +610,13 @@ def refresh_portfolio_data(data_dir_path):
                 updated_snapshot.timestamp = datetime.now()
                 
                 portfolio_manager.save_snapshot(updated_snapshot)
-                print(f"✅ Portfolio data refreshed successfully")
+                print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully")
         else:
-            print(f"⚠️  No portfolio positions found to refresh")
+            print(f"{_safe_emoji('⚠️')}  No portfolio positions found to refresh")
             
     except Exception as e:
-        print(f"⚠️  Failed to refresh portfolio data: {e}")
-        print(f"📊 Continuing with existing data...")
+        print(f"{_safe_emoji('⚠️')}  Failed to refresh portfolio data: {e}")
+        print(f"{_safe_emoji('📊')} Continuing with existing data...")
 
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
@@ -595,7 +627,7 @@ def main(args) -> dict:
         settings = get_settings()
         fund_name = settings.get_fund_name()
     except Exception as e:
-        print(f"⚠️  Could not load fund name from config: {e}")
+        print(f"{_safe_emoji('⚠️')}  Could not load fund name from config: {e}")
         fund_name = "Your Investments"  # Fallback
     
     # First, try to refresh portfolio data to get current prices
@@ -614,7 +646,7 @@ def main(args) -> dict:
         benchmark_configs = {}
         
         for bench_name in benchmark_names:
-            print(f"📥 Downloading {bench_name.upper()} benchmark data...")
+            print(f"{_safe_emoji('📥')} Downloading {bench_name.upper()} benchmark data...")
             benchmark_configs[bench_name] = get_benchmark_config(bench_name)
             benchmark_data_dict[bench_name] = download_benchmark(bench_name, start_date, end_date, portfolio_dates)
     else:
@@ -749,9 +781,9 @@ def main(args) -> dict:
     actual_return = current_performance
     
     if args.benchmark == 'all':
-        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs All Major Benchmarks)"
+        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested -> {actual_return:+.2f}% Return (vs All Major Benchmarks)"
     else:
-        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested → {actual_return:+.2f}% Return (vs {benchmark_config['display_name']})"
+        chart_title = f"Investment Performance Analysis\n${total_invested:,.0f} Invested -> {actual_return:+.2f}% Return (vs {benchmark_config['display_name']})"
     
     plt.title(chart_title)
     # Add weekend/holiday shading for market closure clarity
@@ -815,7 +847,7 @@ def main(args) -> dict:
                 edgecolor='none',
                 format='png',
                 pad_inches=0.1)  # Minimal padding
-    print(f"📊 Saved chart to: {RESULTS_PATH.resolve()}")
+    print(f"{_safe_emoji('📊')} Saved chart to: {RESULTS_PATH.resolve()}")
     
     # Close the figure to free memory and prevent threading issues
     plt.close()
@@ -825,7 +857,7 @@ def main(args) -> dict:
     if should_open_graph(args):
         open_graph_file(RESULTS_PATH)
     else:
-        print(f"📁 Graph ready at: {RESULTS_PATH.resolve()}")
+        print(f"{_safe_emoji('📁')} Graph ready at: {RESULTS_PATH.resolve()}")
 
     return {
         "peak_performance_date": peak_date,

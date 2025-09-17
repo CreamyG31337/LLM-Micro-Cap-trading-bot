@@ -1,9 +1,12 @@
 """System constants and default values."""
 
 from pathlib import Path
+from typing import Optional
 
 # File paths and names
-DEFAULT_DATA_DIR = "trading_data/prod"
+# Note: DEFAULT_DATA_DIR is now dynamically determined by the active fund
+# This fallback is only used when fund management is not available
+DEFAULT_DATA_DIR_FALLBACK = "trading_data/funds/Project Chimera"
 PORTFOLIO_CSV_NAME = "llm_portfolio_update.csv"
 TRADE_LOG_CSV_NAME = "llm_trade_log.csv"
 CASH_BALANCES_JSON_NAME = "cash_balances.json"
@@ -14,8 +17,16 @@ EXCHANGE_RATES_CSV_NAME = "exchange_rates.csv"
 DEFAULT_BACKUP_DIR = "backups"
 MAX_BACKUP_FILES = 10
 
-# Data directory structure
-TEST_DATA_DIR = "trading_data/dev"
+# Fund management configuration
+FUNDS_BASE_DIR = "trading_data/funds"
+SHARED_DATA_DIR = "trading_data/shared"
+ACTIVE_FUND_FILE = "trading_data/active_fund.json"
+
+# Legacy data directory structure (for backward compatibility)
+LEGACY_PROD_DIR = "trading_data/prod"
+LEGACY_DEV_DIR = "trading_data/dev"
+LEGACY_MY_TRADING_DIR = "my trading"
+LEGACY_TEST_DATA_DIR = "test_data"
 
 # Market timing constants
 MARKET_OPEN_HOUR = 6  # 6:30 AM PDT
@@ -114,3 +125,30 @@ INFO_USING_FALLBACK = "Using fallback data source"
 INFO_CACHE_HIT = "Using cached data"
 INFO_CACHE_MISS = "Cache miss, fetching fresh data"
 INFO_BACKUP_SKIPPED = "Backup skipped (disabled)"
+
+
+def get_default_data_directory() -> str:
+    """Get the current default data directory based on active fund.
+    
+    Returns:
+        Data directory path for the currently active fund, or fallback if not available
+    """
+    try:
+        from utils.fund_ui import get_current_fund_info
+        fund_info = get_current_fund_info()
+        
+        if fund_info.get("exists") and fund_info.get("data_directory"):
+            return fund_info["data_directory"]
+    except ImportError:
+        # Fund management not available, use fallback
+        pass
+    except Exception:
+        # Any other error, fall back to default
+        pass
+    
+    return DEFAULT_DATA_DIR_FALLBACK
+
+
+# For backward compatibility, we'll create a module-level variable
+# that gets updated when the module is imported
+DEFAULT_DATA_DIR = get_default_data_directory()

@@ -1,0 +1,26 @@
+{
+  "fund": {
+    "name": "TFSA",
+    "description": "TFSA Investment Portfolio",
+    "display_currency": "Tax-Free Savings Account for retirement planning",
+    "fund_type": "tfsa",
+    "created_date": "2025-09-17T00:14:20.559441",
+    "tax_status": "tax_free"
+  },
+  "repository": {
+    "type": "csv",
+    "csv": {
+      "data_directory": "trading_data/funds/TFSA"
+    }
+  },
+  "market_data": {
+    "primary_source": "yahoo",
+    "fallback_source": "stooq",
+    "cache_enabled": true
+  },
+  "backup": {
+    "enabled": true,
+    "directory": "backups",
+    "max_backups": 10
+  }
+}

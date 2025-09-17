@@ -718,22 +718,33 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception:
                 market_time_info = ""
         
-        # Determine environment based on data directory
+        # Determine environment indicator using fund-aware detection
         env_indicator = ""
         try:
-            data_path = str(repository.data_dir).lower()
-            if 'dev' in data_path or 'test' in data_path:
-                env_indicator = "🟡 DEV"
-            elif 'prod' in data_path or 'production' in data_path:
-                env_indicator = "🟢 PROD"
-            else:
-                # Check if it's a common dev pattern like ending in _dev, -dev, etc.
-                from pathlib import Path
-                data_dir_name = Path(data_path).name
-                if any(pattern in data_dir_name for pattern in ['dev', 'test', 'debug']):
-                    env_indicator = "🟡 DEV"
+            from display.console_output import detect_environment
+            from utils.fund_ui import get_current_fund_info
+            
+            # Get fund information for display
+            fund_info = get_current_fund_info()
+            if fund_info.get("exists"):
+                fund_name = fund_info.get("name", "Unknown")
+                env = detect_environment(str(repository.data_dir))
+                
+                if env == 'DEVELOPMENT':
+                    env_indicator = f"🟡 {fund_name}"
+                elif env == 'PRODUCTION':
+                    env_indicator = f"🏦 {fund_name}"
                 else:
-                    env_indicator = "🟢 PROD"  # Default to PROD if unclear
+                    env_indicator = f"❓ {fund_name}"
+            else:
+                # Fallback to old logic if no fund info
+                env = detect_environment(str(repository.data_dir))
+                if env == 'DEVELOPMENT':
+                    env_indicator = "🟡 DEV"
+                elif env == 'PRODUCTION':
+                    env_indicator = "🟢 PROD"
+                else:
+                    env_indicator = "❓ UNKNOWN"
         except Exception:
             env_indicator = ""
         

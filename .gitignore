@@ -225,6 +225,26 @@ trading_data/backups/
 *.backup_*
 *.backup
 
+# Ignore migration backups and personal data
+trading_data/migration_backup_*/
+trading_data/dev/
+trading_data/prod/
+trading_data/active_fund.json
+
+# Ignore personal fund data (CSV, JSON, but allow config templates)
+trading_data/funds/*/llm_portfolio_update.csv
+trading_data/funds/*/llm_trade_log.csv
+trading_data/funds/*/cash_balances.json
+trading_data/funds/*/exchange_rates.csv
+trading_data/funds/*/fund_contributions.csv
+trading_data/funds/*/backups/
+trading_data/funds/*/thesis.yaml
+
+# Allow fund structure and config templates to be tracked
+!trading_data/funds/*/fund_config.json
+!trading_data/funds/*/README.md
+!trading_data/shared/
+
 # Allow README files and folder structure to be tracked
 !my trading/README.md
 !test_data/README.md

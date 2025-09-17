@@ -33,14 +33,12 @@ from display.console_output import _safe_emoji
 # Project structure
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / "venv"
-MY_TRADING_DIR = PROJECT_ROOT / "trading_data" / "prod"
-TEST_DATA_DIR = PROJECT_ROOT / "trading_data" / "dev"
 SCRIPTS_DIR = PROJECT_ROOT / "Scripts and CSV Files"
 START_YOUR_OWN_DIR = PROJECT_ROOT / "Start Your Own"
 
-# Check if we're in test mode
-IS_TEST_MODE = os.environ.get('TEST_DATA_MODE') == '1'
-DATA_DIR = TEST_DATA_DIR if IS_TEST_MODE else MY_TRADING_DIR
+# Legacy directories (for backward compatibility)
+LEGACY_MY_TRADING_DIR = PROJECT_ROOT / "trading_data" / "prod"
+LEGACY_TEST_DATA_DIR = PROJECT_ROOT / "trading_data" / "dev"
 
 # Virtual environment paths based on platform
 if platform.system() == "Windows":
@@ -70,43 +68,6 @@ def check_venv() -> bool:
     """Check if virtual environment exists"""
     return VENV_DIR.exists() and VENV_PYTHON.exists()
 
-def create_my_trading_dir() -> None:
-    """Ensure 'my trading' directory exists"""
-    MY_TRADING_DIR.mkdir(exist_ok=True)
-    
-    # Create README if it doesn't exist
-    readme_path = MY_TRADING_DIR / "README.md"
-    if not readme_path.exists():
-        readme_content = """# My Trading - Private Data Folder
-
-This folder contains your **private trading data** and is excluded from version control.
-
-## What's Stored Here
-
-- `llm_portfolio_update.csv` - Your current portfolio positions and performance
-- `llm_trade_log.csv` - Complete history of all your trades
-- `cash_balances.json` - Your cash balances (if using dual currency mode)
-- Any other personal trading data files
-
-## Privacy & Security
-
-- _safe_emoji('✅') **Git Ignored**: This entire folder is in `.gitignore` so your trading data stays private
-- _safe_emoji('✅') **Local Only**: These files never get committed to GitHub or shared publicly
-- _safe_emoji('✅') **Default Location**: The trading scripts now use this folder by default
-
-## Getting Started
-
-1. **First Time Setup**: The folder is created automatically when you run the trading script
-2. **Default Usage**: Simply run the master script and choose your options
-3. **Your Data**: All CSV files will be saved here automatically
-4. **Cash Management**: Use option 'u' from the main menu to update your cash balances
-
----
-
-*This folder was automatically created by the LLM Micro-Cap Trading Bot system.*
-"""
-        with open(readme_path, 'w') as f:
-            f.write(readme_content)
 
 def run_with_venv(script_path: Path, args: List[str] = None) -> int:
     """Run a Python script with the virtual environment activated"""
@@ -145,19 +106,34 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
     """Get available menu options with (key, title, description, args)"""
-    data_folder_name = "trading_data/dev" if IS_TEST_MODE else "trading_data/prod"
+    # Get active fund data directory
+    try:
+        from utils.fund_ui import get_current_fund_info
+        fund_info = get_current_fund_info()
+        if fund_info["exists"] and fund_info["data_directory"]:
+            data_folder_name = fund_info["data_directory"]
+            data_dir_path = Path(data_folder_name)
+        else:
+            # No active fund, use fallback
+            data_folder_name = "trading_data/funds/Project Chimera"
+            data_dir_path = Path(data_folder_name)
+    except ImportError:
+        # Fund management not available, use fallback
+        data_folder_name = "trading_data/funds/Project Chimera"
+        data_dir_path = Path(data_folder_name)
+    
     return [
         ("1", "🔄 Main Trading Script", 
          f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("2", f"{_safe_emoji('🤖')} Simple Automation", 
          f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("3", "📊 Generate Performance Graph", 
          f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("4", "📈 Process Portfolio (Scripts folder)", 
          "Process portfolio using the Scripts and CSV Files folder", 
@@ -185,31 +161,31 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
         
         ("d", "📋 Generate Daily Trading Prompt",
          f"Generate daily trading prompt with current portfolio data (uses '{data_folder_name}' folder) - runs prompt_generator.py",
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
-        ("w", "🔬 Generate Weekly Deep Research Prompt", 
+        ("w", "🔬 Generate Weekly Deep Research Prompt",
          f"Generate weekly deep research prompt for comprehensive portfolio analysis (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("u", "💰 Update Cash Balances", 
          f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("m", "👥 Manage Contributors", 
          f"Edit contributor names and email addresses (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("x", "📧 Get Contributor Emails", 
          f"Output all contributor email addresses (semicolon-separated for mail programs) (uses '{data_folder_name}' folder)", 
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("e", "📧 Add Trade from Email",
          f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs email trade parser",
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("r", "🔧 Rebuild Portfolio",
          f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder)",
-         ["--data-dir", str(DATA_DIR)]),
+         ["--data-dir", str(data_dir_path)]),
         
         ("c", "⚙️  Configure", 
          "Configuration options and setup", 
@@ -225,6 +201,20 @@ def show_menu() -> None:
     print_colored("\n" + "=" * 80, Colors.HEADER)
     print_colored(f"{_safe_emoji('🤖')} LLM MICRO-CAP TRADING BOT - MASTER CONTROL", Colors.HEADER + Colors.BOLD)
     print_colored("=" * 80, Colors.HEADER)
+    
+    # Show current fund information
+    try:
+        from utils.fund_ui import get_current_fund_info
+        fund_info = get_current_fund_info()
+        if fund_info["exists"]:
+            print_colored(f"📊 Active Fund: {fund_info['name']}", Colors.GREEN + Colors.BOLD)
+        else:
+            print_colored("📊 Active Fund: No Active Fund", Colors.YELLOW + Colors.BOLD)
+        print_colored("-" * 80, Colors.HEADER)
+    except ImportError:
+        # Fund management not available, show fallback
+        print_colored("📊 Active Fund: Fund Management Not Available", Colors.YELLOW + Colors.BOLD)
+        print_colored("-" * 80, Colors.HEADER)
     
     options = get_menu_options()
     
@@ -270,9 +260,10 @@ def handle_configuration() -> None:
     print_colored("\n[1] Check Virtual Environment Status", Colors.CYAN)
     print_colored("[2] Show Project Structure", Colors.CYAN)
     print_colored("[3] Check Data Directories", Colors.CYAN)
-    print_colored("[4] Return to Main Menu", Colors.CYAN)
+    print_colored("[4] 🏦 Fund Management", Colors.CYAN)
+    print_colored("[5] Return to Main Menu", Colors.CYAN)
     
-    choice = input(f"\n{Colors.YELLOW}Select option (1-4): {Colors.ENDC}").strip()
+    choice = input(f"\n{Colors.YELLOW}Select option (1-5): {Colors.ENDC}").strip()
     
     if choice == "1":
         print_colored(f"\n📍 Virtual Environment Status:", Colors.BLUE + Colors.BOLD)
@@ -292,24 +283,54 @@ def handle_configuration() -> None:
         print_colored(f"\n📁 Project Structure:", Colors.BLUE + Colors.BOLD)
         print_colored(f"Project Root: {PROJECT_ROOT}", Colors.ENDC)
         print_colored(f"Virtual Env:  {VENV_DIR} {_safe_emoji('✅') if VENV_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
-        print_colored(f"My Trading:   {MY_TRADING_DIR} {_safe_emoji('✅') if MY_TRADING_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
         print_colored(f"Scripts Dir:  {SCRIPTS_DIR} {_safe_emoji('✅') if SCRIPTS_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
         print_colored(f"Start Your Own: {START_YOUR_OWN_DIR} {_safe_emoji('✅') if START_YOUR_OWN_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
+        
+        # Show fund information
+        try:
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            if fund_info["exists"]:
+                print_colored(f"Active Fund:  {fund_info['name']} ({fund_info['data_directory']}) {_safe_emoji('✅')}", Colors.ENDC)
+            else:
+                print_colored(f"Active Fund:  No Active Fund {_safe_emoji('❌')}", Colors.ENDC)
+        except ImportError:
+            print_colored(f"Active Fund:  Fund Management Not Available {_safe_emoji('❌')}", Colors.ENDC)
     
     elif choice == "3":
         print_colored(f"\n📂 Data Directory Status:", Colors.BLUE + Colors.BOLD)
-        create_my_trading_dir()  # Ensure it exists
         
-        # Check for key files
-        portfolio_file = MY_TRADING_DIR / "llm_portfolio_update.csv"
-        trade_log_file = MY_TRADING_DIR / "llm_trade_log.csv"
-        cash_file = MY_TRADING_DIR / "cash_balances.json"
+        # Check current fund data directory
+        try:
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            if fund_info["exists"] and fund_info["data_directory"]:
+                data_dir = Path(fund_info["data_directory"])
+                print_colored(f"📁 Active Fund: {fund_info['name']} ({data_dir})", Colors.CYAN)
+                
+                # Check for key files
+                portfolio_file = data_dir / "llm_portfolio_update.csv"
+                trade_log_file = data_dir / "llm_trade_log.csv"
+                cash_file = data_dir / "cash_balances.json"
+                
+                print_colored(f"  {_safe_emoji('📄')} Portfolio: {_safe_emoji('✅') if portfolio_file.exists() else _safe_emoji('❌')} {portfolio_file.name}", Colors.ENDC)
+                print_colored(f"  {_safe_emoji('📄')} Trade Log: {_safe_emoji('✅') if trade_log_file.exists() else _safe_emoji('❌')} {trade_log_file.name}", Colors.ENDC)
+                print_colored(f"  {_safe_emoji('📄')} Cash Balances: {_safe_emoji('✅') if cash_file.exists() else _safe_emoji('❌')} {cash_file.name}", Colors.ENDC)
+            else:
+                print_colored("📁 No Active Fund", Colors.YELLOW)
+        except ImportError:
+            print_colored("📁 Fund Management Not Available", Colors.YELLOW)
         
-        print_colored(f"📁 {MY_TRADING_DIR}", Colors.CYAN)
-        print_colored(f"  {_safe_emoji('📄')} Portfolio: {_safe_emoji('✅') if portfolio_file.exists() else _safe_emoji('❌')} {portfolio_file.name}", Colors.ENDC)
-        print_colored(f"  {_safe_emoji('📄')} Trade Log: {_safe_emoji('✅') if trade_log_file.exists() else _safe_emoji('❌')} {trade_log_file.name}", Colors.ENDC)
-        print_colored(f"  {_safe_emoji('📄')} Cash Balances: {_safe_emoji('✅') if cash_file.exists() else _safe_emoji('❌')} {cash_file.name}", Colors.ENDC)
         print_colored(f"\n💡 Tip: Use option 'u' from the main menu to update cash balances!", Colors.YELLOW)
+    
+    elif choice == "4":
+        try:
+            from utils.fund_ui import show_fund_management_menu
+            show_fund_management_menu()
+        except ImportError as e:
+            print_colored(f"{_safe_emoji('❌')} Fund management not available: {e}", Colors.RED)
+            print_colored("This feature requires the fund management module.", Colors.YELLOW)
+        return  # Don't show "Press Enter" after fund management
     
     input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
 
@@ -338,18 +359,22 @@ def get_script_path(option: str) -> Optional[Path]:
 
 def main() -> None:
     """Main application loop"""
-    if IS_TEST_MODE:
-        print_colored("🧪 Initializing LLM Micro-Cap Trading Bot in TEST MODE...", Colors.YELLOW)
-        print_colored(f"📁 Using test data folder: {DATA_DIR}", Colors.CYAN)
-    else:
-        print_colored(f"{_safe_emoji('🚀')} Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
-        print_colored(f"📁 Using production data folder: {DATA_DIR}", Colors.CYAN)
+    print_colored(f"{_safe_emoji('🚀')} Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
     
-    # Ensure data directory exists
-    if IS_TEST_MODE:
-        DATA_DIR.mkdir(exist_ok=True)
-    else:
-        create_my_trading_dir()
+    # Show current fund information
+    try:
+        from utils.fund_ui import get_current_fund_info
+        fund_info = get_current_fund_info()
+        if fund_info["exists"]:
+            print_colored(f"📁 Using fund data folder: {fund_info['data_directory']}", Colors.CYAN)
+        else:
+            print_colored("📁 Using fallback data folder: trading_data/funds/Project Chimera", Colors.YELLOW)
+    except ImportError:
+        print_colored("📁 Using fallback data folder: trading_data/funds/Project Chimera", Colors.YELLOW)
+    
+    # Ensure legacy directories exist for backward compatibility
+    LEGACY_MY_TRADING_DIR.mkdir(exist_ok=True)
+    LEGACY_TEST_DATA_DIR.mkdir(exist_ok=True)
     
     # Check venv status
     if not check_venv():
@@ -411,8 +436,16 @@ def main() -> None:
                     # Email trade parser - no additional args needed, uses add_trade_from_email.py
                     pass
                 elif choice == "r":
-                    # Rebuild portfolio - pass data directory as positional argument
-                    args = [str(DATA_DIR)]
+                    # Rebuild portfolio - pass current fund data directory as positional argument
+                    try:
+                        from utils.fund_ui import get_current_fund_info
+                        fund_info = get_current_fund_info()
+                        if fund_info["exists"] and fund_info["data_directory"]:
+                            args = [fund_info["data_directory"]]
+                        else:
+                            args = ["trading_data/funds/Project Chimera"]
+                    except ImportError:
+                        args = ["trading_data/funds/Project Chimera"]
                 
                 # Run the script
                 return_code = run_with_venv(script_path, args)

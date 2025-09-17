@@ -53,7 +53,7 @@ import pandas as pd
 import yaml
 
 # Import from modular components
-from config.constants import DEFAULT_DATA_DIR
+from config.constants import get_default_data_directory
 from config.settings import get_settings
 from data.repositories.repository_factory import get_repository_container
 from portfolio.portfolio_manager import PortfolioManager
@@ -103,7 +103,7 @@ class PromptGenerator:
     
     def __init__(self, data_dir: Path | str | None = None):
         """Initialize prompt generator with optional data directory"""
-        self.data_dir = Path(data_dir) if data_dir else Path(DEFAULT_DATA_DIR)
+        self.data_dir = Path(data_dir) if data_dir else Path(get_default_data_directory())
         
         # Initialize components
         self.settings = get_settings()
@@ -758,16 +758,17 @@ class PromptGenerator:
         print(f"\n[PROMPT] Daily Results — {today} ({timeline_text})")
         print("Copy everything below and paste into your LLM:")
         
-        # 1. Load the prompt template
+        # 1. Load the appropriate daily prompt template based on fund type
+        template_path = self._get_daily_template_path()
         try:
-            with open("prompts/daily_template.txt", "r") as f:
+            with open(template_path, "r") as f:
                 prompt_template = f.read()
         except FileNotFoundError:
-            print("❌ Error: prompts/daily_template.txt not found.")
+            print(f"❌ Error: {template_path} not found.")
             return
 
-        # 2. Get fund name from settings
-        fund_name = self.settings.get('fund_details', {}).get('name', 'Project Chimera')
+        # 2. Get fund name from settings or active fund
+        fund_name = self._get_fund_name()
 
         # 3. Format all portfolio data into a single string
         portfolio_data_parts = []
@@ -905,20 +906,22 @@ class PromptGenerator:
         print(f"\n🔬 Weekly Deep Research - {timeline_text}")
         print("Copy everything below and paste into your LLM for deep research:")
         
-        # 1. Load the prompt template
+        # 1. Load the appropriate prompt template based on fund type
+        template_path = self._get_weekly_template_path()
         try:
-            with open("prompts/weekly_template.txt", "r") as f:
+            with open(template_path, "r") as f:
                 prompt_template = f.read()
         except FileNotFoundError:
-            print("❌ Error: prompts/weekly_template.txt not found.")
+            print(f"❌ Error: {template_path} not found.")
             return
 
-        # 2. Get fund name from settings
-        fund_name = self.settings.get('fund_details', {}).get('name', 'Project Chimera')
+        # 2. Get fund name from settings or active fund
+        fund_name = self._get_fund_name()
 
         # 3. Load and format the thesis from YAML
+        thesis_path = self._get_thesis_path()
         try:
-            with open("prompts/thesis.yaml", "r") as f:
+            with open(thesis_path, "r") as f:
                 thesis_data = yaml.safe_load(f)
             
             # Replace placeholder in thesis title and overview
@@ -930,9 +933,9 @@ class PromptGenerator:
                 thesis_text += f"{pillar['name']} ({pillar['allocation']})\n"
                 thesis_text += f"Thesis: {pillar['thesis']}\n\n"
         except FileNotFoundError:
-            thesis_text = "ERROR: prompts/thesis.yaml not found."
+            thesis_text = f"ERROR: {thesis_path} not found."
         except Exception as e:
-            thesis_text = f"ERROR: Could not parse prompts/thesis.yaml: {e}"
+            thesis_text = f"ERROR: Could not parse {thesis_path}: {e}"
 
         # 4. Format the portfolio data
         portfolio_tables = []
@@ -978,6 +981,113 @@ class PromptGenerator:
         print(final_prompt)
         
         print(f"\n🔬 End of deep research prompt - copy everything above to your LLM")
+    
+    def _get_weekly_template_path(self) -> str:
+        """Get the appropriate weekly template path based on fund type."""
+        try:
+            # Try to get fund type from active fund
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info.get("config"):
+                fund_config = fund_info["config"]
+                fund_type = fund_config.get("fund", {}).get("fund_type", "").lower()
+                
+                # Check for fund-specific templates
+                if fund_type == "rrsp":
+                    rrsp_template = Path("prompts/weekly_rrsp_template.txt")
+                    if rrsp_template.exists():
+                        return str(rrsp_template)
+                elif fund_type == "tfsa":
+                    tfsa_template = Path("prompts/weekly_tfsa_template.txt")
+                    if tfsa_template.exists():
+                        return str(tfsa_template)
+        
+        except ImportError:
+            # Fund management not available, use default
+            pass
+        except Exception as e:
+            # Any other error, fall back to default
+            print(f"⚠️  Could not determine fund type: {e}")
+        
+        # Default to the generic weekly template
+        return "prompts/weekly_template.txt"
+    
+    def _get_daily_template_path(self) -> str:
+        """Get the appropriate daily template path based on fund type."""
+        try:
+            # Try to get fund type from active fund
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info.get("config"):
+                fund_config = fund_info["config"]
+                fund_type = fund_config.get("fund", {}).get("fund_type", "").lower()
+                
+                # Check for fund-specific templates
+                if fund_type == "rrsp":
+                    rrsp_template = Path("prompts/daily_rrsp_template.txt")
+                    if rrsp_template.exists():
+                        return str(rrsp_template)
+                elif fund_type == "tfsa":
+                    tfsa_template = Path("prompts/daily_tfsa_template.txt")
+                    if tfsa_template.exists():
+                        return str(tfsa_template)
+        
+        except ImportError:
+            # Fund management not available, use default
+            pass
+        except Exception as e:
+            # Any other error, fall back to default
+            print(f"⚠️  Could not determine fund type for daily template: {e}")
+        
+        # Default to the generic daily template
+        return "prompts/daily_template.txt"
+    
+    def _get_thesis_path(self) -> str:
+        """Get the appropriate thesis file path based on active fund."""
+        try:
+            # Try to get thesis from active fund
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info["data_directory"]:
+                fund_thesis_path = Path(fund_info["data_directory"]) / "thesis.yaml"
+                if fund_thesis_path.exists():
+                    return str(fund_thesis_path)
+        
+        except ImportError:
+            # Fund management not available, use default
+            pass
+        except Exception as e:
+            # Any other error, fall back to default
+            print(f"⚠️  Could not determine thesis path: {e}")
+        
+        # Default to the legacy thesis location
+        return "prompts/thesis.yaml"
+    
+    def _get_fund_name(self) -> str:
+        """Get the fund name from active fund or settings."""
+        try:
+            # Try to get fund name from active fund
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info.get("config"):
+                fund_config = fund_info["config"]
+                fund_name = fund_config.get("fund", {}).get("name")
+                if fund_name:
+                    return fund_name
+        
+        except ImportError:
+            # Fund management not available, use settings
+            pass
+        except Exception as e:
+            # Any other error, fall back to settings
+            print(f"⚠️  Could not get fund name from active fund: {e}")
+        
+        # Fallback to settings or default
+        return self.settings.get('fund_details', {}).get('name', 'Project Chimera')
 
 
 def generate_daily_prompt(data_dir: Path | str | None = None) -> None:

@@ -1,0 +1,13 @@
+guiding_thesis:
+  title: "{fund_name} TFSA Investment Thesis"
+  overview: "This portfolio is an aggressive, tax-free growth strategy designed to maximize capital appreciation within the TFSA contribution room. Since gains are completely tax-free, the focus is on high-growth potential investments with a longer time horizon. The strategy emphasizes capital gains over dividends to optimize the tax-free nature of the account."
+  pillars:
+    - name: "Pillar 1: Growth Technology & Innovation"
+      allocation: "~60%"
+      thesis: "This pillar focuses on high-growth technology companies, disruptive innovators, and secular growth trends. The emphasis is on companies with strong competitive moats, expanding addressable markets, and the potential for significant capital appreciation. This includes exposure to artificial intelligence, cloud computing, cybersecurity, and other transformative technologies through both individual stocks and growth-focused ETFs."
+    - name: "Pillar 2: Emerging Markets & Small-Cap Growth"
+      allocation: "~25%"
+      thesis: "This pillar captures higher-risk, higher-reward opportunities in emerging markets and small-cap growth companies. The tax-free nature of the TFSA makes it ideal for these potentially volatile but high-growth investments. Focus areas include emerging market ETFs, small-cap growth funds, and individual small-cap companies with strong growth prospects."
+    - name: "Pillar 3: Opportunistic & Speculative Investments"
+      allocation: "~15%"
+      thesis: "This pillar takes advantage of the TFSA's tax-free status to hold more speculative investments that could generate significant returns. This includes individual high-conviction growth stocks, sector rotation plays, and tactical opportunities. The goal is to capture asymmetric upside while limiting downside through position sizing and diversification across multiple opportunities."

@@ -36,11 +36,14 @@ class Settings:
     
     def _load_default_config(self) -> None:
         """Load default configuration values."""
+        # Try to get active fund data directory, fallback to legacy
+        active_fund_data_dir = self._get_active_fund_data_directory()
+        
         self._config = {
             'repository': {
                 'type': 'csv',
                 'csv': {
-                    'data_directory': 'trading_data/prod'
+                    'data_directory': active_fund_data_dir
                 },
                 'database': {
                     'host': 'localhost',
@@ -75,11 +78,7 @@ class Settings:
                 'max_backups': 10,
                 'auto_backup_on_save': True
             },
-            'fund': {
-                'name': 'Project Chimera',
-                'description': 'AI-Powered Micro-Cap Investment Fund',
-                'display_currency': 'CAD'
-            }
+            'fund': self._get_active_fund_config()
         }
     
     def _load_from_environment(self) -> None:
@@ -236,7 +235,8 @@ class Settings:
         Returns:
             Data directory path
         """
-        return self.get('repository.csv.data_directory', 'my trading')
+        # Always get the current active fund data directory
+        return self._get_active_fund_data_directory()
     
     def get_repository_type(self) -> str:
         """Get repository type.
@@ -284,7 +284,9 @@ class Settings:
         Returns:
             Fund name for display purposes
         """
-        return self.get('fund.name', 'Your Investments')
+        # Always get the current active fund name
+        active_fund_config = self._get_active_fund_config()
+        return active_fund_config.get('name', 'Your Investments')
     
     def get_fund_config(self) -> Dict[str, Any]:
         """Get fund configuration.
@@ -292,7 +294,58 @@ class Settings:
         Returns:
             Fund configuration dictionary
         """
-        return self.get('fund', {'name': 'Your Investments', 'description': 'Investment Portfolio', 'display_currency': 'CAD'})
+        # Always get the current active fund configuration
+        return self._get_active_fund_config()
+    
+    def _get_active_fund_data_directory(self) -> str:
+        """Get the data directory for the currently active fund.
+        
+        Returns:
+            Data directory path for active fund or legacy fallback
+        """
+        try:
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info["data_directory"]:
+                return fund_info["data_directory"]
+        
+        except ImportError:
+            # Fund management not available, use legacy
+            pass
+        except Exception:
+            # Any other error, fall back to legacy
+            pass
+        
+        # Fallback to legacy structure
+        return 'trading_data/prod'
+    
+    def _get_active_fund_config(self) -> Dict[str, Any]:
+        """Get the configuration for the currently active fund.
+        
+        Returns:
+            Fund configuration dictionary
+        """
+        try:
+            from utils.fund_ui import get_current_fund_info
+            fund_info = get_current_fund_info()
+            
+            if fund_info["exists"] and fund_info.get("config"):
+                return fund_info["config"].get("fund", {})
+        
+        except ImportError:
+            # Fund management not available, use default
+            pass
+        except Exception:
+            # Any other error, fall back to default
+            pass
+        
+        # Fallback to default fund configuration
+        return {
+            'name': 'Project Chimera',
+            'description': 'AI-Powered Micro-Cap Investment Fund',
+            'display_currency': 'CAD'
+        }
 
 
 # Global settings instance

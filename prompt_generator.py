@@ -50,6 +50,7 @@ except ImportError:
         sys.exit(1)
 
 import pandas as pd
+import yaml
 
 # Import from modular components
 from config.constants import DEFAULT_DATA_DIR
@@ -666,36 +667,6 @@ class PromptGenerator:
                 
         return "\n".join(lines)
             
-    def _get_daily_instructions(self) -> str:
-        """Get daily trading instructions"""
-        if _HAS_MARKET_CONFIG:
-            try:
-                return get_daily_instructions()
-            except Exception as e:
-                print(f"Warning: Failed to get instructions from market_config: {e}")
-                return self._get_default_daily_instructions()
-        else:
-            return self._get_default_daily_instructions()
-            
-    def _get_default_daily_instructions(self) -> str:
-        """Default daily instructions if market_config not available"""
-        return (
-            "Use this info to make decisions regarding your Canadian small-cap portfolio. "
-            "You have complete control over every decision. Make any changes you believe are beneficial—no approval required.\n"
-            "\n"
-            "Focus on Canadian small-caps (CAD 50M - CAD 500M market cap) listed on TSX or TSX Venture Exchange.\n"
-            "Consider Canadian market dynamics, regulatory environment, and sector-specific catalysts.\n"
-            "All positions trade in CAD. Account for TSX/TSXV trading hours and liquidity.\n"
-            "\n"
-            "Deep research is not permitted. Act at your discretion to achieve the best outcome.\n"
-            "If you do not make a clear indication to change positions IMMEDIATELY after this message, "
-            "the portfolio remains unchanged for tomorrow.\n"
-            "You are encouraged to use the internet to check current Canadian market conditions "
-            "and company-specific info for potential buys.\n"
-            "\n"
-            "*Paste everything above into your preferred LLM (ChatGPT, Claude, Gemini, etc.)*"
-        )
-        
     def generate_daily_prompt(self, data_dir: Path | str | None = None) -> None:
         """Generate and display daily trading prompt with live data"""
         if data_dir:
@@ -787,16 +758,28 @@ class PromptGenerator:
         print(f"\n[PROMPT] Daily Results — {today} ({timeline_text})")
         print("Copy everything below and paste into your LLM:")
         
-        # Market data table with colors for human readability
-        # Colors are stripped during copy/paste, so they don't affect LLM context
-        print(f"\n{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
+        # 1. Load the prompt template
+        try:
+            with open("prompts/daily_template.txt", "r") as f:
+                prompt_template = f.read()
+        except FileNotFoundError:
+            print("❌ Error: prompts/daily_template.txt not found.")
+            return
+
+        # 2. Get fund name from settings
+        fund_name = self.settings.get('fund_details', {}).get('name', 'Project Chimera')
+
+        # 3. Format all portfolio data into a single string
+        portfolio_data_parts = []
+
+        # Market data table
+        portfolio_data_parts.append(f"{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
         header = ["Ticker", "Close", "% Chg", "Volume", "Avg Vol (30d)"]
         colw = [10, 12, 9, 12, 14]
-        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
+        portfolio_data_parts.append(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
         sep_len = sum(colw) + (len(colw) - 1)
-        print("-" * sep_len)  # Add separator line
+        portfolio_data_parts.append("-" * sep_len)
         for row in market_rows:
-            # Build padded cells first, then apply color so ANSI codes don't affect spacing
             ticker_cell = f"{str(row[0]):<{colw[0]}}"
             close_cell_plain = str(row[1]).rjust(colw[1])
             pct_change = str(row[2])
@@ -804,7 +787,6 @@ class PromptGenerator:
             volume_cell_plain = str(row[3]).rjust(colw[3])
             avg_vol_cell_plain = str(row[4]).rjust(colw[4])
 
-            # Apply colors to fully padded cells
             close_cell = f"{Fore.YELLOW}{close_cell_plain}{Style.RESET_ALL}"
             if pct_change != "—" and pct_change.startswith(('+', '-')):
                 pct_cell = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_cell_plain}{Style.RESET_ALL}"
@@ -812,64 +794,30 @@ class PromptGenerator:
                 pct_cell = pct_cell_plain
             volume_cell = f"{Fore.BLUE}{volume_cell_plain}{Style.RESET_ALL}"
             avg_volume_cell = f"{Fore.BLUE}{avg_vol_cell_plain}{Style.RESET_ALL}"
+            portfolio_data_parts.append(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
+            
+        # Portfolio snapshot
+        portfolio_data_parts.append(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
+        portfolio_data_parts.append(self._format_portfolio_table(llm_portfolio, sort_by="date"))
+        
+        # Company fundamentals
+        portfolio_data_parts.append(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
+        portfolio_data_parts.append(self._format_fundamentals_table(portfolio_tickers))
+            
+        # Financial summary
+        portfolio_data_parts.append(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
+        portfolio_data_parts.append(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
+        portfolio_data_parts.append(f"{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
+        portfolio_data_parts.append(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${financial_data['total_equity']:,.2f}")
+        
+        portfolio_data_string = "\n".join(portfolio_data_parts)
 
-            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
-            
-        # Portfolio snapshot with enhanced formatting
-        print(f"\n{Fore.CYAN}[ Portfolio Snapshot ]{Style.RESET_ALL}")
-        # Table body only (title already printed)
-        print(self._format_portfolio_table(llm_portfolio, sort_by="date"))
-        
-        # Company fundamentals table 
-        print(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
-        # Table body only (title already printed)
-        print(self._format_fundamentals_table(portfolio_tickers))
-            
-        # Enhanced financial summary with comprehensive fund information
-        print(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
-        
-        # Portfolio Value Section
-        print(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
-        print(f"{Fore.GREEN}Cash Balances:{Style.RESET_ALL} {cash_display}")
-        print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${financial_data['total_equity']:,.2f}")
-        
-        # Investment Performance Section
-        print(f"\n{Fore.YELLOW}Investment Performance:{Style.RESET_ALL}")
-        print(f"  Total Contributions: ${financial_data['total_contributions']:,.2f}")
-        print(f"  Total Cost Basis: ${financial_data['cost_basis']:,.2f}")
-        if financial_data['unallocated_vs_cost'] is not None:
-            print(f"  Unallocated vs Cost: ${financial_data['unallocated_vs_cost']:,.2f}")
-        
-        # P&L Section with color coding
-        def get_pnl_color(value):
-            return Fore.GREEN if value >= 0 else Fore.RED
-        
-        print(f"\n{Fore.YELLOW}P&L Breakdown:{Style.RESET_ALL}")
-        print(f"  Unrealized P&L: {get_pnl_color(financial_data['unrealized_pnl'])}${financial_data['unrealized_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Realized P&L: {get_pnl_color(financial_data['realized_pnl'])}${financial_data['realized_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Total Portfolio P&L: {get_pnl_color(financial_data['total_portfolio_pnl'])}${financial_data['total_portfolio_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Overall Return: {get_pnl_color(financial_data['overall_return_pct'])}{financial_data['overall_return_pct']:+.2f}%{Style.RESET_ALL}")
-        
-        # Currency breakdown (if available)
-        if financial_data['cad_cash'] is not None and financial_data['usd_cash'] is not None:
-            print(f"\n{Fore.BLUE}Currency Breakdown:{Style.RESET_ALL}")
-            print(f"  CAD Cash: ${financial_data['cad_cash']:,.2f}")
-            print(f"  USD Cash: ${financial_data['usd_cash']:,.2f}")
-            if financial_data['usd_to_cad_rate'] is not None:
-                print(f"  USD→CAD Rate: {financial_data['usd_to_cad_rate']:.4f}")
-            if financial_data['estimated_fx_fee_total_usd'] is not None:
-                print(f"  Est. USD FX Fee (1.5%): -${financial_data['estimated_fx_fee_total_usd']:,.2f} USD")
-        
-        print(f"\n{Fore.BLUE}Maximum Drawdown:{Style.RESET_ALL} 0.00% (new portfolio)")
-            
-                    
-        # Instructions section - the core trading guidance
-        print(f"\n{Fore.CYAN}[ Your Instructions ]{Style.RESET_ALL}")
-        instructions = self._get_daily_instructions()
-        # Preserve original content; only adapt output if console can't handle Unicode
-        from display.console_output import format_text_for_console
-        print(format_text_for_console(instructions))
-        
+        # 4. Substitute placeholders in the template
+        final_prompt = prompt_template.replace("{insert portfolio data}", portfolio_data_string)
+        final_prompt = final_prompt.replace("{fund_name}", fund_name)
+
+        print(final_prompt)
+
         print(f"\n[END] End of prompt - copy everything above to your LLM")
         
     def generate_weekly_research_prompt(self, data_dir: Path | str | None = None) -> None:
@@ -957,76 +905,50 @@ class PromptGenerator:
         print(f"\n🔬 Weekly Deep Research - {timeline_text}")
         print("Copy everything below and paste into your LLM for deep research:")
         
-        # System Message
-        print("""System Message
+        # 1. Load the prompt template
+        try:
+            with open("prompts/weekly_template.txt", "r") as f:
+                prompt_template = f.read()
+        except FileNotFoundError:
+            print("❌ Error: prompts/weekly_template.txt not found.")
+            return
 
-You are a professional-grade portfolio analyst operating in Deep Research Mode. Your job is to reevaluate the portfolio and produce a complete action plan with exact orders. Optimize risk-adjusted return under strict constraints. Begin by restating the rules to confirm understanding, then deliver your research, decisions, and orders.
+        # 2. Get fund name from settings
+        fund_name = self.settings.get('fund_details', {}).get('name', 'Project Chimera')
 
-Core Rules
-- Budget discipline: no new capital beyond what is shown. Track cash precisely.
-- Execution limits: fractional shares supported (Wealthsimple). No options, shorting, leverage, margin, or derivatives. Long-only.
-- Universe: primarily U.S. micro-caps under 300M market cap unless told otherwise. Respect liquidity, average volume, spread, and slippage.
-- Risk control: respect provided stop-loss levels and position sizing. Flag any breaches immediately.
-- Cadence: this is the weekly deep research window. You may add new names, exit, trim, or add to positions.
-- Complete freedom: you have complete control to act in your best interest to generate alpha.
+        # 3. Load and format the thesis from YAML
+        try:
+            with open("prompts/thesis.yaml", "r") as f:
+                thesis_data = yaml.safe_load(f)
+            
+            # Replace placeholder in thesis title and overview
+            thesis_title = thesis_data['guiding_thesis']['title'].replace('{fund_name}', fund_name)
+            thesis_overview = thesis_data['guiding_thesis']['overview'].replace('{fund_name}', fund_name)
+            
+            thesis_text = f"{thesis_title}\n{thesis_overview}\n\n"
+            for pillar in thesis_data['guiding_thesis']['pillars']:
+                thesis_text += f"{pillar['name']} ({pillar['allocation']})\n"
+                thesis_text += f"Thesis: {pillar['thesis']}\n\n"
+        except FileNotFoundError:
+            thesis_text = "ERROR: prompts/thesis.yaml not found."
+        except Exception as e:
+            thesis_text = f"ERROR: Could not parse prompts/thesis.yaml: {e}"
 
-Deep Research Requirements
-- Reevaluate current holdings and consider new candidates.
-- Build a clear rationale for every keep, add, trim, exit, and new entry.
-- Provide exact order details for every proposed trade.
-- Confirm liquidity and risk checks before finalizing orders.
-- End with a short thesis review summary for next week.
-
-Order Specification Format
-Action: buy or sell
-Ticker: symbol
-Shares: decimal (fractional shares supported)
-Order type: limit preferred, or market with reasoning
-Limit price: exact number
-Time in force: DAY or GTC
-Intended execution date: YYYY-MM-DD
-Stop loss (for buys): exact number and placement logic
-Special instructions: if needed (e.g., open at or below limit, open only, do not exceed spread threshold)
-One-line rationale
-
-Required Sections For Your Reply
-- Restated Rules
-- Research Scope
-- Current Portfolio Assessment
-- Candidate Set
-- Portfolio Actions
-- Exact Orders
-- Risk And Liquidity Checks
-- Monitoring Plan
-- Thesis Review Summary
-- Confirm Cash And Constraints
-
-User Message
-Context""")
-        
-        print(f"It is {timeline_text} of a 6-month live experiment.")
-        print()
-        print(f"{Fore.GREEN}Cash Available{Style.RESET_ALL}")
-        print(cash_display)
-        print()
-        
-        # Market data table with colors for human readability (same as daily prompt)
-        print(f"{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
+        # 4. Format the portfolio data
+        portfolio_tables = []
+        portfolio_tables.append(f"{Fore.CYAN}[ Price & Volume ]{Style.RESET_ALL}")
         header = ["Ticker", "Close", "% Chg", "Volume", "Avg Vol (30d)"]
         colw = [10, 12, 9, 12, 14]
-        print(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
+        portfolio_tables.append(f"{Fore.YELLOW}{header[0]:<{colw[0]}} {header[1]:>{colw[1]}} {header[2]:>{colw[2]}} {header[3]:>{colw[3]}} {header[4]:>{colw[4]}}{Style.RESET_ALL}")
         sep_len = sum(colw) + (len(colw) - 1)
-        print("-" * sep_len)
+        portfolio_tables.append("-" * sep_len)
         for row in market_rows:
-            # Build padded cells first, then apply color so ANSI codes don't affect spacing
             ticker_cell = f"{str(row[0]):<{colw[0]}}"
             close_cell_plain = str(row[1]).rjust(colw[1])
             pct_change = str(row[2])
             pct_cell_plain = pct_change.rjust(colw[2])
             volume_cell_plain = str(row[3]).rjust(colw[3])
             avg_vol_cell_plain = str(row[4]).rjust(colw[4])
-
-            # Apply colors to fully padded cells
             close_cell = f"{Fore.YELLOW}{close_cell_plain}{Style.RESET_ALL}"
             if pct_change != "—" and pct_change.startswith(('+', '-')):
                 pct_cell = f"{Fore.GREEN if pct_change.startswith('+') else Fore.RED}{pct_cell_plain}{Style.RESET_ALL}"
@@ -1034,94 +956,26 @@ Context""")
                 pct_cell = pct_cell_plain
             volume_cell = f"{Fore.BLUE}{volume_cell_plain}{Style.RESET_ALL}"
             avg_volume_cell = f"{Fore.BLUE}{avg_vol_cell_plain}{Style.RESET_ALL}"
+            portfolio_tables.append(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
+        
+        portfolio_tables.append(f"\n{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
+        portfolio_tables.append(self._format_portfolio_table(llm_portfolio, sort_by="value"))
+        portfolio_tables.append(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
+        portfolio_tables.append(self._format_fundamentals_table(portfolio_tickers))
+        portfolio_tables.append(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
+        
+        portfolio_tables.append(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
+        portfolio_tables.append(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")
+        portfolio_tables.append(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
+        
+        portfolio_data_string = "\n".join(portfolio_tables)
 
-            print(f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} {close_cell} {pct_cell} {volume_cell} {avg_volume_cell}")
-        
-        print()
-        print(f"{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
-        print(self._format_portfolio_table(llm_portfolio, sort_by="value"))
-        
-        # Company fundamentals table (same as daily prompt)
-        print(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
-        print(self._format_fundamentals_table(portfolio_tickers))
-        
-        print()
-        print(f"{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
-        
-        # Portfolio Value Section
-        print(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
-        print(f"{Fore.GREEN}Cash Balance:{Style.RESET_ALL} ${cash:,.2f}")
-        print(f"{Fore.GREEN}Total Equity:{Style.RESET_ALL} ${total_equity:,.2f}")
-        
-        # Investment Performance Section
-        print(f"\n{Fore.YELLOW}Investment Performance:{Style.RESET_ALL}")
-        print(f"  Total Contributions: ${financial_data['total_contributions']:,.2f}")
-        print(f"  Total Cost Basis: ${financial_data['cost_basis']:,.2f}")
-        if financial_data['unallocated_vs_cost'] is not None:
-            print(f"  Unallocated vs Cost: ${financial_data['unallocated_vs_cost']:,.2f}")
-        
-        # P&L Section with color coding
-        def get_pnl_color(value):
-            return Fore.GREEN if value >= 0 else Fore.RED
-        
-        print(f"\n{Fore.YELLOW}P&L Breakdown:{Style.RESET_ALL}")
-        print(f"  Unrealized P&L: {get_pnl_color(financial_data['unrealized_pnl'])}${financial_data['unrealized_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Realized P&L: {get_pnl_color(financial_data['realized_pnl'])}${financial_data['realized_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Total Portfolio P&L: {get_pnl_color(financial_data['total_portfolio_pnl'])}${financial_data['total_portfolio_pnl']:,.2f}{Style.RESET_ALL}")
-        print(f"  Overall Return: {get_pnl_color(financial_data['overall_return_pct'])}{financial_data['overall_return_pct']:+.2f}%{Style.RESET_ALL}")
-        
-        # Currency breakdown (if available)
-        if financial_data['cad_cash'] is not None and financial_data['usd_cash'] is not None:
-            print(f"\n{Fore.BLUE}Currency Breakdown:{Style.RESET_ALL}")
-            print(f"  CAD Cash: ${financial_data['cad_cash']:,.2f}")
-            print(f"  USD Cash: ${financial_data['usd_cash']:,.2f}")
-            if financial_data['usd_to_cad_rate'] is not None:
-                print(f"  USD→CAD Rate: {financial_data['usd_to_cad_rate']:.4f}")
-            if financial_data['estimated_fx_fee_total_usd'] is not None:
-                print(f"  Est. USD FX Fee (1.5%): -${financial_data['estimated_fx_fee_total_usd']:,.2f} USD")
-        
-        # Calculate portfolio diversification metrics
-        if not llm_portfolio.empty:
-            num_positions = len(llm_portfolio)
-            # Calculate concentration (largest position weight)
-            total_value = llm_portfolio['market_value'].sum() if 'market_value' in llm_portfolio.columns else 0
-            if total_value > 0:
-                max_position_weight = (llm_portfolio['market_value'].max() / total_value) * 100 if 'market_value' in llm_portfolio.columns else 0
-                print(f"{Fore.BLUE}Number of Positions:{Style.RESET_ALL} {num_positions}")
-                print(f"{Fore.BLUE}Largest Position Weight:{Style.RESET_ALL} {max_position_weight:.1f}%")
-                
-                # Calculate sector/geographic diversification if we have the data
-                sectors = set()
-                countries = set()
-                for ticker in portfolio_tickers:
-                    try:
-                        fundamentals = self.market_data_fetcher.fetch_fundamentals(ticker)
-                        if fundamentals.get('sector'):
-                            sectors.add(fundamentals['sector'])
-                        if fundamentals.get('country'):
-                            countries.add(fundamentals['country'])
-                    except:
-                        pass
-                
-                if sectors:
-                    print(f"{Fore.BLUE}Sector Diversification:{Style.RESET_ALL} {len(sectors)} sectors ({', '.join(list(sectors)[:3])}{'...' if len(sectors) > 3 else ''})")
-                if countries:
-                    print(f"{Fore.BLUE}Geographic Diversification:{Style.RESET_ALL} {len(countries)} countries ({', '.join(list(countries))})")
-        
-        print()
-        print("Last Analyst Thesis For Current Holdings")
-        print("(Previous research summary would go here - this could be enhanced to track thesis history)")
-        print()
-        print("""Execution Policy
-Describe how orders are executed in this system for clarity (e.g., open-driven limit behavior, or standard limit day orders). If unspecified, assume standard limit DAY orders placed for the next session.
+        # 5. Substitute placeholders in the template
+        final_prompt = prompt_template.replace("{insert portfolio data}", portfolio_data_string)
+        final_prompt = final_prompt.replace("{insert thesis}", thesis_text)
+        final_prompt = final_prompt.replace("{fund_name}", fund_name)
 
-Constraints And Reminders To Enforce
-- Hard budget. Use only available cash shown above. No new capital.
-- Fractional shares supported (Wealthsimple). No options/shorting/margin/derivatives.
-- Prefer U.S. micro-caps and respect liquidity.
-- Be sure to use up-to-date stock data for pricing details.
-- Focus on alpha generation and risk-adjusted returns.
-- This is live money - be thorough and disciplined.""")
+        print(final_prompt)
         
         print(f"\n🔬 End of deep research prompt - copy everything above to your LLM")
 

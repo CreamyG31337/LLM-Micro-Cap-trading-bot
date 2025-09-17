@@ -1,0 +1,13 @@
+guiding_thesis:
+  title: "{fund_name} Guiding Thesis"
+  overview: "The {fund_name} portfolio is a high-conviction, global macro fund structured across three distinct and complementary pillars. The strategy is to blend resilient, cash-flowing core holdings with targeted, high-growth thematic bets."
+  pillars:
+    - name: "Pillar 1: The Industrial, Materials & Energy Core"
+      allocation: "~57%"
+      thesis: "This pillar is the portfolio's foundation, designed to be resilient and to capitalize on inflation and the onshoring of North American industry. It is anchored by a significant overweight position in precious metals and uranium to hedge against geopolitical risk and benefit from a new commodity supercycle. It is complemented by wide-moat industrial and infrastructure companies (railroads, pipelines, utilities) that provide stable, dividend-driven returns."
+    - name: "Pillar 2: The Technology & AI Growth Engine"
+      allocation: "~29%"
+      thesis: "This pillar is designed to capture upside from the generational technology shift in Artificial Intelligence. The strategy is a 'picks and shovels' approach, focusing on the indispensable hardware, platforms, and security layers (semiconductors, enterprise software, cybersecurity) that are essential for the entire AI ecosystem's growth."
+    - name: "Pillar 3: Strategic Value & Thematic Satellites"
+      allocation: "~14%"
+      thesis: "This pillar provides diversification and access to unique, uncorrelated, higher-risk/reward opportunities. It includes targeted investments in deep value/turnaround situations (retail), catalyst-driven venture plays (renewable energy development), broad international growth (emerging markets), and defensive blue-chips acquired at attractive value points."

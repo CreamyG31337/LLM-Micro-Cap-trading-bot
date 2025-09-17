@@ -39,7 +39,7 @@ except ImportError:
         sys.exit(1)
 
 try:
-    from dual_currency import load_cash_balances, save_cash_balances, CashBalances
+    from financial.simple_cash_manager import SimpleCashManager
     from config.constants import DEFAULT_DATA_DIR
     from portfolio.position_calculator import PositionCalculator
     from data.repositories.csv_repository import CSVRepository
@@ -99,16 +99,30 @@ def main():
         sys.exit(1)
     
     try:
-        # Load current balances
-        cash_balances = load_cash_balances(data_dir)
+        # Load current balances using simple manager (fixes CAD/cad duplicates)
+        manager = SimpleCashManager(data_dir)
+        balances = manager.get_balances()
+        
         print(f"\n{_safe_emoji('💰')} Current Cash Balances:")
-        print(f"   CAD: ${cash_balances.cad:,.2f}")
-        print(f"   USD: ${cash_balances.usd:,.2f}")
-        print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+        print(f"   CAD: ${balances['CAD']:,.2f}")
+        print(f"   USD: ${balances['USD']:,.2f}")
+        
+        # Calculate total CAD equivalent (simple calculation)
+        total_cad = balances['CAD'] + (balances['USD'] * Decimal('1.35'))
+        print(f"   Total (CAD equiv): ${total_cad:,.2f}")
 
         # Display fund contributions total
         fund_total = calculate_fund_contributions_total(data_dir)
         print(f"{_safe_emoji('💵')} Fund contributions total: ${fund_total:,.2f}")
+        
+        # Show recent transactions
+        transactions = manager.get_transactions(3)
+        if transactions:
+            print(f"\n{_safe_emoji('📋')} Recent Transactions:")
+            for tx in transactions:
+                date_str = tx['timestamp'][:10]
+                amount_str = f"${tx['amount']:+,.2f}"
+                print(f"   {date_str} {tx['currency']} {amount_str} - {tx['description']}")
         
         while True:
             # Get user input
@@ -117,7 +131,7 @@ def main():
             print("  'u' = add/remove USD") 
             print("  's' = set exact amounts")
             print("  'v' = view current balances")
-            print("  'n' = toggle negative balance mode")
+            print("  't' = view transaction history")
             print("  'q' = quit")
             
             action = input("\nWhat would you like to do? ").strip().lower()
@@ -127,25 +141,47 @@ def main():
                 break
                 
             elif action == 'v':
+                # Refresh balances from manager
+                balances = manager.get_balances()
                 print(f"\n{_safe_emoji('💰')} Current Cash Balances:")
-                print(f"   CAD: ${cash_balances.cad:,.2f}")
-                print(f"   USD: ${cash_balances.usd:,.2f}")
-                print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+                print(f"   CAD: ${balances['CAD']:,.2f}")
+                print(f"   USD: ${balances['USD']:,.2f}")
+                
+                # Calculate total CAD equivalent
+                total_cad = balances['CAD'] + (balances['USD'] * Decimal('1.35'))
+                print(f"   Total (CAD equiv): ${total_cad:,.2f}")
 
                 # Display fund contributions total
                 fund_total = calculate_fund_contributions_total(data_dir)
                 print(f"{_safe_emoji('💵')} Fund contributions total: ${fund_total:,.2f}")
                 continue
                 
+            elif action == 't':
+                transactions = manager.get_transactions(10)
+                if not transactions:
+                    print(f"\n{_safe_emoji('📋')} No transactions found")
+                else:
+                    print(f"\n{_safe_emoji('📋')} Recent Transactions (last 10):")
+                    print("-" * 70)
+                    print(f"{'Date':<12} {'Currency':<8} {'Amount':<12} {'Balance':<12} {'Description'}")
+                    print("-" * 70)
+                    for tx in transactions:
+                        date_str = tx['timestamp'][:10]
+                        amount_str = f"${tx['amount']:+,.2f}"
+                        balance_str = f"${tx['balance_after']:,.2f}"
+                        print(f"{date_str:<12} {tx['currency']:<8} {amount_str:<12} {balance_str:<12} {tx['description']}")
+                continue
+                
             elif action == 'c':
                 try:
                     amount = float(input("Enter CAD amount (positive to add, negative to remove): $"))
                     if amount >= 0:
-                        cash_balances.add_cad(amount)
-                        print(f"{_safe_emoji('✅')} Added ${amount:,.2f} CAD")
+                        if manager.add_cash('CAD', amount, f"Manual CAD deposit"):
+                            print(f"{_safe_emoji('✅')} Added ${amount:,.2f} CAD")
+                        else:
+                            print(f"{_safe_emoji('❌')} Failed to add CAD")
                     else:
-                        if cash_balances.can_afford_cad(abs(amount)):
-                            cash_balances.spend_cad(abs(amount))
+                        if manager.remove_cash('CAD', abs(amount), f"Manual CAD withdrawal"):
                             print(f"{_safe_emoji('✅')} Removed ${abs(amount):,.2f} CAD")
                         else:
                             print(f"{_safe_emoji('❌')} Cannot remove ${abs(amount):,.2f} CAD - insufficient balance")
@@ -158,11 +194,12 @@ def main():
                 try:
                     amount = float(input("Enter USD amount (positive to add, negative to remove): $"))
                     if amount >= 0:
-                        cash_balances.add_usd(amount)
-                        print(f"{_safe_emoji('✅')} Added ${amount:,.2f} USD")
+                        if manager.add_cash('USD', amount, f"Manual USD deposit"):
+                            print(f"{_safe_emoji('✅')} Added ${amount:,.2f} USD")
+                        else:
+                            print(f"{_safe_emoji('❌')} Failed to add USD")
                     else:
-                        if cash_balances.can_afford_usd(abs(amount)):
-                            cash_balances.spend_usd(abs(amount))
+                        if manager.remove_cash('USD', abs(amount), f"Manual USD withdrawal"):
                             print(f"{_safe_emoji('✅')} Removed ${abs(amount):,.2f} USD")
                         else:
                             print(f"{_safe_emoji('❌')} Cannot remove ${abs(amount):,.2f} USD - insufficient balance")
@@ -178,8 +215,10 @@ def main():
                     if cad_amount < 0 or usd_amount < 0:
                         print(f"{_safe_emoji('❌')} Balances cannot be negative")
                         continue
-                    cash_balances.cad = cad_amount
-                    cash_balances.usd = usd_amount
+                    
+                    # Set both balances
+                    manager.set_balance('CAD', cad_amount, "Manual CAD balance adjustment")
+                    manager.set_balance('USD', usd_amount, "Manual USD balance adjustment")
                     print(f"{_safe_emoji('✅')} Set balances to CAD ${cad_amount:,.2f} and USD ${usd_amount:,.2f}")
                 except ValueError:
                     print(f"{_safe_emoji('❌')} Invalid amounts entered")
@@ -196,14 +235,15 @@ def main():
                 print(f"{_safe_emoji('❌')} Invalid option")
                 continue
             
-            # Save the updated balances after each successful operation
-            save_cash_balances(cash_balances, data_dir)
-            
-            # Show updated balances
+            # Show updated balances (manager saves automatically)
+            balances = manager.get_balances()
             print(f"\n{_safe_emoji('💰')} Updated Cash Balances:")
-            print(f"   CAD: ${cash_balances.cad:,.2f}")
-            print(f"   USD: ${cash_balances.usd:,.2f}")
-            print(f"   Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
+            print(f"   CAD: ${balances['CAD']:,.2f}")
+            print(f"   USD: ${balances['USD']:,.2f}")
+            
+            # Calculate total CAD equivalent
+            total_cad = balances['CAD'] + (balances['USD'] * Decimal('1.35'))
+            print(f"   Total (CAD equiv): ${total_cad:,.2f}")
 
             # Display fund contributions total
             fund_total = calculate_fund_contributions_total(data_dir)

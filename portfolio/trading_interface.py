@@ -269,7 +269,7 @@ class TradingInterface:
             return False
     
     def update_cash_balances(self) -> bool:
-        """Handle cash balance update action.
+        """Handle cash balance update action using enhanced cash balance manager.
         
         Returns:
             bool: True if successful, False otherwise
@@ -277,46 +277,147 @@ class TradingInterface:
         try:
             print_info("Update Cash Balances", "🔄")
             
-            # Load current cash balances
-            cash_file = Path(self.repository.data_dir) / "cash_balances.json"
-            current_balances = {}
+            # Import the simple cash balance manager
+            from financial.simple_cash_manager import SimpleCashManager
             
-            if cash_file.exists():
-                import json
-                with open(cash_file, 'r') as f:
-                    current_balances = json.load(f)
+            # Initialize the manager
+            manager = SimpleCashManager(Path(self.repository.data_dir))
             
+            # Display current balances
+            balances = manager.get_balances()
             print("Current cash balances:")
-            for currency, balance in current_balances.items():
-                print(f"  {currency}: ${balance:,.2f}")
+            print(f"  CAD: ${balances['CAD']:,.2f}")
+            print(f"  USD: ${balances['USD']:,.2f}")
             
-            # Get new balance
-            currency = input("Enter currency (CAD/USD): ").strip().upper()
-            if currency not in ['CAD', 'USD']:
-                print_error("Currency must be CAD or USD")
-                return False
+            # Calculate total CAD equivalent
+            total_cad = balances['CAD'] + (balances['USD'] * Decimal('1.35'))
+            print(f"  Total (CAD equiv): ${total_cad:,.2f}")
             
-            try:
-                balance_str = input(f"Enter new {currency} balance: $").strip()
-                balance = Decimal(balance_str)
-                if balance < 0:
-                    print_error("Cash balance cannot be negative")
+            # Get operation type
+            print("\nOptions:")
+            print("  'a' = Add cash")
+            print("  'r' = Remove cash")
+            print("  's' = Set exact balance")
+            print("  'v' = View transaction history")
+            
+            operation = input("Choose operation: ").strip().lower()
+            
+            if operation == 'a':
+                # Add cash - CAD
+                try:
+                    amount_str = input("Enter CAD amount to add: $").strip()
+                    amount = Decimal(amount_str)
+                    if amount <= 0:
+                        print_error("Amount must be positive")
+                        return False
+                except (ValueError, InvalidOperation):
+                    print_error("Invalid amount format")
                     return False
-            except ValueError:
-                print_error("Invalid balance format")
+                
+                description = input("Enter description (optional): ").strip()
+                if not description:
+                    description = f"Manual CAD deposit"
+                
+                if manager.add_cash('CAD', amount, description):
+                    print_success(f"Added ${amount:,.2f} CAD")
+                    return True
+                else:
+                    print_error("Failed to add CAD")
+                    return False
+                    
+            elif operation == 'r':
+                # Remove cash - CAD
+                current_balance = manager.get_balance('CAD')
+                print(f"Current CAD balance: ${current_balance:,.2f}")
+                
+                try:
+                    amount_str = input("Enter CAD amount to remove: $").strip()
+                    amount = Decimal(amount_str)
+                    if amount <= 0:
+                        print_error("Amount must be positive")
+                        return False
+                except (ValueError, InvalidOperation):
+                    print_error("Invalid amount format")
+                    return False
+                
+                allow_negative = False
+                if current_balance < amount:
+                    print(f"\n⚠️  Insufficient funds!")
+                    print(f"Available: ${current_balance:,.2f}")
+                    print(f"Requested: ${amount:,.2f}")
+                    print(f"Shortfall: ${amount - current_balance:,.2f}")
+                    
+                    if input("Allow negative balance? (y/N): ").strip().lower() == 'y':
+                        allow_negative = True
+                    else:
+                        print_error("Operation cancelled")
+                        return False
+                
+                description = input("Enter description (optional): ").strip()
+                if not description:
+                    description = f"Manual CAD withdrawal"
+                
+                if manager.remove_cash('CAD', amount, description, allow_negative=allow_negative):
+                    print_success(f"Removed ${amount:,.2f} CAD")
+                    return True
+                else:
+                    print_error("Failed to remove CAD")
+                    return False
+                    
+            elif operation == 's':
+                # Set exact balance - CAD
+                current_balance = manager.get_balance('CAD')
+                print(f"Current CAD balance: ${current_balance:,.2f}")
+                
+                try:
+                    amount_str = input("Enter new CAD balance: $").strip()
+                    amount = Decimal(amount_str)
+                    if amount < 0:
+                        print_error("Balance cannot be negative")
+                        return False
+                except (ValueError, InvalidOperation):
+                    print_error("Invalid amount format")
+                    return False
+                
+                description = input("Enter description (optional): ").strip()
+                if not description:
+                    difference = amount - current_balance
+                    if difference > 0:
+                        description = f"CAD balance adjustment: +${difference:,.2f}"
+                    elif difference < 0:
+                        description = f"CAD balance adjustment: ${difference:,.2f}"
+                    else:
+                        description = "No change needed"
+                
+                if manager.set_balance('CAD', amount, description):
+                    print_success(f"Set CAD balance to ${amount:,.2f}")
+                    return True
+                else:
+                    print_error("Failed to set CAD balance")
+                    return False
+                    
+            elif operation == 'v':
+                # View transaction history
+                transactions = manager.get_transactions(10)
+                if not transactions:
+                    print("No transactions found")
+                    return True
+                
+                print(f"\nRecent Transactions (last 10):")
+                print("-" * 70)
+                print(f"{'Date':<12} {'Currency':<8} {'Amount':<12} {'Balance':<12} {'Description'}")
+                print("-" * 70)
+                
+                for tx in transactions:
+                    date_str = tx['timestamp'][:10]
+                    amount_str = f"${tx['amount']:+,.2f}"
+                    balance_str = f"${tx['balance_after']:,.2f}"
+                    print(f"{date_str:<12} {tx['currency']:<8} {amount_str:<12} {balance_str:<12} {tx['description']}")
+                
+                return True
+            else:
+                print_error("Invalid operation")
                 return False
-            
-            # Update and save balances
-            # Convert Decimal to float for JSON serialization compatibility
-            # Note: This introduces potential precision loss, but is necessary for JSON storage
-            current_balances[currency] = float(balance)
-
-            import json
-            with open(cash_file, 'w') as f:
-                json.dump(current_balances, f, indent=2)
-            
-            print_success(f"{currency} balance updated to ${balance:,.2f}")
-            return True
             
         except Exception as e:
             logger.error(f"Error updating cash balances: {e}")

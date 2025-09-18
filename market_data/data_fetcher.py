@@ -75,6 +75,8 @@ class MarketDataFetcher:
         """
         self.cache = cache_instance
         self.proxy_map = PROXY_MAP.copy()
+        self._portfolio_currency_cache = {}
+        self._load_currency_cache()
         
         # Access global settings for configurable TTL
         try:
@@ -82,6 +84,61 @@ class MarketDataFetcher:
             self.settings = get_settings()
         except Exception:
             self.settings = None
+    
+    def _load_currency_cache(self):
+        """Load currency information from portfolio CSV files."""
+        try:
+            import pandas as pd
+            import glob
+            
+            # Find portfolio CSV files
+            portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+            
+            for file_path in portfolio_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns and 'Currency' in df.columns:
+                        # Get the latest entry for each ticker
+                        latest_entries = df.groupby('Ticker').last()
+                        for ticker, row in latest_entries.iterrows():
+                            self._portfolio_currency_cache[ticker] = row['Currency']
+                except Exception as e:
+                    logger.warning(f"Could not load currency cache from {file_path}: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"Could not load currency cache: {e}")
+    
+    def _convert_usd_to_cad(self, result: 'FetchResult') -> 'FetchResult':
+        """Convert USD prices to CAD prices using current exchange rate."""
+        try:
+            import yfinance as yf
+            from decimal import Decimal
+            
+            # Get current USD/CAD exchange rate
+            usdcad = yf.Ticker('USDCAD=X')
+            info = usdcad.info
+            exchange_rate = info.get('regularMarketPrice', 1.38)  # Fallback to 1.38
+            
+            if exchange_rate and exchange_rate > 0:
+                # Convert all price columns from USD to CAD
+                price_columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
+                converted_df = result.df.copy()
+                
+                for col in price_columns:
+                    if col in converted_df.columns:
+                        # Convert Decimal to float, multiply, then convert back to Decimal
+                        converted_df[col] = converted_df[col].apply(lambda x: Decimal(str(float(x) * exchange_rate)))
+                
+                # Update source to indicate conversion
+                new_source = f"{result.source} (USD→CAD @ {exchange_rate:.4f})"
+                return FetchResult(converted_df, new_source)
+            else:
+                logger.warning("Could not get USD/CAD exchange rate, using original data")
+                return result
+                
+        except Exception as e:
+            logger.warning(f"Could not convert USD to CAD: {e}, using original data")
+            return result
         
         # In-memory fundamentals cache (TTL-based)
         self._fund_cache: Dict[str, Dict[str, Any]] = {}
@@ -167,15 +224,15 @@ class MarketDataFetcher:
         **kwargs: Any
     ) -> FetchResult:
         """
-        Fetch OHLCV data with robust fallback logic.
-        
+        Fetch OHLCV data with robust fallback logic and retry mechanisms.
+
         Args:
             ticker: Stock ticker symbol
             start: Start date for data fetch
-            end: End date for data fetch  
+            end: End date for data fetch
             period: Period for data (default "1d")
             **kwargs: Additional arguments passed to yfinance
-            
+
         Returns:
             FetchResult with DataFrame and source information
         """
@@ -184,37 +241,104 @@ class MarketDataFetcher:
             cached_data = self.cache.get_cached_price(ticker, start, end)
             if cached_data is not None:
                 return FetchResult(cached_data, "cache")
-        
+
         # Determine date range
         start_date, end_date = self._weekend_safe_range(period, start, end)
+
+        # Try multiple fetch strategies with retries
+        # Smart strategy selection based on ticker characteristics
+        fetch_strategies = []
         
-        # Stage 1: Yahoo Finance
-        result = self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)
-        if not result.df.empty:
-            self._cache_result(ticker, result)
-            return result
+        # Check if this is a Canadian ticker based on currency in portfolio data
+        is_likely_canadian = ticker.endswith(('.TO', '.V'))  # Already has Canadian suffix
+        
+        # If no suffix, check if we have currency info from portfolio
+        if not is_likely_canadian and hasattr(self, '_portfolio_currency_cache'):
+            currency = self._portfolio_currency_cache.get(ticker)
+            if currency == 'CAD':
+                is_likely_canadian = True
+            elif currency == 'USD':
+                is_likely_canadian = False
+        
+        if is_likely_canadian:
+            # For likely Canadian tickers, try Canadian suffixes first
+            # But don't add suffixes if ticker already has them
+            if ticker.endswith(('.TO', '.V')):
+                # Ticker already has Canadian suffix, use as-is
+                fetch_strategies = [
+                    ("yahoo", lambda: self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)),
+                    ("stooq-pdr", lambda: self._fetch_stooq_pdr(ticker, start_date, end_date)),
+                    ("stooq-csv", lambda: self._fetch_stooq_csv(ticker, start_date, end_date)),
+                    ("yahoo-retry-period", lambda: self._fetch_yahoo_data_retry_period(ticker, period)),
+                    ("yahoo-retry-simple", lambda: self._fetch_yahoo_data_retry_simple(ticker)),
+                    ("yahoo-proxy", lambda: self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)),
+                ]
+            else:
+                # Ticker doesn't have suffix, try adding Canadian suffixes
+                fetch_strategies = [
+                    ("yahoo-ca-to", lambda: self._fetch_yahoo_data(f"{ticker}.TO", start_date, end_date, **kwargs)),
+                    ("yahoo-ca-v", lambda: self._fetch_yahoo_data(f"{ticker}.V", start_date, end_date, **kwargs)),
+                    ("yahoo", lambda: self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)),
+                    ("stooq-pdr", lambda: self._fetch_stooq_pdr(ticker, start_date, end_date)),
+                    ("stooq-csv", lambda: self._fetch_stooq_csv(ticker, start_date, end_date)),
+                    ("yahoo-retry-period", lambda: self._fetch_yahoo_data_retry_period(ticker, period)),
+                    ("yahoo-retry-simple", lambda: self._fetch_yahoo_data_retry_simple(ticker)),
+                    ("yahoo-proxy", lambda: self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)),
+                ]
+        else:
+            # For likely US tickers, try US first, then Canadian as fallback
+            # But don't add suffixes if ticker already has them
+            if ticker.endswith(('.TO', '.V')):
+                # Ticker already has Canadian suffix, use as-is
+                fetch_strategies = [
+                    ("yahoo", lambda: self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)),
+                    ("stooq-pdr", lambda: self._fetch_stooq_pdr(ticker, start_date, end_date)),
+                    ("stooq-csv", lambda: self._fetch_stooq_csv(ticker, start_date, end_date)),
+                    ("yahoo-retry-period", lambda: self._fetch_yahoo_data_retry_period(ticker, period)),
+                    ("yahoo-retry-simple", lambda: self._fetch_yahoo_data_retry_simple(ticker)),
+                    ("yahoo-proxy", lambda: self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)),
+                ]
+            else:
+                # Ticker doesn't have suffix, try US first then Canadian fallback
+                fetch_strategies = [
+                    ("yahoo", lambda: self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)),
+                    ("stooq-pdr", lambda: self._fetch_stooq_pdr(ticker, start_date, end_date)),
+                    ("stooq-csv", lambda: self._fetch_stooq_csv(ticker, start_date, end_date)),
+                    ("yahoo-ca-to", lambda: self._fetch_yahoo_data(f"{ticker}.TO", start_date, end_date, **kwargs)),
+                    ("yahoo-ca-v", lambda: self._fetch_yahoo_data(f"{ticker}.V", start_date, end_date, **kwargs)),
+                    ("yahoo-retry-period", lambda: self._fetch_yahoo_data_retry_period(ticker, period)),
+                    ("yahoo-retry-simple", lambda: self._fetch_yahoo_data_retry_simple(ticker)),
+                    ("yahoo-proxy", lambda: self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)),
+                ]
+
+        successful_strategy = None
+        failed_strategies = []
+        
+        for strategy_name, fetch_func in fetch_strategies:
+            try:
+                result = fetch_func()
+                if not result.df.empty:
+                    # Update source to indicate which strategy worked
+                    result = FetchResult(result.df, f"{result.source} ({strategy_name})")
+                    self._cache_result(ticker, result)
+                    successful_strategy = strategy_name
+                    break
+            except Exception as e:
+                failed_strategies.append(strategy_name)
+                continue
+
+        # Log a summary instead of individual errors
+        if successful_strategy:
+            if len(failed_strategies) > 0:
+                logger.info(f"{ticker}: {', '.join(failed_strategies)} not found, using {successful_strategy}")
             
-        # Stage 2: Stooq via pandas-datareader
-        result = self._fetch_stooq_pdr(ticker, start_date, end_date)
-        if not result.df.empty:
-            self._cache_result(ticker, result)
-            return result
+            # Note: .TO and .V tickers already return Canadian prices, no conversion needed
+            # Only convert if we're getting US data for Canadian tickers
             
-        # Stage 3: Stooq direct CSV
-        result = self._fetch_stooq_csv(ticker, start_date, end_date)
-        if not result.df.empty:
-            self._cache_result(ticker, result)
             return result
-            
-        # Stage 4: Index proxies
-        result = self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)
-        if not result.df.empty:
-            self._cache_result(ticker, result)
-            return result
-            
-        # All methods failed
-        logger.warning(f"All fetch methods failed for {ticker}")
-        return FetchResult(pd.DataFrame(), "empty")
+        else:
+            logger.error(f"{ticker}: All strategies failed ({', '.join(failed_strategies)})")
+            return FetchResult(pd.DataFrame(), "failed")
     
     def _weekend_safe_range(
         self,
@@ -261,10 +385,10 @@ class MarketDataFetcher:
         """Fetch data from Yahoo Finance via yfinance."""
         try:
             import yfinance as yf
-            
-            # Suppress yfinance logging
+
+            # Reduce yfinance noise but keep ERROR level for real failures
             logging.getLogger("yfinance").setLevel(logging.ERROR)
-            
+
             # Use Ticker.history() instead of yf.download() for single ticker
             ticker_obj = yf.Ticker(ticker)
             df = ticker_obj.history(
@@ -272,19 +396,85 @@ class MarketDataFetcher:
                 end=end,
                 **kwargs
             )
-            
+
             if isinstance(df, pd.DataFrame) and not df.empty:
                 # Remove extra columns that aren't OHLCV
                 ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
                 df = df[ohlcv_columns]
                 df = self._normalize_ohlcv(self._to_datetime_index(df))
                 return FetchResult(df, "yahoo")
-                
+
         except Exception as e:
+            error_msg = str(e).lower()
+            # Don't treat "possibly delisted" as a hard failure for ETFs and known tickers
+            # These are often false positives from yfinance
+            if ("possibly delisted" in error_msg and
+                ("no timezone found" in error_msg or "no price data found" in error_msg)):
+                # Try a simpler approach - just get recent data without date range
+                try:
+                    logger.debug(f"Retrying {ticker} with simplified yfinance call")
+                    ticker_obj = yf.Ticker(ticker)
+                    # Try with just period instead of explicit dates
+                    df = ticker_obj.history(period="5d")
+
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                        df = df[ohlcv_columns]
+                        df = self._normalize_ohlcv(self._to_datetime_index(df))
+                        logger.debug(f"Successfully fetched {ticker} with simplified call")
+                        return FetchResult(df, "yahoo-retry")
+                except Exception as retry_e:
+                    logger.debug(f"Retry also failed for {ticker}: {retry_e}")
+
             logger.debug(f"Yahoo fetch failed for {ticker}: {e}")
-            
+
         return FetchResult(pd.DataFrame(), "empty")
-    
+
+    def _fetch_yahoo_data_retry_period(self, ticker: str, period: str) -> FetchResult:
+        """Retry Yahoo Finance fetch using period instead of date range."""
+        try:
+            import yfinance as yf
+
+            # Reduce yfinance noise but keep ERROR level for real failures
+            logging.getLogger("yfinance").setLevel(logging.ERROR)
+
+            ticker_obj = yf.Ticker(ticker)
+            df = ticker_obj.history(period=period)
+
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                df = df[ohlcv_columns]
+                df = self._normalize_ohlcv(self._to_datetime_index(df))
+                return FetchResult(df, "yahoo-period")
+
+        except Exception as e:
+            logger.debug(f"Yahoo period retry failed for {ticker}: {e}")
+
+        return FetchResult(pd.DataFrame(), "empty")
+
+    def _fetch_yahoo_data_retry_simple(self, ticker: str) -> FetchResult:
+        """Retry Yahoo Finance fetch with minimal parameters."""
+        try:
+            import yfinance as yf
+
+            # Reduce yfinance noise but keep ERROR level for real failures
+            logging.getLogger("yfinance").setLevel(logging.ERROR)
+
+            ticker_obj = yf.Ticker(ticker)
+            # Try with just 5 days of data, no other parameters
+            df = ticker_obj.history(period="5d", interval="1d")
+
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                df = df[ohlcv_columns]
+                df = self._normalize_ohlcv(self._to_datetime_index(df))
+                return FetchResult(df, "yahoo-simple")
+
+        except Exception as e:
+            logger.debug(f"Yahoo simple retry failed for {ticker}: {e}")
+
+        return FetchResult(pd.DataFrame(), "empty")
+
     def _fetch_stooq_pdr(
         self,
         ticker: str,
@@ -547,7 +737,7 @@ class MarketDataFetcher:
         try:
             import yfinance as yf
             
-            # Suppress yfinance logging
+            # Reduce yfinance noise but keep ERROR level for real failures
             logging.getLogger("yfinance").setLevel(logging.ERROR)
             
             ticker_obj = yf.Ticker(ticker)

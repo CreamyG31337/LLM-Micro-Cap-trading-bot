@@ -63,6 +63,8 @@ class CSVRepository(BaseRepository):
             
             # Parse timestamps with timezone awareness
             df['Date'] = df['Date'].apply(self._parse_csv_timestamp)
+            # Ensure the Date column is properly converted to datetime dtype
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
             
             # Filter by date range if provided
             if date_range:
@@ -147,6 +149,8 @@ class CSVRepository(BaseRepository):
                 if not existing_df.empty:
                     # Parse dates to compare
                     existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    # Ensure the Date column is properly converted to datetime dtype
+                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
                     # Check if today's data already exists
@@ -201,6 +205,8 @@ class CSVRepository(BaseRepository):
                 if not existing_df.empty:
                     # Parse dates to compare
                     existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    # Ensure the Date column is properly converted to datetime dtype
+                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
                     # Check if today's data exists
@@ -299,7 +305,9 @@ class CSVRepository(BaseRepository):
             
             # Parse timestamps
             df['Date'] = df['Date'].apply(self._parse_csv_timestamp)
-            
+            # Ensure the Date column is properly converted to datetime dtype
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+
             # Filter by ticker if provided
             if ticker:
                 df = df[df['Ticker'] == ticker]
@@ -534,13 +542,13 @@ class CSVRepository(BaseRepository):
     
     def _parse_csv_timestamp(self, timestamp_str: str) -> datetime:
         """Parse timestamp from CSV format with comprehensive timezone handling.
-        
+
         This function converts timezone abbreviations to pandas-compatible UTC offset formats
         to avoid FutureWarnings and ensure proper timezone handling.
-        
+
         Args:
             timestamp_str: Timestamp string from CSV
-            
+
         Returns:
             Parsed datetime object
         """
@@ -596,8 +604,19 @@ class CSVRepository(BaseRepository):
         elif " UTC" in timestamp_str or " GMT" in timestamp_str:
             return pd.to_datetime(timestamp_str).to_pydatetime()
 
-        # UTC offset format already present
-        elif ("+" in timestamp_str or ("-" in timestamp_str and len(timestamp_str) > 6 and timestamp_str[-6:-3].replace('-', '').isdigit())):
+        # Check for ISO format with timezone offset (e.g., "2025-08-25 04:00:00-04:00")
+        # Look for pattern like YYYY-MM-DD HH:MM:SS±HH:MM or YYYY-MM-DD HH:MM:SS±HH
+        import re
+        iso_tz_pattern = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}(:\d{2})?$')
+        if iso_tz_pattern.match(timestamp_str):
+            try:
+                return pd.to_datetime(timestamp_str).to_pydatetime()
+            except Exception:
+                logger.warning(f"Failed to parse ISO timezone format: {timestamp_str}")
+                # Fall through to general parsing
+
+        # UTC offset format already present (general case)
+        elif ("+" in timestamp_str or "-" in timestamp_str):
             try:
                 return pd.to_datetime(timestamp_str).to_pydatetime()
             except Exception:

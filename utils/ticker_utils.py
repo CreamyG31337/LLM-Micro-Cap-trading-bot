@@ -246,57 +246,165 @@ def validate_ticker_format(ticker: str) -> bool:
 
 
 def get_company_name(ticker: str) -> str:
-    """Get company name for ticker symbol with caching.
-    
+    """Get company name for ticker symbol with Canadian suffix support and caching.
+
     Order of resolution:
     1) Read from persisted name cache (PriceCache)
-    2) Fetch via yfinance and persist to cache
-    
+    2) Try different ticker variants (.TO, .V, no suffix) with yfinance
+    3) Persist successful lookups to cache
+
     Args:
         ticker: Ticker symbol
-        
+
     Returns:
         Company name or 'Unknown' if not found
     """
     if not ticker:
         return 'Unknown'
-    
+
     try:
         from market_data.price_cache import PriceCache
         pc = PriceCache()
         key = ticker.upper().strip()
+        
+        # Check if we have currency info that might indicate a different variant should be used
+        # If so, clear the cache to force a fresh lookup
+        try:
+            import pandas as pd
+            import glob
+            
+            # Load currency cache from portfolio files
+            portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+            currency_cache = {}
+            
+            for file_path in portfolio_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns and 'Currency' in df.columns:
+                        latest_entries = df.groupby('Ticker').last()
+                        for ticker, row in latest_entries.iterrows():
+                            currency_cache[ticker] = row['Currency']
+                except Exception:
+                    continue
+            
+            currency = currency_cache.get(key)
+            if currency == 'CAD' and not key.endswith(('.TO', '.V')):
+                # This is a Canadian ticker without suffix, clear cache to force fresh lookup
+                pc.clear_company_name_cache(key)
+                logger.debug(f"Cleared cache for Canadian ticker {key}")
+        except Exception:
+            pass
+        
         cached = pc.get_company_name(key)
         if cached:
             return cached
     except Exception:
         pc = None
         key = ticker.upper().strip()
-    
-    # Fallback to yfinance lookup
+
+    # Try different ticker variants for better coverage
     name = 'Unknown'
+    successful_ticker = key
+
+    # Use currency-based logic to determine which variants to try first
+    variants_to_try = []
+    
+    # Check if this is a Canadian ticker based on currency in portfolio data
+    is_likely_canadian = key.endswith(('.TO', '.V'))  # Already has Canadian suffix
+    
+    # If no suffix, check if we have currency info from portfolio
+    if not is_likely_canadian:
+        try:
+            import pandas as pd
+            import glob
+            
+            # Load currency cache from portfolio files
+            portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+            currency_cache = {}
+            
+            for file_path in portfolio_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns and 'Currency' in df.columns:
+                        latest_entries = df.groupby('Ticker').last()
+                        for ticker, row in latest_entries.iterrows():
+                            currency_cache[ticker] = row['Currency']
+                except Exception:
+                    continue
+            
+            currency = currency_cache.get(key)
+            if currency == 'CAD':
+                is_likely_canadian = True
+            elif currency == 'USD':
+                is_likely_canadian = False
+        except Exception:
+            pass
+
+    if any(key.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+        # Has suffix - try with suffix first, then without
+        variants_to_try = [key, key.rsplit('.', 1)[0]]
+    elif is_likely_canadian:
+        # Likely Canadian - try Canadian suffixes first
+        variants_to_try = [f"{key}.TO", f"{key}.V", key]
+    else:
+        # Likely US - try US first, then Canadian as fallback
+        variants_to_try = [key, f"{key}.TO", f"{key}.V"]
+
     try:
         import yfinance as yf
         import logging
-        
+
         # Suppress all yfinance logging and warnings
         logging.getLogger("yfinance").setLevel(logging.CRITICAL)
-        
-        stock = yf.Ticker(key)
-        info = stock.info
-        if info and info.get('longName'):
-            name = info.get('longName')
-        elif info and info.get('shortName'):
-            name = info.get('shortName')
-    except Exception:
-        # Silently handle API errors - don't show 404 errors to user
-        pass
-    
-    # Persist to cache if available
+
+        for variant in variants_to_try:
+            try:
+                stock = yf.Ticker(variant)
+                info = stock.info
+
+                # Check for valid company name
+                if info and (info.get('longName') or info.get('shortName')):
+                    candidate_name = info.get('longName') or info.get('shortName')
+                    country = info.get('country', '')
+
+                    # Make sure it's not just "N/A" or generic
+                    if (candidate_name and
+                        candidate_name != 'N/A' and
+                        candidate_name != 'Unknown' and
+                        len(candidate_name.strip()) > 3):  # Real names are longer than 3 chars
+
+                        name = candidate_name.strip()
+                        successful_ticker = variant
+                        logger.debug(f"Found company name for {key}: {name} (using {variant}, country: {country})")
+                        
+                        # If this is a Canadian variant and we're looking for a Canadian ticker, use it
+                        if is_likely_canadian and (variant.endswith('.TO') or variant.endswith('.V') or country == 'Canada'):
+                            logger.debug(f"Using Canadian variant for {key}: {name}")
+                            break
+                        # If this is a US variant and we're looking for a US ticker, use it
+                        elif not is_likely_canadian and not variant.endswith('.TO') and not variant.endswith('.V') and country != 'Canada':
+                            logger.debug(f"Using US variant for {key}: {name}")
+                            break
+                        # If this is the first valid name we found, use it as fallback
+                        elif name == 'Unknown':
+                            logger.debug(f"Using fallback variant for {key}: {name}")
+                            break
+
+            except Exception as e:
+                # Continue to next variant if this one fails
+                logger.debug(f"Failed to get info for {variant}: {e}")
+                continue
+
+    except Exception as e:
+        logger.debug(f"Error during company name lookup for {key}: {e}")
+
+    # Persist to cache if available and we found a name
     try:
         if name != 'Unknown' and pc is not None:
             pc.cache_company_name(key, name)
             pc.save_persistent_cache()
-    except Exception:
-        pass
-    
+            logger.debug(f"Cached company name for {key}: {name}")
+    except Exception as e:
+        logger.debug(f"Could not cache company name for {key}: {e}")
+
     return name

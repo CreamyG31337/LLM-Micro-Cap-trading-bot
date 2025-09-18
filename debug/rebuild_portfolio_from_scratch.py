@@ -118,130 +118,39 @@ from market_data.price_cache import PriceCache
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.market_hours import MarketHours
 from utils.market_holidays import MARKET_HOLIDAYS
-from utils.price_ticker_validator import PRICE_VALIDATOR
+# REMOVED: PRICE_VALIDATOR import - now using MarketDataFetcher's currency-based logic
 PRICE_CACHE = PriceCache()  # In-memory price cache to avoid redundant API calls
 FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)  # Fetcher uses the cache
 MARKET_HOURS = MarketHours()  # For weekend detection
 
-# Cache for ticker corrections to avoid repeated API calls
-TICKER_CORRECTION_CACHE = {}
+# REMOVED: TICKER_CORRECTION_CACHE - now using MarketDataFetcher's currency-based logic
 
-def _auto_correct_ticker_with_price(ticker: str, trade_price: float, trade_date: str, currency: str = "CAD") -> str:
-    """
-    Correct ticker symbols using price validation.
-    
-    This function uses the actual trade price to determine which ticker variant
-    (.TO, .V, no suffix) is correct by comparing market prices with trade prices.
-    
-    Args:
-        ticker: Stock ticker symbol to correct
-        trade_price: Actual price from trade execution
-        trade_date: Date of the trade
-        currency: Expected currency ('CAD' or 'USD')
-        
-    Returns:
-        Corrected ticker symbol with appropriate suffix
-    """
-    ticker = ticker.upper().strip()
-    
-    # Check cache first
-    cache_key = f"{ticker}_{trade_price}_{trade_date}_{currency}"
-    if cache_key in TICKER_CORRECTION_CACHE:
-        return TICKER_CORRECTION_CACHE[cache_key]
-    
-    # If already has a suffix, return as-is
-    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
-        TICKER_CORRECTION_CACHE[cache_key] = ticker
-        return ticker
-    
-    # Use price-based validation
-    corrected_ticker, is_valid = PRICE_VALIDATOR.validate_ticker_with_price(
-        ticker, trade_price, trade_date, currency
-    )
-    
-    # Cache the result
-    TICKER_CORRECTION_CACHE[cache_key] = corrected_ticker
-    return corrected_ticker
+# REMOVED: Old ticker correction functions - now using MarketDataFetcher's currency-based logic
 
-def _auto_correct_ticker_simple(ticker: str) -> str:
-    """
-    Simple ticker correction without price validation (for current price lookups).
-    
-    Args:
-        ticker: Stock ticker symbol to correct
-        
-    Returns:
-        Corrected ticker symbol with appropriate suffix
-    """
-    ticker = ticker.upper().strip()
-    
-    # Check cache first
-    if ticker in TICKER_CORRECTION_CACHE:
-        return TICKER_CORRECTION_CACHE[ticker]
-    
-    # If already has a suffix, return as-is
-    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
-        TICKER_CORRECTION_CACHE[ticker] = ticker
-        return ticker
-    
-    # Prioritize US ticker first, then Canadian (.TO), then Venture (.V)
-    # Prevents incorrect lookups like VTI.TO or ROBO.TO
-    variants_to_test = [ticker, f"{ticker}.TO", f"{ticker}.V"]
-    
-    for variant in variants_to_test:
-        try:
-            import yfinance as yf
-            import logging
-            logging.getLogger("yfinance").setLevel(logging.CRITICAL)
-            
-            stock = yf.Ticker(variant)
-            info = stock.info
-            
-            if info and info.get('symbol') and info.get('symbol') != 'N/A':
-                exchange = info.get('exchange', '')
-                name = info.get('longName', info.get('shortName', ''))
-                
-                if (exchange and exchange != 'N/A' and 
-                    name and name != 'N/A' and name != 'Unknown' and 
-                    len(name) > 3):
-                    TICKER_CORRECTION_CACHE[ticker] = variant
-                    return variant
-        except Exception:
-            continue
-    
-    # If no valid matches found, return original
-    TICKER_CORRECTION_CACHE[ticker] = ticker
-    return ticker
-
-def get_current_price(ticker: str) -> float:
+def get_current_price(ticker: str, trade_price: float = None, currency: str = "CAD") -> float:
     """
     Get current price for a ticker using the cached market data fetcher.
     
-    This function attempts to fetch the most recent available price for a ticker,
-    falling back to historical data if current data isn't available. It uses
-    the shared MarketDataFetcher with price caching for efficiency.
-    
+    This function uses the SAME logic as the main system to ensure consistency.
+    It relies on the MarketDataFetcher's currency-based logic.
+
     Args:
         ticker: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
-        
+        trade_price: Optional trade price for ticker validation (unused, kept for compatibility)
+        currency: Expected currency ('CAD' or 'USD')
+
     Returns:
         Current price as float, or 0.0 if no data available
-        
-    Note:
-        Uses a 5-day lookback window to find the most recent price data.
-        Returns 0.0 if no valid price data is found to prevent calculation errors.
     """
     try:
-        # Use price-based ticker correction for Canadian symbols
-        # For current price, we don't have trade context, so use simple validation
-        corrected_ticker = _auto_correct_ticker_simple(ticker)
-        
         end = pd.Timestamp.now()
         start = end - pd.Timedelta(days=5)
-        result = FETCHER.fetch_price_data(corrected_ticker, start, end)
-        df = result.df
-        if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
-            return float(df['Close'].iloc[-1])
+        
+        # Use the MarketDataFetcher directly - it handles currency-based logic
+        result = FETCHER.fetch_price_data(ticker, start, end)
+        
+        if result.df is not None and not result.df.empty and 'Close' in result.df.columns and result.source != "empty":
+            return float(result.df['Close'].iloc[-1])
     except Exception:
         pass
     return 0.0
@@ -282,12 +191,7 @@ def get_historical_close_price(ticker: str, date_str: str, trade_price: float = 
                 print(f"     Skipping {date_obj.strftime('%Y-%m-%d')} (weekend)")
             return 0.0
         
-        # Use price-based ticker correction if we have trade context and valid price
-        if trade_price is not None and trade_price > 0:
-            corrected_ticker = _auto_correct_ticker_with_price(ticker, trade_price, date_str, currency)
-        else:
-            corrected_ticker = _auto_correct_ticker_simple(ticker)
-        
+        # Use the MarketDataFetcher directly - it handles currency-based logic
         # Try multiple date ranges to find available data
         date_ranges = [
             (date_obj, date_obj + timedelta(days=1)),  # Exact day
@@ -297,7 +201,7 @@ def get_historical_close_price(ticker: str, date_str: str, trade_price: float = 
         ]
         
         for start_date, end_date in date_ranges:
-            result = FETCHER.fetch_price_data(corrected_ticker, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            result = FETCHER.fetch_price_data(ticker, pd.Timestamp(start_date), pd.Timestamp(end_date))
             df = result.df
             if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
                 # Find row matching the target date or closest available
@@ -602,13 +506,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     # Get trade context for price-based ticker validation
                     trade_price = float(position.get('last_price', 0))
                     trade_currency = position.get('last_currency', 'CAD')
-                    
-                    # Only use price validation if we have a valid trade price
+
+                    # Use price validation if we have valid trade context
                     if trade_price > 0:
                         if hold_date_obj_tz.date() == current_time.date():
                             # Today
                             if current_time.hour < market_close_hour:
-                                price_value = get_current_price(ticker)
+                                price_value = get_current_price(ticker, trade_price, trade_currency)
                             else:
                                 price_value = get_historical_close_price(ticker, date_str, trade_price, trade_currency)
                         else:
@@ -715,10 +619,45 @@ def get_company_name(ticker: str) -> str:
         return 'Unknown'
 
 def get_currency(ticker: str) -> str:
-    """Get currency for ticker"""
-    if '.TO' in ticker or '.V' in ticker:
-        return 'CAD'
-    return 'USD'
+    """
+    Get currency for ticker using the SAME logic as the main system.
+    
+    This function now uses the portfolio CSV currency data to determine
+    the correct currency, ensuring consistency with the main system.
+    """
+    try:
+        # Load currency cache from portfolio files (same as MarketDataFetcher)
+        import pandas as pd
+        import glob
+        
+        portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+        currency_cache = {}
+        
+        for file_path in portfolio_files:
+            try:
+                df = pd.read_csv(file_path)
+                if 'Ticker' in df.columns and 'Currency' in df.columns:
+                    latest_entries = df.groupby('Ticker').last()
+                    for ticker_name, row in latest_entries.iterrows():
+                        currency_cache[ticker_name] = row['Currency']
+            except Exception:
+                continue
+        
+        # Return cached currency or fallback to suffix-based logic
+        currency = currency_cache.get(ticker.upper().strip())
+        if currency:
+            return currency
+        
+        # Fallback to suffix-based logic for new tickers
+        if '.TO' in ticker or '.V' in ticker:
+            return 'CAD'
+        return 'USD'
+        
+    except Exception:
+        # Final fallback
+        if '.TO' in ticker or '.V' in ticker:
+            return 'CAD'
+        return 'USD'
 
 def main():
     """Main function to rebuild portfolio from scratch"""

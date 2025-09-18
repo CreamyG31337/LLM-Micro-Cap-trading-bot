@@ -51,10 +51,73 @@
   },
 
   "URNJ": {
-    "sector": "Energy", 
+    "sector": "Energy",
     "industry": "Junior Uranium ETF",
     "country": "Global",
     "description_note": "Global junior uranium miners ETF - smaller cap uranium exploration companies worldwide"
+  },
+
+  "ATRL": {
+    "sector": "Fixed Income",
+    "industry": "Canadian Bond ETF",
+    "country": "Canada",
+    "description_note": "Purpose Total Return Bond Fund - Canadian fixed income ETF tracking investment grade bonds"
+  },
+
+  "CGL": {
+    "sector": "Materials",
+    "industry": "Gold ETF",
+    "country": "Global",
+    "description_note": "iShares Gold Bullion ETF - provides exposure to physical gold bullion"
+  },
+
+  "VFV": {
+    "sector": "Large Cap",
+    "industry": "US Equity ETF",
+    "country": "USA",
+    "description_note": "Vanguard S&P 500 Index ETF (CAD-hedged) - tracks S&P 500 with currency hedging"
+  },
+
+  "XEQT": {
+    "sector": "Large Cap",
+    "industry": "Global Equity ETF",
+    "country": "Global",
+    "description_note": "iShares Core Equity ETF Portfolio - diversified global equity exposure"
+  },
+
+  "XGD": {
+    "sector": "Materials",
+    "industry": "Gold ETF",
+    "country": "Global",
+    "description_note": "iShares S&P/TSX Global Gold Index ETF - tracks global gold mining companies"
+  },
+
+  "XHAK": {
+    "sector": "Technology",
+    "industry": "Cybersecurity ETF",
+    "country": "Global",
+    "description_note": "iShares Cybersecurity and Tech ETF - exposure to cybersecurity and technology companies"
+  },
+
+  "XHC": {
+    "sector": "Healthcare",
+    "industry": "Healthcare ETF",
+    "country": "Global",
+    "description_note": "iShares Global Healthcare Index ETF - tracks global healthcare companies"
+  },
+
+  "XIC": {
+    "sector": "Large Cap",
+    "industry": "Canadian Equity ETF",
+    "country": "Canada",
+    "description_note": "iShares Core S&P/TSX Capped Composite Index ETF - tracks Canadian large cap stocks"
+  },
+
+  "ZEA": {
+    "sector": "Financials",
+    "industry": "Canadian Banks ETF",
+    "country": "Canada",
+    "description_note": "BMO S&P/TSX Equal Weight Banks Index ETF - equal-weighted Canadian bank stocks"
   },
 
   "_examples": {

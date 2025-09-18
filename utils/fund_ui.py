@@ -365,14 +365,326 @@ class FundUI:
         print(f"  Type: {fund_config.get('fund_type', 'N/A')}")
         print(f"  Currency: {fund_config.get('display_currency', 'N/A')}")
         
-        print_warning("Note: Fund editing is currently view-only. Full editing will be implemented in a future update.")
-        print_info("You can manually edit the fund_config.json file in the fund's directory if needed.")
+        # Edit options
+        while True:
+            print(f"\n{Colors.CYAN}Edit Options:{Colors.ENDC}")
+            print("  [1] Change Fund Name")
+            print("  [2] Change Description")
+            print("  [3] Change Fund Type")
+            print("  [4] Change Display Currency")
+            print("  [5] View All Settings")
+            print("  [0] Done Editing")
+            
+            edit_choice = input(f"\n{Colors.YELLOW}Select option (0-5): {Colors.ENDC}").strip()
+            
+            if edit_choice == "0":
+                break
+            elif edit_choice == "1":
+                self._edit_fund_name(selected_fund, config)
+            elif edit_choice == "2":
+                self._edit_fund_description(selected_fund, config)
+            elif edit_choice == "3":
+                self._edit_fund_type(selected_fund, config)
+            elif edit_choice == "4":
+                self._edit_fund_currency(selected_fund, config)
+            elif edit_choice == "5":
+                self._display_fund_settings(selected_fund, config)
+            else:
+                print_error("Invalid choice. Please select 0-5.")
+        
+        print_success(f"Fund '{selected_fund}' editing completed!")
+    
+    def _edit_fund_name(self, fund_name: str, config: Dict[str, Any]) -> None:
+        """Edit fund name."""
+        current_name = config["fund"].get("name", "")
+        print(f"\n{Colors.CYAN}Current name: {current_name}{Colors.ENDC}")
+        
+        new_name = input(f"{Colors.YELLOW}Enter new fund name: {Colors.ENDC}").strip()
+        
+        if not new_name:
+            print_error("Fund name cannot be empty.")
+            return
+        
+        if new_name == current_name:
+            print_info("Name unchanged.")
+            return
+        
+        # Check if name already exists
+        existing_funds = self.fund_manager.get_available_funds()
+        if new_name in existing_funds and new_name != fund_name:
+            print_error(f"Fund name '{new_name}' already exists.")
+            return
+        
+        # Update the config
+        config["fund"]["name"] = new_name
+        
+        # Save the updated config
+        if self._save_fund_config(fund_name, config):
+            print_success(f"Fund name updated to '{new_name}'")
+        else:
+            print_error("Failed to save fund configuration.")
+    
+    def _edit_fund_description(self, fund_name: str, config: Dict[str, Any]) -> None:
+        """Edit fund description."""
+        current_desc = config["fund"].get("description", "")
+        print(f"\n{Colors.CYAN}Current description: {current_desc}{Colors.ENDC}")
+        
+        new_desc = input(f"{Colors.YELLOW}Enter new description: {Colors.ENDC}").strip()
+        
+        if new_desc == current_desc:
+            print_info("Description unchanged.")
+            return
+        
+        # Update the config
+        config["fund"]["description"] = new_desc
+        
+        # Save the updated config
+        if self._save_fund_config(fund_name, config):
+            print_success(f"Fund description updated to '{new_desc}'")
+        else:
+            print_error("Failed to save fund configuration.")
+    
+    def _edit_fund_type(self, fund_name: str, config: Dict[str, Any]) -> None:
+        """Edit fund type."""
+        current_type = config["fund"].get("fund_type", "")
+        print(f"\n{Colors.CYAN}Current type: {current_type}{Colors.ENDC}")
+        
+        print(f"\n{Colors.CYAN}Available fund types:{Colors.ENDC}")
+        fund_types = [
+            ("1", "investment", "General Investment Fund"),
+            ("2", "tfsa", "Tax-Free Savings Account"),
+            ("3", "rrsp", "Registered Retirement Savings Plan"),
+            ("4", "custom", "Custom Type")
+        ]
+        
+        for key, ftype, description in fund_types:
+            print(f"  [{key}] {ftype} - {description}")
+        
+        while True:
+            type_choice = input(f"\n{Colors.YELLOW}Select fund type (1-4): {Colors.ENDC}").strip()
+            
+            if type_choice in ["1", "2", "3"]:
+                new_type = [t[1] for t in fund_types if t[0] == type_choice][0]
+                break
+            elif type_choice == "4":
+                new_type = input(f"{Colors.YELLOW}Enter custom fund type: {Colors.ENDC}").strip().lower()
+                if new_type:
+                    break
+                else:
+                    print_error("Custom type cannot be empty.")
+            else:
+                print_error("Invalid choice. Please select 1-4.")
+        
+        if new_type == current_type:
+            print_info("Type unchanged.")
+            return
+        
+        # Update the config
+        config["fund"]["fund_type"] = new_type
+        
+        # Update tax status based on fund type
+        if new_type == "tfsa":
+            config["fund"]["tax_status"] = "tax_free"
+        elif new_type == "rrsp":
+            config["fund"]["tax_status"] = "tax_deferred"
+        else:
+            config["fund"]["tax_status"] = "taxable"
+        
+        # Save the updated config
+        if self._save_fund_config(fund_name, config):
+            print_success(f"Fund type updated to '{new_type}'")
+        else:
+            print_error("Failed to save fund configuration.")
+    
+    def _edit_fund_currency(self, fund_name: str, config: Dict[str, Any]) -> None:
+        """Edit fund display currency."""
+        current_currency = config["fund"].get("display_currency", "")
+        print(f"\n{Colors.CYAN}Current currency: {current_currency}{Colors.ENDC}")
+        
+        print(f"\n{Colors.CYAN}Available currencies:{Colors.ENDC}")
+        currencies = [("1", "CAD"), ("2", "USD"), ("3", "Custom")]
+        
+        for key, curr in currencies:
+            print(f"  [{key}] {curr}")
+        
+        while True:
+            curr_choice = input(f"\n{Colors.YELLOW}Select currency (1-3): {Colors.ENDC}").strip()
+            
+            if curr_choice == "1":
+                new_currency = "CAD"
+                break
+            elif curr_choice == "2":
+                new_currency = "USD"
+                break
+            elif curr_choice == "3":
+                custom_curr = input(f"{Colors.YELLOW}Enter currency code (e.g., EUR): {Colors.ENDC}").strip().upper()
+                if custom_curr and len(custom_curr) == 3:
+                    new_currency = custom_curr
+                    break
+                else:
+                    print_error("Please enter a valid 3-letter currency code.")
+            else:
+                print_error("Invalid choice. Please select 1-3.")
+        
+        if new_currency == current_currency:
+            print_info("Currency unchanged.")
+            return
+        
+        # Update the config
+        config["fund"]["display_currency"] = new_currency
+        
+        # Save the updated config
+        if self._save_fund_config(fund_name, config):
+            print_success(f"Fund currency updated to '{new_currency}'")
+        else:
+            print_error("Failed to save fund configuration.")
+    
+    def _display_fund_settings(self, fund_name: str, config: Dict[str, Any]) -> None:
+        """Display all current fund settings."""
+        fund_config = config["fund"]
+        
+        print(f"\n{Colors.HEADER}Current settings for '{fund_name}':{Colors.ENDC}")
+        print(f"  Name: {fund_config.get('name', 'N/A')}")
+        print(f"  Description: {fund_config.get('description', 'N/A')}")
+        print(f"  Type: {fund_config.get('fund_type', 'N/A')}")
+        print(f"  Currency: {fund_config.get('display_currency', 'N/A')}")
+        print(f"  Tax Status: {fund_config.get('tax_status', 'N/A')}")
+        print(f"  Created: {fund_config.get('created_date', 'N/A')}")
+    
+    def _save_fund_config(self, fund_name: str, config: Dict[str, Any]) -> bool:
+        """Save fund configuration to file."""
+        try:
+            import json
+            from pathlib import Path
+            
+            fund_dir = self.fund_manager.funds_dir / fund_name
+            config_path = fund_dir / "fund_config.json"
+            
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            return True
+        except Exception as e:
+            print_error(f"Failed to save configuration: {e}")
+            return False
     
     def _import_fund_data(self) -> None:
         """Import data from external sources."""
         print_header("📁 Import Fund Data")
-        print_warning("Data import functionality is planned for a future update.")
-        print_info("Currently, you can manually copy CSV and JSON files to the fund's directory.")
+        
+        print("Available import options:")
+        print("  [1] Import Webull Trade Data")
+        print("  [2] Manual File Import")
+        print("  [0] Cancel")
+        
+        while True:
+            choice = input(f"\n{Colors.YELLOW}Select import option (0-2): {Colors.ENDC}").strip()
+            
+            if choice == "0":
+                print_info("Import cancelled.")
+                return
+            elif choice == "1":
+                self._import_webull_data()
+                break
+            elif choice == "2":
+                self._manual_file_import()
+                break
+            else:
+                print_error("Invalid choice. Please select 0-2.")
+    
+    def _import_webull_data(self) -> None:
+        """Import Webull trade data."""
+        print_header("📈 Import Webull Trade Data")
+        
+        # Get CSV file path
+        csv_path = input(f"{Colors.YELLOW}Enter path to Webull CSV file: {Colors.ENDC}").strip()
+        
+        if not csv_path:
+            print_error("CSV file path is required.")
+            return
+        
+        csv_file = Path(csv_path)
+        if not csv_file.exists():
+            print_error(f"File not found: {csv_file}")
+            return
+        
+        # Ask for preview first
+        preview_choice = input(f"\n{Colors.YELLOW}Preview import first? (y/N): {Colors.ENDC}").strip().lower()
+        preview_first = preview_choice == 'y'
+        
+        try:
+            from utils.webull_importer import import_webull_data
+            
+            if preview_first:
+                print_info("Running preview...")
+                results = import_webull_data(
+                    csv_file_path=str(csv_file),
+                    fund_name=self.fund_manager.get_active_fund(),
+                    dry_run=True
+                )
+                
+                if results["success"]:
+                    self._display_import_preview(results)
+                    
+                    proceed = input(f"\n{Colors.YELLOW}Proceed with import? (y/N): {Colors.ENDC}").strip().lower()
+                    if proceed != 'y':
+                        print_info("Import cancelled.")
+                        return
+                else:
+                    print_error(f"Preview failed: {results['message']}")
+                    return
+            
+            # Perform the actual import
+            print_info("Importing data...")
+            results = import_webull_data(
+                csv_file_path=str(csv_file),
+                fund_name=self.fund_manager.get_active_fund(),
+                dry_run=False
+            )
+            
+            if results["success"]:
+                print_success(f"✅ {results['message']}")
+                print_info(f"Trades processed: {results['trades_processed']}")
+                print_info(f"Trades imported: {results['trades_imported']}")
+                if results['trades_skipped'] > 0:
+                    print_warning(f"Trades skipped: {results['trades_skipped']}")
+            else:
+                print_error(f"❌ {results['message']}")
+                
+        except ImportError:
+            print_error("Webull importer not available. Please ensure utils.webull_importer is installed.")
+        except Exception as e:
+            print_error(f"Import failed: {e}")
+    
+    def _display_import_preview(self, results: dict) -> None:
+        """Display import preview results."""
+        print(f"\n{Colors.HEADER}Import Preview:{Colors.ENDC}")
+        print(f"  Trades to import: {results['trades_processed']}")
+        print(f"  Total value: ${results.get('total_value', 0):,.2f}")
+        
+        symbol_summary = results.get('symbol_summary', {})
+        if symbol_summary:
+            print(f"\n{Colors.CYAN}Symbol Summary:{Colors.ENDC}")
+            print(f"{'Symbol':<10} {'Buy':<8} {'Sell':<8} {'Net':<8} {'Value':<12}")
+            print("-" * 50)
+            
+            for symbol, data in symbol_summary.items():
+                net_qty = data['net_quantity']
+                value = data['total_value']
+                print(f"{symbol:<10} {data['Buy']:<8} {data['Sell']:<8} {net_qty:<8} ${value:<11,.2f}")
+    
+    def _manual_file_import(self) -> None:
+        """Manual file import instructions."""
+        print_header("📁 Manual File Import")
+        print_info("To manually import data:")
+        print("1. Copy your CSV/JSON files to the fund's directory:")
+        print(f"   {self.fund_manager.funds_dir / self.fund_manager.get_active_fund()}")
+        print("2. Ensure files follow the expected format:")
+        print("   - llm_portfolio_update.csv")
+        print("   - llm_trade_log.csv")
+        print("   - cash_balances.json")
+        print("   - exchange_rates.csv")
+        print("3. Restart the trading bot to load the new data")
         
         active_fund = self.fund_manager.get_active_fund()
         if active_fund:

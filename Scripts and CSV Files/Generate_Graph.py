@@ -7,6 +7,7 @@ import yfinance as yf
 from pathlib import Path
 import sys
 import argparse
+from decimal import Decimal
 sys.path.append(str(Path(__file__).parent.parent))
 from display.console_output import _safe_emoji
 

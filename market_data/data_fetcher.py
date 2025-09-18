@@ -14,6 +14,7 @@ The fetcher is designed to work with both current CSV storage and future databas
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any, Dict, Optional, cast
 
 import pandas as pd
@@ -710,3 +711,38 @@ class MarketDataFetcher:
         
         # Apply overrides before returning
         return self._apply_fundamentals_overrides(ticker_key, fundamentals)
+    
+    def get_current_price(self, ticker: str) -> Optional[Decimal]:
+        """
+        Get the current price for a ticker symbol.
+        
+        This method fetches the most recent price data and returns the latest close price.
+        It's a convenience method that wraps fetch_price_data for current price retrieval.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Current price as Decimal, or None if not available
+        """
+        try:
+            # Fetch recent data (last 5 days to ensure we get current data)
+            result = self.fetch_price_data(ticker, period="5d")
+            
+            if result.df.empty:
+                logger.warning(f"No price data available for {ticker}")
+                return None
+            
+            # Get the most recent close price
+            latest_close = result.df['Close'].iloc[-1]
+            
+            # Convert to Decimal for precision
+            if pd.isna(latest_close):
+                logger.warning(f"Latest close price is NaN for {ticker}")
+                return None
+                
+            return Decimal(str(latest_close)).quantize(Decimal('0.01'))
+            
+        except Exception as e:
+            logger.error(f"Error fetching current price for {ticker}: {e}")
+            return None

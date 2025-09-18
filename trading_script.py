@@ -70,7 +70,7 @@ from financial.currency_handler import CurrencyHandler
 from financial.pnl_calculator import PnLCalculator
 
 # Display and utilities
-from display.console_output import print_success, print_error, print_warning, print_info, print_header, print_environment_banner
+from display.console_output import print_success, print_error, print_warning, print_info, print_header, print_environment_banner, _safe_emoji
 from display.table_formatter import TableFormatter
 from display.terminal_utils import detect_terminal_width, check_table_display_issues
 
@@ -360,7 +360,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         InitializationError: If system initialization fails
     """
     try:
-        print_header("Trading System Initialization", "🚀")
+        print_header("Trading System Initialization", _safe_emoji("🚀"))
         
         # Configure system settings
         settings = configure_system(args.config)
@@ -431,7 +431,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         trading_interface: Trading interface for user actions
     """
     try:
-        print_header("Portfolio Management Workflow", "📊")
+        print_header("Portfolio Management Workflow", _safe_emoji("📊"))
         
         # Validate data integrity if requested
         if args.validate_only:
@@ -714,7 +714,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             try:
                 tz = market_hours.get_trading_timezone()
                 now = datetime.now(tz)
-                market_time_info = f"{now.strftime('%Y-%m-%d %H:%M:%S')} PDT | 🔴 MARKET CLOSED"
+                market_time_info = f"{now.strftime('%Y-%m-%d %H:%M:%S')} PDT | {_safe_emoji('🔴')} MARKET CLOSED"
             except Exception:
                 market_time_info = ""
         
@@ -731,20 +731,20 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 env = detect_environment(str(repository.data_dir))
                 
                 if env == 'DEVELOPMENT':
-                    env_indicator = f"🟡 {fund_name}"
+                    env_indicator = f"{_safe_emoji('🟡')} {fund_name}"
                 elif env == 'PRODUCTION':
-                    env_indicator = f"🏦 {fund_name}"
+                    env_indicator = f"{_safe_emoji('🏦')} {fund_name}"
                 else:
-                    env_indicator = f"❓ {fund_name}"
+                    env_indicator = f"{_safe_emoji('❓')} {fund_name}"
             else:
                 # Fallback to old logic if no fund info
                 env = detect_environment(str(repository.data_dir))
                 if env == 'DEVELOPMENT':
-                    env_indicator = "🟡 DEV"
+                    env_indicator = f"{_safe_emoji('🟡')} DEV"
                 elif env == 'PRODUCTION':
-                    env_indicator = "🟢 PROD"
+                    env_indicator = f"{_safe_emoji('🟢')} PROD"
                 else:
-                    env_indicator = "❓ UNKNOWN"
+                    env_indicator = f"{_safe_emoji('❓')} UNKNOWN"
         except Exception:
             env_indicator = ""
         
@@ -757,8 +757,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             logger.debug(f"Could not get experiment timeline: {e}")
         
         # Display portfolio table with market time, timeline, and environment in header
-        time_part = f"⏰ {market_time_info}" if market_time_info else ""
-        timeline_part = f"📅 {timeline_info}" if timeline_info else ""
+        time_part = f"{_safe_emoji('⏰')} {market_time_info}" if market_time_info else ""
+        timeline_part = f"{_safe_emoji('📅')} {timeline_info}" if timeline_info else ""
         env_part = f"{env_indicator}" if env_indicator else ""
         
         # Build header with all available information
@@ -860,7 +860,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             logger.warning(f"Could not save portfolio snapshot: {e}")
             print_warning(f"Could not save portfolio snapshot: {e}")
         
-        print_header(header_title, "📊")
+        print_header(header_title, _safe_emoji("📊"))
         table_formatter.create_portfolio_table(enhanced_positions)
         
         # Display additional tables
@@ -1062,13 +1062,12 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             trading_header_title = f"Trading Actions | {env_indicator}"
         else:
             trading_header_title = "Trading Actions"
-        print_header(trading_header_title, "💰")
+        print_header(trading_header_title, _safe_emoji("💰"))
         # Use fancy Unicode borders if supported, otherwise ASCII fallback
-        from display.console_output import _can_handle_unicode, _safe_emoji
+        from display.console_output import _can_handle_unicode
         from colorama import Fore, Style
         
         # Use safe emoji function for consistent Unicode handling
-        from display.console_output import _safe_emoji
 
         if _can_handle_unicode():
             # Define box width and create properly aligned menu

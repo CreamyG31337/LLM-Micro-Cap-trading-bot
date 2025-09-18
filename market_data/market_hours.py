@@ -15,6 +15,7 @@ import pandas as pd
 import pytz
 
 from config.settings import Settings
+from display.console_output import _safe_emoji
 
 logger = logging.getLogger(__name__)
 
@@ -323,9 +324,9 @@ class MarketHours:
             # Test if we can encode emojis
             "🟢".encode('utf-8')
             if self.is_market_open(now):
-                status = "🟢 MARKET OPEN"
+                status = f"{_safe_emoji('🟢')} MARKET OPEN"
             else:
-                status = "🔴 MARKET CLOSED"
+                status = f"{_safe_emoji('🔴')} MARKET CLOSED"
         except (UnicodeEncodeError, LookupError):
             # Fallback to plain text
             if self.is_market_open(now):

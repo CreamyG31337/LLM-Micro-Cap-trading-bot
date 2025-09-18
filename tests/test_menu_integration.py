@@ -23,7 +23,8 @@ class TestMenuIntegration:
     
     def setup_method(self):
         """Set up test environment."""
-        self.test_data_dir = Path("test_data")
+        # Use the TEST fund directory for testing
+        self.test_data_dir = Path("trading_data/funds/TEST")
         self.project_root = Path(__file__).parent.parent
     
     def test_main_trading_script_imports(self):
@@ -106,7 +107,7 @@ class TestMenuIntegration:
         try:
             # Use echo to provide 'q' input to quit immediately
             if sys.platform == "win32":
-                echo_cmd = ["echo", "q"]
+                echo_cmd = ["cmd", "/c", "echo", "q"]
             else:
                 echo_cmd = ["echo", "q"]
             
@@ -206,7 +207,7 @@ class TestTradingInterfaceIntegration:
     
     def setup_method(self):
         """Set up test environment."""
-        self.test_data_dir = Path("test_data")
+        self.test_data_dir = Path("trading_data/funds/TEST")
         
         # Import required modules
         from data.repositories.csv_repository import CSVRepository
@@ -226,7 +227,7 @@ class TestTradingInterfaceIntegration:
     def test_contribution_logging_with_mock_input(self):
         """Test contribution logging with mocked user input."""
         with patch('builtins.input') as mock_input:
-            mock_input.side_effect = ["Test User", "100.50"]
+            mock_input.side_effect = ["1", "100.50"]
             
             result = self.trading_interface.log_contribution()
             assert result is True
@@ -238,7 +239,7 @@ class TestTradingInterfaceIntegration:
     def test_cash_balance_update_with_mock_input(self):
         """Test cash balance update with mocked user input."""
         with patch('builtins.input') as mock_input:
-            mock_input.side_effect = ["CAD", "500.00"]
+            mock_input.side_effect = ["a", "500.00", "Test deposit"]
             
             result = self.trading_interface.update_cash_balances()
             assert result is True
@@ -253,7 +254,7 @@ class TestModularComponentIntegration:
     
     def setup_method(self):
         """Set up test environment."""
-        self.test_data_dir = Path("test_data")
+        self.test_data_dir = Path("trading_data/funds/TEST")
     
     def test_portfolio_manager_with_repository(self):
         """Test portfolio manager integration with repository."""

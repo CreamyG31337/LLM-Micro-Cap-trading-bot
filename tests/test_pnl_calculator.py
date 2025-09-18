@@ -29,20 +29,20 @@ class TestPnLCalculator(unittest.TestCase):
         
         # Sample position data for testing
         self.sample_position = {
-            'current_price': 15.00,
-            'buy_price': 10.00,
-            'shares': 100
+            'current_price': Decimal('15.00'),
+            'buy_price': Decimal('10.00'),
+            'shares': Decimal('100')
         }
         
         self.sample_positions = [
-            {'current_price': 15.00, 'buy_price': 10.00, 'shares': 100, 'ticker': 'AAPL'},
-            {'current_price': 25.00, 'buy_price': 20.00, 'shares': 50, 'ticker': 'GOOGL'},
-            {'current_price': 8.00, 'buy_price': 12.00, 'shares': 200, 'ticker': 'TSLA'}
+            {'current_price': Decimal('15.00'), 'buy_price': Decimal('10.00'), 'shares': Decimal('100'), 'ticker': 'AAPL'},
+            {'current_price': Decimal('25.00'), 'buy_price': Decimal('20.00'), 'shares': Decimal('50'), 'ticker': 'GOOGL'},
+            {'current_price': Decimal('8.00'), 'buy_price': Decimal('12.00'), 'shares': Decimal('200'), 'ticker': 'TSLA'}
         ]
     
     def test_calculate_position_pnl(self):
         """Test position P&L calculation."""
-        result = self.calculator.calculate_position_pnl(15.00, 10.00, 100)
+        result = self.calculator.calculate_position_pnl(Decimal('15.00'), Decimal('10.00'), Decimal('100'))
         
         # Check absolute P&L: (15 - 10) * 100 = 500
         self.assertEqual(result['absolute_pnl'], Decimal('500.00'))
@@ -58,7 +58,7 @@ class TestPnLCalculator(unittest.TestCase):
     
     def test_calculate_position_pnl_loss(self):
         """Test position P&L calculation for a losing position."""
-        result = self.calculator.calculate_position_pnl(8.00, 12.00, 200)
+        result = self.calculator.calculate_position_pnl(Decimal('8.00'), Decimal('12.00'), Decimal('200'))
         
         # Check absolute P&L: (8 - 12) * 200 = -800
         self.assertEqual(result['absolute_pnl'], Decimal('-800.00'))
@@ -68,7 +68,7 @@ class TestPnLCalculator(unittest.TestCase):
     
     def test_calculate_daily_pnl(self):
         """Test daily P&L calculation."""
-        result = self.calculator.calculate_daily_pnl(15.00, 14.00, 100)
+        result = self.calculator.calculate_daily_pnl(Decimal('15.00'), Decimal('14.00'), Decimal('100'))
         
         # Check daily absolute P&L: (15 - 14) * 100 = 100
         self.assertEqual(result['daily_absolute_pnl'], Decimal('100.00'))
@@ -78,7 +78,7 @@ class TestPnLCalculator(unittest.TestCase):
     
     def test_calculate_period_pnl(self):
         """Test period P&L calculation."""
-        result = self.calculator.calculate_period_pnl(15.00, 12.00, 100, "five_day")
+        result = self.calculator.calculate_period_pnl(Decimal('15.00'), Decimal('12.00'), Decimal('100'), "five_day")
         
         # Check period absolute P&L: (15 - 12) * 100 = 300
         self.assertEqual(result['five_day_absolute_pnl'], Decimal('300.00'))
@@ -175,17 +175,17 @@ class TestPnLCalculator(unittest.TestCase):
     def test_invalid_position_handling(self):
         """Test handling of invalid position data."""
         invalid_positions = [
-            {'current_price': 15.00, 'buy_price': 10.00},  # Missing shares
-            {'current_price': 15.00, 'shares': 100},       # Missing buy_price
-            {'buy_price': 10.00, 'shares': 100},           # Missing current_price
-            {'current_price': 15.00, 'buy_price': 10.00, 'shares': -100},  # Negative shares
+            {'current_price': Decimal('15.00'), 'buy_price': Decimal('10.00')},  # Missing shares
+            {'current_price': Decimal('15.00'), 'shares': Decimal('100')},       # Missing buy_price
+            {'buy_price': Decimal('10.00'), 'shares': Decimal('100')},           # Missing current_price
+            {'current_price': Decimal('15.00'), 'buy_price': Decimal('10.00'), 'shares': Decimal('-100')},  # Negative shares
         ]
         
         for invalid_pos in invalid_positions:
             self.assertFalse(self.calculator._is_valid_position(invalid_pos))
         
         # Test valid position
-        valid_position = {'current_price': 15.00, 'buy_price': 10.00, 'shares': 100}
+        valid_position = {'current_price': Decimal('15.00'), 'buy_price': Decimal('10.00'), 'shares': Decimal('100')}
         self.assertTrue(self.calculator._is_valid_position(valid_position))
 
 
@@ -195,8 +195,8 @@ class TestConvenienceFunctions(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.sample_positions = [
-            {'current_price': 15.00, 'buy_price': 10.00, 'shares': 100, 'ticker': 'AAPL'},
-            {'current_price': 25.00, 'buy_price': 20.00, 'shares': 50, 'ticker': 'GOOGL'}
+            {'current_price': Decimal('15.00'), 'buy_price': Decimal('10.00'), 'shares': Decimal('100'), 'ticker': 'AAPL'},
+            {'current_price': Decimal('25.00'), 'buy_price': Decimal('20.00'), 'shares': Decimal('50'), 'ticker': 'GOOGL'}
         ]
     
     def test_calculate_portfolio_cost_basis(self):
@@ -215,7 +215,7 @@ class TestConvenienceFunctions(unittest.TestCase):
     
     def test_calculate_daily_portfolio_pnl(self):
         """Test daily portfolio P&L convenience function."""
-        previous_prices = {'AAPL': 14.00, 'GOOGL': 24.00}
+        previous_prices = {'AAPL': Decimal('14.00'), 'GOOGL': Decimal('24.00')}
         
         result = calculate_daily_portfolio_pnl(self.sample_positions, previous_prices)
         

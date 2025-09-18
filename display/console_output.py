@@ -45,6 +45,49 @@ def _can_handle_unicode() -> bool:
 _FORCE_FALLBACK = False  # Allow Rich display by default
 _FORCE_COLORAMA_ONLY = os.environ.get("FORCE_COLORAMA_ONLY", "").lower() in ("true", "1", "yes", "on")
 
+
+def _safe_emoji(emoji: str) -> str:
+    """Return emoji if supported, otherwise return a safe alternative."""
+    try:
+        # Test if we can encode the emoji
+        emoji.encode(sys.stdout.encoding or 'utf-8')
+        return emoji
+    except (UnicodeEncodeError, LookupError):
+        # Return safe alternatives for common emojis
+        emoji_map = {
+            "🔥": "*",
+            "🚀": ">>",
+            "💼": "[P]",
+            "⚡": "!",
+            "📊": "[S]",
+            "💰": "$",
+            "🛒": "[B]",
+            "📤": "[S]",
+            "💵": "$",
+            "💸": "-$",
+            "🔄": "~",
+            "🔗": "&",
+            "💾": "[B]",
+            "❌": "X",
+            "📋": "[L]",
+            "🔷": "◆",
+            "✅": "OK",
+            "⚠️": "!",
+            "ℹ️": "i",
+            "🤖": "[AI]",
+            "➤": "->",
+            "🎯": "[T]",
+            "🏢": "[C]",
+            "📅": "[D]",
+            "📈": "[^]",
+            "🍕": "[W]",
+            "🛑": "[!]",
+            "💹": "[P]",
+            "👥": "[O]",
+            "🏦": "[E]"
+        }
+        return emoji_map.get(emoji, "*")
+
 # Color and formatting imports with fallback handling
 try:
     from colorama import init, Fore, Back, Style
@@ -99,7 +142,7 @@ def set_force_fallback(force_fallback: bool = True, colorama_only: bool = False)
             Fore = Back = Style = DummyColor()
 
 
-def print_success(message: str, emoji: str = "✅") -> None:
+def print_success(message: str, emoji: str = _safe_emoji("✅")) -> None:
     """Print a success message with green color and emoji.
     
     Args:
@@ -116,7 +159,7 @@ def print_success(message: str, emoji: str = "✅") -> None:
         print(f"{Fore.GREEN}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
-def print_error(message: str, emoji: str = "❌") -> None:
+def print_error(message: str, emoji: str = _safe_emoji("❌")) -> None:
     """Print an error message with red color and emoji.
     
     Args:
@@ -133,7 +176,7 @@ def print_error(message: str, emoji: str = "❌") -> None:
         print(f"{Fore.RED}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
-def print_warning(message: str, emoji: str = "⚠️") -> None:
+def print_warning(message: str, emoji: str = _safe_emoji("⚠️")) -> None:
     """Print a warning message with yellow color and emoji.
     
     Args:
@@ -167,47 +210,6 @@ def print_info(message: str, emoji: str = "ℹ️") -> None:
         print(f"{Fore.BLUE}{safe_emoji} {message}{Style.RESET_ALL}")
 
 
-def _safe_emoji(emoji: str) -> str:
-    """Return emoji if supported, otherwise return a safe alternative."""
-    try:
-        # Test if we can encode the emoji
-        emoji.encode(sys.stdout.encoding or 'utf-8')
-        return emoji
-    except (UnicodeEncodeError, LookupError):
-        # Return safe alternatives for common emojis
-        emoji_map = {
-            "🔥": "*",
-            "🚀": ">>",
-            "💼": "[P]",
-            "⚡": "!",
-            "📊": "[S]",
-            "💰": "$",
-            "🛒": "[B]",
-            "📤": "[S]",
-            "💵": "$",
-            "💸": "-$",
-            "🔄": "~",
-            "🔗": "&",
-            "💾": "[B]",
-            "❌": "X",
-            "📋": "[L]",
-            "🔷": "◆",
-            "✅": "OK",
-            "⚠️": "!",
-            "ℹ️": "i",
-            "🤖": "[AI]",
-            "➤": "->",
-            "🎯": "[T]",
-            "🏢": "[C]",
-            "📅": "[D]",
-            "📈": "[^]",
-            "🍕": "[W]",
-            "🛑": "[!]",
-            "💹": "[P]",
-            "👥": "[O]",
-            "🏦": "[E]"
-        }
-        return emoji_map.get(emoji, "*")
 
 
 def format_text_for_console(text: str) -> str:
@@ -485,11 +487,11 @@ def get_environment_banner(data_dir: Optional[str] = None) -> str:
     env = detect_environment(data_dir)
     
     if env == 'DEVELOPMENT':
-        return "🔧 DEVELOPMENT ENVIRONMENT 🔧"
+        return f"{_safe_emoji('🔧')} DEVELOPMENT ENVIRONMENT {_safe_emoji('🔧')}"
     elif env == 'PRODUCTION':
-        return "🚨 PRODUCTION ENVIRONMENT 🚨"
+        return f"{_safe_emoji('🚨')} PRODUCTION ENVIRONMENT {_safe_emoji('🚨')}"
     else:
-        return "❓ UNKNOWN ENVIRONMENT ❓"
+        return f"{_safe_emoji('❓')} UNKNOWN ENVIRONMENT {_safe_emoji('❓')}"
 
 
 def print_environment_banner(data_dir: Optional[str] = None) -> None:
@@ -530,27 +532,27 @@ def print_environment_banner(data_dir: Optional[str] = None) -> None:
     if env == 'DEVELOPMENT':
         print_warning(f"\n{'=' * 60}")
         print_warning(f"  {banner}")
-        print_warning(f"  🏦 Fund: {fund_name}")
+        print_warning(f"  {_safe_emoji('🏦')} Fund: {fund_name}")
         if fund_type:
-            print_warning(f"  📋 Type: {fund_type.upper()}")
-        print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
-        print_warning(f"  ⚠️  Safe to modify - This is test data")
+            print_warning(f"  {_safe_emoji('📋')} Type: {fund_type.upper()}")
+        print_warning(f"  {_safe_emoji('📁')} Data Directory: {data_dir or 'Not specified'}")
+        print_warning(f"  {_safe_emoji('⚠️')}  Safe to modify - This is test data")
         print_warning(f"{'=' * 60}\n")
     elif env == 'PRODUCTION':
         print_error(f"\n{'=' * 60}")
         print_error(f"  {banner}")
-        print_error(f"  🏦 Fund: {fund_name}")
+        print_error(f"  {_safe_emoji('🏦')} Fund: {fund_name}")
         if fund_type:
-            print_error(f"  📋 Type: {fund_type.upper()}")
-        print_error(f"  📁 Data Directory: {data_dir or 'Not specified'}")
-        print_error(f"  ⚠️  CAUTION: This is LIVE PRODUCTION DATA")
+            print_error(f"  {_safe_emoji('📋')} Type: {fund_type.upper()}")
+        print_error(f"  {_safe_emoji('📁')} Data Directory: {data_dir or 'Not specified'}")
+        print_error(f"  {_safe_emoji('⚠️')}  CAUTION: This is LIVE PRODUCTION DATA")
         print_error(f"{'=' * 60}\n")
     else:
         print_warning(f"\n{'=' * 60}")
         print_warning(f"  {banner}")
-        print_warning(f"  🏦 Fund: {fund_name}")
+        print_warning(f"  {_safe_emoji('🏦')} Fund: {fund_name}")
         if fund_type:
-            print_warning(f"  📋 Type: {fund_type.upper()}")
-        print_warning(f"  📁 Data Directory: {data_dir or 'Not specified'}")
-        print_warning(f"  ⚠️  Environment could not be determined")
+            print_warning(f"  {_safe_emoji('📋')} Type: {fund_type.upper()}")
+        print_warning(f"  {_safe_emoji('📁')} Data Directory: {data_dir or 'Not specified'}")
+        print_warning(f"  {_safe_emoji('⚠️')}  Environment could not be determined")
         print_warning(f"{'=' * 60}\n")

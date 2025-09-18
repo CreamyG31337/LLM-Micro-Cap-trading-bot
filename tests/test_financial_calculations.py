@@ -70,33 +70,33 @@ class TestCalculateCostBasis(unittest.TestCase):
     
     def test_basic_calculation(self):
         """Test basic cost basis calculation."""
-        self.assertEqual(calculate_cost_basis(10.50, 100), Decimal('1050.00'))
-        self.assertEqual(calculate_cost_basis(15.75, 50), Decimal('787.50'))
-        self.assertEqual(calculate_cost_basis(0.99, 1000), Decimal('990.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('10.50'), Decimal('100')), Decimal('1050.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('15.75'), Decimal('50')), Decimal('787.50'))
+        self.assertEqual(calculate_cost_basis(Decimal('0.99'), Decimal('1000')), Decimal('990.00'))
     
     def test_decimal_precision(self):
         """Test precision with decimal inputs."""
         # 15.333 rounds to 15.33, so 15.33 * 50 = 766.50
-        self.assertEqual(calculate_cost_basis(15.333, 50), Decimal('766.50'))
+        self.assertEqual(calculate_cost_basis(Decimal('15.333'), Decimal('50')), Decimal('766.50'))
         # 10.999 rounds to 11.00, so 11.00 * 100 = 1100.00
-        self.assertEqual(calculate_cost_basis(10.999, 100), Decimal('1100.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('10.999'), Decimal('100')), Decimal('1100.00'))
     
     def test_fractional_shares(self):
         """Test with fractional shares."""
-        self.assertEqual(calculate_cost_basis(10.00, 50.5), Decimal('505.00'))
-        self.assertEqual(calculate_cost_basis(15.75, 33.333), Decimal('524.99'))
+        self.assertEqual(calculate_cost_basis(Decimal('10.00'), Decimal('50.5')), Decimal('505.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('15.75'), Decimal('33.333')), Decimal('524.99'))
     
     def test_zero_values(self):
         """Test edge cases with zero values."""
-        self.assertEqual(calculate_cost_basis(0, 100), Decimal('0.00'))
-        self.assertEqual(calculate_cost_basis(10.50, 0), Decimal('0.00'))
-        self.assertEqual(calculate_cost_basis(0, 0), Decimal('0.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('0'), Decimal('100')), Decimal('0.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('10.50'), Decimal('0')), Decimal('0.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('0'), Decimal('0')), Decimal('0.00'))
     
     def test_mixed_input_types(self):
         """Test with mixed input types."""
-        self.assertEqual(calculate_cost_basis("10.50", 100), Decimal('1050.00'))
-        self.assertEqual(calculate_cost_basis(10.50, "100"), Decimal('1050.00'))
-        self.assertEqual(calculate_cost_basis(Decimal('10.50'), 100), Decimal('1050.00'))
+        self.assertEqual(calculate_cost_basis("10.50", "100"), Decimal('1050.00'))
+        self.assertEqual(calculate_cost_basis("10.50", "100"), Decimal('1050.00'))
+        self.assertEqual(calculate_cost_basis(Decimal('10.50'), Decimal('100')), Decimal('1050.00'))
 
 
 class TestCalculatePositionValue(unittest.TestCase):
@@ -104,13 +104,13 @@ class TestCalculatePositionValue(unittest.TestCase):
     
     def test_basic_calculation(self):
         """Test basic position value calculation."""
-        self.assertEqual(calculate_position_value(12.75, 100), Decimal('1275.00'))
+        self.assertEqual(calculate_position_value(Decimal('12.75'), Decimal('100')), Decimal('1275.00'))
         # 8.999 rounds to 9.00, so 9.00 * 200 = 1800.00
-        self.assertEqual(calculate_position_value(8.999, 200), Decimal('1800.00'))
+        self.assertEqual(calculate_position_value(Decimal('8.999'), Decimal('200')), Decimal('1800.00'))
     
     def test_identical_to_cost_basis(self):
         """Test that position value calculation is identical to cost basis."""
-        price, shares = 15.75, 100
+        price, shares = Decimal('15.75'), Decimal('100')
         self.assertEqual(
             calculate_position_value(price, shares),
             calculate_cost_basis(price, shares)
@@ -122,29 +122,29 @@ class TestCalculatePnL(unittest.TestCase):
     
     def test_positive_pnl(self):
         """Test positive P&L calculation."""
-        self.assertEqual(calculate_pnl(15.00, 10.00, 100), Decimal('500.00'))
-        self.assertEqual(calculate_pnl(12.50, 10.00, 50), Decimal('125.00'))
+        self.assertEqual(calculate_pnl(Decimal('15.00'), Decimal('10.00'), Decimal('100')), Decimal('500.00'))
+        self.assertEqual(calculate_pnl(Decimal('12.50'), Decimal('10.00'), Decimal('50')), Decimal('125.00'))
     
     def test_negative_pnl(self):
         """Test negative P&L calculation."""
-        self.assertEqual(calculate_pnl(8.50, 10.00, 100), Decimal('-150.00'))
-        self.assertEqual(calculate_pnl(9.00, 12.00, 50), Decimal('-150.00'))
+        self.assertEqual(calculate_pnl(Decimal('8.50'), Decimal('10.00'), Decimal('100')), Decimal('-150.00'))
+        self.assertEqual(calculate_pnl(Decimal('9.00'), Decimal('12.00'), Decimal('50')), Decimal('-150.00'))
     
     def test_zero_pnl(self):
         """Test zero P&L (no change in price)."""
-        self.assertEqual(calculate_pnl(10.00, 10.00, 100), Decimal('0.00'))
-        self.assertEqual(calculate_pnl(15.75, 15.75, 200), Decimal('0.00'))
+        self.assertEqual(calculate_pnl(Decimal('10.00'), Decimal('10.00'), Decimal('100')), Decimal('0.00'))
+        self.assertEqual(calculate_pnl(Decimal('15.75'), Decimal('15.75'), Decimal('200')), Decimal('0.00'))
     
     def test_fractional_shares(self):
         """Test P&L with fractional shares."""
-        self.assertEqual(calculate_pnl(11.00, 10.00, 50.5), Decimal('50.50'))
-        self.assertEqual(calculate_pnl(9.00, 10.00, 33.333), Decimal('-33.33'))
+        self.assertEqual(calculate_pnl(Decimal('11.00'), Decimal('10.00'), Decimal('50.5')), Decimal('50.50'))
+        self.assertEqual(calculate_pnl(Decimal('9.00'), Decimal('10.00'), Decimal('33.333')), Decimal('-33.33'))
     
     def test_precision_with_small_differences(self):
         """Test precision with small price differences."""
-        self.assertEqual(calculate_pnl(10.01, 10.00, 1000), Decimal('10.00'))
+        self.assertEqual(calculate_pnl(Decimal('10.01'), Decimal('10.00'), Decimal('1000')), Decimal('10.00'))
         # 9.999 rounds to 10.00, so (10.00 - 10.00) * 1000 = 0.00
-        self.assertEqual(calculate_pnl(9.999, 10.000, 1000), Decimal('0.00'))
+        self.assertEqual(calculate_pnl(Decimal('9.999'), Decimal('10.000'), Decimal('1000')), Decimal('0.00'))
 
 
 class TestRoundMoney(unittest.TestCase):
@@ -225,51 +225,51 @@ class TestCalculateWeightedAveragePrice(unittest.TestCase):
     
     def test_basic_calculation(self):
         """Test basic weighted average calculation."""
-        prices = [10.00, 12.00]
-        quantities = [100, 50]
+        prices = [Decimal('10.00'), Decimal('12.00')]
+        quantities = [Decimal('100'), Decimal('50')]
         expected = Decimal('10.67')  # (10*100 + 12*50) / (100+50) = 1600/150 = 10.67
         self.assertEqual(calculate_weighted_average_price(prices, quantities), expected)
     
     def test_equal_weights(self):
         """Test with equal quantities (simple average)."""
-        prices = [10.00, 20.00]
-        quantities = [100, 100]
+        prices = [Decimal('10.00'), Decimal('20.00')]
+        quantities = [Decimal('100'), Decimal('100')]
         expected = Decimal('15.00')
         self.assertEqual(calculate_weighted_average_price(prices, quantities), expected)
     
     def test_single_price(self):
         """Test with single price and quantity."""
-        prices = [15.75]
-        quantities = [100]
+        prices = [Decimal('15.75')]
+        quantities = [Decimal('100')]
         expected = Decimal('15.75')
         self.assertEqual(calculate_weighted_average_price(prices, quantities), expected)
     
     def test_multiple_prices(self):
         """Test with multiple prices and quantities."""
-        prices = [10.00, 15.00, 20.00]
-        quantities = [100, 200, 50]
+        prices = [Decimal('10.00'), Decimal('15.00'), Decimal('20.00')]
+        quantities = [Decimal('100'), Decimal('200'), Decimal('50')]
         # (10*100 + 15*200 + 20*50) / (100+200+50) = 5000/350 = 14.29
         expected = Decimal('14.29')
         self.assertEqual(calculate_weighted_average_price(prices, quantities), expected)
     
     def test_mismatched_lengths(self):
         """Test error handling for mismatched list lengths."""
-        prices = [10.00, 12.00]
-        quantities = [100]
+        prices = [Decimal('10.00'), Decimal('12.00')]
+        quantities = [Decimal('100')]
         with self.assertRaises(ValueError):
             calculate_weighted_average_price(prices, quantities)
     
     def test_zero_total_quantity(self):
         """Test error handling for zero total quantity."""
-        prices = [10.00, 12.00]
-        quantities = [0, 0]
+        prices = [Decimal('10.00'), Decimal('12.00')]
+        quantities = [Decimal('0'), Decimal('0')]
         with self.assertRaises(ZeroDivisionError):
             calculate_weighted_average_price(prices, quantities)
     
     def test_mixed_input_types(self):
         """Test with mixed input types."""
-        prices = ["10.00", 12.00, Decimal('15.00')]
-        quantities = [100, "50", Decimal('25')]
+        prices = ["10.00", "12.00", Decimal('15.00')]
+        quantities = ["100", "50", Decimal('25')]
         # (10*100 + 12*50 + 15*25) / (100+50+25) = 1975/175 = 11.29
         expected = Decimal('11.29')
         self.assertEqual(calculate_weighted_average_price(prices, quantities), expected)
@@ -280,15 +280,15 @@ class TestPrecisionAndEdgeCases(unittest.TestCase):
     
     def test_very_large_numbers(self):
         """Test with very large monetary values."""
-        large_value = 999999999.99
+        large_value = Decimal('999999999.99')
         self.assertEqual(money_to_decimal(large_value), Decimal('999999999.99'))
-        self.assertEqual(calculate_cost_basis(large_value, 1), Decimal('999999999.99'))
+        self.assertEqual(calculate_cost_basis(large_value, Decimal('1')), Decimal('999999999.99'))
     
     def test_very_small_numbers(self):
         """Test with very small monetary values."""
-        small_value = 0.01
+        small_value = Decimal('0.01')
         self.assertEqual(money_to_decimal(small_value), Decimal('0.01'))
-        self.assertEqual(calculate_cost_basis(small_value, 1), Decimal('0.01'))
+        self.assertEqual(calculate_cost_basis(small_value, Decimal('1')), Decimal('0.01'))
     
     def test_floating_point_precision_issues(self):
         """Test handling of common floating-point precision issues."""
@@ -300,9 +300,9 @@ class TestPrecisionAndEdgeCases(unittest.TestCase):
     def test_chain_calculations_precision(self):
         """Test that chained calculations maintain precision."""
         # Buy 100 shares at $10.33, then sell 50 at $12.67
-        cost_basis = calculate_cost_basis(10.33, 100)
-        remaining_cost = calculate_cost_basis(10.33, 50)
-        sale_proceeds = calculate_position_value(12.67, 50)
+        cost_basis = calculate_cost_basis(Decimal('10.33'), Decimal('100'))
+        remaining_cost = calculate_cost_basis(Decimal('10.33'), Decimal('50'))
+        sale_proceeds = calculate_position_value(Decimal('12.67'), Decimal('50'))
         realized_pnl = sale_proceeds - remaining_cost
         
         self.assertEqual(cost_basis, Decimal('1033.00'))

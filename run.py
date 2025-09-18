@@ -131,7 +131,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(data_dir_path)]),
         
-        ("3", "📊 Generate Performance Graph", 
+        ("3", f"{_safe_emoji('📊')} Generate Performance Graph", 
          f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(data_dir_path)]),
         
@@ -139,7 +139,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Process portfolio using the Scripts and CSV Files folder", 
          []),
         
-        ("5", "📊 Generate Graph (Scripts folder)", 
+        ("5", f"{_safe_emoji('📊')} Generate Graph (Scripts folder)", 
          "Generate performance graph using Scripts and CSV Files folder", 
          []),
         
@@ -207,13 +207,13 @@ def show_menu() -> None:
         from utils.fund_ui import get_current_fund_info
         fund_info = get_current_fund_info()
         if fund_info["exists"]:
-            print_colored(f"📊 Active Fund: {fund_info['name']}", Colors.GREEN + Colors.BOLD)
+            print_colored(f"{_safe_emoji('📊')} Active Fund: {fund_info['name']}", Colors.GREEN + Colors.BOLD)
         else:
-            print_colored("📊 Active Fund: No Active Fund", Colors.YELLOW + Colors.BOLD)
+            print_colored(f"{_safe_emoji('📊')} Active Fund: No Active Fund", Colors.YELLOW + Colors.BOLD)
         print_colored("-" * 80, Colors.HEADER)
     except ImportError:
         # Fund management not available, show fallback
-        print_colored("📊 Active Fund: Fund Management Not Available", Colors.YELLOW + Colors.BOLD)
+        print_colored(f"{_safe_emoji('📊')} Active Fund: Fund Management Not Available", Colors.YELLOW + Colors.BOLD)
         print_colored("-" * 80, Colors.HEADER)
     
     options = get_menu_options()
@@ -226,15 +226,15 @@ def show_menu() -> None:
 
 def handle_benchmark_selection() -> str:
     """Handle benchmark selection submenu"""
-    print_colored("\n📊 BENCHMARK SELECTION", Colors.HEADER + Colors.BOLD)
+    print_colored(f"\n{_safe_emoji('📊')} BENCHMARK SELECTION", Colors.HEADER + Colors.BOLD)
     print_colored("=" * 40, Colors.HEADER)
     
     benchmark_options = [
         ("1", "📈 QQQ (Nasdaq-100)", "Technology-focused benchmark - ideal for growth/tech portfolios", "qqq"),
-        ("2", "📊 S&P 500", "Broad market benchmark - 500 largest US companies", "sp500"),
+        ("2", f"{_safe_emoji('📊')} S&P 500", "Broad market benchmark - 500 largest US companies", "sp500"),
         ("3", "📉 Russell 2000", "Small-cap benchmark - smaller US companies", "russell2000"),
         ("4", "📋 VTI (Total Market)", "Complete US stock market benchmark", "vti"),
-        ("5", "📊 All Benchmarks", "Show all benchmarks on one chart for comprehensive comparison", "all"),
+        ("5", f"{_safe_emoji('📊')} All Benchmarks", "Show all benchmarks on one chart for comprehensive comparison", "all"),
         ("6", "🔙 Back to Main Menu", "Return without generating graph", "back")
     ]
     
@@ -422,7 +422,7 @@ def main() -> None:
                     if benchmark == "back":
                         continue  # Return to main menu
                     args.extend(["--benchmark", benchmark])
-                    print_colored(f"\n📊 Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
+                    print_colored(f"\n{_safe_emoji('📊')} Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
                 
                 # Special handling for prompt generator
                 elif choice == "d":

@@ -169,7 +169,7 @@ class WebullImporter:
                 "total_value": total_value,
                 "timestamp": timestamp,
                 "original_timestamp": filled_time,  # Preserve original timestamp with timezone
-                "currency": "USD",  # Webull typically uses USD
+                "currency": self._detect_currency(symbol),  # Detect currency based on ticker
                 "source": "Webull",
                 "original_row": row_num
             }
@@ -364,7 +364,8 @@ class WebullImporter:
             "Price": float(trade["price"]),
             "Cost Basis": float(trade["total_value"]),
             "PnL": 0.0,
-            "Reason": f"Imported from Webull (Row {trade['original_row']})"
+            "Reason": f"Imported from Webull (Row {trade['original_row']})",
+            "Currency": trade["currency"]
         }
     
     def _update_portfolio(self, portfolio_data: List[Dict[str, Any]], trade: Dict[str, Any]) -> bool:
@@ -419,7 +420,7 @@ class WebullImporter:
                     "Total Value": float(quantity * price),
                     "PnL": 0.0,
                     "Action": "Buy",
-                    "Company": symbol,  # Could be enhanced with company name lookup
+                    "Company": self._get_company_name(symbol),
                     "Currency": trade["currency"]
                 }
                 portfolio_data.append(new_position)
@@ -514,12 +515,33 @@ class WebullImporter:
         if not trade_log_data:
             return
         
-        fieldnames = ["Date", "Ticker", "Shares", "Price", "Cost Basis", "PnL", "Reason"]
+        fieldnames = ["Date", "Ticker", "Shares", "Price", "Cost Basis", "PnL", "Reason", "Currency"]
         
         with open(trade_log_file, 'w', newline='', encoding='utf-8') as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(trade_log_data)
+
+    def _detect_currency(self, ticker: str) -> str:
+        """Detect currency based on ticker characteristics."""
+        ticker = ticker.upper().strip()
+        
+        # Check for Canadian ticker suffixes
+        if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+            return 'CAD'
+        
+        # Default to USD for everything else
+        # No hardcoded lists - rely on Currency field in trade log
+        return 'USD'
+
+    def _get_company_name(self, ticker: str) -> str:
+        """Get company name for ticker symbol using the ticker_utils function."""
+        try:
+            from utils.ticker_utils import get_company_name
+            return get_company_name(ticker)
+        except Exception as e:
+            logger.warning(f"Failed to get company name for {ticker}: {e}")
+            return ticker  # Fallback to ticker symbol
 
 
 def import_webull_data(csv_file_path: str, fund_name: str = None, dry_run: bool = False) -> Dict[str, Any]:

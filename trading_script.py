@@ -107,6 +107,9 @@ def setup_logging(settings: Settings) -> None:
         ]
     )
     
+    # Allow yfinance errors to be visible so we can identify real failures
+    # We need to see when tickers genuinely fail to fetch data
+    
     logger.info(f"Logging configured - Level: {log_config.get('level', 'INFO')}")
 
 
@@ -336,6 +339,14 @@ Examples:
         '--force-fallback',
         action='store_true',
         help='Force fallback mode for testing'
+    )
+    
+    parser.add_argument(
+        '--sort',
+        type=str,
+        choices=['weight', 'ticker', 'pnl', 'value', 'shares', 'price'],
+        default='weight',
+        help='Sort portfolio by: weight (default), ticker (alphabetical), pnl, value, shares, or price'
     )
     
     parser.add_argument(
@@ -617,18 +628,16 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                             pos_dict['five_day_pnl'] = "N/A"
                             logger.debug(f"{position.ticker}: Too new for 5-day P&L ({days_held_trading} <= 5 days)")
                         else:
-                            # Fetch 1 month of history to ensure we get enough trading days
-                            hist_result = market_data_fetcher.fetch_price_data(
-                                position.ticker, period='1mo'
-                            )
-                            
-                            if (hasattr(hist_result, 'df') 
-                                and isinstance(hist_result.df, pd.DataFrame) 
-                                and not hist_result.df.empty 
-                                and 'Close' in hist_result.df.columns):
-                                
-                                closes_series = hist_result.df['Close']
-                                logger.debug(f"{position.ticker}: Got {len(closes_series)} historical closes")
+                            # Use cached historical data instead of fetching again
+                            cached_hist = price_cache.get_cached_price(position.ticker)
+
+                            if (cached_hist is not None
+                                and isinstance(cached_hist, pd.DataFrame)
+                                and not cached_hist.empty
+                                and 'Close' in cached_hist.columns):
+
+                                closes_series = cached_hist['Close']
+                                logger.debug(f"{position.ticker}: Using cached historical closes ({len(closes_series)} days)")
                                 
                                 # Need at least 6 trading days of data (5 days ago + today)
                                 if len(closes_series) >= 6:
@@ -684,18 +693,68 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             
             enhanced_positions.append(pos_dict)
         
-        # Sort positions by weight percentage (highest first)
-        def get_weight_value(pos_dict):
-            """Extract numeric weight value for sorting."""
-            weight_str = pos_dict.get('position_weight', '0.0%')
-            if weight_str == 'N/A':
-                return -1  # Put N/A values at the end
-            try:
-                return float(weight_str.replace('%', ''))
-            except (ValueError, AttributeError):
-                return -1
+        # Sort positions based on command-line argument
+        def get_sort_key(pos_dict, sort_by):
+            """Extract sort key based on the specified sort option."""
+            if sort_by == 'weight':
+                # Sort by weight percentage (highest first)
+                weight_str = pos_dict.get('position_weight', '0.0%')
+                if weight_str == 'N/A':
+                    return -1  # Put N/A values at the end
+                try:
+                    return float(weight_str.replace('%', ''))
+                except (ValueError, AttributeError):
+                    return -1
+            elif sort_by == 'ticker':
+                # Sort by ticker alphabetically
+                return pos_dict.get('ticker', '').upper()
+            elif sort_by == 'pnl':
+                # Sort by total P&L (highest first)
+                pnl_str = pos_dict.get('total_pnl', '$0.00')
+                if pnl_str == 'N/A':
+                    return -999999  # Put N/A values at the end
+                try:
+                    # Remove $ and , from P&L string
+                    pnl_clean = pnl_str.replace('$', '').replace(',', '').replace('+', '')
+                    return float(pnl_clean)
+                except (ValueError, AttributeError):
+                    return -999999
+            elif sort_by == 'value':
+                # Sort by total value (highest first)
+                value_str = pos_dict.get('total_value', '$0.00')
+                if value_str == 'N/A':
+                    return -999999  # Put N/A values at the end
+                try:
+                    # Remove $ and , from value string
+                    value_clean = value_str.replace('$', '').replace(',', '')
+                    return float(value_clean)
+                except (ValueError, AttributeError):
+                    return -999999
+            elif sort_by == 'shares':
+                # Sort by number of shares (highest first)
+                shares = pos_dict.get('shares', 0)
+                try:
+                    return float(shares)
+                except (ValueError, TypeError):
+                    return 0
+            elif sort_by == 'price':
+                # Sort by current price (highest first)
+                price_str = pos_dict.get('current_price', '$0.00')
+                if price_str == 'N/A':
+                    return -999999  # Put N/A values at the end
+                try:
+                    # Remove $ from price string
+                    price_clean = price_str.replace('$', '')
+                    return float(price_clean)
+                except (ValueError, AttributeError):
+                    return -999999
+            else:
+                # Default to weight sorting
+                return get_sort_key(pos_dict, 'weight')
         
-        enhanced_positions.sort(key=get_weight_value, reverse=True)
+        # Sort positions based on the specified sort option
+        reverse_sort = args.sort in ['weight', 'pnl', 'value', 'shares', 'price']  # These sort highest first
+        enhanced_positions.sort(key=lambda pos: get_sort_key(pos, args.sort), reverse=reverse_sort)
         
         # Clear screen before displaying portfolio
         import os
@@ -1106,6 +1165,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
             print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
             print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
+            print(create_menu_line(f"{_safe_emoji('📊')} 'o'       Sort Portfolio"))
             print(create_menu_line(f"{_safe_emoji('❌')} Enter     Quit"))
             print(f"{Fore.GREEN}{Style.BRIGHT}{end_line}{Style.RESET_ALL}")
         else:
@@ -1121,6 +1181,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'restore' ~ Restore from Backup                             |")
             print("| 'r' ~ Refresh Portfolio                                     |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
+            print("| 'o' [O] Sort Portfolio                                      |")
             print("| Enter -> Quit                                               |")
             print("+---------------------------------------------------------------+")
         print()
@@ -1168,6 +1229,62 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 else:
                     print_error("Rebuild script not found!")
                 return
+            elif action == 'o':
+                print_info("Changing portfolio sorting...")
+                print("\n" + "="*60)
+                print("📊 SORTING OPTIONS:")
+                print("  [1] Weight % (highest first)    [2] Ticker (A-Z)           [3] P&L (highest first)")
+                print("  [4] Total Value (highest first) [5] Shares (highest first) [6] Price (highest first)")
+                print("  [Enter] Keep current sort        [q] Back to main menu")
+                print("="*60)
+                
+                try:
+                    choice = input("\nSelect sorting option (1-6, Enter, or q): ").strip().lower()
+                    
+                    if choice == 'q':
+                        print("Returning to main menu...")
+                        return
+                    elif choice == '' or choice == 'enter':
+                        print("Keeping current sort...")
+                        return
+                    elif choice in ['1', '2', '3', '4', '5', '6']:
+                        sort_options = {
+                            '1': 'weight',
+                            '2': 'ticker', 
+                            '3': 'pnl',
+                            '4': 'value',
+                            '5': 'shares',
+                            '6': 'price'
+                        }
+                        
+                        new_sort = sort_options[choice]
+                        print(f"Re-sorting by {new_sort}...")
+                        
+                        # Re-sort the positions
+                        reverse_sort = new_sort in ['weight', 'pnl', 'value', 'shares', 'price']
+                        enhanced_positions.sort(key=lambda pos: get_sort_key(pos, new_sort), reverse=reverse_sort)
+                        
+                        # Clear screen and re-display
+                        import os
+                        os.system('cls' if os.name == 'nt' else 'clear')
+                        
+                        # Re-display header and table
+                        print_header(header_title, _safe_emoji("📊"))
+                        table_formatter.create_portfolio_table(enhanced_positions)
+                        
+                        print_success(f"Portfolio sorted by {new_sort}")
+                        return
+                    else:
+                        print("Invalid choice, keeping current sort...")
+                        return
+                        
+                except KeyboardInterrupt:
+                    print("\nReturning to main menu...")
+                    return
+                except Exception as e:
+                    logger.debug(f"Error in sorting menu: {e}")
+                    print("Error in sorting menu, returning to main menu...")
+                    return
             elif action == 'backup':
                 print_info("Creating backup...")
                 backup_name = backup_manager.create_backup()

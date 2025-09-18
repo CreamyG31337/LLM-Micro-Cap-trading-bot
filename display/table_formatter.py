@@ -124,10 +124,10 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('🎯')}\nTicker", style="cyan", no_wrap=True, width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🏢')}\nCompany", style="white", no_wrap=True, max_width=company_max_width, justify="left", header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📅')}\nOpened", style="dim", no_wrap=True, width=11, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="green", width=10, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="blue", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="bright_white", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="yellow", width=12, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="bright_yellow", width=12, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=16, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
         table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
@@ -260,8 +260,18 @@ class TableFormatter:
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
             
+            # Color code ticker based on currency
+            ticker = position.get('ticker', 'N/A')
+            currency = position.get('currency', 'CAD')
+            if currency == 'USD':
+                ticker_display = f"[blue]{ticker}[/blue]"  # Blue for USD
+            elif currency == 'CAD':
+                ticker_display = f"[cyan]{ticker}[/cyan]"  # Cyan for CAD
+            else:
+                ticker_display = ticker  # Default color for unknown currencies
+            
             table.add_row(
-                position.get('ticker', 'N/A'),
+                ticker_display,
                 display_name,
                 position.get('opened_date', 'N/A'),
                 format_shares(position.get('shares', 0)),
@@ -395,8 +405,18 @@ class TableFormatter:
             else:
                 daily_pnl_display = daily_pnl_dollar
             
+            # Color code ticker based on currency for plain text
+            ticker = position.get('ticker', 'N/A')
+            currency = position.get('currency', 'CAD')
+            if currency == 'USD':
+                ticker_display = f"{Fore.BLUE}{ticker}{Style.RESET_ALL}"  # Blue for USD
+            elif currency == 'CAD':
+                ticker_display = f"{Fore.CYAN}{ticker}{Style.RESET_ALL}"  # Cyan for CAD
+            else:
+                ticker_display = ticker  # Default color for unknown currencies
+            
             df_data.append({
-                'Ticker': position.get('ticker', 'N/A'),
+                'Ticker': ticker_display,
                 'Company': position.get('company', 'N/A'),
                 'Opened': position.get('opened_date', 'N/A'),
                 'Shares': format_shares_plain(shares),

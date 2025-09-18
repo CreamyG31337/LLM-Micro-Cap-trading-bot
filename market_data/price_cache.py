@@ -250,6 +250,17 @@ class PriceCache:
         ticker = ticker.upper().strip()
         self._company_name_cache[ticker] = name
     
+    def clear_company_name_cache(self, ticker: str) -> None:
+        """
+        Clear cached company name for a ticker.
+        
+        Args:
+            ticker: Stock ticker symbol
+        """
+        ticker = ticker.upper().strip()
+        if ticker in self._company_name_cache:
+            del self._company_name_cache[ticker]
+    
     def get_ticker_correction(self, ticker: str) -> Optional[str]:
         """
         Get cached ticker correction.

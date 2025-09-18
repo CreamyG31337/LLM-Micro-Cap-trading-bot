@@ -255,6 +255,12 @@ Results.png
 # Ignore generated graphs folder
 graphs/
 
+# Webull import data and test files
+webull_test_data.csv
+webull_*.csv
+import_data/
+*.import
+
 # Runtime files - should not be tracked
 .script_timestamp
 .script_hash

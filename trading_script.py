@@ -1105,6 +1105,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('💾')} 'backup'  Create Backup"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
             print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
+            print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
             print(create_menu_line(f"{_safe_emoji('❌')} Enter     Quit"))
             print(f"{Fore.GREEN}{Style.BRIGHT}{end_line}{Style.RESET_ALL}")
         else:
@@ -1119,6 +1120,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'backup' [B] Create Backup                                  |")
             print("| 'restore' ~ Restore from Backup                             |")
             print("| 'r' ~ Refresh Portfolio                                     |")
+            print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| Enter -> Quit                                               |")
             print("+---------------------------------------------------------------+")
         print()
@@ -1135,6 +1137,36 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 print_info("Refreshing portfolio...")
                 # Recursive call to refresh (could be improved with a loop)
                 run_portfolio_workflow(args, settings, repository, trading_interface)
+                return
+            elif action == 'rebuild':
+                verify_script_before_action()
+                print_info("Rebuilding portfolio from trade log...")
+                # Import and run the rebuild script
+                import subprocess
+                import sys
+                from pathlib import Path
+                
+                # Get the data directory from settings
+                data_dir = settings.get_data_directory()
+                
+                # Run the rebuild script
+                rebuild_script = Path(__file__).parent / "debug" / "rebuild_portfolio_from_scratch.py"
+                if rebuild_script.exists():
+                    try:
+                        result = subprocess.run([
+                            sys.executable, str(rebuild_script), data_dir
+                        ], capture_output=True, text=True, cwd=Path(__file__).parent.parent)
+                        
+                        if result.returncode == 0:
+                            print_success("Portfolio rebuilt successfully!")
+                            print(result.stdout)
+                        else:
+                            print_error("Portfolio rebuild failed!")
+                            print(result.stderr)
+                    except Exception as e:
+                        print_error(f"Error running rebuild script: {e}")
+                else:
+                    print_error("Rebuild script not found!")
                 return
             elif action == 'backup':
                 print_info("Creating backup...")

@@ -117,9 +117,101 @@ def get_market_close_time(timezone_str: str = None) -> str:
 from market_data.price_cache import PriceCache
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.market_hours import MarketHours
+from utils.market_holidays import MARKET_HOLIDAYS
+from utils.price_ticker_validator import PRICE_VALIDATOR
 PRICE_CACHE = PriceCache()  # In-memory price cache to avoid redundant API calls
 FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)  # Fetcher uses the cache
 MARKET_HOURS = MarketHours()  # For weekend detection
+
+# Cache for ticker corrections to avoid repeated API calls
+TICKER_CORRECTION_CACHE = {}
+
+def _auto_correct_ticker_with_price(ticker: str, trade_price: float, trade_date: str, currency: str = "CAD") -> str:
+    """
+    Correct ticker symbols using price validation.
+    
+    This function uses the actual trade price to determine which ticker variant
+    (.TO, .V, no suffix) is correct by comparing market prices with trade prices.
+    
+    Args:
+        ticker: Stock ticker symbol to correct
+        trade_price: Actual price from trade execution
+        trade_date: Date of the trade
+        currency: Expected currency ('CAD' or 'USD')
+        
+    Returns:
+        Corrected ticker symbol with appropriate suffix
+    """
+    ticker = ticker.upper().strip()
+    
+    # Check cache first
+    cache_key = f"{ticker}_{trade_price}_{trade_date}_{currency}"
+    if cache_key in TICKER_CORRECTION_CACHE:
+        return TICKER_CORRECTION_CACHE[cache_key]
+    
+    # If already has a suffix, return as-is
+    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+        TICKER_CORRECTION_CACHE[cache_key] = ticker
+        return ticker
+    
+    # Use price-based validation
+    corrected_ticker, is_valid = PRICE_VALIDATOR.validate_ticker_with_price(
+        ticker, trade_price, trade_date, currency
+    )
+    
+    # Cache the result
+    TICKER_CORRECTION_CACHE[cache_key] = corrected_ticker
+    return corrected_ticker
+
+def _auto_correct_ticker_simple(ticker: str) -> str:
+    """
+    Simple ticker correction without price validation (for current price lookups).
+    
+    Args:
+        ticker: Stock ticker symbol to correct
+        
+    Returns:
+        Corrected ticker symbol with appropriate suffix
+    """
+    ticker = ticker.upper().strip()
+    
+    # Check cache first
+    if ticker in TICKER_CORRECTION_CACHE:
+        return TICKER_CORRECTION_CACHE[ticker]
+    
+    # If already has a suffix, return as-is
+    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+        TICKER_CORRECTION_CACHE[ticker] = ticker
+        return ticker
+    
+    # Prioritize US ticker first, then Canadian (.TO), then Venture (.V)
+    # Prevents incorrect lookups like VTI.TO or ROBO.TO
+    variants_to_test = [ticker, f"{ticker}.TO", f"{ticker}.V"]
+    
+    for variant in variants_to_test:
+        try:
+            import yfinance as yf
+            import logging
+            logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+            
+            stock = yf.Ticker(variant)
+            info = stock.info
+            
+            if info and info.get('symbol') and info.get('symbol') != 'N/A':
+                exchange = info.get('exchange', '')
+                name = info.get('longName', info.get('shortName', ''))
+                
+                if (exchange and exchange != 'N/A' and 
+                    name and name != 'N/A' and name != 'Unknown' and 
+                    len(name) > 3):
+                    TICKER_CORRECTION_CACHE[ticker] = variant
+                    return variant
+        except Exception:
+            continue
+    
+    # If no valid matches found, return original
+    TICKER_CORRECTION_CACHE[ticker] = ticker
+    return ticker
 
 def get_current_price(ticker: str) -> float:
     """
@@ -140,9 +232,13 @@ def get_current_price(ticker: str) -> float:
         Returns 0.0 if no valid price data is found to prevent calculation errors.
     """
     try:
+        # Use price-based ticker correction for Canadian symbols
+        # For current price, we don't have trade context, so use simple validation
+        corrected_ticker = _auto_correct_ticker_simple(ticker)
+        
         end = pd.Timestamp.now()
         start = end - pd.Timedelta(days=5)
-        result = FETCHER.fetch_price_data(ticker, start, end)
+        result = FETCHER.fetch_price_data(corrected_ticker, start, end)
         df = result.df
         if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
             return float(df['Close'].iloc[-1])
@@ -150,7 +246,7 @@ def get_current_price(ticker: str) -> float:
         pass
     return 0.0
 
-def get_historical_close_price(ticker: str, date_str: str) -> float:
+def get_historical_close_price(ticker: str, date_str: str, trade_price: float = None, currency: str = "CAD") -> float:
     """
     Get historical close price for a ticker on a specific date.
     
@@ -176,22 +272,42 @@ def get_historical_close_price(ticker: str, date_str: str) -> float:
         if not date_obj:
             return None
         date_obj = date_obj.date()
-        next_date = date_obj + timedelta(days=1)
-        # Fetch the exact day range
-        result = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj), pd.Timestamp(next_date))
-        df = result.df
-        if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
-            # Find row matching the date
-            day_rows = df[df.index.date == date_obj]
-            if not day_rows.empty:
-                return float(day_rows['Close'].iloc[0])
-            # If only one row in range, use it
-            return float(df['Close'].iloc[0])
-        # Fallback: fetch previous 5 days and return last close
-        result2 = FETCHER.fetch_price_data(ticker, pd.Timestamp(date_obj) - pd.Timedelta(days=7), pd.Timestamp(date_obj))
-        df2 = result2.df
-        if df2 is not None and not df2.empty and 'Close' in df2.columns and result2.source != "empty":
-            return float(df2['Close'].iloc[-1])
+        
+        # Check if it's a market holiday or weekend
+        if not MARKET_HOLIDAYS.is_trading_day(date_obj, "both"):
+            holiday_name = MARKET_HOLIDAYS.get_holiday_name(date_obj)
+            if holiday_name:
+                print(f"     Skipping {date_obj.strftime('%Y-%m-%d')} ({holiday_name})")
+            else:
+                print(f"     Skipping {date_obj.strftime('%Y-%m-%d')} (weekend)")
+            return 0.0
+        
+        # Use price-based ticker correction if we have trade context and valid price
+        if trade_price is not None and trade_price > 0:
+            corrected_ticker = _auto_correct_ticker_with_price(ticker, trade_price, date_str, currency)
+        else:
+            corrected_ticker = _auto_correct_ticker_simple(ticker)
+        
+        # Try multiple date ranges to find available data
+        date_ranges = [
+            (date_obj, date_obj + timedelta(days=1)),  # Exact day
+            (date_obj - timedelta(days=1), date_obj + timedelta(days=2)),  # 3-day window
+            (date_obj - timedelta(days=3), date_obj + timedelta(days=4)),  # 7-day window
+            (date_obj - timedelta(days=7), date_obj + timedelta(days=8)),  # 15-day window
+        ]
+        
+        for start_date, end_date in date_ranges:
+            result = FETCHER.fetch_price_data(corrected_ticker, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            df = result.df
+            if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
+                # Find row matching the target date or closest available
+                day_rows = df[df.index.date == date_obj]
+                if not day_rows.empty:
+                    return float(day_rows['Close'].iloc[0])
+                # If no exact match, use the closest available date
+                if not df.empty:
+                    return float(df['Close'].iloc[-1])
+        
         return 0.0
     except Exception:
         return 0.0
@@ -226,9 +342,6 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         This function completely overwrites the existing portfolio CSV.
         Make sure to backup your data before running if needed.
     """
-    if timezone_str is None:
-        timezone_str = DEFAULT_TIMEZONE
-    
     data_path = Path(data_dir)
     trade_log_file = data_path / "llm_trade_log.csv"
     portfolio_file = data_path / "llm_portfolio_update.csv"
@@ -236,7 +349,32 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
     print(f"{_safe_emoji('🔄')} Rebuilding Portfolio from Trade Log")
     print("=" * 50)
     print(f"📁 Using data directory: {data_dir}")
-    print(f"🕐 Using timezone: {timezone_str}")
+    
+    # Auto-detect timezone from trade log data
+    if trade_log_file.exists():
+        try:
+            trade_df_sample = pd.read_csv(trade_log_file, nrows=1)
+            if len(trade_df_sample) > 0:
+                sample_date = str(trade_df_sample.iloc[0]['Date'])
+                if 'EDT' in sample_date:
+                    detected_tz = 'US/Eastern'
+                elif 'EST' in sample_date:
+                    detected_tz = 'US/Eastern'
+                elif 'PDT' in sample_date:
+                    detected_tz = 'US/Pacific'
+                elif 'PST' in sample_date:
+                    detected_tz = 'US/Pacific'
+                else:
+                    detected_tz = timezone_str or DEFAULT_TIMEZONE
+                print(f"🕐 Detected timezone from trade log: {detected_tz}")
+            else:
+                detected_tz = timezone_str or DEFAULT_TIMEZONE
+        except:
+            detected_tz = timezone_str or DEFAULT_TIMEZONE
+    else:
+        detected_tz = timezone_str or DEFAULT_TIMEZONE
+    
+    timezone_str = detected_tz
     print(f"🕐 Market close time: {MARKET_CLOSE_TIMES.get(timezone_str, 16)}:00 local time")
     
     if not trade_log_file.exists():
@@ -262,7 +400,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         
         # Process trades chronologically to build complete portfolio
         portfolio_entries = []
-        running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': []})
+        running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': [], 'last_price': Decimal('0'), 'last_currency': 'CAD'})
         
         print(f"\n📈 Processing trades chronologically:")
         
@@ -272,7 +410,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
             shares = Decimal(str(trade['Shares']))  # Keep original precision
             price = Decimal(str(trade['Price']))
             cost = Decimal(str(trade['Cost Basis']))
-            pnl = Decimal(str(trade['PnL']))
+            pnl = Decimal('0')  # Will be calculated
             reason = trade['Reason']
             
             # Determine if this is a buy or sell
@@ -299,13 +437,23 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     'Currency': get_currency(ticker)
                 })
                 
-                # Reset position after sell
-                running_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': []}
+                # Reset position after sell but preserve last trade info for HOLD entries
+                last_price = running_positions[ticker].get('last_price', Decimal('0'))
+                last_currency = running_positions[ticker].get('last_currency', 'CAD')
+                running_positions[ticker] = {
+                    'shares': Decimal('0'), 
+                    'cost': Decimal('0'), 
+                    'trades': [],
+                    'last_price': last_price,
+                    'last_currency': last_currency
+                }
             else:
-                # For buys, update running position
+                # For buys, update running position and store trade info for price validation
                 running_positions[ticker]['shares'] += shares
                 running_positions[ticker]['cost'] += cost
                 running_positions[ticker]['trades'].append({'shares': shares, 'price': price, 'cost': cost})
+                running_positions[ticker]['last_price'] = price
+                running_positions[ticker]['last_currency'] = get_currency(ticker)
                 
                 # Calculate current values
                 total_shares = running_positions[ticker]['shares']
@@ -451,15 +599,32 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     else:
                         # Already timezone-aware - convert to target timezone
                         hold_date_obj_tz = hold_date_obj.astimezone(tz)
-                    if hold_date_obj_tz.date() == current_time.date():
-                        # Today
-                        if current_time.hour < market_close_hour:
-                            price_value = get_current_price(ticker)
+                    # Get trade context for price-based ticker validation
+                    trade_price = float(position.get('last_price', 0))
+                    trade_currency = position.get('last_currency', 'CAD')
+                    
+                    # Only use price validation if we have a valid trade price
+                    if trade_price > 0:
+                        if hold_date_obj_tz.date() == current_time.date():
+                            # Today
+                            if current_time.hour < market_close_hour:
+                                price_value = get_current_price(ticker)
+                            else:
+                                price_value = get_historical_close_price(ticker, date_str, trade_price, trade_currency)
                         else:
-                            price_value = get_historical_close_price(ticker, date_str)
+                            # Historical day
+                            price_value = get_historical_close_price(ticker, date_str, trade_price, trade_currency)
                     else:
-                        # Historical day
-                        price_value = get_historical_close_price(ticker, date_str)
+                        # Fallback to simple ticker correction without price validation
+                        if hold_date_obj_tz.date() == current_time.date():
+                            # Today
+                            if current_time.hour < market_close_hour:
+                                price_value = get_current_price(ticker)
+                            else:
+                                price_value = get_historical_close_price(ticker, date_str)
+                        else:
+                            # Historical day
+                            price_value = get_historical_close_price(ticker, date_str)
                     
                     if price_value > 0:
                         current_price_decimal = Decimal(str(price_value))

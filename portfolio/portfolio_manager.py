@@ -453,3 +453,18 @@ class PortfolioManager:
             issues.append(f"Error during snapshot validation: {e}")
         
         return issues
+    
+    def save_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+        """
+        Save a portfolio snapshot to the repository.
+        
+        This is an alias for save_portfolio() to maintain compatibility
+        with existing code that expects this method name.
+        
+        Args:
+            snapshot: PortfolioSnapshot to save
+            
+        Raises:
+            PortfolioManagerError: If saving fails
+        """
+        self.save_portfolio(snapshot)

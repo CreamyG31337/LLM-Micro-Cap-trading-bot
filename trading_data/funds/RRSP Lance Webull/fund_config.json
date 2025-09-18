@@ -10,7 +10,7 @@
   "repository": {
     "type": "csv",
     "csv": {
-      "data_directory": "trading_data/funds/RRSP"
+      "data_directory": "trading_data/funds/RRSP Lance Webull"
     }
   },
   "market_data": {

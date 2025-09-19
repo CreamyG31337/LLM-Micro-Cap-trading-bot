@@ -41,40 +41,70 @@ def get_supabase_client() -> Optional[SupabaseClient]:
         logger.error(f"Failed to initialize Supabase client: {e}")
         return None
 
-def load_portfolio_data() -> Dict:
-    """Load and process portfolio data from Supabase"""
+def load_portfolio_data(fund_name=None) -> Dict:
+    """Load and process portfolio data from Supabase, optionally filtered by fund"""
     try:
         client = get_supabase_client()
         if not client:
             logger.warning("Supabase not available, returning empty data")
             return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}}
-        
-        # Get current positions
-        positions = client.get_current_positions()
+
+        # Get available funds
+        available_funds = client.get_available_funds()
+
+        if fund_name and fund_name not in available_funds:
+            logger.warning(f"Fund '{fund_name}' not found, showing all funds")
+            fund_name = None
+
+        # Get data (filtered by fund if specified)
+        positions = client.get_current_positions(fund=fund_name)
+        trades = client.get_trade_log(limit=1000, fund=fund_name)
+        cash_balances = client.get_cash_balances(fund=fund_name)
+
+        # Convert to DataFrames for compatibility with existing code
         portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-        
-        # Get recent trades
-        trades = client.get_trade_log(limit=1000)
-        trade_df = pd.DataFrame(trades) if trades else pd.DataFrame()
-        
-        # Get cash balances
-        cash_balances = client.get_cash_balances()
-        
+        trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
+
         return {
             "portfolio": portfolio_df,
-            "trades": trade_df,
-            "cash_balances": cash_balances
+            "trades": trades_df,
+            "cash_balances": cash_balances,
+            "available_funds": available_funds,
+            "current_fund": fund_name
         }
     except Exception as e:
         logger.error(f"Error loading portfolio data: {e}")
         return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}}
 
-def calculate_performance_metrics(portfolio_df: pd.DataFrame, trade_df: pd.DataFrame) -> Dict:
-    """Calculate key performance metrics"""
+def calculate_performance_metrics(portfolio_df: pd.DataFrame, trade_df: pd.DataFrame, fund_name=None) -> Dict:
+    """Calculate key performance metrics for a specific fund or all funds"""
     try:
         client = get_supabase_client()
-        if client:
-            # Use Supabase client for metrics calculation
+        if client and fund_name:
+            # Get metrics for specific fund
+            positions = client.get_current_positions(fund=fund_name)
+            trades = client.get_trade_log(limit=1000, fund=fund_name)
+
+            total_value = sum(pos["total_market_value"] for pos in positions)
+            total_cost_basis = sum(pos["total_cost_basis"] for pos in positions)
+            unrealized_pnl = sum(pos["total_pnl"] for pos in positions)
+            performance_pct = (unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+
+            total_trades = len(trades)
+            winning_trades = len([t for t in trades if t["pnl"] > 0])
+            losing_trades = len([t for t in trades if t["pnl"] < 0])
+
+            return {
+                "total_value": round(total_value, 2),
+                "total_cost_basis": round(total_cost_basis, 2),
+                "unrealized_pnl": round(unrealized_pnl, 2),
+                "performance_pct": round(performance_pct, 2),
+                "total_trades": total_trades,
+                "winning_trades": winning_trades,
+                "losing_trades": losing_trades
+            }
+        elif client:
+            # Use Supabase client for combined metrics (legacy)
             return client.get_performance_metrics()
         
         # Fallback to local calculation if Supabase not available
@@ -237,13 +267,24 @@ def create_performance_chart(portfolio_df: pd.DataFrame) -> str:
 @app.route('/')
 def index():
     """Main dashboard page"""
-    return render_template('index.html')
+    fund = request.args.get('fund')
+    return render_template('index.html', selected_fund=fund)
+
+@app.route('/api/funds')
+def api_funds():
+    """API endpoint for available funds"""
+    client = get_supabase_client()
+    if client:
+        funds = client.get_available_funds()
+        return jsonify({"funds": funds})
+    return jsonify({"funds": []})
 
 @app.route('/api/portfolio')
 def api_portfolio():
     """API endpoint for portfolio data"""
-    data = load_portfolio_data()
-    metrics = calculate_performance_metrics(data['portfolio'], data['trades'])
+    fund = request.args.get('fund')
+    data = load_portfolio_data(fund)
+    metrics = calculate_performance_metrics(data['portfolio'], data['trades'], fund)
     
     # Get current positions
     current_positions = []
@@ -279,20 +320,24 @@ def api_portfolio():
         'metrics': metrics,
         'positions': current_positions,
         'cash_balances': data['cash_balances'],
+        'available_funds': data.get('available_funds', []),
+        'current_fund': data.get('current_fund'),
         'last_updated': datetime.now().isoformat()
     })
 
 @app.route('/api/performance-chart')
 def api_performance_chart():
     """API endpoint for performance chart data"""
-    data = load_portfolio_data()
+    fund = request.args.get('fund')
+    data = load_portfolio_data(fund)
     chart_data = create_performance_chart(data['portfolio'])
     return chart_data
 
 @app.route('/api/recent-trades')
 def api_recent_trades():
     """API endpoint for recent trades"""
-    data = load_portfolio_data()
+    fund = request.args.get('fund')
+    data = load_portfolio_data(fund)
     
     if data['trades'].empty:
         return jsonify([])

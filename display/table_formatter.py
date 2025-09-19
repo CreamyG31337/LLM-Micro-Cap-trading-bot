@@ -119,7 +119,11 @@ class TableFormatter:
         if self.using_test_data:
             company_max_width = 12  # Even more conservative for test data
         
-        table = Table(title=table_title, show_header=True, header_style="bold magenta")
+        table = Table(
+            title=table_title,
+            show_header=True,
+            header_style="bold magenta"
+        )
         # Create safe column headers (headers can wrap, data stays no_wrap where appropriate)
         table.add_column(f"{_safe_emoji('🎯')}\nTicker", style="cyan", no_wrap=True, width=7, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🏢')}\nCompany", style="white", no_wrap=True, max_width=company_max_width, justify="left", header_style="bold magenta")
@@ -180,10 +184,13 @@ class TableFormatter:
             
             return ticker
         
-        for position in portfolio_data:
+        for row_index, position in enumerate(portfolio_data):
+            # Determine background color for alternating rows (zebra stripes)
+            row_style = "on grey11" if row_index % 2 == 1 else None
+
             # Truncate long company names for display
             company_name = position.get('company', 'N/A')
-            display_name = (company_name[:company_max_width-3] + "..." 
+            display_name = (company_name[:company_max_width-3] + "..."
                           if len(company_name) > company_max_width else company_name)
             
             # Calculate total value (handle Decimals properly)
@@ -299,7 +306,8 @@ class TableFormatter:
                 position.get('five_day_pnl', 'N/A'),  # 5-day P&L from enhanced data
                 weight_display,  # Position weight from enhanced data
                 f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
-                f"${float(cost_basis):.2f}"
+                f"${float(cost_basis):.2f}",
+                style=row_style  # Apply alternating background color
             )
         
         self.console.print(table)
@@ -608,7 +616,11 @@ class TableFormatter:
             return json.dumps({"ownership": ownership_data}, indent=2)
         
         if has_rich_support() and self.console:
-            ownership_table = Table(title="Ownership Details", show_header=True, header_style="bold blue")
+            ownership_table = Table(
+                title="Ownership Details",
+                show_header=True,
+                header_style="bold blue"
+            )
             ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
             ownership_table.add_column("Shares", justify="right", style="cyan")
             ownership_table.add_column("Contributed", justify="right", style="green")
@@ -619,13 +631,17 @@ class TableFormatter:
             sorted_ownership = sorted(ownership_data.items(), 
                                     key=lambda x: x[1].get('ownership_pct', 0), reverse=True)
             
-            for contributor, data in sorted_ownership:
+            for row_index, (contributor, data) in enumerate(sorted_ownership):
+                # Determine background color for alternating rows (zebra stripes)
+                row_style = "on grey11" if row_index % 2 == 1 else None
+
                 ownership_table.add_row(
                     contributor,
                     f"{data.get('shares', 0):.2f}",
                     f"${data.get('contributed', 0):,.2f}",
                     f"{data.get('ownership_pct', 0):.1f}%",
-                    f"${data.get('current_value', 0):,.2f}"
+                    f"${data.get('current_value', 0):,.2f}",
+                    style=row_style  # Apply alternating background color
                 )
             
             self.console.print(ownership_table)
@@ -653,7 +669,11 @@ class TableFormatter:
             return json.dumps({"statistics": stats_data}, indent=2)
         
         if has_rich_support() and self.console:
-            stats_table = Table(title="📊 Portfolio Statistics", show_header=True, header_style="bold blue")
+            stats_table = Table(
+                title="📊 Portfolio Statistics",
+                show_header=True,
+                header_style="bold blue"
+            )
             stats_table.add_column("Statistic", style="cyan", no_wrap=True)
             stats_table.add_column("Amount", justify="right", style="yellow")
 
@@ -661,9 +681,9 @@ class TableFormatter:
             def get_pnl_style(value: float) -> str:
                 return "green" if value >= 0 else "red"
 
-            stats_table.add_row("💰 Total Contributions", f"${stats_data.get('total_contributions', 0):,.2f}")
+            stats_table.add_row("💰 Total Contributions", f"${stats_data.get('total_contributions', 0):,.2f}", style="on grey11")
             stats_table.add_row("💵 Total Cost Basis", f"${stats_data.get('total_cost_basis', 0):,.2f}")
-            stats_table.add_row("📈 Current Portfolio Value", f"${stats_data.get('total_current_value', 0):,.2f}")
+            stats_table.add_row("📈 Current Portfolio Value", f"${stats_data.get('total_current_value', 0):,.2f}", style="on grey11")
             stats_table.add_row("💹 Unrealized P&L", f"${stats_data.get('total_pnl', 0):,.2f}",
                                style=get_pnl_style(stats_data.get('total_pnl', 0)))
             stats_table.add_row("💰 Realized P&L", f"${stats_data.get('total_realized_pnl', 0):,.2f}",
@@ -714,16 +734,20 @@ class TableFormatter:
         fund_total = summary_data.get('fund_contributions', 0)
         
         if has_rich_support() and self.console:
-            summary_table = Table(title="💰 Financial Summary", show_header=True, header_style="bold magenta")
+            summary_table = Table(
+                title="💰 Financial Summary",
+                show_header=True,
+                header_style="bold magenta"
+            )
             summary_table.add_column("Metric", style="cyan", no_wrap=True)
             summary_table.add_column("Amount", justify="right", style="green")
             
-            summary_table.add_row("📊 Portfolio Value", f"${total_value:,.2f}")
-            summary_table.add_row("💹 Total P&L", 
+            summary_table.add_row("📊 Portfolio Value", f"${total_value:,.2f}", style="on grey11")
+            summary_table.add_row("💹 Total P&L",
                                 f"${total_pnl:,.2f}" if total_pnl >= 0 else f"[red]${total_pnl:,.2f}[/red]")
-            summary_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+            summary_table.add_row("💰 Cash Balance", f"${cash:,.2f}", style="on grey11")
             summary_table.add_row("🏦 Total Equity", f"${total_value + cash:,.2f}")
-            summary_table.add_row("💵 Fund Contributions", f"${fund_total:,.2f}")
+            summary_table.add_row("💵 Fund Contributions", f"${fund_total:,.2f}", style="on grey11")
             
             self.console.print(summary_table)
         else:
@@ -768,7 +792,11 @@ class TableFormatter:
         """Create Rich-formatted unified financial table."""
         
         # Create unified financial overview table
-        financial_table = Table(title="💰 Financial Overview", show_header=True, header_style="bold magenta")
+        financial_table = Table(
+            title="💰 Financial Overview",
+            show_header=True,
+            header_style="bold magenta"
+        )
         financial_table.add_column("Metric", style="cyan", no_wrap=True)
         financial_table.add_column("Amount", justify="right", style="yellow")
         
@@ -787,36 +815,59 @@ class TableFormatter:
         total_equity = total_value + cash
         
         # Portfolio Value Section
-        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}")
+        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}", style="on grey11")
         financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
-        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]")
-        
+        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
+
         # Add separator
         financial_table.add_row("", "")
-        
+        financial_table.add_row("", "", style="on grey11")
+
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
-        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}")
-        
+        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}", style="on grey11")
+
         # Add separator
         financial_table.add_row("", "")
-        
-        # P&L Section with color coding
+        financial_table.add_row("", "", style="on grey11")
+
+        # P&L Section with color coding AND alternating backgrounds
+        # Combine P&L color with alternating background
+        def get_combined_pnl_style_unified(value: float, is_odd_row: bool) -> str:
+            pnl_color = "green" if value >= 0 else "red"
+            background = "on grey11" if is_odd_row else ""
+            if background:
+                return f"{pnl_color} {background}"
+            return pnl_color
+
+        # Row 1 (odd): Unrealized P&L - should have grey background + pnl color
+        unrealized_style = get_combined_pnl_style_unified(unrealized_pnl, True)
         financial_table.add_row("💹 Unrealized P&L", f"${unrealized_pnl:,.2f}",
-                               style=get_pnl_style(unrealized_pnl))
+                               style=unrealized_style)
+
+        # Row 2 (even): Realized P&L - should have default background + pnl color
+        realized_style = get_combined_pnl_style_unified(realized_pnl, False)
         financial_table.add_row("💰 Realized P&L", f"${realized_pnl:,.2f}",
-                               style=get_pnl_style(realized_pnl))
+                               style=realized_style)
+
+        # Row 3 (odd): Total Portfolio P&L - should have grey background + pnl color
+        total_pnl_style = get_combined_pnl_style_unified(total_portfolio_pnl, True)
         financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
-                               style=get_pnl_style(total_portfolio_pnl))
-        
+                               style=total_pnl_style)
+
         # Calculate and display overall performance
         if total_contributions > 0:
             net_pnl_vs_contrib = (total_equity - total_contributions)
+            # Row 4 (even): Net P&L vs Contributions - should have default background + pnl color
+            net_pnl_style = get_combined_pnl_style_unified(net_pnl_vs_contrib, False)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
-                                   style=get_pnl_style(net_pnl_vs_contrib))
+                                   style=net_pnl_style)
+
             overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
+            # Row 5 (odd): Overall Return - should have grey background + pnl color
+            overall_return_style = get_combined_pnl_style_unified(overall_return_pct, True)
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
-                                   style=get_pnl_style(overall_return_pct))
+                                   style=overall_return_style)
 
         self.console.print(financial_table)
     
@@ -827,7 +878,11 @@ class TableFormatter:
         from rich.columns import Columns
         
         # Create financial overview table (reuse existing logic)
-        financial_table = Table(title="💰 Financial Overview", show_header=True, header_style="bold magenta")
+        financial_table = Table(
+            title="💰 Financial Overview",
+            show_header=True,
+            header_style="bold magenta"
+        )
         financial_table.add_column("Metric", style="cyan", no_wrap=True)
         financial_table.add_column("Amount", justify="right", style="yellow")
         
@@ -846,7 +901,7 @@ class TableFormatter:
         total_equity = total_value + cash
         
         # Portfolio Value Section
-        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}")
+        financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}", style="on grey11")
         # Cash details (if present in summary_data)
         cad_cash = summary_data.get('cad_cash', None)
         usd_cash = summary_data.get('usd_cash', None)
@@ -855,58 +910,85 @@ class TableFormatter:
         estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad', None)
         if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
             financial_table.add_row("💰 Cash Balance (CAD eq)", f"${cash:,.2f}")
-            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}")
+            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}", style="on grey11")
             financial_table.add_row("   • USD Cash", f"${usd_cash:,.2f}")
-            financial_table.add_row("   • USD→CAD rate", f"{usd_to_cad_rate:.4f}")
+            financial_table.add_row("   • USD→CAD rate", f"{usd_to_cad_rate:.4f}", style="on grey11")
             # Totals by currency (cash + positions)
             usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
             cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
             if usd_holdings_total_usd is not None:
                 financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD")
             if cad_holdings_total_cad is not None:
-                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD")
+                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="on grey11")
             # Estimated FX fee on USD holdings (simple)
             if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
                 approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
                 financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="red")
         else:
             financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
-        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]")
-        
+        financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
+
         # Add separator
         financial_table.add_row("", "")
-        
+        financial_table.add_row("", "", style="on grey11")
+
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
-        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}")
-        
+        financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}", style="on grey11")
+
         # Audit metric: funds not yet allocated into positions (net of cash)
         unallocated_vs_cost = stats_data.get('unallocated_vs_cost', None)
         if unallocated_vs_cost is not None:
             financial_table.add_row("🧾 Unallocated vs Cost", f"${unallocated_vs_cost:,.2f}")
-        
+
         # Add separator
+        financial_table.add_row("", "", style="on grey11")
         financial_table.add_row("", "")
-        
-        # P&L Section with color coding
+
+        # P&L Section with color coding AND alternating backgrounds
+        # Combine P&L color with alternating background
+        def get_combined_pnl_style(value: float, is_odd_row: bool) -> str:
+            pnl_color = "green" if value >= 0 else "red"
+            background = "on grey11" if is_odd_row else ""
+            if background:
+                return f"{pnl_color} {background}"
+            return pnl_color
+
+        # Row 1 (odd): Unrealized P&L - should have grey background + pnl color
+        unrealized_style = get_combined_pnl_style(unrealized_pnl, True)
         financial_table.add_row("💹 Unrealized P&L", f"${unrealized_pnl:,.2f}",
-                               style=get_pnl_style(unrealized_pnl))
+                               style=unrealized_style)
+
+        # Row 2 (even): Realized P&L - should have default background + pnl color
+        realized_style = get_combined_pnl_style(realized_pnl, False)
         financial_table.add_row("💰 Realized P&L", f"${realized_pnl:,.2f}",
-                               style=get_pnl_style(realized_pnl))
+                               style=realized_style)
+
+        # Row 3 (odd): Total Portfolio P&L - should have grey background + pnl color
+        total_pnl_style = get_combined_pnl_style(total_portfolio_pnl, True)
         financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
-                               style=get_pnl_style(total_portfolio_pnl))
-        
+                               style=total_pnl_style)
+
         # Calculate and display performance versus contributions (investor view)
         if total_contributions > 0:
             net_pnl_vs_contrib = (total_equity - total_contributions)
+            # Row 4 (even): Net P&L vs Contributions - should have default background + pnl color
+            net_pnl_style = get_combined_pnl_style(net_pnl_vs_contrib, False)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
-                                   style=get_pnl_style(net_pnl_vs_contrib))
+                                   style=net_pnl_style)
+
             overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
+            # Row 5 (odd): Overall Return - should have grey background + pnl color
+            overall_return_style = get_combined_pnl_style(overall_return_pct, True)
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
-                                   style=get_pnl_style(overall_return_pct))
+                                   style=overall_return_style)
         
         # Create ownership table
-        ownership_table = Table(title="👥 Ownership Details", show_header=True, header_style="bold blue")
+        ownership_table = Table(
+            title="👥 Ownership Details",
+            show_header=True,
+            header_style="bold blue"
+        )
         ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
         ownership_table.add_column("Shares", justify="right", style="cyan")
         ownership_table.add_column("Contributed", justify="right", style="green")
@@ -917,13 +999,17 @@ class TableFormatter:
         sorted_ownership = sorted(ownership_data.items(), 
                                 key=lambda x: x[1].get('ownership_pct', 0), reverse=True)
         
-        for contributor, data in sorted_ownership:
+        for row_index, (contributor, data) in enumerate(sorted_ownership):
+            # Determine background color for alternating rows (zebra stripes)
+            row_style = "on grey11" if row_index % 2 == 1 else None
+
             ownership_table.add_row(
                 contributor,
                 f"{data.get('shares', 0):.2f}",
                 f"${data.get('contributed', 0):,.2f}",
                 f"{data.get('ownership_pct', 0):.1f}%",
-                f"${data.get('current_value', 0):,.2f}"
+                f"${data.get('current_value', 0):,.2f}",
+                style=row_style  # Apply alternating background color
             )
         
         # Display tables side by side

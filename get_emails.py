@@ -10,7 +10,7 @@ Usage:
     python get_emails.py
     
 Or with custom data directory:
-    python get_emails.py --data-dir "C:\path\to\your\data"
+    python get_emails.py --data-dir "C:/path/to/your/data"
 
 Features:
 - Outputs emails in semicolon-separated format

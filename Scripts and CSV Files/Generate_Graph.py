@@ -136,10 +136,35 @@ else:
         print("   Example: python Generate_Graph.py --data-dir 'trading_data/prod'")
         sys.exit(1)
 
-# Save path in graphs folder with timestamp
+# Get fund name from config for filename
+try:
+    sys.path.append(str(Path(__file__).parent.parent))
+    from config.settings import get_settings
+    settings = get_settings()
+    fund_name = settings.get_fund_name()
+except Exception as e:
+    print(f"{_safe_emoji('⚠️')}  Could not load fund name from config: {e}")
+    fund_name = "Your Investments"  # Fallback
+
+# Sanitize fund name for filename (remove/replace problematic characters)
+import re
+sanitized_fund_name = re.sub(r'[^\w\-_\.]', '_', fund_name).strip('_')
+
+# Extract fund name from data directory path for filename
+if 'DATA_DIR' in globals() and DATA_DIR:
+    # Get just the fund name from the path (e.g., "RRSP Lance Webull" from full path)
+    fund_dir_name = Path(DATA_DIR).name
+    sanitized_fund_dir = re.sub(r'[^\w\-_\.]', '_', fund_dir_name).strip('_')
+else:
+    sanitized_fund_dir = sanitized_fund_name
+
+# Create benchmark identifier for filename
+benchmark_short = args.benchmark.upper() if args.benchmark != 'all' else 'ALL'
+
+# Save path in graphs folder with fund name, benchmark, and timestamp
 from datetime import datetime
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-RESULTS_PATH = Path(f"graphs/portfolio_performance_{timestamp}.png")
+RESULTS_PATH = Path(f"graphs/{sanitized_fund_dir}_vs_{benchmark_short}_portfolio_performance_{timestamp}.png")
 
 
 def should_open_graph(args) -> bool:
@@ -619,15 +644,6 @@ def refresh_portfolio_data(data_dir_path):
 
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
-    # Get fund name from config
-    try:
-        sys.path.append(str(Path(__file__).parent.parent))
-        from config.settings import get_settings
-        settings = get_settings()
-        fund_name = settings.get_fund_name()
-    except Exception as e:
-        print(f"{_safe_emoji('⚠️')}  Could not load fund name from config: {e}")
-        fund_name = "Your Investments"  # Fallback
     
     # First, try to refresh portfolio data to get current prices
     refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() else None)
@@ -705,73 +721,155 @@ def main(args) -> dict:
             alpha=0.8,
         )
 
-    # annotate peak performance - position text within plot area
+    # Smart annotation positioning functions
+    def find_optimal_text_position(x_data, y_data, x_pos, y_pos, ax, preferred_side='right'):
+        """Find optimal position for text annotation to avoid overlaps and stay within bounds."""
+        # Simple heuristic-based positioning without complex coordinate transforms
+        # This avoids matplotlib's coordinate system complexity
+
+        # Get the data ranges to understand where we are
+        x_min, x_max = x_data.min(), x_data.max()
+        y_min, y_max = y_data.min(), y_data.max()
+
+        # Convert to numerical values for comparison
+        if hasattr(x_pos, 'timestamp'):  # pandas Timestamp
+            x_pos_num = x_pos.timestamp()
+            x_min_num = x_min.timestamp()
+            x_max_num = x_max.timestamp()
+        else:
+            x_pos_num = x_pos
+            x_min_num = x_min
+            x_max_num = x_max
+
+        # Determine relative position in the plot
+        x_relative = (x_pos_num - x_min_num) / (x_max_num - x_min_num) if x_max_num != x_min_num else 0.5
+        y_relative = (y_pos - y_min) / (y_max - y_min) if y_max != y_min else 0.5
+
+        # Smart positioning based on relative position with much increased distances
+        if preferred_side == 'right':
+            # For points in left half, prefer right positioning
+            if x_relative < 0.6:
+                return ('right', 100, 0)
+            # For points in right half, prefer left positioning
+            elif x_relative > 0.4:
+                return ('left', -100, 0)
+            # For middle, try above or below
+            else:
+                if y_relative > 0.5:
+                    return ('below', 0, -100)
+                else:
+                    return ('above', 0, 100)
+        else:
+            # For end labels, prefer left side with much extra distance
+            if x_relative > 0.3:
+                return ('left', -100, 0)
+            else:
+                return ('right', 100, 0)
+
+    def create_smart_annotation(text, x_pos, y_pos, color, facecolor, ax, preferred_side='right', fontsize=10):
+        """Create an annotation with smart positioning."""
+        _, x_offset, y_offset = find_optimal_text_position(x_data=llm_totals["Date"],
+                                                         y_data=llm_totals["Performance_Index"],
+                                                         x_pos=x_pos, y_pos=y_pos, ax=ax,
+                                                         preferred_side=preferred_side)
+
+        plt.annotate(
+            text,
+            xy=(x_pos, y_pos),
+            xytext=(x_offset, y_offset),
+            textcoords='offset points',
+            color=color,
+            fontsize=fontsize,
+            fontweight='bold',
+            bbox=dict(boxstyle="round,pad=0.4", facecolor=facecolor, alpha=0.85,
+                     edgecolor=color, linewidth=1),
+            arrowprops=dict(arrowstyle="->", color=color, alpha=0.8, linewidth=1.5,
+                          shrinkA=5, shrinkB=5),
+            zorder=20  # High z-order to ensure annotations appear on top
+        )
+
+    # Get current axis for positioning calculations
+    ax = plt.gca()
+
+    # annotate peak performance - direct positioning
     peak_value = float(
         llm_totals.loc[llm_totals["Date"] == peak_date, "Performance_Index"].iloc[0]
     )
     plt.annotate(
-        f"+{peak_gain:.2f}% peak",
+        f"[+] +{peak_gain:.1f}% Peak",
         xy=(peak_date, peak_value),
-        xytext=(10, 10),  # Offset from the point
+        xytext=(120, 0),  # Direct right positioning
         textcoords='offset points',
-        color="green",
-        fontsize=9,
+        color="darkgreen",
+        fontsize=11,
         fontweight='bold',
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7),
-        arrowprops=dict(arrowstyle="->", color="green", alpha=0.7)
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="lightgreen", alpha=0.85,
+                 edgecolor="darkgreen", linewidth=1),
+        arrowprops=dict(arrowstyle="->", color="darkgreen", alpha=0.8, linewidth=1.5,
+                      shrinkA=5, shrinkB=5),
+        zorder=20
     )
 
     # annotate final P/Ls - position within plot area
     final_date = llm_totals["Date"].iloc[-1]
     final_llm = float(llm_totals["Performance_Index"].iloc[-1])
     portfolio_return = final_llm - 100.0
-    
-    # Portfolio performance annotation (always show)
+
+    # Portfolio performance annotation (always show) - direct left positioning
     plt.annotate(
-        f"{portfolio_return:+.1f}%",
+        f"[*] {portfolio_return:+.1f}% Total Return",
         xy=(final_date, final_llm),
-        xytext=(-40, 20),  # Left and up offset
+        xytext=(-120, 0),  # Direct left positioning
         textcoords='offset points',
-        color="blue",
-        fontsize=11,
+        color="darkblue",
+        fontsize=12,
         fontweight='bold',
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.8),
-        arrowprops=dict(arrowstyle="->", color="blue", alpha=0.7)
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="lightblue", alpha=0.85,
+                 edgecolor="darkblue", linewidth=1),
+        arrowprops=dict(arrowstyle="->", color="darkblue", alpha=0.8, linewidth=1.5,
+                      shrinkA=5, shrinkB=5),
+        zorder=20
     )
-    
+
     if args.benchmark == 'all':
         # For multiple benchmarks, show performance in legend instead of individual annotations
         # This keeps the chart clean and readable
         pass  # Performance is shown in the legend
     else:
-        # Single benchmark performance annotation
+        # Single benchmark performance annotation - prefer left side
         final_benchmark = float(benchmark_data[benchmark_config['column_name']].iloc[-1].item())
         benchmark_return = final_benchmark - 100.0
-        
+
         plt.annotate(
-            f"{benchmark_return:+.1f}%",
+            f"[=] {benchmark_return:+.1f}% Benchmark",
             xy=(final_date, final_benchmark),
-            xytext=(-40, -15),  # Left and down offset
+            xytext=(-120, -30),  # Direct left and down positioning
             textcoords='offset points',
-            color="orange",
-            fontsize=10,
+            color="darkorange",
+            fontsize=11,
             fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="wheat", alpha=0.7),
-            arrowprops=dict(arrowstyle="->", color="orange", alpha=0.7)
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="wheat", alpha=0.85,
+                     edgecolor="darkorange", linewidth=1),
+            arrowprops=dict(arrowstyle="->", color="darkorange", alpha=0.8, linewidth=1.5,
+                          shrinkA=5, shrinkB=5),
+            zorder=20
         )
 
-    # annotate max drawdown - position within plot area
+    # annotate max drawdown - direct positioning
     dd_normalized = llm_totals.loc[llm_totals["Date"] == dd_date, "Performance_Index"].iloc[0] if len(llm_totals.loc[llm_totals["Date"] == dd_date]) > 0 else 100
     plt.annotate(
-        f"{dd_pct:.1f}% max drawdown",
+        f"[-] {dd_pct:.1f}% Max Drawdown",
         xy=(dd_date, dd_normalized),
-        xytext=(15, -20),  # Right and down offset
+        xytext=(120, -30),  # Direct right and down positioning
         textcoords='offset points',
-        color="red",
-        fontsize=9,
+        color="darkred",
+        fontsize=10,
         fontweight='bold',
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7),
-        arrowprops=dict(arrowstyle="->", color="red", alpha=0.7)
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="lightcoral", alpha=0.85,
+                 edgecolor="darkred", linewidth=1),
+        arrowprops=dict(arrowstyle="->", color="darkred", alpha=0.8, linewidth=1.5,
+                      shrinkA=5, shrinkB=5),
+        zorder=20
     )
 
     # Chart formatting - show TRUE performance, not misleading portfolio value growth
@@ -829,11 +927,48 @@ def main(args) -> dict:
     # Add break-even reference line
     plt.axhline(y=100, color='gray', linestyle=':', alpha=0.7, linewidth=1.5, label='Break-even')
     
+    # Enhanced date axis with more labels and grid lines
+    import matplotlib.dates as mdates
+
+    # Calculate the date range to determine optimal tick frequency
+    date_range = (llm_totals["Date"].max() - llm_totals["Date"].min()).days
+
+    # Set up date formatting and locator based on date range
+    if date_range <= 7:  # Very short range - show every day
+        locator = mdates.DayLocator()
+        date_format = '%m/%d'
+        minor_locator = mdates.HourLocator(byhour=[9, 12, 15])  # Show market hours
+    elif date_range <= 30:  # Short range - show every 2-3 days
+        locator = mdates.DayLocator(interval=2)
+        date_format = '%m/%d'
+        minor_locator = mdates.DayLocator()
+    elif date_range <= 90:  # Medium range - show weekly
+        locator = mdates.WeekdayLocator(byweekday=mdates.MO)
+        date_format = '%m/%d'
+        minor_locator = mdates.DayLocator(interval=1)
+    elif date_range <= 365:  # Long range - show monthly
+        locator = mdates.MonthLocator()
+        date_format = '%Y-%m'
+        minor_locator = mdates.WeekdayLocator(byweekday=mdates.MO)
+    else:  # Very long range - show quarterly
+        locator = mdates.MonthLocator(interval=3)
+        date_format = '%Y-%m'
+        minor_locator = mdates.MonthLocator()
+
+    # Apply the date formatting
+    plt.gca().xaxis.set_major_locator(locator)
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter(date_format))
+    plt.gca().xaxis.set_minor_locator(minor_locator)
+
+    # Add more detailed grid lines
+    plt.grid(True, which='major', axis='x', alpha=0.4, linewidth=1)  # Major vertical grid lines
+    plt.grid(True, which='minor', axis='x', alpha=0.2, linewidth=0.5)  # Minor vertical grid lines
+    plt.grid(True, which='major', axis='y', alpha=0.3, linewidth=0.8)  # Horizontal grid lines
+
     plt.xlabel("Date")
     plt.ylabel("Performance Index (100 = Break-even)")
-    plt.xticks(rotation=45)  # Better rotation for dates
+    plt.xticks(rotation=45)  # Keep rotation for better readability
     plt.legend(loc='upper left', frameon=True, fancybox=True, shadow=True)
-    plt.grid(True, alpha=0.3)
     
     # Better layout management
     plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.88, hspace=0.2, wspace=0.2)

@@ -49,6 +49,11 @@ class ContributorManager:
         # Read existing data
         df = pd.read_csv(self.fund_file)
         
+        # Check if Contributor column exists, if not return empty DataFrame
+        if 'Contributor' not in df.columns:
+            logger.warning("No 'Contributor' column found in fund contributions file")
+            return pd.DataFrame(columns=['Contributor', 'Email'])
+        
         # Ensure Email column exists for backward compatibility
         if 'Email' not in df.columns:
             df['Email'] = ''
@@ -77,6 +82,11 @@ class ContributorManager:
             
             # Read existing data
             df = pd.read_csv(self.fund_file)
+            
+            # Check if Contributor column exists
+            if 'Contributor' not in df.columns:
+                print_error("No 'Contributor' column found in fund contributions file")
+                return False
             
             # Ensure Email column exists
             if 'Email' not in df.columns:

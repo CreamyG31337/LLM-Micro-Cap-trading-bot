@@ -39,7 +39,7 @@
                 <div class="flex items-center space-x-4">
                     <div>
                         <label for="fund-select" class="text-sm text-blue-100 block">Select Fund</label>
-                        <select id="fund-select" class="bg-white/20 border border-white/30 rounded px-3 py-1 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50">
+                        <select id="fund-select" class="bg-white text-gray-900 border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             <option value="">All Funds</option>
                         </select>
                     </div>
@@ -174,7 +174,8 @@
             try {
                 const fundSelect = document.getElementById('fund-select');
                 const fund = fundSelect ? fundSelect.value : '';
-                const url = fund ? `/api/portfolio?fund=${encodeURIComponent(fund)}` : '/api/portfolio';
+                // Always include fund parameter, even if empty (for "All Funds")
+                const url = `/api/portfolio?fund=${encodeURIComponent(fund)}`;
                 const response = await fetch(url);
                 portfolioData = await response.json();
                 updateDashboard();
@@ -189,7 +190,8 @@
             try {
                 const fundSelect = document.getElementById('fund-select');
                 const fund = fundSelect ? fundSelect.value : '';
-                const url = fund ? `/api/performance-chart?fund=${encodeURIComponent(fund)}` : '/api/performance-chart';
+                // Always include fund parameter, even if empty (for "All Funds")
+                const url = `/api/performance-chart?fund=${encodeURIComponent(fund)}`;
                 const response = await fetch(url);
                 const chartData = await response.json();
                 
@@ -211,7 +213,8 @@
             try {
                 const fundSelect = document.getElementById('fund-select');
                 const fund = fundSelect ? fundSelect.value : '';
-                const url = fund ? `/api/recent-trades?fund=${encodeURIComponent(fund)}` : '/api/recent-trades';
+                // Always include fund parameter, even if empty (for "All Funds")
+                const url = `/api/recent-trades?fund=${encodeURIComponent(fund)}`;
                 const response = await fetch(url);
                 const trades = await response.json();
                 displayRecentTrades(trades);

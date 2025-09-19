@@ -34,7 +34,6 @@ from display.console_output import _safe_emoji
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / "venv"
 SCRIPTS_DIR = PROJECT_ROOT / "Scripts and CSV Files"
-START_YOUR_OWN_DIR = PROJECT_ROOT / "Start Your Own"
 
 # Legacy directories (for backward compatibility)
 LEGACY_MY_TRADING_DIR = PROJECT_ROOT / "trading_data" / "prod"
@@ -135,21 +134,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder)", 
          ["--data-dir", str(data_dir_path)]),
         
-        ("4", "📈 Process Portfolio (Scripts folder)", 
-         "Process portfolio using the Scripts and CSV Files folder", 
-         []),
         
-        ("5", f"{_safe_emoji('📊')} Generate Graph (Scripts folder)", 
-         "Generate performance graph using Scripts and CSV Files folder", 
-         []),
-        
-        ("6", "🏁 Start Your Own - Process Portfolio", 
-         "Process portfolio using the Start Your Own template folder", 
-         []),
-        
-        ("7", "📈 Start Your Own - Generate Graph", 
-         "Generate performance graph using Start Your Own template folder", 
-         []),
         
         ("8", "🐛 Debug Instructions", 
          "Show debug information and instructions", 
@@ -284,7 +269,6 @@ def handle_configuration() -> None:
         print_colored(f"Project Root: {PROJECT_ROOT}", Colors.ENDC)
         print_colored(f"Virtual Env:  {VENV_DIR} {_safe_emoji('✅') if VENV_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
         print_colored(f"Scripts Dir:  {SCRIPTS_DIR} {_safe_emoji('✅') if SCRIPTS_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
-        print_colored(f"Start Your Own: {START_YOUR_OWN_DIR} {_safe_emoji('✅') if START_YOUR_OWN_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
         
         # Show fund information
         try:
@@ -338,12 +322,8 @@ def get_script_path(option: str) -> Optional[Path]:
     """Get the script path for a given menu option"""
     script_map = {
         "1": PROJECT_ROOT / "trading_script.py",
-        "2": PROJECT_ROOT / "simple_automation.py", 
+        "2": PROJECT_ROOT / "simple_automation.py",
         "3": SCRIPTS_DIR / "Generate_Graph.py",
-        "4": SCRIPTS_DIR / "ProcessPortfolio.py",
-        "5": SCRIPTS_DIR / "Generate_Graph.py",
-        "6": START_YOUR_OWN_DIR / "ProcessPortfolio.py",
-        "7": START_YOUR_OWN_DIR / "Generate_Graph.py",
         "8": PROJECT_ROOT / "debug_instructions.py",
         "9": PROJECT_ROOT / "show_prompt.py",
         "d": PROJECT_ROOT / "prompt_generator.py",

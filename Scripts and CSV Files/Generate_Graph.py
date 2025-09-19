@@ -75,8 +75,6 @@ else:
         None,  # Will be populated dynamically
         # 3. Scripts and CSV Files (current directory)
         SCRIPT_DIR,
-        # 4. Start Your Own directory
-        SCRIPT_DIR.parent / "Start Your Own",
         # 5. Legacy locations (for backward compatibility)
         SCRIPT_DIR.parent / "my trading",
         SCRIPT_DIR.parent / "trading_data" / "prod"

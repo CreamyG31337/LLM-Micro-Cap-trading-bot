@@ -177,6 +177,9 @@ class FundManager:
             with open(self.active_fund_file, 'w') as f:
                 json.dump(active_fund_data, f, indent=2)
             
+            # Invalidate global settings cache to force refresh
+            self._invalidate_global_settings_cache()
+            
             print_success(f"Switched to fund: {fund_name}")
             return True
             
@@ -196,6 +199,20 @@ class FundManager:
                 return data.get('switch_count', 0)
         except:
             return 0
+    
+    def _invalidate_global_settings_cache(self) -> None:
+        """Invalidate the global settings cache to force refresh after fund switch."""
+        try:
+            # Import here to avoid circular imports
+            import config.settings
+            # Reset the global settings instance to None so it gets recreated
+            config.settings._settings = None
+        except ImportError:
+            # Settings module not available, nothing to invalidate
+            pass
+        except Exception:
+            # Any other error, ignore silently
+            pass
     
     def create_fund(self, fund_name: str, fund_type: str = "investment", 
                    display_currency: str = "CAD", description: str = "", 

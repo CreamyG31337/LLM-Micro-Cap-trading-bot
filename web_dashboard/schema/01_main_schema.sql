@@ -1,8 +1,11 @@
--- Supabase Database Schema for Portfolio Dashboard
--- Run this in your Supabase SQL editor
--- This script drops everything first, then creates clean schema
+-- =====================================================
+-- PORTFOLIO DASHBOARD - MAIN SCHEMA
+-- =====================================================
+-- This is the core schema for the portfolio dashboard
+-- Run this FIRST before any other schema files
+-- =====================================================
 
--- Drop everything first
+-- Drop everything first (clean slate)
 DROP VIEW IF EXISTS current_positions CASCADE;
 DROP TABLE IF EXISTS portfolio_positions CASCADE;
 DROP TABLE IF EXISTS trade_log CASCADE;
@@ -14,7 +17,11 @@ DROP FUNCTION IF EXISTS calculate_daily_performance(DATE, VARCHAR) CASCADE;
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create portfolio_positions table
+-- =====================================================
+-- CORE PORTFOLIO TABLES
+-- =====================================================
+
+-- Portfolio positions table
 CREATE TABLE portfolio_positions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     fund VARCHAR(50) NOT NULL,
@@ -30,7 +37,7 @@ CREATE TABLE portfolio_positions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create trade_log table
+-- Trade log table
 CREATE TABLE trade_log (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     fund VARCHAR(50) NOT NULL,
@@ -45,7 +52,7 @@ CREATE TABLE trade_log (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create cash_balances table
+-- Cash balances table
 CREATE TABLE cash_balances (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     fund VARCHAR(50) NOT NULL,
@@ -55,7 +62,7 @@ CREATE TABLE cash_balances (
     UNIQUE(fund, currency)
 );
 
--- Create performance_metrics table for caching
+-- Performance metrics table for caching
 CREATE TABLE performance_metrics (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     fund VARCHAR(50) NOT NULL,
@@ -72,19 +79,33 @@ CREATE TABLE performance_metrics (
     UNIQUE(fund, date)
 );
 
--- Create indexes for better performance
+-- =====================================================
+-- INDEXES FOR PERFORMANCE
+-- =====================================================
+
+-- Portfolio positions indexes
 CREATE INDEX idx_portfolio_positions_fund ON portfolio_positions(fund);
 CREATE INDEX idx_portfolio_positions_ticker ON portfolio_positions(ticker);
 CREATE INDEX idx_portfolio_positions_date ON portfolio_positions(date);
 CREATE INDEX idx_portfolio_positions_fund_ticker ON portfolio_positions(fund, ticker);
+
+-- Trade log indexes
 CREATE INDEX idx_trade_log_fund ON trade_log(fund);
 CREATE INDEX idx_trade_log_ticker ON trade_log(ticker);
 CREATE INDEX idx_trade_log_date ON trade_log(date);
+
+-- Cash balances indexes
 CREATE INDEX idx_cash_balances_fund ON cash_balances(fund);
+
+-- Performance metrics indexes
 CREATE INDEX idx_performance_metrics_fund ON performance_metrics(fund);
 CREATE INDEX idx_performance_metrics_date ON performance_metrics(date);
 
--- Create updated_at trigger function
+-- =====================================================
+-- TRIGGERS AND FUNCTIONS
+-- =====================================================
+
+-- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -94,16 +115,72 @@ END;
 $$ language 'plpgsql';
 
 -- Create triggers for updated_at
-CREATE TRIGGER update_portfolio_positions_updated_at 
-    BEFORE UPDATE ON portfolio_positions 
+CREATE TRIGGER update_portfolio_positions_updated_at
+    BEFORE UPDATE ON portfolio_positions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_performance_metrics_updated_at 
-    BEFORE UPDATE ON performance_metrics 
+CREATE TRIGGER update_performance_metrics_updated_at
+    BEFORE UPDATE ON performance_metrics
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- VIEWS
+-- =====================================================
+
+-- Current positions view (shares > 0)
+CREATE VIEW current_positions AS
+SELECT
+    fund,
+    ticker,
+    currency,
+    SUM(shares) as total_shares,
+    AVG(price) as avg_price,
+    SUM(cost_basis) as total_cost_basis,
+    SUM(pnl) as total_pnl,
+    SUM(total_value) as total_market_value,
+    MAX(date) as last_updated
+FROM portfolio_positions
+WHERE shares > 0
+GROUP BY fund, ticker, currency;
+
+-- =====================================================
+-- UTILITY FUNCTIONS
+-- =====================================================
+
+-- Function to calculate daily performance by fund
+CREATE OR REPLACE FUNCTION calculate_daily_performance(target_date DATE, fund_name VARCHAR(50) DEFAULT NULL)
+RETURNS TABLE (
+    fund VARCHAR(50),
+    total_value DECIMAL(10, 2),
+    cost_basis DECIMAL(10, 2),
+    unrealized_pnl DECIMAL(10, 2),
+    performance_pct DECIMAL(5, 2)
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        p.fund,
+        COALESCE(SUM(p.total_value), 0) as total_value,
+        COALESCE(SUM(p.cost_basis), 0) as cost_basis,
+        COALESCE(SUM(p.pnl), 0) as unrealized_pnl,
+        CASE
+            WHEN SUM(p.cost_basis) > 0 THEN (SUM(p.pnl) / SUM(p.cost_basis)) * 100
+            ELSE 0
+        END as performance_pct
+    FROM portfolio_positions p
+    WHERE p.date::date = target_date
+      AND p.shares > 0
+      AND (fund_name IS NULL OR p.fund = fund_name)
+    GROUP BY p.fund;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- INITIAL DATA SETUP
+-- =====================================================
 
 -- Insert initial cash balances for common funds
-INSERT INTO cash_balances (fund, currency, amount) VALUES 
+INSERT INTO cash_balances (fund, currency, amount) VALUES
     ('Project Chimera', 'CAD', 0.00),
     ('Project Chimera', 'USD', 0.00),
     ('RRSP Lance Webull', 'CAD', 0.00),
@@ -114,13 +191,17 @@ INSERT INTO cash_balances (fund, currency, amount) VALUES
     ('TFSA', 'USD', 0.00)
 ON CONFLICT (fund, currency) DO NOTHING;
 
--- Enable Row Level Security (RLS)
+-- =====================================================
+-- BASIC RLS (Will be enhanced by auth schema)
+-- =====================================================
+
+-- Enable Row Level Security (basic - will be enhanced by auth schema)
 ALTER TABLE portfolio_positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trade_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cash_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE performance_metrics ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies (allow all for now - you can restrict later)
+-- Basic RLS policies (allow all for now - will be restricted by auth schema)
 CREATE POLICY "Allow all operations on portfolio_positions" ON portfolio_positions
     FOR ALL USING (true);
 
@@ -133,46 +214,14 @@ CREATE POLICY "Allow all operations on cash_balances" ON cash_balances
 CREATE POLICY "Allow all operations on performance_metrics" ON performance_metrics
     FOR ALL USING (true);
 
--- Create a view for current positions (shares > 0)
-CREATE VIEW current_positions AS
-SELECT 
-    fund,
-    ticker,
-    currency,
-    SUM(shares) as total_shares,
-    AVG(price) as avg_price,
-    SUM(cost_basis) as total_cost_basis,
-    SUM(pnl) as total_pnl,
-    SUM(total_value) as total_market_value,
-    MAX(date) as last_updated
-FROM portfolio_positions 
-WHERE shares > 0
-GROUP BY fund, ticker, currency;
+-- =====================================================
+-- SCHEMA COMPLETE
+-- =====================================================
 
--- Create a function to calculate daily performance by fund
-CREATE OR REPLACE FUNCTION calculate_daily_performance(target_date DATE, fund_name VARCHAR(50) DEFAULT NULL)
-RETURNS TABLE (
-    fund VARCHAR(50),
-    total_value DECIMAL(10, 2),
-    cost_basis DECIMAL(10, 2),
-    unrealized_pnl DECIMAL(10, 2),
-    performance_pct DECIMAL(5, 2)
-) AS $$
+-- Success message
+DO $$
 BEGIN
-    RETURN QUERY
-    SELECT 
-        p.fund,
-        COALESCE(SUM(p.total_value), 0) as total_value,
-        COALESCE(SUM(p.cost_basis), 0) as cost_basis,
-        COALESCE(SUM(p.pnl), 0) as unrealized_pnl,
-        CASE 
-            WHEN SUM(p.cost_basis) > 0 THEN (SUM(p.pnl) / SUM(p.cost_basis)) * 100
-            ELSE 0
-        END as performance_pct
-    FROM portfolio_positions p
-    WHERE p.date::date = target_date 
-      AND p.shares > 0 
-      AND (fund_name IS NULL OR p.fund = fund_name)
-    GROUP BY p.fund;
-END;
-$$ LANGUAGE plpgsql;
+    RAISE NOTICE '✅ Main schema created successfully!';
+    RAISE NOTICE '📋 Next step: Run 02_auth_schema.sql';
+    RAISE NOTICE '🔐 This will add user authentication and permissions';
+END $$;

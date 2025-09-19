@@ -69,7 +69,7 @@ class MarketDataFetcher:
     def __init__(self, cache_instance: Optional[Any] = None):
         """
         Initialize the market data fetcher.
-        
+
         Args:
             cache_instance: Optional cache instance for storing/retrieving data
         """
@@ -77,13 +77,34 @@ class MarketDataFetcher:
         self.proxy_map = PROXY_MAP.copy()
         self._portfolio_currency_cache = {}
         self._load_currency_cache()
-        
+
         # Access global settings for configurable TTL
         try:
             from config.settings import get_settings  # lazy import to avoid cycles
             self.settings = get_settings()
         except Exception:
             self.settings = None
+
+        # In-memory fundamentals cache (TTL-based)
+        self._fund_cache: Dict[str, Dict[str, Any]] = {}
+        self._fund_cache_meta: Dict[str, Dict[str, Any]] = {}
+        ttl_hours = 12
+        try:
+            if self.settings:
+                ttl_hours = int(self.settings.get('market_data.fundamentals_cache_ttl_hours', 12))
+        except Exception:
+            ttl_hours = 12
+        self._fund_cache_ttl = timedelta(hours=ttl_hours)
+
+        # Load fundamentals overrides (one-time load)
+        self._fundamentals_overrides: Dict[str, Dict[str, Any]] = {}
+        self._load_fundamentals_overrides()
+
+        # Attempt to load fundamentals cache from disk
+        try:
+            self._load_fundamentals_cache()
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Could not load fundamentals cache: {e}")
     
     def _load_currency_cache(self):
         """Load currency information from portfolio CSV files."""
@@ -139,27 +160,6 @@ class MarketDataFetcher:
         except Exception as e:
             logger.warning(f"Could not convert USD to CAD: {e}, using original data")
             return result
-        
-        # In-memory fundamentals cache (TTL-based)
-        self._fund_cache: Dict[str, Dict[str, Any]] = {}
-        self._fund_cache_meta: Dict[str, Dict[str, Any]] = {}
-        ttl_hours = 12
-        try:
-            if self.settings:
-                ttl_hours = int(self.settings.get('market_data.fundamentals_cache_ttl_hours', 12))
-        except Exception:
-            ttl_hours = 12
-        self._fund_cache_ttl = timedelta(hours=ttl_hours)
-        
-        # Load fundamentals overrides (one-time load)
-        self._fundamentals_overrides: Dict[str, Dict[str, Any]] = {}
-        self._load_fundamentals_overrides()
-        
-        # Attempt to load fundamentals cache from disk
-        try:
-            self._load_fundamentals_cache()
-        except Exception as e:
-            logging.getLogger(__name__).debug(f"Could not load fundamentals cache: {e}")
     
     def _load_fundamentals_overrides(self) -> None:
         """Load fundamentals overrides from JSON file to correct misleading API data."""

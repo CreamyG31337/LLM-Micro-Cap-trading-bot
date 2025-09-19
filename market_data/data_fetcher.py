@@ -595,9 +595,31 @@ class MarketDataFetcher:
         """Normalize OHLCV DataFrame to standard format with Decimal conversion."""
         from decimal import Decimal
         
+        # Flatten multiIndex frame so we can lazily lookup values by index.
+        if isinstance(df.columns, pd.MultiIndex):
+            try:
+                # If the second level is the same ticker for all cols, drop it     
+                if len(set(df.columns.get_level_values(1))) == 1:
+                    df = df.copy()
+                    df.columns = df.columns.get_level_values(0)
+                else:
+                    # multiple tickers: flatten with join
+                    df = df.copy()
+                    df.columns = ["_".join(map(str, t)).strip("_") for t in df.columns.to_flat_index()]
+            except Exception:
+                df = df.copy()
+                df.columns = ["_".join(map(str, t)).strip("_") for t in df.columns.to_flat_index()]
+        
         # Ensure required columns exist
         required_cols = ["Open", "High", "Low", "Close", "Volume"]
         existing_cols = [col for col in required_cols if col in df.columns]
+        
+        # If we have flattened multi-ticker columns, we can't process them with standard OHLCV logic
+        # This typically happens when yfinance returns data for multiple tickers at once
+        # In this case, we should return an empty DataFrame as this function expects single-ticker data
+        if not existing_cols and any("_" in col for col in df.columns):
+            logger.debug("Multi-ticker DataFrame detected, returning empty DataFrame (single-ticker expected)")
+            return pd.DataFrame()
         
         # Add Adj Close if missing
         if "Adj Close" not in df.columns and "Close" in df.columns:

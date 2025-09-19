@@ -37,12 +37,12 @@ class SupabaseClient:
         if not self.url or not self.key:
             raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY environment variables must be set")
         
-        self.client: Client = create_client(self.url, self.key)
+        self.supabase: Client = create_client(self.url, self.key)
     
     def test_connection(self) -> bool:
         """Test database connection"""
         try:
-            result = self.client.table("cash_balances").select("*").limit(1).execute()
+            result = self.supabase.table("cash_balances").select("*").limit(1).execute()
             logger.info("✅ Supabase connection successful")
             return True
         except Exception as e:
@@ -68,7 +68,7 @@ class SupabaseClient:
                 })
             
             # Upsert positions (insert or update on conflict)
-            result = self.client.table("portfolio_positions").upsert(positions).execute()
+            result = self.supabase.table("portfolio_positions").upsert(positions).execute()
             logger.info(f"✅ Upserted {len(positions)} portfolio positions")
             return True
             
@@ -96,7 +96,7 @@ class SupabaseClient:
                 })
             
             # Insert trades (no upsert needed for trade log)
-            result = self.client.table("trade_log").insert(trades).execute()
+            result = self.supabase.table("trade_log").insert(trades).execute()
             logger.info(f"✅ Inserted {len(trades)} trade log entries")
             return True
             
@@ -108,7 +108,7 @@ class SupabaseClient:
         """Update cash balances"""
         try:
             for currency, amount in cash_balances.items():
-                result = self.client.table("cash_balances").update({
+                result = self.supabase.table("cash_balances").update({
                     "amount": float(amount),
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }).eq("currency", currency).execute()
@@ -120,35 +120,55 @@ class SupabaseClient:
             logger.error(f"❌ Error updating cash balances: {e}")
             return False
     
-    def get_current_positions(self) -> List[Dict]:
-        """Get current portfolio positions"""
+    def get_current_positions(self, fund: Optional[str] = None) -> List[Dict]:
+        """Get current portfolio positions, optionally filtered by fund"""
         try:
-            result = self.client.table("current_positions").select("*").execute()
+            query = self.supabase.table("current_positions").select("*")
+            if fund:
+                query = query.eq("fund", fund)
+            result = query.execute()
             return result.data
         except Exception as e:
             logger.error(f"❌ Error getting current positions: {e}")
             return []
     
-    def get_trade_log(self, limit: int = 100) -> List[Dict]:
-        """Get recent trade log entries"""
+    def get_trade_log(self, limit: int = 100, fund: Optional[str] = None) -> List[Dict]:
+        """Get recent trade log entries, optionally filtered by fund"""
         try:
-            result = self.client.table("trade_log").select("*").order("date", desc=True).limit(limit).execute()
+            query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
+            if fund:
+                query = query.eq("fund", fund)
+            result = query.execute()
             return result.data
         except Exception as e:
             logger.error(f"❌ Error getting trade log: {e}")
             return []
     
-    def get_cash_balances(self) -> Dict[str, float]:
-        """Get current cash balances"""
+    def get_cash_balances(self, fund: Optional[str] = None) -> Dict[str, float]:
+        """Get current cash balances, optionally filtered by fund"""
         try:
-            result = self.client.table("cash_balances").select("*").execute()
+            query = self.supabase.table("cash_balances").select("*")
+            if fund:
+                query = query.eq("fund", fund)
+            result = query.execute()
             balances = {}
             for row in result.data:
-                balances[row["currency"]] = float(row["amount"])
+                key = f"{row['fund']}_{row['currency']}" if not fund else row["currency"]
+                balances[key] = float(row["amount"])
             return balances
         except Exception as e:
             logger.error(f"❌ Error getting cash balances: {e}")
             return {"CAD": 0.0, "USD": 0.0}
+    
+    def get_available_funds(self) -> List[str]:
+        """Get list of all available funds"""
+        try:
+            result = self.supabase.table("portfolio_positions").select("fund").execute()
+            funds = list(set(row["fund"] for row in result.data))
+            return sorted(funds)
+        except Exception as e:
+            logger.error(f"❌ Error getting available funds: {e}")
+            return []
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Calculate and return performance metrics"""
@@ -194,7 +214,7 @@ class SupabaseClient:
         """Get daily performance data for charting"""
         try:
             # Get positions grouped by date
-            result = self.client.table("portfolio_positions").select(
+            result = self.supabase.table("portfolio_positions").select(
                 "date, ticker, shares, price, cost_basis, pnl, total_value"
             ).gte("date", (datetime.now() - pd.Timedelta(days=days)).isoformat()).execute()
             

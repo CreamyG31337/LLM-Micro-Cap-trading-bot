@@ -36,6 +36,14 @@
                     <h1 class="text-3xl font-bold">📈 Portfolio Performance Dashboard</h1>
                     <p class="text-blue-100 mt-2">Real-time trading bot performance tracking</p>
                 </div>
+                <div class="flex items-center space-x-4">
+                    <div>
+                        <label for="fund-select" class="text-sm text-blue-100 block">Select Fund</label>
+                        <select id="fund-select" class="bg-white/20 border border-white/30 rounded px-3 py-1 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50">
+                            <option value="">All Funds</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="text-right">
                     <div class="text-sm text-blue-100">Last Updated</div>
                     <div id="last-updated" class="font-mono text-lg">Loading...</div>
@@ -164,7 +172,10 @@
         // Load portfolio data
         async function loadPortfolioData() {
             try {
-                const response = await fetch('/api/portfolio');
+                const fundSelect = document.getElementById('fund-select');
+                const fund = fundSelect ? fundSelect.value : '';
+                const url = fund ? `/api/portfolio?fund=${encodeURIComponent(fund)}` : '/api/portfolio';
+                const response = await fetch(url);
                 portfolioData = await response.json();
                 updateDashboard();
             } catch (error) {
@@ -176,7 +187,10 @@
         // Load performance chart
         async function loadPerformanceChart() {
             try {
-                const response = await fetch('/api/performance-chart');
+                const fundSelect = document.getElementById('fund-select');
+                const fund = fundSelect ? fundSelect.value : '';
+                const url = fund ? `/api/performance-chart?fund=${encodeURIComponent(fund)}` : '/api/performance-chart';
+                const response = await fetch(url);
                 const chartData = await response.json();
                 
                 if (chartData && chartData.data) {
@@ -195,12 +209,15 @@
         // Load recent trades
         async function loadRecentTrades() {
             try {
-                const response = await fetch('/api/recent-trades');
+                const fundSelect = document.getElementById('fund-select');
+                const fund = fundSelect ? fundSelect.value : '';
+                const url = fund ? `/api/recent-trades?fund=${encodeURIComponent(fund)}` : '/api/recent-trades';
+                const response = await fetch(url);
                 const trades = await response.json();
                 displayRecentTrades(trades);
             } catch (error) {
                 console.error('Error loading recent trades:', error);
-                document.getElementById('trades-container').innerHTML = 
+                document.getElementById('trades-container').innerHTML =
                     '<div class="text-center text-red-500 py-8"><p>Error loading trades</p></div>';
             }
         }
@@ -210,6 +227,18 @@
             const metrics = portfolioData.metrics || {};
             const positions = portfolioData.positions || [];
             const cashBalances = portfolioData.cash_balances || {};
+            const availableFunds = portfolioData.available_funds || [];
+            const currentFund = portfolioData.current_fund;
+
+            // Update page title to show current fund
+            const titleElement = document.querySelector('h1');
+            if (currentFund) {
+                titleElement.textContent = `📈 Portfolio Performance Dashboard - ${currentFund}`;
+            } else if (availableFunds.length > 0) {
+                titleElement.textContent = `📈 Portfolio Performance Dashboard - All Funds`;
+            } else {
+                titleElement.textContent = `📈 Portfolio Performance Dashboard`;
+            }
 
             // Update metrics
             document.getElementById('total-value').textContent = `$${metrics.total_value?.toLocaleString() || '0.00'}`;
@@ -317,6 +346,56 @@
             container.innerHTML = html;
         }
 
+        // Load available funds
+        async function loadFunds() {
+            try {
+                const response = await fetch('/api/funds');
+                const data = await response.json();
+                const fundSelect = document.getElementById('fund-select');
+
+                // Clear existing options except "All Funds"
+                fundSelect.innerHTML = '<option value="">All Funds</option>';
+
+                // Add fund options
+                data.funds.forEach(fund => {
+                    const option = document.createElement('option');
+                    option.value = fund;
+                    option.textContent = fund;
+                    fundSelect.appendChild(option);
+                });
+
+                // Set selected fund if provided in URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const selectedFund = urlParams.get('fund');
+                if (selectedFund) {
+                    fundSelect.value = selectedFund;
+                }
+
+            } catch (error) {
+                console.error('Error loading funds:', error);
+            }
+        }
+
+        // Handle fund selection change
+        function setupFundSelection() {
+            const fundSelect = document.getElementById('fund-select');
+            fundSelect.addEventListener('change', function() {
+                const selectedFund = this.value;
+
+                // Update URL
+                const url = new URL(window.location);
+                if (selectedFund) {
+                    url.searchParams.set('fund', selectedFund);
+                } else {
+                    url.searchParams.delete('fund');
+                }
+                window.history.pushState({}, '', url);
+
+                // Reload dashboard data
+                initDashboard();
+            });
+        }
+
         // Show error message
         function showError(message) {
             console.error(message);
@@ -326,6 +405,7 @@
         // Initialize dashboard
         async function initDashboard() {
             await Promise.all([
+                loadFunds(),
                 loadPortfolioData(),
                 loadPerformanceChart(),
                 loadRecentTrades()
@@ -336,7 +416,10 @@
         setInterval(initDashboard, 5 * 60 * 1000);
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', initDashboard);
+        document.addEventListener('DOMContentLoaded', function() {
+            setupFundSelection();
+            initDashboard();
+        });
     </script>
 </body>
 </html>

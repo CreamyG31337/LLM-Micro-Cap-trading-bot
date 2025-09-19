@@ -1095,7 +1095,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                             'shares': float(contributor_shares),  # Proportional share ownership
                             'contributed': float(data.get('net_contribution', Decimal('0'))),
                             'ownership_pct': float(ownership_pct),
-                            'current_value': float(data.get('current_value', Decimal('0')))
+                            'current_value': float(data.get('current_value', Decimal('0'))),
+                            'total_pl': float(data.get('gain_loss', Decimal('0')))  # Total P/L for this contributor
                         }
 
                         logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")

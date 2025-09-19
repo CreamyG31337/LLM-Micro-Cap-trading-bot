@@ -617,15 +617,16 @@ class TableFormatter:
         
         if has_rich_support() and self.console:
             ownership_table = Table(
-                title="Ownership Details",
+                title="👥 Ownership Details",
                 show_header=True,
-                header_style="bold blue"
+                header_style="bold magenta"
             )
-            ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
-            ownership_table.add_column("Shares", justify="right", style="cyan")
-            ownership_table.add_column("Contributed", justify="right", style="green")
-            ownership_table.add_column("Ownership %", justify="right", style="magenta")
-            ownership_table.add_column("Current Value", justify="right", style="red")
+            ownership_table.add_column("Contributor", style="white", no_wrap=True)
+            ownership_table.add_column("Shares", justify="right", style="bright_white")
+            ownership_table.add_column("Ownership %", justify="right", style="bright_blue")
+            ownership_table.add_column("Contributed", justify="right", style="yellow")
+            ownership_table.add_column("Current Value", justify="right", style="bright_yellow")
+            ownership_table.add_column("Total P/L", justify="right", style="magenta")
             
             # Sort by ownership percentage (highest first)
             sorted_ownership = sorted(ownership_data.items(), 
@@ -635,12 +636,22 @@ class TableFormatter:
                 # Determine background color for alternating rows (zebra stripes)
                 row_style = "on grey11" if row_index % 2 == 1 else None
 
+                # Format Total P/L with color coding
+                total_pl = data.get('total_pl', 0)
+                if total_pl > 0:
+                    total_pl_display = f"[bold green]${total_pl:,.2f}[/bold green]"
+                elif total_pl < 0:
+                    total_pl_display = f"[bold red]${total_pl:,.2f}[/bold red]"
+                else:
+                    total_pl_display = f"[dim]${total_pl:,.2f}[/dim]"
+
                 ownership_table.add_row(
                     contributor,
                     f"{data.get('shares', 0):.2f}",
-                    f"${data.get('contributed', 0):,.2f}",
                     f"{data.get('ownership_pct', 0):.1f}%",
+                    f"${data.get('contributed', 0):,.2f}",
                     f"${data.get('current_value', 0):,.2f}",
+                    total_pl_display,
                     style=row_style  # Apply alternating background color
                 )
             
@@ -648,9 +659,18 @@ class TableFormatter:
         else:
             print_info("Ownership Details:", "👥")
             for contributor, data in ownership_data.items():
-                print(f"  {contributor}: {data.get('shares', 0):.2f} shares, "
+                total_pl = data.get('total_pl', 0)
+                if total_pl > 0:
+                    total_pl_display = f"{Fore.GREEN}{Style.BRIGHT}${total_pl:,.2f}{Style.RESET_ALL}"
+                elif total_pl < 0:
+                    total_pl_display = f"{Fore.RED}{Style.BRIGHT}${total_pl:,.2f}{Style.RESET_ALL}"
+                else:
+                    total_pl_display = f"{Style.DIM}${total_pl:,.2f}{Style.RESET_ALL}"
+                
+                print(f"  {contributor}: {data.get('shares', 0):.2f} shares ({data.get('ownership_pct', 0):.1f}%), "
                       f"${data.get('contributed', 0):,.2f} contributed, "
-                      f"{data.get('ownership_pct', 0):.1f}% ownership")
+                      f"${data.get('current_value', 0):,.2f} value, "
+                      f"P/L: {total_pl_display}")
         
         return None
     
@@ -971,13 +991,14 @@ class TableFormatter:
         ownership_table = Table(
             title="👥 Ownership Details",
             show_header=True,
-            header_style="bold blue"
+            header_style="bold magenta"
         )
-        ownership_table.add_column("Contributor", style="yellow", no_wrap=True)
-        ownership_table.add_column("Shares", justify="right", style="cyan")
-        ownership_table.add_column("Contributed", justify="right", style="green")
-        ownership_table.add_column("Ownership %", justify="right", style="magenta")
-        ownership_table.add_column("Current Value", justify="right", style="red")
+        ownership_table.add_column("Contributor", style="white", no_wrap=True)
+        ownership_table.add_column("Shares", justify="right", style="bright_white")
+        ownership_table.add_column("Ownership %", justify="right", style="bright_blue")
+        ownership_table.add_column("Contributed", justify="right", style="yellow")
+        ownership_table.add_column("Current Value", justify="right", style="bright_yellow")
+        ownership_table.add_column("Total P/L", justify="right", style="magenta")
         
         # Sort by ownership percentage (highest first)
         sorted_ownership = sorted(ownership_data.items(), 
@@ -987,12 +1008,22 @@ class TableFormatter:
             # Determine background color for alternating rows (zebra stripes)
             row_style = "on grey11" if row_index % 2 == 1 else None
 
+            # Format Total P/L with color coding
+            total_pl = data.get('total_pl', 0)
+            if total_pl > 0:
+                total_pl_display = f"[bold green]${total_pl:,.2f}[/bold green]"
+            elif total_pl < 0:
+                total_pl_display = f"[bold red]${total_pl:,.2f}[/bold red]"
+            else:
+                total_pl_display = f"[dim]${total_pl:,.2f}[/dim]"
+
             ownership_table.add_row(
                 contributor,
                 f"{data.get('shares', 0):.2f}",
-                f"${data.get('contributed', 0):,.2f}",
                 f"{data.get('ownership_pct', 0):.1f}%",
+                f"${data.get('contributed', 0):,.2f}",
                 f"${data.get('current_value', 0):,.2f}",
+                total_pl_display,
                 style=row_style  # Apply alternating background color
             )
         
@@ -1135,11 +1166,20 @@ class TableFormatter:
             contributed = data.get('contributed', 0)
             ownership_pct = data.get('ownership_pct', 0)
             current_value = data.get('current_value', 0)
+            total_pl = data.get('total_pl', 0)
+            
+            # Format Total P/L with color coding for plain text
+            if total_pl > 0:
+                total_pl_display = f"{Fore.GREEN}{Style.BRIGHT}${total_pl:,.2f}{Style.RESET_ALL}"
+            elif total_pl < 0:
+                total_pl_display = f"{Fore.RED}{Style.BRIGHT}${total_pl:,.2f}{Style.RESET_ALL}"
+            else:
+                total_pl_display = f"{Style.DIM}${total_pl:,.2f}{Style.RESET_ALL}"
             
             # Format contributor line
-            contrib_line = f"  {contributor[:15]:<15}: {shares:>6.1f} shares"
+            contrib_line = f"  {contributor[:15]:<15}: {shares:>6.1f} shares ({ownership_pct:4.1f}%)"
             ownership_lines.append(contrib_line)
-            ownership_lines.append(f"    ${contributed:>7,.0f} ({ownership_pct:4.1f}%) = ${current_value:>8,.0f}")
+            ownership_lines.append(f"    ${contributed:>7,.0f} contributed = ${current_value:>8,.0f} value P/L: {total_pl_display}")
         
         # Display side by side
         print("\n")

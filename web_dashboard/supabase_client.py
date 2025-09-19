@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 try:
     from supabase import create_client, Client
@@ -57,7 +61,7 @@ class SupabaseClient:
                 positions.append({
                     "ticker": row["Ticker"],
                     "shares": float(row["Shares"]),
-                    "price": float(row["Price"]),
+                    "price": float(row["Current Price"]),  # Fixed column name
                     "cost_basis": float(row["Cost Basis"]),
                     "pnl": float(row["PnL"]),
                     "date": row["Date"].isoformat() if pd.notna(row["Date"]) else datetime.now(timezone.utc).isoformat()

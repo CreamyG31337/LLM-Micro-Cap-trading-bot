@@ -341,8 +341,16 @@ def login():
             return response
         else:
             error_data = response.json() if response.text else {}
+            error_code = error_data.get("error_code", "")
             error_msg = error_data.get("msg", "Invalid credentials")
-            return jsonify({"error": error_msg}), 401
+            
+            # Handle specific error cases
+            if error_code == "email_not_confirmed":
+                return jsonify({"error": "Please check your email and click the confirmation link before logging in."}), 401
+            elif error_code == "invalid_credentials":
+                return jsonify({"error": "Invalid email or password."}), 401
+            else:
+                return jsonify({"error": error_msg}), 401
             
     except Exception as e:
         logger.error(f"Login error: {e}")
@@ -381,11 +389,21 @@ def register():
             logger.error(f"Registration failed: {response.text}")
         
         if response.status_code == 200:
-            return jsonify({"message": "Account created successfully"})
+            return jsonify({"message": "Account created successfully! Please check your email and click the confirmation link to activate your account."})
         else:
             error_data = response.json() if response.text else {}
+            error_code = error_data.get("error_code", "")
             error_msg = error_data.get("msg", "Registration failed")
-            return jsonify({"error": error_msg}), 400
+            
+            # Handle specific error cases
+            if error_code == "email_address_invalid":
+                return jsonify({"error": "Please enter a valid email address."}), 400
+            elif error_code == "weak_password":
+                return jsonify({"error": "Password is too weak. Please use at least 6 characters."}), 400
+            elif error_code == "user_already_registered":
+                return jsonify({"error": "An account with this email already exists."}), 400
+            else:
+                return jsonify({"error": error_msg}), 400
             
     except Exception as e:
         logger.error(f"Registration error: {e}")

@@ -4,7 +4,7 @@ Portfolio Performance Web Dashboard
 A Flask web app to display trading bot portfolio performance using Supabase
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect, url_for
 import pandas as pd
 import json
 import os
@@ -15,16 +15,19 @@ import plotly.graph_objs as go
 import plotly.utils
 from typing import Dict, List, Optional, Tuple
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
-# Import Supabase client
+# Import Supabase client and auth
 try:
     from supabase_client import SupabaseClient
+    from auth import auth_manager, require_auth, get_user_funds
     SUPABASE_AVAILABLE = True
 except ImportError:
     logger.warning("Supabase client not available. Install with: pip install supabase")
@@ -266,23 +269,136 @@ def create_performance_chart(portfolio_df: pd.DataFrame) -> str:
 
 @app.route('/')
 def index():
-    """Main dashboard page"""
+    """Main dashboard page - requires authentication"""
+    # Check for session token
+    token = request.cookies.get('session_token')
+    if not token:
+        return redirect(url_for('auth_page'))
+    
+    # Verify session
+    user_data = auth_manager.verify_session(token)
+    if not user_data:
+        return redirect(url_for('auth_page'))
+    
     fund = request.args.get('fund')
     return render_template('index.html', selected_fund=fund)
 
+@app.route('/auth')
+def auth_page():
+    """Authentication page"""
+    return render_template('auth.html')
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Handle user login"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+        
+        # Authenticate with Supabase
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/auth/v1/token?grant_type=password",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Content-Type": "application/json"
+            },
+            json={
+                "email": email,
+                "password": password
+            }
+        )
+        
+        if response.status_code == 200:
+            auth_data = response.json()
+            user_id = auth_data["user"]["id"]
+            
+            # Create session token
+            session_token = auth_manager.create_user_session(user_id, email)
+            
+            return jsonify({
+                "token": session_token,
+                "user": {
+                    "id": user_id,
+                    "email": email
+                }
+            })
+        else:
+            return jsonify({"error": "Invalid credentials"}), 401
+            
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({"error": "Login failed"}), 500
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Handle user registration"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        
+        if not email or not password or not name:
+            return jsonify({"error": "Email, password, and name required"}), 400
+        
+        # Register with Supabase
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/auth/v1/signup",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Content-Type": "application/json"
+            },
+            json={
+                "email": email,
+                "password": password,
+                "user_metadata": {
+                    "full_name": name
+                }
+            }
+        )
+        
+        if response.status_code == 200:
+            return jsonify({"message": "Account created successfully"})
+        else:
+            error_data = response.json()
+            return jsonify({"error": error_data.get("msg", "Registration failed")}), 400
+            
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({"error": "Registration failed"}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Handle user logout"""
+    response = jsonify({"message": "Logged out successfully"})
+    response.set_cookie('session_token', '', expires=0)
+    return response
+
 @app.route('/api/funds')
+@require_auth
 def api_funds():
-    """API endpoint for available funds"""
-    client = get_supabase_client()
-    if client:
-        funds = client.get_available_funds()
-        return jsonify({"funds": funds})
-    return jsonify({"funds": []})
+    """API endpoint for user's assigned funds"""
+    try:
+        user_funds = get_user_funds()
+        return jsonify({"funds": user_funds})
+    except Exception as e:
+        logger.error(f"Error getting user funds: {e}")
+        return jsonify({"funds": []})
 
 @app.route('/api/portfolio')
+@require_auth
 def api_portfolio():
     """API endpoint for portfolio data"""
     fund = request.args.get('fund')
+    
+    # Verify user has access to this fund
+    if fund and not auth_manager.check_fund_access(request.user_id, fund):
+        return jsonify({"error": "Access denied to this fund"}), 403
+    
     data = load_portfolio_data(fund)
     metrics = calculate_performance_metrics(data['portfolio'], data['trades'], fund)
     
@@ -326,17 +442,29 @@ def api_portfolio():
     })
 
 @app.route('/api/performance-chart')
+@require_auth
 def api_performance_chart():
     """API endpoint for performance chart data"""
     fund = request.args.get('fund')
+    
+    # Verify user has access to this fund
+    if fund and not auth_manager.check_fund_access(request.user_id, fund):
+        return jsonify({"error": "Access denied to this fund"}), 403
+    
     data = load_portfolio_data(fund)
     chart_data = create_performance_chart(data['portfolio'])
     return chart_data
 
 @app.route('/api/recent-trades')
+@require_auth
 def api_recent_trades():
     """API endpoint for recent trades"""
     fund = request.args.get('fund')
+    
+    # Verify user has access to this fund
+    if fund and not auth_manager.check_fund_access(request.user_id, fund):
+        return jsonify({"error": "Access denied to this fund"}), 403
+    
     data = load_portfolio_data(fund)
     
     if data['trades'].empty:

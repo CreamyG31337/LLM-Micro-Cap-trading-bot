@@ -36,14 +36,13 @@ class Settings:
     
     def _load_default_config(self) -> None:
         """Load default configuration values."""
-        # Try to get active fund data directory, fallback to legacy
-        active_fund_data_dir = self._get_active_fund_data_directory()
+        # Use placeholder for data_directory - will be resolved dynamically
         
         self._config = {
             'repository': {
                 'type': 'csv',
                 'csv': {
-                    'data_directory': active_fund_data_dir
+                    'data_directory': 'trading_data/prod'  # Legacy fallback, overridden by get_data_directory()
                 },
                 'database': {
                     'host': 'localhost',

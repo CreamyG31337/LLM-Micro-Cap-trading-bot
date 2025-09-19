@@ -129,10 +129,10 @@ python simple_automation.py --dry-run
 python simple_automation.py
 
 # 3. Review results
-cat "Start Your Own/llm_responses.jsonl" | tail -1
+cat "trading_data/funds/[FUND_NAME]/llm_responses.jsonl" | tail -1
 
 # 4. Check portfolio updates
-python "Start Your Own/Trading_Script.py"
+python trading_script.py --data-dir "trading_data/funds/[FUND_NAME]"
 ```
 
 ## Troubleshooting

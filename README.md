@@ -15,7 +15,6 @@ This is a personal fork focused on enhanced portfolio tracking, dual currency su
 - **`trading_data/prod/`** - **Production data folder** (gitignored) - Your real trading data
 - **`trading_data/dev/`** - **Test environment** - Safe copies for development and testing
 - **`Scripts and CSV Files/`** - My personal portfolio (updates every trading day)
-- **`Start Your Own/`** - Template files and guide for starting your own experiment  
 - **`Weekly Deep Research (MD|PDF)/`** - Research summaries and performance reports
 - **`Experiment Details/`** - Documentation, methodology, prompts, and Q&A
 

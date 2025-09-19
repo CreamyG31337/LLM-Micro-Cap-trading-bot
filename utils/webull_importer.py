@@ -341,10 +341,10 @@ class WebullImporter:
     
     def _create_trade_log_entry(self, trade: Dict[str, Any]) -> Dict[str, Any]:
         """Create a trade log entry from a trade.
-        
+
         Args:
             trade: Trade dictionary
-            
+
         Returns:
             Trade log entry dictionary
         """
@@ -356,7 +356,16 @@ class WebullImporter:
             timezone_suffix = " EST"
         else:
             timezone_suffix = " EDT"  # Default to EDT
-        
+
+        # Create proper reason based on action for rebuild script compatibility
+        action = trade.get("action", "Buy")
+        if action.upper() == "SELL":
+            reason = f"Sell - Limit Order"
+        elif action.upper() == "BUY":
+            reason = f"Buy - Limit Order"
+        else:
+            reason = f"Imported from Webull (Row {trade['original_row']})"
+
         return {
             "Date": trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S") + timezone_suffix,
             "Ticker": trade["symbol"],
@@ -364,7 +373,7 @@ class WebullImporter:
             "Price": float(trade["price"]),
             "Cost Basis": float(trade["total_value"]),
             "PnL": 0.0,
-            "Reason": f"Imported from Webull (Row {trade['original_row']})",
+            "Reason": reason,
             "Currency": trade["currency"]
         }
     

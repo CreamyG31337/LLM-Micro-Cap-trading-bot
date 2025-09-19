@@ -505,6 +505,11 @@ class TradingInterface:
                 print_info("Trade cancelled")
                 return False
 
+            # Detect currency based on ticker
+            from financial.currency_handler import CurrencyHandler
+            currency_handler = CurrencyHandler(Path(self.repository.data_dir))
+            detected_currency = currency_handler.get_ticker_currency(ticker)
+            
             # Execute trade
             trade = self.trade_processor.execute_buy_trade(
                 ticker=ticker,
@@ -512,6 +517,7 @@ class TradingInterface:
                 price=price,
                 stop_loss=stop_loss,
                 reason=f"{order_type.title()} order",
+                currency=detected_currency,
                 trade_timestamp=trade_timestamp
             )
             
@@ -631,12 +637,18 @@ class TradingInterface:
                 print_info("Trade cancelled")
                 return False
 
+            # Detect currency based on ticker
+            from financial.currency_handler import CurrencyHandler
+            currency_handler = CurrencyHandler(Path(self.repository.data_dir))
+            detected_currency = currency_handler.get_ticker_currency(ticker)
+            
             # Execute trade with custom timestamp
             trade = self.trade_processor.execute_sell_trade(
                 ticker=ticker,
                 shares=shares,
                 price=price,
                 reason="Limit sell order",
+                currency=detected_currency,
                 trade_timestamp=trade_timestamp  # Pass custom timestamp
             )
 

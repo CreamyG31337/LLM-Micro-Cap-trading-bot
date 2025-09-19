@@ -121,14 +121,14 @@ class TableFormatter:
         
         table = Table(title=table_title, show_header=True, header_style="bold magenta")
         # Create safe column headers (headers can wrap, data stays no_wrap where appropriate)
-        table.add_column(f"{_safe_emoji('🎯')}\nTicker", style="cyan", no_wrap=True, width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('🎯')}\nTicker", style="cyan", no_wrap=True, width=7, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🏢')}\nCompany", style="white", no_wrap=True, max_width=company_max_width, justify="left", header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📅')}\nOpened", style="dim", no_wrap=True, width=11, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="bright_white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="bright_yellow", width=12, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=16, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=17, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
         table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=10, header_style="bold magenta")
@@ -165,6 +165,20 @@ class TableFormatter:
             else:
                 # For <1: show 6 decimals max (e.g., 0.123456)
                 return f"{shares_float:.6f}".rstrip('0').rstrip('.')
+        
+        def format_ticker_for_display(ticker: str) -> str:
+            """Format ticker for display by removing common suffixes to save space."""
+            if not ticker or ticker == 'N/A':
+                return ticker
+            
+            # Common suffixes to remove for display
+            suffixes_to_remove = ['.TO', '.V', '.CN', '.NE', '.TSX', '.TSXV']
+            
+            for suffix in suffixes_to_remove:
+                if ticker.upper().endswith(suffix):
+                    return ticker[:-len(suffix)]
+            
+            return ticker
         
         for position in portfolio_data:
             # Truncate long company names for display
@@ -260,15 +274,17 @@ class TableFormatter:
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
             
-            # Color code ticker based on currency
+            # Color code ticker based on currency (remove suffixes for display)
             ticker = position.get('ticker', 'N/A')
             currency = position.get('currency', 'CAD')
+            display_ticker = format_ticker_for_display(ticker)
+            
             if currency == 'USD':
-                ticker_display = f"[blue]{ticker}[/blue]"  # Blue for USD
+                ticker_display = f"[blue]{display_ticker}[/blue]"  # Blue for USD
             elif currency == 'CAD':
-                ticker_display = f"[cyan]{ticker}[/cyan]"  # Cyan for CAD
+                ticker_display = f"[cyan]{display_ticker}[/cyan]"  # Cyan for CAD
             else:
-                ticker_display = ticker  # Default color for unknown currencies
+                ticker_display = display_ticker  # Default color for unknown currencies
             
             table.add_row(
                 ticker_display,
@@ -322,6 +338,20 @@ class TableFormatter:
             else:
                 # For <1: show 6 decimals max (e.g., 0.123456)
                 return f"{shares_float:.6f}".rstrip('0').rstrip('.')
+        
+        def format_ticker_for_display_plain(ticker: str) -> str:
+            """Format ticker for display by removing common suffixes to save space."""
+            if not ticker or ticker == 'N/A':
+                return ticker
+            
+            # Common suffixes to remove for display
+            suffixes_to_remove = ['.TO', '.V', '.CN', '.NE', '.TSX', '.TSXV']
+            
+            for suffix in suffixes_to_remove:
+                if ticker.upper().endswith(suffix):
+                    return ticker[:-len(suffix)]
+            
+            return ticker
         
         # Convert to DataFrame for better plain text formatting
         df_data = []
@@ -405,15 +435,17 @@ class TableFormatter:
             else:
                 daily_pnl_display = daily_pnl_dollar
             
-            # Color code ticker based on currency for plain text
+            # Color code ticker based on currency for plain text (remove suffixes for display)
             ticker = position.get('ticker', 'N/A')
             currency = position.get('currency', 'CAD')
+            display_ticker = format_ticker_for_display_plain(ticker)
+            
             if currency == 'USD':
-                ticker_display = f"{Fore.BLUE}{ticker}{Style.RESET_ALL}"  # Blue for USD
+                ticker_display = f"{Fore.BLUE}{display_ticker}{Style.RESET_ALL}"  # Blue for USD
             elif currency == 'CAD':
-                ticker_display = f"{Fore.CYAN}{ticker}{Style.RESET_ALL}"  # Cyan for CAD
+                ticker_display = f"{Fore.CYAN}{display_ticker}{Style.RESET_ALL}"  # Cyan for CAD
             else:
-                ticker_display = ticker  # Default color for unknown currencies
+                ticker_display = display_ticker  # Default color for unknown currencies
             
             df_data.append({
                 'Ticker': ticker_display,

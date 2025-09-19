@@ -266,3 +266,14 @@ import_data/
 .script_hash
 .vscode/settings.json
 *.exe
+# Supabase credentials (keep secure)
+supabase_credentials.txt
+
+# Admin credentials and personal data (keep secure)
+.env
+.env.local
+.env.production
+.env.staging
+*admin*.py
+*credentials*.txt
+*secrets*.txt

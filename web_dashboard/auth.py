@@ -85,6 +85,26 @@ class AuthManager:
             return None
         except jwt.InvalidTokenError:
             return None
+    
+    def is_admin(self, user_id: str) -> bool:
+        """Check if user is admin"""
+        try:
+            response = requests.post(
+                f"{self.supabase_url}/rest/v1/rpc/is_admin",
+                headers={
+                    "apikey": self.supabase_anon_key,
+                    "Authorization": f"Bearer {self.supabase_anon_key}",
+                    "Content-Type": "application/json"
+                },
+                json={"user_uuid": user_id}
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            return False
+        except Exception as e:
+            logger.error(f"Error checking admin status: {e}")
+            return False
 
 # Global auth manager instance
 auth_manager = AuthManager()
@@ -130,3 +150,22 @@ def get_user_funds():
     if not hasattr(request, 'user_id'):
         return []
     return auth_manager.get_user_funds(request.user_id)
+
+def require_admin(f):
+    """Decorator to require admin privileges"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not hasattr(request, 'user_id'):
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if not auth_manager.is_admin(request.user_id):
+            return jsonify({"error": "Admin privileges required"}), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+def is_admin():
+    """Check if current user is admin"""
+    if not hasattr(request, 'user_id'):
+        return False
+    return auth_manager.is_admin(request.user_id)

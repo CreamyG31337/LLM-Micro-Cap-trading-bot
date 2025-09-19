@@ -256,12 +256,25 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Function to create user profile on signup
 CREATE OR REPLACE FUNCTION create_user_profile()
 RETURNS TRIGGER AS $$
+DECLARE
+    user_count INTEGER;
+    user_role VARCHAR(50);
 BEGIN
-    INSERT INTO user_profiles (user_id, email, full_name)
+    -- Check if this is the first user (admin)
+    SELECT COUNT(*) INTO user_count FROM user_profiles;
+    
+    IF user_count = 0 THEN
+        user_role := 'admin';
+    ELSE
+        user_role := 'user';
+    END IF;
+    
+    INSERT INTO user_profiles (user_id, email, full_name, role)
     VALUES (
         NEW.id,
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', '')
+        COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+        user_role
     );
     RETURN NEW;
 END;
@@ -271,6 +284,35 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION create_user_profile();
+
+-- =====================================================
+-- ADMIN FUNCTIONS AND POLICIES
+-- =====================================================
+
+-- Function to check if user is admin
+CREATE OR REPLACE FUNCTION is_admin(user_uuid UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM user_profiles 
+        WHERE user_id = user_uuid AND role = 'admin'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Admin policies for user management
+CREATE POLICY "Admins can view all user profiles" ON user_profiles
+    FOR SELECT USING (is_admin(auth.uid()));
+
+CREATE POLICY "Admins can view all user funds" ON user_funds
+    FOR SELECT USING (is_admin(auth.uid()));
+
+CREATE POLICY "Admins can manage user funds" ON user_funds
+    FOR ALL USING (is_admin(auth.uid()));
+
+-- =====================================================
+-- FUND ASSIGNMENT FUNCTIONS
+-- =====================================================
 
 -- Function to assign fund to user (admin only)
 CREATE OR REPLACE FUNCTION assign_fund_to_user(user_email TEXT, fund_name TEXT)

@@ -30,7 +30,7 @@ os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this"
 # Import Supabase client and auth
 try:
     from supabase_client import SupabaseClient
-    from auth import auth_manager, require_auth, get_user_funds
+    from auth import auth_manager, require_auth, require_admin, get_user_funds, is_admin
     SUPABASE_AVAILABLE = True
 except ImportError:
     logger.warning("Supabase client not available. Install with: pip install supabase")
@@ -415,6 +415,161 @@ def logout():
     response = jsonify({"message": "Logged out successfully"})
     response.set_cookie('session_token', '', expires=0)
     return response
+
+# =====================================================
+# ADMIN ROUTES
+# =====================================================
+
+@app.route('/admin')
+@require_auth
+def admin_dashboard():
+    """Admin dashboard page"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    return render_template('admin.html')
+
+@app.route('/api/admin/users')
+@require_admin
+def api_admin_users():
+    """Get all users with their fund assignments"""
+    try:
+        # Get users from user_profiles
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/list_users_with_funds",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code == 200:
+            users = response.json()
+            
+            # Get stats
+            stats = {
+                "total_users": len(users),
+                "total_funds": len(set(fund for user in users for fund in (user.get('funds') or []))),
+                "total_assignments": sum(len(user.get('funds') or []) for user in users)
+            }
+            
+            return jsonify({"users": users, "stats": stats})
+        else:
+            logger.error(f"Error getting users: {response.text}")
+            return jsonify({"users": [], "stats": {"total_users": 0, "total_funds": 0, "total_assignments": 0}})
+    except Exception as e:
+        logger.error(f"Error in admin users API: {e}")
+        return jsonify({"error": "Failed to load users"}), 500
+
+@app.route('/api/admin/funds')
+@require_admin
+def api_admin_funds():
+    """Get all available funds"""
+    try:
+        # Get unique funds from portfolio_positions
+        response = requests.get(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/portfolio_positions",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            params={"select": "fund"}
+        )
+        
+        if response.status_code == 200:
+            funds = list(set(row['fund'] for row in response.json()))
+            return jsonify({"funds": sorted(funds)})
+        else:
+            # Fallback to hardcoded funds
+            return jsonify({"funds": ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]})
+    except Exception as e:
+        logger.error(f"Error getting funds: {e}")
+        return jsonify({"funds": ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]})
+
+@app.route('/api/admin/assign-fund', methods=['POST'])
+@require_admin
+def api_admin_assign_fund():
+    """Assign a fund to a user"""
+    try:
+        data = request.get_json()
+        user_email = data.get('user_email')
+        fund_name = data.get('fund_name')
+        
+        if not user_email or not fund_name:
+            return jsonify({"error": "User email and fund name required"}), 400
+        
+        # Use the database function to assign fund
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/assign_fund_to_user",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "user_email": user_email,
+                "fund_name": fund_name
+            }
+        )
+        
+        if response.status_code == 200:
+            return jsonify({"message": f"Fund '{fund_name}' assigned to {user_email}"})
+        else:
+            error_msg = response.json().get('message', 'Failed to assign fund') if response.text else 'Failed to assign fund'
+            return jsonify({"error": error_msg}), 400
+            
+    except Exception as e:
+        logger.error(f"Error assigning fund: {e}")
+        return jsonify({"error": "Failed to assign fund"}), 500
+
+@app.route('/api/admin/remove-fund', methods=['POST'])
+@require_admin
+def api_admin_remove_fund():
+    """Remove a fund from a user"""
+    try:
+        data = request.get_json()
+        user_email = data.get('user_email')
+        fund_name = data.get('fund_name')
+        
+        if not user_email or not fund_name:
+            return jsonify({"error": "User email and fund name required"}), 400
+        
+        # Get user ID first
+        user_response = requests.get(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/user_profiles",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            params={"email": f"eq.{user_email}", "select": "user_id"}
+        )
+        
+        if user_response.status_code != 200 or not user_response.json():
+            return jsonify({"error": "User not found"}), 404
+        
+        user_id = user_response.json()[0]['user_id']
+        
+        # Remove fund assignment
+        remove_response = requests.delete(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/user_funds",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            params={"user_id": f"eq.{user_id}", "fund_name": f"eq.{fund_name}"}
+        )
+        
+        if remove_response.status_code in [200, 204]:
+            return jsonify({"message": f"Fund '{fund_name}' removed from {user_email}"})
+        else:
+            return jsonify({"error": "Failed to remove fund"}), 400
+            
+    except Exception as e:
+        logger.error(f"Error removing fund: {e}")
+        return jsonify({"error": "Failed to remove fund"}), 500
 
 @app.route('/api/funds')
 @require_auth

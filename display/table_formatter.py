@@ -819,17 +819,9 @@ class TableFormatter:
         financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
 
-        # Add separator
-        financial_table.add_row("", "")
-        financial_table.add_row("", "", style="on grey11")
-
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
         financial_table.add_row("📈 Total Cost Basis", f"${cost_basis:,.2f}", style="on grey11")
-
-        # Add separator
-        financial_table.add_row("", "")
-        financial_table.add_row("", "", style="on grey11")
 
         # P&L Section with color coding AND alternating backgrounds
         # Combine P&L color with alternating background
@@ -910,16 +902,16 @@ class TableFormatter:
         estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad', None)
         if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
             financial_table.add_row("💰 Cash Balance (CAD eq)", f"${cash:,.2f}")
-            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}", style="on grey11")
-            financial_table.add_row("   • USD Cash", f"${usd_cash:,.2f}")
+            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}", style="cyan on grey11")
+            financial_table.add_row("   • USD Cash", f"${usd_cash:,.2f}", style="blue")
             financial_table.add_row("   • USD→CAD rate", f"{usd_to_cad_rate:.4f}", style="on grey11")
             # Totals by currency (cash + positions)
             usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
             cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
             if usd_holdings_total_usd is not None:
-                financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD")
+                financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD", style="blue")
             if cad_holdings_total_cad is not None:
-                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="on grey11")
+                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="cyan on grey11")
             # Estimated FX fee on USD holdings (simple)
             if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
                 approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
@@ -927,10 +919,6 @@ class TableFormatter:
         else:
             financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
-
-        # Add separator
-        financial_table.add_row("", "")
-        financial_table.add_row("", "", style="on grey11")
 
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
@@ -940,10 +928,6 @@ class TableFormatter:
         unallocated_vs_cost = stats_data.get('unallocated_vs_cost', None)
         if unallocated_vs_cost is not None:
             financial_table.add_row("🧾 Unallocated vs Cost", f"${unallocated_vs_cost:,.2f}")
-
-        # Add separator
-        financial_table.add_row("", "", style="on grey11")
-        financial_table.add_row("", "")
 
         # P&L Section with color coding AND alternating backgrounds
         # Combine P&L color with alternating background
@@ -1048,23 +1032,22 @@ class TableFormatter:
         estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad')
         if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
             print(f"  Cash Balance (CAD eq): ${cash:,.2f}")
-            print(f"    • CAD Cash: ${cad_cash:,.2f}")
-            print(f"    • USD Cash: ${usd_cash:,.2f}")
+            print(f"    • CAD Cash: {Fore.CYAN}${cad_cash:,.2f}{Style.RESET_ALL}")
+            print(f"    • USD Cash: {Fore.BLUE}${usd_cash:,.2f}{Style.RESET_ALL}")
             print(f"    • USD→CAD rate: {usd_to_cad_rate:.4f}")
             # Totals by currency (cash + positions)
             usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
             cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
             if usd_holdings_total_usd is not None:
-                print(f"    • Total USD (cash+positions): ${usd_holdings_total_usd:,.2f} USD")
+                print(f"    • Total USD (cash+positions): {Fore.BLUE}${usd_holdings_total_usd:,.2f} USD{Style.RESET_ALL}")
             if cad_holdings_total_cad is not None:
-                print(f"    • Total CAD (cash+positions): ${cad_holdings_total_cad:,.2f} CAD")
+                print(f"    • Total CAD (cash+positions): {Fore.CYAN}${cad_holdings_total_cad:,.2f} CAD{Style.RESET_ALL}")
             if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
                 approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
                 print(f"    • Est. USD FX fee on USD holdings (1.5%): {Fore.RED}-${estimated_fx_fee_total_usd:,.2f} USD{Style.RESET_ALL}{approx_cad}")
         else:
             print(f"  Cash Balance: ${cash:,.2f}")
         print(f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}")
-        print()
         
         # Investment Performance Section  
         print(f"  Total Contributions: ${total_contributions:,.2f}")
@@ -1074,7 +1057,6 @@ class TableFormatter:
         unallocated_vs_cost = stats_data.get('unallocated_vs_cost', None)
         if unallocated_vs_cost is not None:
             print(f"  Unallocated vs Cost: ${unallocated_vs_cost:,.2f}")
-        print()
         
         # P&L Section with color coding
         print(f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}")
@@ -1120,15 +1102,13 @@ class TableFormatter:
             f"  Current Portfolio Value: ${total_value:,.2f}",
             # Cash section
             (f"  Cash Balance (CAD eq): ${cash:,.2f}" if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None else f"  Cash Balance: ${cash:,.2f}"),
-            (f"    • CAD Cash: ${cad_cash:,.2f}" if cad_cash is not None else None),
-            (f"    • USD Cash: ${usd_cash:,.2f} (×{usd_to_cad_rate:.4f} CAD)" if usd_cash is not None and usd_to_cad_rate is not None else None),
+            (f"    • CAD Cash: {Fore.CYAN}${cad_cash:,.2f}{Style.RESET_ALL}" if cad_cash is not None else None),
+            (f"    • USD Cash: {Fore.BLUE}${usd_cash:,.2f}{Style.RESET_ALL} (×{usd_to_cad_rate:.4f} CAD)" if usd_cash is not None and usd_to_cad_rate is not None else None),
             (f"    • Est. USD→CAD fee (1.5%): -${estimated_cashout_fee_cad:,.2f}" if estimated_cashout_fee_cad and estimated_cashout_fee_cad > 0 else None),
             f"  {Fore.CYAN}Total Equity: ${total_equity:,.2f}{Style.RESET_ALL}",
-            "",
             f"  Total Contributions: ${total_contributions:,.2f}",
             f"  Total Cost Basis: ${cost_basis:,.2f}",
             (f"  Unallocated vs Cost: ${stats_data.get('unallocated_vs_cost', 0):,.2f}" if stats_data.get('unallocated_vs_cost', None) is not None else None),
-            "",
             f"  Unrealized P&L: {get_pnl_color(unrealized_pnl)}${unrealized_pnl:,.2f}{Style.RESET_ALL}",
             f"  Realized P&L: {get_pnl_color(realized_pnl)}${realized_pnl:,.2f}{Style.RESET_ALL}",
             f"  {Fore.CYAN}Total Portfolio P&L: {get_pnl_color(total_portfolio_pnl)}${total_portfolio_pnl:,.2f}{Style.RESET_ALL}",

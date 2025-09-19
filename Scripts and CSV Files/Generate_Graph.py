@@ -136,27 +136,36 @@ else:
         print("   Example: python Generate_Graph.py --data-dir 'trading_data/prod'")
         sys.exit(1)
 
-# Get fund name from config for filename
-try:
-    sys.path.append(str(Path(__file__).parent.parent))
-    from config.settings import get_settings
-    settings = get_settings()
-    fund_name = settings.get_fund_name()
-except Exception as e:
-    print(f"{_safe_emoji('⚠️')}  Could not load fund name from config: {e}")
-    fund_name = "Your Investments"  # Fallback
-
-# Sanitize fund name for filename (remove/replace problematic characters)
+# Extract fund name from data directory path (use actual fund name, NO FALLBACKS)
 import re
-sanitized_fund_name = re.sub(r'[^\w\-_\.]', '_', fund_name).strip('_')
-
-# Extract fund name from data directory path for filename
 if 'DATA_DIR' in globals() and DATA_DIR:
     # Get just the fund name from the path (e.g., "RRSP Lance Webull" from full path)
     fund_dir_name = Path(DATA_DIR).name
+    
+    # Try to load fund name from the fund's own config file first
+    fund_config_path = Path(DATA_DIR) / "fund_config.json"
+    if fund_config_path.exists():
+        try:
+            import json
+            with open(fund_config_path, 'r') as f:
+                fund_config = json.load(f)
+            fund_name_from_config = fund_config.get('fund', {}).get('name', fund_dir_name)
+            print(f"{_safe_emoji('📁')} Using fund name from config: {fund_name_from_config}")
+        except Exception as e:
+            print(f"{_safe_emoji('⚠️')}  Could not load fund config: {e}")
+            fund_name_from_config = fund_dir_name
+    else:
+        fund_name_from_config = fund_dir_name
+    
+    # Use the actual fund name from the config - no splitting or manipulation
+    fund_name = fund_name_from_config
+    
     sanitized_fund_dir = re.sub(r'[^\w\-_\.]', '_', fund_dir_name).strip('_')
 else:
-    sanitized_fund_dir = sanitized_fund_name
+    # NO FALLBACKS - require data directory to be specified
+    print("❌ No data directory specified. Use --data-dir argument.")
+    print("   Example: python Generate_Graph.py --data-dir 'trading_data/funds/RRSP Lance Webull'")
+    sys.exit(1)
 
 # Create benchmark identifier for filename
 benchmark_short = args.benchmark.upper() if args.benchmark != 'all' else 'ALL'
@@ -791,14 +800,15 @@ def main(args) -> dict:
     # Get current axis for positioning calculations
     ax = plt.gca()
 
-    # annotate peak performance - direct positioning
+    # annotate peak performance - always position above
     peak_value = float(
         llm_totals.loc[llm_totals["Date"] == peak_date, "Performance_Index"].iloc[0]
     )
+    
     plt.annotate(
         f"[+] +{peak_gain:.1f}% Peak",
         xy=(peak_date, peak_value),
-        xytext=(120, 0),  # Direct right positioning
+        xytext=(0, 80),  # Always above the peak
         textcoords='offset points',
         color="darkgreen",
         fontsize=11,
@@ -815,11 +825,11 @@ def main(args) -> dict:
     final_llm = float(llm_totals["Performance_Index"].iloc[-1])
     portfolio_return = final_llm - 100.0
 
-    # Portfolio performance annotation (always show) - direct left positioning
+    # Portfolio performance annotation (always show) - position down
     plt.annotate(
         f"[*] {portfolio_return:+.1f}% Total Return",
         xy=(final_date, final_llm),
-        xytext=(-120, 0),  # Direct left positioning
+        xytext=(0, -80),  # Always below the final point
         textcoords='offset points',
         color="darkblue",
         fontsize=12,
@@ -843,7 +853,7 @@ def main(args) -> dict:
         plt.annotate(
             f"[=] {benchmark_return:+.1f}% Benchmark",
             xy=(final_date, final_benchmark),
-            xytext=(-120, -30),  # Direct left and down positioning
+            xytext=(0, -100),  # Straight down from the benchmark point
             textcoords='offset points',
             color="darkorange",
             fontsize=11,
@@ -855,12 +865,13 @@ def main(args) -> dict:
             zorder=20
         )
 
-    # annotate max drawdown - direct positioning
+    # annotate max drawdown - position to the right
     dd_normalized = llm_totals.loc[llm_totals["Date"] == dd_date, "Performance_Index"].iloc[0] if len(llm_totals.loc[llm_totals["Date"] == dd_date]) > 0 else 100
+    
     plt.annotate(
         f"[-] {dd_pct:.1f}% Max Drawdown",
         xy=(dd_date, dd_normalized),
-        xytext=(120, -30),  # Direct right and down positioning
+        xytext=(100, 0),  # Right from the drawdown point
         textcoords='offset points',
         color="darkred",
         fontsize=10,

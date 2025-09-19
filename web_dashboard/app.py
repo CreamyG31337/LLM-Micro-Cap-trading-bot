@@ -336,8 +336,5 @@ def api_recent_trades():
     return jsonify(formatted_trades)
 
 if __name__ == '__main__':
-    # Ensure data directory exists
-    DATA_DIR.mkdir(exist_ok=True)
-    
     # Run the app
     app.run(debug=True, host='0.0.0.0', port=5000)

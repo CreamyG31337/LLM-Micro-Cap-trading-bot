@@ -21,7 +21,7 @@ from supabase_client import SupabaseClient
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def load_csv_data(data_dir: str = "../trading_data/prod") -> dict:
+def load_csv_data(data_dir: str = "../trading_data/funds/Project Chimera") -> dict:
     """Load data from CSV files"""
     data_dir = Path(data_dir)
     
@@ -29,7 +29,7 @@ def load_csv_data(data_dir: str = "../trading_data/prod") -> dict:
     portfolio_file = data_dir / "llm_portfolio_update.csv"
     if portfolio_file.exists():
         portfolio_df = pd.read_csv(portfolio_file)
-        portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
+        portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'], format='mixed')
         logger.info(f"✅ Loaded portfolio data: {len(portfolio_df)} entries")
     else:
         portfolio_df = pd.DataFrame()
@@ -39,7 +39,7 @@ def load_csv_data(data_dir: str = "../trading_data/prod") -> dict:
     trade_file = data_dir / "llm_trade_log.csv"
     if trade_file.exists():
         trade_df = pd.read_csv(trade_file)
-        trade_df['Date'] = pd.to_datetime(trade_df['Date'])
+        trade_df['Date'] = pd.to_datetime(trade_df['Date'], format='mixed')
         logger.info(f"✅ Loaded trade log: {len(trade_df)} entries")
     else:
         trade_df = pd.DataFrame()

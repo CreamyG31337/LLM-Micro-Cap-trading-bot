@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
+# Set JWT secret for auth system
+os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
+
 # Import Supabase client and auth
 try:
     from supabase_client import SupabaseClient
@@ -312,6 +315,10 @@ def login():
             }
         )
         
+        logger.info(f"Login attempt for {email}: Status {response.status_code}")
+        if response.status_code != 200:
+            logger.error(f"Login failed: {response.text}")
+        
         if response.status_code == 200:
             auth_data = response.json()
             user_id = auth_data["user"]["id"]
@@ -319,15 +326,23 @@ def login():
             # Create session token
             session_token = auth_manager.create_user_session(user_id, email)
             
-            return jsonify({
+            # Create response with cookie
+            response = jsonify({
                 "token": session_token,
                 "user": {
                     "id": user_id,
                     "email": email
                 }
             })
+            
+            # Set the session token as a cookie
+            response.set_cookie('session_token', session_token, max_age=86400, httponly=True, secure=False)
+            
+            return response
         else:
-            return jsonify({"error": "Invalid credentials"}), 401
+            error_data = response.json() if response.text else {}
+            error_msg = error_data.get("msg", "Invalid credentials")
+            return jsonify({"error": error_msg}), 401
             
     except Exception as e:
         logger.error(f"Login error: {e}")
@@ -361,11 +376,16 @@ def register():
             }
         )
         
+        logger.info(f"Registration attempt for {email}: Status {response.status_code}")
+        if response.status_code != 200:
+            logger.error(f"Registration failed: {response.text}")
+        
         if response.status_code == 200:
             return jsonify({"message": "Account created successfully"})
         else:
-            error_data = response.json()
-            return jsonify({"error": error_data.get("msg", "Registration failed")}), 400
+            error_data = response.json() if response.text else {}
+            error_msg = error_data.get("msg", "Registration failed")
+            return jsonify({"error": error_msg}), 400
             
     except Exception as e:
         logger.error(f"Registration error: {e}")

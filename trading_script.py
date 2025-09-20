@@ -378,17 +378,6 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Configure system settings
         settings = configure_system(args.config)
         
-        # Override settings from command-line arguments
-        if args.data_dir:
-            settings.set('repository.csv.data_directory', args.data_dir)
-        
-        # Show environment banner (after command-line overrides)
-        data_dir = settings.get_data_directory()
-        print_environment_banner(data_dir)
-        
-        if args.debug:
-            settings.set('logging.level', 'DEBUG')
-        
         # Setup logging
         setup_logging(settings)
         
@@ -401,8 +390,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Handle graceful degradation
         handle_graceful_degradation(dependencies)
         
-        # Initialize repository for the default fund for now
-        # This will be updated when fund switching is implemented
+        # Initialize repository for the default fund
         default_fund = fund_manager.get_fund_by_id('default')
         if not default_fund:
             raise InitializationError("Default fund not found in funds.yml")
@@ -417,6 +405,18 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Also update the data directory setting to match the fund
         if 'directory' in default_fund.repository.settings:
             settings.set('repository.csv.data_directory', default_fund.repository.settings['directory'])
+        
+        # Override settings from command-line arguments (only if specified)
+        if args.data_dir:
+            settings.set('repository.csv.data_directory', args.data_dir)
+            print_warning(f"Command line data directory override: {args.data_dir}")
+        
+        # Show environment banner (after command-line overrides)
+        data_dir = settings.get_data_directory()
+        print_environment_banner(data_dir)
+        
+        if args.debug:
+            settings.set('logging.level', 'DEBUG')
         
         repository = initialize_repository(settings)
         
@@ -507,6 +507,10 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
             if 'directory' in selected_fund.repository.settings:
                 settings.set('repository.csv.data_directory', selected_fund.repository.settings['directory'])
             
+            # Clear the repository cache to force a fresh instance
+            from data.repositories.repository_factory import get_repository_container
+            get_repository_container().clear()
+            
             # Re-initialize repository with new fund's settings
             new_repository = initialize_repository(settings)
             
@@ -516,11 +520,12 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
             # Update global references
             global repository, portfolio_manager
             repository = new_repository
+            # Note: fund_manager stays the same, we're just switching which fund is active
             
             print_success(f"Successfully switched to {selected_fund.name}")
             
             # Refresh the portfolio display with new fund
-            run_portfolio_workflow(args, settings, new_repository, trading_interface)
+            run_portfolio_workflow(args, settings, new_repository, trading_interface, fund_manager)
             
         except ValueError:
             print_error("Invalid input. Please enter a number or 'q'")
@@ -975,6 +980,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         import pandas as pd
                         df = pd.read_csv(repository.portfolio_file)
                         df['Date'] = df['Date'].apply(repository._parse_csv_timestamp)
+                        
+                        # Ensure Date column contains valid datetime objects
+                        if not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                            # Convert to datetime if it's not already
+                            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                        
+                        # Filter out any rows where date parsing failed
+                        df = df.dropna(subset=['Date'])
+                        
                         df['Date_Only'] = df['Date'].dt.date
                         today_data = df[df['Date_Only'] == now.date()]
                         
@@ -1460,11 +1474,13 @@ def main() -> None:
         # Parse command-line arguments
         args = parse_command_line_arguments()
         
+        # Store global references for cleanup
+        global settings, repository, fund_manager
+        
         # Initialize system
         system_settings, system_repository, dependencies, fund_manager = initialize_system(args)
         
-        # Store global references for cleanup
-        global settings, repository
+        # Store global references
         settings = system_settings
         repository = system_repository
         

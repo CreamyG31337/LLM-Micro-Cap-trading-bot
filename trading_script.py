@@ -57,6 +57,7 @@ from data.models.portfolio import PortfolioSnapshot
 
 # Business logic modules
 from portfolio.portfolio_manager import PortfolioManager
+from portfolio.fund_manager import FundManager, Fund
 from portfolio.fifo_trade_processor import FIFOTradeProcessor
 from portfolio.position_calculator import PositionCalculator
 from portfolio.trading_interface import TradingInterface
@@ -194,13 +195,14 @@ def initialize_repository(settings: Settings) -> BaseRepository:
         raise InitializationError(error_msg) from e
 
 
-def initialize_components(settings: Settings, repository: BaseRepository, dependencies: dict[str, bool]) -> None:
+def initialize_components(settings: Settings, repository: BaseRepository, dependencies: dict[str, bool], fund: Fund) -> None:
     """Initialize all system components with dependency injection.
     
     Args:
         settings: System settings
         repository: Initialized repository instance
         dependencies: Dictionary of available dependencies
+        fund: The currently active fund
         
     Raises:
         InitializationError: If component initialization fails
@@ -213,7 +215,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
         logger.info("Initializing system components...")
         
         # Initialize portfolio components
-        portfolio_manager = PortfolioManager(repository)
+        portfolio_manager = PortfolioManager(repository, fund)
         trade_processor = FIFOTradeProcessor(repository)
         position_calculator = PositionCalculator(repository)
         trading_interface = TradingInterface(repository, trade_processor)
@@ -358,14 +360,14 @@ Examples:
     return parser.parse_args()
 
 
-def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepository, dict[str, bool]]:
+def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepository, dict[str, bool], FundManager]:
     """Initialize the trading system with configuration and dependencies.
     
     Args:
         args: Parsed command-line arguments
         
     Returns:
-        Tuple of (settings, repository, dependencies)
+        Tuple of (settings, repository, dependencies, fund_manager)
         
     Raises:
         InitializationError: If system initialization fails
@@ -390,21 +392,40 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Setup logging
         setup_logging(settings)
         
+        # Initialize Fund Manager
+        fund_manager = FundManager(Path('funds.yml'))
+
         # Check dependencies
         dependencies = check_dependencies()
         
         # Handle graceful degradation
         handle_graceful_degradation(dependencies)
         
-        # Initialize repository
+        # Initialize repository for the default fund for now
+        # This will be updated when fund switching is implemented
+        default_fund = fund_manager.get_fund_by_id('default')
+        if not default_fund:
+            raise InitializationError("Default fund not found in funds.yml")
+
+        # Update repository configuration with fund-specific settings
+        repo_config = {
+            'type': default_fund.repository.type,
+            **default_fund.repository.settings
+        }
+        settings.set('repository', repo_config)
+        
+        # Also update the data directory setting to match the fund
+        if 'directory' in default_fund.repository.settings:
+            settings.set('repository.csv.data_directory', default_fund.repository.settings['directory'])
+        
         repository = initialize_repository(settings)
         
         # Initialize components
-        initialize_components(settings, repository, dependencies)
+        initialize_components(settings, repository, dependencies, default_fund)
         
         print_success("System initialization completed successfully")
         
-        return settings, repository, dependencies
+        return settings, repository, dependencies, fund_manager
         
     except Exception as e:
         error_msg = f"System initialization failed: {e}"
@@ -432,7 +453,89 @@ def verify_script_before_action() -> None:
         raise ScriptIntegrityError(f"Script integrity check failed: {e}") from e
 
 
-def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface) -> None:
+def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_manager: FundManager) -> None:
+    """Handle fund switching workflow.
+    
+    Args:
+        args: Parsed command-line arguments
+        settings: System settings
+        fund_manager: Fund manager instance
+    """
+    try:
+        print_header("Switch Fund", _safe_emoji("🏦"))
+        
+        # Get available funds
+        funds = fund_manager.get_all_funds()
+        if not funds:
+            print_error("No funds available")
+            return
+        
+        # Display available funds
+        print_info("Available funds:")
+        print()
+        for i, fund in enumerate(funds, 1):
+            print(f"  [{i}] {fund.name}")
+            print(f"      ID: {fund.id}")
+            print(f"      Description: {fund.description}")
+            print(f"      Repository: {fund.repository.type}")
+            print()
+        
+        # Get user selection
+        try:
+            choice = input(f"Select fund (1-{len(funds)}) or 'q' to cancel: ").strip().lower()
+            
+            if choice == 'q':
+                print_info("Fund switching cancelled")
+                return
+            
+            fund_index = int(choice) - 1
+            if fund_index < 0 or fund_index >= len(funds):
+                print_error("Invalid selection")
+                return
+            
+            selected_fund = funds[fund_index]
+            print_success(f"Switching to fund: {selected_fund.name}")
+            
+            # Update settings with new fund's repository configuration
+            repo_config = {
+                'type': selected_fund.repository.type,
+                **selected_fund.repository.settings
+            }
+            settings.set('repository', repo_config)
+            
+            # Also update the data directory setting to match the fund
+            if 'directory' in selected_fund.repository.settings:
+                settings.set('repository.csv.data_directory', selected_fund.repository.settings['directory'])
+            
+            # Re-initialize repository with new fund's settings
+            new_repository = initialize_repository(settings)
+            
+            # Re-initialize components with new fund
+            initialize_components(settings, new_repository, check_dependencies(), selected_fund)
+            
+            # Update global references
+            global repository, portfolio_manager
+            repository = new_repository
+            
+            print_success(f"Successfully switched to {selected_fund.name}")
+            
+            # Refresh the portfolio display with new fund
+            run_portfolio_workflow(args, settings, new_repository, trading_interface)
+            
+        except ValueError:
+            print_error("Invalid input. Please enter a number or 'q'")
+            return
+        except KeyboardInterrupt:
+            print_info("\nFund switching cancelled")
+            return
+            
+    except Exception as e:
+        error_msg = f"Fund switching failed: {e}"
+        print_error(error_msg)
+        logger.error(error_msg, exc_info=True)
+
+
+def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface, fund_manager: FundManager = None) -> None:
     """Run the main portfolio management workflow.
     
     Args:
@@ -1165,6 +1268,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('💾')} 'backup'  Create Backup"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
             print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
+            print(create_menu_line(f"{_safe_emoji('🏦')} 'f'       Switch Fund"))
             print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
             print(create_menu_line(f"{_safe_emoji('📊')} 'o'       Sort Portfolio"))
             print(create_menu_line(f"{_safe_emoji('❌')} Enter     Quit"))
@@ -1181,6 +1285,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'backup' [B] Create Backup                                  |")
             print("| 'restore' ~ Restore from Backup                             |")
             print("| 'r' ~ Refresh Portfolio                                     |")
+            print("| 'f' ~ Switch Fund                                           |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| 'o' [O] Sort Portfolio                                      |")
             print("| Enter -> Quit                                               |")
@@ -1198,7 +1303,13 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 verify_script_before_action()
                 print_info("Refreshing portfolio...")
                 # Recursive call to refresh (could be improved with a loop)
-                run_portfolio_workflow(args, settings, repository, trading_interface)
+                run_portfolio_workflow(args, settings, repository, trading_interface, fund_manager)
+                return
+            elif action == 'f':
+                if fund_manager is None:
+                    print_error("Fund manager not available")
+                    return
+                switch_fund_workflow(args, settings, fund_manager)
                 return
             elif action == 'rebuild':
                 verify_script_before_action()
@@ -1350,7 +1461,7 @@ def main() -> None:
         args = parse_command_line_arguments()
         
         # Initialize system
-        system_settings, system_repository, dependencies = initialize_system(args)
+        system_settings, system_repository, dependencies, fund_manager = initialize_system(args)
         
         # Store global references for cleanup
         global settings, repository
@@ -1358,7 +1469,7 @@ def main() -> None:
         repository = system_repository
         
         # Run main workflow
-        run_portfolio_workflow(args, system_settings, system_repository, trading_interface)
+        run_portfolio_workflow(args, system_settings, system_repository, trading_interface, fund_manager)
         
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user")

@@ -11,15 +11,33 @@ echo.
 
 REM Check if virtual environment exists
 if not exist "venv\Scripts\python.exe" (
-    echo ERROR: Virtual environment not found!
+    echo Virtual environment not found. Creating it now...
     echo.
-    echo Please create the virtual environment first:
-    echo   python -m venv venv
-    echo   venv\Scripts\activate
-    echo   pip install -r requirements.txt
+    
+    REM Create virtual environment
+    echo Creating virtual environment...
+    python -m venv venv
+    if errorlevel 1 (
+        echo ERROR: Failed to create virtual environment!
+        echo Please make sure Python is installed and accessible.
+        pause
+        exit /b 1
+    )
+    echo Virtual environment created successfully.
     echo.
-    pause
-    exit /b 1
+    
+    REM Install requirements
+    echo Installing requirements...
+    venv\Scripts\pip.exe install -r requirements.txt
+    if errorlevel 1 (
+        echo ERROR: Failed to install requirements!
+        pause
+        exit /b 1
+    )
+    echo Requirements installed successfully.
+    echo.
+    echo Setup complete!
+    echo.
 )
 
 REM Run the master script using the virtual environment

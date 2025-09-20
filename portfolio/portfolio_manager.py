@@ -16,6 +16,7 @@ from pathlib import Path
 from data.repositories.base_repository import BaseRepository, RepositoryError
 from data.models.portfolio import Position, PortfolioSnapshot
 from data.models.trade import Trade
+from .fund_manager import Fund
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +34,16 @@ class PortfolioManager:
     It supports both CSV and future database backends seamlessly.
     """
     
-    def __init__(self, repository: BaseRepository):
+    def __init__(self, repository: BaseRepository, fund: Fund):
         """Initialize portfolio manager.
         
         Args:
             repository: Repository implementation for data access
+            fund: The fund being managed
         """
         self.repository = repository
-        logger.info(f"Portfolio manager initialized with {type(repository).__name__}")
+        self.fund = fund
+        logger.info(f"Portfolio manager initialized for fund '{self.fund.name}' with {type(repository).__name__}")
     
     def load_portfolio(self, date_range: Optional[Tuple[datetime, datetime]] = None) -> List[PortfolioSnapshot]:
         """Load portfolio snapshots from repository.

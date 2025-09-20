@@ -1,0 +1,36 @@
+funds:
+  - name: "Project Chimera"
+    id: "default"
+    description: "The main trading fund."
+    repository:
+      type: "csv"
+      settings:
+        directory: "trading_data/funds/Project Chimera"
+  - name: "TFSA Fund"
+    id: "tfsa"
+    description: "Tax-Free Savings Account fund."
+    repository:
+      type: "csv"
+      settings:
+        directory: "trading_data/funds/TFSA"
+  - name: "RRSP Lance Webull"
+    id: "rrsp_webull"
+    description: "RRSP fund with Webull integration."
+    repository:
+      type: "csv"
+      settings:
+        directory: "trading_data/funds/RRSP Lance Webull"
+  - name: "Test Fund"
+    id: "test"
+    description: "Testing and development fund."
+    repository:
+      type: "csv"
+      settings:
+        directory: "trading_data/funds/TEST"
+  - name: "Development Fund"
+    id: "dev"
+    description: "Development and testing fund."
+    repository:
+      type: "csv"
+      settings:
+        directory: "trading_data/dev"

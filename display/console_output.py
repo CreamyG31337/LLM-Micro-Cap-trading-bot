@@ -512,20 +512,27 @@ def print_environment_banner(data_dir: Optional[str] = None) -> None:
             from pathlib import Path
             fund_name = Path(data_dir).name
             
-            # Try to get fund config for this specific fund
-            from utils.fund_manager import get_fund_manager
-            fm = get_fund_manager()
-            fund_config = fm.get_fund_config(fund_name)
-            if fund_config:
-                fund_type = fund_config.get("fund", {}).get("fund_type", "")
+            # Try to get fund config for this specific fund from the new fund manager
+            try:
+                from portfolio.fund_manager import FundManager
+                fm = FundManager(Path('funds.yml'))
+                fund = fm.get_fund_by_id('default')  # Get the default fund for now
+                if fund:
+                    fund_name = fund.name
+                    # Try to get fund type from fund config file
+                    fund_config_path = Path(data_dir) / "fund_config.json"
+                    if fund_config_path.exists():
+                        import json
+                        with open(fund_config_path, 'r') as f:
+                            fund_config = json.load(f)
+                            fund_type = fund_config.get("fund", {}).get("fund_type", "")
+            except:
+                pass
         else:
-            # Fallback to current active fund
-            from utils.fund_ui import get_current_fund_info
-            fund_info = get_current_fund_info()
-            if fund_info.get("exists"):
-                fund_name = fund_info.get("name", "Unknown Fund")
-                if fund_info.get("config"):
-                    fund_type = fund_info["config"].get("fund", {}).get("fund_type", "")
+            # Fallback to extracting from data directory name
+            if data_dir:
+                from pathlib import Path
+                fund_name = Path(data_dir).name
     except:
         pass
     

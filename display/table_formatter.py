@@ -836,7 +836,30 @@ class TableFormatter:
         
         # Portfolio Value Section
         financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}", style="on grey11")
-        financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        # Cash details (if present in summary_data)
+        cad_cash = summary_data.get('cad_cash', None)
+        usd_cash = summary_data.get('usd_cash', None)
+        usd_to_cad_rate = summary_data.get('usd_to_cad_rate', None)
+        estimated_fx_fee_total_usd = summary_data.get('estimated_fx_fee_total_usd', None)
+        estimated_fx_fee_total_cad = summary_data.get('estimated_fx_fee_total_cad', None)
+        if cad_cash is not None and usd_cash is not None and usd_to_cad_rate is not None:
+            financial_table.add_row("💰 Cash Balance (CAD eq)", f"${cash:,.2f}")
+            financial_table.add_row("   • CAD Cash", f"${cad_cash:,.2f}", style="cyan on grey11")
+            financial_table.add_row("   • USD Cash", f"${usd_cash:,.2f}", style="blue")
+            financial_table.add_row("   • USD→CAD rate", f"{usd_to_cad_rate:.4f}", style="on grey11")
+            # Totals by currency (cash + positions)
+            usd_holdings_total_usd = summary_data.get('usd_holdings_total_usd')
+            cad_holdings_total_cad = summary_data.get('cad_holdings_total_cad')
+            if usd_holdings_total_usd is not None:
+                financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD", style="blue")
+            if cad_holdings_total_cad is not None:
+                financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="cyan on grey11")
+            # Estimated FX fee on USD holdings (simple)
+            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
+                approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
+                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="red")
+        else:
+            financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
 
         # Investment Performance Section
@@ -867,17 +890,25 @@ class TableFormatter:
         financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
                                style=total_pnl_style)
 
+        # Calculate and display profit percentage based on cost basis
+        if cost_basis > 0:
+            profit_pct = (unrealized_pnl / cost_basis) * 100
+            # Row 4 (even): Profit Percentage - should have default background + pnl color
+            profit_pct_style = get_combined_pnl_style_unified(profit_pct, False)
+            financial_table.add_row("📈 Profit Percentage", f"[bold]{profit_pct:+.2f}%[/bold]",
+                                   style=profit_pct_style)
+
         # Calculate and display overall performance
         if total_contributions > 0:
             net_pnl_vs_contrib = (total_equity - total_contributions)
-            # Row 4 (even): Net P&L vs Contributions - should have default background + pnl color
-            net_pnl_style = get_combined_pnl_style_unified(net_pnl_vs_contrib, False)
+            # Row 5 (odd): Net P&L vs Contributions - should have grey background + pnl color
+            net_pnl_style = get_combined_pnl_style_unified(net_pnl_vs_contrib, True)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
                                    style=net_pnl_style)
 
             overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
-            # Row 5 (odd): Overall Return - should have grey background + pnl color
-            overall_return_style = get_combined_pnl_style_unified(overall_return_pct, True)
+            # Row 6 (even): Overall Return - should have default background + pnl color
+            overall_return_style = get_combined_pnl_style_unified(overall_return_pct, False)
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
                                    style=overall_return_style)
 
@@ -973,17 +1004,25 @@ class TableFormatter:
         financial_table.add_row("📊 Total Portfolio P&L", f"[bold]${total_portfolio_pnl:,.2f}[/bold]",
                                style=total_pnl_style)
 
+        # Calculate and display profit percentage based on cost basis
+        if cost_basis > 0:
+            profit_pct = (unrealized_pnl / cost_basis) * 100
+            # Row 4 (even): Profit Percentage - should have default background + pnl color
+            profit_pct_style = get_combined_pnl_style(profit_pct, False)
+            financial_table.add_row("📈 Profit Percentage", f"[bold]{profit_pct:+.2f}%[/bold]",
+                                   style=profit_pct_style)
+
         # Calculate and display performance versus contributions (investor view)
         if total_contributions > 0:
             net_pnl_vs_contrib = (total_equity - total_contributions)
-            # Row 4 (even): Net P&L vs Contributions - should have default background + pnl color
-            net_pnl_style = get_combined_pnl_style(net_pnl_vs_contrib, False)
+            # Row 5 (odd): Net P&L vs Contributions - should have grey background + pnl color
+            net_pnl_style = get_combined_pnl_style(net_pnl_vs_contrib, True)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
                                    style=net_pnl_style)
 
             overall_return_pct = (net_pnl_vs_contrib / total_contributions) * 100
-            # Row 5 (odd): Overall Return - should have grey background + pnl color
-            overall_return_style = get_combined_pnl_style(overall_return_pct, True)
+            # Row 6 (even): Overall Return - should have default background + pnl color
+            overall_return_style = get_combined_pnl_style(overall_return_pct, False)
             financial_table.add_row("📈 Overall Return", f"[bold]{overall_return_pct:+.2f}%[/bold]",
                                    style=overall_return_style)
         

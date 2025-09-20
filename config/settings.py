@@ -234,8 +234,9 @@ class Settings:
         Returns:
             Data directory path
         """
-        # Always get the current active fund data directory
-        return self._get_active_fund_data_directory()
+        # Get data directory from repository configuration
+        repo_config = self.get_repository_config()
+        return repo_config.get('data_directory', 'my trading')
     
     def get_repository_type(self) -> str:
         """Get repository type.

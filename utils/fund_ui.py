@@ -157,6 +157,9 @@ class FundUI:
                     else:
                         if self.fund_manager.set_active_fund(selected_fund):
                             print_success(f"Successfully switched to fund: {selected_fund}")
+                            # Refresh fund manager instance to pick up the change immediately
+                            from utils.fund_manager import get_fund_manager
+                            self.fund_manager = get_fund_manager()
                         else:
                             print_error("Failed to switch fund.")
                     return
@@ -302,6 +305,13 @@ class FundUI:
                     switch = input(f"\n{Colors.YELLOW}Switch to the new fund now? (Y/n): {Colors.ENDC}").strip().lower()
                     if switch != 'n':
                         self.fund_manager.set_active_fund(fund_name)
+                        # Refresh fund manager instance to pick up the change immediately
+                        from utils.fund_manager import get_fund_manager
+                        self.fund_manager = get_fund_manager()
+                else:
+                    # Refresh fund manager even if not switching, in case it became the active fund
+                    from utils.fund_manager import get_fund_manager
+                    self.fund_manager = get_fund_manager()
             else:
                 print_error("Failed to create fund. Check the logs for details.")
         else:

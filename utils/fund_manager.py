@@ -213,6 +213,10 @@ class FundManager:
         except Exception:
             # Any other error, ignore silently
             pass
+        
+        # Also invalidate the global fund manager cache to ensure fresh instance
+        # This prevents UI from showing stale fund names after switching
+        invalidate_fund_manager_cache()
     
     def create_fund(self, fund_name: str, fund_type: str = "investment", 
                    display_currency: str = "CAD", description: str = "", 
@@ -567,3 +571,13 @@ def get_fund_manager() -> FundManager:
     if _fund_manager is None:
         _fund_manager = FundManager()
     return _fund_manager
+
+
+def invalidate_fund_manager_cache() -> None:
+    """Invalidate the global fund manager cache to force refresh.
+    
+    This should be called after fund switches to ensure all instances
+    pick up the new active fund immediately.
+    """
+    global _fund_manager
+    _fund_manager = None

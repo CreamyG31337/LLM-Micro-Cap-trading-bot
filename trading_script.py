@@ -63,7 +63,7 @@ from portfolio.position_calculator import PositionCalculator
 from portfolio.trading_interface import TradingInterface
 
 from market_data.data_fetcher import MarketDataFetcher
-from market_data.market_hours import MarketHours
+from market_data.market_hours import MarketHours, MarketTimer
 from market_data.price_cache import PriceCache
 
 from financial.calculations import money_to_decimal, calculate_cost_basis, calculate_position_value
@@ -197,18 +197,18 @@ def initialize_repository(settings: Settings) -> BaseRepository:
 
 def initialize_components(settings: Settings, repository: BaseRepository, dependencies: dict[str, bool], fund: Fund) -> None:
     """Initialize all system components with dependency injection.
-    
+
     Args:
         settings: System settings
         repository: Initialized repository instance
         dependencies: Dictionary of available dependencies
         fund: The currently active fund
-        
+
     Raises:
         InitializationError: If component initialization fails
     """
     global portfolio_manager, trade_processor, position_calculator, trading_interface
-    global market_data_fetcher, market_hours, price_cache
+    global market_data_fetcher, market_hours, market_timer, price_cache
     global currency_handler, pnl_calculator, table_formatter, backup_manager
     
     try:
@@ -224,6 +224,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
         price_cache = PriceCache()
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         market_hours = MarketHours(settings=settings)
+        market_timer = MarketTimer(market_hours=market_hours)
         
         # Initialize financial components
         data_dir = Path(settings.get_data_directory())
@@ -871,17 +872,17 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         from pathlib import Path
         os.system('cls' if os.name == 'nt' else 'clear')
         
-        # Get market time info and environment for header
+        # Get market timer info for header
         market_time_info = ""
         try:
-            market_time_info = market_hours.display_market_time_header()
+            market_time_info = market_timer.display_market_timer(compact=True)
         except Exception as e:
-            logger.debug(f"Could not get market time header: {e}")
+            logger.debug(f"Could not get market timer header: {e}")
             # Fallback to simple time display
             try:
                 tz = market_hours.get_trading_timezone()
                 now = datetime.now(tz)
-                market_time_info = f"{now.strftime('%Y-%m-%d %H:%M:%S')} PDT | {_safe_emoji('🔴')} MARKET CLOSED"
+                market_time_info = f"{_safe_emoji('⏰')} {now.strftime('%Y-%m-%d %H:%M:%S')} PDT | {_safe_emoji('🔴')} MARKET CLOSED"
             except Exception:
                 market_time_info = ""
         
@@ -923,20 +924,19 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Could not get experiment timeline: {e}")
         
-        # Display portfolio table with market time, timeline, and environment in header
-        time_part = f"{_safe_emoji('⏰')} {market_time_info}" if market_time_info else ""
+        # Display portfolio table with market timer, timeline, and environment in header
         timeline_part = f"{_safe_emoji('📅')} {timeline_info}" if timeline_info else ""
         env_part = f"{env_indicator}" if env_indicator else ""
-        
+
         # Build header with all available information
         header_parts = ["Portfolio Summary"]
-        if time_part:
-            header_parts.append(time_part)
+        if market_time_info:
+            header_parts.append(market_time_info)
         if timeline_part:
             header_parts.append(timeline_part)
         if env_part:
             header_parts.append(env_part)
-        
+
         header_title = " | ".join(header_parts)
             
         # UPDATE CSV BEFORE DISPLAYING - This ensures the portfolio data is current
@@ -1234,11 +1234,22 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         
         # Display trading menu
         print()  # Add spacing
-        # Add environment indicator to Trading Actions header too
+
+        # Get market timer info for trading menu header
+        menu_time_info = ""
+        try:
+            menu_time_info = market_timer.display_market_timer(compact=True)
+        except Exception as e:
+            logger.debug(f"Could not get market timer for menu: {e}")
+
+        # Add environment indicator and market timer to Trading Actions header
+        header_parts = ["Trading Actions"]
+        if menu_time_info:
+            header_parts.append(menu_time_info)
         if env_indicator:
-            trading_header_title = f"Trading Actions | {env_indicator}"
-        else:
-            trading_header_title = "Trading Actions"
+            header_parts.append(env_indicator)
+
+        trading_header_title = " | ".join(header_parts)
         print_header(trading_header_title, _safe_emoji("💰"))
         # Use fancy Unicode borders if supported, otherwise ASCII fallback
         from display.console_output import _can_handle_unicode

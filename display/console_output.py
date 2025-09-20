@@ -321,31 +321,75 @@ def print_separator(width: int = 60, char: str = "─") -> None:
 
 def display_market_time_header(market_time_info: dict) -> None:
     """Display market time information in a formatted header.
-    
+
     Args:
         market_time_info: Dictionary containing market time information
                          Expected keys: 'current_time', 'market_status', 'next_open', etc.
     """
     if not market_time_info:
         return
-    
+
     if _HAS_RICH and console and not _FORCE_FALLBACK:
         # Rich formatting with table
         from rich.table import Table
         from rich.text import Text
-        
+
         time_table = Table(show_header=False, show_edge=False, pad_edge=False)
         time_table.add_column("Time", style="bold cyan", width=15)
         time_table.add_column("Value", style="bold white", width=20)
-        
+
         for key, value in market_time_info.items():
             time_table.add_row(f"{key}:", str(value))
-        
+
         console.print(time_table)
     else:
         # Colorama fallback
         for key, value in market_time_info.items():
             print(f"{Fore.CYAN}{key}:{Style.RESET_ALL} {Fore.WHITE}{value}{Style.RESET_ALL}")
+
+
+def display_market_timer(timer_info: dict, compact: bool = False) -> None:
+    """Display market timer information in a formatted header.
+
+    Args:
+        timer_info: Dictionary containing market timer information
+                   Expected keys: 'current_time', 'market_status', 'next_event', etc.
+        compact: If True, use compact single-line format
+    """
+    if not timer_info:
+        return
+
+    if compact:
+        # Compact format for headers
+        status_emoji = "🟢" if timer_info.get('is_market_open', False) else "🔴"
+        safe_status_emoji = _safe_emoji(status_emoji)
+        timer_str = (f"{_safe_emoji('⏰')} {timer_info['current_time']} | "
+                    f"{safe_status_emoji} {timer_info['market_status']} | "
+                    f"{timer_info['next_event']} in {timer_info['countdown']}")
+        print(f"{Fore.CYAN}{timer_str}{Style.RESET_ALL}")
+        return
+
+    # Full format display
+    if _HAS_RICH and console and not _FORCE_FALLBACK:
+        from rich.table import Table
+        from rich.text import Text
+
+        timer_table = Table(show_header=False, show_edge=False, pad_edge=False)
+        timer_table.add_column("Info", style="bold cyan", width=15)
+        timer_table.add_column("Value", style="bold white", width=25)
+
+        for key, value in timer_info.items():
+            if key != 'is_market_open':  # Skip internal flag
+                display_key = key.replace('_', ' ').title()
+                timer_table.add_row(f"{display_key}:", str(value))
+
+        console.print(timer_table)
+    else:
+        # Colorama fallback
+        for key, value in timer_info.items():
+            if key != 'is_market_open':  # Skip internal flag
+                display_key = key.replace('_', ' ').title()
+                print(f"{Fore.CYAN}{display_key}:{Style.RESET_ALL} {Fore.WHITE}{value}{Style.RESET_ALL}")
 
 
 def format_money_display(amount: float, currency: str = "CAD", 

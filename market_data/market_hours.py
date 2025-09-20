@@ -9,7 +9,7 @@ storage and future database backends.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
 import pandas as pd
 import pytz
@@ -335,3 +335,133 @@ class MarketHours:
                 status = "MARKET CLOSED"
         
         return f"{time_str} | {status}"
+
+
+class MarketTimer:
+    """
+    Market timer that shows countdown to market open/close.
+
+    Provides real-time countdown display for market events and
+    integrates with the existing display system.
+    """
+
+    def __init__(self, market_hours: Optional[MarketHours] = None):
+        """
+        Initialize market timer.
+
+        Args:
+            market_hours: Optional MarketHours instance to use
+        """
+        self.market_hours = market_hours or MarketHours()
+
+    def get_next_market_event(self) -> Tuple[datetime, str]:
+        """
+        Get the next market event (open or close) and its type.
+
+        Returns:
+            Tuple of (next_event_time, event_type) where event_type is 'open' or 'close'
+        """
+        tz = self.market_hours.get_trading_timezone()
+        now = datetime.now(tz)
+
+        # Check if market is currently open
+        if self.market_hours.is_market_open(now):
+            # Market is open, next event is close
+            next_event = self.market_hours.get_market_close_time(now)
+            event_type = "close"
+        else:
+            # Market is closed, next event is open
+            next_event = self.market_hours.get_market_open_time(now)
+            event_type = "open"
+
+            # If we've passed today's open time, get tomorrow's open time
+            if now > next_event:
+                next_event = self.market_hours.get_market_open_time(
+                    self.market_hours.next_trading_day(now).to_pydatetime()
+                )
+                event_type = "open"
+
+        return next_event, event_type
+
+    def format_countdown(self, target_time: datetime) -> str:
+        """
+        Format countdown to target time.
+
+        Args:
+            target_time: The target datetime to count down to
+
+        Returns:
+            Formatted countdown string (e.g., "02:30:45")
+        """
+        tz = self.market_hours.get_trading_timezone()
+        now = datetime.now(tz)
+
+        time_diff = target_time - now
+
+        # Handle if target is in the past (shouldn't happen with get_next_market_event)
+        if time_diff.total_seconds() <= 0:
+            return "00:00:00"
+
+        # Calculate hours, minutes, seconds
+        total_seconds = int(time_diff.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def get_market_timer_display(self) -> Dict[str, Any]:
+        """
+        Get complete market timer information for display.
+
+        Returns:
+            Dictionary with timer information including countdown, next event, etc.
+        """
+        next_event_time, event_type = self.get_next_market_event()
+        countdown = self.format_countdown(next_event_time)
+
+        # Get current market status
+        tz = self.market_hours.get_trading_timezone()
+        now = datetime.now(tz)
+        is_open = self.market_hours.is_market_open(now)
+
+        # Format current time
+        time_str = now.strftime("%H:%M:%S %Z")
+
+        return {
+            'current_time': time_str,
+            'market_status': 'OPEN' if is_open else 'CLOSED',
+            'next_event': event_type.upper(),
+            'next_event_time': next_event_time.strftime("%H:%M:%S %Z"),
+            'countdown': countdown,
+            'countdown_label': f"until market {event_type}",
+            'is_market_open': is_open
+        }
+
+    def display_market_timer(self, compact: bool = False) -> str:
+        """
+        Generate formatted market timer string for display.
+
+        Args:
+            compact: If True, use compact format for header integration
+
+        Returns:
+            Formatted timer string
+        """
+        timer_info = self.get_market_timer_display()
+
+        if compact:
+            # Compact format for headers: "⏰ 14:30:25 PST | 🟢 OPEN | Closes in 02:30:45"
+            status_emoji = "🟢" if timer_info['is_market_open'] else "🔴"
+            safe_status_emoji = _safe_emoji(status_emoji)
+            return (f"{_safe_emoji('⏰')} {timer_info['current_time']} | "
+                   f"{safe_status_emoji} {timer_info['market_status']} | "
+                   f"{timer_info['next_event']} in {timer_info['countdown']}")
+        else:
+            # Full format for dedicated display
+            lines = [
+                f"{_safe_emoji('⏰')} Current Time: {timer_info['current_time']}",
+                f"{_safe_emoji('📊')} Market Status: {timer_info['market_status']}",
+                f"{_safe_emoji('🎯')} Next Event: {timer_info['next_event']} at {timer_info['next_event_time']}",
+                f"{_safe_emoji('⏱️')} {timer_info['countdown_label']}: {timer_info['countdown']}"
+            ]
+            return "\n".join(lines)

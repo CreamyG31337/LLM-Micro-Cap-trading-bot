@@ -76,8 +76,9 @@ class Settings:
                 'directory': 'backups',
                 'max_backups': 10,
                 'auto_backup_on_save': True
-            },
-            'fund': self._get_active_fund_config()
+            }
+            # Note: 'fund' config removed from initialization to prevent caching
+            # Fund configuration is now retrieved dynamically via get_fund_config()
         }
     
     def _load_from_environment(self) -> None:
@@ -234,9 +235,9 @@ class Settings:
         Returns:
             Data directory path
         """
-        # Get data directory from repository configuration
-        repo_config = self.get_repository_config()
-        return repo_config.get('data_directory', 'my trading')
+        # Always get the active fund data directory dynamically
+        # This ensures we're always using the correct fund's data
+        return self._get_active_fund_data_directory()
     
     def get_repository_type(self) -> str:
         """Get repository type.
@@ -284,7 +285,8 @@ class Settings:
         Returns:
             Fund name for display purposes
         """
-        # Always get the current active fund name
+        # Always get the current active fund name dynamically
+        # Never cache to ensure we always show the correct fund
         active_fund_config = self._get_active_fund_config()
         return active_fund_config.get('name', 'Your Investments')
     
@@ -294,7 +296,8 @@ class Settings:
         Returns:
             Fund configuration dictionary
         """
-        # Always get the current active fund configuration
+        # Always get the current active fund configuration dynamically
+        # Never cache to ensure consistency with the actual active fund
         return self._get_active_fund_config()
     
     def _get_active_fund_data_directory(self) -> str:

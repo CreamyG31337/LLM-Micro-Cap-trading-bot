@@ -122,26 +122,26 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
         data_dir_path = Path(data_folder_name)
     
     return [
-        ("1", "🔄 Main Trading Script", 
-         f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder)", 
+        ("1", "🔄 Main Trading Script",
+         f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder) - runs trading_script.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("2", f"{_safe_emoji('🤖')} Simple Automation", 
-         f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder)", 
+        ("2", f"{_safe_emoji('🤖')} Simple Automation",
+         f"Run LLM-powered automated trading (requires OpenAI API key) (uses '{data_folder_name}' folder) - runs simple_automation.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("3", f"{_safe_emoji('📊')} Generate Performance Graph", 
-         f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder)", 
+        ("3", f"{_safe_emoji('📊')} Generate Performance Graph",
+         f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder) - runs Generate_Graph.py",
          ["--data-dir", str(data_dir_path)]),
         
         
         
-        ("8", "🐛 Debug Instructions", 
-         "Show debug information and instructions", 
+        ("8", "🐛 Debug Instructions",
+         "Show debug information and instructions - runs debug_instructions.py",
          []),
         
-        ("9", "💡 Show Prompt", 
-         "Display the current LLM prompt template", 
+        ("9", "💡 Show Prompt",
+         "Display the current LLM prompt template - runs show_prompt.py",
          []),
         
         ("d", "📋 Generate Daily Trading Prompt",
@@ -149,27 +149,27 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          ["--data-dir", str(data_dir_path)]),
         
         ("w", "🔬 Generate Weekly Deep Research Prompt",
-         f"Generate weekly deep research prompt for comprehensive portfolio analysis (uses '{data_folder_name}' folder)", 
+         f"Generate weekly deep research prompt for comprehensive portfolio analysis (uses '{data_folder_name}' folder) - runs prompt_generator.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("u", "💰 Update Cash Balances", 
-         f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder)", 
+        ("u", "💰 Update Cash Balances",
+         f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder) - runs update_cash.py",
          ["--data-dir", str(data_dir_path)]),
-        
-        ("m", "👥 Manage Contributors", 
-         f"Edit contributor names and email addresses (uses '{data_folder_name}' folder)", 
+
+        ("m", "👥 Manage Contributors",
+         f"Edit contributor names and email addresses (uses '{data_folder_name}' folder) - runs menu_actions.py",
          ["--data-dir", str(data_dir_path)]),
-        
-        ("x", "📧 Get Contributor Emails", 
-         f"Output all contributor email addresses (semicolon-separated for mail programs) (uses '{data_folder_name}' folder)", 
+
+        ("x", "📧 Get Contributor Emails",
+         f"Output all contributor email addresses (semicolon-separated for mail programs) (uses '{data_folder_name}' folder) - runs get_emails.py",
          ["--data-dir", str(data_dir_path)]),
         
         ("e", "📧 Add Trade from Email",
-         f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs email trade parser",
+         f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs add_trade_from_email.py",
          ["--data-dir", str(data_dir_path)]),
         
         ("r", "🔧 Rebuild Portfolio",
-         f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder)",
+         f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder) - runs rebuild_portfolio_from_scratch.py",
          ["--data-dir", str(data_dir_path)]),
         
         ("c", "⚙️  Configure", 
@@ -437,11 +437,14 @@ def main() -> None:
                     print_colored(f"{_safe_emoji('❌')} Script exited with code: {return_code}", Colors.RED)
                 
                 input(f"\n{Colors.YELLOW}Press Enter to return to menu...{Colors.ENDC}")
+                continue  # Return to main menu loop
             else:
                 print_colored(f"{_safe_emoji('❌')} Invalid option selected", Colors.RED)
+                continue  # Return to main menu loop
         else:
             print_colored(f"{_safe_emoji('❌')} Invalid option. Please try again.", Colors.RED)
             input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+            continue  # Return to main menu loop
 
 if __name__ == "__main__":
     try:

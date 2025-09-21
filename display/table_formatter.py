@@ -135,7 +135,7 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=17, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
         table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=13, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
@@ -281,6 +281,39 @@ class TableFormatter:
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
             
+            # Format 5-day P&L with color coding (or partial period P&L)
+            # Color Scheme:
+            # - YELLOW: Partial periods (2d:, 3d:, 4d: prefixes) - position held < 5 days
+            # - GREEN: Full 5-day period with positive returns (contains '+' in percentage)
+            # - RED: Full 5-day period with negative returns (contains '-' in percentage)
+            # - DEFAULT: Zero change or N/A
+            # 
+            # The + sign in percentages triggers the green color for Rich markup.
+            # Format from trading_script.py: "$123.45 +5.6%" or "2d: $45.67 +2.3%"
+            five_day_pnl_raw = position.get('five_day_pnl', 'N/A')
+            if five_day_pnl_raw != 'N/A':
+                # Parse the P&L string (format: "$XX.XX +Y.Y%" or "$XX.XX -Y.Y%" or "2d: $XX.XX +Y.Y%")
+                try:
+                    # Check if it's a partial period (indicated by "2d:", "3d:", "4d:" prefix)
+                    if any(prefix in five_day_pnl_raw for prefix in ['2d:', '3d:', '4d:']):
+                        # Yellow color for partial periods (less than 5 days)
+                        five_day_pnl_display = f"[yellow]{five_day_pnl_raw}[/yellow]"
+                    else:
+                        # Full 5-day period: use green/red based on performance
+                        # The presence of '+' in the percentage triggers green
+                        if '+' in five_day_pnl_raw:
+                            five_day_pnl_display = f"[green]{five_day_pnl_raw}[/green]"
+                        elif '-' in five_day_pnl_raw:
+                            five_day_pnl_display = f"[red]{five_day_pnl_raw}[/red]"
+                        else:
+                            # Edge case: exactly 0% change
+                            five_day_pnl_display = five_day_pnl_raw
+                except:
+                    # Fallback if parsing fails
+                    five_day_pnl_display = five_day_pnl_raw
+            else:
+                five_day_pnl_display = 'N/A'
+            
             # Color code ticker based on currency (remove suffixes for display)
             ticker = position.get('ticker', 'N/A')
             currency = position.get('currency', 'CAD')
@@ -303,7 +336,7 @@ class TableFormatter:
                 total_value_display,  # Total Value (shares * current price)
                 total_pnl_display,  # Combined Total P&L: percentage [dollar amount]
                 daily_pnl_display,  # Combined Daily P&L: percentage [dollar amount]
-                position.get('five_day_pnl', 'N/A'),  # 5-day P&L from enhanced data
+                five_day_pnl_display,  # 5-day P&L with color formatting
                 weight_display,  # Position weight from enhanced data
                 f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
                 f"${float(cost_basis):.2f}",
@@ -443,6 +476,30 @@ class TableFormatter:
             else:
                 daily_pnl_display = daily_pnl_dollar
             
+            # Format 5-day P&L with color coding for plain text (or partial period P&L)
+            five_day_pnl_raw = position.get('five_day_pnl', 'N/A')
+            if five_day_pnl_raw != 'N/A':
+                # Parse the P&L string for plain text color coding
+                try:
+                    # Check if it's a partial period (indicated by "2d:", "3d:", "4d:" prefix)
+                    if any(prefix in five_day_pnl_raw for prefix in ['2d:', '3d:', '4d:']):
+                        # Yellow color for partial periods (less than 5 days)
+                        five_day_pnl_display_plain = f"{Fore.YELLOW}{five_day_pnl_raw}{Style.RESET_ALL}"
+                    else:
+                        # Full 5-day period: use green/red based on performance
+                        if '+' in five_day_pnl_raw:
+                            five_day_pnl_display_plain = f"{Fore.GREEN}{five_day_pnl_raw}{Style.RESET_ALL}"
+                        elif '-' in five_day_pnl_raw:
+                            five_day_pnl_display_plain = f"{Fore.RED}{five_day_pnl_raw}{Style.RESET_ALL}"
+                        else:
+                            # Edge case: exactly 0% change
+                            five_day_pnl_display_plain = five_day_pnl_raw
+                except:
+                    # Fallback if parsing fails
+                    five_day_pnl_display_plain = five_day_pnl_raw
+            else:
+                five_day_pnl_display_plain = 'N/A'
+            
             # Color code ticker based on currency for plain text (remove suffixes for display)
             ticker = position.get('ticker', 'N/A')
             currency = position.get('currency', 'CAD')
@@ -466,6 +523,7 @@ class TableFormatter:
                 'Dollar P&L': f"${float(abs(unrealized_pnl)):,.2f}" if unrealized_pnl != 0 else "$0.00",
                 'Total P&L': total_pnl_display,
                 'Daily P&L': daily_pnl_display,
+                '5-Day P&L': five_day_pnl_display_plain,
                 'Weight': position.get('position_weight', 'N/A'),
                 'Stop Loss': f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
                 'Cost Basis': f"${float(cost_basis):.2f}"

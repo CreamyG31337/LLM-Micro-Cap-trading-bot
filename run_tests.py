@@ -56,12 +56,13 @@ def main():
     
     # Test categories
     test_categories = {
-        "all": ["python", "-m", "pytest", "tests/", "-v"],
-        "portfolio_display": ["python", "-m", "pytest", "tests/test_portfolio_display_bugs.py", "-v"],
-        "emoji_unicode": ["python", "-m", "pytest", "tests/test_emoji_unicode_bugs.py", "-v"],
-        "financial": ["python", "-m", "pytest", "tests/test_financial_calculations.py", "-v"],
-        "integration": ["python", "-m", "pytest", "tests/test_integration.py", "-v"],
-        "quick": ["python", "-m", "pytest", "tests/", "-v", "--tb=short", "-x"]
+        "all": ["python", "-m", "pytest", "tests/", "-q", "--tb=line", "--durations=10"],
+        "portfolio_display": ["python", "-m", "pytest", "tests/test_portfolio_display_bugs.py", "-q", "--tb=line", "--durations=5"],
+        "emoji_unicode": ["python", "-m", "pytest", "tests/test_emoji_unicode_bugs.py", "-q", "--tb=line", "--durations=3"],
+        "financial": ["python", "-m", "pytest", "tests/test_financial_calculations.py", "-q", "--tb=line", "--durations=5"],
+        "integration": ["python", "-m", "pytest", "tests/test_integration.py", "-q", "--tb=line", "--durations=5"],
+        "quick": ["python", "-m", "pytest", "tests/", "-q", "--tb=line", "-x"],
+        "verbose": ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
     }
     
     if len(sys.argv) > 1:
@@ -79,7 +80,7 @@ def main():
         print("\nAvailable test categories:")
         for i, (name, cmd) in enumerate(test_categories.items(), 1):
             print(f"  {i}. {name}: {' '.join(cmd)}")
-        
+
         print("\nCommon Bug Prevention Patterns:")
         print("=" * 40)
         print("1. Emoji Syntax: Use _safe_emoji('✅') not '_safe_emoji('✅')'")
@@ -87,9 +88,9 @@ def main():
         print("3. P&L Calculations: Always handle None values with 'or 0'")
         print("4. Field Names: Ensure consistency between data structures")
         print("5. Console Output: Test both Rich and fallback modes")
-        
+
         try:
-            choice = input("\nEnter test category number (1-6) or 'all' for all tests: ").strip()
+            choice = input(f"\nEnter test category number (1-{len(test_categories)}) or name: ").strip()
             
             if choice.isdigit():
                 choice_num = int(choice)

@@ -2,6 +2,23 @@
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
+## CRITICAL DEVELOPMENT RULES
+
+### 🚨 MANDATORY: Always Run Tests Before Code Changes
+```bash
+# ALWAYS run this before making any code changes
+python -m pytest tests/ -v
+
+# For quick validation during development
+python run_tests.py
+```
+
+### 📁 MANDATORY: Debug File Organization
+- **ALL debug scripts** must go in `debug/` folder
+- **ALL temporary files** (*.txt, *.log, debug_*.py, fix_*.py) go in `debug/`
+- **NO debug files** in root directory
+- **Clean up** after debugging sessions
+
 ## Common Development Commands
 
 ### Environment Setup
@@ -99,7 +116,7 @@ This is a **modular Python trading system** with **repository pattern** for data
 - **`portfolio/`**: Portfolio management, FIFO trade processing, position calculations, trading interface
 - **`market_data/`**: Market data fetching (Yahoo Finance primary, Stooq fallback), market hours handling, price caching
 - **`financial/`**: P&L calculations, currency handling, cost basis calculations with Decimal precision
-- **`display/`**: Terminal output formatting, table generation, console utilities
+- **`display/`**: Terminal output formatting, Rich table generation with color coding, console utilities with emoji support
 
 #### Configuration and Utilities
 - **`config/`**: Settings management with JSON file and environment variable support
@@ -127,6 +144,7 @@ The system is architected for seamless migration from CSV to database:
 - **Decimal Precision**: All financial calculations use `decimal.Decimal` for accuracy
 - **Currency Conversion**: Handles CAD/USD conversions with proper exchange rates
 - **Daily P&L**: Industry-standard close-to-close price comparison with market hours handling
+- **5-Day P&L with Partial Periods**: Shows full 5-day P&L when available, falls back to 2-4 day periods with yellow color coding for newer positions
 
 ## Development Guidelines
 
@@ -181,4 +199,25 @@ The system is architected for seamless migration from CSV to database:
 
 This is a **fork** of the ChatGPT Micro-Cap Experiment focused on enhanced portfolio tracking and dual currency support (CAD/USD). The system uses LLM-assisted trading analysis while maintaining professional-grade financial accuracy and audit trails.
 
-Key features include FIFO lot tracking, real-time market data integration, comprehensive P&L calculations, and a modular architecture designed for future database migration and web dashboard development.
+Key features include FIFO lot tracking, real-time market data integration, comprehensive P&L calculations with intelligent partial-period display, color-coded portfolio tables, and a modular architecture designed for future database migration and web dashboard development.
+
+### Caching and Performance
+
+#### Python Import Caching
+- **Python bytecode caching**: Python caches compiled bytecode (.pyc files) which can persist code changes
+- **Module reload required**: After code changes, especially in imported modules like `display/table_formatter.py`, you may need to:
+  - Restart the Python process/terminal session
+  - Use `importlib.reload()` for development
+  - Delete `__pycache__/` directories if experiencing stale code issues
+
+#### Market Data Caching
+- **Price data**: Market data is cached to avoid excessive API calls
+- **Cache location**: `trading_data/dev/` and `trading_data/prod/` contain cached CSV files
+- **Cache refresh**: Use `--refresh-cache` flag or delete old CSV files to force refresh
+
+### Recent Enhancements
+
+- **Enhanced 5-Day P&L Display**: Intelligently shows 2-4 day partial periods when full 5-day data unavailable
+- **Smart Color Coding**: Green/red for full periods, yellow for partial periods, proper formatting without redundant minus signs
+- **LLM Prompt Integration**: Multi-period P&L data included in generated prompts for AI trading analysis
+- **Improved Column Layout**: Optimized table width (13 characters) for better display formatting

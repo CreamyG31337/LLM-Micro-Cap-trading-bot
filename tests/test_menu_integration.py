@@ -149,8 +149,9 @@ class TestMenuIntegration:
     def test_show_prompt_execution(self):
         """Test that show_prompt can execute without crashing."""
         cmd = [
-            sys.executable, 
-            str(self.project_root / "show_prompt.py")
+            sys.executable,
+            str(self.project_root / "show_prompt.py"),
+            "--data-dir", str(self.test_data_dir)
         ]
         
         try:

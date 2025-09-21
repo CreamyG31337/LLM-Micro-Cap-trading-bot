@@ -1099,13 +1099,12 @@ class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
         # Update portfolio
         self.repository.update_daily_portfolio_snapshot(updated_snapshot)
         
-        # Verify portfolio data - should have 2 snapshots (initial + after buy trade)
+        # Verify portfolio data - should have 1 snapshot per day (consolidated)
         portfolio_data = self.repository.get_portfolio_data()
-        self.assertEqual(len(portfolio_data), 2)
+        self.assertEqual(len(portfolio_data), 1)
         
         # Check that we have the correct number of positions
         self.assertGreaterEqual(len(portfolio_data[0].positions), 1)
-        self.assertGreaterEqual(len(portfolio_data[1].positions), 1)
     
     def test_multiple_days_no_duplicates(self):
         """Test that multiple days don't create duplicates within each day."""
@@ -1294,9 +1293,9 @@ class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
         
         self.repository.update_daily_portfolio_snapshot(day2_snapshot)
         
-        # Verify we have 3 snapshots: Day 1 initial, Day 1 after price update, Day 2 after buy trade
+        # Verify we have 2 snapshots: Day 1 (consolidated), Day 2 (after buy trade)
         portfolio_data = self.repository.get_portfolio_data()
-        self.assertEqual(len(portfolio_data), 3)
+        self.assertEqual(len(portfolio_data), 2)
         
         # Verify each snapshot has exactly one position
         for snapshot in portfolio_data:

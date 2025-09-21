@@ -100,9 +100,9 @@ def format_enhanced_portfolio_display(enhanced_df):
         return "No current holdings"
 
     lines = []
-    lines.append("Ticker        Shares    Avg Price  Current   Total P&L        Daily P&L        Weight %")
-    lines.append("                                              $      %            $      %")
-    lines.append("-" * 92)
+    lines.append("Ticker        Shares    Avg Price  Current   Total P&L        Daily P&L        5-Day P&L     Weight %")
+    lines.append("                                              $      %            $      %          $      %")
+    lines.append("-" * 104)
     
     for _, row in enhanced_df.iterrows():
         ticker = str(row.get('ticker', ''))[:12].ljust(12)
@@ -118,9 +118,17 @@ def format_enhanced_portfolio_display(enhanced_df):
         daily_pnl_amount = f"${float(row.get('Daily_PnL_Amount', 0)):+.2f}".rjust(9)
         daily_pnl_percent = f"{float(row.get('Daily_PnL_Percent', 0)):+.1f}%".rjust(8)
         
+        # 5-Day P&L (use actual data if available)
+        five_day_pnl_raw = str(row.get('five_day_pnl', 'N/A'))
+        if five_day_pnl_raw != 'N/A' and '$' in five_day_pnl_raw:
+            # Parse existing formatted string like "$+12.34 +5.6%"
+            five_day_pnl_display = five_day_pnl_raw.rjust(15)
+        else:
+            five_day_pnl_display = "N/A".rjust(15)
+        
         weight = f"{float(row.get('Weight_Percent', 0)):.1f}%".rjust(8)
         
-        lines.append(f"{ticker} {shares} {buy_price} {current} {total_pnl_amount} {total_pnl_percent} {daily_pnl_amount} {daily_pnl_percent} {weight}")
+        lines.append(f"{ticker} {shares} {buy_price} {current} {total_pnl_amount} {total_pnl_percent} {daily_pnl_amount} {daily_pnl_percent} {five_day_pnl_display} {weight}")
     
     return "\n".join(lines)
 
@@ -263,8 +271,62 @@ def show_complete_prompt(data_dir: str = None):
                     logger.debug(f"Could not calculate daily P&L for {position.ticker}: {e}")
                     pos_dict['daily_pnl'] = "$0.00"
 
-                # 5-day P&L would require more historical data
-                pos_dict['five_day_pnl'] = "N/A"
+                # Multi-day P&L calculation using historical data (5-day preferred, but show 2-4 day if available)
+                try:
+                    period_pnl_calculated = False
+                    
+                    # First try for 5-day P&L (snapshots 4-7 days back)
+                    for i in range(4, min(len(portfolio_snapshots), 8)):  # Look for snapshots 4-7 days back
+                        if len(portfolio_snapshots) > i:
+                            period_snapshot = portfolio_snapshots[-(i+1)]
+                            # Find the same ticker in historical snapshot
+                            period_position = None
+                            for period_pos in period_snapshot.positions:
+                                if period_pos.ticker == position.ticker:
+                                    period_position = period_pos
+                                    break
+
+                            if period_position and period_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
+                                period_pnl_change = position.unrealized_pnl - period_position.unrealized_pnl
+                                period_pct_change = ((position.current_price or position.avg_price) - (period_position.current_price or period_position.avg_price)) / (period_position.current_price or period_position.avg_price) * 100 if (period_position.current_price or period_position.avg_price) > 0 else 0
+                                if period_pnl_change >= 0:
+                                    pos_dict['five_day_pnl'] = f"${period_pnl_change:.2f} {period_pct_change:.1f}%"
+                                else:
+                                    pos_dict['five_day_pnl'] = f"${abs(period_pnl_change):.2f} {period_pct_change:.1f}%"
+                                period_pnl_calculated = True
+                                break
+                    
+                    # If no 5-day data, try for 2-4 day periods
+                    if not period_pnl_calculated:
+                        for days_back in [3, 2, 1]:  # Try 4-day, 3-day, 2-day periods
+                            if len(portfolio_snapshots) > days_back:
+                                period_snapshot = portfolio_snapshots[-(days_back+1)]
+                                # Find the same ticker in historical snapshot
+                                period_position = None
+                                for period_pos in period_snapshot.positions:
+                                    if period_pos.ticker == position.ticker:
+                                        period_position = period_pos
+                                        break
+
+                                if period_position and period_position.unrealized_pnl is not None and position.unrealized_pnl is not None:
+                                    period_pnl_change = position.unrealized_pnl - period_position.unrealized_pnl
+                                    period_pct_change = ((position.current_price or position.avg_price) - (period_position.current_price or period_position.avg_price)) / (period_position.current_price or period_position.avg_price) * 100 if (period_position.current_price or period_position.avg_price) > 0 else 0
+                                    # Add day prefix to indicate partial period
+                                    days_label = days_back + 1  # +1 because we're looking at snapshots back
+                                    if period_pnl_change >= 0:
+                                        pos_dict['five_day_pnl'] = f"{days_label}d: ${period_pnl_change:.2f} {period_pct_change:.1f}%"
+                                    else:
+                                        pos_dict['five_day_pnl'] = f"{days_label}d: ${abs(period_pnl_change):.2f} {period_pct_change:.1f}%"
+                                    period_pnl_calculated = True
+                                    break
+                            
+                            if period_pnl_calculated:
+                                break
+                    
+                    if not period_pnl_calculated:
+                        pos_dict['five_day_pnl'] = "N/A"
+                except Exception as e:
+                    pos_dict['five_day_pnl'] = "N/A"
 
                 enhanced_positions.append(pos_dict)
 

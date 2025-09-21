@@ -59,7 +59,10 @@ class Settings:
                 'cache_enabled': True,
                 'cache_duration_hours': 24,
                 'fundamentals_cache_persist': True,
-                'fundamentals_cache_ttl_hours': 12
+                'fundamentals_cache_ttl_hours': 12,
+                'historical_window_days': 90,  # Days of historical data for volume calculations
+                'average_volume_period_days': 30,  # Days for average volume calculation
+                'volume_format_threshold': 1000  # Threshold for formatting volume in thousands
             },
             'timezone': {
                 'name': 'PST',

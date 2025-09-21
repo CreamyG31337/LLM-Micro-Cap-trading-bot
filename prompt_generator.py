@@ -167,12 +167,26 @@ class PromptGenerator:
         """
         rows: List[List[str]] = []
         
-        # Get a longer historical window so we can compute 30d average volume
+        # Get a longer historical window so we can compute average volume
         start_d, end_d = self.market_hours.trading_day_window()
-        start_d = end_d - pd.Timedelta(days=90)  # ~3 months to ensure >=30 trading days
-        
-        # Get benchmarks (hardcoded for now, could be moved to config)
-        benchmarks = ["SPY", "QQQ", "VTI"]
+        # Use configurable historical window instead of hardcoded 90 days
+        historical_days = self.settings.get('market_data', {}).get('historical_window_days', 90)
+        start_d = end_d - pd.Timedelta(days=historical_days)
+
+        # Get benchmarks from market configuration
+        benchmarks = []
+        if _HAS_MARKET_CONFIG:
+            try:
+                benchmarks = get_benchmarks()
+            except Exception as e:
+                logger.debug(f"Could not get benchmarks from market_config: {e}")
+                # Fallback to default benchmarks
+                benchmarks = ["SPY", "QQQ", "VTI"]
+
+        if not benchmarks:
+            # Final fallback if market_config fails
+            benchmarks = ["SPY", "QQQ", "VTI"]
+
         all_tickers = portfolio_tickers + benchmarks
         
         for ticker in all_tickers:
@@ -193,24 +207,29 @@ class PromptGenerator:
                 else:
                     volume = float("nan")
                 
-                # 30-day average volume (last 30 trading days)
+                # Average volume calculation using configurable period
                 avg_vol_cell = "—"
                 if "Volume" in data.columns:
                     vol_series = data["Volume"].dropna()
                     if not vol_series.empty:
-                        avg30 = vol_series.tail(30).mean()
-                        if pd.notna(avg30):
-                            # Format volume in thousands (K) to save space
-                            if avg30 >= 1000:
-                                avg_vol_cell = f"{int(avg30/1000):,}K"
+                        # Use configurable period instead of hardcoded 30 days
+                        avg_period_days = self.settings.get('market_data', {}).get('average_volume_period_days', 30)
+                        avg_volume = vol_series.tail(avg_period_days).mean()
+                        if pd.notna(avg_volume):
+                            # Use configurable threshold for formatting
+                            volume_threshold = self.settings.get('market_data', {}).get('volume_format_threshold', 1000)
+                            if avg_volume >= volume_threshold:
+                                avg_vol_cell = f"{int(avg_volume/volume_threshold):,}K"
                             else:
-                                avg_vol_cell = f"{int(avg30):,}"
+                                avg_vol_cell = f"{int(avg_volume):,}"
                 
                 percent_change = ((price - last_price) / last_price) * 100
-                # Format current volume in thousands (K) to save space
+                # Format current volume using configurable threshold
                 if pd.notna(volume):
-                    if volume >= 1000:
-                        volume_cell = f"{int(volume/1000):,}K"
+                    # Use configurable threshold for formatting
+                    volume_threshold = self.settings.get('market_data', {}).get('volume_format_threshold', 1000)
+                    if volume >= volume_threshold:
+                        volume_cell = f"{int(volume/volume_threshold):,}K"
                     else:
                         volume_cell = f"{int(volume):,}"
                 else:
@@ -722,12 +741,14 @@ class PromptGenerator:
             self.portfolio_manager = PortfolioManager(self.repository)
             
         # Load portfolio data
+        print("Loading portfolio data...")
         try:
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
             if latest_snapshot is None:
                 print(f"❌ No portfolio data found in {self.data_dir}")
                 print("Please run the main trading script first to create portfolio data.")
                 return
+            print(f"✅ Loaded portfolio with {len(latest_snapshot.positions)} positions")
             
             # Convert to DataFrame with enhanced data (same as main trading script)
             portfolio_data = []
@@ -782,12 +803,16 @@ class PromptGenerator:
         portfolio_tickers = []
         if not llm_portfolio.empty and 'ticker' in llm_portfolio.columns:
             portfolio_tickers = llm_portfolio['ticker'].tolist()
-            
+
         # Fetch market data
+        print("Fetching current market data...")
         market_rows = self._get_market_data_table(portfolio_tickers)
-        
+        print(f"✅ Updated market data for {len(market_rows)} tickers")
+
         # Calculate comprehensive financial overview data
+        print("Calculating portfolio metrics...")
         financial_data = self._calculate_financial_overview_data(latest_snapshot)
+        print("✅ Portfolio metrics calculated successfully")
         
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
@@ -877,11 +902,13 @@ class PromptGenerator:
             
         try:
             # Load portfolio data using the same approach as daily prompt
+            print("Loading portfolio data...")
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
             if latest_snapshot is None:
                 print(f"❌ No portfolio data found in {self.data_dir}")
                 print("Please run the main trading script first to create portfolio data.")
                 return
+            print(f"✅ Loaded portfolio with {len(latest_snapshot.positions)} positions")
             
             # Convert to DataFrame with enhanced data (same as daily prompt)
             portfolio_data = []
@@ -933,12 +960,16 @@ class PromptGenerator:
         portfolio_tickers = []
         if not llm_portfolio.empty and 'ticker' in llm_portfolio.columns:
             portfolio_tickers = llm_portfolio['ticker'].tolist()
-            
+
         # Fetch market data (same as daily prompt)
+        print("Fetching current market data...")
         market_rows = self._get_market_data_table(portfolio_tickers)
-        
+        print(f"✅ Updated market data for {len(market_rows)} tickers")
+
         # Calculate comprehensive financial overview data
+        print("Calculating portfolio metrics...")
         financial_data = self._calculate_financial_overview_data(latest_snapshot)
+        print("✅ Portfolio metrics calculated successfully")
         
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)

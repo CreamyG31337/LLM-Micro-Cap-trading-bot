@@ -28,6 +28,46 @@ This fork enhances the original with:
 - **Better User Experience** - Terminal optimization, virtual environment checks, and interactive menus
 - **Comprehensive Debugging** - Multiple debug tools for troubleshooting and analysis
 - **Configurable Timezone Support** - Flexible timezone handling for different markets
+- **Cache Management System** - Monitor, clear, and update cached data with dedicated UI
+
+## Cache Management
+
+The system includes comprehensive cache management to handle cached market data, exchange rates, and company fundamentals:
+
+### Quick Cache Management
+```bash
+# From main menu - select option 'k'
+python run.py
+
+# From trading script - select 'cache'
+python trading_script.py --data-dir "your_fund"
+```
+
+### Cache Types
+- **Price Cache**: Stock prices and market data
+- **Fundamentals Cache**: Company financial information
+- **Exchange Rate Cache**: Currency conversion rates
+- **Memory Caches**: Runtime data for performance
+
+### When to Use Cache Management
+- **Stale Data**: Clear caches when data appears outdated
+- **Display Issues**: Clear caches for table formatting problems
+- **Performance Issues**: Monitor and clear excessive cache sizes
+- **Troubleshooting**: First step when experiencing data inconsistencies
+
+### Cache Management Commands
+```bash
+# View cache status
+python run.py  # Select 'k' -> View Cache Status
+
+# Clear specific cache
+python run.py  # Select 'k' -> Clear Specific Cache
+
+# Clear all caches (emergency)
+python run.py  # Select 'k' -> Clear All Caches
+```
+
+For detailed cache management documentation, see [`docs/CACHE_MANAGEMENT.md`](docs/CACHE_MANAGEMENT.md).
 
 ## Original Documentation
 

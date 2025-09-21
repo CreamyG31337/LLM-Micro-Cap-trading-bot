@@ -42,8 +42,8 @@ class CacheUI:
         # Show detailed stats
         stats = self.cache_manager.get_cache_stats()
         if 'price_cache' in stats and stats['price_cache']['total_entries'] > 0:
-            print_info("
-📈 Price Cache Details:"            price_stats = stats['price_cache']
+            print_info("\n📈 Price Cache Details:")
+            price_stats = stats['price_cache']
             print_info(f"  Entries: {price_stats['total_entries']}")
             print_info(f"  Rows: {price_stats['total_rows']}")
             if 'sources' in price_stats and price_stats['sources']:

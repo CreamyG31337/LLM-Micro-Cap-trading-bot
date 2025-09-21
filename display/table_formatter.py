@@ -131,10 +131,10 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="bright_white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('💵')}\nTotal Value", justify="right", style="bright_yellow", width=12, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nValue", justify="right", style="bright_yellow", width=12, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=17, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
-        table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📈')}\n1-Day P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=14, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")

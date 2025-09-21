@@ -26,7 +26,7 @@ try:
 
             # Test cache status
             status = cache_manager.get_cache_status()
-            print(f"✅ Cache status retrieved: {status['total_cache_files']} files, {status['total_cache_size_formatted']} total")
+            print(f"✅ Cache status retrieved: {status['total_cache_files']} files, {status['total_cache_size']} bytes total")
 
             # Test cache stats
             stats = cache_manager.get_cache_stats()

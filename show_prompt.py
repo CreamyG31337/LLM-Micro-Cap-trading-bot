@@ -17,6 +17,16 @@ import numpy as np
 from pathlib import Path
 import sys
 
+# Colorama imports for terminal coloring
+try:
+    from colorama import Fore, Style, init
+    init()  # Initialize colorama
+except ImportError:
+    class DummyColor:
+        def __getattr__(self, name):
+            return ""
+    Fore = Style = DummyColor()
+
 def calculate_position_metrics(portfolio_df, cash_balance):
     """Calculate enhanced position metrics for portfolio display"""
     if portfolio_df.empty:
@@ -105,18 +115,48 @@ def format_enhanced_portfolio_display(enhanced_df):
     lines.append("-" * 104)
     
     for _, row in enhanced_df.iterrows():
-        ticker = str(row.get('ticker', ''))[:12].ljust(12)
+        # Color ticker based on currency (same as Rich table formatter)
+        ticker_raw = str(row.get('ticker', ''))
+        currency = row.get('currency', 'CAD')  # Default to CAD if not specified
+        
+        if currency == 'USD':
+            ticker = f"{Fore.BLUE}{ticker_raw[:12].ljust(12)}{Style.RESET_ALL}"  # Blue for USD
+        elif currency == 'CAD':
+            ticker = f"{Fore.CYAN}{ticker_raw[:12].ljust(12)}{Style.RESET_ALL}"  # Cyan for CAD
+        else:
+            ticker = ticker_raw[:12].ljust(12)  # Default color for unknown currencies
+        
         shares = f"{float(row.get('shares', 0)):.4f}".rjust(8)  # Show fractional shares with 4 decimal places
         buy_price = f"${float(row.get('buy_price', 0)):.2f}".rjust(9)
         current = f"${float(row.get('Current_Price', 0)):.2f}".rjust(8)
         
-        # Total P&L (since purchase)
-        total_pnl_amount = f"${float(row.get('Total_PnL_Amount', 0)):+.2f}".rjust(9)
-        total_pnl_percent = f"{float(row.get('Total_PnL_Percent', 0)):+.1f}%".rjust(8)
+        # Total P&L (since purchase) with color coding
+        total_pnl_amt = float(row.get('Total_PnL_Amount', 0))
+        total_pnl_pct = float(row.get('Total_PnL_Percent', 0))
         
-        # Daily P&L (today's change)
-        daily_pnl_amount = f"${float(row.get('Daily_PnL_Amount', 0)):+.2f}".rjust(9)
-        daily_pnl_percent = f"{float(row.get('Daily_PnL_Percent', 0)):+.1f}%".rjust(8)
+        if total_pnl_pct > 0:
+            total_pnl_amount = f"{Fore.GREEN}${total_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.GREEN) + len(Style.RESET_ALL))
+            total_pnl_percent = f"{Fore.GREEN}{total_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.GREEN) + len(Style.RESET_ALL))
+        elif total_pnl_pct < 0:
+            total_pnl_amount = f"{Fore.RED}${total_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.RED) + len(Style.RESET_ALL))
+            total_pnl_percent = f"{Fore.RED}{total_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.RED) + len(Style.RESET_ALL))
+        else:
+            total_pnl_amount = f"{Fore.CYAN}${total_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.CYAN) + len(Style.RESET_ALL))
+            total_pnl_percent = f"{Fore.CYAN}{total_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.CYAN) + len(Style.RESET_ALL))
+        
+        # Daily P&L (today's change) with color coding
+        daily_pnl_amt = float(row.get('Daily_PnL_Amount', 0))
+        daily_pnl_pct = float(row.get('Daily_PnL_Percent', 0))
+        
+        if daily_pnl_pct > 0:
+            daily_pnl_amount = f"{Fore.GREEN}${daily_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.GREEN) + len(Style.RESET_ALL))
+            daily_pnl_percent = f"{Fore.GREEN}{daily_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.GREEN) + len(Style.RESET_ALL))
+        elif daily_pnl_pct < 0:
+            daily_pnl_amount = f"{Fore.RED}${daily_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.RED) + len(Style.RESET_ALL))
+            daily_pnl_percent = f"{Fore.RED}{daily_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.RED) + len(Style.RESET_ALL))
+        else:
+            daily_pnl_amount = f"{Fore.CYAN}${daily_pnl_amt:+.2f}{Style.RESET_ALL}".rjust(9 + len(Fore.CYAN) + len(Style.RESET_ALL))
+            daily_pnl_percent = f"{Fore.CYAN}{daily_pnl_pct:+.1f}%{Style.RESET_ALL}".rjust(8 + len(Fore.CYAN) + len(Style.RESET_ALL))
         
         # 5-Day P&L (use actual data if available)
         five_day_pnl_raw = str(row.get('five_day_pnl', 'N/A'))

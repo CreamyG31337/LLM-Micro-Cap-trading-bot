@@ -288,7 +288,7 @@ class CacheManager:
             size_bytes /= 1024.0
             i += 1
 
-        return f"{size_bytes".1f"} {size_names[i]}"
+        return f"{size_bytes:.1f} {size_names[i]}"
 
 
 def get_cache_manager() -> CacheManager:

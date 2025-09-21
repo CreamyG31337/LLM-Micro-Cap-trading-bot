@@ -9,6 +9,8 @@ utils/
 ├── backup_manager.py   # Backup and restore functionality
 ├── timezone_utils.py   # Timezone handling and timestamp parsing
 ├── validation.py       # Data validation and integrity checks
+├── cache_manager.py    # Comprehensive cache management system
+├── cache_ui.py        # User interface for cache operations
 └── README.md          # This file
 ```
 
@@ -252,3 +254,146 @@ Planned improvements for database migration:
 - **Daylight Saving**: Automatic DST transitions
 - **Historical Timezone**: Handle timezone changes over time
 - **User Preferences**: Per-user timezone settings
+
+## Cache Manager (`cache_manager.py`)
+
+Provides comprehensive cache management functionality for all system caches:
+
+### Key Features
+- **Multi-Cache Support**: Manages price cache, fundamentals cache, and exchange rate cache
+- **Status Monitoring**: Real-time cache statistics and size information
+- **Selective Clearing**: Clear specific cache types or all caches at once
+- **Cache Updating**: Refresh cache data with current market information
+- **Size Management**: Monitor and control cache disk usage
+- **Component Integration**: Works with PriceCache, MarketDataFetcher, and CurrencyHandler
+
+### Cache Types Managed
+- **Price Cache**: Market data and price information (`.cache/price_cache.pkl`, `.cache/name_cache.json`)
+- **Fundamentals Cache**: Company financial data (`.cache/fundamentals_cache.json`)
+- **Exchange Rate Cache**: Currency conversion rates (`.cache/exchange_rates.csv`)
+- **Memory Caches**: In-memory caches for all components
+
+### Core Functions
+- `get_cache_status()`: Get comprehensive cache status and statistics
+- `clear_all_caches()`: Clear all cache types with confirmation
+- `clear_specific_cache(cache_type)`: Clear specific cache type
+- `update_all_caches()`: Refresh all cache data
+- `initialize_components()`: Initialize cache manager with all components
+
+### Usage Example
+```python
+from utils.cache_manager import get_cache_manager
+
+# Initialize cache manager
+cache_mgr = get_cache_manager()
+cache_mgr.initialize_components()
+
+# Get cache status
+status = cache_mgr.get_cache_status()
+print(f"Total cache size: {status['total_cache_size_formatted']}")
+
+# Clear specific cache
+results = cache_mgr.clear_specific_cache('price_cache')
+if results['success']:
+    print("Price cache cleared successfully")
+
+# Clear all caches
+results = cache_mgr.clear_all_caches()
+```
+
+### Cache Manager Integration
+- **Menu Integration**: Available from main menu (option 'k') and trading menu (option 'cache')
+- **Status Display**: Shows file counts, sizes, and types for all caches
+- **Safe Operations**: Confirmation prompts for destructive operations
+- **Error Handling**: Graceful handling of missing components
+
+## Cache UI (`cache_ui.py`)
+
+Provides user interface functions for cache management operations:
+
+### Key Features
+- **Interactive Menu**: User-friendly menu system for cache operations
+- **Status Display**: Detailed cache information presentation
+- **Operation Confirmation**: Safety prompts for destructive operations
+- **Error Reporting**: User-friendly error messages and recovery suggestions
+
+### Menu Options
+- **View Cache Status**: Display comprehensive cache statistics
+- **Clear All Caches**: Remove all cache data with confirmation
+- **Clear Specific Cache**: Selectively clear cache types
+- **Update All Caches**: Refresh cache data with current information
+
+### Usage Example
+```python
+from utils.cache_ui import show_cache_management_menu
+
+# Show cache management menu
+show_cache_management_menu()
+```
+
+### UI Features
+- **Status Display**: Shows cache file counts, sizes, and types
+- **Progress Indicators**: Visual feedback during operations
+- **Error Handling**: Clear error messages with suggested actions
+- **Safety Confirmations**: Prevents accidental cache clearing
+
+## When to Use Cache Management
+
+### Troubleshooting Cache Issues
+- **Stale Data**: Clear caches when data appears outdated
+- **Corrupted Cache**: Clear specific caches when experiencing display issues
+- **Performance Issues**: Monitor cache sizes and clear if excessive
+- **Data Inconsistencies**: Clear caches when portfolio values seem incorrect
+
+### Regular Maintenance
+- **Weekly**: Check cache status and sizes
+- **Monthly**: Clear caches to ensure data freshness
+- **After Major Updates**: Clear all caches to rebuild with new logic
+- **Before Troubleshooting**: Clear caches to eliminate cache-related issues
+
+### Cache Clearing Scenarios
+1. **Price Cache**: Clear when stock prices seem incorrect or outdated
+2. **Fundamentals Cache**: Clear when company data appears stale
+3. **Exchange Rate Cache**: Clear when currency conversions seem wrong
+4. **All Caches**: Clear when experiencing multiple data inconsistencies
+
+## Cache Management Commands
+
+### From Main Menu
+```bash
+python run.py
+# Select option 'k' - Manage Cache
+```
+
+### From Trading Script
+```bash
+python trading_script.py --data-dir "your_fund"
+# Select 'cache' from trading menu
+```
+
+### Direct Cache Management
+```python
+from utils.cache_ui import CacheUI
+cache_ui = CacheUI()
+cache_ui.show_cache_status()
+```
+
+## Cache Management Best Practices
+
+### Safe Cache Clearing
+1. **Always check status first** - Understand what will be cleared
+2. **Use selective clearing** - Clear only problematic caches when possible
+3. **Backup before clearing** - Consider creating a backup before major cache operations
+4. **Monitor after clearing** - Verify system works correctly after cache operations
+
+### Performance Optimization
+- **Monitor cache sizes** - Keep caches at reasonable sizes
+- **Clear stale caches** - Remove outdated data regularly
+- **Update when needed** - Refresh caches for current market data
+- **Component isolation** - Clear only caches causing issues
+
+### Integration with Other Tools
+- **Use with backup manager** - Clear caches before creating backups
+- **Use with validation** - Validate data after cache operations
+- **Use with troubleshooting** - Cache management as first troubleshooting step
+- **Use with updates** - Clear caches after system updates

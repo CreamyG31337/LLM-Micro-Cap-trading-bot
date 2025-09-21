@@ -499,17 +499,18 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
     """
     SHARED FUNCTION: Used by both trading_script.py and prompt_generator.py
 
-    Calculate daily P&L for a position by comparing current_price with yesterday's closing price.
+    Calculate 1-Day P&L for a position by comparing current_price with previous trading day's closing price.
     
     For new trades (first day), we compare current price with the buy price to show intraday P&L.
-    For existing positions, we compare with the previous day's closing price.
+    For existing positions, we compare with the previous trading day's closing price.
+    This works on weekends too - showing Friday's performance on Saturday/Sunday.
 
     Args:
         current_position: Current position object with current_price
         portfolio_snapshots: List of historical portfolio snapshots (from portfolio_manager.load_portfolio())
 
     Returns:
-        str: Formatted daily P&L string (e.g., "$123.45", "$0.00")
+        str: Formatted 1-Day P&L string (e.g., "$123.45", "$0.00")
     """
     try:
         if not portfolio_snapshots or len(portfolio_snapshots) < 1:
@@ -519,15 +520,9 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
         if current_price is None:
             return "$0.00"
 
-        # Check if market is closed - if so, daily P&L should be $0.00
-        try:
-            from market_data.market_hours import MarketHours
-            market_hours = MarketHours()
-            if not market_hours.is_market_open():
-                return "$0.00"
-        except Exception:
-            # If we can't determine market status, continue with calculation
-            pass
+        # Note: We always calculate P&L vs previous trading day, even on weekends
+        # This shows Friday's performance on Saturday/Sunday, which is more useful
+        # than showing $0.00 when markets are closed
 
         # For new trades (first day), compare current price with buy price for intraday P&L
         # For existing positions, compare with previous day's closing price

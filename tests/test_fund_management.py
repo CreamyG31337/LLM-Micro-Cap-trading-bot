@@ -139,6 +139,9 @@ class TestFundUI(unittest.TestCase):
         import utils.fund_manager
         self.original_fund_manager = utils.fund_manager._fund_manager
         utils.fund_manager._fund_manager = self.fund_manager
+        # Also mock the get_fund_manager function to return our test instance
+        self.original_get_fund_manager = utils.fund_manager.get_fund_manager
+        utils.fund_manager.get_fund_manager = lambda: self.fund_manager
         self.fund_ui = FundUI()
         
     def tearDown(self):
@@ -146,6 +149,7 @@ class TestFundUI(unittest.TestCase):
         # Restore original fund manager
         import utils.fund_manager
         utils.fund_manager._fund_manager = self.original_fund_manager
+        utils.fund_manager.get_fund_manager = self.original_get_fund_manager
         shutil.rmtree(self.test_dir, ignore_errors=True)
     
     def test_get_fund_list(self):
@@ -165,13 +169,27 @@ class TestFundUI(unittest.TestCase):
         self.fund_ui.fund_manager.create_fund("Current Fund", "investment")
         self.fund_ui.fund_manager.set_active_fund("Current Fund")
         
-        from utils.fund_ui import get_current_fund_info
-        info = get_current_fund_info()
+        # Debug: Check what the active fund actually is
+        active_fund = self.fund_ui.fund_manager.get_active_fund()
+        print(f"Debug: Active fund is: {active_fund}")
         
-        self.assertTrue(info['exists'])
-        self.assertEqual(info['name'], "Current Fund")
-        self.assertIn('data_directory', info)
-        self.assertIn('config', info)
+        # Import and patch the function to use our test fund manager
+        from utils import fund_ui
+        original_get_fund_manager = fund_ui.get_fund_manager
+        fund_ui.get_fund_manager = lambda: self.fund_manager
+        
+        try:
+            info = fund_ui.get_current_fund_info()
+            
+            print(f"Debug: get_current_fund_info returned: {info}")
+            
+            self.assertTrue(info['exists'])
+            self.assertEqual(info['name'], "Current Fund")
+            self.assertIn('data_directory', info)
+            self.assertIn('config', info)
+        finally:
+            # Restore original function
+            fund_ui.get_fund_manager = original_get_fund_manager
 
 
 class TestFundIntegration(unittest.TestCase):

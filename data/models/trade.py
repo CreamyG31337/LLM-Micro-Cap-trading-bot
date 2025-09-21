@@ -139,11 +139,19 @@ class Trade:
         Returns:
             Trade instance
         """
-        # Handle timestamp from Date column or parameter
-        if timestamp is None and 'Date' in data:
-            # This would need proper timezone parsing in real implementation
-            timestamp = datetime.fromisoformat(str(data['Date']).replace(' PST', '').replace(' PDT', ''))
-        elif timestamp is None:
+        # Handle timestamp - prioritize passed parameter over data dict
+        if timestamp is not None:
+            # Use the timestamp parameter (properly parsed by repository)
+            pass  # timestamp is already set correctly
+        elif 'Date' in data:
+            # Fallback to proper timezone-aware parsing if no timestamp parameter
+            from utils.timezone_utils import parse_csv_timestamp
+            timestamp = parse_csv_timestamp(str(data['Date']))
+            if timestamp is None:
+                # If parsing fails, use current time as last resort
+                timestamp = datetime.now()
+        else:
+            # Last resort fallback
             timestamp = datetime.now()
         
         # Determine action based on reason or other indicators

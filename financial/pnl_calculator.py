@@ -519,6 +519,16 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
         if current_price is None:
             return "$0.00"
 
+        # Check if market is closed - if so, daily P&L should be $0.00
+        try:
+            from market_data.market_hours import MarketHours
+            market_hours = MarketHours()
+            if not market_hours.is_market_open():
+                return "$0.00"
+        except Exception:
+            # If we can't determine market status, continue with calculation
+            pass
+
         # For new trades (first day), compare current price with buy price for intraday P&L
         # For existing positions, compare with previous day's closing price
         

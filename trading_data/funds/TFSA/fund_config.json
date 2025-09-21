@@ -1,6 +1,5 @@
 {
   "fund": {
-    "name": "TFSA",
     "description": "Tax-Free Savings Account for retirement planning",
     "display_currency": "CAD",
     "fund_type": "tfsa",
@@ -8,10 +7,7 @@
     "tax_status": "tax_free"
   },
   "repository": {
-    "type": "csv",
-    "csv": {
-      "data_directory": "trading_data/funds/TFSA"
-    }
+    "type": "csv"
   },
   "market_data": {
     "primary_source": "yahoo",

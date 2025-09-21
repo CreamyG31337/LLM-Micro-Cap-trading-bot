@@ -1,6 +1,5 @@
 {
   "fund": {
-    "name": "Project Chimera",
     "description": "AI-Powered Micro-Cap Investment Fund",
     "display_currency": "CAD",
     "fund_type": "investment",
@@ -8,10 +7,7 @@
     "tax_status": "taxable"
   },
   "repository": {
-    "type": "csv",
-    "csv": {
-      "data_directory": "trading_data/funds/Project Chimera"
-    }
+    "type": "csv"
   },
   "market_data": {
     "primary_source": "yahoo",

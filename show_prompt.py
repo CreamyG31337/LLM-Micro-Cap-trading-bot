@@ -7,7 +7,7 @@ This script shows you the complete prompt that you should copy and paste into yo
 
 from market_config import get_daily_instructions, get_market_info, ACTIVE_MARKET
 from dual_currency import load_cash_balances, format_cash_display
-from config.constants import DEFAULT_DATA_DIR
+import argparse
 from market_data.market_hours import MarketHours
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.price_cache import PriceCache
@@ -159,8 +159,12 @@ def calculate_portfolio_risk_metrics(enhanced_df, total_portfolio_value, cash_ba
         'portfolio_volatility': portfolio_volatility
     }
 
-def show_complete_prompt():
-    """Display the complete LLM prompt for the current configuration"""
+def show_complete_prompt(data_dir: str = None):
+    """Display the complete LLM prompt for the current configuration
+    
+    Args:
+        data_dir: Required data directory path
+    """
     
     print("=" * 80)
     print("COMPLETE LLM PROMPT FOR COPY/PASTE")
@@ -200,7 +204,12 @@ def show_complete_prompt():
         from data.repositories.csv_repository import CSVRepository
         from portfolio.portfolio_manager import PortfolioManager
 
-        data_dir = Path(DEFAULT_DATA_DIR)
+        if not data_dir:
+            print("Error: Data directory is required")
+            print("Usage: python show_prompt.py --data-dir <path>")
+            return
+        
+        data_dir = Path(data_dir)
         repository = CSVRepository(data_dir)
         portfolio_manager = PortfolioManager(repository)
 
@@ -289,7 +298,7 @@ def show_complete_prompt():
         # Cash balance
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
-                cash_balances = load_cash_balances(Path(DEFAULT_DATA_DIR))
+                cash_balances = load_cash_balances(Path(data_dir))
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
@@ -349,7 +358,7 @@ def show_complete_prompt():
         # Cash balance fallback
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
-                cash_balances = load_cash_balances(Path(DEFAULT_DATA_DIR))
+                cash_balances = load_cash_balances(Path(data_dir))
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
@@ -371,7 +380,11 @@ def show_complete_prompt():
 
 def main():
     """Main function for show_prompt script."""
-    show_complete_prompt()
+    parser = argparse.ArgumentParser(description="Show complete LLM prompt")
+    parser.add_argument("--data-dir", type=str, required=True, help="Data directory path")
+    args = parser.parse_args()
+    
+    show_complete_prompt(args.data_dir)
 
 
 if __name__ == "__main__":

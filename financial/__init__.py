@@ -20,8 +20,6 @@ from .calculations import (
 from .currency_handler import (
     CashBalances,
     CurrencyHandler,
-    is_canadian_ticker,
-    is_us_ticker,
     get_ticker_currency,
     calculate_conversion_with_fee
 )
@@ -47,8 +45,6 @@ __all__ = [
     # Currency handling
     'CashBalances',
     'CurrencyHandler',
-    'is_canadian_ticker',
-    'is_us_ticker',
     'get_ticker_currency',
     'calculate_conversion_with_fee',
     

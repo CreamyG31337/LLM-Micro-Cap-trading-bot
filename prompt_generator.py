@@ -53,7 +53,7 @@ import pandas as pd
 import yaml
 
 # Import from modular components
-from config.constants import get_default_data_directory
+# Remove default data directory import - require explicit directory
 from config.settings import get_settings
 from data.repositories.repository_factory import get_repository_container
 from portfolio.portfolio_manager import PortfolioManager
@@ -101,9 +101,15 @@ from utils.timeline_utils import get_experiment_timeline, format_timeline_displa
 class PromptGenerator:
     """Main class for generating trading prompts"""
     
-    def __init__(self, data_dir: Path | str | None = None):
-        """Initialize prompt generator with optional data directory"""
-        self.data_dir = Path(data_dir) if data_dir else Path(get_default_data_directory())
+    def __init__(self, data_dir: Path | str):
+        """Initialize prompt generator with required data directory
+        
+        Args:
+            data_dir: Required data directory path
+        """
+        if not data_dir:
+            raise ValueError("Data directory is required - no default directory allowed")
+        self.data_dir = Path(data_dir)
         
         # Initialize components
         self.settings = get_settings()
@@ -114,7 +120,46 @@ class PromptGenerator:
         # Initialize repository and portfolio manager
         from data.repositories.csv_repository import CSVRepository
         self.repository = CSVRepository(self.data_dir)
-        self.portfolio_manager = PortfolioManager(self.repository)
+        
+        # Get fund information from data directory
+        from portfolio.fund_manager import Fund, RepositorySettings
+        from utils.fund_manager import get_fund_manager
+        fund_manager = get_fund_manager()
+        
+        # Determine fund from data directory path
+        fund_name = fund_manager.get_fund_by_data_directory(str(self.data_dir))
+        if fund_name is None:
+            # Fallback: create a default fund object
+            repo_settings = RepositorySettings(type="csv", settings={})
+            fund = Fund(
+                id="unknown",
+                name="Unknown",
+                description="Unknown fund",
+                repository=repo_settings
+            )
+        else:
+            fund_config = fund_manager.get_fund_config(fund_name)
+            if fund_config:
+                repo_settings = RepositorySettings(
+                    type=fund_config.get("repository", {}).get("type", "csv"),
+                    settings=fund_config.get("repository", {}).get("csv", {})
+                )
+                fund = Fund(
+                    id=fund_name,
+                    name=fund_config.get("fund", {}).get("name", fund_name),
+                    description=fund_config.get("fund", {}).get("description", ""),
+                    repository=repo_settings
+                )
+            else:
+                repo_settings = RepositorySettings(type="csv", settings={})
+                fund = Fund(
+                    id=fund_name,
+                    name=fund_name,
+                    description="Fund",
+                    repository=repo_settings
+                )
+        
+        self.portfolio_manager = PortfolioManager(self.repository, fund)
         
     def _get_market_data_table(self, portfolio_tickers: List[str]) -> List[List[str]]:
         """Fetch market data for portfolio tickers and benchmarks

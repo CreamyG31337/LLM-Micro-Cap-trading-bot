@@ -327,13 +327,18 @@ class MarketDataFetcher:
                 failed_strategies.append(strategy_name)
                 continue
 
-        # Log a summary instead of individual errors
+            # Log a summary instead of individual errors
         if successful_strategy:
             if len(failed_strategies) > 0:
                 logger.info(f"{ticker}: {', '.join(failed_strategies)} not found, using {successful_strategy}")
             
-            # Note: .TO and .V tickers already return Canadian prices, no conversion needed
-            # Only convert if we're getting US data for Canadian tickers
+            # Note: Canadian stocks (.TO, .V) already return CAD prices from Canadian exchanges
+            # Only convert if we're getting US data for Canadian tickers (fallback case)
+            if hasattr(self, '_portfolio_currency_cache'):
+                currency = self._portfolio_currency_cache.get(ticker)
+                if currency == 'CAD' and not successful_strategy.startswith('yahoo-ca'):
+                    # Only convert if we got data from US exchange, not Canadian
+                    result = self._convert_usd_to_cad(result)
             
             return result
         else:

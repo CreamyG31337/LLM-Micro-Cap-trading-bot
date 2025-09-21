@@ -33,7 +33,6 @@ except ImportError:
 
 # Core system imports
 from config.settings import Settings, configure_system
-from config.constants import DEFAULT_DATA_DIR
 
 # Repository and data access
 from data.repositories.repository_factory import get_repository_container, configure_repositories

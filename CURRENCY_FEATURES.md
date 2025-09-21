@@ -77,6 +77,8 @@ Options:
 - `dual_currency.py` - Added conversion methods and negative balance support
 - `trading_script.py` - Enhanced insufficient funds handling
 - `update_cash.py` - Added negative balance toggle option
+- `utils/currency_converter.py` - Currency conversion utilities
+- `portfolio/position_calculator.py` - Portfolio currency calculations
 
 ### New Functions
 - `convert_cad_to_usd()` - Convert CAD to USD with fee
@@ -113,3 +115,12 @@ The features have been tested with various scenarios:
 - ✅ Balance persistence and loading
 
 All tests pass successfully, confirming the features work as expected.
+
+## Important Fix: Currency Detection
+
+⚠️ **Fixed Major Bug (September 2025)**: The original implementation incorrectly guessed currency from ticker symbols, causing a 12% portfolio value inflation. This has been fixed to use the actual `currency` field from position data.
+
+**Before**: `if is_us_ticker(ticker):` (unreliable guessing)
+**After**: `if position.currency == 'USD':` (uses actual data)
+
+For debugging/import scripts that need currency guessing, see `utils/ticker_currency_guess.py` with appropriate warnings.

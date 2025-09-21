@@ -240,7 +240,18 @@ class CSVRepository(BaseRepository):
                                 existing_df.loc[mask, 'Current Price'] = current_price_float
                                 existing_df.loc[mask, 'Total Value'] = market_value_float
                                 existing_df.loc[mask, 'PnL'] = unrealized_pnl_float
-                                logger.debug(f"Updated prices for {ticker}")
+
+                                # Also update position quantities and cost metrics for same-day trades
+                                # This ensures average cost and shares are correct when multiple buys happen in a day
+                                shares_float = float((updated_position.shares).quantize(Decimal('0.0001')))
+                                avg_price_float = float((updated_position.avg_price).quantize(Decimal('0.01')))
+                                cost_basis_float = float((updated_position.cost_basis).quantize(Decimal('0.01')))
+
+                                existing_df.loc[mask, 'Shares'] = shares_float
+                                existing_df.loc[mask, 'Average Price'] = avg_price_float
+                                existing_df.loc[mask, 'Cost Basis'] = cost_basis_float
+
+                                logger.debug(f"Updated position metrics for {ticker}: shares={shares_float}, avg_price={avg_price_float}, cost_basis={cost_basis_float}")
                         
                         # Add HOLD entries for new positions that don't exist in today's data
                         new_positions = []

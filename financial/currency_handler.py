@@ -99,8 +99,8 @@ class CashBalances:
     def to_dict(self) -> Dict[str, Union[str, float]]:
         """Convert to dictionary for CSV/JSON serialization."""
         return {
-            'cad': float(self.cad),
-            'usd': float(self.usd),
+            'CAD': float(self.cad),
+            'USD': float(self.usd),
             'id': self.id,
             'last_updated': self.last_updated
         }
@@ -109,8 +109,8 @@ class CashBalances:
     def from_dict(cls, data: Dict[str, Union[str, float]]) -> 'CashBalances':
         """Create from dictionary (CSV row or database record)."""
         return cls(
-            cad=data.get('cad', 0.0),
-            usd=data.get('usd', 0.0),
+            cad=data.get('CAD', 0.0),
+            usd=data.get('USD', 0.0),
             id=data.get('id'),
             last_updated=data.get('last_updated')
         )

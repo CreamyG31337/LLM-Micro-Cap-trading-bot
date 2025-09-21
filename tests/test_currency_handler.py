@@ -110,8 +110,8 @@ class TestCashBalances(unittest.TestCase):
         result = balances.to_dict()
         
         expected = {
-            'cad': 1000.50,
-            'usd': 750.25,
+            'CAD': 1000.50,
+            'USD': 750.25,
             'id': 'test_id',
             'last_updated': None
         }
@@ -120,8 +120,8 @@ class TestCashBalances(unittest.TestCase):
     def test_from_dict(self):
         """Test dictionary deserialization."""
         data = {
-            'cad': 1000.50,
-            'usd': 750.25,
+            'CAD': 1000.50,
+            'USD': 750.25,
             'id': 'test_id',
             'last_updated': '2025-01-01'
         }

@@ -101,3 +101,34 @@ class FundManager:
             if fund.id == fund_id:
                 return fund
         return None
+    
+    def get_fund_by_data_directory(self, data_directory: str) -> str | None:
+        """Find fund ID by data directory path.
+        
+        Args:
+            data_directory: Data directory path to search for
+            
+        Returns:
+            Fund ID if found, None otherwise
+        """
+        data_path = Path(data_directory).resolve()
+        
+        # Check each fund's repository settings for directory match
+        for fund in self.funds:
+            if 'directory' in fund.repository.settings:
+                fund_dir = Path(fund.repository.settings['directory']).resolve()
+                if data_path == fund_dir:
+                    return fund.id
+        
+        # Check if the data directory is actually a fund directory by looking at the folder name
+        # This handles cases where the path doesn't match exactly but the folder name does
+        if data_path.parent.name == 'funds':
+            folder_name = data_path.name
+            # Find fund by matching the folder name to the directory setting
+            for fund in self.funds:
+                if 'directory' in fund.repository.settings:
+                    fund_dir = Path(fund.repository.settings['directory'])
+                    if fund_dir.name == folder_name:
+                        return fund.id
+        
+        return None

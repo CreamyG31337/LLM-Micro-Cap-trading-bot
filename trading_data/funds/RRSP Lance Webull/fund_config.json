@@ -1,6 +1,5 @@
 {
   "fund": {
-    "name": "RRSP Lance Webull",
     "description": "RRSP Investment Portfolio",
     "display_currency": "CAD",
     "fund_type": "rrsp",
@@ -8,10 +7,7 @@
     "tax_status": "tax_deferred"
   },
   "repository": {
-    "type": "csv",
-    "csv": {
-      "data_directory": "trading_data/funds/RRSP Lance Webull"
-    }
+    "type": "csv"
   },
   "market_data": {
     "primary_source": "yahoo",

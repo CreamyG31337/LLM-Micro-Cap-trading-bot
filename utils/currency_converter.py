@@ -49,44 +49,52 @@ def load_exchange_rates(data_dir: Path) -> Dict[str, Decimal]:
     return exchange_rates
 
 
-def get_exchange_rate_for_date(exchange_rates: Dict[str, Decimal], 
+def get_exchange_rate_for_date(exchange_rates: Dict[str, Decimal],
                               target_date: Optional[datetime] = None) -> Decimal:
     """
     Get the USD to CAD exchange rate for a specific date.
-    
+
     Args:
         exchange_rates: Dictionary of exchange rates by date
         target_date: Date to get rate for (uses latest if None)
-        
+
     Returns:
-        USD to CAD exchange rate as Decimal
+        USD to CAD exchange rate as Decimal (1 USD = X CAD)
     """
     if not exchange_rates:
         logger.warning("No exchange rates available, using default rate 1.35")
         return Decimal('1.35')
-    
+
     if target_date is None:
         # Use the latest available rate
         latest_date = max(exchange_rates.keys())
-        return exchange_rates[latest_date]
-    
+        rate = exchange_rates[latest_date]
+        # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
+        return rate
+
     # Find the closest date to target_date
     target_date_str = target_date.strftime('%Y-%m-%d')
-    
+
     # First try exact match
     if target_date_str in exchange_rates:
-        return exchange_rates[target_date_str]
-    
+        rate = exchange_rates[target_date_str]
+        # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
+        return rate
+
     # Find the closest previous date
     available_dates = sorted(exchange_rates.keys())
     for date_str in reversed(available_dates):
         if date_str <= target_date_str:
-            return exchange_rates[date_str]
-    
+            rate = exchange_rates[date_str]
+            # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
+            return rate
+
     # If no previous date found, use the earliest available
     earliest_date = min(exchange_rates.keys())
-    logger.warning(f"No exchange rate found for {target_date_str}, using {earliest_date}")
-    return exchange_rates[earliest_date]
+    rate = exchange_rates[earliest_date]
+    # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
+    logger.warning(f"No exchange rate found for {target_date_str}, using {earliest_date} with rate {rate}")
+    return rate
 
 
 def convert_usd_to_cad(usd_amount: Decimal, 
@@ -137,47 +145,8 @@ def convert_cad_to_usd(cad_amount: Decimal,
     return usd_amount
 
 
-def is_us_ticker(ticker: str) -> bool:
-    """
-    Determine if a ticker is a US ticker (not Canadian).
-    
-    Args:
-        ticker: Ticker symbol to check
-        
-    Returns:
-        True if ticker appears to be US-based
-    """
-    ticker = ticker.upper().strip()
-    
-    # Canadian tickers have these suffixes
-    canadian_suffixes = ['.TO', '.V', '.CN', '.TSX']
-    
-    # If it has a Canadian suffix, it's not US
-    for suffix in canadian_suffixes:
-        if ticker.endswith(suffix):
-            return False
-    
-    # If it starts with ^ or ends with .L, it's not US
-    if ticker.startswith('^') or ticker.endswith('.L'):
-        return False
-    
-    # Otherwise, assume it's US
-    return True
-
-
-def is_canadian_ticker(ticker: str) -> bool:
-    """
-    Determine if a ticker is a Canadian ticker.
-    
-    Args:
-        ticker: Ticker symbol to check
-        
-    Returns:
-        True if ticker appears to be Canadian
-    """
-    ticker = ticker.upper().strip()
-    
-    # Canadian tickers have these suffixes
-    canadian_suffixes = ['.TO', '.V', '.CN', '.TSX']
-    
-    return any(ticker.endswith(suffix) for suffix in canadian_suffixes)
+# REMOVED: is_us_ticker() and is_canadian_ticker() functions from production code.
+# These functions caused a 12% portfolio inflation bug by incorrectly classifying tickers.
+# 
+# For production code: Use pos.currency field from position data instead of guessing.
+# For debugging/import scripts: See utils/ticker_currency_guess.py for guessing functions.

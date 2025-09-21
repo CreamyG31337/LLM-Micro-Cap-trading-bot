@@ -114,7 +114,7 @@ CASH_BALANCE_FILE = "cash_balances.json"
 EXCHANGE_RATES_FILE = "exchange_rates.csv"
 
 # Directory structure
-DEFAULT_DATA_DIR = "my trading"
+# Note: NO DEFAULT_DATA_DIR - scripts must specify explicitly
 BACKUP_DIR = "backups"
 TEST_DATA_DIR = "test_data"
 ```

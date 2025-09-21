@@ -487,17 +487,28 @@ def detect_environment(data_dir: Optional[str] = None) -> str:
         
         # For other fund types, determine based on fund configuration
         try:
-            from utils.fund_ui import get_current_fund_info
-            fund_info = get_current_fund_info()
-            if fund_info.get("exists") and fund_info.get("config"):
-                fund_type = fund_info["config"].get("fund", {}).get("fund_type", "").lower()
-                if fund_type in ['test', 'development', 'debug']:
-                    return 'DEVELOPMENT'
-                # Default to production for investment, rrsp, tfsa, etc.
-                return 'PRODUCTION'
+            from portfolio.fund_manager import FundManager
+            fm = FundManager(Path('funds.yml'))
+            fund_id = fm.get_fund_by_data_directory(data_dir)
+            if fund_id:
+                fund = fm.get_fund_by_id(fund_id)
+                if fund:
+                    # Check fund config file for fund type
+                    fund_config_path = Path(data_dir) / "fund_config.json"
+                    if fund_config_path.exists():
+                        import json
+                        with open(fund_config_path, 'r') as f:
+                            fund_config = json.load(f)
+                            fund_type = fund_config.get("fund", {}).get("fund_type", "").lower()
+                            if fund_type in ['test', 'development', 'debug']:
+                                return 'DEVELOPMENT'
+                            # Default to production for investment, rrsp, tfsa, etc.
+                            return 'PRODUCTION'
         except:
-            # If we can't determine from config, default to production for fund structure
-            return 'PRODUCTION'
+            pass
+        
+        # If we can't determine from config, default to production for fund structure
+        return 'PRODUCTION'
     
     # Legacy environment detection
     # Check for development environment
@@ -554,22 +565,17 @@ def print_environment_banner(data_dir: Optional[str] = None) -> None:
         # Extract fund name from data directory if it's a fund-based path
         if data_dir and ('trading_data/funds/' in data_dir or 'trading_data\\funds\\' in data_dir):
             from pathlib import Path
+            # Use folder name as fund name, get fund type from config
             fund_name = Path(data_dir).name
-            
-            # Try to get fund config for this specific fund from the new fund manager
+            fund_type = ""
             try:
-                from portfolio.fund_manager import FundManager
-                fm = FundManager(Path('funds.yml'))
-                fund = fm.get_fund_by_id('default')  # Get the default fund for now
-                if fund:
-                    fund_name = fund.name
-                    # Try to get fund type from fund config file
-                    fund_config_path = Path(data_dir) / "fund_config.json"
-                    if fund_config_path.exists():
-                        import json
-                        with open(fund_config_path, 'r') as f:
-                            fund_config = json.load(f)
-                            fund_type = fund_config.get("fund", {}).get("fund_type", "")
+                # Try to get fund type from fund config file
+                fund_config_path = Path(data_dir) / "fund_config.json"
+                if fund_config_path.exists():
+                    import json
+                    with open(fund_config_path, 'r') as f:
+                        fund_config = json.load(f)
+                        fund_type = fund_config.get("fund", {}).get("fund_type", "")
             except:
                 pass
         else:

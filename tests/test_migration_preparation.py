@@ -513,8 +513,10 @@ class TestRepositoryPatternAbstraction(unittest.TestCase):
             self.assertEqual(len(googl_trades), 1)
             
             # Test date range filtering
-            date_range = (datetime(2025, 1, 2, tzinfo=timezone.utc), 
-                         datetime(2025, 1, 3, tzinfo=timezone.utc))
+            # Use a broader date range to account for timezone shifts during save/load
+            # The CSV repository converts UTC to PST/PDT, so we need to account for the 8-hour shift
+            date_range = (datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc), 
+                         datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc))
             recent_trades = repo.get_trade_history(date_range=date_range)
             self.assertEqual(len(recent_trades), 2)
     

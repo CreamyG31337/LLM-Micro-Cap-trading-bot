@@ -48,7 +48,7 @@ import pandas as pd
 
 # Core system imports
 from config.settings import Settings, get_settings, configure_system
-from config.constants import DEFAULT_DATA_DIR, LOG_FILE, VERSION
+from config.constants import LOG_FILE, VERSION
 
 # Repository and data access
 from data.repositories.repository_factory import RepositoryFactory, get_repository_container, configure_repositories
@@ -391,26 +391,41 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Handle graceful degradation
         handle_graceful_degradation(dependencies)
         
-        # Initialize repository for the default fund
-        default_fund = fund_manager.get_fund_by_id('default')
-        if not default_fund:
-            raise InitializationError("Default fund not found in funds.yml")
+        # Determine which fund to use
+        if args.data_dir:
+            # Find fund by data directory
+            fund_name = fund_manager.get_fund_by_data_directory(args.data_dir)
+            if fund_name:
+                fund = fund_manager.get_fund_by_id(fund_name)
+                if not fund:
+                    raise InitializationError(f"Fund '{fund_name}' not found in funds.yml")
+                print_warning(f"Command line data directory override: {args.data_dir}")
+                print_info(f"Using fund: {Path(args.data_dir).name}")
+            else:
+                # Data directory doesn't match any fund, use default but override directory
+                fund = fund_manager.get_fund_by_id('default')
+                if not fund:
+                    raise InitializationError("Default fund not found in funds.yml")
+                print_warning(f"Command line data directory override: {args.data_dir}")
+                print_warning(f"Data directory doesn't match any fund, using default fund: {fund.name}")
+        else:
+            # Use default fund
+            fund = fund_manager.get_fund_by_id('default')
+            if not fund:
+                raise InitializationError("Default fund not found in funds.yml")
 
         # Update repository configuration with fund-specific settings
         repo_config = {
-            'type': default_fund.repository.type,
-            **default_fund.repository.settings
+            'type': fund.repository.type,
+            **fund.repository.settings
         }
         settings.set('repository', repo_config)
         
-        # Also update the data directory setting to match the fund
-        if 'directory' in default_fund.repository.settings:
-            settings.set('repository.csv.data_directory', default_fund.repository.settings['directory'])
-        
-        # Override settings from command-line arguments (only if specified)
+        # Set data directory (either from fund or command line override)
         if args.data_dir:
             settings.set('repository.csv.data_directory', args.data_dir)
-            print_warning(f"Command line data directory override: {args.data_dir}")
+        elif 'directory' in fund.repository.settings:
+            settings.set('repository.csv.data_directory', fund.repository.settings['directory'])
         
         # Show environment banner (after command-line overrides)
         data_dir = settings.get_data_directory()
@@ -422,7 +437,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         repository = initialize_repository(settings)
         
         # Initialize components
-        initialize_components(settings, repository, dependencies, default_fund)
+        initialize_components(settings, repository, dependencies, fund)
         
         print_success("System initialization completed successfully")
         
@@ -653,7 +668,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         
         # Calculate total portfolio value with proper currency conversion
         total_portfolio_value = Decimal('0')
-        from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
+        from utils.currency_converter import load_exchange_rates, convert_usd_to_cad
         from pathlib import Path
         
         # Load exchange rates for currency conversion
@@ -661,11 +676,11 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         
         for pos in updated_positions:
             if pos.market_value is not None:
-                if is_us_ticker(pos.ticker):
+                if pos.currency == 'USD':
                     # Convert USD to CAD
                     market_value_cad = convert_usd_to_cad(pos.market_value, exchange_rates)
                 else:
-                    # Already in CAD
+                    # Already in CAD (or assume CAD if currency field missing)
                     market_value_cad = pos.market_value
                 total_portfolio_value += market_value_cad
         
@@ -1117,10 +1132,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         try:
                             if pos.market_value is None:
                                 continue
-                            ticker_currency = handler.get_ticker_currency(pos.ticker)
-                            if ticker_currency == 'USD':
+                            # Use the currency field from the position data instead of detecting from ticker
+                            if pos.currency == 'USD':
                                 usd_positions_value_usd += (pos.market_value or Decimal('0'))
-                            elif ticker_currency == 'CAD':
+                            elif pos.currency == 'CAD':
                                 cad_positions_value_cad += (pos.market_value or Decimal('0'))
                         except Exception:
                             continue

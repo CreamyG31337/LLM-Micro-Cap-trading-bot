@@ -14,6 +14,7 @@ Usage: python update_cash.py
 import sys
 import argparse
 from pathlib import Path
+from decimal import Decimal
 
 # Modular startup check - handles path setup and dependency checking
 try:
@@ -40,11 +41,9 @@ except ImportError:
 
 try:
     from financial.simple_cash_manager import SimpleCashManager
-    from config.constants import DEFAULT_DATA_DIR
     from portfolio.position_calculator import PositionCalculator
-    from data.repositories.csv_repository import CSVRepository
 except ImportError as e:
-    print(f"{_safe_emoji('❌')} Error importing required modules: {e}")
+    print(f"❌ Error importing required modules: {e}")
     print("Make sure you're running this script from the project directory.")
     sys.exit(1)
 
@@ -91,7 +90,10 @@ def main():
     if args.data_dir:
         data_dir = Path(args.data_dir)
     else:
-        data_dir = Path(DEFAULT_DATA_DIR)
+        print(f"{_safe_emoji('❌')} Error: Data directory must be specified")
+        print("Usage: python update_cash.py --data-dir <path>")
+        print("\n💡 TIP: Use 'python run.py' and select option 'u' to avoid path issues")
+        sys.exit(1)
     
     if not data_dir.exists():
         print(f"{_safe_emoji('❌')} Data directory not found: {data_dir}")

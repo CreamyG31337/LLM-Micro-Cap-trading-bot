@@ -18,7 +18,7 @@ from data.repositories.base_repository import BaseRepository, RepositoryError
 from data.models.portfolio import Position, PortfolioSnapshot
 from data.models.trade import Trade
 from financial.calculations import money_to_decimal, calculate_cost_basis, calculate_position_value
-from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker, is_canadian_ticker
+from utils.currency_converter import load_exchange_rates, convert_usd_to_cad
 
 logger = logging.getLogger(__name__)
 
@@ -279,36 +279,26 @@ class PositionCalculator:
                 pos_metrics = self.calculate_position_metrics(position, current_price)
                 position_metrics.append(pos_metrics)
                 
-                # Determine currency and convert to CAD equivalent
-                is_us = is_us_ticker(position.ticker)
-                is_cad = is_canadian_ticker(position.ticker)
-                
-                # Convert cost basis to CAD
-                if is_us:
+                # Convert cost basis to CAD equivalent using position.currency field
+                if position.currency == 'USD':
                     cost_basis_cad = convert_usd_to_cad(position.cost_basis, exchange_rates)
                     total_cost_basis_usd += position.cost_basis
-                elif is_cad:
-                    cost_basis_cad = position.cost_basis
-                    total_cost_basis_cad_only += position.cost_basis
                 else:
-                    # Default to CAD if currency can't be determined
+                    # Assume CAD for all non-USD currencies (or missing currency field)
                     cost_basis_cad = position.cost_basis
                     total_cost_basis_cad_only += position.cost_basis
                 
                 total_cost_basis_cad += cost_basis_cad
                 
-                # Convert market value to CAD
+                # Convert market value to CAD using position.currency field
                 if pos_metrics['market_value']:
                     market_value = pos_metrics['market_value']
                     
-                    if is_us:
+                    if position.currency == 'USD':
                         market_value_cad = convert_usd_to_cad(market_value, exchange_rates)
                         total_market_value_usd += market_value
-                    elif is_cad:
-                        market_value_cad = market_value
-                        total_market_value_cad_only += market_value
                     else:
-                        # Default to CAD if currency can't be determined
+                        # Assume CAD for all non-USD currencies (or missing currency field)
                         market_value_cad = market_value
                         total_market_value_cad_only += market_value
                     
@@ -319,16 +309,14 @@ class PositionCalculator:
                         largest_position_value_cad = market_value_cad
                         largest_position_ticker = position.ticker
                 
-                # Convert P&L to CAD
+                # Convert P&L to CAD using position.currency field
                 if pos_metrics['unrealized_pnl']:
                     pnl = pos_metrics['unrealized_pnl']
                     
-                    if is_us:
+                    if position.currency == 'USD':
                         pnl_cad = convert_usd_to_cad(pnl, exchange_rates)
-                    elif is_cad:
-                        pnl_cad = pnl
                     else:
-                        # Default to CAD if currency can't be determined
+                        # Assume CAD for all non-USD currencies (or missing currency field)
                         pnl_cad = pnl
                     
                     total_unrealized_pnl_cad += pnl_cad

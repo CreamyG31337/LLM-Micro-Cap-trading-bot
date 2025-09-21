@@ -4,9 +4,8 @@ from pathlib import Path
 from typing import Optional
 
 # File paths and names
-# Note: DEFAULT_DATA_DIR is now dynamically determined by the active fund
-# This fallback is only used when fund management is not available
-DEFAULT_DATA_DIR_FALLBACK = "trading_data/funds/Project Chimera"
+# Note: NO DEFAULT DATA DIR - scripts must specify explicitly
+# Dangerous defaults to 'prod' removed to prevent unpredictable behavior
 PORTFOLIO_CSV_NAME = "llm_portfolio_update.csv"
 TRADE_LOG_CSV_NAME = "llm_trade_log.csv"
 CASH_BALANCES_JSON_NAME = "cash_balances.json"
@@ -22,11 +21,9 @@ FUNDS_BASE_DIR = "trading_data/funds"
 SHARED_DATA_DIR = "trading_data/shared"
 ACTIVE_FUND_FILE = "trading_data/active_fund.json"
 
-# Legacy data directory structure (for backward compatibility)
-LEGACY_PROD_DIR = "trading_data/prod"
-LEGACY_DEV_DIR = "trading_data/dev"
-LEGACY_MY_TRADING_DIR = "my trading"
-LEGACY_TEST_DATA_DIR = "test_data"
+# Legacy constants REMOVED - they encouraged dangerous defaults
+# Scripts MUST explicitly specify data directories
+# No more implicit 'prod' or 'dev' folder assumptions
 
 # Market timing constants
 MARKET_OPEN_HOUR = 6  # 6:30 AM PDT
@@ -127,28 +124,5 @@ INFO_CACHE_MISS = "Cache miss, fetching fresh data"
 INFO_BACKUP_SKIPPED = "Backup skipped (disabled)"
 
 
-def get_default_data_directory() -> str:
-    """Get the current default data directory based on active fund.
-    
-    Returns:
-        Data directory path for the currently active fund, or fallback if not available
-    """
-    try:
-        from utils.fund_ui import get_current_fund_info
-        fund_info = get_current_fund_info()
-        
-        if fund_info.get("exists") and fund_info.get("data_directory"):
-            return fund_info["data_directory"]
-    except ImportError:
-        # Fund management not available, use fallback
-        pass
-    except Exception:
-        # Any other error, fall back to default
-        pass
-    
-    return DEFAULT_DATA_DIR_FALLBACK
-
-
-# For backward compatibility, we'll create a module-level variable
-# that gets updated when the module is imported
-DEFAULT_DATA_DIR = get_default_data_directory()
+# NO MODULE-LEVEL DEFAULT - each script must explicitly specify data directory
+# All scripts must receive explicit data directory parameters

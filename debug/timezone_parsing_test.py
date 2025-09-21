@@ -24,7 +24,7 @@ def test_timezone_parsing():
         df = pd.DataFrame(test_data)
 
         # Test the parse_csv_timestamp function (simulate what our fixed code does)
-        from trading_script import parse_csv_timestamp
+        from utils.timezone_utils import parse_csv_timestamp
 
         # Apply parse_csv_timestamp to the Date column
         df['Date'] = df['Date'].apply(parse_csv_timestamp)

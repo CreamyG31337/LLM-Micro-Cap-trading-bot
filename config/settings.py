@@ -41,9 +41,9 @@ class Settings:
         self._config = {
             'repository': {
                 'type': 'csv',
-                'csv': {
-                    'data_directory': 'trading_data/prod'  # Legacy fallback, overridden by get_data_directory()
-                },
+            'csv': {
+                'data_directory': None  # MUST be explicitly specified - no dangerous defaults
+            },
                 'database': {
                     'host': 'localhost',
                     'port': 5432,
@@ -235,8 +235,12 @@ class Settings:
         Returns:
             Data directory path
         """
-        # Always get the active fund data directory dynamically
-        # This ensures we're always using the correct fund's data
+        # First check if repository.csv.data_directory is set (command line override)
+        repo_data_dir = self.get('repository.csv.data_directory')
+        if repo_data_dir:
+            return repo_data_dir
+        
+        # Fallback to active fund data directory
         return self._get_active_fund_data_directory()
     
     def get_repository_type(self) -> str:
@@ -320,8 +324,12 @@ class Settings:
             # Any other error, fall back to legacy
             pass
         
-        # Fallback to legacy structure
-        return 'trading_data/prod'
+        # NO FALLBACK - crash instead of guessing wrong data directory
+        raise ValueError(
+            "CRITICAL: No data directory specified and no active fund found.\n"
+            "You MUST specify --data-dir explicitly or set up a fund.\n"
+            "Refusing to default to 'prod' as this causes unpredictable behavior."
+        )
     
     def _get_active_fund_config(self) -> Dict[str, Any]:
         """Get the configuration for the currently active fund.

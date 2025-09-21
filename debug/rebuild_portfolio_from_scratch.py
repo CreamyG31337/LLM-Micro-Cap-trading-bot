@@ -59,6 +59,9 @@ import yfinance as yf  # retained for compatibility, core fetching uses MarketDa
 import time
 from decimal import Decimal, getcontext
 import pytz
+import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import emoji handling
 try:
@@ -286,14 +289,22 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         return False
     
     try:
-        # BACKUP THE FILE FIRST
+        # BACKUP THE FILES FIRST
         backup_dir = data_path / "backups"
         backup_dir.mkdir(exist_ok=True)
-        backup_file = backup_dir / f"{portfolio_file.name}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Backup portfolio file
         if portfolio_file.exists():
             portfolio_df = pd.read_csv(portfolio_file)
-            portfolio_df.to_csv(backup_file, index=False)
-            print(f"{_safe_emoji('💾')} Backed up portfolio to: {backup_file}")
+            portfolio_backup = backup_dir / f"{portfolio_file.name}.backup_{timestamp}"
+            portfolio_df.to_csv(portfolio_backup, index=False)
+            print(f"{_safe_emoji('💾')} Backed up portfolio to: {portfolio_backup}")
+        
+        # Backup trade log file (IMPORTANT!)
+        trade_log_backup = backup_dir / f"{trade_log_file.name}.backup_{timestamp}"
+        shutil.copy2(trade_log_file, trade_log_backup)
+        print(f"{_safe_emoji('💾')} Backed up trade log to: {trade_log_backup}")
         
         # Read trade log
         trade_df = pd.read_csv(trade_log_file)
@@ -301,6 +312,115 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         
         # Sort trades by date
         trade_df = trade_df.sort_values('Date').reset_index(drop=True)
+        
+        # Get all unique tickers for fast price fetching
+        unique_tickers = trade_df['Ticker'].unique()
+        print(f"📈 Found {len(unique_tickers)} unique tickers")
+        
+        # Fetch ALL prices for ALL tickers in parallel (fast approach)
+        print(f"🌐 Fetching current prices for all {len(unique_tickers)} tickers in parallel...")
+        ticker_prices = {}
+        failed_details = {}
+        
+        # Get current date for price fetching
+        today = datetime.now()
+        start_date = today - timedelta(days=7)  # 7-day window for current price
+        
+        def fetch_single_ticker(ticker):
+            """Fetch price for a single ticker - designed for parallel execution"""
+            try:
+                result = FETCHER.fetch_price_data(ticker, start_date, today)
+                if result and result.df is not None and not result.df.empty and 'Close' in result.df.columns:
+                    latest_price = float(result.df['Close'].iloc[-1])
+                    source = getattr(result, 'source', 'unknown')
+                    return {
+                        'ticker': ticker,
+                        'price': latest_price,
+                        'source': source,
+                        'success': True
+                    }
+                else:
+                    return {
+                        'ticker': ticker,
+                        'price': None,
+                        'source': None,
+                        'success': False,
+                        'error': "No data returned from API"
+                    }
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "delisted" in error_msg:
+                    error_type = "Possibly delisted - will use trade price"
+                elif "not found" in error_msg:
+                    error_type = "Ticker not found - will use trade price"
+                elif "timeout" in error_msg:
+                    error_type = "API timeout - will use trade price"
+                else:
+                    error_type = f"Error: {str(e)[:50]}..."
+                
+                return {
+                    'ticker': ticker,
+                    'price': None,
+                    'source': None,
+                    'success': False,
+                    'error': error_type
+                }
+        
+        # Use ThreadPoolExecutor for parallel fetching
+        # Use max_workers=10 to avoid overwhelming the APIs
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all tasks
+            future_to_ticker = {executor.submit(fetch_single_ticker, ticker): ticker for ticker in unique_tickers}
+            
+            # Process completed tasks as they finish
+            completed = 0
+            for future in as_completed(future_to_ticker):
+                completed += 1
+                result = future.result()
+                ticker = result['ticker']
+                
+                print(f"   {completed:2d}/{len(unique_tickers)} {ticker:6s} ", end="")
+                
+                if result['success']:
+                    ticker_prices[ticker] = result['price']
+                    source = result['source']
+                    
+                    # Parse source to show what actually happened
+                    if 'yahoo-ca-to' in source:
+                        print(f"✅ ${result['price']:.2f} (Canadian exchange)")
+                    elif 'yahoo' in source:
+                        print(f"✅ ${result['price']:.2f} (US exchange)")
+                    else:
+                        print(f"✅ ${result['price']:.2f} ({source})")
+                else:
+                    failed_details[ticker] = result['error']
+                    error = result['error']
+                    if "delisted" in error.lower():
+                        print("⚠️  DELISTED (using trade price)")
+                    elif "not found" in error.lower():
+                        print("❌ NOT FOUND (using trade price)")
+                    elif "timeout" in error.lower():
+                        print("⏱️  TIMEOUT (using trade price)")
+                    else:
+                        print(f"❌ ERROR: {error[:20]}...")
+        
+        print(f"✅ Fetched prices for {len(ticker_prices)} tickers")
+        
+        # Show summary of failed tickers with details
+        failed_tickers = [ticker for ticker in unique_tickers if ticker not in ticker_prices]
+        if failed_tickers:
+            print(f"\n⚠️  Failed to fetch prices for {len(failed_tickers)} tickers:")
+            for ticker in failed_tickers:
+                reason = failed_details.get(ticker, "Unknown error")
+                print(f"   • {ticker}: {reason}")
+            print("   These will use trade prices as fallback for current price calculations")
+        
+        # PRE-CALCULATE ALL CURRENCIES ONCE (no more file I/O during HOLD generation)
+        print(f"\n💰 Pre-calculating currencies for all tickers...")
+        ticker_currencies = {}
+        for ticker in unique_tickers:
+            ticker_currencies[ticker] = get_currency(ticker)
+        print(f"   Pre-calculated currencies for {len(ticker_currencies)} tickers")
         
         # Process trades chronologically to build complete portfolio
         portfolio_entries = []
@@ -357,13 +477,17 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                 running_positions[ticker]['cost'] += cost
                 running_positions[ticker]['trades'].append({'shares': shares, 'price': price, 'cost': cost})
                 running_positions[ticker]['last_price'] = price
-                running_positions[ticker]['last_currency'] = get_currency(ticker)
+                running_positions[ticker]['last_currency'] = ticker_currencies[ticker]
                 
                 # Calculate current values
                 total_shares = running_positions[ticker]['shares']
                 total_cost = running_positions[ticker]['cost']
-                avg_price = total_cost / total_shares if total_shares > 0 else Decimal('0')
-                current_price = price  # Use the trade price as current price
+                
+                # For the BUY entry, use the trade price with fees as average price
+                # This ensures fees are included in the cost basis
+                avg_price = price  # Use the trade price (with fees) as average price
+                
+                current_price = Decimal(str(ticker_prices.get(ticker, float(price))))  # Use pre-fetched current price
                 total_value = total_shares * current_price
                 unrealized_pnl = (current_price - avg_price) * total_shares
                 
@@ -379,10 +503,10 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     'PnL': unrealized_pnl,
                     'Action': 'BUY',
                     'Company': get_company_name(ticker),
-                    'Currency': get_currency(ticker)
+                    'Currency': ticker_currencies[ticker]
                 })
         
-        # Add HOLD entries for every day between trades and current positions
+        # Add HOLD entries for every day between trades and current positions (ONE PER DAY PER TICKER)
         print(f"\n📊 Adding HOLD entries for price tracking...")
         
         # Get all unique trade dates
@@ -434,36 +558,33 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         
         print(f"   Adding HOLD entries for {len(all_dates)} dates")
         
-        # Process each date and add HOLD entries for stocks that have shares
+        # OPTIMIZATION: Pre-calculate all positions for all dates at once
+        print("   Pre-calculating positions for all dates...")
+        date_positions = {}  # date_str -> {ticker: position_data}
+        traded_tickers_by_date = {}  # date_str -> set of tickers
+        
+        # Pre-calculate which tickers were traded on which dates
+        for _, trade in trade_df.iterrows():
+            from utils.timezone_utils import parse_csv_timestamp
+            trade_date_obj = parse_csv_timestamp(trade['Date'])
+            if trade_date_obj:
+                trade_date = trade_date_obj.strftime('%Y-%m-%d')
+                if trade_date not in traded_tickers_by_date:
+                    traded_tickers_by_date[trade_date] = set()
+                traded_tickers_by_date[trade_date].add(trade['Ticker'])
+        
+        # Pre-calculate positions for each date
         for hold_date in all_dates:
-            print(f"   Processing {hold_date}...")
-            
-            # Check if this date already has trade entries
             from utils.timezone_utils import parse_csv_timestamp
             hold_date_obj = parse_csv_timestamp(hold_date)
             if not hold_date_obj:
                 continue
             
-            # WEEKEND HANDLING: Skip weekends (Saturday/Sunday) as there's no market data available
-            # This prevents "Could not get price" warnings for weekend dates when trying to fetch
-            # historical prices for HOLD entries. The portfolio will show the last available
-            # trading day's price for positions held over weekends.
+            # Skip weekends
             if not MARKET_HOURS.is_trading_day(hold_date_obj):
-                print(f"     Skipping {hold_date_obj.strftime('%Y-%m-%d')} (weekend)")
                 continue
                 
             date_str = hold_date_obj.strftime('%Y-%m-%d')
-            
-            # Get list of tickers that were traded on this exact date
-            traded_tickers_on_date = set()
-            for _, trade in trade_df.iterrows():
-                trade_date_obj = parse_csv_timestamp(trade['Date'])
-                if trade_date_obj:
-                    trade_date = trade_date_obj.strftime('%Y-%m-%d')
-                    if trade_date == date_str:
-                        traded_tickers_on_date.add(trade['Ticker'])
-            
-            print(f"     Tickers traded on {date_str}: {traded_tickers_on_date}")
             
             # Recalculate positions up to this date
             temp_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0')})
@@ -473,62 +594,50 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                 trade_date = trade['Date']
                 if trade_date <= hold_date:
                     ticker = trade['Ticker']
-                    shares = Decimal(str(trade['Shares']))  # Keep original precision
+                    shares = Decimal(str(trade['Shares']))
                     cost = Decimal(str(trade['Cost Basis']))
                     reason = trade['Reason']
                     
                     is_sell = 'SELL' in reason.upper() or 'sell' in reason.lower()
                     
                     if is_sell:
-                        # Reset position after sell
                         temp_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0')}
                     else:
-                        # Add to position
                         temp_positions[ticker]['shares'] += shares
                         temp_positions[ticker]['cost'] += cost
             
-            # Add HOLD entry for each ticker that has shares on this date
+            # Store positions for this date
+            date_positions[date_str] = dict(temp_positions)
+        
+        print(f"   Pre-calculated positions for {len(date_positions)} trading days")
+        
+        # Now generate HOLD entries efficiently (ONE PER DAY PER TICKER)
+        hold_entries_added = 0
+        for hold_date in all_dates:
+            from utils.timezone_utils import parse_csv_timestamp
+            hold_date_obj = parse_csv_timestamp(hold_date)
+            if not hold_date_obj:
+                continue
+            
+            # Skip weekends
+            if not MARKET_HOURS.is_trading_day(hold_date_obj):
+                continue
+                
+            date_str = hold_date_obj.strftime('%Y-%m-%d')
+            
+            # Get pre-calculated positions and traded tickers for this date
+            temp_positions = date_positions.get(date_str, {})
+            traded_tickers_on_date = traded_tickers_by_date.get(date_str, set())
+            
+            # Add HOLD entry for each ticker that has shares on this date (ONE PER TICKER PER DAY)
             for ticker, position in temp_positions.items():
                 if position['shares'] > 0:
                     # Skip HOLD entry if this ticker was traded on this date (to avoid duplicates)
                     if ticker in traded_tickers_on_date:
-                        print(f"     Skipping HOLD for {ticker} (was traded on {date_str})")
                         continue
                     
-                    # Determine the correct price for this hold date
-                    tz = pytz.timezone(timezone_str)
-                    if hold_date_obj.tzinfo is None:
-                        # Naive datetime - localize it
-                        hold_date_obj_tz = tz.localize(hold_date_obj)
-                    else:
-                        # Already timezone-aware - convert to target timezone
-                        hold_date_obj_tz = hold_date_obj.astimezone(tz)
-                    # Get trade context for price-based ticker validation
-                    trade_price = float(position.get('last_price', 0))
-                    trade_currency = position.get('last_currency', 'CAD')
-
-                    # Use price validation if we have valid trade context
-                    if trade_price > 0:
-                        if hold_date_obj_tz.date() == current_time.date():
-                            # Today
-                            if current_time.hour < market_close_hour:
-                                price_value = get_current_price(ticker, trade_price, trade_currency)
-                            else:
-                                price_value = get_historical_close_price(ticker, date_str, trade_price, trade_currency)
-                        else:
-                            # Historical day
-                            price_value = get_historical_close_price(ticker, date_str, trade_price, trade_currency)
-                    else:
-                        # Fallback to simple ticker correction without price validation
-                        if hold_date_obj_tz.date() == current_time.date():
-                            # Today
-                            if current_time.hour < market_close_hour:
-                                price_value = get_current_price(ticker)
-                            else:
-                                price_value = get_historical_close_price(ticker, date_str)
-                        else:
-                            # Historical day
-                            price_value = get_historical_close_price(ticker, date_str)
+                    # Use pre-fetched current price (fast approach)
+                    price_value = ticker_prices.get(ticker, 0.0)
                     
                     if price_value > 0:
                         current_price_decimal = Decimal(str(price_value))
@@ -537,11 +646,15 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                         unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
                         
                         # Set HOLD entries timestamp based on market status
+                        tz = pytz.timezone(timezone_str)
+                        if hold_date_obj.tzinfo is None:
+                            hold_date_obj_tz = tz.localize(hold_date_obj)
+                        else:
+                            hold_date_obj_tz = hold_date_obj.astimezone(tz)
+                        
                         if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
-                            # Use current time for today if market is still open
                             hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
                         else:
-                            # Use market close time for all other days
                             close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
                             timezone_abbr = hold_date_obj_tz.strftime('%Z')
                             hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
@@ -558,11 +671,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                             'PnL': unrealized_pnl,
                             'Action': 'HOLD',
                             'Company': get_company_name(ticker),
-                            'Currency': get_currency(ticker)
+                            'Currency': ticker_currencies[ticker]
                         })
-                        print(f"     Added HOLD: {ticker} @ ${price_value:.2f}")
-                    else:
-                        print(f"     ⚠️  Could not get price for {ticker} on {hold_date}")
+                        hold_entries_added += 1
+        
+        print(f"   Added {hold_entries_added} HOLD entries (ONE PER DAY PER TICKER)")
         
         # Create new portfolio DataFrame
         new_portfolio_df = pd.DataFrame(portfolio_entries)
@@ -599,7 +712,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         print(f"   Created {len(new_portfolio_df)} entries from {len(trade_df)} trades")
         print(f"   Added HOLD entries for price tracking")
         print(f"   Used actual PnL from trade log for sell transactions")
-        print(f"   Backup created at: {backup_file}")
+        print(f"   Backups created in: {backup_dir}")
         
         return True
         
@@ -620,38 +733,31 @@ def get_company_name(ticker: str) -> str:
 
 def get_currency(ticker: str) -> str:
     """
-    Get currency for ticker using the SAME logic as the main system.
+    Get currency for ticker from the trade log data.
     
-    This function now uses the portfolio CSV currency data to determine
-    the correct currency, ensuring consistency with the main system.
+    This function uses the trade log currency data to determine
+    the correct currency, ensuring consistency with the source data.
     """
     try:
-        # Load currency cache from portfolio files (same as MarketDataFetcher)
+        # Load currency from trade log (source of truth)
         import pandas as pd
-        import glob
         
-        portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
-        currency_cache = {}
+        trade_log_file = 'trading_data/funds/TEST/llm_trade_log.csv'
+        try:
+            df = pd.read_csv(trade_log_file)
+            if 'Ticker' in df.columns and 'Currency' in df.columns:
+                ticker_data = df[df['Ticker'] == ticker.upper().strip()]
+                if not ticker_data.empty:
+                    return ticker_data['Currency'].iloc[0]
+        except Exception:
+            pass
         
-        for file_path in portfolio_files:
-            try:
-                df = pd.read_csv(file_path)
-                if 'Ticker' in df.columns and 'Currency' in df.columns:
-                    latest_entries = df.groupby('Ticker').last()
-                    for ticker_name, row in latest_entries.iterrows():
-                        currency_cache[ticker_name] = row['Currency']
-            except Exception:
-                continue
-        
-        # Return cached currency or fallback to suffix-based logic
-        currency = currency_cache.get(ticker.upper().strip())
-        if currency:
-            return currency
-        
-        # Fallback to suffix-based logic for new tickers
-        if '.TO' in ticker or '.V' in ticker:
+        # Fallback to suffix-based logic
+        ticker = ticker.upper().strip()
+        if ticker.endswith(('.TO', '.V', '.CN', '.TSX')):
             return 'CAD'
-        return 'USD'
+        else:
+            return 'USD'
         
     except Exception:
         # Final fallback

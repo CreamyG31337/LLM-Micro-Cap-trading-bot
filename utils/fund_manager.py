@@ -470,6 +470,42 @@ class FundManager:
         
         return str(self.funds_dir / fund_name)
     
+    def get_fund_by_data_directory(self, data_directory: str) -> Optional[str]:
+        """Find fund name by data directory path.
+        
+        Args:
+            data_directory: Data directory path to search for
+            
+        Returns:
+            Fund name if found, None otherwise
+        """
+        data_path = Path(data_directory).resolve()
+        
+        # Check if it's a direct fund directory
+        for fund_name in self.get_available_funds():
+            fund_dir = (self.funds_dir / fund_name).resolve()
+            if data_path == fund_dir:
+                return fund_name
+        
+        # Check if it's a subdirectory of a fund
+        for fund_name in self.get_available_funds():
+            fund_dir = (self.funds_dir / fund_name).resolve()
+            try:
+                data_path.relative_to(fund_dir)
+                return fund_name
+            except ValueError:
+                # Not a subdirectory of this fund
+                continue
+        
+        # Check if the data directory is actually a fund directory by looking at the folder name
+        # This handles cases where the path doesn't match exactly but the folder name does
+        if data_path.parent == self.funds_dir:
+            folder_name = data_path.name
+            if folder_name in self.get_available_funds():
+                return folder_name
+        
+        return None
+    
     def delete_fund(self, fund_name: str, confirm: bool = False) -> bool:
         """Delete a fund and all its data.
         

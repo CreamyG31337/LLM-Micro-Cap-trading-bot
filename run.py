@@ -172,12 +172,16 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder) - runs rebuild_portfolio_from_scratch.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("c", "⚙️  Configure", 
-         "Configuration options and setup", 
+        ("c", "⚙️  Configure",
+         "Configuration options and setup",
          []),
-        
-        ("q", "🚪 Quit", 
-         "Exit the application", 
+
+        ("k", "💾 Manage Cache",
+         f"View, clear, or update cache data (uses '{data_folder_name}' folder) - runs cache management",
+         []),
+
+        ("q", "🚪 Quit",
+         "Exit the application",
          [])
     ]
 
@@ -375,6 +379,15 @@ def main() -> None:
         
         elif choice == "c":
             handle_configuration()
+            continue
+
+        elif choice == "k":
+            try:
+                from utils.cache_ui import show_cache_management_menu
+                show_cache_management_menu()
+            except ImportError as e:
+                print_colored(f"{_safe_emoji('❌')} Cache management not available: {e}", Colors.RED)
+                print_colored("This feature requires the cache management module.", Colors.YELLOW)
             continue
         
         # Handle script execution options

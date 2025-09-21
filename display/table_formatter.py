@@ -135,7 +135,7 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=17, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
         table.add_column(f"{_safe_emoji('📈')}\nDaily P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=13, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=14, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
@@ -242,7 +242,7 @@ class TableFormatter:
                 elif total_pnl_pct < 0:
                     total_pnl_display = f"[red]${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"[cyan]${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/cyan]"
             elif avg_price > 0 and current_price > 0:
                 total_pnl_pct = float(((current_price - avg_price) / avg_price) * 100)
                 if total_pnl_pct > 0:
@@ -250,7 +250,7 @@ class TableFormatter:
                 elif total_pnl_pct < 0:
                     total_pnl_display = f"[red]${float(abs(unrealized_pnl)):,.2f} {total_pnl_pct:.1f}%[/red]"
                 else:
-                    total_pnl_display = f"${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%"
+                    total_pnl_display = f"[cyan]${float(unrealized_pnl):,.2f} {total_pnl_pct:.1f}%[/cyan]"
             else:
                 total_pnl_display = 'N/A'
 
@@ -273,41 +273,42 @@ class TableFormatter:
                 elif daily_pnl_pct < 0:
                     daily_pnl_display = f"[red]${float(abs(daily_pnl_value)):,.2f} {daily_pnl_pct:.1f}%[/red]"
                 else:
-                    daily_pnl_display = f"${float(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%"
+                    daily_pnl_display = f"[cyan]${float(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%[/cyan]"
             else:
                 # When daily P&L is $0.00, percentage should also be 0.00%
-                daily_pnl_display = "$0.00 0.0%"
+                daily_pnl_display = "[cyan]$0.00 0.0%[/cyan]"
             
             # Get position weight from enhanced data
             weight_display = position.get('position_weight', 'N/A')
             
             # Format 5-day P&L with color coding (or partial period P&L)
             # Color Scheme:
-            # - YELLOW: Partial periods (2d:, 3d:, 4d: prefixes) - position held < 5 days
-            # - GREEN: Full 5-day period with positive returns (contains '+' in percentage)
-            # - RED: Full 5-day period with negative returns (contains '-' in percentage)
+            # - ORANGE: 1-2 days held (very new positions)
+            # - YELLOW: 3-4 days held (partial periods)
+            # - GREEN: 5+ days held with positive returns (contains '+' in percentage)
+            # - RED: 5+ days held with negative returns (contains '-' in percentage)
             # - DEFAULT: Zero change or N/A
-            # 
-            # The + sign in percentages triggers the green color for Rich markup.
-            # Format from trading_script.py: "$123.45 +5.6%" or "2d: $45.67 +2.3%"
             five_day_pnl_raw = position.get('five_day_pnl', 'N/A')
             if five_day_pnl_raw != 'N/A':
-                # Parse the P&L string (format: "$XX.XX +Y.Y%" or "$XX.XX -Y.Y%" or "2d: $XX.XX +Y.Y%")
+                # Check if this is a partial period using the stored period type
+                period_type = position.get('five_day_period_type', '')
                 try:
-                    # Check if it's a partial period (indicated by "2d:", "3d:", "4d:" prefix)
-                    if any(prefix in five_day_pnl_raw for prefix in ['2d:', '3d:', '4d:']):
-                        # Yellow color for partial periods (less than 5 days)
+                    # Determine color based on days held
+                    if period_type in ['1d', '2d']:
+                        # Orange for very new positions (1-2 days)
+                        five_day_pnl_display = f"[orange1]{five_day_pnl_raw}[/orange1]"
+                    elif period_type in ['3d', '4d']:
+                        # Yellow for partial periods (3-4 days)
                         five_day_pnl_display = f"[yellow]{five_day_pnl_raw}[/yellow]"
                     else:
-                        # Full 5-day period: use green/red based on performance
-                        # The presence of '+' in the percentage triggers green
+                        # Full 5-day+ period: use green/red based on performance
                         if '+' in five_day_pnl_raw:
                             five_day_pnl_display = f"[green]{five_day_pnl_raw}[/green]"
                         elif '-' in five_day_pnl_raw:
                             five_day_pnl_display = f"[red]{five_day_pnl_raw}[/red]"
                         else:
                             # Edge case: exactly 0% change
-                            five_day_pnl_display = five_day_pnl_raw
+                            five_day_pnl_display = f"[cyan]{five_day_pnl_raw}[/cyan]"
                 except:
                     # Fallback if parsing fails
                     five_day_pnl_display = five_day_pnl_raw

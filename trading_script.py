@@ -1523,6 +1523,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'f' ~ Switch Fund                                           |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| 'o' [O] Sort Portfolio                                      |")
+            print("| 'cache' 💾 Manage Cache                                     |")
             print("| Enter -> Quit                                               |")
             print("+---------------------------------------------------------------+")
         print()
@@ -1660,6 +1661,14 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             elif action == 'restore':
                 print_warning("Restore functionality not yet implemented")
                 print_info("This feature will be added in future updates")
+            elif action == 'cache':
+                try:
+                    from utils.cache_ui import show_cache_management_menu
+                    show_cache_management_menu()
+                except ImportError as e:
+                    print_error(f"Cache management not available: {e}")
+                    print_info("This feature requires the cache management module.")
+                return
             else:
                 print_warning("Invalid action selected")
 

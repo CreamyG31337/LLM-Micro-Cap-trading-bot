@@ -219,8 +219,13 @@ def show_complete_prompt(data_dir: str = None):
     print("=" * 80)
     print()
     
+    # Status indicators
+    print(f"{Fore.CYAN}🔄 Initializing prompt generation...{Style.RESET_ALL}")
+    
     # Market info
+    print(f"{Fore.YELLOW}📊 Loading market configuration...{Style.RESET_ALL}")
     market_info = get_market_info()
+    print(f"{Fore.GREEN}✅ Market config loaded{Style.RESET_ALL}")
     print(f"Current Market Configuration: {market_info['name']}")
     print(f"Currency: {market_info['currency']}")
     print(f"Market Cap Range: {market_info['market_cap']}")
@@ -232,7 +237,9 @@ def show_complete_prompt(data_dir: str = None):
     
     # This would normally come from your trading script output
     print("================================================================")
+    print(f"{Fore.YELLOW}🕰️ Checking market hours...{Style.RESET_ALL}")
     market_hours = MarketHours()
+    print(f"{Fore.GREEN}✅ Market hours loaded{Style.RESET_ALL}")
     print(f"Daily Results — {market_hours.last_trading_date_str()}")
     print("================================================================")
     print()
@@ -248,27 +255,52 @@ def show_complete_prompt(data_dir: str = None):
     
     # Load actual portfolio data for enhanced display
     try:
+        print(f"{Fore.CYAN}💼 Initializing portfolio system...{Style.RESET_ALL}")
+        
         # Load portfolio using modular components (same as main script)
         from data.repositories.csv_repository import CSVRepository
         from portfolio.portfolio_manager import PortfolioManager
+        from portfolio.fund_manager import Fund, RepositorySettings
 
         if not data_dir:
-            print("Error: Data directory is required")
+            print(f"{Fore.RED}❌ Error: Data directory is required{Style.RESET_ALL}")
             print("Usage: python show_prompt.py --data-dir <path>")
             return
         
+        print(f"{Fore.YELLOW}📂 Loading data repository...{Style.RESET_ALL}")
         data_dir = Path(data_dir)
         repository = CSVRepository(data_dir)
-        portfolio_manager = PortfolioManager(repository)
+        print(f"{Fore.GREEN}✅ Repository initialized{Style.RESET_ALL}")
+        
+        print(f"{Fore.YELLOW}\ud83d\udcca Creating portfolio manager...{Style.RESET_ALL}")
+        # Create a default fund for the portfolio manager
+        default_fund = Fund(
+            id="default",
+            name="Default Fund",
+            description="Default fund for prompt generation",
+            repository=RepositorySettings(type="csv", settings={"directory": str(data_dir)})
+        )
+        portfolio_manager = PortfolioManager(repository, default_fund)
+        print(f"{Fore.GREEN}\u2705 Portfolio manager ready{Style.RESET_ALL}")
 
+        print(f"{Fore.YELLOW}📄 Loading latest portfolio snapshot...{Style.RESET_ALL}")
         latest_snapshot = portfolio_manager.get_latest_portfolio()
+        if latest_snapshot:
+            print(f"{Fore.GREEN}✅ Latest snapshot loaded ({len(latest_snapshot.positions)} positions){Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}⚠️ No portfolio snapshot found{Style.RESET_ALL}")
         if latest_snapshot and latest_snapshot.positions:
             # Get portfolio snapshots for historical comparison
+            print(f"{Fore.YELLOW}📈 Loading historical portfolio snapshots...{Style.RESET_ALL}")
             portfolio_snapshots = portfolio_manager.get_portfolio_snapshots(limit=10)
+            print(f"{Fore.GREEN}✅ Loaded {len(portfolio_snapshots)} historical snapshots{Style.RESET_ALL}")
 
             # Convert to enhanced format with daily P&L (same logic as main script)
+            print(f"{Fore.YELLOW}🗺️ Processing position data and calculating P&L...{Style.RESET_ALL}")
             enhanced_positions = []
-            for position in latest_snapshot.positions:
+            total_positions = len(latest_snapshot.positions)
+            for i, position in enumerate(latest_snapshot.positions, 1):
+                print(f"{Fore.CYAN}  📋 Processing {position.ticker} ({i}/{total_positions})...{Style.RESET_ALL}")
                 pos_dict = {
                     'ticker': position.ticker,
                     'company': position.company or position.ticker,
@@ -370,16 +402,23 @@ def show_complete_prompt(data_dir: str = None):
 
                 enhanced_positions.append(pos_dict)
 
+            print(f"{Fore.GREEN}✅ All positions processed successfully{Style.RESET_ALL}")
+            
             # Convert to DataFrame for display
+            print(f"{Fore.YELLOW}📊 Converting to analysis format...{Style.RESET_ALL}")
             portfolio_df = pd.DataFrame(enhanced_positions)
+            print(f"{Fore.GREEN}✅ Portfolio data ready for analysis{Style.RESET_ALL}")
             cash = 0.0  # Will be loaded separately
         else:
             portfolio_df = pd.DataFrame()
             cash = 0.0
 
         # Calculate enhanced metrics
+        print(f"{Fore.YELLOW}🗺️ Calculating portfolio metrics and risk analysis...{Style.RESET_ALL}")
         enhanced_df, total_portfolio_value = calculate_position_metrics(portfolio_df, cash)
+        print(f"{Fore.CYAN}  ⚙️ Computing risk metrics...{Style.RESET_ALL}")
         risk_metrics = calculate_portfolio_risk_metrics(enhanced_df, total_portfolio_value, cash)
+        print(f"{Fore.GREEN}✅ Portfolio analysis complete{Style.RESET_ALL}")
 
         print("[ Enhanced Portfolio Analysis ]")
         if not enhanced_df.empty:
@@ -398,12 +437,15 @@ def show_complete_prompt(data_dir: str = None):
         print()
         
         # Cash balance
+        print(f"{Fore.YELLOW}💰 Loading cash balance data...{Style.RESET_ALL}")
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
                 cash_balances = load_cash_balances(Path(data_dir))
+                print(f"{Fore.GREEN}✅ Cash balances loaded{Style.RESET_ALL}")
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
+                print(f"{Fore.YELLOW}⚠️ Using default cash balance{Style.RESET_ALL}")
                 print(f"Cash Balance: ${cash:,.2f}")
         else:
             print(f"Cash Balance: ${cash:,.2f}")
@@ -450,30 +492,36 @@ def show_complete_prompt(data_dir: str = None):
                 print()
         
     except Exception as e:
+        print(f"{Fore.RED}❌ Error loading portfolio data: {e}{Style.RESET_ALL}")
         print(f"[ Portfolio Snapshot ]")
-        print(f"Error loading portfolio data: {e}")
         print("Empty DataFrame")
         print("Columns: [ticker, shares, stop_loss, buy_price, cost_basis]")
         print("Index: []")
         print()
         
         # Cash balance fallback
+        print(f"{Fore.YELLOW}💰 Loading fallback cash balance...{Style.RESET_ALL}")
         if ACTIVE_MARKET == "NORTH_AMERICAN":
             try:
                 cash_balances = load_cash_balances(Path(data_dir))
+                print(f"{Fore.GREEN}✅ Cash balances loaded{Style.RESET_ALL}")
                 print(f"Cash Balances: {format_cash_display(cash_balances)}")
                 print(f"Total (CAD equiv): ${cash_balances.total_cad_equivalent():,.2f}")
             except:
+                print(f"{Fore.YELLOW}⚠️ Using default fallback balance{Style.RESET_ALL}")
                 print("Cash Balance: $289.05")
         else:
             print("Cash Balance: $289.05")
         print()
     
-    # The key part - the instructions
-    print("[ Your Instructions ]")
+    # The key part - the instructions  
+    print(f"{Fore.YELLOW}{_safe_emoji('📝')} Loading trading instructions...{Style.RESET_ALL}")
     instructions = get_daily_instructions()
+    print(f"{Fore.GREEN}\u2705 Instructions loaded{Style.RESET_ALL}")
+    print("[ Your Instructions ]")
     print(instructions)
     
+    print(f"{Fore.GREEN}\u2728 Prompt generation complete!{Style.RESET_ALL}")
     print()
     print("-" * 80)
     print("COPY EVERYTHING ABOVE THIS LINE")

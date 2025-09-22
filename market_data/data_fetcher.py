@@ -112,8 +112,17 @@ class MarketDataFetcher:
             import pandas as pd
             import glob
             
-            # Find portfolio CSV files
-            portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+            # Find portfolio CSV files in multiple possible locations
+            portfolio_files = []
+            potential_paths = [
+                'trading_data/funds/*/llm_portfolio_update.csv',
+                'Scripts and CSV Files/chatgpt_portfolio_update.csv',
+                'data/*/portfolio.csv',
+                'data/portfolio.csv'
+            ]
+            
+            for pattern in potential_paths:
+                portfolio_files.extend(glob.glob(pattern))
             
             for file_path in portfolio_files:
                 try:
@@ -123,8 +132,9 @@ class MarketDataFetcher:
                         latest_entries = df.groupby('Ticker').last()
                         for ticker, row in latest_entries.iterrows():
                             self._portfolio_currency_cache[ticker] = row['Currency']
+                        logger.debug(f"Loaded currency cache from {file_path}: {len(latest_entries)} tickers")
                 except Exception as e:
-                    logger.warning(f"Could not load currency cache from {file_path}: {e}")
+                    logger.debug(f"Could not load currency cache from {file_path}: {e}")
                     
         except Exception as e:
             logger.warning(f"Could not load currency cache: {e}")
@@ -254,11 +264,21 @@ class MarketDataFetcher:
         
         # If no suffix, check if we have currency info from portfolio
         if not is_likely_canadian and hasattr(self, '_portfolio_currency_cache'):
-            currency = self._portfolio_currency_cache.get(ticker)
+            currency = self._portfolio_currency_cache.get(ticker.upper())
             if currency == 'CAD':
                 is_likely_canadian = True
+                logger.debug(f"Detected Canadian ticker from portfolio cache: {ticker} (Currency: {currency})")
             elif currency == 'USD':
                 is_likely_canadian = False
+        
+        # If still no currency info, check fundamentals overrides for Canadian securities
+        if not is_likely_canadian and hasattr(self, '_fundamentals_overrides'):
+            override_data = self._fundamentals_overrides.get(ticker.upper())
+            if override_data:
+                country = override_data.get('country', '').upper()
+                # Consider Canadian if country is Canada or if it's a Canadian-listed ETF
+                if country == 'CANADA' or 'CANADIAN' in override_data.get('industry', '').upper():
+                    is_likely_canadian = True
         
         if is_likely_canadian:
             # For likely Canadian tickers, try Canadian suffixes first

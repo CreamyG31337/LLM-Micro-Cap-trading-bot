@@ -43,7 +43,28 @@ def load_exchange_rates(data_dir: Path) -> Dict[str, Decimal]:
         rates_df = rates_df.set_index('Date')
         # Convert index to datetime if it's not already
         if not isinstance(rates_df.index, pd.DatetimeIndex):
-            rates_df.index = pd.to_datetime(rates_df.index)
+            # Handle timezone-aware strings by converting PDT/PST to UTC offset format
+            # This follows the existing pattern in utils/timezone_utils.py
+            def convert_timezone_abbreviation(timestamp_str):
+                if pd.isna(timestamp_str):
+                    return timestamp_str
+                
+                timestamp_str = str(timestamp_str).strip()
+                
+                # Convert PDT to UTC offset format (-07:00)
+                if " PDT" in timestamp_str:
+                    clean_timestamp = timestamp_str.replace(" PDT", "")
+                    return f"{clean_timestamp}-07:00"
+                # Convert PST to UTC offset format (-08:00)
+                elif " PST" in timestamp_str:
+                    clean_timestamp = timestamp_str.replace(" PST", "")
+                    return f"{clean_timestamp}-08:00"
+                else:
+                    return timestamp_str
+            
+            # Apply timezone conversion to each element
+            converted_dates = rates_df.index.map(convert_timezone_abbreviation)
+            rates_df.index = pd.to_datetime(converted_dates)
         
         # Create a full date range from the first to the last available date
         full_date_range = pd.date_range(start=rates_df.index.min(), end=rates_df.index.max(), freq='D')

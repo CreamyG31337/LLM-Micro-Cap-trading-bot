@@ -3,9 +3,14 @@
     "name": "RRSP Lance Webull",
     "description": "RRSP Investment Portfolio",
     "display_currency": "CAD",
-    "fund_type": "rrsp",
-    "created_date": "2025-09-17T00:14:20.734753",
-    "tax_status": "tax_deferred"
+    "fund_type": "webull",
+    "created_date": "2025-09-21T00:39:00.000000",
+    "tax_status": "tax_deferred",
+    "webull_fx_fee": {
+      "enabled": true,
+      "fee_rate": 0.015,
+      "description": "Webull foreign exchange fee applied to current value"
+    }
   },
   "repository": {
     "type": "csv"

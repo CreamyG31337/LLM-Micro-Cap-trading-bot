@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional, Dict
 from datetime import datetime
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +34,29 @@ def load_exchange_rates(data_dir: Path) -> Dict[str, Decimal]:
         return exchange_rates
     
     try:
-        with open(rates_file, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                date_str = row.get('Date', '')
-                rate_str = row.get('USD_CAD_Rate', '')
-                if date_str and rate_str:
-                    try:
-                        exchange_rates[date_str] = Decimal(rate_str)
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"Invalid exchange rate data: {date_str}={rate_str}, error: {e}")
+        rates_df = pd.read_csv(rates_file)
     except Exception as e:
         logger.error(f"Failed to load exchange rates: {e}")
-    
+        return exchange_rates
+
+    if not rates_df.empty:
+        rates_df = rates_df.set_index('Date')
+        # Convert index to datetime if it's not already
+        if not isinstance(rates_df.index, pd.DatetimeIndex):
+            rates_df.index = pd.to_datetime(rates_df.index)
+        
+        # Create a full date range from the first to the last available date
+        full_date_range = pd.date_range(start=rates_df.index.min(), end=rates_df.index.max(), freq='D')
+        
+        # Reindex the DataFrame to include all dates in the range, then forward-fill missing values
+        rates_df = rates_df.reindex(full_date_range).ffill()
+        
+        # Convert back to dictionary with 'YYYY-MM-DD' format, ensuring values are Decimal
+        exchange_rates = {
+            date.strftime('%Y-%m-%d'): Decimal(str(rate))
+            for date, rate in rates_df['USD_CAD_Rate'].to_dict().items()
+        }
+        
     return exchange_rates
 
 
@@ -53,48 +64,48 @@ def get_exchange_rate_for_date(exchange_rates: Dict[str, Decimal],
                               target_date: Optional[datetime] = None) -> Decimal:
     """
     Get the USD to CAD exchange rate for a specific date.
+    Finds the most recent rate on or before the target date.
 
     Args:
-        exchange_rates: Dictionary of exchange rates by date
-        target_date: Date to get rate for (uses latest if None)
+        exchange_rates: Dictionary of exchange rates by date.
+        target_date: The date for which to get the rate. Uses the latest available if None.
 
     Returns:
-        USD to CAD exchange rate as Decimal (1 USD = X CAD)
+        USD to CAD exchange rate as a Decimal.
+
+    Raises:
+        ValueError: If no exchange rate is available on or before the target date.
     """
     if not exchange_rates:
-        logger.warning("No exchange rates available, using default rate 1.35")
-        return Decimal('1.35')
+        raise ValueError("Exchange rates data is empty. Cannot determine rate.")
+
+    sorted_dates = sorted(exchange_rates.keys())
 
     if target_date is None:
-        # Use the latest available rate
-        latest_date = max(exchange_rates.keys())
-        rate = exchange_rates[latest_date]
-        # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
-        return rate
+        # Use the latest available rate if no date is specified.
+        latest_date = sorted_dates[-1]
+        return exchange_rates[latest_date]
 
-    # Find the closest date to target_date
     target_date_str = target_date.strftime('%Y-%m-%d')
 
-    # First try exact match
-    if target_date_str in exchange_rates:
-        rate = exchange_rates[target_date_str]
-        # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
-        return rate
-
-    # Find the closest previous date
-    available_dates = sorted(exchange_rates.keys())
-    for date_str in reversed(available_dates):
+    # Find the most recent rate on or before the target date.
+    best_date = None
+    for date_str in sorted_dates:
         if date_str <= target_date_str:
-            rate = exchange_rates[date_str]
-            # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
-            return rate
+            best_date = date_str
+        else:
+            break  # Stop checking once we pass the target date.
 
-    # If no previous date found, use the earliest available
-    earliest_date = min(exchange_rates.keys())
-    rate = exchange_rates[earliest_date]
-    # Exchange rates in the CSV are already in USD->CAD format (1 USD = X CAD)
-    logger.warning(f"No exchange rate found for {target_date_str}, using {earliest_date} with rate {rate}")
-    return rate
+    if best_date:
+        return exchange_rates[best_date]
+    else:
+        # This is the critical failure case: the history doesn't go back far enough.
+        earliest_available = sorted_dates[0]
+        raise ValueError(
+            f"Missing historical exchange rate data. "
+            f"Cannot find rate for '{target_date_str}'. "
+            f"Earliest available rate is on '{earliest_available}'."
+        )
 
 
 def convert_usd_to_cad(usd_amount: Decimal, 

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Dict
 import sys
+import zipfile
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -208,6 +209,67 @@ class BackupCleanupUtility:
         print(f"📊 TOTAL: {total_files} files, {self._format_size(total_size)}")
 
 
+    def archive_old_backups(self, days_old: int = 1, dry_run: bool = False) -> None:
+        """Archive backups older than specified days into a single zip file per day.
+        
+        Args:
+            days_old: Archive backups older than this many days.
+            dry_run: If True, only show what would be archived.
+        """
+        cutoff_date = datetime.now() - timedelta(days=days_old)
+        print(f"📦 Archiving backups older than {days_old} days (before {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')})")
+        if dry_run:
+            print("🔍 DRY RUN MODE - No files will be archived or deleted")
+        print()
+
+        backup_dirs = self.get_all_fund_backup_dirs()
+        if not backup_dirs:
+            print("❌ No fund backup directories found")
+            return
+
+        for backup_dir, fund_name in backup_dirs:
+            print(f"📁 Processing fund: {fund_name}")
+            self._archive_fund_backups(backup_dir, cutoff_date, dry_run)
+            print()
+
+    def _archive_fund_backups(self, backup_dir: Path, cutoff_date: datetime, dry_run: bool) -> None:
+        """Archive old backups for a specific fund."""
+        files_to_archive = [
+            f for f in backup_dir.glob("*.backup_*") 
+            if datetime.fromtimestamp(f.stat().st_mtime) < cutoff_date
+        ]
+
+        if not files_to_archive:
+            print("   ℹ️ No old backups to archive.")
+            return
+
+        # Group files by day
+        files_by_day = {}
+        for f in files_to_archive:
+            day = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y%m%d")
+            if day not in files_by_day:
+                files_by_day[day] = []
+            files_by_day[day].append(f)
+
+        for day, files in files_by_day.items():
+            archive_name = backup_dir / f"archive_{day}.zip"
+            if dry_run:
+                print(f"   🔍 Would create archive: {archive_name}")
+                for f in files:
+                    print(f"      - Would add {f.name}")
+            else:
+                print(f"   📦 Creating archive: {archive_name}")
+                with zipfile.ZipFile(archive_name, "a", zipfile.ZIP_DEFLATED) as zf:
+                    for f in files:
+                        try:
+                            zf.write(f, f.name)
+                            print(f"      - Added {f.name}")
+                            f.unlink()
+                        except Exception as e:
+                            print(f"      - ⚠️ Failed to add or delete {f.name}: {e}")
+
+
+
 def main():
     """Main entry point for the backup cleanup utility."""
     parser = argparse.ArgumentParser(
@@ -250,6 +312,12 @@ Examples:
         action='store_true',
         help='Show backup statistics for all funds'
     )
+
+    parser.add_argument(
+        '--archive',
+        action='store_true',
+        help='Archive old backups into zip files.'
+    )
     
     parser.add_argument(
         '--verbose', '-v',
@@ -279,6 +347,9 @@ Examples:
         if args.stats:
             # Show statistics
             cleanup_util.list_backup_stats()
+        elif args.archive:
+            # Archive old backups
+            cleanup_util.archive_old_backups(days_old=args.days, dry_run=args.dry_run)
         else:
             # Clean up old backups
             results = cleanup_util.cleanup_old_backups_by_age(

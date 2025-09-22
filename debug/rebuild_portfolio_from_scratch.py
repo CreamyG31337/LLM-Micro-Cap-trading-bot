@@ -199,6 +199,11 @@ def get_historical_close_price(ticker: str, date_str: str, trade_price: float = 
             return None
         date_obj = date_obj.date()
         
+        # Prevent future date API calls - only fetch historical data
+        today = datetime.now().date()
+        if date_obj > today:
+            return 0.0
+        
         # Check if it's a market holiday or weekend
         if not MARKET_HOLIDAYS.is_trading_day(date_obj, "both"):
             holiday_name = MARKET_HOLIDAYS.get_holiday_name(date_obj)
@@ -323,6 +328,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         # Read trade log
         trade_df = pd.read_csv(trade_log_file)
         print(f"{_safe_emoji('📊')} Loaded {len(trade_df)} trades from trade log")
+        
+        # Convert date column to timezone-aware datetime objects for accurate comparisons
+        from utils.timezone_utils import parse_csv_timestamp
+        trade_df['Date'] = trade_df['Date'].apply(parse_csv_timestamp)
+        trade_df.dropna(subset=['Date'], inplace=True)
         
         # Sort trades by date
         trade_df = trade_df.sort_values('Date').reset_index(drop=True)
@@ -464,8 +474,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 # For sells, create entry with 0 shares and sell details
                 avg_price = running_positions[ticker]['cost'] / running_positions[ticker]['shares'] if running_positions[ticker]['shares'] > 0 else Decimal('0')
                 
+                # Format the date to a naive timestamp string for the CSV
+                formatted_date = date.strftime('%Y-%m-%d %H:%M:%S')
+
                 portfolio_entries.append({
-                    'Date': date,
+                    'Date': formatted_date,
                     'Ticker': ticker,
                     'Shares': Decimal('0'),
                     'Average Price': Decimal('0'),
@@ -497,6 +510,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 running_positions[ticker]['last_price'] = price
                 running_positions[ticker]['last_currency'] = ticker_currencies[ticker]
                 
+                # Format the date to a naive timestamp string for the CSV
+                formatted_date = date.strftime('%Y-%m-%d %H:%M:%S')
+
                 # Calculate current values
                 total_shares = running_positions[ticker]['shares']
                 total_cost = running_positions[ticker]['cost']
@@ -510,7 +526,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 unrealized_pnl = (current_price - avg_price) * total_shares
                 
                 portfolio_entries.append({
-                    'Date': date,
+                    'Date': formatted_date,
                     'Ticker': ticker,
                     'Shares': total_shares,
                     'Average Price': avg_price,
@@ -536,11 +552,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         unique_calendar_dates = set()
         
         # First, collect all unique calendar dates from trade dates
-        for trade_date in trade_dates:
-            from utils.timezone_utils import parse_csv_timestamp
-            date_obj = parse_csv_timestamp(trade_date)
-            if date_obj:
-                calendar_date = date_obj.strftime('%Y-%m-%d')
+        for trade_date_obj in trade_df['Date']:
+            if trade_date_obj:
+                calendar_date = trade_date_obj.strftime('%Y-%m-%d')
                 unique_calendar_dates.add(calendar_date)
         
         # Convert to sorted list
@@ -561,17 +575,14 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
             current_time = today.astimezone(tz)
             market_close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
             
-            # Always include today, but use different timestamp logic
-            end_date = today.date()
+            # Only generate dates up to the last trade date to avoid future API calls
+            end_date = last_date.date()
             
-            if current_time.hour < market_close_hour:
-                print(f"   ⏰ Market still open ({current_time.strftime('%H:%M')} < {market_close_hour}:00), using current time for today's HOLD entries")
-            else:
-                print(f"   ⏰ Market closed ({current_time.strftime('%H:%M')} >= {market_close_hour}:00), using market close time for today's HOLD entries")
+            print(f"   📅 Generating HOLD entries from {first_date.date()} to {end_date} (last trade date)")
             
             current_date = first_date
             while current_date.date() <= end_date:
-                all_dates.append(current_date.strftime('%Y-%m-%d %H:%M:%S PDT'))
+                all_dates.append(current_date)
                 current_date += timedelta(days=1)
         
         print(f"   Adding HOLD entries for {len(all_dates)} dates")
@@ -583,8 +594,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         
         # Pre-calculate which tickers were traded on which dates
         for _, trade in trade_df.iterrows():
-            from utils.timezone_utils import parse_csv_timestamp
-            trade_date_obj = parse_csv_timestamp(trade['Date'])
+            trade_date_obj = trade['Date'] # This is now a datetime object
             if trade_date_obj:
                 trade_date = trade_date_obj.strftime('%Y-%m-%d')
                 if trade_date not in traded_tickers_by_date:
@@ -592,11 +602,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 traded_tickers_by_date[trade_date].add(trade['Ticker'])
         
         # Pre-calculate positions for each date
-        for hold_date in all_dates:
-            from utils.timezone_utils import parse_csv_timestamp
-            hold_date_obj = parse_csv_timestamp(hold_date)
-            if not hold_date_obj:
-                continue
+        for hold_date_obj in all_dates:
             
             # Skip weekends
             if not MARKET_HOURS.is_trading_day(hold_date_obj):
@@ -609,8 +615,8 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
             
             # Process all trades up to this date
             for _, trade in trade_df.iterrows():
-                trade_date = trade['Date']
-                if trade_date <= hold_date:
+                trade_date_obj = trade['Date'] # This is now a datetime object
+                if trade_date_obj and trade_date_obj.date() <= hold_date_obj.date():
                     ticker = trade['Ticker']
                     shares = Decimal(str(trade['Shares']))
                     cost = Decimal(str(trade['Cost Basis']))
@@ -634,13 +640,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         total_hold_dates = len(all_dates)
         print(f"   Generating HOLD entries for {total_hold_dates} dates...")
         
-        for date_idx, hold_date in enumerate(all_dates):
+        for date_idx, hold_date_obj in enumerate(all_dates):
             if date_idx % 5 == 0:  # Status update every 5 dates
-                print(f"   Processing date {date_idx + 1}/{total_hold_dates}: {hold_date}")
-            from utils.timezone_utils import parse_csv_timestamp
-            hold_date_obj = parse_csv_timestamp(hold_date)
-            if not hold_date_obj:
-                continue
+                print(f"   Processing date {date_idx + 1}/{total_hold_dates}: {hold_date_obj.date()}")
             
             # Skip weekends
             if not MARKET_HOURS.is_trading_day(hold_date_obj):
@@ -655,26 +657,30 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
             # Add HOLD entry for each ticker that has shares on this date (ONE PER TICKER PER DAY)
             for ticker, position in temp_positions.items():
                 if position['shares'] > 0:
-                    # Skip HOLD entry if this ticker was traded on this date (to avoid duplicates)
-                    if ticker in traded_tickers_on_date:
-                        continue
+                    # Previously we skipped HOLD when traded that date; now we ALWAYS add EOD HOLD
+                    # to ensure a proper end-of-day snapshot for performance calculations.
                     
                     # Set HOLD entries timestamp based on market status
                     tz = pytz.timezone(timezone_str)
-                    if hold_date_obj.tzinfo is None:
-                        hold_date_obj_tz = tz.localize(hold_date_obj)
-                    else:
-                        hold_date_obj_tz = hold_date_obj.astimezone(tz)
                     
-                    if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
-                        hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
-                    else:
-                        close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
-                        timezone_abbr = hold_date_obj_tz.strftime('%Z')
-                        hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
+                    # Use the date part of hold_date_obj and combine with market close time
+                    close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
+                    hold_date_at_close = hold_date_obj.replace(hour=close_hour, minute=0, second=0, microsecond=0)
+                    
+                    # Format as naive timestamp string
+                    hold_date_str = hold_date_at_close.strftime('%Y-%m-%d %H:%M:%S')
                     
                     # Use historical price for this specific date
                     price_value = get_historical_close_price(ticker, hold_date_str)
+                    
+                    # If no historical price found, use the last known price from trades
+                    if price_value <= 0:
+                        # Find the last trade price for this ticker on or before this date
+                        ticker_trades = trade_df[trade_df['Ticker'] == ticker]
+                        ticker_trades = ticker_trades[ticker_trades['Date'].dt.date <= hold_date_obj.date()]
+                        if not ticker_trades.empty:
+                            last_trade = ticker_trades.iloc[-1]
+                            price_value = float(last_trade['Price'])
                     
                     if price_value > 0:
                         current_price_decimal = Decimal(str(price_value))

@@ -129,6 +129,7 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('🏢')}\nCompany", style="white", no_wrap=True, max_width=company_max_width, justify="left", header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📅')}\nOpened", style="dim", no_wrap=True, width=11, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('📈')}\nShares", justify="right", style="bright_white", width=10, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nPrice", justify="right", style="white", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💰')}\nCurrent", justify="right", style="yellow", width=10, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('💵')}\nValue", justify="right", style="bright_yellow", width=12, header_style="bold magenta")
@@ -138,7 +139,6 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=14, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('💵')}\nCost Basis", justify="right", style="yellow", width=11, header_style="bold magenta")
         
         def format_shares(shares_value):
             """Format shares with up to 6 significant digits, adjusting decimals based on magnitude."""
@@ -335,6 +335,7 @@ class TableFormatter:
                 display_name,
                 position.get('opened_date', 'N/A'),
                 format_shares(position.get('shares', 0)),
+                f"${float(cost_basis):.2f}",
                 f"${float(avg_price):.2f}",  # Use the Decimal-converted avg_price
                 f"${float(current_price):.2f}" if current_price > 0 else "N/A",
                 total_value_display,  # Total Value (shares * current price)
@@ -343,7 +344,6 @@ class TableFormatter:
                 five_day_pnl_display,  # 5-day P&L with color formatting
                 weight_display,  # Position weight from enhanced data
                 f"${float(Decimal(str(position.get('stop_loss', 0)))):.2f}" if position.get('stop_loss', 0) > 0 else "None",
-                f"${float(cost_basis):.2f}",
                 style=row_style  # Apply alternating background color
             )
         

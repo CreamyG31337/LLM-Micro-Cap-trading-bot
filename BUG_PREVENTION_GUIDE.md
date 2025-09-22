@@ -44,7 +44,74 @@ def _safe_emoji(emoji):
 
 **Prevention**: Always use `_safe_emoji()` for emojis in console output.
 
-### 3. Pandas Unicode Character Issues
+### 3. Cache-Related Issues
+
+**Problem**: Stale data, incorrect prices, or display problems due to corrupted or outdated cache files.
+
+**Root Cause**: Cache files can become corrupted, outdated, or excessively large over time.
+
+**✅ PREVENTION & SOLUTION**:
+
+#### Cache Management System
+The system includes comprehensive cache management accessible from both main menus:
+
+**From Main Menu**:
+```bash
+python run.py  # Select option 'k' - Manage Cache
+```
+
+**From Trading Script**:
+```bash
+python trading_script.py --data-dir "your_fund"  # Select 'cache' from menu
+```
+
+#### Cache Types and Issues
+
+| Cache Type | Contains | Common Issues | When to Clear |
+|------------|----------|---------------|---------------|
+| **Price Cache** | Stock prices, market data | Wrong prices, stale quotes | Price data incorrect |
+| **Fundamentals Cache** | Company financial data | Wrong company info | Company data stale |
+| **Exchange Rate Cache** | Currency conversions | Wrong CAD/USD values | Conversion errors |
+| **Memory Caches** | Runtime data | Data inconsistencies | Multiple problems |
+
+#### Cache Management Commands
+
+**View Cache Status** (Always do this first):
+```bash
+python run.py  # Option 'k' -> 1 (View Cache Status)
+```
+
+**Clear Specific Cache**:
+```bash
+python run.py  # Option 'k' -> 3 (Clear Specific Cache)
+# Then select cache type to clear
+```
+
+**Clear All Caches** (Emergency):
+```bash
+python run.py  # Option 'k' -> 2 (Clear All Caches)
+# Requires confirmation
+```
+
+#### Troubleshooting Workflow
+
+**Standard Cache Troubleshooting**:
+1. **View cache status** first to understand current state
+2. **Clear specific cache** causing issues (if identifiable)
+3. **Clear all caches** if problems persist
+4. **Restart application** after cache operations
+5. **Verify cache rebuild** by checking status again
+
+**Cache Management Best Practices**:
+- **Weekly**: Check cache status and sizes
+- **Monthly**: Clear caches for data freshness
+- **Before troubleshooting**: Always check cache status first
+- **After system updates**: Clear caches to rebuild with new logic
+- **When experiencing issues**: Cache management as first troubleshooting step
+
+**Prevention**: Monitor cache sizes regularly and clear caches proactively rather than waiting for issues.
+
+### 4. Pandas Unicode Character Issues
 
 **Problem**: Pandas generates problematic Unicode characters like `à` that cause encoding errors.
 

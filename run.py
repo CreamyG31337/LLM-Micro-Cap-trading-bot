@@ -136,7 +136,9 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Create performance comparison charts from your trading data (uses '{data_folder_name}' folder) - runs Generate_Graph.py",
          ["--data-dir", str(data_dir_path)]),
         
-        
+        ("4", f"{_safe_emoji('📈')} Graph Benchmarks (365 days)",
+         f"Generate benchmark performance graphs for last 365 days (S&P 500, QQQ, Russell 2000, VTI) - runs benchmark graphing",
+         ["--data-dir", str(data_dir_path)]),
         
         ("8", "🐛 Debug Instructions",
          "Show debug information and instructions - runs debug_instructions.py",
@@ -334,6 +336,7 @@ def get_script_path(option: str) -> Optional[Path]:
         "1": PROJECT_ROOT / "trading_script.py",
         "2": PROJECT_ROOT / "simple_automation.py",
         "3": SCRIPTS_DIR / "Generate_Graph.py",
+        "4": "benchmark",  # Special handler for benchmark graphing
         "8": PROJECT_ROOT / "debug_instructions.py",
         "9": PROJECT_ROOT / "show_prompt.py",
         "d": PROJECT_ROOT / "prompt_generator.py",
@@ -346,6 +349,44 @@ def get_script_path(option: str) -> Optional[Path]:
     }
     
     return script_map.get(option)
+
+def handle_benchmark_graphing(data_dir: str) -> None:
+    """Handle benchmark graphing for last 365 days."""
+    print_colored("\n" + "=" * 80, Colors.HEADER)
+    print_colored(f"{_safe_emoji('📈')} BENCHMARK PERFORMANCE GRAPHING", Colors.HEADER + Colors.BOLD)
+    print_colored("=" * 80, Colors.HEADER)
+    print_colored(
+        "Generating benchmark performance graphs for the last 365 days...",
+        Colors.YELLOW
+    )
+    print_colored("This will download data for S&P 500, QQQ, Russell 2000, and VTI.", Colors.CYAN)
+    
+    try:
+        # Import the benchmark graphing function from trading_script
+        from trading_script import generate_benchmark_graph
+        from config.settings import configure_system
+        
+        # Configure system settings
+        settings = configure_system()
+        settings.set('repository.csv.data_directory', data_dir)
+        
+        print_colored(f"Using data directory: {data_dir}", Colors.CYAN)
+        print_colored("Downloading benchmark data and generating graph...", Colors.YELLOW)
+        
+        # Generate the benchmark graph
+        generate_benchmark_graph(settings)
+        
+        print_colored(f"\n{_safe_emoji('✅')} Benchmark graph generated successfully!", Colors.GREEN)
+        print_colored("Check the 'graphs' folder for the generated image.", Colors.CYAN)
+        
+    except ImportError as e:
+        print_colored(f"{_safe_emoji('❌')} Error importing benchmark graphing function: {e}", Colors.RED)
+        print_colored("This feature requires the trading_script module.", Colors.YELLOW)
+    except Exception as e:
+        print_colored(f"{_safe_emoji('❌')} Error generating benchmark graph: {e}", Colors.RED)
+        print_colored("Please check your data directory and try again.", Colors.YELLOW)
+
+    input(f"\n{Colors.YELLOW}Press Enter to return to the main menu...{Colors.ENDC}")
 
 def handle_backup_archiving() -> None:
     """Handle backup archiving submenu."""
@@ -435,6 +476,19 @@ def main() -> None:
                 print_colored(f"{_safe_emoji('❌')} Cache management not available: {e}", Colors.RED)
                 print_colored("This feature requires the cache management module.", Colors.YELLOW)
             continue
+        
+        # Handle special cases first
+        if choice == "4":
+            # Benchmark graphing - special handler
+            selected_option = next((opt for opt in options if opt[0] == choice), None)
+            if selected_option:
+                _, title, _, args = selected_option
+                print_colored(f"\n🎯 Selected: {title}", Colors.GREEN + Colors.BOLD)
+                
+                # Get data directory from args
+                data_dir = args[1] if len(args) > 1 else "trading_data/funds/Project Chimera"
+                handle_benchmark_graphing(data_dir)
+                continue
         
         # Handle script execution options
         script_path = get_script_path(choice)

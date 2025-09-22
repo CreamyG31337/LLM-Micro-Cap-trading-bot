@@ -1,5 +1,6 @@
 {
   "fund": {
+    "name": "TFSA Fund",
     "description": "Tax-Free Savings Account for retirement planning",
     "display_currency": "CAD",
     "fund_type": "tfsa",

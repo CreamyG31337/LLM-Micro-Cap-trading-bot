@@ -746,6 +746,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     market_value_cad = pos.market_value
                 total_portfolio_value += market_value_cad
 
+
         # Debug output to file when in non-interactive mode (screen clearing is disabled)
         if args.non_interactive:
             with open('debug_output.txt', 'w') as debug_file:
@@ -823,7 +824,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     with open('debug_output.txt', 'a') as debug_file:
                         debug_file.write(f"  5-day P&L calc for {position.ticker}: opened_date={opened_date_str}\n")
                         debug_file.flush()
-                logger.debug(f"{position.ticker}: Starting 5-day P&L calculation with opened_date: {opened_date_str}")
+                # logger.debug(f"{position.ticker}: Starting 5-day P&L calculation with opened_date: {opened_date_str}")
 
                 if opened_date_str != 'N/A':
                     # Parse the opened date (format: 'MM-DD-YY')
@@ -1350,9 +1351,11 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Could not load fund contributions: {e}")
 
-        # Calculate and display portfolio statistics
+            # Calculate and display portfolio statistics
         try:
             portfolio_metrics = position_calculator.calculate_portfolio_metrics(latest_snapshot)
+            
+            webull_fx_fee = Decimal('0')
 
             # Calculate total contributions from fund data
             total_contributions = 0
@@ -1438,6 +1441,18 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 estimated_fx_fee_total_usd = Decimal('0')
                 estimated_fx_fee_total_cad = Decimal('0')
 
+            # Determine if the Webull FX fee should be applied for display
+            try:
+                from utils.fund_manager import get_fund_manager
+                fund_manager_utils = get_fund_manager()
+                data_dir_name = Path(settings.get_data_directory()).name
+                fund_config = fund_manager_utils.get_fund_config(data_dir_name)
+                if fund_config and fund_config.get('fund', {}).get('fund_type') == 'webull':
+                    webull_fx_fee = estimated_fx_fee_total_cad
+                    logger.info(f"Using estimated FX fee for Webull fund display: ${webull_fx_fee}")
+            except Exception as e:
+                logger.debug(f"Could not determine fund type for Webull FX fee: {e}")
+
             # Prepare summary data - convert Decimal to float for JSON serialization
             # CRITICAL: Floats introduce precision loss but are required for JSON compatibility
             # All financial calculations above use Decimal for accuracy, only converted here for storage
@@ -1447,7 +1462,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 'cash_balance': float(cash_balance),
                 'cad_cash': float(cad_cash),
                 'usd_cash': float(usd_cash),
-'usd_to_cad_rate': float(usd_to_cad_rate),
+                'usd_to_cad_rate': float(usd_to_cad_rate),
                 'estimated_fx_fee_total_usd': float(estimated_fx_fee_total_usd),
                 'estimated_fx_fee_total_cad': float(estimated_fx_fee_total_cad),
                 'usd_positions_value_usd': float(usd_positions_value_usd),
@@ -1455,7 +1470,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 'usd_holdings_total_usd': float(total_usd_holdings),
                 'cad_holdings_total_cad': float(total_cad_holdings),
                 'total_equity_cad': float(total_portfolio_value + cash_balance),
-                'fund_contributions': float(stats_data.get('total_contributions', 0.0))
+                'fund_contributions': float(stats_data.get('total_contributions', 0.0)),
+                'webull_fx_fee': float(webull_fx_fee)
             }
 
             # Enrich stats with audit metrics - convert to float for JSON serialization

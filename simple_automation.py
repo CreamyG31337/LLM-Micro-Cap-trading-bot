@@ -190,12 +190,14 @@ def execute_automated_trades(trades: List[Dict[str, Any]], portfolio_df: pd.Data
     return portfolio_df, cash
 
 
-def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "trading_data/funds/Project Chimera", dry_run: bool = False):
+def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = None, dry_run: bool = False):
     """Run the automated trading process"""
     
     print("=== Automated Trading System ===")
     
-    # Set up data directory
+    # Validate and set up data directory
+    if not data_dir:
+        raise ValueError("Data directory must be specified")
     data_path = Path(data_dir)
     set_data_dir(data_path)
     
@@ -267,7 +269,7 @@ def main():
     parser = argparse.ArgumentParser(description="Simple Automated Trading")
     parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)")
     parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
-    parser.add_argument("--data-dir", default="trading_data/funds/Project Chimera", help="Data directory (default: trading_data/funds/Project Chimera)")
+    parser.add_argument("--data-dir", help="Data directory (required: specify your fund directory)")
     parser.add_argument("--dry-run", action="store_true", help="Don't execute trades, just show recommendations")
     
     args = parser.parse_args()
@@ -276,6 +278,11 @@ def main():
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("Error: OpenAI API key required. Set OPENAI_API_KEY env var or use --api-key")
+        return
+    
+    # Validate data directory
+    if not args.data_dir:
+        print("Error: Data directory required. Use --data-dir to specify your fund directory.")
         return
     
     # Run automated trading

@@ -464,26 +464,27 @@ class FundUI:
             ("1", "investment", "General Investment Fund"),
             ("2", "tfsa", "Tax-Free Savings Account"),
             ("3", "rrsp", "Registered Retirement Savings Plan"),
-            ("4", "custom", "Custom Type")
+            ("4", "webull", "Webull Trading Account (with FX fees)"),
+            ("5", "custom", "Custom Type")
         ]
         
         for key, ftype, description in fund_types:
             print(f"  [{key}] {ftype} - {description}")
         
         while True:
-            type_choice = input(f"\n{Colors.YELLOW}Select fund type (1-4): {Colors.ENDC}").strip()
+            type_choice = input(f"\n{Colors.YELLOW}Select fund type (1-5): {Colors.ENDC}").strip()
             
-            if type_choice in ["1", "2", "3"]:
+            if type_choice in ["1", "2", "3", "4"]:
                 new_type = [t[1] for t in fund_types if t[0] == type_choice][0]
                 break
-            elif type_choice == "4":
+            elif type_choice == "5":
                 new_type = input(f"{Colors.YELLOW}Enter custom fund type: {Colors.ENDC}").strip().lower()
                 if new_type:
                     break
                 else:
                     print_error("Custom type cannot be empty.")
             else:
-                print_error("Invalid choice. Please select 1-4.")
+                print_error("Invalid choice. Please select 1-5.")
         
         if new_type == current_type:
             print_info("Type unchanged.")
@@ -499,6 +500,14 @@ class FundUI:
             config["fund"]["tax_status"] = "tax_deferred"
         else:
             config["fund"]["tax_status"] = "taxable"
+        
+        # Add Webull-specific configuration
+        if new_type == "webull":
+            config["fund"]["webull_fx_fee"] = {
+                "enabled": True,
+                "fee_rate": 0.015,  # 1.5% FX fee
+                "description": "Webull foreign exchange fee applied to current value"
+            }
         
         # Save the updated config
         if self._save_fund_config(fund_name, config):

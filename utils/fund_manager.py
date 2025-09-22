@@ -127,8 +127,8 @@ class FundManager:
             # Try to set a default active fund
             funds = self.get_available_funds()
             if funds:
-                # Prefer "Project Chimera" if it exists, otherwise first available
-                preferred_fund = "Project Chimera" if "Project Chimera" in funds else funds[0]
+                # Use first available fund alphabetically
+                preferred_fund = funds[0]
                 self.set_active_fund(preferred_fund)
                 return preferred_fund
             return None
@@ -145,8 +145,8 @@ class FundManager:
                     # Active fund no longer exists, reset
                     funds = self.get_available_funds()
                     if funds:
-                        # Prefer "Project Chimera" if it exists, otherwise first available
-                        preferred_fund = "Project Chimera" if "Project Chimera" in funds else funds[0]
+                        # Use first available fund alphabetically
+                        preferred_fund = funds[0]
                         self.set_active_fund(preferred_fund)
                         return preferred_fund
                     return None
@@ -303,6 +303,14 @@ class FundManager:
             config["fund"]["tax_status"] = "tax_deferred"
         else:
             config["fund"]["tax_status"] = "taxable"
+        
+        # Add Webull-specific configuration
+        if fund_type.lower() == "webull":
+            config["fund"]["webull_fx_fee"] = {
+                "enabled": True,
+                "fee_rate": 0.015,  # 1.5% FX fee
+                "description": "Webull foreign exchange fee applied to current value"
+            }
         
         # Update data directory path
         config["repository"]["csv"]["data_directory"] = f"trading_data/funds/{fund_name}"

@@ -352,9 +352,9 @@ def main() -> None:
         if fund_info["exists"]:
             print_colored(f"📁 Using fund data folder: {fund_info['data_directory']}", Colors.CYAN)
         else:
-            print_colored("📁 Using fallback data folder: trading_data/funds/Project Chimera", Colors.YELLOW)
+            print_colored("📁 No active fund configured - please set up a fund first", Colors.YELLOW)
     except ImportError:
-        print_colored("📁 Using fallback data folder: trading_data/funds/Project Chimera", Colors.YELLOW)
+        print_colored("📁 Fund management not available - using legacy mode", Colors.YELLOW)
     
     # Ensure legacy directories exist for backward compatibility
     LEGACY_MY_TRADING_DIR.mkdir(exist_ok=True)
@@ -436,9 +436,13 @@ def main() -> None:
                         if fund_info["exists"] and fund_info["data_directory"]:
                             args = [fund_info["data_directory"]]
                         else:
-                            args = ["trading_data/funds/Project Chimera"]
+                            print_colored("❌ No active fund found - cannot rebuild portfolio", Colors.RED)
+                            input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+                            continue
                     except ImportError:
-                        args = ["trading_data/funds/Project Chimera"]
+                        print_colored("❌ Fund management not available - cannot rebuild portfolio", Colors.RED)
+                        input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+                        continue
                 
                 # Run the script
                 return_code = run_with_venv(script_path, args)

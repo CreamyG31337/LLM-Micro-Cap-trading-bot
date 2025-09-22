@@ -1,5 +1,6 @@
 {
   "fund": {
+    "name": "RRSP Lance Webull",
     "description": "RRSP Investment Portfolio",
     "display_currency": "CAD",
     "fund_type": "rrsp",

@@ -63,8 +63,8 @@ Examples:
     
     parser.add_argument(
         '--data-dir', '-d',
-        default='trading_data/prod',
-        help='Directory containing trading data files (default: "trading_data/prod")'
+        default='trading_data/funds/Project Chimera',
+        help='Directory containing trading data files (default: "trading_data/funds/Project Chimera")'
     )
     
     parser.add_argument(

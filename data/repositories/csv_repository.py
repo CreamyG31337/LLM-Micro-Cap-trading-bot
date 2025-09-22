@@ -27,7 +27,7 @@ class CSVRepository(BaseRepository):
     while providing the repository interface for future database migration.
     """
     
-    def __init__(self, data_directory: str = "trading_data/prod"):
+    def __init__(self, data_directory: str = "trading_data/funds/Project Chimera"):
         """Initialize CSV repository.
         
         Args:

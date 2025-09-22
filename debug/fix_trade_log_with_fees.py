@@ -12,8 +12,9 @@ def fix_trade_log_with_fees():
     """Update trade log to include Webull fees in TEST environment."""
     
     # File paths for TEST environment
-    trade_log_file = 'trading_data/funds/TEST/llm_trade_log.csv'
-    backup_file = f'trading_data/funds/TEST/llm_trade_log_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    data_dir = 'trading_data/funds/TEST'
+    trade_log_file = f'{data_dir}/llm_trade_log.csv'
+    backup_file = f'{data_dir}/llm_trade_log_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
     
     # Create backup
     shutil.copy2(trade_log_file, backup_file)

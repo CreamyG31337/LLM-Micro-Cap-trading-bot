@@ -500,7 +500,7 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
     SHARED FUNCTION: Used by both trading_script.py and prompt_generator.py
 
     Calculate 1-Day P&L for a position by comparing current_price with previous trading day's closing price.
-    
+
     For new trades (first day), we compare current price with the buy price to show intraday P&L.
     For existing positions, we compare with the previous trading day's closing price.
     This works on weekends too - showing Friday's performance on Saturday/Sunday.
@@ -513,11 +513,19 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
         str: Formatted 1-Day P&L string (e.g., "$123.45", "$0.00")
     """
     try:
+        logger.debug(f"Calculating daily P&L for {current_position.ticker}")
+        logger.debug(f"  Current position price: {current_position.current_price}")
+        logger.debug(f"  Current position shares: {current_position.shares}")
+        logger.debug(f"  Current position avg_price: {current_position.avg_price}")
+        logger.debug(f"  Number of snapshots: {len(portfolio_snapshots)}")
+
         if not portfolio_snapshots or len(portfolio_snapshots) < 1:
+            logger.debug("  No portfolio snapshots available")
             return "$0.00"
 
         current_price = current_position.current_price
         if current_price is None:
+            logger.debug("  Current position has no price data")
             return "$0.00"
 
         # Note: We always calculate P&L vs previous trading day, even on weekends
@@ -533,21 +541,28 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
             previous_snapshot = portfolio_snapshots[i]
             if any(pos.ticker == current_position.ticker for pos in previous_snapshot.positions):
                 ticker_exists_in_previous_days = True
+                logger.debug(f"  Found {current_position.ticker} in previous snapshots")
                 break
-        
+
         if not ticker_exists_in_previous_days:
+            logger.debug(f"  {current_position.ticker} is a new position")
             # This is a new trade on its first day - compare with buy price for intraday P&L
             buy_price = current_position.avg_price
+            logger.debug(f"  Buy price: {buy_price}")
             if buy_price and abs(current_price - buy_price) > 0.01:
                 daily_price_change = current_price - buy_price
                 daily_pnl_amount = daily_price_change * current_position.shares
+                logger.debug(f"  New position daily P&L: ${daily_pnl_amount:.2f}")
                 return f"${daily_pnl_amount:.2f}"
             else:
+                logger.debug("  New position: no significant price change")
                 return "$0.00"
-        
+
         # For existing positions, find the previous day's closing price
+        logger.debug(f"  Looking for previous day data for {current_position.ticker}")
         for i in range(1, len(portfolio_snapshots)):
             previous_snapshot = portfolio_snapshots[-(i+1)]
+            logger.debug(f"  Checking snapshot from {previous_snapshot.timestamp}")
 
             # Find the same ticker in previous snapshot
             prev_position = None
@@ -558,14 +573,20 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
 
             if prev_position and prev_position.current_price is not None:
                 prev_price = prev_position.current_price
+                logger.debug(f"  Found previous price: ${prev_price}")
 
                 # Calculate P&L from previous day's closing price
                 if abs(current_price - prev_price) > 0.01:  # More than 1 cent difference
                     daily_price_change = current_price - prev_price
                     daily_pnl_amount = daily_price_change * current_position.shares
+                    logger.debug(f"  Existing position daily P&L: ${daily_pnl_amount:.2f}")
                     return f"${daily_pnl_amount:.2f}"
+                else:
+                    logger.debug("  No significant price change from previous day")
+                    return "$0.00"
 
         # If no previous day data found, show $0.00
+        logger.debug("  No previous day data found")
         return "$0.00"
 
     except Exception as e:

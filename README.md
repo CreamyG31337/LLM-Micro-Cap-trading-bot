@@ -6,14 +6,14 @@ This is a personal fork focused on enhanced portfolio tracking, dual currency su
 
 ## Quick Start
 - **Getting Started Guide**: [Original Setup Instructions](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment/blob/main/Start%20Your%20Own/README.md)
-- **Run with test data**: `python trading_script.py --data-dir trading_data/dev`
-- **Production data**: Use `trading_data/prod/` folder (gitignored)
+- **Run with test data**: `python trading_script.py --data-dir "trading_data/funds/TEST"`
+- **Production data**: Use `trading_data/funds/Project Chimera/` folder
 
 ## Repository Structure
 
 - **`trading_script.py`** - Main trading engine with portfolio management and stop-loss automation
-- **`trading_data/prod/`** - **Production data folder** (gitignored) - Your real trading data
-- **`trading_data/dev/`** - **Test environment** - Safe copies for development and testing
+- **`trading_data/funds/Project Chimera/`** - **Production data folder** - Your real trading data
+- **`trading_data/funds/TEST/`** - **Test environment** - Safe copies for development and testing
 - **`Scripts and CSV Files/`** - My personal portfolio (updates every trading day)
 - **`Weekly Deep Research (MD|PDF)/`** - Research summaries and performance reports
 - **`Experiment Details/`** - Documentation, methodology, prompts, and Q&A
@@ -104,7 +104,7 @@ For the original concept, methodology, and research documentation, see the [orig
 3. **After hours**: Shows prices but doesn't save to CSV
 4. **Graphing**: Use the CSV data to generate portfolio performance charts
 
-*For performance data and results, see the CSV files in `trading_data/prod/` and `trading_data/dev/` folders.*
+*For performance data and results, see the CSV files in the fund directories under `trading_data/funds/`.*
 
 ## Tech Stack
 
@@ -197,7 +197,7 @@ The `rebuild_portfolio_from_scratch.py` script provides a complete portfolio rec
 python run.py
 
 # Direct execution with different data directories
-python debug/rebuild_portfolio_from_scratch.py trading_data/dev
+python debug/rebuild_portfolio_from_scratch.py "trading_data/funds/TEST"
 python debug/rebuild_portfolio_from_scratch.py "my trading" "US/Pacific"
 ```
 
@@ -252,8 +252,8 @@ This fork includes all the original functionality plus enhanced features for por
 
 1. **Clone this repository**
 2. **Set up your virtual environment** (see `debug/activate_venv.bat` for Windows)
-3. **Configure your data directories** (use `trading_data/dev/` for testing, `trading_data/prod/` for production)
-4. **Run the trading script** with `python trading_script.py --data-dir trading_data/dev`
+3. **Configure your fund directories** (use `trading_data/funds/TEST/` for testing, `trading_data/funds/Project Chimera/` for production)
+4. **Run the trading script** with `python trading_script.py --data-dir "trading_data/funds/TEST"`
 
 For the original setup guide and methodology, see the [original repository](https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment).
 

@@ -40,14 +40,17 @@ class CacheUI:
                 print_info(f"  {name}: {status_icon} {info['size_formatted']} ({info['file_count']} files)")
 
         # Show detailed stats
-        stats = self.cache_manager.get_cache_stats()
-        if 'price_cache' in stats and stats['price_cache']['total_entries'] > 0:
-            print_info("\n📈 Price Cache Details:")
-            price_stats = stats['price_cache']
-            print_info(f"  Entries: {price_stats['total_entries']}")
-            print_info(f"  Rows: {price_stats['total_rows']}")
-            if 'sources' in price_stats and price_stats['sources']:
-                print_info(f"  Sources: {', '.join(price_stats['sources'].keys())}")
+        try:
+            stats = self.cache_manager.get_cache_stats()
+            if 'price_cache' in stats and stats['price_cache'].get('total_entries', 0) > 0:
+                print_info("\n📈 Price Cache Details:")
+                price_stats = stats['price_cache']
+                print_info(f"  Entries: {price_stats.get('total_entries', 0)}")
+                print_info(f"  Rows: {price_stats.get('total_rows', 0)}")
+                if 'sources' in price_stats and price_stats['sources']:
+                    print_info(f"  Sources: {', '.join(price_stats['sources'].keys())}")
+        except Exception as e:
+            print_warning(f"Could not retrieve detailed cache stats: {e}")
 
     def show_cache_menu(self) -> None:
         """Display cache management menu."""

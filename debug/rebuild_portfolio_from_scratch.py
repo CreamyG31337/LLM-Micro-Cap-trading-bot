@@ -126,6 +126,20 @@ PRICE_CACHE = PriceCache()  # In-memory price cache to avoid redundant API calls
 FETCHER = MarketDataFetcher(cache_instance=PRICE_CACHE)  # Fetcher uses the cache
 MARKET_HOURS = MarketHours()  # For weekend detection
 
+# Set up currency cache for proper CAD/USD detection
+def setup_currency_cache(tickers):
+    """Set up currency cache for MarketDataFetcher to use correct exchanges"""
+    currency_cache = {}
+    for ticker in tickers:
+        if ticker.endswith(('.TO', '.V', '.CN', '.TSX')):
+            currency_cache[ticker] = 'CAD'
+        else:
+            currency_cache[ticker] = 'USD'
+    
+    # Set the currency cache on the fetcher
+    FETCHER._portfolio_currency_cache = currency_cache
+    return currency_cache
+
 # REMOVED: TICKER_CORRECTION_CACHE - now using MarketDataFetcher's currency-based logic
 
 # REMOVED: Old ticker correction functions - now using MarketDataFetcher's currency-based logic
@@ -219,7 +233,7 @@ def get_historical_close_price(ticker: str, date_str: str, trade_price: float = 
     except Exception:
         return 0.0
 
-def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone_str: str = None):
+def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", timezone_str: str = None):
     """
     Completely rebuild portfolio CSV from trade log with full recalculation.
     
@@ -316,6 +330,10 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         # Get all unique tickers for fast price fetching
         unique_tickers = trade_df['Ticker'].unique()
         print(f"📈 Found {len(unique_tickers)} unique tickers")
+        
+        # Set up currency cache for proper exchange selection
+        setup_currency_cache(unique_tickers)
+        print(f"💰 Set up currency cache for {len(unique_tickers)} tickers")
         
         # Fetch ALL prices for ALL tickers in parallel (fast approach)
         print(f"🌐 Fetching current prices for all {len(unique_tickers)} tickers in parallel...")
@@ -613,7 +631,12 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
         
         # Now generate HOLD entries efficiently (ONE PER DAY PER TICKER)
         hold_entries_added = 0
-        for hold_date in all_dates:
+        total_hold_dates = len(all_dates)
+        print(f"   Generating HOLD entries for {total_hold_dates} dates...")
+        
+        for date_idx, hold_date in enumerate(all_dates):
+            if date_idx % 5 == 0:  # Status update every 5 dates
+                print(f"   Processing date {date_idx + 1}/{total_hold_dates}: {hold_date}")
             from utils.timezone_utils import parse_csv_timestamp
             hold_date_obj = parse_csv_timestamp(hold_date)
             if not hold_date_obj:
@@ -636,28 +659,28 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                     if ticker in traded_tickers_on_date:
                         continue
                     
-                    # Use pre-fetched current price (fast approach)
-                    price_value = ticker_prices.get(ticker, 0.0)
+                    # Set HOLD entries timestamp based on market status
+                    tz = pytz.timezone(timezone_str)
+                    if hold_date_obj.tzinfo is None:
+                        hold_date_obj_tz = tz.localize(hold_date_obj)
+                    else:
+                        hold_date_obj_tz = hold_date_obj.astimezone(tz)
+                    
+                    if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
+                        hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+                    else:
+                        close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
+                        timezone_abbr = hold_date_obj_tz.strftime('%Z')
+                        hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
+                    
+                    # Use historical price for this specific date
+                    price_value = get_historical_close_price(ticker, hold_date_str)
                     
                     if price_value > 0:
                         current_price_decimal = Decimal(str(price_value))
                         avg_price = position['cost'] / position['shares']
                         total_value = position['shares'] * current_price_decimal
                         unrealized_pnl = (current_price_decimal - avg_price) * position['shares']
-                        
-                        # Set HOLD entries timestamp based on market status
-                        tz = pytz.timezone(timezone_str)
-                        if hold_date_obj.tzinfo is None:
-                            hold_date_obj_tz = tz.localize(hold_date_obj)
-                        else:
-                            hold_date_obj_tz = hold_date_obj.astimezone(tz)
-                        
-                        if hold_date_obj_tz.date() == current_time.date() and current_time.hour < market_close_hour:
-                            hold_date_str = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
-                        else:
-                            close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
-                            timezone_abbr = hold_date_obj_tz.strftime('%Z')
-                            hold_date_str = f"{date_str} {close_hour:02d}:00:00 {timezone_abbr}"
                         
                         portfolio_entries.append({
                             'Date': hold_date_str,
@@ -674,6 +697,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/prod", timezone
                             'Currency': ticker_currencies[ticker]
                         })
                         hold_entries_added += 1
+                        
+                        if hold_entries_added % 50 == 0:  # Status update every 50 entries
+                            print(f"   Added {hold_entries_added} HOLD entries so far...")
         
         print(f"   Added {hold_entries_added} HOLD entries (ONE PER DAY PER TICKER)")
         
@@ -742,7 +768,7 @@ def get_currency(ticker: str) -> str:
         # Load currency from trade log (source of truth)
         import pandas as pd
         
-        trade_log_file = 'trading_data/funds/TEST/llm_trade_log.csv'
+        trade_log_file = f'{data_dir}/llm_trade_log.csv'
         try:
             df = pd.read_csv(trade_log_file)
             if 'Ticker' in df.columns and 'Currency' in df.columns:
@@ -768,7 +794,7 @@ def get_currency(ticker: str) -> str:
 def main():
     """Main function to rebuild portfolio from scratch"""
     # Check if data directory argument provided
-    data_dir = "trading_data/prod"
+    data_dir = "trading_data/funds/TEST"
     timezone_str = None
     
     if len(sys.argv) > 1:

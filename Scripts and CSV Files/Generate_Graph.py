@@ -133,7 +133,7 @@ else:
         for i, loc in enumerate(search_locations, 1):
             print(f"   {i}. {loc}")
         print("\n💡 Try specifying the data directory with --data-dir argument")
-        print("   Example: python Generate_Graph.py --data-dir 'trading_data/prod'")
+        print("   Example: python Generate_Graph.py --data-dir 'trading_data/funds/Project Chimera'")
         sys.exit(1)
 
 # Extract fund name from data directory path (use actual fund name, NO FALLBACKS)
@@ -611,41 +611,61 @@ def refresh_portfolio_data(data_dir_path):
         price_cache = PriceCache()
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
-        # Get current portfolio and refresh prices
-        latest_snapshot = portfolio_manager.get_latest_portfolio()
-        if latest_snapshot and latest_snapshot.positions:
-            print(f"{_safe_emoji('💰')} Refreshing prices for {len(latest_snapshot.positions)} positions...")
+        # Check for missing trading days and update if needed
+        from market_data.market_hours import MarketHours
+        from utils.missing_trading_days import MissingTradingDayDetector
+        
+        market_hours = MarketHours(settings=settings)
+        detector = MissingTradingDayDetector(market_hours, portfolio_manager)
+        
+        # Check if we should skip due to non-trading day
+        should_skip, skip_reason = detector.should_skip_due_to_non_trading_day()
+        if should_skip:
+            print(f"{_safe_emoji('ℹ️')} {skip_reason}")
+            return
+        
+        # Check for missing trading days
+        needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
+        if needs_update:
+            print(f"{_safe_emoji('🔄')} {detector.get_update_reason()}")
             
-            # Update prices for all positions
-            updated_positions = []
-            for position in latest_snapshot.positions:
-                try:
-                    current_price = market_data_fetcher.get_current_price(position.ticker)
-                    if current_price:
-                        # Update position with current market data
-                        position.current_price = current_price
-                        position.market_value = current_price * position.shares
-                        position.unrealized_pnl = position.market_value - position.cost_basis
-                        updated_positions.append(position)
-                        print(f"{_safe_emoji('✅')} {position.ticker}: ${current_price:.2f}")
-                    else:
-                        print(f"{_safe_emoji('⚠️')}  {position.ticker}: Could not fetch current price")
-                        updated_positions.append(position)  # Keep existing data
-                except Exception as e:
-                    print(f"{_safe_emoji('⚠️')}  {position.ticker}: Error fetching price - {e}")
-                    updated_positions.append(position)  # Keep existing data
-            
-            # Save updated snapshot
-            if updated_positions:
-                from datetime import datetime
-                updated_snapshot = latest_snapshot
-                updated_snapshot.positions = updated_positions
-                updated_snapshot.timestamp = datetime.now()
+            # Get current portfolio and refresh prices
+            latest_snapshot = portfolio_manager.get_latest_portfolio()
+            if latest_snapshot and latest_snapshot.positions:
+                print(f"{_safe_emoji('💰')} Refreshing prices for {len(latest_snapshot.positions)} positions...")
                 
-                portfolio_manager.save_snapshot(updated_snapshot)
-                print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully")
+                # Update prices for all positions
+                updated_positions = []
+                for position in latest_snapshot.positions:
+                    try:
+                        current_price = market_data_fetcher.get_current_price(position.ticker)
+                        if current_price:
+                            # Update position with current market data
+                            position.current_price = current_price
+                            position.market_value = current_price * position.shares
+                            position.unrealized_pnl = position.market_value - position.cost_basis
+                            updated_positions.append(position)
+                            print(f"{_safe_emoji('✅')} {position.ticker}: ${current_price:.2f}")
+                        else:
+                            print(f"{_safe_emoji('⚠️')}  {position.ticker}: Could not fetch current price")
+                            updated_positions.append(position)  # Keep existing data
+                    except Exception as e:
+                        print(f"{_safe_emoji('⚠️')}  {position.ticker}: Error fetching price - {e}")
+                        updated_positions.append(position)  # Keep existing data
+                
+                # Save updated snapshot
+                if updated_positions:
+                    from datetime import datetime
+                    updated_snapshot = latest_snapshot
+                    updated_snapshot.positions = updated_positions
+                    updated_snapshot.timestamp = datetime.now()
+                    
+                    portfolio_manager.save_snapshot(updated_snapshot)
+                    print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully")
+            else:
+                print(f"{_safe_emoji('⚠️')}  No portfolio positions found to refresh")
         else:
-            print(f"{_safe_emoji('⚠️')}  No portfolio positions found to refresh")
+            print(f"{_safe_emoji('ℹ️')} {detector.get_update_reason()}")
             
     except Exception as e:
         print(f"{_safe_emoji('⚠️')}  Failed to refresh portfolio data: {e}")

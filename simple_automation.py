@@ -190,7 +190,7 @@ def execute_automated_trades(trades: List[Dict[str, Any]], portfolio_df: pd.Data
     return portfolio_df, cash
 
 
-def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "trading_data/prod", dry_run: bool = False):
+def run_automated_trading(api_key: str, model: str = "gpt-4", data_dir: str = "trading_data/funds/Project Chimera", dry_run: bool = False):
     """Run the automated trading process"""
     
     print("=== Automated Trading System ===")
@@ -267,7 +267,7 @@ def main():
     parser = argparse.ArgumentParser(description="Simple Automated Trading")
     parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)")
     parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
-    parser.add_argument("--data-dir", default="trading_data/prod", help="Data directory (default: trading_data/prod)")
+    parser.add_argument("--data-dir", default="trading_data/funds/Project Chimera", help="Data directory (default: trading_data/funds/Project Chimera)")
     parser.add_argument("--dry-run", action="store_true", help="Don't execute trades, just show recommendations")
     
     args = parser.parse_args()

@@ -6,8 +6,8 @@
   ```bash
   .\venv\Scripts\activate
   ```
-- **Use trading_data/dev directory** for development (not "trading_data/prod" which is production)
-- **Copy CSVs from prod to dev** anytime: Copy files from `trading_data/prod/` to `trading_data/dev/` for testing
+- **Use trading_data/funds/TEST directory** for development (not "trading_data/funds/Project Chimera" which is production)
+- **Copy CSVs between funds** anytime: Copy files from `trading_data/funds/Project Chimera/` to `trading_data/funds/TEST/` for testing
 
 ## Build/Lint/Test Commands
 
@@ -39,7 +39,7 @@ python run_tests.py
 
 ### Development Mode
 ```bash
-python dev_run.py --data-dir "trading_data/dev"
+python dev_run.py --data-dir "trading_data/funds/TEST"
 ```
 
 ## Committing Code

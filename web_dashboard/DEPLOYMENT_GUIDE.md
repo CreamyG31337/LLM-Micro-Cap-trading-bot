@@ -5,7 +5,7 @@ This guide will help you deploy your trading bot's portfolio dashboard to share 
 ## 📋 Prerequisites
 
 1. **GitHub Account** - For hosting your code
-2. **Trading Data** - Your CSV files in `trading_data/prod/`
+2. **Trading Data** - Your CSV files in `trading_data/funds/Project Chimera/`
 3. **Python 3.11+** - For local development
 
 ## 🎯 Quick Start Options

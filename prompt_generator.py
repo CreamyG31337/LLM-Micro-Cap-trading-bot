@@ -657,9 +657,13 @@ class PromptGenerator:
                 else:
                     current_price_cell_colored = f"{Fore.YELLOW}{current_price_cell}{Style.RESET_ALL}"
 
-            # Apply colors to other columns
+            # Apply colors to other columns - color ticker by currency
+            # Blue for USD, Cyan for CAD (consistent with other parts of system)
+            currency = row.get('currency', 'CAD')  # Default to CAD if not specified
+            ticker_color = Fore.BLUE if currency == 'USD' else Fore.CYAN
+            
             line = (
-                f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} "
+                f"{ticker_color}{ticker_cell}{Style.RESET_ALL} "
                 f"{company_cell} "
                 f"{Fore.BLUE}{opened_cell}{Style.RESET_ALL} "
                 f"{shares_cell} "
@@ -674,13 +678,22 @@ class PromptGenerator:
         
         return "\n".join(lines)
     
-    def _format_fundamentals_table(self, portfolio_tickers: List[str]) -> str:
+    def _format_fundamentals_table(self, portfolio_tickers: List[str], portfolio_df: pd.DataFrame = None) -> str:
         """Format fundamentals data table for portfolio tickers
         
         Returns formatted table with sector, industry, country, market cap, P/E, dividend yield
         """
         if not portfolio_tickers:
             return "No holdings to display fundamentals"
+        
+        # Cache currency lookup for performance - build once, use for all tickers
+        currency_lookup = {}
+        if portfolio_df is not None and not portfolio_df.empty:
+            for _, row in portfolio_df.iterrows():
+                ticker = row.get('ticker')
+                currency = row.get('currency', 'USD')
+                if ticker:
+                    currency_lookup[ticker] = currency
             
         lines = []
         # Header row only (section title printed above)
@@ -693,6 +706,7 @@ class PromptGenerator:
         
         for ticker in portfolio_tickers:
             try:
+                
                 fundamentals = self.market_data_fetcher.fetch_fundamentals(ticker)
                 
                 # Format each field with proper truncation/padding
@@ -706,9 +720,14 @@ class PromptGenerator:
                 high_52w_cell = f"{str(fundamentals.get('fiftyTwoWeekHigh', 'N/A')):<10}"
                 low_52w_cell = f"{str(fundamentals.get('fiftyTwoWeekLow', 'N/A')):<10}"
                 
+                # Determine ticker color based on currency (consistent with portfolio table)
+                # Use cached currency lookup for performance
+                currency = currency_lookup.get(ticker, 'USD')  # Default to USD if not found
+                ticker_color = Fore.BLUE if currency == 'USD' else Fore.CYAN
+                
                 # Build colored line
                 line = (
-                    f"{Fore.CYAN}{ticker_cell}{Style.RESET_ALL} "
+                    f"{ticker_color}{ticker_cell}{Style.RESET_ALL} "
                     f"{sector_cell} "
                     f"{industry_cell} "
                     f"{Fore.BLUE}{country_cell}{Style.RESET_ALL} "
@@ -873,7 +892,7 @@ class PromptGenerator:
         
         # Company fundamentals
         portfolio_data_parts.append(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
-        portfolio_data_parts.append(self._format_fundamentals_table(portfolio_tickers))
+        portfolio_data_parts.append(self._format_fundamentals_table(portfolio_tickers, llm_portfolio))
             
         # Financial summary
         portfolio_data_parts.append(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
@@ -1040,7 +1059,7 @@ class PromptGenerator:
         portfolio_tables.append(f"\n{Fore.CYAN}Current Portfolio State{Style.RESET_ALL}")
         portfolio_tables.append(self._format_portfolio_table(llm_portfolio, sort_by="value"))
         portfolio_tables.append(f"\n{Fore.CYAN}[ Company Fundamentals ]{Style.RESET_ALL}")
-        portfolio_tables.append(self._format_fundamentals_table(portfolio_tickers))
+        portfolio_tables.append(self._format_fundamentals_table(portfolio_tickers, llm_portfolio))
         portfolio_tables.append(f"\n{Fore.CYAN}[ Fund Performance Summary ]{Style.RESET_ALL}")
         
         portfolio_tables.append(f"{Fore.GREEN}Portfolio Value:{Style.RESET_ALL} ${financial_data['total_portfolio_value']:,.2f}")
@@ -1178,13 +1197,82 @@ def generate_weekly_research_prompt(data_dir: Path | str | None = None) -> None:
     generator.generate_weekly_research_prompt()
 
 
+def show_prompt_menu(args) -> None:
+    """Show a small menu after generating the prompt with options to refresh or exit."""
+    while True:
+        print("\n" + "="*50)
+        print("📋 Prompt Generator Options")
+        print("="*50)
+        print("[1] 🔄 Refresh (Clear Market Data Cache & Reload)")
+        print("[Enter] 🚺 Exit")
+        
+        try:
+            choice = input("\n❓ Select option (1 or Enter): ").strip()
+            
+            if choice == "1":
+                # Clear cache and regenerate
+                print("\n🔄 Clearing prompt screen caches and reloading...")
+                
+                # Clear only caches used by prompt generation (scoped clearing)
+                cleared_caches = []
+                
+                # Clear price cache (market data used by prompt screen)
+                try:
+                    from market_data.price_cache import PriceCache
+                    price_cache = PriceCache()
+                    price_cache.invalidate_all()
+                    cleared_caches.append("Price cache")
+                except Exception as e:
+                    print(f"⚠️  Failed to clear price cache: {e}")
+                
+                # Clear exchange rate cache (currency conversion)
+                try:
+                    from financial.currency_handler import CurrencyHandler
+                    from pathlib import Path
+                    currency_handler = CurrencyHandler(data_dir=Path(args.data_dir if hasattr(args, 'data_dir') and args.data_dir else 'trading_data/funds/TEST'))
+                    currency_handler.clear_exchange_rate_cache()
+                    cleared_caches.append("Exchange rate cache")
+                except Exception as e:
+                    print(f"⚠️  Failed to clear exchange rate cache: {e}")
+                
+                # Show results
+                if cleared_caches:
+                    print(f"✅ Cleared {len(cleared_caches)} cache types: {', '.join(cleared_caches)}")
+                    print("ℹ️  Fundamentals and other unrelated caches preserved")
+                else:
+                    print("⚠️  No caches were successfully cleared")
+                
+                # Regenerate the prompt
+                print("\n🔄 Regenerating prompt...")
+                print("\n" + "="*80)
+                if args.type == "daily":
+                    generate_daily_prompt(args.data_dir)
+                elif args.type == "weekly":
+                    generate_weekly_research_prompt(args.data_dir)
+                print("\n✅ Prompt refreshed successfully!")
+                
+            elif choice == "" or choice.lower() in ["exit", "quit", "q"]:
+                print("\n👋 Exiting prompt generator...")
+                break
+            else:
+                print("❌ Invalid choice. Please select 1 or press Enter to exit.")
+                
+        except KeyboardInterrupt:
+            print("\n\n👋 Goodbye!")
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+
 if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Generate LLM trading prompts")
     parser.add_argument("--type", choices=["daily", "weekly"], default="daily",
                        help="Type of prompt to generate (default: daily)")
-    parser.add_argument("--data-dir", help="Data directory (default: trading_data/prod)")
+    parser.add_argument("--data-dir", help="Data directory (default: trading_data/funds/Project Chimera)")
+    parser.add_argument("--no-menu", action="store_true", 
+                       help="Generate prompt and exit without showing menu")
     
     args = parser.parse_args()
     
@@ -1192,7 +1280,13 @@ if __name__ == "__main__":
     from display.console_output import print_environment_banner
     print_environment_banner(args.data_dir)
     
+    # Generate initial prompt
     if args.type == "daily":
         generate_daily_prompt(args.data_dir)
     elif args.type == "weekly":
         generate_weekly_research_prompt(args.data_dir)
+    
+    # Show menu unless --no-menu flag is used
+    if not args.no_menu:
+        print("\n" + "="*80)  # Visual separator between prompt and menu
+        show_prompt_menu(args)

@@ -4,126 +4,115 @@
     "description": "This file overrides fundamental data fetched from APIs when the data is incorrect or misleading",
     "usage": "Data here takes precedence over API responses. Only include fields that need correction.",
     "supported_fields": [
-      "sector", "industry", "country", "marketCap", "trailingPE", 
-      "dividendYield", "fiftyTwoWeekHigh", "fiftyTwoWeekLow"
+      "sector",
+      "industry",
+      "country",
+      "marketCap",
+      "trailingPE",
+      "dividendYield",
+      "fiftyTwoWeekHigh",
+      "fiftyTwoWeekLow"
     ],
     "country_guidelines": "Use descriptive 8-letter max abbreviations that help LLM understand geographic exposure"
   },
-  
   "VEE.TO": {
     "sector": "Emerging Markets",
     "industry": "International Equity ETF",
     "country": "Emerging",
     "description_note": "Emerging markets ETF with exposure to China, India, Taiwan, Brazil, Middle East, Mexico - NOT Canadian stocks despite being listed on TSX"
   },
-  
   "XMA.TO": {
     "sector": "Materials",
-    "industry": "Canadian Materials ETF", 
+    "industry": "Canadian Materials ETF",
     "country": "Canada",
     "description_note": "TSX-listed materials sector ETF focused on Canadian mining, forestry, and commodity companies"
   },
-
   "GMIN.TO": {
     "country": "Global",
     "description_note": "Mining company with global operations - not just Canada despite TSX listing"
   },
-
   "WEB.V": {
     "sector": "Renewable Energy",
     "industry": "Clean Energy Development",
-    "country": "Canada", 
+    "country": "Canada",
     "description_note": "Canadian renewable energy developer"
   },
-
   "SMH": {
     "sector": "Technology",
     "industry": "Semiconductor ETF",
     "country": "Global",
     "description_note": "Global semiconductor ETF with heavy exposure to Taiwan, South Korea, US chip companies"
   },
-
   "URNM": {
     "sector": "Energy",
     "industry": "Uranium Mining ETF",
     "country": "Global",
     "description_note": "Global uranium mining ETF with exposure to Kazakhstan, Canada, Australia, Africa"
   },
-
   "URNJ": {
     "sector": "Energy",
     "industry": "Junior Uranium ETF",
     "country": "Global",
     "description_note": "Global junior uranium miners ETF - smaller cap uranium exploration companies worldwide"
   },
-
   "ATRL": {
     "sector": "Fixed Income",
     "industry": "Canadian Bond ETF",
     "country": "Canada",
     "description_note": "Purpose Total Return Bond Fund - Canadian fixed income ETF tracking investment grade bonds"
   },
-
   "CGL": {
     "sector": "Materials",
     "industry": "Gold ETF",
     "country": "Global",
     "description_note": "iShares Gold Bullion ETF - provides exposure to physical gold bullion"
   },
-
   "VFV": {
     "sector": "Large Cap",
     "industry": "US Equity ETF",
     "country": "USA",
     "description_note": "Vanguard S&P 500 Index ETF (CAD-hedged) - tracks S&P 500 with currency hedging"
   },
-
   "XEQT": {
     "sector": "Large Cap",
     "industry": "Global Equity ETF",
     "country": "Global",
     "description_note": "iShares Core Equity ETF Portfolio - diversified global equity exposure"
   },
-
   "XGD": {
     "sector": "Materials",
     "industry": "Gold ETF",
     "country": "Global",
     "description_note": "iShares S&P/TSX Global Gold Index ETF - tracks global gold mining companies"
   },
-
   "XHAK": {
     "sector": "Technology",
     "industry": "Cybersecurity ETF",
     "country": "Global",
     "description_note": "iShares Cybersecurity and Tech ETF - exposure to cybersecurity and technology companies"
   },
-
   "XHC": {
     "sector": "Healthcare",
     "industry": "Healthcare ETF",
     "country": "Global",
     "description_note": "iShares Global Healthcare Index ETF - tracks global healthcare companies"
   },
-
   "XIC": {
     "sector": "Large Cap",
     "industry": "Canadian Equity ETF",
     "country": "Canada",
     "description_note": "iShares Core S&P/TSX Capped Composite Index ETF - tracks Canadian large cap stocks"
   },
-
   "ZEA": {
     "sector": "Financials",
     "industry": "Canadian Banks ETF",
     "country": "Canada",
     "description_note": "BMO S&P/TSX Equal Weight Banks Index ETF - equal-weighted Canadian bank stocks"
   },
-
   "_examples": {
     "EXAMPLE.TO": {
       "sector": "Example Sector",
-      "industry": "Example Industry", 
+      "industry": "Example Industry",
       "country": "Example",
       "marketCap": "1.5B",
       "trailingPE": "25.3",
@@ -132,5 +121,11 @@
       "fiftyTwoWeekLow": "30.00",
       "description_note": "This is an example entry showing all possible override fields"
     }
+  },
+  "DOL.TO": {
+    "sector": "Consumer Defensive",
+    "industry": "Discount Stores",
+    "country": "Canada",
+    "description_note": "Dollarama Inc. - Canadian discount retail chain"
   }
 }

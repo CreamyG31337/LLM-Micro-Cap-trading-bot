@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # Load the data and analyze cash flows vs performance
-df = pd.read_csv('trading_data/prod/llm_portfolio_update.csv')
+df = pd.read_csv('trading_data/funds/Project Chimera/llm_portfolio_update.csv')
 print('📊 Analyzing Portfolio Cash Flows vs Returns')
 print('=' * 50)
 

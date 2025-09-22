@@ -492,7 +492,7 @@ def main():
     Main function with command line interface.
     """
     parser = argparse.ArgumentParser(description='Correct inaccurate prices in portfolio CSV')
-    parser.add_argument('--data-dir', default='my trading', 
+    parser.add_argument('--data-dir', default='trading_data/funds/TEST', 
                        help='Data directory containing portfolio CSV')
     parser.add_argument('--analyze-only', action='store_true',
                        help='Only analyze prices without making corrections')

@@ -384,7 +384,7 @@ def is_duplicate_trade(trade: Trade, repository) -> bool:
         return False
 
 
-def add_trade_from_email(email_text: str, data_dir: str = "trading_data/prod") -> bool:
+def add_trade_from_email(email_text: str, data_dir: str = "trading_data/funds/Project Chimera") -> bool:
     """Parse email text and add the trade to the trading system.
 
     Args:

@@ -127,5 +127,125 @@
     "industry": "Discount Stores",
     "country": "Canada",
     "description_note": "Dollarama Inc. - Canadian discount retail chain"
+  },
+  "VFV.TO": {
+    "sector": "Large Cap",
+    "industry": "US Equity ETF",
+    "country": "USA",
+    "description_note": "Vanguard S&P 500 Index ETF (CAD-hedged) - tracks S&P 500 with currency hedging"
+  },
+  "VOO": {
+    "sector": "Large Cap",
+    "industry": "US Equity ETF", 
+    "country": "USA",
+    "description_note": "Vanguard S&P 500 ETF - tracks S&P 500 index with low expense ratio"
+  },
+  "VTI": {
+    "sector": "Large Cap",
+    "industry": "US Total Market ETF",
+    "country": "USA", 
+    "description_note": "Vanguard Total Stock Market ETF - tracks entire US equity market"
+  },
+  "XEQT.TO": {
+    "sector": "Large Cap",
+    "industry": "Global Equity ETF",
+    "country": "Global",
+    "description_note": "iShares Core Equity ETF Portfolio - diversified global equity exposure"
+  },
+  "XGD.TO": {
+    "sector": "Materials",
+    "industry": "Gold ETF",
+    "country": "Global",
+    "description_note": "iShares S&P/TSX Global Gold Index ETF - tracks global gold mining companies"
+  },
+  "XHAK.TO": {
+    "sector": "Technology",
+    "industry": "Cybersecurity ETF",
+    "country": "Global",
+    "description_note": "iShares Cybersecurity and Tech ETF - exposure to cybersecurity and technology companies"
+  },
+  "XHC.TO": {
+    "sector": "Healthcare",
+    "industry": "Healthcare ETF",
+    "country": "Global",
+    "description_note": "iShares Global Healthcare Index ETF - tracks global healthcare companies"
+  },
+  "XIC.TO": {
+    "sector": "Large Cap",
+    "industry": "Canadian Equity ETF",
+    "country": "Canada",
+    "description_note": "iShares Core S&P/TSX Capped Composite Index ETF - tracks Canadian large cap stocks"
+  },
+  "ZEA.TO": {
+    "sector": "Financials",
+    "industry": "Canadian Banks ETF",
+    "country": "Canada",
+    "description_note": "BMO S&P/TSX Equal Weight Banks Index ETF - equal-weighted Canadian bank stocks"
+  },
+  "FTXL": {
+    "sector": "Technology",
+    "industry": "Tech Leverage ETF",
+    "country": "USA",
+    "description_note": "First Trust Nasdaq Semiconductor ETF - leveraged technology exposure"
+  },
+  "FXD": {
+    "sector": "Consumer Staples",
+    "industry": "Consumer Staples ETF",
+    "country": "USA",
+    "description_note": "First Trust Consumer Staples AlphaDEX Fund - consumer staples sector exposure"
+  },
+  "FXG": {
+    "sector": "Consumer Discretionary",
+    "industry": "Consumer Discretionary ETF",
+    "country": "USA",
+    "description_note": "First Trust Consumer Discretionary AlphaDEX Fund - consumer discretionary exposure"
+  },
+  "FXL": {
+    "sector": "Technology",
+    "industry": "Technology ETF",
+    "country": "USA",
+    "description_note": "First Trust Technology AlphaDEX Fund - technology sector exposure"
+  },
+  "BUG": {
+    "sector": "Technology",
+    "industry": "Cybersecurity ETF",
+    "country": "USA",
+    "description_note": "Global X Cybersecurity ETF - global cybersecurity companies"
+  },
+  "CGL.TO": {
+    "sector": "Materials",
+    "industry": "Gold ETF",
+    "country": "Global",
+    "description_note": "iShares Gold Bullion ETF - provides exposure to physical gold bullion"
+  },
+  "CIBR": {
+    "sector": "Technology",
+    "industry": "Cybersecurity ETF",
+    "country": "USA",
+    "description_note": "First Trust NASDAQ Cybersecurity ETF - cybersecurity and technology companies"
+  },
+  "GLCC.TO": {
+    "sector": "Materials",
+    "industry": "Commodities ETF",
+    "country": "Global",
+    "description_note": "Global X Copper Miners ETF - global copper mining companies"
+  },
+  "ITA": {
+    "sector": "Industrials",
+    "industry": "Aerospace & Defense ETF",
+    "country": "USA",
+    "description_note": "iShares U.S. Aerospace & Defense ETF - aerospace and defense industry exposure"
+  },
+  "NXTG.TO": {
+    "sector": "Technology",
+    "industry": "Next Gen Tech ETF",
+    "country": "Global",
+    "description_note": "First Trust Indxx NextG ETF - next generation technology companies"
+  },
+  "ROBO": {
+    "sector": "Technology",
+    "industry": "Robotics & AI ETF",
+    "country": "Global",
+    "description_note": "ROBO Global Robotics and Automation Index ETF - robotics and automation companies"
   }
 }

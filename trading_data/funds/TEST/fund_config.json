@@ -1,10 +1,16 @@
 {
   "fund": {
+    "name": "Test Fund",
     "description": "Testing and Development Fund - ISOLATED",
     "display_currency": "CAD",
-    "fund_type": "test",
+    "fund_type": "webull",
     "created_date": "2025-09-21T00:39:00.000000",
-    "tax_status": "test"
+    "tax_status": "taxable",
+    "webull_fx_fee": {
+      "enabled": true,
+      "fee_rate": 0.015,
+      "description": "Webull foreign exchange fee applied to current value"
+    }
   },
   "repository": {
     "type": "csv"

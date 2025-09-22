@@ -898,6 +898,14 @@ class TableFormatter:
         
         # Portfolio Value Section
         financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}", style="on grey11")
+        
+        # Webull FX Fee (if applicable)
+        webull_fx_fee = summary_data.get('webull_fx_fee', 0)
+        if webull_fx_fee > 0:
+            financial_table.add_row("   • Webull FX Fee (1.5%)", f"-${webull_fx_fee:,.2f}", style="red")
+            net_after_fee = total_value - webull_fx_fee
+            financial_table.add_row("   • Net Portfolio After FX Fee", f"${net_after_fee:,.2f}", style="on grey11")
+        
         # Cash details (if present in summary_data)
         cad_cash = summary_data.get('cad_cash', None)
         usd_cash = summary_data.get('usd_cash', None)
@@ -916,13 +924,21 @@ class TableFormatter:
                 financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD", style="blue")
             if cad_holdings_total_cad is not None:
                 financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="cyan on grey11")
-            # Estimated FX fee on USD holdings (simple)
-            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
+            # Estimated FX fee on USD holdings (simple) - only show if not a Webull fund
+            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0 and webull_fx_fee == 0:
                 approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
-                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="red")
+                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="dim")
         else:
             financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        
+        # Recalculate total_equity with webull_fx_fee for display
+        net_equity = total_equity - webull_fx_fee
+        
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
+        # Show net equity after FX fee if applicable
+        if webull_fx_fee and webull_fx_fee > 0:
+            net_equity_after_fee = total_equity - webull_fx_fee
+            financial_table.add_row("   • Net Equity After FX Fee", f"[bold]${net_equity_after_fee:,.2f}[/bold]")
 
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
@@ -962,7 +978,7 @@ class TableFormatter:
 
         # Calculate and display overall performance
         if total_contributions > 0:
-            net_pnl_vs_contrib = (total_equity - total_contributions)
+            net_pnl_vs_contrib = (net_equity - total_contributions)
             # Row 5 (odd): Net P&L vs Contributions - should have grey background + pnl color
             net_pnl_style = get_combined_pnl_style_unified(net_pnl_vs_contrib, True)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",
@@ -1007,6 +1023,14 @@ class TableFormatter:
         
         # Portfolio Value Section
         financial_table.add_row("📊 Current Portfolio Value", f"${total_value:,.2f}", style="on grey11")
+        
+        # Webull FX Fee (if applicable)
+        webull_fx_fee = summary_data.get('webull_fx_fee', 0)
+        if webull_fx_fee > 0:
+            financial_table.add_row("   • Webull FX Fee (1.5%)", f"-${webull_fx_fee:,.2f}", style="red")
+            net_after_fee = total_value - webull_fx_fee
+            financial_table.add_row("   • Net Portfolio After FX Fee", f"${net_after_fee:,.2f}", style="on grey11")
+        
         # Cash details (if present in summary_data)
         cad_cash = summary_data.get('cad_cash', None)
         usd_cash = summary_data.get('usd_cash', None)
@@ -1025,13 +1049,21 @@ class TableFormatter:
                 financial_table.add_row("   • Total USD (cash+positions)", f"${usd_holdings_total_usd:,.2f} USD", style="blue")
             if cad_holdings_total_cad is not None:
                 financial_table.add_row("   • Total CAD (cash+positions)", f"${cad_holdings_total_cad:,.2f} CAD", style="cyan on grey11")
-            # Estimated FX fee on USD holdings (simple)
-            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0:
+            # Estimated FX fee on USD holdings (simple) - only show if not a Webull fund
+            if estimated_fx_fee_total_usd and estimated_fx_fee_total_usd > 0 and webull_fx_fee == 0:
                 approx_cad = f" (≈ ${estimated_fx_fee_total_cad:,.2f} CAD)" if estimated_fx_fee_total_cad is not None else ""
-                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="red")
+                financial_table.add_row("   • Est. USD FX fee on USD holdings (1.5%)", f"-${estimated_fx_fee_total_usd:,.2f} USD{approx_cad}", style="dim")
         else:
             financial_table.add_row("💰 Cash Balance", f"${cash:,.2f}")
+        
+        # Recalculate total_equity with webull_fx_fee for display
+        net_equity = total_equity - webull_fx_fee
+        
         financial_table.add_row("🏦 Total Equity", f"[bold]${total_equity:,.2f}[/bold]", style="on grey11")
+        # Show net equity after FX fee if applicable
+        if webull_fx_fee and webull_fx_fee > 0:
+            net_equity_after_fee = total_equity - webull_fx_fee
+            financial_table.add_row("   • Net Equity After FX Fee", f"[bold]${net_equity_after_fee:,.2f}[/bold]")
 
         # Investment Performance Section
         financial_table.add_row("💵 Total Contributions", f"${total_contributions:,.2f}")
@@ -1076,7 +1108,7 @@ class TableFormatter:
 
         # Calculate and display performance versus contributions (investor view)
         if total_contributions > 0:
-            net_pnl_vs_contrib = (total_equity - total_contributions)
+            net_pnl_vs_contrib = (net_equity - total_contributions)
             # Row 5 (odd): Net P&L vs Contributions - should have grey background + pnl color
             net_pnl_style = get_combined_pnl_style(net_pnl_vs_contrib, True)
             financial_table.add_row("🧮 Net P&L vs Contributions", f"${net_pnl_vs_contrib:,.2f}",

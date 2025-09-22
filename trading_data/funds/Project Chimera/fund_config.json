@@ -1,5 +1,6 @@
 {
   "fund": {
+    "name": "Project Chimera",
     "description": "AI-Powered Micro-Cap Investment Fund",
     "display_currency": "CAD",
     "fund_type": "investment",

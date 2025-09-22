@@ -354,10 +354,12 @@ class Settings:
             # Any other error, fall back to default
             pass
         
-        # Fallback to default fund configuration
+        # Graceful fallback for missing fund configuration
+        print("⚠️  No fund configuration found - using default settings")
+        print("   💡 Tip: Use the fund management menu to set up a proper fund")
         return {
-            'name': 'Project Chimera',
-            'description': 'AI-Powered Micro-Cap Investment Fund',
+            'name': 'Default Fund',
+            'description': 'Default fund configuration - please set up proper fund',
             'display_currency': 'CAD'
         }
 

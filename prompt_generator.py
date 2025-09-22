@@ -709,10 +709,23 @@ class PromptGenerator:
                 
                 fundamentals = self.market_data_fetcher.fetch_fundamentals(ticker)
                 
-                # Format each field with proper truncation/padding
+                # Check if this is an ETF to provide better labeling
+                is_etf = fundamentals.get('marketCap') == 'ETF'
+                
+                # Format each field with proper truncation/padding and ETF-aware labels
                 ticker_cell = f"{ticker:<10}"
-                sector_cell = f"{str(fundamentals.get('sector', 'N/A'))[:19]:<20}"
-                industry_cell = f"{str(fundamentals.get('industry', 'N/A'))[:24]:<25}"
+                
+                # For ETFs, show more meaningful labels instead of N/A
+                sector_val = fundamentals.get('sector', 'N/A')
+                if is_etf and sector_val == 'N/A':
+                    sector_val = 'ETF'
+                sector_cell = f"{str(sector_val)[:19]:<20}"
+                
+                industry_val = fundamentals.get('industry', 'N/A')
+                if is_etf and industry_val == 'N/A':
+                    industry_val = 'ETF'
+                industry_cell = f"{str(industry_val)[:24]:<25}"
+                
                 country_cell = f"{str(fundamentals.get('country', 'N/A')):<8}"
                 market_cap_cell = f"{str(fundamentals.get('marketCap', 'N/A')):<12}"
                 pe_cell = f"{str(fundamentals.get('trailingPE', 'N/A')):<6}"
@@ -1181,8 +1194,13 @@ class PromptGenerator:
             # Any other error, fall back to settings
             print(f"⚠️  Could not get fund name from active fund: {e}")
         
-        # Fallback to settings or default
-        return self.settings.get('fund_details', {}).get('name', 'Project Chimera')
+        # Fallback to settings or generic name - graceful handling
+        fund_name = self.settings.get('fund_details', {}).get('name')
+        if not fund_name:
+            print("⚠️  No fund name configured - using 'Trading Fund' as default")
+            print("   💡 Tip: Set up a proper fund configuration for better organization")
+            return "Trading Fund"
+        return fund_name
 
 
 def generate_daily_prompt(data_dir: Path | str | None = None) -> None:
@@ -1203,13 +1221,13 @@ def show_prompt_menu(args) -> None:
         print("\n" + "="*50)
         print("📋 Prompt Generator Options")
         print("="*50)
-        print("[1] 🔄 Refresh (Clear Market Data Cache & Reload)")
+        print("[r] 🔄 Refresh (Clear Market Data Cache & Reload)")
         print("[Enter] 🚺 Exit")
         
         try:
-            choice = input("\n❓ Select option (1 or Enter): ").strip()
+            choice = input("\n❓ Select option (r or Enter): ").strip().lower()
             
-            if choice == "1":
+            if choice == "r":
                 # Clear cache and regenerate
                 print("\n🔄 Clearing prompt screen caches and reloading...")
                 
@@ -1255,7 +1273,7 @@ def show_prompt_menu(args) -> None:
                 print("\n👋 Exiting prompt generator...")
                 break
             else:
-                print("❌ Invalid choice. Please select 1 or press Enter to exit.")
+                print("❌ Invalid choice. Please select 'r' or press Enter to exit.")
                 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
@@ -1270,7 +1288,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate LLM trading prompts")
     parser.add_argument("--type", choices=["daily", "weekly"], default="daily",
                        help="Type of prompt to generate (default: daily)")
-    parser.add_argument("--data-dir", help="Data directory (default: trading_data/funds/Project Chimera)")
+    parser.add_argument("--data-dir", help="Data directory (default: uses active fund directory)")
     parser.add_argument("--no-menu", action="store_true", 
                        help="Generate prompt and exit without showing menu")
     

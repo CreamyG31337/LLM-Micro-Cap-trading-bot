@@ -29,8 +29,8 @@ funds:
         directory: "trading_data/funds/TEST"
   - name: "Development Fund"
     id: "dev"
-    description: "Development and testing fund."
+    description: "Development and testing fund (alias for test)."
     repository:
       type: "csv"
       settings:
-        directory: "trading_data/dev"
+        directory: "trading_data/funds/TEST"

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from financial.currency_handler import CurrencyHandler
 
-def fix_currency_assignments(data_dir: str = "trading_data/funds/Project Chimera"):
+def fix_currency_assignments(data_dir: str = "trading_data/funds/TEST"):
     """Fix currency assignments in portfolio CSV files."""
     
     print(f"Fixing currency assignments in {data_dir}")
@@ -78,6 +78,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         data_dir = sys.argv[1]
     else:
-        data_dir = "trading_data/funds/Project Chimera"
+        data_dir = "trading_data/funds/TEST"
     
     fix_currency_assignments(data_dir)

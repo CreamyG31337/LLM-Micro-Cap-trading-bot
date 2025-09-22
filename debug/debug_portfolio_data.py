@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 # Load the data and show what's happening
-df = pd.read_csv('trading_data/prod/llm_portfolio_update.csv')
+df = pd.read_csv('trading_data/funds/TEST/llm_portfolio_update.csv')
 print('📊 Data shape:', df.shape)
 print()
 

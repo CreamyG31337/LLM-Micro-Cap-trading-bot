@@ -32,7 +32,7 @@ if __name__ == "__main__":
         
         parser = argparse.ArgumentParser(description="Trading Bot - Development Mode")
         parser.add_argument("--file", help="Path to portfolio CSV")
-        parser.add_argument("--data-dir", help="Data directory", default="trading_data/dev")
+        parser.add_argument("--data-dir", help="Data directory", default="trading_data/funds/TEST")
         parser.add_argument("--asof", help="Treat this YYYY-MM-DD as 'today'")
         parser.add_argument("--force-fallback", action="store_true", help="Force fallback mode")
         parser.add_argument("--colorama-only", action="store_true", help="Force colorama-only mode")

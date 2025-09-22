@@ -35,7 +35,7 @@ def get_currency(ticker: str) -> str:
         return 'CAD'
     return 'USD'
 
-def recalculate_portfolio_data(data_dir: str = "trading_data/prod"):
+def recalculate_portfolio_data(data_dir: str = "trading_data/funds/TEST"):
     """Update existing portfolio rows with correct data from trade log - preserves all historical price tracking"""
     
     data_path = Path(data_dir)
@@ -335,7 +335,7 @@ def main():
     print("=" * 50)
     
     # Check if data directory argument provided
-    data_dir = "trading_data/prod"
+    data_dir = "trading_data/funds/TEST"
     if len(sys.argv) > 1:
         data_dir = sys.argv[1]
     

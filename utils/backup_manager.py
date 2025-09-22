@@ -69,21 +69,37 @@ class BackupManager:
         for filename in csv_files_to_backup:
             source_file = self.data_dir / filename
             if source_file.exists():
-                backup_file = self.backup_dir / f"{filename}.backup_{backup_name}"
+                # Extract base name without extension and add timestamp before .csv
+                base_name = filename.replace('.csv', '')
+                backup_file = self.backup_dir / f"{base_name}.backup_{backup_name}.csv"
                 try:
                     shutil.copy2(source_file, backup_file)
                     backed_up_files.append(filename)
                 except Exception as e:
                     logger.warning(f"Failed to backup {filename}: {e}")
         
-        # Backup JSON files
+        # Backup JSON files (convert to CSV format)
         for filename in json_files_to_backup:
             source_file = self.data_dir / filename
             if source_file.exists():
-                backup_file = self.backup_dir / f"{filename}.backup_{backup_name}"
+                # Convert JSON to CSV format with timestamp
+                base_name = filename.replace('.json', '')
+                backup_file = self.backup_dir / f"{base_name}.backup_{backup_name}.csv"
                 try:
-                    shutil.copy2(source_file, backup_file)
-                    backed_up_files.append(filename)
+                    # Convert JSON to CSV
+                    with open(source_file, 'r') as f:
+                        data = json.load(f)
+                    
+                    if isinstance(data, dict):
+                        # Convert dict to DataFrame and save as CSV
+                        df = pd.DataFrame([data])
+                        df.to_csv(backup_file, index=False)
+                        backed_up_files.append(filename)
+                    else:
+                        # For other JSON structures, save as-is but with .csv extension
+                        shutil.copy2(source_file, backup_file)
+                        backed_up_files.append(filename)
+                        
                 except Exception as e:
                     logger.warning(f"Failed to backup {filename}: {e}")
         
@@ -110,8 +126,8 @@ class BackupManager:
                 return False
             logger.info(f"Using latest backup: {backup_name}")
         
-        # Find backup files for this backup
-        backup_files = list(self.backup_dir.glob(f"*.backup_{backup_name}"))
+        # Find backup files for this backup (new pattern: *.backup_timestamp.csv)
+        backup_files = list(self.backup_dir.glob(f"*.backup_{backup_name}.csv"))
         if not backup_files:
             logger.error(f"No backup files found for backup: {backup_name}")
             return False
@@ -119,10 +135,36 @@ class BackupManager:
         # Restore files
         restored_files = []
         for backup_file in backup_files:
-            original_name = backup_file.name.split(f".backup_{backup_name}")[0]
+            # Extract original name from pattern: base.backup_timestamp.csv
+            name_parts = backup_file.name.split(f".backup_{backup_name}.csv")
+            if len(name_parts) >= 1:
+                base_name = name_parts[0]
+                # Determine original extension based on base name
+                if base_name in ["cash_balances"]:
+                    original_name = f"{base_name}.json"
+                else:
+                    original_name = f"{base_name}.csv"
+            else:
+                logger.error(f"Could not parse backup filename: {backup_file.name}")
+                continue
+                
             target_file = self.data_dir / original_name
             try:
-                shutil.copy2(backup_file, target_file)
+                # If restoring JSON file from CSV backup, convert back
+                if original_name.endswith('.json'):
+                    df = pd.read_csv(backup_file)
+                    if not df.empty:
+                        # Convert DataFrame back to JSON
+                        data = df.iloc[0].to_dict()
+                        with open(target_file, 'w') as f:
+                            json.dump(data, f, indent=2)
+                    else:
+                        logger.warning(f"Empty CSV file for JSON restore: {backup_file.name}")
+                        continue
+                else:
+                    # Direct copy for CSV files
+                    shutil.copy2(backup_file, target_file)
+                
                 restored_files.append(original_name)
             except Exception as e:
                 logger.error(f"Failed to restore {original_name}: {e}")
@@ -144,13 +186,23 @@ class BackupManager:
         if not self.backup_dir.exists():
             return []
         
+        # Look for both old pattern (*.backup_*) and new pattern (*.backup_*.csv)
         backup_files = list(self.backup_dir.glob("*.backup_*"))
         timestamps = set()
+        
         for backup_file in backup_files:
-            parts = backup_file.name.split(".backup_")
-            if len(parts) >= 2:
-                timestamp = parts[1]
-                timestamps.add(timestamp)
+            # Handle new pattern: base.backup_timestamp.csv
+            if backup_file.name.endswith('.csv') and '.backup_' in backup_file.name:
+                parts = backup_file.name.split(".backup_")
+                if len(parts) >= 2:
+                    timestamp = parts[1].replace('.csv', '')
+                    timestamps.add(timestamp)
+            # Handle old pattern: base.backup_timestamp (no extension)
+            elif '.backup_' in backup_file.name and not backup_file.name.endswith('.csv'):
+                parts = backup_file.name.split(".backup_")
+                if len(parts) >= 2:
+                    timestamp = parts[1]
+                    timestamps.add(timestamp)
         
         # Sort by creation time (newest first)
         try:
@@ -181,7 +233,11 @@ class BackupManager:
         Returns:
             bool: True if deletion was successful, False otherwise
         """
-        backup_files = list(self.backup_dir.glob(f"*.backup_{backup_name}"))
+        # Look for both old pattern (*.backup_timestamp) and new pattern (*.backup_timestamp.csv)
+        old_pattern_files = list(self.backup_dir.glob(f"*.backup_{backup_name}"))
+        new_pattern_files = list(self.backup_dir.glob(f"*.backup_{backup_name}.csv"))
+        backup_files = old_pattern_files + new_pattern_files
+        
         if not backup_files:
             logger.warning(f"No backup files found for backup: {backup_name}")
             return False
@@ -207,7 +263,11 @@ class BackupManager:
         Returns:
             Dict[str, Any]: Information about the backup including files and sizes
         """
-        backup_files = list(self.backup_dir.glob(f"*.backup_{backup_name}"))
+        # Look for both old pattern (*.backup_timestamp) and new pattern (*.backup_timestamp.csv)
+        old_pattern_files = list(self.backup_dir.glob(f"*.backup_{backup_name}"))
+        new_pattern_files = list(self.backup_dir.glob(f"*.backup_{backup_name}.csv"))
+        backup_files = old_pattern_files + new_pattern_files
+        
         if not backup_files:
             return {"exists": False, "files": [], "total_size": 0}
         
@@ -217,7 +277,17 @@ class BackupManager:
         for backup_file in backup_files:
             try:
                 stat = backup_file.stat()
-                original_name = backup_file.name.split(f".backup_{backup_name}")[0]
+                # Extract original name based on pattern
+                if backup_file.name.endswith('.csv') and f".backup_{backup_name}.csv" in backup_file.name:
+                    original_name = backup_file.name.replace(f".backup_{backup_name}.csv", "")
+                    # Add appropriate extension
+                    if original_name in ["cash_balances"]:
+                        original_name += ".json"
+                    else:
+                        original_name += ".csv"
+                else:
+                    original_name = backup_file.name.split(f".backup_{backup_name}")[0]
+                
                 files_info.append({
                     "original_name": original_name,
                     "backup_name": backup_file.name,

@@ -7,7 +7,7 @@ This guide will help you set up your portfolio dashboard with Supabase database 
 1. **GitHub Account** - For hosting your code
 2. **Supabase Account** - For database hosting (free tier available)
 3. **Vercel Account** - For web hosting (free tier available)
-4. **Your Trading Data** - CSV files in `trading_data/prod/`
+4. **Your Trading Data** - CSV files in `trading_data/funds/Project Chimera/`
 
 ## 🗄️ Step 1: Set Up Supabase Database
 
@@ -84,7 +84,7 @@ python migrate_to_supabase.py
 ```
 
 This will:
-- Load your CSV data from `trading_data/prod/`
+- Load your CSV data from `trading_data/funds/Project Chimera/`
 - Upload it to Supabase
 - Verify the migration was successful
 
@@ -124,7 +124,7 @@ jobs:
       - name: Sync data
         run: |
           cd web_dashboard
-          python sync_to_supabase.py --data-dir ../trading_data/prod
+          python sync_to_supabase.py --data-dir "../trading_data/funds/Project Chimera"
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

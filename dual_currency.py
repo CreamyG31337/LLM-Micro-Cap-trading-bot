@@ -275,9 +275,9 @@ def update_exchange_rates_csv() -> None:
         from pathlib import Path
         
         # Determine data directory
-        data_dir = Path("trading_data/prod")
+        data_dir = Path("trading_data/funds/Project Chimera")
         if not data_dir.exists():
-            data_dir = Path("trading_data/dev")
+            data_dir = Path("trading_data/funds/TEST")
         
         exchange_rates_file = data_dir / "exchange_rates.csv"
         trading_tz = pytz.timezone('America/Los_Angeles')

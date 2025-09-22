@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-def backup_trade_log(data_dir: str = "trading_data/prod") -> bool:
+def backup_trade_log(data_dir: str = "trading_data/funds/Project Chimera") -> bool:
     """
     Create a backup of the trade log file.
     
@@ -70,7 +70,7 @@ def backup_trade_log(data_dir: str = "trading_data/prod") -> bool:
 
 def main():
     """Main function"""
-    data_dir = "trading_data/prod"
+    data_dir = "trading_data/funds/Project Chimera"
     
     if len(sys.argv) > 1:
         data_dir = sys.argv[1]

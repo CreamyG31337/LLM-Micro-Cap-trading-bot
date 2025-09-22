@@ -235,9 +235,11 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
 
         # Initialize utility components
         backup_config = settings.get_backup_config()
+        # Use fund-specific backup directory instead of root backups folder
+        fund_backup_dir = data_dir / "backups"
         backup_manager = BackupManager(
             data_dir=data_dir,
-            backup_dir=Path(backup_config.get('directory', 'backups'))
+            backup_dir=fund_backup_dir
         )
 
         logger.info("All system components initialized successfully")
@@ -288,7 +290,7 @@ def parse_command_line_arguments() -> argparse.Namespace:
         epilog="""
 Examples:
   python trading_script.py                           # Use default data directory
-  python trading_script.py --data-dir "trading_data/dev"   # Use test data directory
+  python trading_script.py --data-dir "trading_data/funds/TEST"   # Use test data directory
   python trading_script.py --config config.json     # Use custom configuration
   python trading_script.py --debug                  # Enable debug logging
   python trading_script.py --validate-only          # Only validate data integrity
@@ -545,7 +547,7 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
             print_success(f"Successfully switched to {selected_fund.name}")
 
             # Refresh the portfolio display with new fund
-            run_portfolio_workflow(args, settings, new_repository, trading_interface, fund_manager)
+            run_portfolio_workflow(args, settings, new_repository, trading_interface, fund_manager, clear_caches=False)
 
         except ValueError:
             print_error("Invalid input. Please enter a number or 'q'")
@@ -560,7 +562,7 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
         logger.error(error_msg, exc_info=True)
 
 
-def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface, fund_manager: FundManager = None) -> None:
+def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface, fund_manager: FundManager = None, clear_caches: bool = False) -> None:
     """Run the main portfolio management workflow.
     
     Args:
@@ -568,9 +570,65 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         settings: System settings
         repository: Initialized repository
         trading_interface: Trading interface for user actions
+        fund_manager: Fund manager instance (optional)
+        clear_caches: Whether to clear caches before refreshing (used when called from 'r' action)
     """
     try:
         print_header("Portfolio Management Workflow", _safe_emoji("📊"))
+        
+        # Clear only main trading screen caches if requested (when 'r' is pressed)
+        if clear_caches:
+            print_info("Clearing main trading screen caches...")
+            
+            # Clear price cache (market data used by main screen)
+            try:
+                if price_cache:
+                    price_cache.invalidate_all()
+                    print_success("Price cache cleared")
+                else:
+                    print_warning("Price cache not available")
+            except Exception as e:
+                logger.warning(f"Failed to clear price cache: {e}")
+                print_warning(f"Failed to clear price cache: {e}")
+            
+            # Clear exchange rate cache (currency conversion used by main screen)
+            try:
+                if currency_handler:
+                    currency_handler.clear_exchange_rate_cache()
+                    print_success("Exchange rate cache cleared")
+                else:
+                    print_warning("Currency handler not available")
+            except Exception as e:
+                logger.warning(f"Failed to clear exchange rate cache: {e}")
+                print_warning(f"Failed to clear exchange rate cache: {e}")
+            
+            # Clear fundamentals cache (company names and sector info used by main screen)
+            try:
+                if market_data_fetcher:
+                    # Clear in-memory fundamentals cache
+                    if hasattr(market_data_fetcher, '_fund_cache'):
+                        market_data_fetcher._fund_cache.clear()
+                    if hasattr(market_data_fetcher, '_fund_cache_meta'):
+                        market_data_fetcher._fund_cache_meta.clear()
+                    
+                    # Clear disk-based fundamentals cache
+                    fund_cache_path = market_data_fetcher._get_fund_cache_path()
+                    if fund_cache_path and fund_cache_path.exists():
+                        try:
+                            fund_cache_path.unlink()
+                            print_success("Fundamentals cache cleared (disk and memory)")
+                        except Exception as disk_error:
+                            logger.warning(f"Failed to clear fundamentals cache file: {disk_error}")
+                            print_success("Fundamentals cache cleared (memory only)")
+                    else:
+                        print_success("Fundamentals cache cleared (memory)")
+                else:
+                    print_warning("Market data fetcher not available")
+            except Exception as e:
+                logger.warning(f"Failed to clear fundamentals cache: {e}")
+                print_warning(f"Failed to clear fundamentals cache: {e}")
+            
+            print_info("Cache clearing completed - ticker correction and other unrelated caches preserved")
 
         # Validate data integrity if requested
         if args.validate_only:
@@ -709,6 +767,12 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             else:
                 pos_dict['position_weight'] = "N/A"
 
+            # Add total_pnl field for sorting (maps to unrealized_pnl from position)
+            if position.unrealized_pnl is not None:
+                pos_dict['total_pnl'] = f"${position.unrealized_pnl:.2f}"
+            else:
+                pos_dict['total_pnl'] = "$0.00"
+
             # Get open date from trade log
             try:
                 trades = repository.get_trade_history(position.ticker)
@@ -731,8 +795,21 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Calculate daily P&L using historical portfolio data
             # SHARED LOGIC: Same function used by prompt_generator.py when user hits 'd' in menu
+            if args.non_interactive:
+                with open('debug_output.txt', 'a') as debug_file:
+                    debug_file.write(f"  Calculating 1-day P&L for {position.ticker}:\n")
+                    debug_file.write(f"    Current price: {position.current_price}\n")
+                    debug_file.write(f"    Shares: {position.shares}\n")
+                    debug_file.write(f"    Snapshots count: {len(portfolio_snapshots)}\n")
+                    debug_file.flush()
+
             from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
             pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, portfolio_snapshots)
+
+            if args.non_interactive:
+                with open('debug_output.txt', 'a') as debug_file:
+                    debug_file.write(f"    Result: {pos_dict['daily_pnl']}\n")
+                    debug_file.flush()
 
             # 5-day P&L with open-date check (show N/A if opened < 5 trading days ago)
             try:
@@ -1156,86 +1233,102 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             # Check if we should update prices (market hours or no update today)
             should_update_prices = False
 
-            # Check if market is open
-            if market_hours.is_market_open():
-                should_update_prices = True
-                logger.debug("Market is open - updating portfolio prices")
-            else:
-                # Market is closed - check if we need to update based on data freshness
-                latest_snapshot = portfolio_manager.get_latest_portfolio()
-                if latest_snapshot:
-                    latest_timestamp = latest_snapshot.timestamp
-                    # Use timezone-aware datetime for comparison to avoid timezone mismatch errors
-                    from utils.timezone_utils import get_current_trading_time
-                    now = get_current_trading_time()
-                    hours_since_update = (now - latest_timestamp).total_seconds() / 3600
-
-                    # Update if:
-                    # 1. No data from today at all
-                    # 2. Data is from today but older than 4 hours (likely pre-market/stale)
-                    # 3. Market has closed since last update and we can get closing prices
-                    # 4. New trades were added today that need HOLD entries
-
-                    # Check if there are new trades that only have BUY entries (no HOLD entries)
-                    today_buy_tickers = set()
-                    today_hold_tickers = set()
-
-                    # Get today's entries from the CSV to check for missing HOLD entries
-                    try:
-                        import pandas as pd
-                        df = pd.read_csv(repository.portfolio_file)
-                        df['Date'] = df['Date'].apply(repository._parse_csv_timestamp)
-
-                        # Ensure Date column contains valid datetime objects
-                        if not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                            # Convert to datetime if it's not already
-                            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-
-                        # Filter out any rows where date parsing failed
-                        df = df.dropna(subset=['Date'])
-
-                        df['Date_Only'] = df['Date'].dt.date
-                        today_data = df[df['Date_Only'] == now.date()]
-
-                        for _, row in today_data.iterrows():
-                            ticker = row['Ticker']
-                            action = row['Action']
-                            if action == 'BUY':
-                                today_buy_tickers.add(ticker)
-                            elif action == 'HOLD':
-                                today_hold_tickers.add(ticker)
-
-                        # Check if there are BUY entries without corresponding HOLD entries
-                        missing_hold_entries = today_buy_tickers - today_hold_tickers
-                        if missing_hold_entries:
-                            should_update_prices = True
-                            logger.debug(f"New trades found without HOLD entries: {missing_hold_entries} - updating to create HOLD entries")
-                    except Exception as e:
-                        logger.warning(f"Could not check for missing HOLD entries: {e}")
-
-                    if latest_timestamp.date() < now.date():
-                        should_update_prices = True
-                        logger.debug(f"Portfolio not updated today (last: {latest_timestamp.date()}) - updating prices")
-                    elif hours_since_update > 4:
-                        should_update_prices = True
-                        logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating prices")
-                    else:
-                        # Data is from today but recent - only skip if it's very fresh (< 1 hour)
-                        if hours_since_update < 1:
-                            logger.debug(f"Portfolio data is very recent ({latest_timestamp.strftime('%H:%M')}, {hours_since_update:.1f}h ago) - skipping update")
-                        else:
-                            should_update_prices = True
-                            logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating to get current prices")
-                else:
+            # Check for missing trading days and update if needed
+            from utils.missing_trading_days import MissingTradingDayDetector
+            
+            detector = MissingTradingDayDetector(market_hours, portfolio_manager)
+            
+            # Check if we should skip due to non-trading day
+            should_skip, skip_reason = detector.should_skip_due_to_non_trading_day()
+            if should_skip:
+                print_info(f"Portfolio prices not updated ({skip_reason})")
+                # Continue to display portfolio even on non-trading days
+            
+            # Check for missing trading days (only if not skipping due to non-trading day)
+            if not should_skip:
+                needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
+                if needs_update:
                     should_update_prices = True
-                    logger.info("No existing portfolio data - creating initial snapshot")
+                    logger.info(detector.get_update_reason())
 
-            if should_update_prices:
-                # Use the new daily update method
-                repository.update_daily_portfolio_snapshot(updated_snapshot)
-                print_success("Portfolio snapshot updated successfully")
-            else:
-                print_info("Portfolio prices not updated (market closed and already updated today)")
+            # Check if market is open (only if not skipping due to non-trading day)
+            if not should_skip:
+                if market_hours.is_market_open():
+                    should_update_prices = True
+                    logger.debug("Market is open - updating portfolio prices")
+                else:
+                    # Market is closed - check if we need to update based on data freshness
+                    latest_snapshot = portfolio_manager.get_latest_portfolio()
+                    if latest_snapshot:
+                        latest_timestamp = latest_snapshot.timestamp
+                        # Use timezone-aware datetime for comparison to avoid timezone mismatch errors
+                        from utils.timezone_utils import get_current_trading_time
+                        now = get_current_trading_time()
+                        hours_since_update = (now - latest_timestamp).total_seconds() / 3600
+
+                        # Update if:
+                        # 1. No data from today at all
+                        # 2. Data is from today but older than 4 hours (likely pre-market/stale)
+                        # 3. Market has closed since last update and we can get closing prices
+                        # 4. New trades were added today that need HOLD entries
+
+                        # Check if there are new trades that only have BUY entries (no HOLD entries)
+                        today_buy_tickers = set()
+                        today_hold_tickers = set()
+
+                        # Get today's entries from the CSV to check for missing HOLD entries
+                        try:
+                            import pandas as pd
+                            df = pd.read_csv(repository.portfolio_file)
+                            df['Date'] = df['Date'].apply(repository._parse_csv_timestamp)
+
+                            # Ensure Date column contains valid datetime objects
+                            if not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                                # Convert to datetime if it's not already
+                                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+
+                            # Filter out any rows where date parsing failed
+                            df = df.dropna(subset=['Date'])
+
+                            df['Date_Only'] = df['Date'].dt.date
+                            today_data = df[df['Date_Only'] == now.date()]
+
+                            for _, row in today_data.iterrows():
+                                ticker = row['Ticker']
+                                action = row['Action']
+                                if action == 'BUY':
+                                    today_buy_tickers.add(ticker)
+                                elif action == 'HOLD':
+                                    today_hold_tickers.add(ticker)
+
+                            # Check if there are BUY entries without corresponding HOLD entries
+                            missing_hold_entries = today_buy_tickers - today_hold_tickers
+                            if missing_hold_entries:
+                                should_update_prices = True
+                                logger.debug(f"New trades found without HOLD entries: {missing_hold_entries} - updating to create HOLD entries")
+                        except Exception as e:
+                            logger.warning(f"Could not check for missing HOLD entries: {e}")
+
+                        if hours_since_update > 4:
+                            should_update_prices = True
+                            logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating prices")
+                        else:
+                            # Data is from today but recent - only skip if it's very fresh (< 1 hour)
+                            if hours_since_update < 1:
+                                logger.debug(f"Portfolio data is very recent ({latest_timestamp.strftime('%H:%M')}, {hours_since_update:.1f}h ago) - skipping update")
+                            else:
+                                should_update_prices = True
+                                logger.debug(f"Portfolio data is {hours_since_update:.1f}h old (from {latest_timestamp.strftime('%H:%M')}) - updating to get current prices")
+                    else:
+                        should_update_prices = True
+                        logger.info("No existing portfolio data - creating initial snapshot")
+
+                if should_update_prices:
+                    # Use the new daily update method
+                    repository.update_daily_portfolio_snapshot(updated_snapshot)
+                    print_success("Portfolio snapshot updated successfully")
+                else:
+                    print_info("Portfolio prices not updated (market closed and already updated today)")
 
         except Exception as e:
             logger.warning(f"Could not save portfolio snapshot: {e}")
@@ -1502,7 +1595,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('🔗')} 'sync'    Sync Fund Contributions"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'backup'  Create Backup"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'restore' Restore from Backup"))
-            print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio"))
+            print(create_menu_line(f"{_safe_emoji('🧹')} '9'       Clean Old Backups"))
+            print(create_menu_line(f"{_safe_emoji('📊')} '0'       Backup Statistics"))
+            print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio (clear cache)"))
             print(create_menu_line(f"{_safe_emoji('🏦')} 'f'       Switch Fund"))
             print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
             print(create_menu_line(f"{_safe_emoji('📊')} 'o'       Sort Portfolio"))
@@ -1519,7 +1614,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'sync' & Sync Fund Contributions                            |")
             print("| 'backup' [B] Create Backup                                  |")
             print("| 'restore' ~ Restore from Backup                             |")
-            print("| 'r' ~ Refresh Portfolio                                     |")
+            print("| '9' [9] Clean Old Backups                                  |")
+            print("| '0' [0] Backup Statistics                                   |")
+            print("| 'r' ~ Refresh Portfolio (clear cache)                      |")
             print("| 'f' ~ Switch Fund                                           |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| 'o' [O] Sort Portfolio                                      |")
@@ -1538,8 +1635,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             elif action == 'r':
                 verify_script_before_action()
                 print_info("Refreshing portfolio...")
-                # Recursive call to refresh (could be improved with a loop)
-                run_portfolio_workflow(args, settings, repository, trading_interface, fund_manager)
+                # Recursive call to refresh with cache clearing enabled
+                run_portfolio_workflow(args, settings, repository, trading_interface, fund_manager, clear_caches=True)
                 return
             elif action == 'f':
                 if fund_manager is None:
@@ -1661,6 +1758,58 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             elif action == 'restore':
                 print_warning("Restore functionality not yet implemented")
                 print_info("This feature will be added in future updates")
+            elif action == '9':
+                try:
+                    from utils.backup_cleanup import BackupCleanupUtility
+                    cleanup_util = BackupCleanupUtility()
+                    
+                    print_header("Backup Cleanup")
+                    print_info("This will remove old backup files to free up space.")
+                    
+                    # Ask for confirmation and days
+                    try:
+                        days_input = input("Enter number of days (backups older than this will be deleted) [7]: ").strip()
+                        days = int(days_input) if days_input else 7
+                    except ValueError:
+                        print_warning("Invalid input, using default of 7 days")
+                        days = 7
+                    
+                    # Show what would be deleted
+                    print_info(f"Checking for backups older than {days} days...")
+                    results = cleanup_util.cleanup_old_backups_by_age(days=days, dry_run=True)
+                    
+                    total_files = sum(results.values())
+                    if total_files == 0:
+                        print_success("No old backup files found to clean up!")
+                        return
+                    
+                    # Ask for confirmation
+                    confirm = input(f"Found {total_files} old backup files. Delete them? (y/N): ").strip().lower()
+                    if confirm in ['y', 'yes']:
+                        print_info("Deleting old backup files...")
+                        results = cleanup_util.cleanup_old_backups_by_age(days=days, dry_run=False)
+                        total_deleted = sum(results.values())
+                        print_success(f"Cleaned up {total_deleted} old backup files!")
+                    else:
+                        print_info("Cleanup cancelled.")
+                        
+                except ImportError as e:
+                    print_error(f"Backup cleanup not available: {e}")
+                    print_info("This feature requires the backup cleanup module.")
+                except Exception as e:
+                    print_error(f"Error during backup cleanup: {e}")
+                    logger.error(f"Backup cleanup error: {e}", exc_info=True)
+            elif action == '0':
+                try:
+                    from utils.backup_cleanup import BackupCleanupUtility
+                    cleanup_util = BackupCleanupUtility()
+                    cleanup_util.list_backup_stats()
+                except ImportError as e:
+                    print_error(f"Backup statistics not available: {e}")
+                    print_info("This feature requires the backup cleanup module.")
+                except Exception as e:
+                    print_error(f"Error getting backup statistics: {e}")
+                    logger.error(f"Backup statistics error: {e}", exc_info=True)
             elif action == 'cache':
                 try:
                     from utils.cache_ui import show_cache_management_menu
@@ -1715,7 +1864,7 @@ def main() -> None:
         repository = system_repository
 
         # Run main workflow
-        run_portfolio_workflow(args, system_settings, system_repository, trading_interface, fund_manager)
+        run_portfolio_workflow(args, system_settings, system_repository, trading_interface, fund_manager, clear_caches=False)
 
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user")

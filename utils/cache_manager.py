@@ -128,6 +128,9 @@ class CacheManager:
                     "size_formatted": "0 B"
                 }
 
+        # Add formatted total size
+        status["total_cache_size_formatted"] = self._format_size(status["total_cache_size"])
+
         return status
 
     def clear_all_caches(self) -> Dict[str, Any]:
@@ -229,22 +232,53 @@ class CacheManager:
         """
         results = {}
 
-        # Update price cache with current market data
-        if self.price_cache and self.data_fetcher:
+        # Ensure components are initialized
+        if not (self.price_cache and self.data_fetcher and self.currency_handler):
             try:
-                # This would trigger a refresh of market data
-                # For now, just clear and let it rebuild naturally
-                results["price_cache"] = {"success": True, "message": "Price cache marked for refresh"}
+                logger.info("Initializing cache components for update...")
+                self.initialize_components()
             except Exception as e:
-                results["price_cache"] = {"success": False, "message": f"Failed to update price cache: {e}"}
+                results["initialization"] = {"success": False, "message": f"Failed to initialize components: {e}"}
+                return results
 
-        # Update exchange rates
-        if self.currency_handler:
-            try:
+        # Update price cache by clearing it (forces fresh data on next access)
+        try:
+            if self.price_cache:
+                self.price_cache.invalidate_all()
+                results["price_cache"] = {"success": True, "message": "Price cache cleared - will fetch fresh data"}
+            else:
+                results["price_cache"] = {"success": False, "message": "Price cache not available"}
+        except Exception as e:
+            results["price_cache"] = {"success": False, "message": f"Failed to update price cache: {e}"}
+
+        # Update exchange rates by clearing the cache
+        try:
+            if self.currency_handler:
                 self.currency_handler.clear_exchange_rate_cache()
-                results["exchange_rates"] = {"success": True, "message": "Exchange rate cache refreshed"}
-            except Exception as e:
-                results["exchange_rates"] = {"success": False, "message": f"Failed to update exchange rates: {e}"}
+                results["exchange_rates"] = {"success": True, "message": "Exchange rate cache cleared - will fetch fresh rates"}
+            else:
+                results["exchange_rates"] = {"success": False, "message": "Currency handler not available"}
+        except Exception as e:
+            results["exchange_rates"] = {"success": False, "message": f"Failed to update exchange rates: {e}"}
+
+        # Clear file-based caches to force fresh data
+        try:
+            cache_dirs = self.get_cache_directories()
+            for cache_name, cache_dir in cache_dirs.items():
+                if cache_dir.exists():
+                    # Clear specific cache files that should be refreshed
+                    cache_files = list(cache_dir.glob("*.pkl")) + list(cache_dir.glob("*.json")) + list(cache_dir.glob("*.csv"))
+                    if cache_files:
+                        for cache_file in cache_files:
+                            try:
+                                cache_file.unlink()
+                            except Exception:
+                                pass  # Ignore individual file errors
+                        results[f"file_cache_{cache_name}"] = {"success": True, "message": f"Cleared {len(cache_files)} cache files in {cache_name}"}
+                    else:
+                        results[f"file_cache_{cache_name}"] = {"success": True, "message": f"No cache files to clear in {cache_name}"}
+        except Exception as e:
+            results["file_caches"] = {"success": False, "message": f"Failed to clear file caches: {e}"}
 
         return results
 

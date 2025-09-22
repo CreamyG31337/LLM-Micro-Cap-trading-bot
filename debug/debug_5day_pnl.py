@@ -50,7 +50,7 @@ def debug_5day_pnl():
         repo_config = {
             'default': {
                 'type': default_fund.repository.type,
-                'data_directory': default_fund.repository.settings.get('directory', 'trading_data/prod')
+                'data_directory': default_fund.repository.settings.get('directory', 'trading_data/funds/TEST')
             }
         }
         repository_container.configure(repo_config)

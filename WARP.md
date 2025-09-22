@@ -60,19 +60,19 @@ python run_tests.py
 
 #### Development Mode (with detailed logging)
 ```bash
-python dev_run.py --data-dir "trading_data/dev"
+python dev_run.py --data-dir "trading_data/funds/TEST"
 ```
 
 ### Running the Trading System
 
 #### Production Mode
 ```bash
-python trading_script.py --data-dir "trading_data/prod"
+python trading_script.py --data-dir "trading_data/funds/Project Chimera"
 ```
 
 #### Development/Testing Mode (recommended)
 ```bash
-python trading_script.py --data-dir "trading_data/dev"
+python trading_script.py --data-dir "trading_data/funds/TEST"
 ```
 
 #### Run Single Test
@@ -87,7 +87,7 @@ python debug/test_fifo_system.py
 ### Other Useful Commands
 ```bash
 # Copy production data to test directory
-cp "trading_data/prod/*.csv" trading_data/dev/
+cp "trading_data/funds/Project Chimera/*.csv" "trading_data/funds/TEST/"
 
 # Generate performance graphs
 python "Scripts and CSV Files/Generate_Graph.py"
@@ -150,7 +150,7 @@ The system is architected for seamless migration from CSV to database:
 
 ### Windows Environment Considerations
 - This is a **Windows environment** - use Windows-specific commands and paths
-- Always use `trading_data/dev/` directory for development (not `trading_data/prod/` which is production)
+- Always use `trading_data/funds/TEST/` directory for development (not `trading_data/funds/Project Chimera/` which is production)
 - Activate virtual environment with `.\\venv\\Scripts\\activate`
 
 ### Code Quality Requirements
@@ -175,7 +175,7 @@ The system is architected for seamless migration from CSV to database:
 
 ### Important Notes for Development
 
-1. **Data Safety**: Always use `trading_data/dev/` directory during development to avoid affecting production data in `trading_data/prod/`
+1. **Data Safety**: Always use `trading_data/funds/TEST/` directory during development to avoid affecting production data in `trading_data/funds/Project Chimera/`
 
 2. **Financial Accuracy**: This system handles real money - all financial calculations must use `Decimal` type, never float
 
@@ -187,8 +187,8 @@ The system is architected for seamless migration from CSV to database:
 
 ## Important File Locations
 
-- **Production Data**: `trading_data/prod/` (gitignored)
-- **Test Data**: `trading_data/dev/` (use for development)
+- **Production Data**: `trading_data/funds/Project Chimera/`
+- **Test Data**: `trading_data/funds/TEST/` (use for development)
 - **Main Script**: `trading_script.py`
 - **Development Runner**: `dev_run.py`
 - **Configuration**: `config/settings.py`
@@ -212,7 +212,7 @@ Key features include FIFO lot tracking, real-time market data integration, compr
 
 #### Market Data Caching
 - **Price data**: Market data is cached to avoid excessive API calls
-- **Cache location**: `trading_data/dev/` and `trading_data/prod/` contain cached CSV files
+- **Cache location**: Fund directories under `trading_data/funds/` contain cached CSV files
 - **Cache refresh**: Use `--refresh-cache` flag or delete old CSV files to force refresh
 
 ### Recent Enhancements

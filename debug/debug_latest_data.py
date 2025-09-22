@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 
 # Load and examine the latest portfolio data
-df = pd.read_csv('trading_data/prod/llm_portfolio_update.csv')
+df = pd.read_csv('trading_data/funds/TEST/llm_portfolio_update.csv')
 print('🔍 Debugging Latest Portfolio Data')
 print('=' * 50)
 

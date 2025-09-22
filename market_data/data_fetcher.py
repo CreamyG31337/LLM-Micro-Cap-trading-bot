@@ -107,21 +107,70 @@ class MarketDataFetcher:
             logging.getLogger(__name__).debug(f"Could not load fundamentals cache: {e}")
     
     def _load_currency_cache(self):
-        """Load currency information from portfolio CSV files."""
+        """Load currency information from trade log and portfolio CSV files.
+        
+        Trade log is the source of truth for currency information.
+        """
         try:
             import pandas as pd
             import glob
             
-            # Find portfolio CSV files in multiple possible locations
+            # First load from trade logs (source of truth)
+            trade_log_files = []
+            trade_log_paths = [
+                'trading_data/funds/*/llm_trade_log.csv',
+                'Scripts and CSV Files/chatgpt_trade_log.csv',
+                'data/*/trade_log.csv',
+                'data/trade_log.csv'
+            ]
+            
+            for pattern in trade_log_paths:
+                trade_log_files.extend(glob.glob(pattern))
+            
+            # Load currency info from trade logs
+            for file_path in trade_log_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns and 'Currency' in df.columns:
+                        # Get the latest entry for each ticker
+                        latest_entries = df.groupby('Ticker').last()
+                        for ticker, row in latest_entries.iterrows():
+                            currency = row['Currency']
+                            self._portfolio_currency_cache[ticker] = currency
+                            
+                            # Handle ticker variants for smart lookup
+                            # If ticker has .TO/.V suffix, also cache the base ticker
+                            if ticker.endswith('.TO'):
+                                base_ticker = ticker[:-3]  # Remove .TO
+                                if base_ticker not in self._portfolio_currency_cache:
+                                    self._portfolio_currency_cache[base_ticker] = currency
+                                    logger.debug(f"Mapped base ticker {base_ticker} -> {currency} from {ticker}")
+                            elif ticker.endswith('.V'):
+                                base_ticker = ticker[:-2]  # Remove .V
+                                if base_ticker not in self._portfolio_currency_cache:
+                                    self._portfolio_currency_cache[base_ticker] = currency
+                                    logger.debug(f"Mapped base ticker {base_ticker} -> {currency} from {ticker}")
+                            # If base ticker is CAD, also try to map to .TO variant
+                            elif currency == 'CAD' and not ticker.endswith(('.TO', '.V')):
+                                to_variant = f"{ticker}.TO"
+                                if to_variant not in self._portfolio_currency_cache:
+                                    self._portfolio_currency_cache[to_variant] = currency
+                                    logger.debug(f"Mapped .TO variant {to_variant} -> {currency} from {ticker}")
+                        
+                        logger.debug(f"Loaded currency cache from trade log {file_path}: {len(latest_entries)} tickers")
+                except Exception as e:
+                    logger.debug(f"Could not load currency cache from trade log {file_path}: {e}")
+            
+            # Then load from portfolio files as fallback/supplement
             portfolio_files = []
-            potential_paths = [
+            portfolio_paths = [
                 'trading_data/funds/*/llm_portfolio_update.csv',
                 'Scripts and CSV Files/chatgpt_portfolio_update.csv',
                 'data/*/portfolio.csv',
                 'data/portfolio.csv'
             ]
             
-            for pattern in potential_paths:
+            for pattern in portfolio_paths:
                 portfolio_files.extend(glob.glob(pattern))
             
             for file_path in portfolio_files:
@@ -131,10 +180,28 @@ class MarketDataFetcher:
                         # Get the latest entry for each ticker
                         latest_entries = df.groupby('Ticker').last()
                         for ticker, row in latest_entries.iterrows():
-                            self._portfolio_currency_cache[ticker] = row['Currency']
-                        logger.debug(f"Loaded currency cache from {file_path}: {len(latest_entries)} tickers")
+                            # Only add if not already present (trade log takes precedence)
+                            if ticker not in self._portfolio_currency_cache:
+                                currency = row['Currency']
+                                self._portfolio_currency_cache[ticker] = currency
+                                
+                                # Handle ticker variants for smart lookup
+                                if ticker.endswith('.TO'):
+                                    base_ticker = ticker[:-3]
+                                    if base_ticker not in self._portfolio_currency_cache:
+                                        self._portfolio_currency_cache[base_ticker] = currency
+                                elif ticker.endswith('.V'):
+                                    base_ticker = ticker[:-2]
+                                    if base_ticker not in self._portfolio_currency_cache:
+                                        self._portfolio_currency_cache[base_ticker] = currency
+                                elif currency == 'CAD' and not ticker.endswith(('.TO', '.V')):
+                                    to_variant = f"{ticker}.TO"
+                                    if to_variant not in self._portfolio_currency_cache:
+                                        self._portfolio_currency_cache[to_variant] = currency
+                        
+                        logger.debug(f"Supplemented currency cache from portfolio {file_path}: {len([t for t in latest_entries.index if t not in self._portfolio_currency_cache])} new tickers")
                 except Exception as e:
-                    logger.debug(f"Could not load currency cache from {file_path}: {e}")
+                    logger.debug(f"Could not load currency cache from portfolio {file_path}: {e}")
                     
         except Exception as e:
             logger.warning(f"Could not load currency cache: {e}")
@@ -342,6 +409,10 @@ class MarketDataFetcher:
                     result = FetchResult(result.df, f"{result.source} ({strategy_name})")
                     self._cache_result(ticker, result)
                     successful_strategy = strategy_name
+                    
+                    # If we found data using a Canadian suffix, update CSVs to use canonical format
+                    self._normalize_ticker_in_csvs(ticker, strategy_name)
+                    
                     break
             except Exception as e:
                 failed_strategies.append(strategy_name)
@@ -350,16 +421,33 @@ class MarketDataFetcher:
             # Log a summary instead of individual errors
         if successful_strategy:
             if len(failed_strategies) > 0:
-                logger.info(f"{ticker}: {', '.join(failed_strategies)} not found, using {successful_strategy}")
-            
+                # Provide clear user-visible information about fallbacks
+                fallback_msg = f"{ticker}: {', '.join(failed_strategies)} failed, using {successful_strategy}"
+                logger.info(fallback_msg)
+
+                # Also provide more detailed technical info at debug level
+                if successful_strategy == 'yahoo-retry':
+                    logger.debug(f"{ticker}: Yahoo Finance returned 'possibly delisted' warning, but retry with simplified parameters succeeded")
+                elif successful_strategy == 'yahoo-period':
+                    logger.debug(f"{ticker}: Yahoo Finance with date range failed, but period-based fetch succeeded")
+                elif successful_strategy == 'yahoo-simple':
+                    logger.debug(f"{ticker}: Yahoo Finance with full parameters failed, but minimal 5-day fetch succeeded")
+                elif successful_strategy.startswith('yahoo:'):
+                    logger.debug(f"{ticker}: Using proxy ticker {successful_strategy} instead of original ticker")
+                elif successful_strategy.startswith('stooq'):
+                    logger.debug(f"{ticker}: Yahoo Finance failed, successfully fell back to Stooq data source")
+            else:
+                logger.debug(f"{ticker}: Successfully fetched from primary source {successful_strategy}")
+
             # Note: Canadian stocks (.TO, .V) already return CAD prices from Canadian exchanges
             # Only convert if we're getting US data for Canadian tickers (fallback case)
             if hasattr(self, '_portfolio_currency_cache'):
                 currency = self._portfolio_currency_cache.get(ticker)
-                if currency == 'CAD' and not successful_strategy.startswith('yahoo-ca'):
-                    # Only convert if we got data from US exchange, not Canadian
+                # Don't convert if ticker already has Canadian suffix (.TO, .V) - these are already in CAD
+                if currency == 'CAD' and not successful_strategy.startswith('yahoo-ca') and not ticker.endswith(('.TO', '.V')):
+                    # Only convert if we got data from US exchange, not Canadian, and ticker doesn't have Canadian suffix
                     result = self._convert_usd_to_cad(result)
-            
+
             return result
         else:
             logger.error(f"{ticker}: All strategies failed ({', '.join(failed_strategies)})")
@@ -411,23 +499,29 @@ class MarketDataFetcher:
         try:
             import yfinance as yf
 
-            # Reduce yfinance noise but keep ERROR level for real failures
-            logging.getLogger("yfinance").setLevel(logging.ERROR)
+            # Suppress yfinance warnings and provide our own clear messaging
+            yf_logger = logging.getLogger("yfinance")
+            original_level = yf_logger.level
+            yf_logger.setLevel(logging.ERROR)
 
-            # Use Ticker.history() instead of yf.download() for single ticker
-            ticker_obj = yf.Ticker(ticker)
-            df = ticker_obj.history(
-                start=start,
-                end=end,
-                **kwargs
-            )
+            try:
+                # Use Ticker.history() instead of yf.download() for single ticker
+                ticker_obj = yf.Ticker(ticker)
+                df = ticker_obj.history(
+                    start=start,
+                    end=end,
+                    **kwargs
+                )
 
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                # Remove extra columns that aren't OHLCV
-                ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                df = df[ohlcv_columns]
-                df = self._normalize_ohlcv(self._to_datetime_index(df))
-                return FetchResult(df, "yahoo")
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    # Remove extra columns that aren't OHLCV
+                    ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    df = df[ohlcv_columns]
+                    df = self._normalize_ohlcv(self._to_datetime_index(df))
+                    return FetchResult(df, "yahoo")
+            finally:
+                # Restore original logging level
+                yf_logger.setLevel(original_level)
 
         except Exception as e:
             error_msg = str(e).lower()
@@ -437,7 +531,8 @@ class MarketDataFetcher:
                 ("no timezone found" in error_msg or "no price data found" in error_msg)):
                 # Try a simpler approach - just get recent data without date range
                 try:
-                    logger.debug(f"Retrying {ticker} with simplified yfinance call")
+                    logger.info(f"{ticker}: Yahoo Finance reported 'possibly delisted' - retrying with simplified parameters")
+                    import yfinance as yf
                     ticker_obj = yf.Ticker(ticker)
                     # Try with just period instead of explicit dates
                     df = ticker_obj.history(period="5d")
@@ -446,10 +541,12 @@ class MarketDataFetcher:
                         ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
                         df = df[ohlcv_columns]
                         df = self._normalize_ohlcv(self._to_datetime_index(df))
-                        logger.debug(f"Successfully fetched {ticker} with simplified call")
+                        logger.info(f"{ticker}: Successfully retrieved price data via fallback method")
                         return FetchResult(df, "yahoo-retry")
+                    else:
+                        logger.warning(f"{ticker}: Fallback method also returned no data")
                 except Exception as retry_e:
-                    logger.debug(f"Retry also failed for {ticker}: {retry_e}")
+                    logger.warning(f"{ticker}: Both primary and fallback methods failed")
 
             logger.debug(f"Yahoo fetch failed for {ticker}: {e}")
 
@@ -460,17 +557,24 @@ class MarketDataFetcher:
         try:
             import yfinance as yf
 
-            # Reduce yfinance noise but keep ERROR level for real failures
-            logging.getLogger("yfinance").setLevel(logging.ERROR)
+            # Suppress yfinance warnings and provide our own clear messaging
+            yf_logger = logging.getLogger("yfinance")
+            original_level = yf_logger.level
+            yf_logger.setLevel(logging.ERROR)
 
-            ticker_obj = yf.Ticker(ticker)
-            df = ticker_obj.history(period=period)
+            try:
+                ticker_obj = yf.Ticker(ticker)
+                df = ticker_obj.history(period=period)
 
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                df = df[ohlcv_columns]
-                df = self._normalize_ohlcv(self._to_datetime_index(df))
-                return FetchResult(df, "yahoo-period")
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    df = df[ohlcv_columns]
+                    df = self._normalize_ohlcv(self._to_datetime_index(df))
+                    logger.info(f"{ticker}: Successfully retrieved price data using period-based approach")
+                    return FetchResult(df, "yahoo-period")
+            finally:
+                # Restore original logging level
+                yf_logger.setLevel(original_level)
 
         except Exception as e:
             logger.debug(f"Yahoo period retry failed for {ticker}: {e}")
@@ -482,18 +586,25 @@ class MarketDataFetcher:
         try:
             import yfinance as yf
 
-            # Reduce yfinance noise but keep ERROR level for real failures
-            logging.getLogger("yfinance").setLevel(logging.ERROR)
+            # Suppress yfinance warnings and provide our own clear messaging
+            yf_logger = logging.getLogger("yfinance")
+            original_level = yf_logger.level
+            yf_logger.setLevel(logging.ERROR)
 
-            ticker_obj = yf.Ticker(ticker)
-            # Try with just 5 days of data, no other parameters
-            df = ticker_obj.history(period="5d", interval="1d")
+            try:
+                ticker_obj = yf.Ticker(ticker)
+                # Try with just 5 days of data, no other parameters
+                df = ticker_obj.history(period="5d", interval="1d")
 
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                df = df[ohlcv_columns]
-                df = self._normalize_ohlcv(self._to_datetime_index(df))
-                return FetchResult(df, "yahoo-simple")
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    ohlcv_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    df = df[ohlcv_columns]
+                    df = self._normalize_ohlcv(self._to_datetime_index(df))
+                    logger.info(f"{ticker}: Successfully retrieved price data using minimal parameters approach")
+                    return FetchResult(df, "yahoo-simple")
+            finally:
+                # Restore original logging level
+                yf_logger.setLevel(original_level)
 
         except Exception as e:
             logger.debug(f"Yahoo simple retry failed for {ticker}: {e}")
@@ -509,7 +620,7 @@ class MarketDataFetcher:
         """Fetch data from Stooq via pandas-datareader."""
         if not _HAS_PDR or ticker in STOOQ_BLOCKLIST:
             return FetchResult(pd.DataFrame(), "empty")
-            
+
         try:
             # Map ticker for Stooq
             stooq_ticker = STOOQ_MAP.get(ticker, ticker)
@@ -519,19 +630,20 @@ class MarketDataFetcher:
                 if not stooq_ticker.endswith(".to") and not stooq_ticker.endswith(".us"):
                     # Default to .us for US tickers if no suffix
                     stooq_ticker += ".us"
-            
+
             df = cast(pd.DataFrame, pdr.DataReader(
                 stooq_ticker, "stooq", start=start, end=end
             ))
-            
+
             if isinstance(df, pd.DataFrame) and not df.empty:
                 df.sort_index(inplace=True)
                 df = self._normalize_ohlcv(self._to_datetime_index(df))
+                logger.info(f"{ticker}: Successfully retrieved price data from Stooq (pandas-datareader)")
                 return FetchResult(df, "stooq-pdr")
-                
+
         except Exception as e:
             logger.debug(f"Stooq PDR fetch failed for {ticker}: {e}")
-            
+
         return FetchResult(pd.DataFrame(), "empty")
     
     def _fetch_stooq_csv(
@@ -577,11 +689,12 @@ class MarketDataFetcher:
                 
             if not df.empty:
                 df = self._normalize_ohlcv(df)
+                logger.info(f"{ticker}: Successfully retrieved price data from Stooq (CSV endpoint)")
                 return FetchResult(df, "stooq-csv")
-                
+
         except Exception as e:
             logger.debug(f"Stooq CSV fetch failed for {ticker}: {e}")
-            
+
         return FetchResult(pd.DataFrame(), "empty")
     
     def _fetch_proxy_data(
@@ -599,11 +712,12 @@ class MarketDataFetcher:
         try:
             result = self._fetch_yahoo_data(proxy, start, end, **kwargs)
             if not result.df.empty:
+                logger.info(f"{ticker}: Successfully retrieved price data using proxy ticker {proxy}")
                 return FetchResult(result.df, f"yahoo:{proxy}-proxy")
-                
+
         except Exception as e:
             logger.debug(f"Proxy fetch failed for {ticker} -> {proxy}: {e}")
-            
+
         return FetchResult(pd.DataFrame(), "empty")
     
     def _to_datetime_index(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -670,6 +784,93 @@ class MarketDataFetcher:
         """Cache the fetch result if cache is available."""
         if self.cache and not result.df.empty:
             self.cache.cache_price_data(ticker, result.df, result.source)
+    
+    def _normalize_ticker_in_csvs(self, original_ticker: str, successful_strategy: str) -> None:
+        """Update CSVs to use canonical ticker format when we discover the correct suffix.
+        
+        Args:
+            original_ticker: The ticker as it appears in CSV (e.g., 'CGL')
+            successful_strategy: The strategy that worked (e.g., 'yahoo-ca-to')
+        """
+        # Determine the canonical ticker format based on successful strategy
+        canonical_ticker = None
+        
+        if successful_strategy == 'yahoo-ca-to':
+            canonical_ticker = f"{original_ticker}.TO"
+        elif successful_strategy == 'yahoo-ca-v':
+            canonical_ticker = f"{original_ticker}.V"
+        else:
+            # No normalization needed for other strategies
+            return
+        
+        if canonical_ticker == original_ticker:
+            # Already in canonical format
+            return
+        
+        try:
+            import pandas as pd
+            import glob
+            from datetime import datetime
+            import shutil
+            
+            logger.info(f"Normalizing ticker {original_ticker} -> {canonical_ticker} in CSV files")
+            
+            # Update portfolio files
+            portfolio_files = glob.glob('trading_data/funds/*/llm_portfolio_update.csv')
+            for file_path in portfolio_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns:
+                        # Check if this ticker needs updating
+                        ticker_mask = df['Ticker'] == original_ticker
+                        if ticker_mask.any():
+                            # Create backup
+                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_file = f"{file_path}.backup_normalize_{timestamp}"
+                            shutil.copy2(file_path, backup_file)
+                            
+                            # Update ticker format
+                            df.loc[ticker_mask, 'Ticker'] = canonical_ticker
+                            
+                            # Save updated file
+                            df.to_csv(file_path, index=False)
+                            logger.debug(f"Updated {ticker_mask.sum()} entries in {file_path}")
+                            
+                            # Update currency cache with canonical format
+                            currency = self._portfolio_currency_cache.get(original_ticker)
+                            if currency:
+                                self._portfolio_currency_cache[canonical_ticker] = currency
+                                logger.debug(f"Updated currency cache: {canonical_ticker} -> {currency}")
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to normalize ticker in portfolio {file_path}: {e}")
+            
+            # Update trade log files
+            trade_log_files = glob.glob('trading_data/funds/*/llm_trade_log.csv')
+            for file_path in trade_log_files:
+                try:
+                    df = pd.read_csv(file_path)
+                    if 'Ticker' in df.columns:
+                        # Check if this ticker needs updating
+                        ticker_mask = df['Ticker'] == original_ticker
+                        if ticker_mask.any():
+                            # Create backup
+                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_file = f"{file_path}.backup_normalize_{timestamp}"
+                            shutil.copy2(file_path, backup_file)
+                            
+                            # Update ticker format
+                            df.loc[ticker_mask, 'Ticker'] = canonical_ticker
+                            
+                            # Save updated file
+                            df.to_csv(file_path, index=False)
+                            logger.debug(f"Updated {ticker_mask.sum()} entries in trade log {file_path}")
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to normalize ticker in trade log {file_path}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to normalize ticker {original_ticker} -> {canonical_ticker}: {e}")
     
     # -------------------- Fundamentals cache persistence --------------------
     def _get_fund_cache_path(self) -> Optional[Path]:

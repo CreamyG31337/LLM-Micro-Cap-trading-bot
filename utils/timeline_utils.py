@@ -191,7 +191,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Timeline utilities for the trading bot experiment")
-    parser.add_argument("--data-dir", type=str, default="trading_data/prod", 
+    parser.add_argument("--data-dir", type=str, default="trading_data/funds/Project Chimera", 
                        help="Data directory containing trade log")
     
     args = parser.parse_args()

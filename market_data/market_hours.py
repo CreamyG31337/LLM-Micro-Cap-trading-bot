@@ -16,6 +16,7 @@ import pytz
 
 from config.settings import Settings
 from display.console_output import _safe_emoji
+from utils.market_holidays import MarketHolidays
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +38,14 @@ class MarketHours:
         """
         self.settings = settings or Settings()
         self._timezone_cache = {}
+        self.holidays = MarketHolidays()
     
     def is_market_open(self, target_time: Optional[datetime] = None) -> bool:
         """
         Check if the market is currently open.
         
         Market hours: 6:30 AM to 1:00 PM PST (9:30 AM to 4:00 PM EST)
-        Only considers weekdays (Monday-Friday).
+        Considers weekdays (Monday-Friday) and market holidays.
         
         Args:
             target_time: Optional specific time to check (defaults to now)
@@ -59,8 +61,8 @@ class MarketHours:
         if now.tzinfo != tz:
             now = now.astimezone(tz)
         
-        # Check if it's a weekday
-        if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+        # Check if it's a trading day (weekday and not a holiday)
+        if not self.holidays.is_trading_day(now.date(), market="both"):
             return False
         
         # Market hours: 6:30 AM to 1:00 PM PST (9:30 AM to 4:00 PM EST)
@@ -213,7 +215,7 @@ class MarketHours:
     
     def is_trading_day(self, date: Optional[datetime] = None) -> bool:
         """
-        Check if the given date is a trading day (Monday-Friday).
+        Check if the given date is a trading day (weekday and not a holiday).
         
         Args:
             date: Optional date to check (defaults to today)
@@ -222,7 +224,9 @@ class MarketHours:
             True if it's a trading day, False otherwise
         """
         target_date = date or datetime.now()
-        return target_date.weekday() < 5
+        if isinstance(target_date, datetime):
+            target_date = target_date.date()
+        return self.holidays.is_trading_day(target_date, market="both")
     
     def next_trading_day(self, date: Optional[datetime] = None) -> pd.Timestamp:
         """

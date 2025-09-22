@@ -132,7 +132,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Clean CSV files in trading data directory")
-    parser.add_argument("--data-dir", default="trading_data/dev", help="Data directory to clean")
+    parser.add_argument("--data-dir", default="trading_data/funds/TEST", help="Data directory to clean")
     parser.add_argument("--file", help="Specific CSV file to clean")
     
     args = parser.parse_args()

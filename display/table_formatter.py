@@ -264,9 +264,12 @@ class TableFormatter:
                 except:
                     daily_pnl_value = Decimal('0')
 
-                # Calculate daily P&L percentage based on the dollar amount and total position value
-                total_position_value = shares * current_price if current_price > 0 else Decimal('0')
-                daily_pnl_pct = float((daily_pnl_value / total_position_value * 100)) if total_position_value > 0 else 0
+                # Calculate daily P&L percentage based on cost basis (previous day value)
+                cost_basis = position.get('cost_basis', Decimal('0'))
+                if cost_basis and cost_basis > 0:
+                    daily_pnl_pct = float((float(daily_pnl_value) / float(cost_basis) * 100))
+                else:
+                    daily_pnl_pct = 0
 
                 if daily_pnl_pct > 0:
                     daily_pnl_display = f"[green]${float(daily_pnl_value):,.2f} +{daily_pnl_pct:.1f}%[/green]"
@@ -275,7 +278,7 @@ class TableFormatter:
                 else:
                     daily_pnl_display = f"[cyan]${float(daily_pnl_value):,.2f} {daily_pnl_pct:.1f}%[/cyan]"
             else:
-                # When daily P&L is $0.00, percentage should also be 0.00%
+                # When daily P&L is $0.00 or N/A, percentage should also be 0.00%
                 daily_pnl_display = "[cyan]$0.00 0.0%[/cyan]"
             
             # Get position weight from enhanced data

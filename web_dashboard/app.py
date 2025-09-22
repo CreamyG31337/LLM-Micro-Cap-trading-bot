@@ -193,7 +193,7 @@ def create_performance_chart(portfolio_df: pd.DataFrame) -> str:
             from pathlib import Path
             from decimal import Decimal
             
-            exchange_rates = load_exchange_rates(Path("trading_data/prod"))
+            exchange_rates = load_exchange_rates(Path("trading_data/funds/Project Chimera"))
             
             # Group by date and calculate daily totals
             daily_totals = []

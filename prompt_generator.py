@@ -179,7 +179,7 @@ class PromptGenerator:
             try:
                 benchmarks = get_benchmarks()
             except Exception as e:
-                logger.debug(f"Could not get benchmarks from market_config: {e}")
+                print(f"Debug: Could not get benchmarks from market_config: {e}")
                 # Fallback to default benchmarks
                 benchmarks = ["SPY", "QQQ", "VTI"]
 
@@ -726,7 +726,9 @@ class PromptGenerator:
                     industry_val = 'ETF'
                 industry_cell = f"{str(industry_val)[:24]:<25}"
                 
-                country_cell = f"{str(fundamentals.get('country', 'N/A')):<8}"
+                country_val = str(fundamentals.get('country', 'N/A'))
+                # Truncate long country names to fit 8-character column
+                country_cell = f"{country_val[:7]:<8}"
                 market_cap_cell = f"{str(fundamentals.get('marketCap', 'N/A')):<12}"
                 pe_cell = f"{str(fundamentals.get('trailingPE', 'N/A')):<6}"
                 div_cell = f"{str(fundamentals.get('dividendYield', 'N/A')):<6}"

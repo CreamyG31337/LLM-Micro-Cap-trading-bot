@@ -475,6 +475,232 @@ def verify_script_before_action() -> None:
         raise ScriptIntegrityError(f"Script integrity check failed: {e}") from e
 
 
+def generate_benchmark_graph(settings: Settings) -> None:
+    """Generate a benchmark performance graph for the last 365 days.
+    
+    Args:
+        settings: System settings containing data directory configuration
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        import yfinance as yf
+        from datetime import datetime, timedelta
+        from pathlib import Path
+        
+        print_info("Setting up benchmark graph generation...")
+        
+        # Get data directory
+        data_dir = settings.get_data_directory()
+        if not data_dir:
+            print_error("No data directory configured")
+            return
+            
+        # Calculate date range for last 365 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        
+        print_info(f"Generating benchmark graph from {start_date.date()} to {end_date.date()}")
+        
+        # Define benchmark configurations
+        benchmarks = {
+            'sp500': {'ticker': '^GSPC', 'name': 'S&P 500', 'color': 'blue'},
+            'qqq': {'ticker': 'QQQ', 'name': 'Nasdaq-100 (QQQ)', 'color': 'orange'},
+            'russell2000': {'ticker': '^RUT', 'name': 'Russell 2000', 'color': 'green'},
+            'vti': {'ticker': 'VTI', 'name': 'Total Stock Market (VTI)', 'color': 'red'}
+        }
+        
+        # Create date range for the last 365 days
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        
+        # Download and process each benchmark
+        benchmark_data = {}
+        for key, config in benchmarks.items():
+            try:
+                print_info(f"Downloading {config['name']} data...")
+                
+                # Download with extra buffer days
+                download_start = start_date - timedelta(days=5)
+                download_end = end_date + timedelta(days=5)
+                
+                data = yf.download(config['ticker'], start=download_start, end=download_end, 
+                                 progress=False, auto_adjust=False)
+                
+                if data.empty:
+                    print_warning(f"No data available for {config['name']}")
+                    continue
+                    
+                # Reset index and clean up columns
+                data = data.reset_index()
+                if isinstance(data.columns, pd.MultiIndex):
+                    data.columns = data.columns.get_level_values(0)
+                
+                # Find baseline price (first available price in our date range)
+                data['Date_Only'] = pd.to_datetime(data['Date']).dt.date
+                baseline_data = data[data['Date_Only'] >= start_date.date()]
+                
+                if len(baseline_data) > 0:
+                    baseline_price = baseline_data['Close'].iloc[0]
+                else:
+                    # Fallback to first available price
+                    baseline_price = data['Close'].iloc[0]
+                
+                # Normalize to $100 baseline
+                scaling_factor = 100.0 / baseline_price
+                data['Normalized_Value'] = data['Close'] * scaling_factor
+                
+                # Create complete date range and merge
+                portfolio_date_range = pd.DataFrame({'Date': [d.date() for d in date_range]})
+                data_clean = data[['Date_Only', 'Normalized_Value']].copy()
+                
+                merged = portfolio_date_range.merge(data_clean, left_on='Date', right_on='Date_Only', how='left')
+                merged['Normalized_Value'] = merged['Normalized_Value'].ffill().bfill()
+                
+                # Convert back to datetime and apply market timing
+                merged['Date'] = pd.to_datetime(merged['Date'])
+                
+                # Apply market close timing (1:00 PM PST) for consistency
+                for idx, row in merged.iterrows():
+                    date_only = row['Date'].date()
+                    weekday = pd.to_datetime(date_only).weekday()
+                    
+                    if weekday < 5:  # Trading day
+                        market_close_time = pd.to_datetime(date_only) + timedelta(hours=13)
+                        merged.at[idx, 'Date'] = market_close_time
+                    else:  # Weekend
+                        weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
+                        merged.at[idx, 'Date'] = weekend_market_close
+                
+                benchmark_data[key] = merged[['Date', 'Normalized_Value']].copy()
+                print_success(f"Processed {config['name']} data: {len(merged)} days")
+                
+            except Exception as e:
+                print_warning(f"Error downloading {config['name']}: {e}")
+                continue
+        
+        if not benchmark_data:
+            print_error("No benchmark data could be downloaded")
+            return
+        
+        # Create the graph
+        print_info("Creating benchmark performance graph...")
+        
+        plt.figure(figsize=(16, 9))
+        plt.style.use("seaborn-v0_8-whitegrid")
+        
+        # Plot each benchmark
+        colors = ['blue', 'orange', 'green', 'red', 'purple', 'brown']
+        styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 5))]
+        markers = ['o', 's', '^', 'v', 'D', 'p']
+        
+        for i, (key, data) in enumerate(benchmark_data.items()):
+            config = benchmarks[key]
+            color = colors[i % len(colors)]
+            style = styles[i % len(styles)]
+            marker = markers[i % len(markers)]
+            
+            # Calculate final performance
+            final_value = data['Normalized_Value'].iloc[-1]
+            performance = final_value - 100.0
+            
+            plt.plot(
+                data['Date'],
+                data['Normalized_Value'],
+                label=f"{config['name']} ({performance:+.1f}%)",
+                color=color,
+                linestyle=style,
+                linewidth=2,
+                marker=marker,
+                markersize=3,
+                alpha=0.8
+            )
+        
+        # Add weekend shading
+        def add_weekend_shading():
+            current_date = start_date.date()
+            end_date_only = end_date.date()
+            
+            while current_date <= end_date_only:
+                weekday = pd.to_datetime(current_date).weekday()
+                
+                if weekday == 5:  # Saturday
+                    weekend_start = pd.to_datetime(current_date)
+                    weekend_end = weekend_start + timedelta(days=2)
+                    
+                    plt.axvspan(weekend_start, weekend_end, 
+                               color='lightgray', alpha=0.2, zorder=0)
+                    current_date += timedelta(days=2)
+                else:
+                    current_date += timedelta(days=1)
+        
+        add_weekend_shading()
+        
+        # Add break-even line
+        plt.axhline(y=100, color='gray', linestyle=':', alpha=0.7, linewidth=1.5, label='Break-even')
+        
+        # Formatting
+        plt.title(f"Benchmark Performance Comparison\nLast 365 Days (Normalized to $100)", fontsize=14, fontweight='bold')
+        plt.xlabel("Date", fontsize=12)
+        plt.ylabel("Performance Index (100 = Break-even)", fontsize=12)
+        
+        # Date formatting
+        import matplotlib.dates as mdates
+        plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        plt.gca().xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+        
+        plt.grid(True, which='major', alpha=0.3)
+        plt.grid(True, which='minor', alpha=0.1)
+        plt.legend(loc='upper left', frameon=True, fancybox=True, shadow=True)
+        plt.xticks(rotation=45)
+        
+        # Adjust layout
+        plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.88)
+        
+        # Save the graph
+        graphs_dir = Path("graphs")
+        graphs_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"benchmark_comparison_365days_{timestamp}.png"
+        filepath = graphs_dir / filename
+        
+        plt.savefig(filepath, dpi=300, bbox_inches="tight", facecolor='white', edgecolor='none')
+        print_success(f"Benchmark graph saved to: {filepath.resolve()}")
+        
+        # Close the figure to free memory
+        plt.close()
+        
+        # Try to open the graph
+        try:
+            import os
+            import platform
+            import subprocess
+            
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(str(filepath))
+                print_info("Graph opened in default viewer")
+            elif system == "Darwin":  # macOS
+                subprocess.run(["open", str(filepath)], check=True)
+                print_info("Graph opened in default viewer")
+            else:  # Linux
+                subprocess.run(["xdg-open", str(filepath)], check=True)
+                print_info("Graph opened in default viewer")
+        except Exception as e:
+            print_warning(f"Could not open graph automatically: {e}")
+            print_info(f"Graph saved at: {filepath.resolve()}")
+        
+    except ImportError as e:
+        print_error(f"Required packages not available: {e}")
+        print_info("Please ensure matplotlib, pandas, and yfinance are installed")
+    except Exception as e:
+        print_error(f"Error generating benchmark graph: {e}")
+        logger.error(f"Benchmark graph generation error: {e}", exc_info=True)
+
+
 def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_manager: FundManager) -> None:
     """Handle fund switching workflow.
     
@@ -1617,6 +1843,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('🏦')} 'f'       Switch Fund"))
             print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
             print(create_menu_line(f"{_safe_emoji('📊')} 'o'       Sort Portfolio"))
+            print(create_menu_line(f"{_safe_emoji('💾')} 'cache'   Manage Cache"))
             print(create_menu_line(f"{_safe_emoji('❌')} Enter     Quit"))
             print(f"{Fore.GREEN}{Style.BRIGHT}{end_line}{Style.RESET_ALL}")
         else:

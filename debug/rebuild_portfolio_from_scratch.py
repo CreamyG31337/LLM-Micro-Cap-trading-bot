@@ -330,11 +330,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         print(f"{_safe_emoji('📊')} Loaded {len(trade_df)} trades from trade log")
         
         # Convert date column to timezone-aware datetime objects for accurate comparisons
+        # This ensures proper chronological ordering and date comparisons
         from utils.timezone_utils import parse_csv_timestamp
         trade_df['Date'] = trade_df['Date'].apply(parse_csv_timestamp)
         trade_df.dropna(subset=['Date'], inplace=True)
         
-        # Sort trades by date
+        # Sort trades by date to process them chronologically
+        # This is critical for accurate position tracking and P&L calculations
         trade_df = trade_df.sort_values('Date').reset_index(drop=True)
         
         # Get all unique tickers for fast price fetching
@@ -346,11 +348,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         print(f"💰 Set up currency cache for {len(unique_tickers)} tickers")
         
         # Fetch ALL prices for ALL tickers in parallel (fast approach)
+        # This pre-fetches current prices to avoid API calls during HOLD generation
         print(f"🌐 Fetching current prices for all {len(unique_tickers)} tickers in parallel...")
         ticker_prices = {}
         failed_details = {}
         
         # Get current date for price fetching
+        # Use a 7-day window to ensure we get recent price data
         today = datetime.now()
         start_date = today - timedelta(days=7)  # 7-day window for current price
         
@@ -451,6 +455,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         print(f"   Pre-calculated currencies for {len(ticker_currencies)} tickers")
         
         # Process trades chronologically to build complete portfolio
+        # This maintains running position state as we process each trade
         portfolio_entries = []
         running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'trades': [], 'last_price': Decimal('0'), 'last_currency': 'CAD'})
         
@@ -541,9 +546,10 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 })
         
         # Add HOLD entries for every day between trades and current positions (ONE PER DAY PER TICKER)
+        # HOLD entries provide end-of-day snapshots for accurate performance tracking
         print(f"\n📊 Adding HOLD entries for price tracking...")
         
-        # Get all unique trade dates
+        # Get all unique trade dates to understand the trading timeline
         trade_dates = sorted(trade_df['Date'].unique())
         print(f"   Trade dates: {trade_dates}")
         
@@ -552,12 +558,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         unique_calendar_dates = set()
         
         # First, collect all unique calendar dates from trade dates
+        # This ensures we have HOLD entries for every day there was trading activity
         for trade_date_obj in trade_df['Date']:
             if trade_date_obj:
                 calendar_date = trade_date_obj.strftime('%Y-%m-%d')
                 unique_calendar_dates.add(calendar_date)
         
-        # Convert to sorted list
+        # Convert to sorted list for chronological processing
         unique_calendar_dates = sorted(list(unique_calendar_dates))
         
         # Generate all dates between first trade and today
@@ -575,10 +582,15 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
             current_time = today.astimezone(tz)
             market_close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
             
-            # Only generate dates up to the last trade date to avoid future API calls
-            end_date = last_date.date()
+            # Generate dates up to the last actual trading day to ensure complete data
+            # This ensures we have HOLD entries through the most recent market close
+            last_trading_day = MARKET_HOURS.last_trading_date().date()
             
-            print(f"   📅 Generating HOLD entries from {first_date.date()} to {end_date} (last trade date)")
+            # Use the later of: last trade date or last actual trading day
+            # This ensures we don't miss any trading days after the last trade
+            end_date = max(last_date.date(), last_trading_day)
+            
+            print(f"   📅 Generating HOLD entries from {first_date.date()} to {end_date} (last trading day)")
             
             current_date = first_date
             while current_date.date() <= end_date:
@@ -588,11 +600,13 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         print(f"   Adding HOLD entries for {len(all_dates)} dates")
         
         # OPTIMIZATION: Pre-calculate all positions for all dates at once
+        # This avoids recalculating positions for each HOLD entry, making it much faster
         print("   Pre-calculating positions for all dates...")
         date_positions = {}  # date_str -> {ticker: position_data}
         traded_tickers_by_date = {}  # date_str -> set of tickers
         
         # Pre-calculate which tickers were traded on which dates
+        # This helps us avoid duplicate HOLD entries on days with trades
         for _, trade in trade_df.iterrows():
             trade_date_obj = trade['Date'] # This is now a datetime object
             if trade_date_obj:
@@ -671,9 +685,11 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                     hold_date_str = hold_date_at_close.strftime('%Y-%m-%d %H:%M:%S')
                     
                     # Use historical price for this specific date
+                    # This fetches the actual market close price for accurate valuation
                     price_value = get_historical_close_price(ticker, hold_date_str)
                     
                     # If no historical price found, use the last known price from trades
+                    # This is a fallback for delisted stocks or API failures
                     if price_value <= 0:
                         # Find the last trade price for this ticker on or before this date
                         ticker_trades = trade_df[trade_df['Ticker'] == ticker]

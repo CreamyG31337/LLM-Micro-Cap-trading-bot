@@ -235,126 +235,95 @@ def load_portfolio_totals() -> pd.DataFrame:
     print(f"{_safe_emoji('📊')} Loaded portfolio data with {len(llm_df)} rows")
     print(f"{_safe_emoji('📊')} Columns: {list(llm_df.columns)}")
     
-    # Convert date and clean data for modern format
+    # --- Data Cleaning and Preparation ---
     llm_df["Date"] = pd.to_datetime(llm_df["Date"], errors="coerce")
-    llm_df["Total Value"] = pd.to_numeric(llm_df["Total Value"], errors="coerce")
-    
-    # Convert dates to date-only (remove time component) for proper daily aggregation
-    # Filter out NaN dates first to avoid mixed type issues
     llm_df = llm_df.dropna(subset=['Date'])
-    llm_df['Date_Only'] = llm_df['Date'].dt.date
+    llm_df = llm_df.sort_values("Date").reset_index(drop=True)
     
-    print(f"{_safe_emoji('📅')} Date range: {llm_df['Date_Only'].min()} to {llm_df['Date_Only'].max()}")
+    numeric_cols = ['Shares', 'Average Price', 'Cost Basis', 'Current Price', 'Total Value', 'PnL']
+    for col in numeric_cols:
+        llm_df[col] = pd.to_numeric(llm_df[col], errors='coerce').fillna(0)
+
+    print(f"{_safe_emoji('📅')} Date range: {llm_df['Date'].min().date()} to {llm_df['Date'].max().date()}")
     
-    # Load exchange rates for currency conversion
-    from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
+    # --- Load Exchange Rates ---
+    from utils.currency_converter import load_exchange_rates, convert_usd_to_cad
     from pathlib import Path
     from decimal import Decimal
-    
-    # Use the data directory from the portfolio file for exchange rates
-    exchange_rates = load_exchange_rates(Path(DATA_DIR) if 'DATA_DIR' in globals() else Path("trading_data/funds/Project Chimera"))
-    
-    # Group by date and calculate portfolio totals
-    # For each date, we want the FINAL state (latest timestamp) for each ticker
-    daily_totals = []
-    for date_only, date_group in llm_df.groupby('Date_Only'):
-        if pd.isna(date_only):
-            continue
-        
-        # For each ticker on this date, get the LATEST entry (last timestamp)
-        latest_positions = []
-        for ticker, ticker_group in date_group.groupby('Ticker'):
-            # Get the row with the latest timestamp for this ticker on this date
-            latest_entry = ticker_group.loc[ticker_group['Date'].idxmax()]
-            
-            # Only include positions that still have value (not sold)
-            if latest_entry['Total Value'] > 0:
-                latest_positions.append(latest_entry)
-        
-        if latest_positions:
-            # Calculate TRUE performance metrics with proper currency conversion
+    exchange_rates = load_exchange_rates(Path(DATA_DIR))
+
+    # --- Progressive Portfolio Calculation ---
+    daily_snapshots = []
+    portfolio = {}  # Holds the state of our portfolio {ticker: {data}}
+    all_dates = pd.to_datetime(llm_df['Date'].dt.date.unique())
+
+    for current_date in all_dates:
+        # Get all records for the current day
+        day_df = llm_df[llm_df['Date'].dt.date == current_date.date()]
+
+        # Update portfolio with the latest info from the day
+        for _, row in day_df.iterrows():
+            ticker = row['Ticker']
+            # We take the last update for any given ticker on a given day
+            portfolio[ticker] = row.to_dict()
+
+        # Remove sold positions
+        portfolio = {ticker: pos for ticker, pos in portfolio.items() if pos['Total Value'] > 0}
+
+        # --- Calculate Daily Totals ---
+        if portfolio:
             total_cost_basis_cad = Decimal('0')
             total_market_value_cad = Decimal('0')
-            total_pnl_cad = Decimal('0')
-            
-            for pos in latest_positions:
-                ticker = pos['Ticker']
-                cost_basis = Decimal(str(pos['Cost Basis']))
-                market_value = Decimal(str(pos['Total Value']))
-                pnl = Decimal(str(pos['PnL']))
-                
-                # Convert USD to CAD if needed
-                if is_us_ticker(ticker):
-                    cost_basis_cad = convert_usd_to_cad(cost_basis, exchange_rates)
-                    market_value_cad = convert_usd_to_cad(market_value, exchange_rates)
-                    pnl_cad = convert_usd_to_cad(pnl, exchange_rates)
+
+            for ticker, pos in portfolio.items():
+                cost_basis = Decimal(str(pos.get('Cost Basis', 0)))
+                market_value = Decimal(str(pos.get('Total Value', 0)))
+                currency = pos.get('Currency', 'CAD')
+                if pd.isna(currency):
+                    currency = 'CAD'
+                currency = currency.upper()
+
+                if currency == 'USD':
+                    total_cost_basis_cad += convert_usd_to_cad(cost_basis, exchange_rates, current_date)
+                    total_market_value_cad += convert_usd_to_cad(market_value, exchange_rates, current_date)
                 else:
-                    cost_basis_cad = cost_basis
-                    market_value_cad = market_value
-                    pnl_cad = pnl
-                
-                total_cost_basis_cad += cost_basis_cad
-                total_market_value_cad += market_value_cad
-                total_pnl_cad += pnl_cad
+                    total_cost_basis_cad += cost_basis
+                    total_market_value_cad += market_value
             
-            # Convert back to float for compatibility
+            total_pnl = float(total_market_value_cad - total_cost_basis_cad)
             total_cost_basis = float(total_cost_basis_cad)
             total_market_value = float(total_market_value_cad)
-            total_pnl = float(total_pnl_cad)
             
-            # Performance percentage (how much your investments have grown/declined)
             performance_pct = (total_pnl / total_cost_basis) * 100 if total_cost_basis > 0 else 0.0
-            
-            # Use the latest timestamp from this date as the representative date
-            latest_timestamp = pd.to_datetime(date_only)
-            
-            daily_totals.append({
-                "Date": latest_timestamp, 
-                "Total Equity": total_market_value,  # Keep for compatibility
-                "Cost_Basis": total_cost_basis,      # Money actually invested
-                "Market_Value": total_market_value,   # Current value of investments
-                "Unrealized_PnL": total_pnl,         # Actual gains/losses
-                "Performance_Pct": performance_pct     # True percentage return
-            })
-            
-            print(f"{_safe_emoji('📊')} {date_only}: Invested ${total_cost_basis:,.2f} -> Worth ${total_market_value:,.2f} ({performance_pct:+.2f}%)")
-    
-    if len(daily_totals) == 0:
-        print(f"{_safe_emoji('⚠️')}  No valid portfolio data found. Creating baseline entry.")
-        llm_totals = pd.DataFrame({
-            "Date": [pd.Timestamp.now()], 
-            "Total Equity": [100.0]
-        })
-    else:
-        llm_totals = pd.DataFrame(daily_totals)
-        print(f"{_safe_emoji('📈')} Calculated {len(llm_totals)} daily portfolio totals")
 
-    # Convert to DataFrame and sort by date
-    if daily_totals:
-        llm_totals = pd.DataFrame(daily_totals)
-        llm_totals = llm_totals.sort_values("Date").reset_index(drop=True)
-        
-        # Use actual investment performance for meaningful comparison
-        # This shows how your investments are performing, not cash injections
-        llm_totals["Performance_Index"] = llm_totals["Performance_Pct"] + 100  # Base 100 index
-        
-        start_invested = llm_totals["Cost_Basis"].iloc[0]
-        end_invested = llm_totals["Cost_Basis"].iloc[-1]
-        start_performance = llm_totals["Performance_Pct"].iloc[0]
-        end_performance = llm_totals["Performance_Pct"].iloc[-1]
-        
-        print(f"{_safe_emoji('📈')} Investment Performance: {start_performance:+.2f}% -> {end_performance:+.2f}%")
-        print(f"{_safe_emoji('💰')} Total Capital Deployed: ${start_invested:,.2f} -> ${end_invested:,.2f}")
-        
-        # Create continuous timeline including weekends
-        llm_totals = create_continuous_timeline(llm_totals)
-        return llm_totals
-    else:
-        # Fallback if no data
+            daily_snapshots.append({
+                "Date": current_date,
+                "Cost_Basis": total_cost_basis,
+                "Market_Value": total_market_value,
+                "Unrealized_PnL": total_pnl,
+                "Performance_Pct": performance_pct
+            })
+            print(f"{_safe_emoji('📊')} {current_date.date()}: Invested ${total_cost_basis:,.2f} -> Worth ${total_market_value:,.2f} ({performance_pct:+.2f}%)")
+
+    if not daily_snapshots:
+        print(f"{_safe_emoji('⚠️')}  No valid portfolio data found. Creating baseline entry.")
         return pd.DataFrame({"Date": [pd.Timestamp.now()], "Performance_Pct": [0.0], "Performance_Index": [100.0]})
+
+    llm_totals = pd.DataFrame(daily_snapshots)
+    print(f"{_safe_emoji('📈')} Calculated {len(llm_totals)} daily portfolio totals")
+
+    llm_totals["Performance_Index"] = llm_totals["Performance_Pct"] + 100
     
-    print(f"{_safe_emoji('📊')} Final dataset: {len(out)} data points from {out['Date'].min().date()} to {out['Date'].max().date()}")
-    return out
+    start_invested = llm_totals["Cost_Basis"].iloc[0]
+    end_invested = llm_totals["Cost_Basis"].iloc[-1]
+    start_performance = llm_totals["Performance_Pct"].iloc[0]
+    end_performance = llm_totals["Performance_Pct"].iloc[-1]
+    
+    print(f"{_safe_emoji('📈')} Investment Performance: {start_performance:+.2f}% -> {end_performance:+.2f}%")
+    print(f"{_safe_emoji('💰')} Total Capital Deployed: ${start_invested:,.2f} -> ${end_invested:,.2f}")
+    
+    llm_totals = create_continuous_timeline(llm_totals)
+    return llm_totals
 
 
 def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
@@ -579,7 +548,7 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
     df["Running Max"] = df["Performance_Index"].cummax()
     df["Drawdown %"] = (df["Performance_Index"] / df["Running Max"] - 1.0) * 100.0
     row = df.loc[df["Drawdown %"].idxmin()]
-    return pd.Timestamp(row["Date"]), float(row["Total Equity"]), float(row["Drawdown %"])
+    return pd.Timestamp(row["Date"]), float(row["Market_Value"]), float(row["Drawdown %"])
 
 
 def refresh_portfolio_data(data_dir_path):
@@ -1005,6 +974,8 @@ def main(args) -> dict:
     plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.88, hspace=0.2, wspace=0.2)
 
     # --- Auto-save to project root with optimized settings ---
+    # Ensure the directory exists before saving
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(RESULTS_PATH, 
                 dpi=300, 
                 bbox_inches="tight",

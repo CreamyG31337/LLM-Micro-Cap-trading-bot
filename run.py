@@ -68,6 +68,21 @@ def check_venv() -> bool:
     return VENV_DIR.exists() and VENV_PYTHON.exists()
 
 
+def run_script_with_subprocess(command: List[str]) -> int:
+    """Run a script using a subprocess, handling keyboard interrupts."""
+    print_colored(f"{_safe_emoji('🚀')} Running: {' '.join(command)}", Colors.CYAN)
+    print_colored("=" * 60, Colors.BLUE)
+    
+    try:
+        result = subprocess.run(command, cwd=PROJECT_ROOT)
+        return result.returncode
+    except KeyboardInterrupt:
+        print_colored(f"\n\n{_safe_emoji('⚠️')}  Script interrupted by user", Colors.YELLOW)
+        return 130
+    except Exception as e:
+        print_colored(f"\n{_safe_emoji('❌')} Error running script: {e}", Colors.RED)
+        return 1
+
 def run_with_venv(script_path: Path, args: List[str] = None) -> int:
     """Run a Python script with the virtual environment activated"""
     if args is None:
@@ -88,20 +103,7 @@ def run_with_venv(script_path: Path, args: List[str] = None) -> int:
     
     # Prepare command
     cmd = [str(VENV_PYTHON), str(script_path)] + args
-    
-    print_colored(f"{_safe_emoji('🚀')} Running: {' '.join(cmd)}", Colors.CYAN)
-    print_colored("=" * 60, Colors.BLUE)
-    
-    # Run the command
-    try:
-        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
-        return result.returncode
-    except KeyboardInterrupt:
-        print_colored(f"\n\n{_safe_emoji('⚠️')}  Script interrupted by user", Colors.YELLOW)
-        return 130
-    except Exception as e:
-        print_colored(f"\n{_safe_emoji('❌')} Error running script: {e}", Colors.RED)
-        return 1
+    return run_script_with_subprocess(cmd)
 
 def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
     """Get available menu options with (key, title, description, args)"""
@@ -178,6 +180,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
 
         ("k", "💾 Manage Cache",
          f"View, clear, or update cache data (uses '{data_folder_name}' folder) - runs cache management",
+         []),
+
+        ("b", "📦 Archive Backups",
+         "Archive old backups into daily zip files to save space.",
          []),
 
         ("q", "🚪 Quit",
@@ -341,6 +347,42 @@ def get_script_path(option: str) -> Optional[Path]:
     
     return script_map.get(option)
 
+def handle_backup_archiving() -> None:
+    """Handle backup archiving submenu."""
+    print_colored("\n" + "=" * 80, Colors.HEADER)
+    print_colored(f"{_safe_emoji('📦')} BACKUP ARCHIVING", Colors.HEADER + Colors.BOLD)
+    print_colored("=" * 80, Colors.HEADER)
+    print_colored(
+        "This utility will archive old backups into daily zip files.",
+        Colors.YELLOW
+    )
+    
+    try:
+        days_old_str = input(f"Enter number of days old to archive (default: 1): ")
+        days_old = int(days_old_str) if days_old_str else 1
+        
+        dry_run_choice = input("Perform a dry run first? (y/n, default: y): ").lower()
+        dry_run = dry_run_choice != 'n'
+
+        command = [
+            sys.executable, 
+            "utils/backup_cleanup.py",
+            "--archive",
+            "--days", str(days_old)
+        ]
+        if dry_run:
+            command.append("--dry-run")
+
+        run_script_with_subprocess(command)
+
+    except ValueError:
+        print_colored("Invalid number of days. Please enter an integer.", Colors.RED)
+    except Exception as e:
+        print_colored(f"An error occurred: {e}", Colors.RED)
+
+    input("\nPress Enter to return to the main menu...")
+
+
 def main() -> None:
     """Main application loop"""
     print_colored(f"{_safe_emoji('🚀')} Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
@@ -379,6 +421,10 @@ def main() -> None:
         
         elif choice == "c":
             handle_configuration()
+            continue
+
+        elif choice == "b":
+            handle_backup_archiving()
             continue
 
         elif choice == "k":

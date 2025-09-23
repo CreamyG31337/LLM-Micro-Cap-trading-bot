@@ -308,8 +308,18 @@ class FundManager:
         if fund_type.lower() == "webull":
             config["fund"]["webull_fx_fee"] = {
                 "enabled": True,
-                "fee_rate": 0.015,  # 1.5% FX fee
-                "description": "Webull foreign exchange fee applied to current value"
+                "liquidation_fee": 2.99,  # $2.99 per USD holding
+                "fx_fee_rate": 0.015,  # 1.5% FX fee
+                "description": "Webull liquidation fee ($2.99/holding) + FX fee (1.5%)"
+            }
+        
+        # Add Wealthsimple-specific configuration
+        if fund_type.lower() == "wealthsimple":
+            config["fund"]["wealthsimple_fees"] = {
+                "enabled": True,
+                "fx_fee_rate": 0.015,  # 1.5% FX fee on USD holdings (same as Webull)
+                "liquidation_fee": 0.0,  # No liquidation fees (unlike Webull's $2.99)
+                "description": "Wealthsimple FX fees only (1.5% of USD holdings, no liquidation fees)"
             }
         
         # Update data directory path

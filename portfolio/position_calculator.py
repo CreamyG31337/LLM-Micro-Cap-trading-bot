@@ -163,7 +163,7 @@ class PositionCalculator:
             PositionCalculatorError: If calculation fails
         """
         try:
-            logger.debug(f"Calculating position metrics for {position.ticker}")
+            # logger.debug(f"Calculating position metrics for {position.ticker}")
             
             # Use provided current price or position's current price
             price = current_price or position.current_price
@@ -214,8 +214,8 @@ class PositionCalculator:
                 'company': position.company
             }
             
-            logger.debug(f"Position metrics calculated for {position.ticker}: "
-                       f"P&L: {unrealized_pnl}, {unrealized_pnl_percentage}%")
+            # logger.debug(f"Position metrics calculated for {position.ticker}: "
+            #            f"P&L: {unrealized_pnl}, {unrealized_pnl_percentage}%")
             
             return metrics
             

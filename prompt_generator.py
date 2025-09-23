@@ -330,8 +330,14 @@ class PromptGenerator:
                                 _, _, usd_to_cad_rate = load_cash_balances(self.data_dir)
                                 if usd_cash and usd_to_cad_rate:
                                     # Calculate estimated FX fee (1.5% on USD holdings)
-                                    estimated_fx_fee_total_usd = usd_cash * Decimal('0.015')
-                                    estimated_fx_fee_total_cad = estimated_fx_fee_total_usd * usd_to_cad_rate
+                                    # Compute CAD fee directly and round once to 2 decimals
+                                    estimated_fx_fee_total_cad = (
+                                        usd_cash * usd_to_cad_rate * Decimal('0.015')
+                                    ).quantize(Decimal('0.01'))
+                                    # USD fee for display/reference (keep as is, rounded separately)
+                                    estimated_fx_fee_total_usd = (
+                                        usd_cash * Decimal('0.015')
+                                    ).quantize(Decimal('0.01'))
                             except Exception:
                                 pass
             except Exception as e:

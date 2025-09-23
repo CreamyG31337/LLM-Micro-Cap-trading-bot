@@ -277,3 +277,5 @@ supabase_credentials.txt
 *admin*.py
 *credentials*.txt
 *secrets*.txt
+debug_output.txt
+test_output.txt

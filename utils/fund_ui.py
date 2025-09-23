@@ -465,19 +465,20 @@ class FundUI:
             ("2", "tfsa", "Tax-Free Savings Account"),
             ("3", "rrsp", "Registered Retirement Savings Plan"),
             ("4", "webull", "Webull Trading Account (with FX fees)"),
-            ("5", "custom", "Custom Type")
+            ("5", "wealthsimple", "Wealthsimple Trading Account (with fees)"),
+            ("6", "custom", "Custom Type")
         ]
         
         for key, ftype, description in fund_types:
             print(f"  [{key}] {ftype} - {description}")
         
         while True:
-            type_choice = input(f"\n{Colors.YELLOW}Select fund type (1-5): {Colors.ENDC}").strip()
+            type_choice = input(f"\n{Colors.YELLOW}Select fund type (1-6): {Colors.ENDC}").strip()
             
-            if type_choice in ["1", "2", "3", "4"]:
+            if type_choice in ["1", "2", "3", "4", "5"]:
                 new_type = [t[1] for t in fund_types if t[0] == type_choice][0]
                 break
-            elif type_choice == "5":
+            elif type_choice == "6":
                 new_type = input(f"{Colors.YELLOW}Enter custom fund type: {Colors.ENDC}").strip().lower()
                 if new_type:
                     break
@@ -505,8 +506,18 @@ class FundUI:
         if new_type == "webull":
             config["fund"]["webull_fx_fee"] = {
                 "enabled": True,
-                "fee_rate": 0.015,  # 1.5% FX fee
-                "description": "Webull foreign exchange fee applied to current value"
+                "liquidation_fee": 2.99,  # $2.99 per USD holding
+                "fx_fee_rate": 0.015,  # 1.5% FX fee
+                "description": "Webull liquidation fee ($2.99/holding) + FX fee (1.5%)"
+            }
+        
+        # Add Wealthsimple-specific configuration
+        if new_type == "wealthsimple":
+            config["fund"]["wealthsimple_fees"] = {
+                "enabled": True,
+                "fx_fee_rate": 0.015,  # 1.5% FX fee on USD holdings (same as Webull)
+                "liquidation_fee": 0.0,  # No liquidation fees (unlike Webull's $2.99)
+                "description": "Wealthsimple FX fees only (1.5% of USD holdings, no liquidation fees)"
             }
         
         # Save the updated config

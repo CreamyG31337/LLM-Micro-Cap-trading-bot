@@ -149,7 +149,7 @@ def convert_usd_to_cad(usd_amount: Decimal,
     rate = get_exchange_rate_for_date(exchange_rates, target_date)
     cad_amount = (usd_amount * rate).quantize(Decimal('0.01'))
     
-    logger.debug(f"Converted ${usd_amount} USD to ${cad_amount} CAD (rate: {rate})")
+    # logger.debug(f"Converted ${usd_amount} USD to ${cad_amount} CAD (rate: {rate})")
     return cad_amount
 
 

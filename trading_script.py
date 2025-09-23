@@ -1644,7 +1644,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 elif fund_type == 'wealthsimple':
                     # Wealthsimple: Only 1.5% of USD holdings (no $2.99 fees)
                     webull_fx_fee = estimated_fx_fee_total_cad
-                    logger.info(f"Using estimated FX fee for Wealthsimple fund display: ${webull_fx_fee}")
+                    logger.debug(f"Using estimated FX fee for Wealthsimple fund display: ${webull_fx_fee}")
                 else:
                     # For other fund types, keep webull_fx_fee at 0
                     webull_fx_fee = Decimal('0')

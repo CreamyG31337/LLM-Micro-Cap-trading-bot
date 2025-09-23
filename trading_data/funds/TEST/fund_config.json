@@ -1,15 +1,16 @@
 {
   "fund": {
-    "name": "Test Fund",
-    "description": "Testing and Development Fund - ISOLATED",
+    "name": "Project Chimera",
+    "description": "AI-Powered Micro-Cap Investment Fund",
     "display_currency": "CAD",
-    "fund_type": "webull",
-    "created_date": "2025-09-21T00:39:00.000000",
+    "fund_type": "wealthsimple",
+    "created_date": "2025-09-16T23:53:03.606325",
     "tax_status": "taxable",
-    "webull_fx_fee": {
+    "wealthsimple_fees": {
       "enabled": true,
-      "fee_rate": 0.015,
-      "description": "Webull foreign exchange fee applied to current value"
+      "fx_fee_rate": 0.015,
+      "liquidation_fee": 0.0,
+      "description": "Wealthsimple FX fees only (1.5% of USD holdings, no liquidation fees)"
     }
   },
   "repository": {
@@ -23,6 +24,6 @@
   "backup": {
     "enabled": true,
     "directory": "backups",
-    "max_backups": 5
+    "max_backups": 10
   }
 }

@@ -36,6 +36,7 @@ if __name__ == "__main__":
         parser.add_argument("--asof", help="Treat this YYYY-MM-DD as 'today'")
         parser.add_argument("--force-fallback", action="store_true", help="Force fallback mode")
         parser.add_argument("--colorama-only", action="store_true", help="Force colorama-only mode")
+        parser.add_argument("--no-menu", action="store_true", help="Skip interactive menu and exit after display")
         
         args = parser.parse_args()
         
@@ -57,6 +58,24 @@ if __name__ == "__main__":
             os.environ["FORCE_FALLBACK"] = "true"
         if args.colorama_only:
             os.environ["FORCE_COLORAMA_ONLY"] = "true"
+        if args.no_menu:
+            os.environ["NON_INTERACTIVE"] = "true"
+        
+        # Pass arguments to main script
+        import sys
+        sys.argv = ['trading_script.py']
+        if args.data_dir:
+            sys.argv.extend(['--data-dir', args.data_dir])
+        if args.file:
+            sys.argv.extend(['--file', args.file])
+        if args.asof:
+            sys.argv.extend(['--asof', args.asof])
+        if args.force_fallback:
+            sys.argv.append('--force-fallback')
+        if args.colorama_only:
+            sys.argv.append('--colorama-only')
+        if args.no_menu:
+            sys.argv.append('--non-interactive')
         
         main()
         

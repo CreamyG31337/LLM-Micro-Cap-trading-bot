@@ -513,7 +513,7 @@ def calculate_daily_pnl_from_snapshots(current_position, portfolio_snapshots):
         str: Formatted 1-Day P&L string (e.g., "$123.45", "$0.00")
     """
     try:
-        logger.debug(f"Calculating daily P&L for {current_position.ticker}")
+        # logger.debug(f"Calculating daily P&L for {current_position.ticker}")
         logger.debug(f"  Current position price: {current_position.current_price}")
         logger.debug(f"  Current position shares: {current_position.shares}")
         logger.debug(f"  Current position avg_price: {current_position.avg_price}")

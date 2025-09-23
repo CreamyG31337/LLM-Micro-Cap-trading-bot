@@ -362,7 +362,13 @@ Examples:
         version=f'Trading System {VERSION}'
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Check for NON_INTERACTIVE environment variable
+    if os.environ.get("NON_INTERACTIVE", "").lower() in ("true", "1", "yes"):
+        args.non_interactive = True
+    
+    return args
 
 
 def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepository, dict[str, bool], FundManager]:
@@ -1615,17 +1621,46 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 fund_manager_utils = get_fund_manager()
                 data_dir_name = Path(settings.get_data_directory()).name
                 fund_config = fund_manager_utils.get_fund_config(data_dir_name)
-                if fund_config and fund_config.get('fund', {}).get('fund_type') == 'webull':
+                fund_type = fund_config.get('fund', {}).get('fund_type') if fund_config else None
+                
+                if fund_type == 'webull':
+                    # Webull: $2.99 per holding + 1.5% of USD holdings
+                    # Count USD holdings (positions with USD currency)
+                    usd_holdings_count = 0
+                    try:
+                        # Get current positions to count USD holdings
+                        latest_snapshot = repository.get_latest_portfolio_snapshot()
+                        if latest_snapshot:
+                            for position in latest_snapshot.positions:
+                                if position.currency == 'USD':
+                                    usd_holdings_count += 1
+                    except Exception as e:
+                        logger.debug(f"Could not count USD holdings: {e}")
+                    
+                    liquidation_fee = Decimal('2.99') * usd_holdings_count
+                    fx_fee = estimated_fx_fee_total_cad
+                    webull_fx_fee = liquidation_fee + fx_fee
+                    logger.info(f"Using estimated fees for Webull fund display: ${liquidation_fee} liquidation + ${fx_fee} FX = ${webull_fx_fee}")
+                elif fund_type == 'wealthsimple':
+                    # Wealthsimple: Only 1.5% of USD holdings (no $2.99 fees)
                     webull_fx_fee = estimated_fx_fee_total_cad
-                    logger.info(f"Using estimated FX fee for Webull fund display: ${webull_fx_fee}")
+                    logger.info(f"Using estimated FX fee for Wealthsimple fund display: ${webull_fx_fee}")
+                else:
+                    # For other fund types, keep webull_fx_fee at 0
+                    webull_fx_fee = Decimal('0')
             except Exception as e:
-                logger.debug(f"Could not determine fund type for Webull FX fee: {e}")
+                logger.debug(f"Could not determine fund type for fee calculation: {e}")
+                # On error, default to no fees
+                webull_fx_fee = Decimal('0')
 
+            # Apply platform fees to portfolio value
+            net_portfolio_value = total_portfolio_value - webull_fx_fee
+            
             # Prepare summary data - convert Decimal to float for JSON serialization
             # CRITICAL: Floats introduce precision loss but are required for JSON compatibility
             # All financial calculations above use Decimal for accuracy, only converted here for storage
             summary_data = {
-                'portfolio_value': float(total_portfolio_value),
+                'portfolio_value': float(net_portfolio_value),
                 'total_pnl': float(pnl_metrics.get('total_absolute_pnl', Decimal('0'))),
                 'cash_balance': float(cash_balance),
                 'cad_cash': float(cad_cash),
@@ -1637,7 +1672,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 'cad_positions_value_cad': float(cad_positions_value_cad),
                 'usd_holdings_total_usd': float(total_usd_holdings),
                 'cad_holdings_total_cad': float(total_cad_holdings),
-                'total_equity_cad': float(total_portfolio_value + cash_balance),
+                'total_equity_cad': float(net_portfolio_value + cash_balance),
                 'fund_contributions': float(stats_data.get('total_contributions', 0.0)),
                 'webull_fx_fee': float(webull_fx_fee)
             }
@@ -1675,7 +1710,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     from decimal import Decimal
                     try:
                         total_shares = sum((pos.shares for pos in updated_positions), start=Decimal('0')) if updated_positions else Decimal('0')
-                        logger.debug(f"Calculated total shares: {total_shares}")
+                        # logger.debug(f"Calculated total shares: {total_shares}")
                     except Exception as calc_error:
                         logger.warning(f"Could not calculate total shares: {calc_error}")
                         total_shares = Decimal('0')
@@ -1698,7 +1733,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                             'total_pl': float(data.get('gain_loss', Decimal('0')))  # Total P/L for this contributor
                         }
 
-                        logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
+                        # logger.debug(f"Contributor {contributor}: {contributor_shares:.4f} shares ({ownership_pct:.1f}% ownership)")
             except Exception as e:
                 logger.error(f"Could not calculate ownership data: {e}")
 
@@ -1805,7 +1840,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| 'f' ~ Switch Fund                                           |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| 'o' [O] Sort Portfolio                                      |")
-            print("| 'cache' 💾 Manage Cache                                     |")
+            print(f"| 'cache' {_safe_emoji('💾')} Manage Cache                                     |")
             print("| Enter -> Quit                                               |")
             print("+---------------------------------------------------------------+")
         print()

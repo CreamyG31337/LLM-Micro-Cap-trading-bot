@@ -147,10 +147,11 @@ class CSVRepository(BaseRepository):
             if self.portfolio_file.exists():
                 existing_df = pd.read_csv(self.portfolio_file)
                 if not existing_df.empty:
-                    # Parse dates to compare
+                    # Parse dates to compare - handle timezone-aware dates properly
                     existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
-                    # Ensure the Date column is properly converted to datetime dtype
-                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
+                    # Convert to pandas datetime, handling timezone-aware dates
+                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], utc=True)
+                    # Convert to date-only for comparison
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
                     # Check if today's data already exists
@@ -158,7 +159,7 @@ class CSVRepository(BaseRepository):
                     today_data = existing_df[existing_df['Date_Only'] == today]
                     
                     if not today_data.empty:
-                        logger.warning(f"Portfolio data for {today} already exists. Use update_daily_portfolio_snapshot() instead of save_portfolio_snapshot() to prevent duplicates.")
+                        logger.debug(f"Portfolio data for {today} already exists. Use update_daily_portfolio_snapshot() instead of save_portfolio_snapshot() to prevent duplicates.")
                         # Remove existing today's data to prevent duplicates
                         existing_df = existing_df[existing_df['Date_Only'] != today]
                         existing_df = existing_df.drop('Date_Only', axis=1)  # Remove helper column

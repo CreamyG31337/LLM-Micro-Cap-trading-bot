@@ -236,8 +236,34 @@ def load_portfolio_totals() -> pd.DataFrame:
     print(f"{_safe_emoji('📊')} Columns: {list(llm_df.columns)}")
     
     # --- Data Cleaning and Preparation ---
-    llm_df["Date"] = pd.to_datetime(llm_df["Date"], errors="coerce")
+    # Handle mixed date formats (some with timezone, some without)
+    def parse_mixed_dates(date_str):
+        """Parse dates that may have timezone info or not."""
+        try:
+            # First try parsing with timezone info
+            return pd.to_datetime(date_str, errors='coerce')
+        except:
+            # If that fails, try without timezone
+            try:
+                # Remove timezone suffix if present
+                clean_date = date_str.replace(' PST', '').replace(' PDT', '')
+                return pd.to_datetime(clean_date, errors='coerce')
+            except:
+                return pd.NaT
+    
+    llm_df["Date"] = llm_df["Date"].apply(parse_mixed_dates)
     llm_df = llm_df.dropna(subset=['Date'])
+    
+    # Convert all dates to timezone-naive for consistent sorting
+    def make_timezone_naive(ts):
+        if pd.isna(ts):
+            return ts
+        if hasattr(ts, 'tz') and ts.tz is not None:
+            return ts.tz_localize(None)
+        return ts
+    
+    llm_df["Date"] = llm_df["Date"].apply(make_timezone_naive)
+    
     llm_df = llm_df.sort_values("Date").reset_index(drop=True)
     
     numeric_cols = ['Shares', 'Average Price', 'Cost Basis', 'Current Price', 'Total Value', 'PnL']
@@ -256,6 +282,13 @@ def load_portfolio_totals() -> pd.DataFrame:
     daily_snapshots = []
     portfolio = {}  # Holds the state of our portfolio {ticker: {data}}
     all_dates = pd.to_datetime(llm_df['Date'].dt.date.unique())
+    
+    # Start one day earlier for better baseline comparison
+    if len(all_dates) > 0:
+        earliest_date = all_dates.min()
+        # Add a baseline day one day before the earliest data
+        baseline_date = earliest_date - pd.Timedelta(days=1)
+        all_dates = pd.concat([pd.Series([baseline_date]), pd.Series(all_dates)]).sort_values()
 
     for current_date in all_dates:
         # Get all records for the current day
@@ -304,6 +337,18 @@ def load_portfolio_totals() -> pd.DataFrame:
                 "Performance_Pct": performance_pct
             })
             print(f"{_safe_emoji('📊')} {current_date.date()}: Invested ${total_cost_basis:,.2f} -> Worth ${total_market_value:,.2f} ({performance_pct:+.2f}%)")
+        else:
+            # Handle baseline day (no portfolio data yet)
+            if len(daily_snapshots) == 0:
+                # Create a baseline entry with $0 for the day before first data
+                daily_snapshots.append({
+                    "Date": current_date,
+                    "Cost_Basis": 0.0,
+                    "Market_Value": 0.0,
+                    "Unrealized_PnL": 0.0,
+                    "Performance_Pct": 0.0
+                })
+                print(f"{_safe_emoji('📊')} {current_date.date()}: Baseline day (no portfolio data yet)")
 
     if not daily_snapshots:
         print(f"{_safe_emoji('⚠️')}  No valid portfolio data found. Creating baseline entry.")
@@ -446,6 +491,8 @@ def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: 
         benchmark_temp = benchmark_data.copy()
         benchmark_temp['Date_Only'] = pd.to_datetime(benchmark_temp['Date']).dt.date
         
+        # Use the first actual trading day (not the baseline day) for benchmark normalization
+        # This ensures benchmarks start at exactly $100
         portfolio_start_date = pd.to_datetime(start_date).date()
         # Ensure both sides of comparison are datetime.date objects
         benchmark_temp['Date_Only'] = pd.to_datetime(benchmark_temp['Date_Only']).dt.date
@@ -552,7 +599,19 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
 
 
 def refresh_portfolio_data(data_dir_path):
-    """Refresh portfolio data to ensure we have current prices before graphing."""
+    """
+    Refresh portfolio data to ensure we have current prices before graphing.
+    
+    Price Refresh Logic:
+    - During market hours: Always refresh with current live prices
+    - After market close: Only refresh if no data exists for today (gets official market close prices)
+    - Prevents overwriting good market close prices with after-hours trading data
+    
+    This ensures:
+    1. Live prices during market hours for real-time accuracy
+    2. Official market close prices after hours (not after-hours trading prices)
+    3. No unnecessary overwrites of good market close data
+    """
     try:
         print(f"{_safe_emoji('🔄')} Refreshing portfolio data to ensure current prices...")
         
@@ -570,13 +629,35 @@ def refresh_portfolio_data(data_dir_path):
         settings = get_settings()
         if data_dir_path:
             settings._data_directory = str(data_dir_path)
+            # Also set the repository-specific data directory
+            settings._config['repository']['csv']['data_directory'] = str(data_dir_path)
+        else:
+            # Use the global DATA_DIR if available
+            if 'DATA_DIR' in globals() and DATA_DIR:
+                settings._data_directory = str(DATA_DIR)
+                settings._config['repository']['csv']['data_directory'] = str(DATA_DIR)
+            else:
+                print(f"{_safe_emoji('⚠️')}  No data directory specified for portfolio refresh")
+                return
         
         repo_config = settings.get_repository_config()
         configure_repositories({'default': repo_config})
         repository = get_repository_container().get_repository('default')
         
+        # Create a basic Fund object for the PortfolioManager
+        from portfolio.fund_manager import Fund, RepositorySettings
+        fund = Fund(
+            id="graph_generator",
+            name="Graph Generator Fund",
+            description="Temporary fund for graph generation",
+            repository=RepositorySettings(
+                type="csv",
+                settings={'data_directory': str(data_dir_path) if data_dir_path else str(DATA_DIR)}
+            )
+        )
+        
         # Initialize components
-        portfolio_manager = PortfolioManager(repository)
+        portfolio_manager = PortfolioManager(repository, fund)
         price_cache = PriceCache()
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
@@ -593,48 +674,17 @@ def refresh_portfolio_data(data_dir_path):
             print(f"{_safe_emoji('ℹ️')} {skip_reason}")
             return
         
-        # Check for missing trading days
-        needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
-        if needs_update:
-            print(f"{_safe_emoji('🔄')} {detector.get_update_reason()}")
-            
-            # Get current portfolio and refresh prices
-            latest_snapshot = portfolio_manager.get_latest_portfolio()
-            if latest_snapshot and latest_snapshot.positions:
-                print(f"{_safe_emoji('💰')} Refreshing prices for {len(latest_snapshot.positions)} positions...")
-                
-                # Update prices for all positions
-                updated_positions = []
-                for position in latest_snapshot.positions:
-                    try:
-                        current_price = market_data_fetcher.get_current_price(position.ticker)
-                        if current_price:
-                            # Update position with current market data
-                            position.current_price = current_price
-                            position.market_value = current_price * position.shares
-                            position.unrealized_pnl = position.market_value - position.cost_basis
-                            updated_positions.append(position)
-                            print(f"{_safe_emoji('✅')} {position.ticker}: ${current_price:.2f}")
-                        else:
-                            print(f"{_safe_emoji('⚠️')}  {position.ticker}: Could not fetch current price")
-                            updated_positions.append(position)  # Keep existing data
-                    except Exception as e:
-                        print(f"{_safe_emoji('⚠️')}  {position.ticker}: Error fetching price - {e}")
-                        updated_positions.append(position)  # Keep existing data
-                
-                # Save updated snapshot
-                if updated_positions:
-                    from datetime import datetime
-                    updated_snapshot = latest_snapshot
-                    updated_snapshot.positions = updated_positions
-                    updated_snapshot.timestamp = datetime.now()
-                    
-                    portfolio_manager.save_snapshot(updated_snapshot)
-                    print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully")
-            else:
-                print(f"{_safe_emoji('⚠️')}  No portfolio positions found to refresh")
-        else:
-            print(f"{_safe_emoji('ℹ️')} {detector.get_update_reason()}")
+        # Use centralized portfolio refresh logic
+        from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+        
+        was_updated, reason = refresh_portfolio_prices_if_needed(
+            market_hours=market_hours,
+            portfolio_manager=portfolio_manager,
+            repository=repository,
+            market_data_fetcher=market_data_fetcher,
+            price_cache=price_cache,
+            verbose=True
+        )
             
     except Exception as e:
         print(f"{_safe_emoji('⚠️')}  Failed to refresh portfolio data: {e}")
@@ -644,13 +694,22 @@ def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
     
     # First, try to refresh portfolio data to get current prices
-    refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() else None)
+    refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
     
     llm_totals = load_portfolio_totals()
 
+    # Use the first actual trading day (not the baseline day) for benchmark normalization
+    # This ensures benchmarks start at exactly $100
     start_date = llm_totals["Date"].min()
     end_date = llm_totals["Date"].max()
     portfolio_dates = llm_totals["Date"]
+    
+    # Find the first actual trading day (skip baseline day with $0 portfolio)
+    first_trading_day = llm_totals[llm_totals["Cost_Basis"] > 0]["Date"].min()
+    if pd.notna(first_trading_day):
+        benchmark_start_date = first_trading_day
+    else:
+        benchmark_start_date = start_date
     
     # Handle multiple benchmarks for 'all' option
     if args.benchmark == 'all':
@@ -661,11 +720,11 @@ def main(args) -> dict:
         for bench_name in benchmark_names:
             print(f"{_safe_emoji('📥')} Downloading {bench_name.upper()} benchmark data...")
             benchmark_configs[bench_name] = get_benchmark_config(bench_name)
-            benchmark_data_dict[bench_name] = download_benchmark(bench_name, start_date, end_date, portfolio_dates)
+            benchmark_data_dict[bench_name] = download_benchmark(bench_name, benchmark_start_date, end_date, portfolio_dates)
     else:
         # Single benchmark configuration
         benchmark_config = get_benchmark_config(args.benchmark)
-        benchmark_data = download_benchmark(args.benchmark, start_date, end_date, portfolio_dates)
+        benchmark_data = download_benchmark(args.benchmark, benchmark_start_date, end_date, portfolio_dates)
 
     # metrics
     peak_date, peak_gain = find_peak_performance(llm_totals)

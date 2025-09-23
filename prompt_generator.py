@@ -774,9 +774,22 @@ class PromptGenerator:
             self.repository = CSVRepository(self.data_dir)
             self.portfolio_manager = PortfolioManager(self.repository)
             
-        # Load portfolio data
+        # Load portfolio data with smart price refresh
         print("Loading portfolio data...")
         try:
+            # Use centralized portfolio refresh logic
+            from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+            
+            was_updated, reason = refresh_portfolio_prices_if_needed(
+                market_hours=self.market_hours,
+                portfolio_manager=self.portfolio_manager,
+                repository=self.repository,
+                market_data_fetcher=self.market_data_fetcher,
+                price_cache=self.price_cache,
+                verbose=True
+            )
+            
+            # Load the (potentially refreshed) portfolio data
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
             if latest_snapshot is None:
                 print(f"❌ No portfolio data found in {self.data_dir}")

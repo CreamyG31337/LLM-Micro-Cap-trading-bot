@@ -5,8 +5,8 @@ Processing position: ABNB
   Calculating 1-day P&L for ABNB:
     Current price: 127.040001
     Shares: 18.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $28.26
   5-day P&L calc for ABNB: opened_date=08-25-25
     ABNB: Cache lookup - found data: True
       ABNB: Cache validation passed (using Close column)
@@ -21,8 +21,8 @@ Processing position: ADSK
   Calculating 1-day P&L for ADSK:
     Current price: 322.670013
     Shares: 8.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-2.96
   5-day P&L calc for ADSK: opened_date=08-25-25
     ADSK: Cache lookup - found data: True
       ADSK: Cache validation passed (using Close column)
@@ -33,20 +33,28 @@ Processing position: ADSK
         ADSK: P&L calculation returned: {'five_day_absolute_pnl': Decimal('28.96'), 'five_day_percentage_pnl': Decimal('0.0113'), 'current_price': Decimal('322.67'), 'five_day_start_price': Decimal('319.05'), 'shares': Decimal('8.00')}
         ADSK: Extracting P&L values: abs_pnl=28.96, pct_pnl=0.0113
         ADSK: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: AEM.TO.TO
-  Calculating 1-day P&L for AEM.TO.TO:
-    Current price: 306.49
+Processing position: AEM.TO
+  Calculating 1-day P&L for AEM.TO:
+    Current price: 222.130005
     Shares: 17.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for AEM.TO.TO: opened_date=08-25-25
-    AEM.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $155.04
+  5-day P&L calc for AEM.TO: opened_date=08-25-25
+    AEM.TO: Cache lookup - found data: True
+      AEM.TO: Cache validation passed (using Close column)
+      AEM.TO: Has 10 days of data
+        AEM.TO: Starting 5-day P&L calculation...
+        AEM.TO: Price 5-days ago: $212.240005, current: $222.130005
+        AEM.TO: Calling pnl_calculator.calculate_period_pnl()...
+        AEM.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('168.13'), 'five_day_percentage_pnl': Decimal('0.0466'), 'current_price': Decimal('222.13'), 'five_day_start_price': Decimal('212.24'), 'shares': Decimal('17.00')}
+        AEM.TO: Extracting P&L values: abs_pnl=168.13, pct_pnl=0.0466
+        AEM.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: AKAM
   Calculating 1-day P&L for AKAM:
     Current price: 76.279999
     Shares: 30.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-24.30
   5-day P&L calc for AKAM: opened_date=08-25-25
     AKAM: Cache lookup - found data: True
       AKAM: Cache validation passed (using Close column)
@@ -61,8 +69,8 @@ Processing position: AMAT
   Calculating 1-day P&L for AMAT:
     Current price: 190.100006
     Shares: 15.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $5.10
   5-day P&L calc for AMAT: opened_date=09-03-25
     AMAT: Cache lookup - found data: True
       AMAT: Cache validation passed (using Close column)
@@ -77,8 +85,8 @@ Processing position: AMD
   Calculating 1-day P&L for AMD:
     Current price: 157.389999
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-5.30
   5-day P&L calc for AMD: opened_date=09-03-25
     AMD: Cache lookup - found data: True
       AMD: Cache validation passed (using Close column)
@@ -93,8 +101,8 @@ Processing position: AMZN
   Calculating 1-day P&L for AMZN:
     Current price: 231.479996
     Shares: 6.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $1.50
   5-day P&L calc for AMZN: opened_date=09-03-25
     AMZN: Cache lookup - found data: True
       AMZN: Cache validation passed (using Close column)
@@ -109,8 +117,8 @@ Processing position: AOS
   Calculating 1-day P&L for AOS:
     Current price: 73.089996
     Shares: 23.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $0.46
   5-day P&L calc for AOS: opened_date=09-03-25
     AOS: Cache lookup - found data: True
       AOS: Cache validation passed (using Close column)
@@ -125,8 +133,8 @@ Processing position: ASML
   Calculating 1-day P&L for ASML:
     Current price: 932.150024
     Shares: 2.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $8.70
   5-day P&L calc for ASML: opened_date=09-03-25
     ASML: Cache lookup - found data: True
       ASML: Cache validation passed (using Close column)
@@ -137,20 +145,28 @@ Processing position: ASML
         ASML: P&L calculation returned: {'five_day_absolute_pnl': Decimal('236.56'), 'five_day_percentage_pnl': Decimal('0.1453'), 'current_price': Decimal('932.15'), 'five_day_start_price': Decimal('813.87'), 'shares': Decimal('2.00')}
         ASML: Extracting P&L values: abs_pnl=236.56, pct_pnl=0.1453
         ASML: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: ATRL.TO.TO
-  Calculating 1-day P&L for ATRL.TO.TO:
-    Current price: 145.08
+Processing position: ATRL.TO
+  Calculating 1-day P&L for ATRL.TO:
+    Current price: 105.150002
     Shares: 34.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for ATRL.TO.TO: opened_date=08-25-25
-    ATRL.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $73.78
+  5-day P&L calc for ATRL.TO: opened_date=08-25-25
+    ATRL.TO: Cache lookup - found data: True
+      ATRL.TO: Cache validation passed (using Close column)
+      ATRL.TO: Has 10 days of data
+        ATRL.TO: Starting 5-day P&L calculation...
+        ATRL.TO: Price 5-days ago: $101.940002, current: $105.150002
+        ATRL.TO: Calling pnl_calculator.calculate_period_pnl()...
+        ATRL.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('109.14'), 'five_day_percentage_pnl': Decimal('0.0315'), 'current_price': Decimal('105.15'), 'five_day_start_price': Decimal('101.94'), 'shares': Decimal('34.00')}
+        ATRL.TO: Extracting P&L values: abs_pnl=109.14, pct_pnl=0.0315
+        ATRL.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: AVGO
   Calculating 1-day P&L for AVGO:
     Current price: 344.940002
     Shares: 8.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-3.28
   5-day P&L calc for AVGO: opened_date=09-03-25
     AVGO: Cache lookup - found data: True
       AVGO: Cache validation passed (using Close column)
@@ -165,8 +181,8 @@ Processing position: BUG
   Calculating 1-day P&L for BUG:
     Current price: 35.48
     Shares: 70.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $16.10
   5-day P&L calc for BUG: opened_date=08-26-25
     BUG: Cache lookup - found data: True
       BUG: Cache validation passed (using Close column)
@@ -177,20 +193,28 @@ Processing position: BUG
         BUG: P&L calculation returned: {'five_day_absolute_pnl': Decimal('101.50'), 'five_day_percentage_pnl': Decimal('0.0426'), 'current_price': Decimal('35.48'), 'five_day_start_price': Decimal('34.03'), 'shares': Decimal('70.00')}
         BUG: Extracting P&L values: abs_pnl=101.50, pct_pnl=0.0426
         BUG: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: CGL.TO.TO
-  Calculating 1-day P&L for CGL.TO.TO:
-    Current price: 39.48
+Processing position: CGL.TO
+  Calculating 1-day P&L for CGL.TO:
+    Current price: 28.610001
     Shares: 117.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for CGL.TO.TO: opened_date=08-25-25
-    CGL.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $32.76
+  5-day P&L calc for CGL.TO: opened_date=08-25-25
+    CGL.TO: Cache lookup - found data: True
+      CGL.TO: Cache validation passed (using Close column)
+      CGL.TO: Has 10 days of data
+        CGL.TO: Starting 5-day P&L calculation...
+        CGL.TO: Price 5-days ago: $28.290001, current: $28.610001
+        CGL.TO: Calling pnl_calculator.calculate_period_pnl()...
+        CGL.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('37.44'), 'five_day_percentage_pnl': Decimal('0.0113'), 'current_price': Decimal('28.61'), 'five_day_start_price': Decimal('28.29'), 'shares': Decimal('117.00')}
+        CGL.TO: Extracting P&L values: abs_pnl=37.44, pct_pnl=0.0113
+        CGL.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: CHD
   Calculating 1-day P&L for CHD:
     Current price: 90.349998
     Shares: 15.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-25.80
   5-day P&L calc for CHD: opened_date=09-03-25
     CHD: Cache lookup - found data: True
       CHD: Cache validation passed (using Close column)
@@ -205,8 +229,8 @@ Processing position: CIBR
   Calculating 1-day P&L for CIBR:
     Current price: 76.910004
     Shares: 33.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-1.65
   5-day P&L calc for CIBR: opened_date=09-03-25
     CIBR: Cache lookup - found data: True
       CIBR: Cache validation passed (using Close column)
@@ -217,20 +241,28 @@ Processing position: CIBR
         CIBR: P&L calculation returned: {'five_day_absolute_pnl': Decimal('65.01'), 'five_day_percentage_pnl': Decimal('0.0263'), 'current_price': Decimal('76.91'), 'five_day_start_price': Decimal('74.94'), 'shares': Decimal('33.00')}
         CIBR: Extracting P&L values: abs_pnl=65.01, pct_pnl=0.0263
         CIBR: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: CLS.TO.TO
-  Calculating 1-day P&L for CLS.TO.TO:
-    Current price: 482.7
+Processing position: CLS.TO
+  Calculating 1-day P&L for CLS.TO:
+    Current price: 349.839996
     Shares: 12.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for CLS.TO.TO: opened_date=08-25-25
-    CLS.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $30.60
+  5-day P&L calc for CLS.TO: opened_date=08-25-25
+    CLS.TO: Cache lookup - found data: True
+      CLS.TO: Cache validation passed (using Close column)
+      CLS.TO: Has 10 days of data
+        CLS.TO: Starting 5-day P&L calculation...
+        CLS.TO: Price 5-days ago: $334.529999, current: $349.839996
+        CLS.TO: Calling pnl_calculator.calculate_period_pnl()...
+        CLS.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('183.72'), 'five_day_percentage_pnl': Decimal('0.0458'), 'current_price': Decimal('349.84'), 'five_day_start_price': Decimal('334.53'), 'shares': Decimal('12.00')}
+        CLS.TO: Extracting P&L values: abs_pnl=183.72, pct_pnl=0.0458
+        CLS.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: CMI
   Calculating 1-day P&L for CMI:
     Current price: 423.640015
     Shares: 5.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-13.75
   5-day P&L calc for CMI: opened_date=09-03-25
     CMI: Cache lookup - found data: True
       CMI: Cache validation passed (using Close column)
@@ -245,8 +277,8 @@ Processing position: COST
   Calculating 1-day P&L for COST:
     Current price: 951.159973
     Shares: 3.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-3.60
   5-day P&L calc for COST: opened_date=09-03-25
     COST: Cache lookup - found data: True
       COST: Cache validation passed (using Close column)
@@ -261,8 +293,8 @@ Processing position: DE
   Calculating 1-day P&L for DE:
     Current price: 469.630005
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-25.96
   5-day P&L calc for DE: opened_date=09-03-25
     DE: Cache lookup - found data: True
       DE: Cache validation passed (using Close column)
@@ -277,8 +309,8 @@ Processing position: DG
   Calculating 1-day P&L for DG:
     Current price: 102.110001
     Shares: 13.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-62.27
   5-day P&L calc for DG: opened_date=09-03-25
     DG: Cache lookup - found data: True
       DG: Cache validation passed (using Close column)
@@ -289,28 +321,44 @@ Processing position: DG
         DG: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-29.77'), 'five_day_percentage_pnl': Decimal('-0.0219'), 'current_price': Decimal('102.11'), 'five_day_start_price': Decimal('104.40'), 'shares': Decimal('13.00')}
         DG: Extracting P&L values: abs_pnl=-29.77, pct_pnl=-0.0219
         DG: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: DOL.TO.TO
-  Calculating 1-day P&L for DOL.TO.TO:
-    Current price: 261.69
+Processing position: DOL.TO
+  Calculating 1-day P&L for DOL.TO:
+    Current price: 189.660004
     Shares: 17.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for DOL.TO.TO: opened_date=08-25-25
-    DOL.TO.TO: Cache lookup - found data: False
-Processing position: ENB.TO.TO
-  Calculating 1-day P&L for ENB.TO.TO:
-    Current price: 94.32
+    Snapshots count: 19
+    Result: $38.42
+  5-day P&L calc for DOL.TO: opened_date=08-25-25
+    DOL.TO: Cache lookup - found data: True
+      DOL.TO: Cache validation passed (using Close column)
+      DOL.TO: Has 10 days of data
+        DOL.TO: Starting 5-day P&L calculation...
+        DOL.TO: Price 5-days ago: $188.770004, current: $189.660004
+        DOL.TO: Calling pnl_calculator.calculate_period_pnl()...
+        DOL.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('15.13'), 'five_day_percentage_pnl': Decimal('0.0047'), 'current_price': Decimal('189.66'), 'five_day_start_price': Decimal('188.77'), 'shares': Decimal('17.00')}
+        DOL.TO: Extracting P&L values: abs_pnl=15.13, pct_pnl=0.0047
+        DOL.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: ENB.TO
+  Calculating 1-day P&L for ENB.TO:
+    Current price: 68.360001
     Shares: 50.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for ENB.TO.TO: opened_date=08-25-25
-    ENB.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $29.00
+  5-day P&L calc for ENB.TO: opened_date=08-25-25
+    ENB.TO: Cache lookup - found data: True
+      ENB.TO: Cache validation passed (using Close column)
+      ENB.TO: Has 10 days of data
+        ENB.TO: Starting 5-day P&L calculation...
+        ENB.TO: Price 5-days ago: $67.980003, current: $68.360001
+        ENB.TO: Calling pnl_calculator.calculate_period_pnl()...
+        ENB.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('19.00'), 'five_day_percentage_pnl': Decimal('0.0056'), 'current_price': Decimal('68.36'), 'five_day_start_price': Decimal('67.98'), 'shares': Decimal('50.00')}
+        ENB.TO: Extracting P&L values: abs_pnl=19.00, pct_pnl=0.0056
+        ENB.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: EXPD
   Calculating 1-day P&L for EXPD:
     Current price: 120.150002
     Shares: 12.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-46.80
   5-day P&L calc for EXPD: opened_date=09-03-25
     EXPD: Cache lookup - found data: True
       EXPD: Cache validation passed (using Close column)
@@ -325,8 +373,8 @@ Processing position: FAST
   Calculating 1-day P&L for FAST:
     Current price: 47.580002
     Shares: 34.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $12.24
   5-day P&L calc for FAST: opened_date=09-03-25
     FAST: Cache lookup - found data: True
       FAST: Cache validation passed (using Close column)
@@ -341,8 +389,8 @@ Processing position: FDS
   Calculating 1-day P&L for FDS:
     Current price: 289.149994
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-48.32
   5-day P&L calc for FDS: opened_date=09-03-25
     FDS: Cache lookup - found data: True
       FDS: Cache validation passed (using Close column)
@@ -353,20 +401,28 @@ Processing position: FDS
         FDS: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-290.76'), 'five_day_percentage_pnl': Decimal('-0.2009'), 'current_price': Decimal('289.15'), 'five_day_start_price': Decimal('361.84'), 'shares': Decimal('4.00')}
         FDS: Extracting P&L values: abs_pnl=-290.76, pct_pnl=-0.2009
         FDS: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: FTS.TO.TO
-  Calculating 1-day P&L for FTS.TO.TO:
-    Current price: 93.74
+Processing position: FTS.TO
+  Calculating 1-day P&L for FTS.TO:
+    Current price: 67.940002
     Shares: 47.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for FTS.TO.TO: opened_date=08-25-25
-    FTS.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $26.32
+  5-day P&L calc for FTS.TO: opened_date=08-25-25
+    FTS.TO: Cache lookup - found data: True
+      FTS.TO: Cache validation passed (using Close column)
+      FTS.TO: Has 10 days of data
+        FTS.TO: Starting 5-day P&L calculation...
+        FTS.TO: Price 5-days ago: $68.370003, current: $67.940002
+        FTS.TO: Calling pnl_calculator.calculate_period_pnl()...
+        FTS.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-20.21'), 'five_day_percentage_pnl': Decimal('-0.0063'), 'current_price': Decimal('67.94'), 'five_day_start_price': Decimal('68.37'), 'shares': Decimal('47.00')}
+        FTS.TO: Extracting P&L values: abs_pnl=-20.21, pct_pnl=-0.0063
+        FTS.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: FTXL
   Calculating 1-day P&L for FTXL:
     Current price: 109.249001
     Shares: 23.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-19.34
   5-day P&L calc for FTXL: opened_date=08-26-25
     FTXL: Cache lookup - found data: True
       FTXL: Cache validation passed (using Close column)
@@ -381,8 +437,8 @@ Processing position: FXD
   Calculating 1-day P&L for FXD:
     Current price: 68.949997
     Shares: 36.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-16.20
   5-day P&L calc for FXD: opened_date=09-03-25
     FXD: Cache lookup - found data: True
       FXD: Cache validation passed (using Close column)
@@ -397,8 +453,8 @@ Processing position: FXG
   Calculating 1-day P&L for FXG:
     Current price: 62.84
     Shares: 38.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-8.74
   5-day P&L calc for FXG: opened_date=09-03-25
     FXG: Cache lookup - found data: True
       FXG: Cache validation passed (using Close column)
@@ -413,8 +469,8 @@ Processing position: FXL
   Calculating 1-day P&L for FXL:
     Current price: 171.410004
     Shares: 16.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $0.64
   5-day P&L calc for FXL: opened_date=09-03-25
     FXL: Cache lookup - found data: True
       FXL: Cache validation passed (using Close column)
@@ -429,8 +485,8 @@ Processing position: GD
   Calculating 1-day P&L for GD:
     Current price: 324.079987
     Shares: 7.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-3.43
   5-day P&L calc for GD: opened_date=09-03-25
     GD: Cache lookup - found data: True
       GD: Cache validation passed (using Close column)
@@ -445,8 +501,8 @@ Processing position: GE
   Calculating 1-day P&L for GE:
     Current price: 301.140015
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $40.50
   5-day P&L calc for GE: opened_date=09-03-25
     GE: Cache lookup - found data: True
       GE: Cache validation passed (using Close column)
@@ -461,8 +517,8 @@ Processing position: GEHC
   Calculating 1-day P&L for GEHC:
     Current price: 74.910004
     Shares: 35.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $31.85
   5-day P&L calc for GEHC: opened_date=09-03-25
     GEHC: Cache lookup - found data: True
       GEHC: Cache validation passed (using Close column)
@@ -477,8 +533,8 @@ Processing position: GEV
   Calculating 1-day P&L for GEV:
     Current price: 624.169983
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $52.68
   5-day P&L calc for GEV: opened_date=09-03-25
     GEV: Cache lookup - found data: True
       GEV: Cache validation passed (using Close column)
@@ -489,20 +545,28 @@ Processing position: GEV
         GEV: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-5.52'), 'five_day_percentage_pnl': Decimal('-0.0022'), 'current_price': Decimal('624.17'), 'five_day_start_price': Decimal('625.55'), 'shares': Decimal('4.00')}
         GEV: Extracting P&L values: abs_pnl=-5.52, pct_pnl=-0.0022
         GEV: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: GLCC.TO.TO
-  Calculating 1-day P&L for GLCC.TO.TO:
-    Current price: 66.35
+Processing position: GLCC.TO
+  Calculating 1-day P&L for GLCC.TO:
+    Current price: 48.09
     Shares: 80.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for GLCC.TO.TO: opened_date=08-26-25
-    GLCC.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $154.40
+  5-day P&L calc for GLCC.TO: opened_date=08-26-25
+    GLCC.TO: Cache lookup - found data: True
+      GLCC.TO: Cache validation passed (using Close column)
+      GLCC.TO: Has 10 days of data
+        GLCC.TO: Starting 5-day P&L calculation...
+        GLCC.TO: Price 5-days ago: $46.790001, current: $48.09
+        GLCC.TO: Calling pnl_calculator.calculate_period_pnl()...
+        GLCC.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('104.00'), 'five_day_percentage_pnl': Decimal('0.0278'), 'current_price': Decimal('48.09'), 'five_day_start_price': Decimal('46.79'), 'shares': Decimal('80.00')}
+        GLCC.TO: Extracting P&L values: abs_pnl=104.00, pct_pnl=0.0278
+        GLCC.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: HD
   Calculating 1-day P&L for HD:
     Current price: 415.690002
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-7.16
   5-day P&L calc for HD: opened_date=09-03-25
     HD: Cache lookup - found data: True
       HD: Cache validation passed (using Close column)
@@ -517,8 +581,8 @@ Processing position: ITA
   Calculating 1-day P&L for ITA:
     Current price: 203.399994
     Shares: 12.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $5.16
   5-day P&L calc for ITA: opened_date=09-02-25
     ITA: Cache lookup - found data: True
       ITA: Cache validation passed (using Close column)
@@ -533,8 +597,8 @@ Processing position: JNJ
   Calculating 1-day P&L for JNJ:
     Current price: 176.190002
     Shares: 8.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $16.24
   5-day P&L calc for JNJ: opened_date=09-03-25
     JNJ: Cache lookup - found data: True
       JNJ: Cache validation passed (using Close column)
@@ -545,20 +609,28 @@ Processing position: JNJ
         JNJ: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-14.96'), 'five_day_percentage_pnl': Decimal('-0.0105'), 'current_price': Decimal('176.19'), 'five_day_start_price': Decimal('178.06'), 'shares': Decimal('8.00')}
         JNJ: Extracting P&L values: abs_pnl=-14.96, pct_pnl=-0.0105
         JNJ: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: KEY.TO.TO
-  Calculating 1-day P&L for KEY.TO.TO:
-    Current price: 62.55
+Processing position: KEY.TO
+  Calculating 1-day P&L for KEY.TO:
+    Current price: 45.330002
     Shares: 69.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for KEY.TO.TO: opened_date=08-25-25
-    KEY.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $17.94
+  5-day P&L calc for KEY.TO: opened_date=08-25-25
+    KEY.TO: Cache lookup - found data: True
+      KEY.TO: Cache validation passed (using Close column)
+      KEY.TO: Has 10 days of data
+        KEY.TO: Starting 5-day P&L calculation...
+        KEY.TO: Price 5-days ago: $44.360001, current: $45.330002
+        KEY.TO: Calling pnl_calculator.calculate_period_pnl()...
+        KEY.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('66.93'), 'five_day_percentage_pnl': Decimal('0.0219'), 'current_price': Decimal('45.33'), 'five_day_start_price': Decimal('44.36'), 'shares': Decimal('69.00')}
+        KEY.TO: Extracting P&L values: abs_pnl=66.93, pct_pnl=0.0219
+        KEY.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: KO
   Calculating 1-day P&L for KO:
     Current price: 66.43
     Shares: 24.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-0.72
   5-day P&L calc for KO: opened_date=09-03-25
     KO: Cache lookup - found data: True
       KO: Cache validation passed (using Close column)
@@ -573,8 +645,8 @@ Processing position: LHX
   Calculating 1-day P&L for LHX:
     Current price: 283.940002
     Shares: 9.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $10.89
   5-day P&L calc for LHX: opened_date=09-03-25
     LHX: Cache lookup - found data: True
       LHX: Cache validation passed (using Close column)
@@ -589,8 +661,8 @@ Processing position: MCHP
   Calculating 1-day P&L for MCHP:
     Current price: 65.150002
     Shares: 36.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-39.96
   5-day P&L calc for MCHP: opened_date=09-02-25
     MCHP: Cache lookup - found data: True
       MCHP: Cache validation passed (using Close column)
@@ -605,8 +677,8 @@ Processing position: META
   Calculating 1-day P&L for META:
     Current price: 778.380005
     Shares: 3.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-5.61
   5-day P&L calc for META: opened_date=09-03-25
     META: Cache lookup - found data: True
       META: Cache validation passed (using Close column)
@@ -621,8 +693,8 @@ Processing position: MNST
   Calculating 1-day P&L for MNST:
     Current price: 64.129997
     Shares: 26.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-13.26
   5-day P&L calc for MNST: opened_date=09-03-25
     MNST: Cache lookup - found data: True
       MNST: Cache validation passed (using Close column)
@@ -637,8 +709,8 @@ Processing position: MSFT
   Calculating 1-day P&L for MSFT:
     Current price: 517.929993
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $37.92
   5-day P&L calc for MSFT: opened_date=09-03-25
     MSFT: Cache lookup - found data: True
       MSFT: Cache validation passed (using Close column)
@@ -653,8 +725,8 @@ Processing position: MU
   Calculating 1-day P&L for MU:
     Current price: 162.729996
     Shares: 20.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-123.20
   5-day P&L calc for MU: opened_date=09-03-25
     MU: Cache lookup - found data: True
       MU: Cache validation passed (using Close column)
@@ -669,8 +741,8 @@ Processing position: NVDA
   Calculating 1-day P&L for NVDA:
     Current price: 176.669998
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $4.30
   5-day P&L calc for NVDA: opened_date=09-03-25
     NVDA: Cache lookup - found data: True
       NVDA: Cache validation passed (using Close column)
@@ -681,20 +753,28 @@ Processing position: NVDA
         NVDA: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-11.50'), 'five_day_percentage_pnl': Decimal('-0.0065'), 'current_price': Decimal('176.67'), 'five_day_start_price': Decimal('177.82'), 'shares': Decimal('10.00')}
         NVDA: Extracting P&L values: abs_pnl=-11.50, pct_pnl=-0.0065
         NVDA: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: NXTG.TO.TO
-  Calculating 1-day P&L for NXTG.TO.TO:
-    Current price: 19.58
+Processing position: NXTG.TO
+  Calculating 1-day P&L for NXTG.TO:
+    Current price: 14.27
     Shares: 235.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for NXTG.TO.TO: opened_date=08-25-25
-    NXTG.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $61.10
+  5-day P&L calc for NXTG.TO: opened_date=08-25-25
+    NXTG.TO: Cache lookup - found data: True
+      NXTG.TO: Cache validation passed (using Close column)
+      NXTG.TO: Has 11 days of data
+        NXTG.TO: Starting 5-day P&L calculation...
+        NXTG.TO: Price 5-days ago: $13.98, current: $14.27
+        NXTG.TO: Calling pnl_calculator.calculate_period_pnl()...
+        NXTG.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('68.15'), 'five_day_percentage_pnl': Decimal('0.0207'), 'current_price': Decimal('14.27'), 'five_day_start_price': Decimal('13.98'), 'shares': Decimal('235.00')}
+        NXTG.TO: Extracting P&L values: abs_pnl=68.15, pct_pnl=0.0207
+        NXTG.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: PANW
   Calculating 1-day P&L for PANW:
     Current price: 208.190002
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $25.10
   5-day P&L calc for PANW: opened_date=09-03-25
     PANW: Cache lookup - found data: True
       PANW: Cache validation passed (using Close column)
@@ -709,8 +789,8 @@ Processing position: PAYX
   Calculating 1-day P&L for PAYX:
     Current price: 130.0
     Shares: 11.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-12.21
   5-day P&L calc for PAYX: opened_date=09-03-25
     PAYX: Cache lookup - found data: True
       PAYX: Cache validation passed (using Close column)
@@ -725,9 +805,9 @@ Processing position: RMBS
   Calculating 1-day P&L for RMBS:
     Current price: 102.349998
     Shares: 33.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for RMBS: opened_date=09-01-25
+    Snapshots count: 19
+    Result: $-165.99
+  5-day P&L calc for RMBS: opened_date=09-02-25
     RMBS: Cache lookup - found data: True
       RMBS: Cache validation passed (using Close column)
       RMBS: Has 10 days of data
@@ -741,8 +821,8 @@ Processing position: ROBO
   Calculating 1-day P&L for ROBO:
     Current price: 66.400002
     Shares: 27.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $1.62
   5-day P&L calc for ROBO: opened_date=09-03-25
     ROBO: Cache lookup - found data: True
       ROBO: Cache validation passed (using Close column)
@@ -753,28 +833,44 @@ Processing position: ROBO
         ROBO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('41.85'), 'five_day_percentage_pnl': Decimal('0.0239'), 'current_price': Decimal('66.40'), 'five_day_start_price': Decimal('64.85'), 'shares': Decimal('27.00')}
         ROBO: Extracting P&L values: abs_pnl=41.85, pct_pnl=0.0239
         ROBO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: RY.TO.TO
-  Calculating 1-day P&L for RY.TO.TO:
-    Current price: 280.29
+Processing position: RY.TO
+  Calculating 1-day P&L for RY.TO:
+    Current price: 203.139999
     Shares: 17.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for RY.TO.TO: opened_date=08-25-25
-    RY.TO.TO: Cache lookup - found data: False
-Processing position: SHOP.TO.TO
-  Calculating 1-day P&L for SHOP.TO.TO:
-    Current price: 291.96
+    Snapshots count: 19
+    Result: $25.50
+  5-day P&L calc for RY.TO: opened_date=08-25-25
+    RY.TO: Cache lookup - found data: True
+      RY.TO: Cache validation passed (using Close column)
+      RY.TO: Has 10 days of data
+        RY.TO: Starting 5-day P&L calculation...
+        RY.TO: Price 5-days ago: $199.630005, current: $203.139999
+        RY.TO: Calling pnl_calculator.calculate_period_pnl()...
+        RY.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('59.67'), 'five_day_percentage_pnl': Decimal('0.0176'), 'current_price': Decimal('203.14'), 'five_day_start_price': Decimal('199.63'), 'shares': Decimal('17.00')}
+        RY.TO: Extracting P&L values: abs_pnl=59.67, pct_pnl=0.0176
+        RY.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: SHOP.TO
+  Calculating 1-day P&L for SHOP.TO:
+    Current price: 211.600006
     Shares: 16.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for SHOP.TO.TO: opened_date=08-25-25
-    SHOP.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $29.76
+  5-day P&L calc for SHOP.TO: opened_date=08-25-25
+    SHOP.TO: Cache lookup - found data: True
+      SHOP.TO: Cache validation passed (using Close column)
+      SHOP.TO: Has 10 days of data
+        SHOP.TO: Starting 5-day P&L calculation...
+        SHOP.TO: Price 5-days ago: $198.490005, current: $211.600006
+        SHOP.TO: Calling pnl_calculator.calculate_period_pnl()...
+        SHOP.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('209.76'), 'five_day_percentage_pnl': Decimal('0.0660'), 'current_price': Decimal('211.60'), 'five_day_start_price': Decimal('198.49'), 'shares': Decimal('16.00')}
+        SHOP.TO: Extracting P&L values: abs_pnl=209.76, pct_pnl=0.0660
+        SHOP.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: SNA
   Calculating 1-day P&L for SNA:
     Current price: 337.23999
     Shares: 6.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-13.50
   5-day P&L calc for SNA: opened_date=09-03-25
     SNA: Cache lookup - found data: True
       SNA: Cache validation passed (using Close column)
@@ -789,8 +885,8 @@ Processing position: SPGI
   Calculating 1-day P&L for SPGI:
     Current price: 507.160004
     Shares: 3.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-1.92
   5-day P&L calc for SPGI: opened_date=09-03-25
     SPGI: Cache lookup - found data: True
       SPGI: Cache validation passed (using Close column)
@@ -805,8 +901,8 @@ Processing position: STLD
   Calculating 1-day P&L for STLD:
     Current price: 139.270004
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-5.70
   5-day P&L calc for STLD: opened_date=09-15-25
     STLD: Cache lookup - found data: True
       STLD: Cache validation passed (using Close column)
@@ -821,8 +917,8 @@ Processing position: TRMB
   Calculating 1-day P&L for TRMB:
     Current price: 82.779999
     Shares: 15.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $16.80
   5-day P&L calc for TRMB: opened_date=09-03-25
     TRMB: Cache lookup - found data: True
       TRMB: Cache validation passed (using Close column)
@@ -837,8 +933,8 @@ Processing position: TSCO
   Calculating 1-day P&L for TSCO:
     Current price: 59.66
     Shares: 40.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-8.40
   5-day P&L calc for TSCO: opened_date=09-03-25
     TSCO: Cache lookup - found data: True
       TSCO: Cache validation passed (using Close column)
@@ -853,8 +949,8 @@ Processing position: TSLA
   Calculating 1-day P&L for TSLA:
     Current price: 426.070007
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $36.88
   5-day P&L calc for TSLA: opened_date=09-03-25
     TSLA: Cache lookup - found data: True
       TSLA: Cache validation passed (using Close column)
@@ -869,8 +965,8 @@ Processing position: TSM
   Calculating 1-day P&L for TSM:
     Current price: 264.869995
     Shares: 10.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-37.70
   5-day P&L calc for TSM: opened_date=09-03-25
     TSM: Cache lookup - found data: True
       TSM: Cache validation passed (using Close column)
@@ -885,8 +981,8 @@ Processing position: TXN
   Calculating 1-day P&L for TXN:
     Current price: 179.369995
     Shares: 12.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-27.00
   5-day P&L calc for TXN: opened_date=09-03-25
     TXN: Cache lookup - found data: True
       TXN: Cache validation passed (using Close column)
@@ -901,8 +997,8 @@ Processing position: UL
   Calculating 1-day P&L for UL:
     Current price: 61.200001
     Shares: 27.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $-7.02
   5-day P&L calc for UL: opened_date=09-03-25
     UL: Cache lookup - found data: True
       UL: Cache validation passed (using Close column)
@@ -913,20 +1009,28 @@ Processing position: UL
         UL: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-45.63'), 'five_day_percentage_pnl': Decimal('-0.0269'), 'current_price': Decimal('61.20'), 'five_day_start_price': Decimal('62.89'), 'shares': Decimal('27.00')}
         UL: Extracting P&L values: abs_pnl=-45.63, pct_pnl=-0.0269
         UL: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: VFV.TO.TO
-  Calculating 1-day P&L for VFV.TO.TO:
-    Current price: 225.29
+Processing position: VFV.TO
+  Calculating 1-day P&L for VFV.TO:
+    Current price: 163.279999
     Shares: 41.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for VFV.TO.TO: opened_date=08-25-25
-    VFV.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $27.06
+  5-day P&L calc for VFV.TO: opened_date=08-25-25
+    VFV.TO: Cache lookup - found data: True
+      VFV.TO: Cache validation passed (using Close column)
+      VFV.TO: Has 10 days of data
+        VFV.TO: Starting 5-day P&L calculation...
+        VFV.TO: Price 5-days ago: $162.020004, current: $163.279999
+        VFV.TO: Calling pnl_calculator.calculate_period_pnl()...
+        VFV.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('51.66'), 'five_day_percentage_pnl': Decimal('0.0078'), 'current_price': Decimal('163.28'), 'five_day_start_price': Decimal('162.02'), 'shares': Decimal('41.00')}
+        VFV.TO: Extracting P&L values: abs_pnl=51.66, pct_pnl=0.0078
+        VFV.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: VOO
   Calculating 1-day P&L for VOO:
     Current price: 611.780029
     Shares: 4.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $11.36
   5-day P&L calc for VOO: opened_date=08-26-25
     VOO: Cache lookup - found data: True
       VOO: Cache validation passed (using Close column)
@@ -941,8 +1045,8 @@ Processing position: VTI
   Calculating 1-day P&L for VTI:
     Current price: 328.440002
     Shares: 7.0
-    Snapshots count: 20
-    Result: $0.00
+    Snapshots count: 19
+    Result: $8.61
   5-day P&L calc for VTI: opened_date=09-03-25
     VTI: Cache lookup - found data: True
       VTI: Cache validation passed (using Close column)
@@ -953,52 +1057,92 @@ Processing position: VTI
         VTI: P&L calculation returned: {'five_day_absolute_pnl': Decimal('28.91'), 'five_day_percentage_pnl': Decimal('0.0127'), 'current_price': Decimal('328.44'), 'five_day_start_price': Decimal('324.31'), 'shares': Decimal('7.00')}
         VTI: Extracting P&L values: abs_pnl=28.91, pct_pnl=0.0127
         VTI: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
-Processing position: XEQT.TO.TO
-  Calculating 1-day P&L for XEQT.TO.TO:
-    Current price: 53.27
+Processing position: XEQT.TO
+  Calculating 1-day P&L for XEQT.TO:
+    Current price: 38.610001
     Shares: 88.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for XEQT.TO.TO: opened_date=08-25-25
-    XEQT.TO.TO: Cache lookup - found data: False
-Processing position: XGD.TO.TO
-  Calculating 1-day P&L for XGD.TO.TO:
-    Current price: 60.2
+    Snapshots count: 19
+    Result: $8.80
+  5-day P&L calc for XEQT.TO: opened_date=08-25-25
+    XEQT.TO: Cache lookup - found data: True
+      XEQT.TO: Cache validation passed (using Close column)
+      XEQT.TO: Has 10 days of data
+        XEQT.TO: Starting 5-day P&L calculation...
+        XEQT.TO: Price 5-days ago: $38.34, current: $38.610001
+        XEQT.TO: Calling pnl_calculator.calculate_period_pnl()...
+        XEQT.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('23.76'), 'five_day_percentage_pnl': Decimal('0.0070'), 'current_price': Decimal('38.61'), 'five_day_start_price': Decimal('38.34'), 'shares': Decimal('88.00')}
+        XEQT.TO: Extracting P&L values: abs_pnl=23.76, pct_pnl=0.0070
+        XEQT.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: XGD.TO
+  Calculating 1-day P&L for XGD.TO:
+    Current price: 43.630001
     Shares: 93.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for XGD.TO.TO: opened_date=08-25-25
-    XGD.TO.TO: Cache lookup - found data: False
-Processing position: XHAK.TO.TO
-  Calculating 1-day P&L for XHAK.TO.TO:
-    Current price: 74.22
+    Snapshots count: 19
+    Result: $196.23
+  5-day P&L calc for XGD.TO: opened_date=08-25-25
+    XGD.TO: Cache lookup - found data: True
+      XGD.TO: Cache validation passed (using Close column)
+      XGD.TO: Has 10 days of data
+        XGD.TO: Starting 5-day P&L calculation...
+        XGD.TO: Price 5-days ago: $41.990002, current: $43.630001
+        XGD.TO: Calling pnl_calculator.calculate_period_pnl()...
+        XGD.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('152.52'), 'five_day_percentage_pnl': Decimal('0.0391'), 'current_price': Decimal('43.63'), 'five_day_start_price': Decimal('41.99'), 'shares': Decimal('93.00')}
+        XGD.TO: Extracting P&L values: abs_pnl=152.52, pct_pnl=0.0391
+        XGD.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: XHAK.TO
+  Calculating 1-day P&L for XHAK.TO:
+    Current price: 53.529999
     Shares: 63.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for XHAK.TO.TO: opened_date=08-25-25
-    XHAK.TO.TO: Cache lookup - found data: False
-Processing position: XHC.TO.TO
-  Calculating 1-day P&L for XHC.TO.TO:
-    Current price: 88.13
+    Snapshots count: 19
+    Result: $-16.38
+  5-day P&L calc for XHAK.TO: opened_date=08-25-25
+    XHAK.TO: Cache lookup - found data: True
+      XHAK.TO: Cache validation passed (using Close column)
+      XHAK.TO: Has 11 days of data
+        XHAK.TO: Starting 5-day P&L calculation...
+        XHAK.TO: Price 5-days ago: $52.650002, current: $53.529999
+        XHAK.TO: Calling pnl_calculator.calculate_period_pnl()...
+        XHAK.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('55.44'), 'five_day_percentage_pnl': Decimal('0.0167'), 'current_price': Decimal('53.53'), 'five_day_start_price': Decimal('52.65'), 'shares': Decimal('63.00')}
+        XHAK.TO: Extracting P&L values: abs_pnl=55.44, pct_pnl=0.0167
+        XHAK.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: XHC.TO
+  Calculating 1-day P&L for XHC.TO:
+    Current price: 63.869999
     Shares: 50.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for XHC.TO.TO: opened_date=08-25-25
-    XHC.TO.TO: Cache lookup - found data: False
-Processing position: XIC.TO.TO
-  Calculating 1-day P&L for XIC.TO.TO:
-    Current price: 65.75
+    Snapshots count: 19
+    Result: $-1.00
+  5-day P&L calc for XHC.TO: opened_date=08-25-25
+    XHC.TO: Cache lookup - found data: True
+      XHC.TO: Cache validation passed (using Close column)
+      XHC.TO: Has 10 days of data
+        XHC.TO: Starting 5-day P&L calculation...
+        XHC.TO: Price 5-days ago: $64.260002, current: $63.869999
+        XHC.TO: Calling pnl_calculator.calculate_period_pnl()...
+        XHC.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('-19.50'), 'five_day_percentage_pnl': Decimal('-0.0061'), 'current_price': Decimal('63.87'), 'five_day_start_price': Decimal('64.26'), 'shares': Decimal('50.00')}
+        XHC.TO: Extracting P&L values: abs_pnl=-19.50, pct_pnl=-0.0061
+        XHC.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
+Processing position: XIC.TO
+  Calculating 1-day P&L for XIC.TO:
+    Current price: 47.650002
     Shares: 111.0
-    Snapshots count: 20
-    Result: $0.00
-  5-day P&L calc for XIC.TO.TO: opened_date=08-25-25
-    XIC.TO.TO: Cache lookup - found data: False
+    Snapshots count: 19
+    Result: $53.28
+  5-day P&L calc for XIC.TO: opened_date=08-25-25
+    XIC.TO: Cache lookup - found data: True
+      XIC.TO: Cache validation passed (using Close column)
+      XIC.TO: Has 10 days of data
+        XIC.TO: Starting 5-day P&L calculation...
+        XIC.TO: Price 5-days ago: $46.889999, current: $47.650002
+        XIC.TO: Calling pnl_calculator.calculate_period_pnl()...
+        XIC.TO: P&L calculation returned: {'five_day_absolute_pnl': Decimal('84.36'), 'five_day_percentage_pnl': Decimal('0.0162'), 'current_price': Decimal('47.65'), 'five_day_start_price': Decimal('46.89'), 'shares': Decimal('111.00')}
+        XIC.TO: Extracting P&L values: abs_pnl=84.36, pct_pnl=0.0162
+        XIC.TO: Checking P&L values - abs_pnl is not None: True, pct_pnl is not None: True
 Processing position: ZEA.TO
   Calculating 1-day P&L for ZEA.TO:
     Current price: 27.190001
     Shares: 240.0
-    Snapshots count: 20
-    Result: $-2479.20
+    Snapshots count: 19
+    Result: $-36.00
   5-day P&L calc for ZEA.TO: opened_date=08-25-25
     ZEA.TO: Cache lookup - found data: True
       ZEA.TO: Cache validation passed (using Close column)

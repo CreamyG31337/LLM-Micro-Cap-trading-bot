@@ -323,6 +323,8 @@ def handle_configuration() -> None:
         try:
             from utils.fund_ui import show_fund_management_menu
             show_fund_management_menu()
+            # Fund switching happened, return to main menu to refresh options
+            return
         except ImportError as e:
             print_colored(f"{_safe_emoji('❌')} Fund management not available: {e}", Colors.RED)
             print_colored("This feature requires the fund management module.", Colors.YELLOW)
@@ -462,6 +464,8 @@ def main() -> None:
         
         elif choice == "c":
             handle_configuration()
+            # Refresh options after configuration changes (fund switching, etc.)
+            options = get_menu_options()
             continue
 
         elif choice == "b":
@@ -497,6 +501,8 @@ def main() -> None:
             selected_option = next((opt for opt in options if opt[0] == choice), None)
             if selected_option:
                 _, title, _, args = selected_option
+                # Make a copy of args to avoid modifying the original tuple
+                args = args.copy()
                 print_colored(f"\n🎯 Selected: {title}", Colors.GREEN + Colors.BOLD)
                 
                 # Special handling for automation script

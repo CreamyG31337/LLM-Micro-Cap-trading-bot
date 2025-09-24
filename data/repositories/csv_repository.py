@@ -115,9 +115,18 @@ class CSVRepository(BaseRepository):
             snapshot: PortfolioSnapshot to save
         """
         try:
-            # Prepare data for CSV
+            # Prepare data for CSV - use normalized timestamp
+            from utils.timezone_utils import get_trading_timezone
+            trading_tz = get_trading_timezone()
+            
+            # Normalize snapshot timestamp to trading timezone
+            if snapshot.timestamp.tzinfo is None:
+                normalized_timestamp = snapshot.timestamp.replace(tzinfo=trading_tz)
+            else:
+                normalized_timestamp = snapshot.timestamp.astimezone(trading_tz)
+            
             rows = []
-            timestamp_str = self._format_timestamp_for_csv(snapshot.timestamp)
+            timestamp_str = self._format_timestamp_for_csv(normalized_timestamp)
             
             for position in snapshot.positions:
                 row = position.to_csv_dict()
@@ -148,14 +157,29 @@ class CSVRepository(BaseRepository):
                 existing_df = pd.read_csv(self.portfolio_file)
                 if not existing_df.empty:
                     # Parse dates to compare - handle timezone-aware dates properly
+                    from utils.timezone_utils import get_trading_timezone
+                    trading_tz = get_trading_timezone()
+                    
                     existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
                     # Convert to pandas datetime, handling timezone-aware dates
-                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], utc=True)
+                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
+                    # CRITICAL: Convert to trading timezone for consistent comparison
+                    # Handle both timezone-aware and timezone-naive timestamps
+                    if existing_df['Date'].dt.tz is None:
+                        # Timezone-naive: localize first
+                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(trading_tz)
+                    else:
+                        # Timezone-aware: convert to trading timezone
+                        existing_df['Date'] = existing_df['Date'].dt.tz_convert(trading_tz)
                     # Convert to date-only for comparison
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
-                    # Check if today's data already exists
-                    today = snapshot.timestamp.date()
+                    # Check if today's data already exists - normalize snapshot to trading timezone
+                    if snapshot.timestamp.tzinfo is None:
+                        normalized_timestamp = snapshot.timestamp.replace(tzinfo=trading_tz)
+                    else:
+                        normalized_timestamp = snapshot.timestamp.astimezone(trading_tz)
+                    today = normalized_timestamp.date()
                     today_data = existing_df[existing_df['Date_Only'] == today]
                     
                     if not today_data.empty:
@@ -195,25 +219,47 @@ class CSVRepository(BaseRepository):
         try:
             from datetime import datetime, timezone
             import pytz
+            from utils.timezone_utils import get_trading_timezone
             
-            # Get today's date in the same timezone as the snapshot
-            today = snapshot.timestamp.date()
+            # CRITICAL: Always normalize to trading timezone for consistent date comparison
+            trading_tz = get_trading_timezone()
+            
+            # Convert snapshot timestamp to trading timezone
+            if snapshot.timestamp.tzinfo is None:
+                # Assume naive timestamps are already in trading timezone
+                normalized_timestamp = snapshot.timestamp.replace(tzinfo=trading_tz)
+            else:
+                # Convert timezone-aware timestamp to trading timezone
+                normalized_timestamp = snapshot.timestamp.astimezone(trading_tz)
+            
+            # Get today's date in trading timezone consistently
+            today = normalized_timestamp.date()
             
             # Check if today's snapshot already exists
             existing_df = None
             if self.portfolio_file.exists():
                 existing_df = pd.read_csv(self.portfolio_file)
                 if not existing_df.empty:
-                    # Parse dates to compare
+                    # Parse dates to compare - ensure consistent timezone handling
                     existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
                     # Ensure the Date column is properly converted to datetime dtype
                     existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
+                    
+                    # CRITICAL: Convert all existing dates to trading timezone for consistent comparison
+                    trading_tz = get_trading_timezone()
+                    # Handle both timezone-aware and timezone-naive timestamps
+                    if existing_df['Date'].dt.tz is None:
+                        # Timezone-naive: localize first
+                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(trading_tz)
+                    else:
+                        # Timezone-aware: convert to trading timezone
+                        existing_df['Date'] = existing_df['Date'].dt.tz_convert(trading_tz)
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
                     # Check if today's data exists
                     today_data = existing_df[existing_df['Date_Only'] == today]
                     if not today_data.empty:
-                        logger.debug(f"Today's portfolio snapshot already exists, updating prices and adding new positions")
+                        logger.debug(f"Today's portfolio snapshot already exists, updating prices only (no duplicate rows)")
                         
                         # Get list of existing tickers for today
                         existing_tickers = set(today_data['Ticker'].tolist())
@@ -254,27 +300,29 @@ class CSVRepository(BaseRepository):
 
                                 logger.debug(f"Updated position metrics for {ticker}: shares={shares_float}, avg_price={avg_price_float}, cost_basis={cost_basis_float}")
                         
-                        # Add HOLD entries for new positions that don't exist in today's data
+                        # SIMPLIFIED FIX: Only add HOLD rows for tickers that don't have a HOLD row today
                         new_positions = []
                         for pos in snapshot.positions:
                             if pos.ticker not in existing_tickers:
-                                # Create HOLD entry for new position
+                                # No HOLD row for this ticker today, add one
                                 hold_entry = pos.to_csv_dict()
-                                hold_entry['Date'] = self._format_timestamp_for_csv(snapshot.timestamp)
+                                hold_entry['Date'] = self._format_timestamp_for_csv(normalized_timestamp)
                                 hold_entry['Action'] = 'HOLD'
                                 new_positions.append(hold_entry)
-                                logger.debug(f"Adding HOLD entry for new position: {pos.ticker}")
+                                logger.debug(f"Adding HOLD entry for ticker missing from today: {pos.ticker}")
                         
                         if new_positions:
                             # Add new HOLD entries to the DataFrame
                             new_df = pd.DataFrame(new_positions)
                             existing_df = pd.concat([existing_df, new_df], ignore_index=True)
                             logger.debug(f"Added {len(new_positions)} new HOLD entries for today")
+                        else:
+                            logger.debug("No new positions to add - only updated existing positions")
                         
                         # Save the updated DataFrame
                         existing_df = existing_df.drop('Date_Only', axis=1)  # Remove helper column
                         existing_df.to_csv(self.portfolio_file, index=False)
-                        logger.debug(f"Updated today's portfolio snapshot with current prices and new positions")
+                        logger.debug(f"Updated today's portfolio snapshot with current prices (no duplicates created)")
                         return
             
             # If today's snapshot doesn't exist, create new rows

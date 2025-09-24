@@ -52,26 +52,18 @@ def refresh_portfolio_prices_if_needed(
                 price_cache = PriceCache()
             market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
-        # Check if we need to refresh portfolio prices
-        detector = MissingTradingDayDetector(market_hours, portfolio_manager)
+        # Use centralized portfolio update logic
+        from utils.portfolio_update_logic import should_update_portfolio
         
-        if market_hours.is_market_open():
+        needs_update, reason = should_update_portfolio(market_hours, portfolio_manager)
+        
+        if needs_update:
             if verbose:
-                print("🔄 Market is open - refreshing portfolio prices for current market data")
-            needs_update = True
-            reason = "Market is open - refreshing prices"
+                print(f"🔄 {reason}")
         else:
-            # Market is closed - check if we need to update based on missing trading days
-            needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
-            if needs_update:
-                if verbose:
-                    print(f"🔄 Missing trading days detected: {missing_days} - refreshing to get official market close prices")
-                reason = f"Missing trading days: {missing_days}"
-            else:
-                if verbose:
-                    print("ℹ️ Market is closed and portfolio is up to date - using existing market close prices")
-                reason = "Portfolio is up to date"
-                return False, reason
+            if verbose:
+                print(f"ℹ️ {reason}")
+            return False, reason
         
         if not needs_update:
             return False, reason

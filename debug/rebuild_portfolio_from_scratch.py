@@ -479,8 +479,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 # For sells, create entry with 0 shares and sell details
                 avg_price = running_positions[ticker]['cost'] / running_positions[ticker]['shares'] if running_positions[ticker]['shares'] > 0 else Decimal('0')
                 
-                # Format the date to a naive timestamp string for the CSV
-                formatted_date = date.strftime('%Y-%m-%d %H:%M:%S')
+                # Format the date using timezone utilities for consistency
+                from utils.timezone_utils import format_timestamp_for_csv
+                formatted_date = format_timestamp_for_csv(date)
 
                 portfolio_entries.append({
                     'Date': formatted_date,
@@ -515,8 +516,9 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                 running_positions[ticker]['last_price'] = price
                 running_positions[ticker]['last_currency'] = ticker_currencies[ticker]
                 
-                # Format the date to a naive timestamp string for the CSV
-                formatted_date = date.strftime('%Y-%m-%d %H:%M:%S')
+                # Format the date using timezone utilities for consistency
+                from utils.timezone_utils import format_timestamp_for_csv
+                formatted_date = format_timestamp_for_csv(date)
 
                 # Calculate current values
                 total_shares = running_positions[ticker]['shares']
@@ -679,10 +681,15 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                     
                     # Use the date part of hold_date_obj and combine with market close time
                     close_hour = MARKET_CLOSE_TIMES.get(timezone_str, 16)
-                    hold_date_at_close = hold_date_obj.replace(hour=close_hour, minute=0, second=0, microsecond=0)
+                    # Create timezone-aware datetime for consistent formatting
+                    if hold_date_obj.tzinfo is None:
+                        hold_date_at_close = tz.localize(hold_date_obj.replace(hour=close_hour, minute=0, second=0, microsecond=0))
+                    else:
+                        hold_date_at_close = hold_date_obj.astimezone(tz).replace(hour=close_hour, minute=0, second=0, microsecond=0)
                     
-                    # Format as naive timestamp string
-                    hold_date_str = hold_date_at_close.strftime('%Y-%m-%d %H:%M:%S')
+                    # Format using timezone utilities for consistency
+                    from utils.timezone_utils import format_timestamp_for_csv
+                    hold_date_str = format_timestamp_for_csv(hold_date_at_close)
                     
                     # Use historical price for this specific date
                     # This fetches the actual market close price for accurate valuation

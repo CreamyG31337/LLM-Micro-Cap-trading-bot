@@ -900,33 +900,53 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         print_info("Updating exchange rates...")
         currency_handler.update_exchange_rates_csv()
 
-        # Fetch current market data
+        # Fetch current market data with cache-first optimization
         print_info("Fetching current market data...")
         tickers = [pos.ticker for pos in latest_snapshot.positions]
 
         if tickers:
-            # Fetch more historical data (10 trading days) to support 5-day P&L calculations
-            # instead of just the current trading day
             from datetime import timedelta
             end_date = datetime.now()
             # Go back about 15 calendar days to ensure we get at least 10 trading days
             start_date = end_date - timedelta(days=15)
 
-            # Fetch market data for each ticker
+            # Cache-first approach: Check cache first, only fetch missing data
             market_data = {}
+            cache_hits = 0
+            api_calls = 0
+            
             for ticker in tickers:
                 try:
-                    result = market_data_fetcher.fetch_price_data(ticker, start_date, end_date)
-                    if not result.df.empty:
-                        market_data[ticker] = result.df
-                        # Update price cache with more historical data
-                        price_cache.cache_price_data(ticker, result.df, result.source)
-                        logger.debug(f"Cached {len(result.df)} rows for {ticker} from {result.source}")
+                    # First, try to get cached data
+                    cached_data = price_cache.get_cached_price(ticker, start_date, end_date)
+                    
+                    if cached_data is not None and not cached_data.empty:
+                        # Use cached data
+                        market_data[ticker] = cached_data
+                        cache_hits += 1
+                        logger.debug(f"Cache hit for {ticker}: {len(cached_data)} rows")
+                    else:
+                        # Cache miss - fetch fresh data
+                        result = market_data_fetcher.fetch_price_data(ticker, start_date, end_date)
+                        if not result.df.empty:
+                            market_data[ticker] = result.df
+                            # Update price cache with fresh data
+                            price_cache.cache_price_data(ticker, result.df, result.source)
+                            api_calls += 1
+                            logger.debug(f"API fetch for {ticker}: {len(result.df)} rows from {result.source}")
+                        else:
+                            market_data[ticker] = pd.DataFrame()
+                            logger.warning(f"No data returned for {ticker}")
+                            
                 except Exception as e:
                     logger.warning(f"Failed to fetch data for {ticker}: {e}")
                     market_data[ticker] = pd.DataFrame()
 
-            print_success(f"Updated market data for {len(market_data)} tickers")
+            # Report optimization results
+            if cache_hits > 0:
+                print_success(f"Updated market data for {len(market_data)} tickers ({cache_hits} from cache, {api_calls} fresh fetches)")
+            else:
+                print_success(f"Updated market data for {len(market_data)} tickers")
 
         # Calculate portfolio metrics
         print_info("Calculating portfolio metrics...")
@@ -1401,35 +1421,23 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception:
                 market_time_info = ""
 
-        # Determine environment indicator using fund-aware detection
-        env_indicator = ""
+        # Get fund name for display
+        fund_indicator = ""
         try:
-            from display.console_output import detect_environment
             from utils.fund_ui import get_current_fund_info
 
             # Get fund information for display
             fund_info = get_current_fund_info()
             if fund_info.get("exists"):
                 fund_name = fund_info.get("name", "Unknown")
-                env = detect_environment(str(repository.data_dir))
-
-                if env == 'DEVELOPMENT':
-                    env_indicator = f"{_safe_emoji('🟡')} {fund_name}"
-                elif env == 'PRODUCTION':
-                    env_indicator = f"{_safe_emoji('🏦')} {fund_name}"
-                else:
-                    env_indicator = f"{_safe_emoji('❓')} {fund_name}"
+                fund_indicator = f"{_safe_emoji('📊')} {fund_name}"
             else:
-                # Fallback to old logic if no fund info
-                env = detect_environment(str(repository.data_dir))
-                if env == 'DEVELOPMENT':
-                    env_indicator = f"{_safe_emoji('🟡')} DEV"
-                elif env == 'PRODUCTION':
-                    env_indicator = f"{_safe_emoji('🟢')} PROD"
-                else:
-                    env_indicator = f"{_safe_emoji('❓')} UNKNOWN"
+                # Fallback - extract fund name from data directory
+                from pathlib import Path
+                fund_name = Path(repository.data_dir).name
+                fund_indicator = f"{_safe_emoji('📊')} {fund_name}"
         except Exception:
-            env_indicator = ""
+            fund_indicator = ""
 
         # Get experiment timeline for header
         timeline_info = ""
@@ -1439,9 +1447,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Could not get experiment timeline: {e}")
 
-        # Display portfolio table with market timer, timeline, and environment in header
+        # Display portfolio table with market timer, timeline, and fund in header
         timeline_part = f"{_safe_emoji('📅')} {timeline_info}" if timeline_info else ""
-        env_part = f"{env_indicator}" if env_indicator else ""
 
         # Build header with all available information
         header_parts = ["Portfolio Summary"]
@@ -1449,8 +1456,8 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             header_parts.append(market_time_info)
         if timeline_part:
             header_parts.append(timeline_part)
-        if env_part:
-            header_parts.append(env_part)
+        if fund_indicator:
+            header_parts.append(fund_indicator)
 
         header_title = " | ".join(header_parts)
 
@@ -1466,30 +1473,20 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             # Check if we should update prices (market hours or no update today)
             should_update_prices = False
 
-            # Check for missing trading days and update if needed
-            from utils.missing_trading_days import MissingTradingDayDetector
+            # Use centralized portfolio update logic
+            from utils.portfolio_update_logic import should_update_portfolio
             
-            detector = MissingTradingDayDetector(market_hours, portfolio_manager)
-            
-            # Check if we should skip due to non-trading day
-            should_skip, skip_reason = detector.should_skip_due_to_non_trading_day()
-            if should_skip:
-                print_info(f"Portfolio prices not updated ({skip_reason})")
-                # Continue to display portfolio even on non-trading days
-            
-            # Check for missing trading days (only if not skipping due to non-trading day)
-            if not should_skip:
-                needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
-                if needs_update:
-                    should_update_prices = True
-                    logger.info(detector.get_update_reason())
+            needs_update, reason = should_update_portfolio(market_hours, portfolio_manager)
+            if needs_update:
+                should_update_prices = True
+                logger.info(reason)
+            else:
+                print_info(f"Portfolio prices not updated ({reason})")
 
-            # Check if market is open (only if not skipping due to non-trading day)
-            if not should_skip:
-                # Use centralized portfolio refresh logic
-                from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
-                
-                was_updated, reason = refresh_portfolio_prices_if_needed(
+            # Use centralized portfolio refresh logic
+            from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+            
+            was_updated, reason = refresh_portfolio_prices_if_needed(
                     market_hours=market_hours,
                     portfolio_manager=portfolio_manager,
                     repository=repository,
@@ -1497,13 +1494,13 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     price_cache=price_cache,
                     verbose=False  # Use logger instead of print for main trading script
                 )
-                
-                if was_updated:
-                    logger.info(f"Portfolio prices updated: {reason}")
-                    print_success("Portfolio snapshot updated successfully")
-                else:
-                    logger.debug(f"Portfolio prices not updated: {reason}")
-                    print_info("Portfolio prices not updated (market closed and already updated today)")
+            
+            if was_updated:
+                logger.info(f"Portfolio prices updated: {reason}")
+                print_success("Portfolio snapshot updated successfully")
+            else:
+                logger.debug(f"Portfolio prices not updated: {reason}")
+                print_info("Portfolio prices not updated (market closed and already updated today)")
 
         except Exception as e:
             logger.warning(f"Could not save portfolio snapshot: {e}")
@@ -1764,12 +1761,12 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception as e:
             logger.debug(f"Could not get market timer for menu: {e}")
 
-        # Add environment indicator and market timer to Trading Actions header
+        # Add fund indicator and market timer to Trading Actions header
         header_parts = ["Trading Actions"]
         if menu_time_info:
             header_parts.append(menu_time_info)
-        if env_indicator:
-            header_parts.append(env_indicator)
+        if fund_indicator:
+            header_parts.append(fund_indicator)
 
         trading_header_title = " | ".join(header_parts)
         print_header(trading_header_title, _safe_emoji("💰"))

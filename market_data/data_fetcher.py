@@ -66,17 +66,25 @@ class MarketDataFetcher:
     through a consistent interface.
     """
     
-    def __init__(self, cache_instance: Optional[Any] = None):
+    def __init__(self, cache_instance: Optional[Any] = None, market_hours: Optional[Any] = None):
         """
         Initialize the market data fetcher.
 
         Args:
             cache_instance: Optional cache instance for storing/retrieving data
+            market_hours: Optional MarketHours instance for market status checking
         """
         self.cache = cache_instance
         self.proxy_map = PROXY_MAP.copy()
         self._portfolio_currency_cache = {}
         self._load_currency_cache()
+
+        # Initialize market hours
+        if market_hours is None:
+            from market_data.market_hours import MarketHours
+            self.market_hours = MarketHours()
+        else:
+            self.market_hours = market_hours
 
         # Access global settings for configurable TTL
         try:
@@ -1150,21 +1158,127 @@ class MarketDataFetcher:
         # Apply overrides before returning
         return self._apply_fundamentals_overrides(ticker_key, fundamentals)
     
-    def get_current_price(self, ticker: str) -> Optional[Decimal]:
+    def get_current_price(self, ticker: str, allow_after_hours: bool = False) -> Optional[Decimal]:
         """
-        Get the current price for a ticker symbol.
+        Get the current price for a ticker symbol with smart market close logic.
         
-        This method fetches the most recent price data and returns the latest close price.
-        It's a convenience method that wraps fetch_price_data for current price retrieval.
+        When market is closed, this method efficiently uses cached market close prices
+        instead of making expensive API calls for after-hours data.
         
         Args:
             ticker: Stock ticker symbol
+            allow_after_hours: If True, fetch after-hours prices when market is closed.
+                              If False (default), use cached market close prices.
             
         Returns:
             Current price as Decimal, or None if not available
         """
         try:
-            # Fetch recent data (last 5 days to ensure we get current data)
+            # Check if market is open
+            is_market_open = self.market_hours.is_market_open()
+            
+            if not is_market_open and not allow_after_hours:
+                # Market is closed - try to use cached market close prices efficiently
+                return self._get_market_close_price(ticker)
+            else:
+                # Market is open OR after-hours prices are requested
+                return self._get_live_price(ticker)
+            
+        except Exception as e:
+            logger.error(f"Error fetching current price for {ticker}: {e}")
+            return None
+    
+    def _get_market_close_price(self, ticker: str) -> Optional[Decimal]:
+        """
+        Get market close price efficiently using cache when market is closed.
+        
+        This method tries to use cached data first, only fetching if necessary.
+        Much more efficient than the old approach of always fetching 5 days of data.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Market close price as Decimal, or None if not available
+        """
+        try:
+            # First, try to get cached data for the previous trading day
+            if self.cache:
+                # Get data for the last few days to find the most recent trading day
+                cached_data = self.cache.get_cached_price(ticker)
+                if cached_data is not None and not cached_data.empty:
+                    # Get the most recent close price from cache
+                    latest_close = cached_data['Close'].iloc[-1]
+                    if not pd.isna(latest_close):
+                        logger.debug(f"Using cached market close price for {ticker}: {latest_close}")
+                        return Decimal(str(latest_close)).quantize(Decimal('0.01'))
+            
+            # If no cached data, fetch minimal data to get market close price
+            # Only fetch 1 day to get the most recent close price
+            result = self.fetch_price_data(ticker, period="1d")
+            
+            if result.df.empty:
+                logger.warning(f"No market close price data available for {ticker}")
+                return None
+            
+            # Get the most recent close price
+            latest_close = result.df['Close'].iloc[-1]
+            
+            # Convert to Decimal for precision
+            if pd.isna(latest_close):
+                logger.warning(f"Latest close price is NaN for {ticker}")
+                return None
+                
+            logger.debug(f"Fetched market close price for {ticker}: {latest_close}")
+            return Decimal(str(latest_close)).quantize(Decimal('0.01'))
+            
+        except Exception as e:
+            logger.error(f"Error fetching market close price for {ticker}: {e}")
+            return None
+    
+    def _get_live_price(self, ticker: str) -> Optional[Decimal]:
+        """
+        Get live price data (for when market is open or after-hours is requested).
+        
+        This method tries to use cached data first, then fetches minimal data if needed.
+        Much more efficient than always fetching 5 days of data.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Live price as Decimal, or None if not available
+        """
+        try:
+            # First, try to get cached data
+            if self.cache:
+                cached_data = self.cache.get_cached_price(ticker)
+                if cached_data is not None and not cached_data.empty:
+                    # Get the most recent close price from cache
+                    latest_close = cached_data['Close'].iloc[-1]
+                    if not pd.isna(latest_close):
+                        logger.debug(f"Using cached live price for {ticker}: {latest_close}")
+                        return Decimal(str(latest_close)).quantize(Decimal('0.01'))
+            
+            # If no cached data or cache miss, fetch minimal data
+            # Try 1 day first, then 2 days if needed (for weekend/holiday handling)
+            for period in ["1d", "2d"]:
+                result = self.fetch_price_data(ticker, period=period)
+                
+                if not result.df.empty:
+                    # Get the most recent close price
+                    latest_close = result.df['Close'].iloc[-1]
+                    
+                    # Convert to Decimal for precision
+                    if pd.isna(latest_close):
+                        logger.warning(f"Latest close price is NaN for {ticker}")
+                        continue
+                        
+                    logger.debug(f"Fetched live price for {ticker} using {period}: {latest_close}")
+                    return Decimal(str(latest_close)).quantize(Decimal('0.01'))
+            
+            # If 1d and 2d both fail, fall back to 5d as last resort
+            logger.debug(f"Trying 5d fallback for {ticker}")
             result = self.fetch_price_data(ticker, period="5d")
             
             if result.df.empty:
@@ -1179,8 +1293,9 @@ class MarketDataFetcher:
                 logger.warning(f"Latest close price is NaN for {ticker}")
                 return None
                 
+            logger.debug(f"Fetched live price for {ticker} using 5d fallback: {latest_close}")
             return Decimal(str(latest_close)).quantize(Decimal('0.01'))
             
         except Exception as e:
-            logger.error(f"Error fetching current price for {ticker}: {e}")
+            logger.error(f"Error fetching live price for {ticker}: {e}")
             return None

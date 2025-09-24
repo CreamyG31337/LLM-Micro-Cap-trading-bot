@@ -5,10 +5,13 @@ This module provides functionality to detect missing trading days between
 the last portfolio update and the current date, and trigger updates for
 those missing days. Used across portfolio management, graphing, and
 prompt generator screens.
+
+DEPRECATED: Use utils.portfolio_update_logic.PortfolioUpdateLogic instead.
+This module is kept for backward compatibility.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import List, Optional, Tuple
 
 from market_data.market_hours import MarketHours
@@ -21,9 +24,12 @@ class MissingTradingDayDetector:
     """
     Detects missing trading days and determines if portfolio updates are needed.
     
-    This class provides a centralized way to check for missing trading days
-    across different parts of the application (portfolio management, graphing,
-    prompt generation, etc.).
+    DEPRECATED: Use utils.portfolio_update_logic.PortfolioUpdateLogic instead.
+    This class is kept for backward compatibility.
+    
+    Args:
+        market_hours: MarketHours instance for trading day detection
+        portfolio_manager: PortfolioManager instance for getting latest portfolio data
     """
     
     def __init__(self, market_hours: MarketHours, portfolio_manager: PortfolioManager):
@@ -80,10 +86,48 @@ class MissingTradingDayDetector:
                 logger.info(f"Most recent missing trading day: {most_recent_missing.strftime('%Y-%m-%d')}")
                 return True, missing_trading_days, most_recent_missing
             else:
-                # No missing trading days, check if today is a trading day
+                # No missing trading days, check if today is a trading day AND we need today's data
                 if self.market_hours.is_trading_day(today):
-                    logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day - update needed")
-                    return True, [today], today
+                    # Check if we already have today's data
+                    if last_update_date < today:
+                        # Only update if markets are open
+                        if self.market_hours.is_market_open():
+                            logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are open - update needed")
+                            return True, [today], today
+                        else:
+                            # Markets are closed - check if we have data from after the most recent market close
+                            # This works for both same-day (after 4 PM today) and next-day (3 AM) scenarios
+                            latest_snapshot = self.portfolio_manager.get_latest_portfolio()
+                            if latest_snapshot and latest_snapshot.timestamp:
+                                snapshot_date = latest_snapshot.timestamp.date()
+                                snapshot_time = latest_snapshot.timestamp.time()
+                                market_close_time = time(16, 0)  # 4:00 PM EST
+                                
+                                # Check if we have data from after market close on the most recent trading day
+                                if snapshot_date == today and snapshot_time >= market_close_time:
+                                    # We have data from after today's market close - we're good
+                                    logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are closed - we already have post-market-close data from today, skipping update")
+                                    return False, [], None
+                                elif snapshot_date < today:
+                                    # We have data from a previous day - check if it's from after market close
+                                    if snapshot_time >= market_close_time:
+                                        # We have data from after the previous day's market close - we're good
+                                        logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are closed - we already have post-market-close data from {snapshot_date}, skipping update")
+                                        return False, [], None
+                                    else:
+                                        # We have data from before market close on the previous day - we need today's data
+                                        logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are closed - we need post-market-close data, update needed")
+                                        return True, [today], today
+                                else:
+                                    # We have data from the future (shouldn't happen) - we're good
+                                    logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are closed - we have future data, skipping update")
+                                    return False, [], None
+                            else:
+                                logger.info(f"No missing trading days, but today ({today.strftime('%A')}) is a trading day and markets are closed - no existing data, update needed")
+                                return True, [today], today
+                    else:
+                        logger.debug(f"No missing trading days and today ({today.strftime('%A')}) is a trading day but we already have today's data")
+                        return False, [], None
                 else:
                     logger.debug(f"No missing trading days and today ({today.strftime('%A')}) is not a trading day")
                     return False, [], None

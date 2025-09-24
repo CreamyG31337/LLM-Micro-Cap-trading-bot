@@ -51,6 +51,7 @@ except ImportError:
 
 import pandas as pd
 import yaml
+import logging
 
 # Import from modular components
 # Remove default data directory import - require explicit directory
@@ -60,6 +61,9 @@ from portfolio.portfolio_manager import PortfolioManager
 from market_data.market_hours import MarketHours
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.price_cache import PriceCache
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # HOW TO ACCESS THIS SCRIPT:
 # - User hits 'd' in main menu (run.py) -> runs: python prompt_generator.py --data-dir "my trading"
@@ -189,10 +193,29 @@ class PromptGenerator:
 
         all_tickers = portfolio_tickers + benchmarks
         
+        # Cache-first approach: Check cache first, only fetch missing data
+        cache_hits = 0
+        api_calls = 0
+        
+        # Note: Prompt generator fetches data regardless of market hours for display purposes
+        
         for ticker in all_tickers:
             try:
-                result = self.market_data_fetcher.fetch_price_data(ticker, start_d, end_d)
-                data = result.df
+                # First, try to get cached data
+                cached_data = self.price_cache.get_cached_price(ticker, start_d, end_d)
+                
+                if cached_data is not None and not cached_data.empty:
+                    # Use cached data
+                    data = cached_data
+                    cache_hits += 1
+                    logger.debug(f"Cache hit for {ticker}: {len(cached_data)} rows")
+                else:
+                    # Cache miss - fetch data even when markets are closed for prompt display
+                    # The prompt generator needs data for display purposes, even if markets are closed
+                    result = self.market_data_fetcher.fetch_price_data(ticker, start_d, end_d)
+                    data = result.df
+                    api_calls += 1
+                    logger.debug(f"API fetch for {ticker}: {len(result.df)} rows from {result.source}")
                 
                 if data.empty or len(data) < 2 or "Close" not in data.columns:
                     rows.append([ticker, "—", "—", "—", "—"])
@@ -239,6 +262,12 @@ class PromptGenerator:
             except Exception as e:
                 print(f"Warning: Failed to fetch data for {ticker}: {e}")
                 rows.append([ticker, "—", "—", "—", "—"])
+        
+        # Report optimization results
+        if cache_hits > 0:
+            print(f"✅ Market data: {cache_hits} from cache, {api_calls} fresh fetches")
+        else:
+            print(f"✅ Market data: {api_calls} fresh fetches")
                 
         return rows
         

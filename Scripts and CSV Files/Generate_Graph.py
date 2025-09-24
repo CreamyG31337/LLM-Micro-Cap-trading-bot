@@ -238,18 +238,25 @@ def load_portfolio_totals() -> pd.DataFrame:
     # --- Data Cleaning and Preparation ---
     # Handle mixed date formats (some with timezone, some without)
     def parse_mixed_dates(date_str):
-        """Parse dates that may have timezone info or not."""
-        try:
-            # First try parsing with timezone info
+        """Parse dates that may have timezone info or not using timezone-aware parsing."""
+        if pd.isna(date_str):
+            return pd.NaT
+        
+        date_str = str(date_str).strip()
+        
+        # Use the same timezone parsing logic as the trading system to prevent warnings
+        # Convert timezone abbreviations to UTC offsets before parsing
+        if " PDT" in date_str:
+            clean_date = date_str.replace(" PDT", "")
+            date_with_offset = f"{clean_date}-07:00"
+            return pd.to_datetime(date_with_offset, errors='coerce')
+        elif " PST" in date_str:
+            clean_date = date_str.replace(" PST", "")
+            date_with_offset = f"{clean_date}-08:00"
+            return pd.to_datetime(date_with_offset, errors='coerce')
+        else:
+            # No timezone info - parse normally
             return pd.to_datetime(date_str, errors='coerce')
-        except:
-            # If that fails, try without timezone
-            try:
-                # Remove timezone suffix if present
-                clean_date = date_str.replace(' PST', '').replace(' PDT', '')
-                return pd.to_datetime(clean_date, errors='coerce')
-            except:
-                return pd.NaT
     
     llm_df["Date"] = llm_df["Date"].apply(parse_mixed_dates)
     llm_df = llm_df.dropna(subset=['Date'])
@@ -463,7 +470,7 @@ def get_benchmark_config(benchmark_name: str) -> dict:
 
 
 def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: pd.Timestamp, portfolio_dates: pd.Series) -> pd.DataFrame:
-    """Download benchmark prices, normalize to $100 baseline, and forward-fill for weekends."""
+    """Download benchmark prices with cache-first optimization, normalize to $100 baseline, and forward-fill for weekends."""
     config = get_benchmark_config(benchmark_name)
     ticker = config['ticker']
     display_name = config['display_name']
@@ -474,9 +481,39 @@ def download_benchmark(benchmark_name: str, start_date: pd.Timestamp, end_date: 
         download_start = start_date - pd.Timedelta(days=5)
         download_end = end_date + pd.Timedelta(days=5)
         
-        benchmark_data = yf.download(ticker, start=download_start, end=download_end,
-                                   progress=False, auto_adjust=False)
-        benchmark_data = benchmark_data.reset_index()
+        # Cache-first approach: Try to use cached data first
+        benchmark_data = None
+        cache_hit = False
+        
+        # Try to get cached data if available
+        try:
+            from market_data.price_cache import PriceCache
+            price_cache = PriceCache()
+            cached_data = price_cache.get_cached_price(ticker, download_start, download_end)
+            
+            if cached_data is not None and not cached_data.empty:
+                benchmark_data = cached_data.reset_index()
+                cache_hit = True
+                print(f"{_safe_emoji('💾')} Using cached {display_name} data ({len(benchmark_data)} rows)")
+        except Exception as cache_error:
+            print(f"{_safe_emoji('⚠️')} Cache lookup failed for {ticker}: {cache_error}")
+        
+        # If no cached data, fetch fresh data
+        if not cache_hit:
+            print(f"{_safe_emoji('📥')} Fetching fresh {display_name} data...")
+            benchmark_data = yf.download(ticker, start=download_start, end=download_end,
+                                       progress=False, auto_adjust=False)
+            benchmark_data = benchmark_data.reset_index()
+            
+            # Cache the fresh data for future use
+            try:
+                from market_data.price_cache import PriceCache
+                price_cache = PriceCache()
+                price_cache.cache_price_data(ticker, benchmark_data, "yfinance")
+                print(f"{_safe_emoji('💾')} Cached {display_name} data for future use")
+            except Exception as cache_error:
+                print(f"{_safe_emoji('⚠️')} Failed to cache {ticker} data: {cache_error}")
+        
         if isinstance(benchmark_data.columns, pd.MultiIndex):
             benchmark_data.columns = benchmark_data.columns.get_level_values(0)
         

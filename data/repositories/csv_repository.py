@@ -61,10 +61,14 @@ class CSVRepository(BaseRepository):
                 logger.info("Portfolio CSV file is empty")
                 return []
             
-            # Parse timestamps with timezone awareness
-            df['Date'] = df['Date'].apply(self._parse_csv_timestamp)
-            # Ensure the Date column is properly converted to datetime dtype
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            # Parse timestamps with timezone awareness  
+            # _parse_csv_timestamp returns timezone-aware pandas Timestamps
+            parsed_dates = df['Date'].apply(self._parse_csv_timestamp)
+            # Convert to datetime64 by extracting components (avoids timezone conversion issues)
+            df['Date'] = pd.to_datetime(parsed_dates.apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if hasattr(x, 'strftime') else str(x)))
+            # Add timezone info back
+            if not parsed_dates.empty and hasattr(parsed_dates.iloc[0], 'tz'):
+                df['Date'] = df['Date'].dt.tz_localize(parsed_dates.iloc[0].tz)
             
             # Filter by date range if provided
             if date_range:
@@ -160,17 +164,12 @@ class CSVRepository(BaseRepository):
                     from utils.timezone_utils import get_trading_timezone
                     trading_tz = get_trading_timezone()
                     
-                    existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
-                    # Convert to pandas datetime, handling timezone-aware dates
-                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
-                    # CRITICAL: Convert to trading timezone for consistent comparison
-                    # Handle both timezone-aware and timezone-naive timestamps
-                    if existing_df['Date'].dt.tz is None:
-                        # Timezone-naive: localize first
-                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(trading_tz)
-                    else:
-                        # Timezone-aware: convert to trading timezone
-                        existing_df['Date'] = existing_df['Date'].dt.tz_convert(trading_tz)
+                    parsed_dates = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    # Convert to datetime64 by extracting components
+                    existing_df['Date'] = pd.to_datetime(parsed_dates.apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if hasattr(x, 'strftime') else str(x)))
+                    # Add timezone info back
+                    if not parsed_dates.empty and hasattr(parsed_dates.iloc[0], 'tz'):
+                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(parsed_dates.iloc[0].tz)
                     # Convert to date-only for comparison
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
@@ -241,19 +240,12 @@ class CSVRepository(BaseRepository):
                 existing_df = pd.read_csv(self.portfolio_file)
                 if not existing_df.empty:
                     # Parse dates to compare - ensure consistent timezone handling
-                    existing_df['Date'] = existing_df['Date'].apply(self._parse_csv_timestamp)
-                    # Ensure the Date column is properly converted to datetime dtype
-                    existing_df['Date'] = pd.to_datetime(existing_df['Date'], errors='coerce')
-                    
-                    # CRITICAL: Convert all existing dates to trading timezone for consistent comparison
-                    trading_tz = get_trading_timezone()
-                    # Handle both timezone-aware and timezone-naive timestamps
-                    if existing_df['Date'].dt.tz is None:
-                        # Timezone-naive: localize first
-                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(trading_tz)
-                    else:
-                        # Timezone-aware: convert to trading timezone
-                        existing_df['Date'] = existing_df['Date'].dt.tz_convert(trading_tz)
+                    parsed_dates = existing_df['Date'].apply(self._parse_csv_timestamp)
+                    # Convert to datetime64 by extracting components (same fix as get_portfolio_data)
+                    existing_df['Date'] = pd.to_datetime(parsed_dates.apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S') if hasattr(x, 'strftime') else str(x)))
+                    # Add timezone info back
+                    if not parsed_dates.empty and hasattr(parsed_dates.iloc[0], 'tz'):
+                        existing_df['Date'] = existing_df['Date'].dt.tz_localize(parsed_dates.iloc[0].tz)
                     existing_df['Date_Only'] = existing_df['Date'].dt.date
                     
                     # Check if today's data exists
@@ -624,45 +616,45 @@ class CSVRepository(BaseRepository):
         if " PST" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" PST", "")
             timestamp_with_offset = f"{clean_timestamp}-08:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
         elif " PDT" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" PDT", "")
             timestamp_with_offset = f"{clean_timestamp}-07:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
 
         # Mountain Time (Rockies)
         elif " MST" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" MST", "")
             timestamp_with_offset = f"{clean_timestamp}-07:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
         elif " MDT" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" MDT", "")
             timestamp_with_offset = f"{clean_timestamp}-06:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
 
         # Central Time (Midwest)
         elif " CST" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" CST", "")
             timestamp_with_offset = f"{clean_timestamp}-06:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
         elif " CDT" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" CDT", "")
             timestamp_with_offset = f"{clean_timestamp}-05:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
 
         # Eastern Time (East Coast)
         elif " EST" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" EST", "")
             timestamp_with_offset = f"{clean_timestamp}-05:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
         elif " EDT" in timestamp_str:
             clean_timestamp = timestamp_str.replace(" EDT", "")
             timestamp_with_offset = f"{clean_timestamp}-04:00"
-            return pd.to_datetime(timestamp_with_offset).to_pydatetime()
+            return pd.to_datetime(timestamp_with_offset)
 
         # Already pandas-compatible formats
         elif " UTC" in timestamp_str or " GMT" in timestamp_str:
-            return pd.to_datetime(timestamp_str).to_pydatetime()
+            return pd.to_datetime(timestamp_str)
 
         # Check for ISO format with timezone offset (e.g., "2025-08-25 04:00:00-04:00")
         # Look for pattern like YYYY-MM-DD HH:MM:SS±HH:MM or YYYY-MM-DD HH:MM:SS±HH
@@ -670,7 +662,7 @@ class CSVRepository(BaseRepository):
         iso_tz_pattern = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{2}(:\d{2})?$')
         if iso_tz_pattern.match(timestamp_str):
             try:
-                return pd.to_datetime(timestamp_str).to_pydatetime()
+                return pd.to_datetime(timestamp_str)
             except Exception:
                 logger.warning(f"Failed to parse ISO timezone format: {timestamp_str}")
                 # Fall through to general parsing
@@ -678,10 +670,9 @@ class CSVRepository(BaseRepository):
         # UTC offset format already present (general case)
         elif ("+" in timestamp_str or "-" in timestamp_str):
             try:
-                return pd.to_datetime(timestamp_str).to_pydatetime()
+                return pd.to_datetime(timestamp_str)
             except Exception:
-                dt = pd.to_datetime(timestamp_str, utc=True)
-                return dt.to_pydatetime()
+                return pd.to_datetime(timestamp_str, utc=True)
 
         else:
             # No timezone info, assume local timezone and make it timezone-aware
@@ -691,8 +682,8 @@ class CSVRepository(BaseRepository):
                 from utils.timezone_utils import get_trading_timezone
                 trading_tz = get_trading_timezone()
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=trading_tz)
-                return dt.to_pydatetime()
+                    dt = dt.tz_localize(trading_tz)
+                return dt
             except Exception:
                 logger.warning(f"Failed to parse timestamp: {timestamp_str}")
                 from utils.timezone_utils import get_trading_timezone

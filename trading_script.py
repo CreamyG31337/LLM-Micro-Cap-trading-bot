@@ -18,7 +18,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Modular startup check - handles path setup and dependency checking
@@ -493,7 +493,6 @@ def generate_benchmark_graph(settings: Settings) -> None:
         import matplotlib.pyplot as plt
         import pandas as pd
         import yfinance as yf
-        from datetime import datetime, timedelta
         from pathlib import Path
         
         print_info("Setting up benchmark graph generation...")
@@ -905,7 +904,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         tickers = [pos.ticker for pos in latest_snapshot.positions]
 
         if tickers:
-            from datetime import timedelta
             end_date = datetime.now()
             # Go back about 15 calendar days to ensure we get at least 10 trading days
             start_date = end_date - timedelta(days=15)
@@ -1048,16 +1046,30 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Calculate daily P&L using historical portfolio data
             # SHARED LOGIC: Same function used by prompt_generator.py when user hits 'd' in menu
+            # Smart logic: If today's snapshot exists in CSV, we exclude it because we've updated with fresh prices
+            # If today's snapshot doesn't exist (pre-market), we use all snapshots as-is
+            today_date = datetime.now().date()
+            latest_snapshot_date = portfolio_snapshots[-1].timestamp.date() if portfolio_snapshots else None
+            
+            if latest_snapshot_date == today_date:
+                # Today's snapshot exists - exclude it since we have fresh prices
+                historical_snapshots = portfolio_snapshots[:-1] if len(portfolio_snapshots) > 1 else []
+            else:
+                # Pre-market or weekend - use all snapshots as-is
+                historical_snapshots = portfolio_snapshots
+            
             if args.non_interactive:
                 with open('debug_output.txt', 'a') as debug_file:
                     debug_file.write(f"  Calculating 1-day P&L for {position.ticker}:\n")
                     debug_file.write(f"    Current price: {position.current_price}\n")
                     debug_file.write(f"    Shares: {position.shares}\n")
-                    debug_file.write(f"    Snapshots count: {len(portfolio_snapshots)}\n")
+                    debug_file.write(f"    Latest snapshot date: {latest_snapshot_date}\n")
+                    debug_file.write(f"    Today's date: {today_date}\n")
+                    debug_file.write(f"    Using {len(historical_snapshots)} snapshots for comparison\n")
                     debug_file.flush()
 
             from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
-            pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, portfolio_snapshots)
+            pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
 
             if args.non_interactive:
                 with open('debug_output.txt', 'a') as debug_file:
@@ -1080,16 +1092,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
                 if opened_date_str != 'N/A':
                     # Parse the opened date (format: 'MM-DD-YY')
-                    from datetime import datetime as _dt
                     try:
-                        opened_dt = _dt.strptime(opened_date_str, '%m-%d-%y')
+                        opened_dt = datetime.strptime(opened_date_str, '%m-%d-%y')
                         # Handle 2-digit year: assume 20xx for years 00-30, 19xx for years 31-99
                         if opened_dt.year < 2000:
                             opened_dt = opened_dt.replace(year=opened_dt.year + 2000)
                         # Make it timezone-aware
                         tz = market_hours.get_trading_timezone()
                         opened_dt = tz.localize(opened_dt)
-                        now_tz = _dt.now(tz)
+                        now_tz = datetime.now(tz)
 
                         # Count trading days between open and now (inclusive)
                         days_held_trading = market_hours.trading_days_between(opened_dt, now_tz)

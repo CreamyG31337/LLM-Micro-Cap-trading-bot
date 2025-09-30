@@ -232,6 +232,10 @@ def load_portfolio_totals() -> pd.DataFrame:
     """Load portfolio equity history and calculate daily totals from individual positions."""
     llm_df = pd.read_csv(PORTFOLIO_CSV)
     
+    # IMPORTANT: Portfolio refresh uses the same centralized logic as the main trading system
+    # The graph generation intelligently refreshes data when needed (e.g., during market hours
+    # or when missing trading days) and creates continuous timeline with forward-filling
+    
     print(f"{_safe_emoji('📊')} Loaded portfolio data with {len(llm_df)} rows")
     print(f"{_safe_emoji('📊')} Columns: {list(llm_df.columns)}")
     
@@ -277,7 +281,8 @@ def load_portfolio_totals() -> pd.DataFrame:
     for col in numeric_cols:
         llm_df[col] = pd.to_numeric(llm_df[col], errors='coerce').fillna(0)
 
-    print(f"{_safe_emoji('📅')} Date range: {llm_df['Date'].min().date()} to {llm_df['Date'].max().date()}")
+    print(f"{_safe_emoji('📅')} Portfolio data available from: {llm_df['Date'].min().date()} to {llm_df['Date'].max().date()}")
+    print(f"{_safe_emoji('ℹ️')} Graph shows continuous timeline with forward-filled values for missing days")
     
     # --- Load Exchange Rates ---
     from utils.currency_converter import load_exchange_rates, convert_usd_to_cad
@@ -288,14 +293,31 @@ def load_portfolio_totals() -> pd.DataFrame:
     # --- Progressive Portfolio Calculation ---
     daily_snapshots = []
     portfolio = {}  # Holds the state of our portfolio {ticker: {data}}
-    all_dates = pd.to_datetime(llm_df['Date'].dt.date.unique())
     
-    # Start one day earlier for better baseline comparison
-    if len(all_dates) > 0:
-        earliest_date = all_dates.min()
+    # Get the date range from the data
+    data_dates = pd.to_datetime(llm_df['Date'].dt.date.unique())
+    if len(data_dates) > 0:
+        start_date = data_dates.min()
+        end_date = data_dates.max()
+        
+        # Create continuous timeline up to the last data date
+        # This ensures missing trading days are filled with forward-filled values
+        # Note: We only go up to the last available data date, not today
+        # The trading system should be run first to refresh data for missing days
+        from datetime import datetime, timedelta
+        
+        # Use the last available data date as the end date for the continuous timeline
+        # This prevents extending beyond available data and creating false expectations
+        end_date_for_range = end_date.date()
+        
+        # Create a continuous date range from start to the appropriate end date
+        all_dates = pd.date_range(start=start_date, end=end_date_for_range, freq='D')
+        
         # Add a baseline day one day before the earliest data
-        baseline_date = earliest_date - pd.Timedelta(days=1)
+        baseline_date = start_date - pd.Timedelta(days=1)
         all_dates = pd.concat([pd.Series([baseline_date]), pd.Series(all_dates)]).sort_values()
+    else:
+        all_dates = pd.Series([])
 
     for current_date in all_dates:
         # Get all records for the current day
@@ -309,6 +331,19 @@ def load_portfolio_totals() -> pd.DataFrame:
 
         # Remove sold positions
         portfolio = {ticker: pos for ticker, pos in portfolio.items() if pos['Total Value'] > 0}
+        
+        # If no data for this day, use the last known portfolio state
+        # This ensures we don't lose the portfolio state between days
+        if day_df.empty and not portfolio:
+            # No data for this day and no portfolio state - skip this day
+            continue
+        
+        # If no data for this day but we have portfolio state, use it
+        # This handles missing trading days by using the last known state
+        if day_df.empty and portfolio:
+            # Use the last known portfolio state for missing trading days
+            # This ensures we don't lose the portfolio state between days
+            pass  # Continue with existing portfolio state
 
         # --- Calculate Daily Totals ---
         if portfolio:
@@ -384,6 +419,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     - Grid lines represent midnight (00:00)
     - Trading data points represent market close time (~13:00 PST)
     - Weekend/holiday values are forward-filled from last trading day
+    - Missing trading days are forward-filled to create continuous timeline
     """
     if df.empty:
         return df
@@ -406,7 +442,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     # Merge and forward-fill missing values (weekends/holidays keep previous trading day values)
     merged = continuous_df.merge(df_for_merge.drop('Date', axis=1), on='Date_Only', how='left')
     
-    # Forward fill all numeric columns (portfolio values don't change on weekends)
+    # Forward fill all numeric columns (portfolio values don't change on weekends or missing days)
     numeric_cols = ['Cost_Basis', 'Market_Value', 'Unrealized_PnL', 'Performance_Pct', 'Performance_Index', 'Total Equity']
     for col in numeric_cols:
         if col in merged.columns:
@@ -635,22 +671,220 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
     return pd.Timestamp(row["Date"]), float(row["Market_Value"]), float(row["Drawdown %"])
 
 
-def refresh_portfolio_data(data_dir_path):
+
+def get_historical_price_for_date(ticker, target_date, market_data_fetcher):
     """
-    Refresh portfolio data to ensure we have current prices before graphing.
+    Get historical closing price for a ticker on a specific date.
     
-    Price Refresh Logic:
-    - During market hours: Always refresh with current live prices
-    - After market close: Only refresh if no data exists for today (gets official market close prices)
-    - Prevents overwriting good market close prices with after-hours trading data
+    This uses the same logic as the rebuild script to fetch historical prices.
     
-    This ensures:
-    1. Live prices during market hours for real-time accuracy
-    2. Official market close prices after hours (not after-hours trading prices)
-    3. No unnecessary overwrites of good market close data
+    Args:
+        ticker: Stock ticker symbol
+        target_date: datetime.date object for the target date
+        market_data_fetcher: MarketDataFetcher instance
+        
+    Returns:
+        Historical close price as float, or None if not available
     """
     try:
-        print(f"{_safe_emoji('🔄')} Refreshing portfolio data to ensure current prices...")
+        from datetime import timedelta
+        import pandas as pd
+        
+        # Try multiple date ranges to find available data
+        date_ranges = [
+            (target_date, target_date + timedelta(days=1)),  # Exact day
+            (target_date - timedelta(days=1), target_date + timedelta(days=2)),  # 3-day window
+            (target_date - timedelta(days=3), target_date + timedelta(days=4)),  # 7-day window
+        ]
+        
+        for start_date, end_date in date_ranges:
+            result = market_data_fetcher.fetch_price_data(ticker, pd.Timestamp(start_date), pd.Timestamp(end_date))
+            df = result.df
+            
+            if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
+                # Find row matching the target date or closest available
+                day_rows = df[df.index.date == target_date]
+                if not day_rows.empty:
+                    return float(day_rows['Close'].iloc[0])
+                # If no exact match, try to find closest date within range
+                available_dates = df.index.date
+                closest_dates = [d for d in available_dates if d <= target_date]
+                if closest_dates:
+                    closest_date = max(closest_dates)
+                    closest_rows = df[df.index.date == closest_date]
+                    if not closest_rows.empty:
+                        return float(closest_rows['Close'].iloc[0])
+        
+        return None
+    except Exception as e:
+        print(f"       Error fetching historical price for {ticker}: {e}")
+        return None
+
+
+def create_historical_snapshots_for_missing_days(data_dir_path, market_hours, portfolio_manager, repository, market_data_fetcher):
+    """
+    Create historical portfolio snapshots for ACTUAL missing trading days only.
+    
+    Requirements:
+    1. Weekends/Holidays: Do NOT create snapshots (will be forward-filled in graph)
+    2. Missing Trading Days: Create snapshots with REAL historical prices from API
+    
+    This uses the same historical price fetching logic as the rebuild script.
+    
+    Args:
+        data_dir_path: Path to the data directory
+        market_hours: MarketHours instance
+        portfolio_manager: PortfolioManager instance
+        repository: Repository instance
+        market_data_fetcher: MarketDataFetcher instance
+    """
+    try:
+        from utils.missing_trading_days import MissingTradingDayDetector
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        detector = MissingTradingDayDetector(market_hours, portfolio_manager)
+        needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
+        
+        if not needs_update or not missing_days:
+            print(f"{_safe_emoji('ℹ️')} No missing trading days detected")
+            return
+        
+        # Load the CSV to check which days actually have data
+        csv_path = Path(data_dir_path) / "llm_portfolio_update.csv"
+        if not csv_path.exists():
+            print(f"{_safe_emoji('⚠️')} Portfolio CSV not found")
+            return
+        
+        portfolio_df = pd.read_csv(csv_path)
+        
+        # Parse dates handling timezone info (PDT/PST)
+        def parse_date_with_tz(date_str):
+            if pd.isna(date_str):
+                return pd.NaT
+            date_str = str(date_str).strip()
+            # Strip timezone abbreviations before parsing
+            if " PDT" in date_str:
+                date_str = date_str.replace(" PDT", "").strip()
+            elif " PST" in date_str:
+                date_str = date_str.replace(" PST", "").strip()
+            return pd.to_datetime(date_str, errors='coerce')
+        
+        portfolio_df['Parsed_Date'] = portfolio_df['Date'].apply(parse_date_with_tz)
+        
+        # Extract date objects, handling any that didn't parse
+        def extract_date(dt_value):
+            if pd.isna(dt_value):
+                return None
+            if hasattr(dt_value, 'date'):
+                return dt_value.date()
+            return None
+        
+        existing_dates = set(filter(None, portfolio_df['Parsed_Date'].apply(extract_date).unique()))
+        
+        # Filter to only truly missing trading days (days with NO data in CSV) and are trading days
+        truly_missing_days = [day for day in missing_days if (day not in existing_dates and market_hours.is_trading_day(day))]
+        
+        if not truly_missing_days:
+            print(f"{_safe_emoji('✅')} No trading days need backfill - only weekends/holidays missing or already present")
+            return
+        
+        print(f"{_safe_emoji('🔄')} Backfilling {len(truly_missing_days)} missing TRADING days with historical prices...")
+        
+        # Get the latest portfolio positions to work with
+        latest_snapshot = portfolio_manager.get_latest_portfolio()
+        if not latest_snapshot or not latest_snapshot.positions:
+            print(f"{_safe_emoji('⚠️')} No portfolio positions found to create historical snapshots")
+            return
+        
+        # Create snapshots for each truly missing trading day
+        for missing_day in truly_missing_days:
+            try:
+                print(f"   Creating snapshot for {missing_day.strftime('%Y-%m-%d')}...")
+                
+                # Create a new snapshot for this historical day
+                historical_positions = []
+                
+                for position in latest_snapshot.positions:
+                    # Get historical price for this position on this day
+                    # Convert missing_day to date if it's a datetime
+                    target_date = missing_day.date() if hasattr(missing_day, 'date') else missing_day
+                    
+                    try:
+                        # Use the same historical price fetching logic as the rebuild script
+                        historical_price = get_historical_price_for_date(position.ticker, target_date, market_data_fetcher)
+                        
+                        if historical_price:
+                            # Create updated position with historical price and proper calculations
+                            from data.models.portfolio import Position
+                            from decimal import Decimal
+                            
+                            hist_price_decimal = Decimal(str(historical_price))
+                            market_value = position.shares * hist_price_decimal
+                            unrealized_pnl = market_value - position.cost_basis
+                            
+                            historical_position = Position(
+                                ticker=position.ticker,
+                                shares=position.shares,
+                                avg_price=position.avg_price,
+                                cost_basis=position.cost_basis,
+                                current_price=hist_price_decimal,
+                                market_value=market_value,
+                                unrealized_pnl=unrealized_pnl,
+                                currency=position.currency,
+                                company=position.company
+                            )
+                            historical_positions.append(historical_position)
+                            print(f"     {position.ticker}: ${historical_price:.2f} (value: ${market_value:.2f}, PnL: ${unrealized_pnl:.2f})")
+                        else:
+                            # Keep existing position data if no historical price found
+                            historical_positions.append(position)
+                            print(f"     {position.ticker}: No historical price found, using last known")
+                            
+                    except Exception as e:
+                        # Keep existing position data if there's an error
+                        historical_positions.append(position)
+                        print(f"     {position.ticker}: Error fetching historical price - {e}")
+                
+                # Create historical snapshot
+                from data.models.portfolio import PortfolioSnapshot
+                # Create timestamp for market close on the missing day
+                if hasattr(missing_day, 'date'):
+                    snapshot_date = missing_day.date()  # missing_day is datetime
+                else:
+                    snapshot_date = missing_day  # missing_day is already date
+                    
+                historical_snapshot = PortfolioSnapshot(
+                    positions=historical_positions,
+                    timestamp=datetime.combine(snapshot_date, datetime.min.time().replace(hour=16))  # Market close time
+                )
+                
+                # Save historical snapshot
+                repository.save_portfolio_snapshot(historical_snapshot)
+                print(f"     ✅ Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
+                
+            except Exception as e:
+                print(f"     ⚠️ Error creating snapshot for {missing_day.strftime('%Y-%m-%d')}: {e}")
+        
+        print(f"✅ Completed creating historical snapshots for missing trading days")
+        
+    except Exception as e:
+        print(f"⚠️ Error creating historical snapshots: {e}")
+
+
+def refresh_portfolio_data_if_needed(data_dir_path):
+    """
+    Refresh portfolio data using the centralized trading system logic.
+    
+    This function uses the same portfolio refresh logic as the main trading system
+    to ensure consistency and avoid code duplication. It intelligently decides
+    whether to refresh data based on market hours and existing data.
+    
+    Args:
+        data_dir_path: Path to the data directory
+    """
+    try:
+        print(f"{_safe_emoji('🔄')} Checking if portfolio data refresh is needed...")
         
         # Import the trading system components
         import sys
@@ -659,22 +893,21 @@ def refresh_portfolio_data(data_dir_path):
         from config.settings import get_settings
         from data.repositories.repository_factory import get_repository_container, configure_repositories
         from portfolio.portfolio_manager import PortfolioManager
-        from market_data.data_fetcher import MarketDataFetcher
-        from market_data.price_cache import PriceCache
+        from market_data.market_hours import MarketHours
+        from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+        from portfolio.fund_manager import Fund, RepositorySettings
         
         # Configure settings and repository
         settings = get_settings()
         if data_dir_path:
             settings._data_directory = str(data_dir_path)
-            # Also set the repository-specific data directory
             settings._config['repository']['csv']['data_directory'] = str(data_dir_path)
         else:
-            # Use the global DATA_DIR if available
             if 'DATA_DIR' in globals() and DATA_DIR:
                 settings._data_directory = str(DATA_DIR)
                 settings._config['repository']['csv']['data_directory'] = str(DATA_DIR)
             else:
-                print(f"{_safe_emoji('⚠️')}  No data directory specified for portfolio refresh")
+                print(f"{_safe_emoji('ℹ️')} No data directory specified - using existing data")
                 return
         
         repo_config = settings.get_repository_config()
@@ -682,7 +915,6 @@ def refresh_portfolio_data(data_dir_path):
         repository = get_repository_container().get_repository('default')
         
         # Create a basic Fund object for the PortfolioManager
-        from portfolio.fund_manager import Fund, RepositorySettings
         fund = Fund(
             id="graph_generator",
             name="Graph Generator Fund",
@@ -695,25 +927,34 @@ def refresh_portfolio_data(data_dir_path):
         
         # Initialize components
         portfolio_manager = PortfolioManager(repository, fund)
-        price_cache = PriceCache()
+        market_hours = MarketHours(settings=settings)
+        
+        # Initialize market data fetcher for historical data
+        from market_data.data_fetcher import MarketDataFetcher
+        from market_data.price_cache import PriceCache
+        price_cache = PriceCache(settings=settings)
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
-        # Check for missing trading days and update if needed
-        from market_data.market_hours import MarketHours
-        from utils.missing_trading_days import MissingTradingDayDetector
+        # STEP 1: Backfill missing trading days with historical prices
+        # This ensures we have complete data before refreshing current prices
+        create_historical_snapshots_for_missing_days(
+            data_dir_path=data_dir_path if data_dir_path else DATA_DIR,
+            market_hours=market_hours,
+            portfolio_manager=portfolio_manager,
+            repository=repository,
+            market_data_fetcher=market_data_fetcher
+        )
         
-        market_hours = MarketHours(settings=settings)
-        detector = MissingTradingDayDetector(market_hours, portfolio_manager)
+        # Recreate portfolio manager to reload data from disk after backfilling
+        # This ensures the refresh logic sees the freshly backfilled data
+        portfolio_manager = PortfolioManager(repository, fund)
         
-        # Check if we should skip due to non-trading day
-        should_skip, skip_reason = detector.should_skip_due_to_non_trading_day()
-        if should_skip:
-            print(f"{_safe_emoji('ℹ️')} {skip_reason}")
-            return
+        # Clear price cache to ensure fresh prices are fetched for today
+        # This prevents reusing historical prices from the backfill step
+        if hasattr(price_cache, '_price_cache'):
+            price_cache._price_cache = {}
         
-        # Use centralized portfolio refresh logic
-        from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
-        
+        # STEP 2: Refresh current prices for today's snapshot
         was_updated, reason = refresh_portfolio_prices_if_needed(
             market_hours=market_hours,
             portfolio_manager=portfolio_manager,
@@ -722,16 +963,23 @@ def refresh_portfolio_data(data_dir_path):
             price_cache=price_cache,
             verbose=True
         )
+        
+        if was_updated:
+            print(f"{_safe_emoji('✅')} Portfolio data refreshed: {reason}")
+        else:
+            print(f"{_safe_emoji('ℹ️')} {reason}")
             
     except Exception as e:
-        print(f"{_safe_emoji('⚠️')}  Failed to refresh portfolio data: {e}")
+        print(f"{_safe_emoji('⚠️')} Failed to refresh portfolio data: {e}")
         print(f"{_safe_emoji('📊')} Continuing with existing data...")
+
 
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
     
-    # First, try to refresh portfolio data to get current prices
-    refresh_portfolio_data(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
+    # Use centralized portfolio refresh logic from the trading system
+    # This ensures consistency and avoids code duplication
+    refresh_portfolio_data_if_needed(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
     
     llm_totals = load_portfolio_totals()
 

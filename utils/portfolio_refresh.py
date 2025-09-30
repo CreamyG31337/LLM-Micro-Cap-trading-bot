@@ -105,9 +105,14 @@ def refresh_portfolio_prices_if_needed(
         
         # Save updated snapshot
         if updated_positions:
-            updated_snapshot = latest_snapshot
-            updated_snapshot.positions = updated_positions
-            updated_snapshot.timestamp = datetime.now()
+            # Create a NEW snapshot for today with updated prices
+            # Don't modify the existing snapshot object to avoid reference issues
+            from data.models.portfolio import PortfolioSnapshot
+            
+            updated_snapshot = PortfolioSnapshot(
+                positions=updated_positions,
+                timestamp=datetime.now()
+            )
             
             repository.update_daily_portfolio_snapshot(updated_snapshot)
             if verbose:

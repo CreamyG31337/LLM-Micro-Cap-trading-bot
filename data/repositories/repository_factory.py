@@ -7,6 +7,7 @@ import logging
 
 from .base_repository import BaseRepository
 from .csv_repository import CSVRepository
+from .supabase_repository import SupabaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class RepositoryFactory:
     
     _repositories: Dict[str, type] = {
         'csv': CSVRepository,
+        'supabase': SupabaseRepository,
         # Future repository types can be added here
         # 'database': DatabaseRepository,
         # 'memory': InMemoryRepository,

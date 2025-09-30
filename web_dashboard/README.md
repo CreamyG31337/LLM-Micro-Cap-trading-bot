@@ -13,12 +13,13 @@ A secure, multi-user web dashboard for tracking trading bot portfolio performanc
 ### 2. Environment Setup
 ```bash
 # Copy environment template
-cp .env.example .env
+cp env.example .env
 
 # Edit .env with your Supabase credentials
 # SUPABASE_URL=https://your-project.supabase.co
 # SUPABASE_ANON_KEY=your-anon-key
-# FLASK_SECRET_KEY=your-secret-key
+# JWT_SECRET=your-super-secret-jwt-key
+# FLASK_SECRET_KEY=your-flask-secret-key
 ```
 
 ### 3. Migrate Your Data
@@ -56,8 +57,33 @@ web_dashboard/
 ├── supabase_client.py        # 📊 Database client
 ├── migrate.py                # 📦 Data migration script
 ├── admin_assign_funds.py     # 👥 User management
-└── requirements.txt          # 📋 Dependencies
+├── requirements.txt          # 📋 Dependencies
+├── env.example               # 🔧 Environment template (safe to commit)
+├── credentials.example.txt   # 🔑 Credentials template (safe to commit)
+├── .gitignore               # 🛡️ Protects sensitive files
+└── SETUP_GUIDE.md           # 📖 Detailed setup instructions
 ```
+
+## 🔧 Example Files (Safe to Commit)
+
+### **Environment Template (`env.example`)**
+```bash
+# Copy this to .env and fill in your values
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+JWT_SECRET=your-super-secret-jwt-key-here
+FLASK_SECRET_KEY=your-flask-secret-key-here
+```
+
+### **Credentials Template (`credentials.example.txt`)**
+```bash
+# Copy this to supabase_credentials.txt and fill in your values
+Database Password: [CHANGE_THIS_PASSWORD]
+Project URL: https://your-project-id.supabase.co
+Anon Key: your-anon-key-here
+```
+
+**See `SETUP_GUIDE.md` for detailed setup instructions.**
 
 ## 🛠️ Features
 
@@ -125,6 +151,21 @@ python migrate.py
 - **Database-Level Security** - RLS policies enforce access control
 - **JWT Authentication** - Secure session management
 - **Automatic Redirects** - Unauthenticated users sent to login
+
+### 🔒 Admin-Only Features
+- **SQL Interface** (`/dev/sql`) - Direct database query access
+- **Data Export APIs** (`/api/export/*`) - LLM data access
+- **Developer Dashboard** (`/dev/dashboard`) - Visual data overview
+- **User Management** - Assign funds to users
+
+### 🛡️ Security Measures
+- **First User = Admin** - Only the first registered user gets admin access
+- **No Hardcoded Credentials** - All sensitive data in environment variables
+- **Database-Level Security** - Row Level Security (RLS) policies
+- **JWT Token Security** - Secure session management with expiration
+- **Gitignore Protection** - Credentials files are never committed to git
+
+**See `SECURITY_GUIDE.md` for detailed security information.**
 
 ## 📋 Setup Checklist
 

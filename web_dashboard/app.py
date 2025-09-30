@@ -701,6 +701,203 @@ def api_recent_trades():
     
     return jsonify(formatted_trades)
 
+# =====================================================
+# DEVELOPER/LLM SHARED DATA ACCESS
+# =====================================================
+
+@app.route('/dev')
+@require_auth
+def dev_home():
+    """Developer tools home page"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    return render_template('dev_home.html')
+
+@app.route('/dev/sql')
+@require_auth
+def sql_interface():
+    """SQL query interface for debugging"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    return render_template('sql_interface.html')
+
+@app.route('/dev/dashboard')
+@require_auth
+def dev_dashboard():
+    """Developer dashboard with key metrics"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    return render_template('dev_dashboard.html')
+
+@app.route('/api/dev/query', methods=['POST'])
+@require_auth
+def execute_sql():
+    """Execute SQL query safely"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    try:
+        query = request.json.get('query', '').strip()
+        if not query:
+            return jsonify({"error": "No query provided"}), 400
+        
+        # Basic safety checks
+        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+        if any(keyword in query.upper() for keyword in dangerous_keywords):
+            return jsonify({"error": "Query contains dangerous keywords. Only SELECT queries allowed."}), 400
+        
+        # Execute query
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Use raw SQL execution
+        result = client.supabase.rpc('execute_sql', {'query': query}).execute()
+        
+        return jsonify({
+            "success": True,
+            "data": result.data,
+            "count": len(result.data) if result.data else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"SQL execution error: {e}")
+        return jsonify({"error": f"Query execution failed: {str(e)}"}), 500
+
+# =====================================================
+# DATA EXPORT APIs FOR LLM ACCESS
+# =====================================================
+
+@app.route('/api/export/portfolio')
+@require_auth
+def export_portfolio():
+    """Export portfolio data as JSON for LLM analysis"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    try:
+        fund = request.args.get('fund')
+        limit = int(request.args.get('limit', 1000))
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Get portfolio positions
+        query = client.supabase.table("portfolio_positions").select("*")
+        if fund:
+            query = query.eq("fund", fund)
+        query = query.limit(limit)
+        
+        result = query.execute()
+        
+        return jsonify({
+            "success": True,
+            "data": result.data,
+            "count": len(result.data),
+            "fund": fund,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Portfolio export error: {e}")
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
+@app.route('/api/export/trades')
+@require_auth
+def export_trades():
+    """Export trade data as JSON for LLM analysis"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    try:
+        fund = request.args.get('fund')
+        limit = int(request.args.get('limit', 1000))
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Get trade log
+        query = client.supabase.table("trade_log").select("*")
+        if fund:
+            query = query.eq("fund", fund)
+        query = query.order("date", desc=True).limit(limit)
+        
+        result = query.execute()
+        
+        return jsonify({
+            "success": True,
+            "data": result.data,
+            "count": len(result.data),
+            "fund": fund,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Trades export error: {e}")
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
+@app.route('/api/export/performance')
+@require_auth
+def export_performance():
+    """Export performance metrics for LLM analysis"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    try:
+        days = int(request.args.get('days', 30))
+        fund = request.args.get('fund')
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Get performance data
+        performance_data = client.get_performance_metrics()
+        daily_data = client.get_daily_performance_data(days)
+        
+        return jsonify({
+            "success": True,
+            "performance": performance_data,
+            "daily_data": daily_data,
+            "days": days,
+            "fund": fund,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Performance export error: {e}")
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
+@app.route('/api/export/cash')
+@require_auth
+def export_cash():
+    """Export cash balance data for LLM analysis"""
+    if not is_admin():
+        return jsonify({"error": "Admin privileges required"}), 403
+    
+    try:
+        fund = request.args.get('fund')
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Get cash balances
+        cash_balances = client.get_cash_balances(fund)
+        
+        return jsonify({
+            "success": True,
+            "data": cash_balances,
+            "fund": fund,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Cash export error: {e}")
+        return jsonify({"error": f"Export failed: {str(e)}"}), 500
+
 if __name__ == '__main__':
     # Run the app
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -220,12 +220,12 @@ def show_complete_prompt(data_dir: str = None):
     print()
     
     # Status indicators
-    print(f"{Fore.CYAN}🔄 Initializing prompt generation...{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{_safe_emoji('🔄')} Initializing prompt generation...{Style.RESET_ALL}")
     
     # Market info
-    print(f"{Fore.YELLOW}📊 Loading market configuration...{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}{_safe_emoji('📊')} Loading market configuration...{Style.RESET_ALL}")
     market_info = get_market_info()
-    print(f"{Fore.GREEN}✅ Market config loaded{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}{_safe_emoji('✅')} Market config loaded{Style.RESET_ALL}")
     print(f"Current Market Configuration: {market_info['name']}")
     print(f"Currency: {market_info['currency']}")
     print(f"Market Cap Range: {market_info['market_cap']}")
@@ -237,9 +237,9 @@ def show_complete_prompt(data_dir: str = None):
     
     # This would normally come from your trading script output
     print("================================================================")
-    print(f"{Fore.YELLOW}🕰️ Checking market hours...{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}{_safe_emoji('🕰️')} Checking market hours...{Style.RESET_ALL}")
     market_hours = MarketHours()
-    print(f"{Fore.GREEN}✅ Market hours loaded{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}{_safe_emoji('✅')} Market hours loaded{Style.RESET_ALL}")
     print(f"Daily Results — {market_hours.last_trading_date_str()}")
     print("================================================================")
     print()

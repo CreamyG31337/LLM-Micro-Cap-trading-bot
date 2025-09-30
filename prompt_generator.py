@@ -857,9 +857,22 @@ class PromptGenerator:
                     pos_dict['opened_date'] = "N/A"
                 
                 # Calculate daily P&L using shared function
+                # Smart logic: If today's snapshot exists in CSV (after refresh), exclude it
+                # If pre-market, use all snapshots as-is
                 from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+                from datetime import datetime
                 snapshots = self.portfolio_manager.load_portfolio()
-                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, snapshots)
+                today_date = datetime.now().date()
+                latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
+                
+                if latest_snapshot_date == today_date:
+                    # Today's snapshot exists - exclude it since we have fresh prices
+                    historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                else:
+                    # Pre-market or weekend - use all snapshots as-is
+                    historical_snapshots = snapshots
+                
+                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
             
@@ -1015,9 +1028,19 @@ class PromptGenerator:
                     pos_dict['opened_date'] = "N/A"
                 
                 # Calculate daily P&L using shared function
+                # Smart logic: If today's snapshot exists in CSV, exclude it; otherwise use all
                 from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+                from datetime import datetime
                 snapshots = self.portfolio_manager.load_portfolio()
-                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, snapshots)
+                today_date = datetime.now().date()
+                latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
+                
+                if latest_snapshot_date == today_date:
+                    historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                else:
+                    historical_snapshots = snapshots
+                
+                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
             

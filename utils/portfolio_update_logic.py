@@ -71,7 +71,7 @@ class PortfolioUpdateLogic:
                 current_date += timedelta(days=1)
             
             if missing_trading_days:
-                return True, f"Found {len(missing_trading_days)} missing trading days: {[d.strftime('%Y-%m-%d') for d in missing_trading_days]}"
+                return True, f"Refreshing prices for today"
             else:
                 # No missing trading days, check if today is a trading day
                 if self.market_hours.is_trading_day(today):

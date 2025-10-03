@@ -192,7 +192,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Archive old backups into daily zip files to save space.",
          []),
 
-        ("r", f"{_safe_emoji('🔄')} Restart",
+        ("t", f"{_safe_emoji('🔄')} Restart",
          "Restart the application",
          []),
 
@@ -720,7 +720,7 @@ def main() -> None:
             print_colored("\n👋 Thanks for using LLM Micro-Cap Trading Bot!", Colors.GREEN)
             break
         
-        elif choice == "r":
+        elif choice == "t":
             print_colored(f"\n{_safe_emoji('🔄')} Restarting the application...", Colors.YELLOW)
             print_colored("Please wait while the application restarts...", Colors.CYAN)
             # Exit with code 42 to signal restart

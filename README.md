@@ -249,6 +249,201 @@ For the original concept, methodology, and research documentation, see the [orig
 
 *For performance data and results, see the CSV files in the fund directories under `trading_data/funds/`.*
 
+## Architecture
+
+This trading bot is built using a modern, modular architecture that ensures maintainability, extensibility, and future-proofing. The system employs several key design patterns to achieve clean separation of concerns and facilitate easy migration between different data storage backends.
+
+### Design Patterns
+
+#### Repository Pattern (Data Access Abstraction)
+The system uses the Repository pattern to abstract data access operations from business logic:
+
+```python
+# Business logic works with any repository implementation
+class PortfolioManager:
+    def __init__(self, repository: BaseRepository, fund: Fund):
+        self.repository = repository  # Could be CSV, Database, or In-Memory
+        self.fund = fund
+
+    def load_portfolio(self) -> List[PortfolioSnapshot]:
+        return self.repository.get_portfolio_data()
+```
+
+**Benefits:**
+- **Backend Independence**: Switch between CSV files and databases without changing business logic
+- **Easy Testing**: Mock repositories for unit testing
+- **Future Migration**: Seamless transition to database backend
+- **Consistent Interface**: Same API regardless of storage mechanism
+
+#### Dependency Injection (Component Management)
+Components are loosely coupled through dependency injection using the RepositoryContainer:
+
+```python
+# Global dependency injection container
+class RepositoryContainer:
+    def get_repository(self, name: str = 'default') -> BaseRepository:
+        # Creates or returns cached repository instance
+        return self._repositories[name]
+```
+
+**Benefits:**
+- **Loose Coupling**: Components don't create their own dependencies
+- **Testability**: Easy to inject mock dependencies for testing
+- **Configuration**: Runtime configuration of different repository types
+- **Singleton Management**: Shared instances managed centrally
+
+#### Factory Pattern (Repository Creation)
+Repository instances are created through a factory that handles different backend types:
+
+```python
+class RepositoryFactory:
+    @classmethod
+    def create_repository(cls, repository_type: str, **kwargs) -> BaseRepository:
+        if repository_type == "csv":
+            return CSVRepository(**kwargs)
+        elif repository_type == "supabase":
+            return SupabaseRepository(**kwargs)
+        elif repository_type == "database":
+            return DatabaseRepository(**kwargs)
+```
+
+**Benefits:**
+- **Extensibility**: Easy to add new repository types
+- **Centralized Creation**: Single point for repository instantiation logic
+- **Configuration-Driven**: Repository type determined by configuration
+
+#### Domain Model Pattern (Business Entities)
+Business entities use dataclasses with rich serialization capabilities:
+
+```python
+@dataclass
+class Position:
+    ticker: str
+    shares: Decimal
+    avg_price: Decimal
+    cost_basis: Decimal
+    currency: str = "CAD"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for CSV/JSON serialization."""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Position':
+        """Create from dictionary (CSV row or database record)."""
+```
+
+**Benefits:**
+- **Type Safety**: Strong typing with mypy validation
+- **Immutability**: Dataclasses provide immutable value objects
+- **Serialization**: Built-in conversion to/from CSV and database formats
+- **Validation**: Centralized data validation and conversion logic
+
+#### Service Layer Pattern (Business Logic Separation)
+Business operations are encapsulated in service classes that use repositories:
+
+```python
+class PortfolioManager:
+    """Manages portfolio data using the repository pattern."""
+
+class PnLCalculator:
+    """Handles all profit and loss calculations."""
+
+class TradingInterface:
+    """Coordinates trading operations and user interactions."""
+```
+
+**Benefits:**
+- **Separation of Concerns**: Business logic separate from data access
+- **Reusability**: Services can be used across different interfaces
+- **Testability**: Easy to unit test business logic in isolation
+
+### Modular Architecture
+
+The codebase is organized into focused modules with clear responsibilities:
+
+```
+├── config/           # Configuration management
+├── data/            # Data access layer
+│   ├── models/      # Domain models (Position, Trade, PortfolioSnapshot)
+│   └── repositories/# Repository implementations
+├── portfolio/       # Portfolio management business logic
+├── financial/       # Financial calculation services
+├── market_data/     # Market data fetching and caching
+├── display/         # User interface and formatting
+└── utils/           # Shared utilities and helpers
+```
+
+### Configuration Management
+
+The system uses a centralized configuration approach:
+
+```python
+class Settings:
+    """Centralized configuration management."""
+
+    def __init__(self, config_file: Optional[str] = None):
+        self._config = self._load_default_config()
+        if config_file:
+            self.load_from_file(config_file)
+        self._load_from_environment()
+```
+
+**Benefits:**
+- **Environment Variables**: Secure credential management
+- **File-Based Config**: Human-readable configuration files
+- **Runtime Configuration**: Dynamic configuration loading
+- **Validation**: Configuration validation and defaults
+
+### Future Database Migration
+
+The architecture is designed to support seamless migration from CSV files to a database backend:
+
+#### Current State (CSV Repository)
+- Local file-based storage
+- Fast development and debugging
+- Zero configuration needed
+- Perfect for getting started
+
+#### Future State (Database Repository)
+- PostgreSQL backend with proper schema
+- Scalable for large datasets
+- Concurrent access support
+- Web dashboard integration
+- Transaction support and data integrity
+
+#### Migration Strategy
+1. **Phase 1**: Database setup and testing alongside CSV
+2. **Phase 2**: Data migration with validation
+3. **Phase 3**: Cutover with rollback capability
+
+**Migration Benefits:**
+- **Zero Downtime**: Run both systems in parallel during migration
+- **Data Safety**: Comprehensive validation and backup procedures
+- **Rollback Capability**: Easy reversion if issues arise
+- **Performance**: Better performance for large portfolios
+
+### Architecture Benefits
+
+#### For Current Development
+- **Easy Testing**: Mock repositories and isolated unit tests
+- **Fast Iteration**: Quick development cycles with CSV backend
+- **Simple Debugging**: Clear data flow and minimal dependencies
+- **Type Safety**: Comprehensive type hints and validation
+
+#### For Production Use
+- **Scalability**: Ready for database migration when needed
+- **Maintainability**: Clean separation enables easy modifications
+- **Reliability**: Comprehensive error handling and validation
+- **Extensibility**: Easy to add new features and repository types
+
+#### For Long-term Evolution
+- **Database Ready**: Architecture supports seamless database migration
+- **Web Integration**: Repository pattern enables web dashboard development
+- **Multi-tenancy**: Support for multiple funds and users
+- **Performance**: Optimized for large-scale portfolio management
+
+This architecture provides a solid foundation for both current CSV-based development and future database-backed production deployment, ensuring the system can grow and evolve with changing requirements.
+
 ## Tech Stack
 
 ### Core Technologies

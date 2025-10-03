@@ -27,12 +27,17 @@ class CSVRepository(BaseRepository):
     while providing the repository interface for future database migration.
     """
     
-    def __init__(self, data_directory: str = "trading_data/funds/Project Chimera"):
+    def __init__(self, data_directory: str):
         """Initialize CSV repository.
         
         Args:
             data_directory: Directory containing CSV files
         """
+        if not data_directory:
+            raise ValueError(
+                "data_directory is required for CSVRepository. "
+                "This should be provided by the repository factory using the active fund's data directory."
+            )
         self.data_dir = Path(data_directory)
         self.portfolio_file = self.data_dir / "llm_portfolio_update.csv"
         self.trade_log_file = self.data_dir / "llm_trade_log.csv"

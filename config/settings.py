@@ -231,7 +231,11 @@ class Settings:
                 with open(repo_config_file, 'r') as f:
                     repo_config = json.load(f)
                 if 'repository' in repo_config:
-                    return repo_config['repository']
+                    config = repo_config['repository'].copy()
+                    # Add fund name for Supabase repositories
+                    if config.get('type') == 'supabase':
+                        config['fund'] = self.get_fund_name()
+                    return config
             except Exception as e:
                 logger.warning(f"Failed to load repository config file: {e}")
         
@@ -239,10 +243,16 @@ class Settings:
         repo_type = self.get('repository.type', 'csv')
         repo_config = self.get(f'repository.{repo_type}', {})
         
-        return {
+        config = {
             'type': repo_type,
             **repo_config
         }
+        
+        # Add fund name for Supabase repositories
+        if repo_type == 'supabase':
+            config['fund'] = self.get_fund_name()
+        
+        return config
     
     def get_data_directory(self) -> str:
         """Get data directory path.

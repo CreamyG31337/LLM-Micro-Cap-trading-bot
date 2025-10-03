@@ -106,9 +106,18 @@ class CashBalances:
         return self.usd >= usd_amount
 
 def is_canadian_ticker(ticker: str) -> bool:
-    """Determine if ticker is Canadian based on suffix"""
+    """Determine if ticker is Canadian based on suffix.
+    
+    Canadian stock exchanges and their suffixes:
+    - .TO: Toronto Stock Exchange (TSX)
+    - .V: TSX Venture Exchange
+    - .CN: Canadian Securities Exchange (CSE)  
+    - .NE: NEO Exchange
+    - .TSX: Alternative TSX suffix (less common)
+    """
     ticker = ticker.upper()
-    return ticker.endswith('.TO') or ticker.endswith('.V') or ticker.endswith('.CN')
+    canadian_suffixes = ('.TO', '.V', '.CN', '.NE', '.TSX')
+    return ticker.endswith(canadian_suffixes)
 
 def is_us_ticker(ticker: str) -> bool:
     """Determine if ticker is US based on format"""

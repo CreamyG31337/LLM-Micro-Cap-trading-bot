@@ -13,7 +13,18 @@ from ..models.portfolio import Position, PortfolioSnapshot
 from ..models.trade import Trade
 from ..models.market_data import MarketData
 
+# Import field mappers
+from .field_mapper import (
+    PositionMapper,
+    TradeMapper,
+    CashBalanceMapper,
+    SnapshotMapper
+)
+
 logger = logging.getLogger(__name__)
+
+# Suppress httpx INFO logs (Supabase HTTP requests)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class SupabaseRepository(BaseRepository):
@@ -29,11 +40,21 @@ class SupabaseRepository(BaseRepository):
         Args:
             url: Supabase project URL
             key: Supabase anon key
-            fund: Fund name (optional)
+            fund: Fund name (REQUIRED - no default)
         """
         self.supabase_url = url or os.getenv("SUPABASE_URL")
         self.supabase_key = key or os.getenv("SUPABASE_ANON_KEY")
-        self.fund = fund or "Project Chimera"
+        
+        if not fund:
+            raise RepositoryError(
+                "Fund name is required for SupabaseRepository. "
+                "This should be provided by the repository factory using the active fund name."
+            )
+        self.fund = fund
+        
+        # Add data_dir for compatibility with code expecting it (exchange rates, etc.)
+        # Point to the common shared data directory where exchange rates are stored
+        self.data_dir = "trading_data/exchange_rates"
         
         if not self.supabase_url or not self.supabase_key:
             raise RepositoryError("Supabase URL and key must be provided")
@@ -61,43 +82,57 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data retrieval fails
         """
         try:
-            query = self.supabase.table("portfolio_positions").select("*")
+            # Supabase Python client has a 1000-row default limit
+            # We need to paginate to get all data
+            all_data = []
+            page_size = 1000
+            offset = 0
             
-            if date_range:
-                start_date, end_date = date_range
-                query = query.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
+            while True:
+                query = self.supabase.table("portfolio_positions") \
+                    .select("*") \
+                    .eq("fund", self.fund) \
+                    .range(offset, offset + page_size - 1)
+                
+                if date_range:
+                    start_date, end_date = date_range
+                    query = query.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
+                
+                result = query.execute()
+                
+                if not result.data:
+                    break
+                
+                all_data.extend(result.data)
+                
+                # If we got less than page_size rows, we're done
+                if len(result.data) < page_size:
+                    break
+                
+                offset += page_size
             
-            result = query.execute()
+            logger.debug(f"Fetched {len(all_data)} total portfolio positions for fund {self.fund}")
             
-            # Convert to PortfolioSnapshot objects
+            # Create a result-like object with all data
+            class Result:
+                def __init__(self, data):
+                    self.data = data
+            
+            result = Result(all_data)
+            
+            # Use SnapshotMapper to group positions by date and create snapshots
+            grouped = SnapshotMapper.group_positions_by_date(result.data)
+            
             snapshots = []
-            for row in result.data:
-                position = Position(
-                    ticker=row["ticker"],
-                    shares=Decimal(str(row["shares"])),
-                    price=Decimal(str(row["price"])),
-                    cost_basis=Decimal(str(row["cost_basis"])),
-                    pnl=Decimal(str(row["pnl"])),
-                    currency=row.get("currency", "USD"),
-                    date=datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
-                )
-                
-                # Group by date for snapshots
-                snapshot_date = position.date.date()
-                existing_snapshot = next((s for s in snapshots if s.date == snapshot_date), None)
-                
-                if existing_snapshot:
-                    existing_snapshot.positions.append(position)
-                else:
-                    snapshots.append(PortfolioSnapshot(
-                        date=snapshot_date,
-                        positions=[position],
-                        total_value=position.shares * position.price,
-                        total_cost_basis=position.cost_basis,
-                        unrealized_pnl=position.pnl
-                    ))
+            for date_key, position_rows in grouped.items():
+                # Get timestamp from first position
+                if position_rows:
+                    from .field_mapper import TypeTransformers
+                    timestamp = TypeTransformers.iso_to_datetime(position_rows[0]["date"])
+                    snapshot = SnapshotMapper.create_snapshot_from_positions(timestamp, position_rows)
+                    snapshots.append(snapshot)
             
-            return snapshots
+            return sorted(snapshots, key=lambda s: s.timestamp)
             
         except Exception as e:
             logger.error(f"Failed to get portfolio data: {e}")
@@ -113,21 +148,13 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data saving fails
         """
         try:
-            # Convert positions to Supabase format
-            positions_data = []
-            for position in snapshot.positions:
-                positions_data.append({
-                    "ticker": position.ticker,
-                    "shares": float(position.shares),
-                    "price": float(position.price),
-                    "cost_basis": float(position.cost_basis),
-                    "pnl": float(position.pnl),
-                    "currency": position.currency,
-                    "date": snapshot.date.isoformat(),
-                    "fund": "Project Chimera"  # Default fund, could be configurable
-                })
+            # Use PositionMapper to convert positions to Supabase format
+            positions_data = [
+                PositionMapper.model_to_db(position, self.fund, snapshot.timestamp)
+                for position in snapshot.positions
+            ]
             
-            # Upsert positions (insert or update)
+            # Batch upsert positions (insert or update)
             result = self.supabase.table("portfolio_positions").upsert(positions_data).execute()
             
             logger.info(f"Saved {len(positions_data)} portfolio positions to Supabase")
@@ -140,6 +167,7 @@ class SupabaseRepository(BaseRepository):
         """Get trade history from Supabase.
         
         Args:
+            ticker: Optional ticker symbol to filter by
             date_range: Optional date range filter
             
         Returns:
@@ -149,7 +177,11 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data retrieval fails
         """
         try:
-            query = self.supabase.table("trade_log").select("*")
+            # Filter by fund name
+            query = self.supabase.table("trade_log").select("*").eq("fund", self.fund)
+            
+            if ticker:
+                query = query.eq("ticker", ticker)
             
             if date_range:
                 start_date, end_date = date_range
@@ -157,20 +189,8 @@ class SupabaseRepository(BaseRepository):
             
             result = query.execute()
             
-            # Convert to Trade objects
-            trades = []
-            for row in result.data:
-                trade = Trade(
-                    ticker=row["ticker"],
-                    shares=Decimal(str(row["shares"])),
-                    price=Decimal(str(row["price"])),
-                    cost_basis=Decimal(str(row["cost_basis"])),
-                    pnl=Decimal(str(row["pnl"])),
-                    reason=row["reason"],
-                    currency=row.get("currency", "USD"),
-                    date=datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
-                )
-                trades.append(trade)
+            # Use TradeMapper to convert database rows to Trade objects
+            trades = [TradeMapper.db_to_model(row) for row in result.data]
             
             return trades
             
@@ -188,17 +208,8 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data saving fails
         """
         try:
-            trade_data = {
-                "ticker": trade.ticker,
-                "shares": float(trade.shares),
-                "price": float(trade.price),
-                "cost_basis": float(trade.cost_basis),
-                "pnl": float(trade.pnl),
-                "reason": trade.reason,
-                "currency": trade.currency,
-                "date": trade.date.isoformat(),
-                "fund": "Project Chimera"  # Default fund, could be configurable
-            }
+            # Use TradeMapper to convert Trade object to Supabase format
+            trade_data = TradeMapper.model_to_db(trade, self.fund)
             
             result = self.supabase.table("trade_log").insert(trade_data).execute()
             
@@ -286,11 +297,8 @@ class SupabaseRepository(BaseRepository):
         try:
             result = self.supabase.table("cash_balances").select("*").execute()
             
-            balances = {}
-            for row in result.data:
-                currency = row["currency"]
-                amount = Decimal(str(row["amount"]))
-                balances[currency] = amount
+            # Use CashBalanceMapper to convert database rows to dictionary
+            balances = CashBalanceMapper.db_to_dict(result.data)
             
             return balances
             
@@ -308,14 +316,8 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data saving fails
         """
         try:
-            balances_data = []
-            for currency, amount in balances.items():
-                balances_data.append({
-                    "currency": currency,
-                    "amount": float(amount),
-                    "fund": "Project Chimera",  # Default fund
-                    "updated_at": datetime.now().isoformat()
-                })
+            # Use CashBalanceMapper to convert dictionary to database format
+            balances_data = CashBalanceMapper.dict_to_db(balances, self.fund)
             
             result = self.supabase.table("cash_balances").upsert(balances_data).execute()
             
@@ -326,16 +328,64 @@ class SupabaseRepository(BaseRepository):
             raise RepositoryError(f"Failed to save cash balances: {e}")
     
     def get_latest_portfolio_snapshot(self) -> Optional[PortfolioSnapshot]:
-        """Get the most recent portfolio snapshot."""
+        """Get the most recent portfolio snapshot.
+        
+        Returns the latest snapshot with all positions from that exact timestamp.
+        This avoids loading historical data and just gets the current portfolio state.
+        """
         try:
-            result = self.supabase.table("portfolio_positions").select("*").order("date", desc=True).limit(1).execute()
+            # Strategy: Get max date first, then get all positions with that exact date
+            # This is more efficient than loading all history and taking the last one
             
-            if not result.data:
+            # Step 1: Find the maximum (latest) date for this fund
+            max_date_query = self.supabase.table("portfolio_positions") \
+                .select("date") \
+                .eq("fund", self.fund) \
+                .order("date", desc=True) \
+                .limit(1) \
+                .execute()
+            
+            if not max_date_query.data:
+                logger.debug(f"No portfolio data found for fund: {self.fund}")
                 return None
             
-            # Convert to PortfolioSnapshot
-            # This is a simplified implementation
-            return self.get_portfolio_data()[-1] if self.get_portfolio_data() else None
+            from .field_mapper import TypeTransformers
+            latest_timestamp_str = max_date_query.data[0]["date"]
+            latest_timestamp = TypeTransformers.iso_to_datetime(latest_timestamp_str)
+            
+            # Step 2: Get ALL positions from that exact DATE (not timestamp)
+            # Get positions from the same DATE (not exact timestamp)
+            date_str = latest_timestamp.date().isoformat()
+            positions_query = self.supabase.table("portfolio_positions") \
+                .select("*") \
+                .eq("fund", self.fund) \
+                .gte("date", f"{date_str}T00:00:00Z") \
+                .lte("date", f"{date_str}T23:59:59Z") \
+                .execute()
+            
+            if not positions_query.data:
+                logger.debug(f"No positions found for latest date: {latest_timestamp}")
+                return None
+            
+            logger.debug(f"Found {len(positions_query.data)} positions for latest snapshot: {latest_timestamp}")
+            
+            # Convert to Position objects
+            positions = [PositionMapper.db_to_model(row) for row in positions_query.data]
+            
+            # Calculate total value
+            total_value = Decimal('0')
+            for position in positions:
+                if position.market_value:
+                    total_value += position.market_value
+            
+            # Create snapshot
+            snapshot = PortfolioSnapshot(
+                positions=positions,
+                timestamp=latest_timestamp,
+                total_value=total_value
+            )
+            
+            return snapshot
             
         except Exception as e:
             logger.error(f"Failed to get latest portfolio snapshot: {e}")
@@ -346,18 +396,8 @@ class SupabaseRepository(BaseRepository):
         try:
             result = self.supabase.table("portfolio_positions").select("*").eq("ticker", ticker).execute()
             
-            positions = []
-            for row in result.data:
-                position = Position(
-                    ticker=row["ticker"],
-                    shares=Decimal(str(row["shares"])),
-                    price=Decimal(str(row["price"])),
-                    cost_basis=Decimal(str(row["cost_basis"])),
-                    pnl=Decimal(str(row["pnl"])),
-                    currency=row.get("currency", "USD"),
-                    date=datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
-                )
-                positions.append(position)
+            # Use PositionMapper to convert database rows to Position objects
+            positions = [PositionMapper.db_to_model(row) for row in result.data]
             
             return positions
             

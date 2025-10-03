@@ -1,6 +1,6 @@
 {
   "repository": {
-    "type": "csv"
+    "type": "supabase"
   },
   "web_dashboard": {
     "data_source": "hybrid",
@@ -11,6 +11,6 @@
       "TFSA",
       "TEST"
     ],
-    "default_fund": "Project Chimera"
+    "default_fund": "RRSP Lance Webull"
   }
 }

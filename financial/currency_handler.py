@@ -142,12 +142,18 @@ class CurrencyHandler:
         self._exchange_rate_cache = {}
         
     def is_canadian_ticker(self, ticker: str) -> bool:
-        """Determine if ticker is Canadian based on suffix."""
+        """Determine if ticker is Canadian based on suffix.
+        
+        Canadian stock exchanges and their suffixes:
+        - .TO: Toronto Stock Exchange (TSX)
+        - .V: TSX Venture Exchange  
+        - .CN: Canadian Securities Exchange (CSE)
+        - .NE: NEO Exchange
+        - .TSX: Alternative TSX suffix (less common)
+        """
         ticker = ticker.upper().strip()
-        return (ticker.endswith('.TO') or 
-                ticker.endswith('.V') or 
-                ticker.endswith('.CN') or
-                ticker.endswith('.TSX'))
+        canadian_suffixes = ('.TO', '.V', '.CN', '.NE', '.TSX')
+        return ticker.endswith(canadian_suffixes)
 
     def is_us_ticker(self, ticker: str) -> bool:
         """Determine if ticker is US based on format."""

@@ -142,12 +142,11 @@ class RepositoryContainer:
         repo_config = self._config.get(name, self._config.get('default', {}))
         
         if not repo_config:
-            # Default to CSV repository if no configuration
-            repo_config = {
-                'type': 'csv',
-                'data_directory': 'my trading'
-            }
-            logger.warning(f"No configuration found for repository '{name}', using default CSV")
+            # No valid default - must have explicit configuration
+            raise ValueError(
+                f"No configuration found for repository '{name}'. "
+                f"Repository must be configured with explicit settings including data_directory."
+            )
         
         repository_type = repo_config.get('type', 'csv')
         

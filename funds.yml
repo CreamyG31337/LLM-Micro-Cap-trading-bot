@@ -3,9 +3,9 @@ funds:
     id: "default"
     description: "The main trading fund."
     repository:
-      type: "csv"
+      type: "supabase"
       settings:
-        directory: "trading_data/funds/Project Chimera"
+        fund: "Project Chimera"
   - name: "TFSA Fund"
     id: "tfsa"
     description: "Tax-Free Savings Account fund."

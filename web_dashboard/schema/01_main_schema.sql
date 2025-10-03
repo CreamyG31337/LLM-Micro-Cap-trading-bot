@@ -26,6 +26,7 @@ CREATE TABLE portfolio_positions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     fund VARCHAR(50) NOT NULL,
     ticker VARCHAR(20) NOT NULL,
+    company VARCHAR(255),  -- Company name (optional, for display)
     shares DECIMAL(15, 6) NOT NULL,
     price DECIMAL(10, 2) NOT NULL,
     cost_basis DECIMAL(10, 2) NOT NULL,
@@ -88,6 +89,7 @@ CREATE INDEX idx_portfolio_positions_fund ON portfolio_positions(fund);
 CREATE INDEX idx_portfolio_positions_ticker ON portfolio_positions(ticker);
 CREATE INDEX idx_portfolio_positions_date ON portfolio_positions(date);
 CREATE INDEX idx_portfolio_positions_fund_ticker ON portfolio_positions(fund, ticker);
+CREATE INDEX idx_portfolio_positions_company ON portfolio_positions(company);
 
 -- Trade log indexes
 CREATE INDEX idx_trade_log_fund ON trade_log(fund);

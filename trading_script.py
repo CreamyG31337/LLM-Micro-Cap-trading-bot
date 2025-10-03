@@ -20,6 +20,17 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import List, Dict, Any, Tuple, Optional
+
+# Load environment variables from .env file (for Supabase credentials)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load .env from current directory
+    logger_early = logging.getLogger(__name__)
+    if os.getenv("SUPABASE_URL"):
+        logger_early.info("Loaded Supabase credentials from .env file")
+except ImportError:
+    pass  # dotenv is optional, environment variables may be set another way
 
 # Modular startup check - handles path setup and dependency checking
 try:
@@ -28,7 +39,7 @@ try:
 except ImportError:
     # Fallback for minimal dependency checking if script_startup isn't available
     try:
-        import pandas
+        import pandas  # noqa: F401 - imported for availability check only
     except ImportError:
         print("\n❌ Missing Dependencies (trading_script.py)")
         print("Required packages not found. Please activate virtual environment:")
@@ -88,7 +99,7 @@ class TradingSystemError(Exception):
 
 def setup_logging(settings: Settings) -> None:
     """Setup logging configuration.
-    
+
     Args:
         settings: System settings containing logging configuration
     """
@@ -112,7 +123,7 @@ def setup_logging(settings: Settings) -> None:
 
 def check_dependencies() -> dict[str, bool]:
     """Check for optional dependencies and return availability status.
-    
+
     Returns:
         Dictionary mapping dependency names to availability status
     """
@@ -120,7 +131,7 @@ def check_dependencies() -> dict[str, bool]:
 
     # Check for market configuration
     try:
-        from market_config import get_timezone_config, get_timezone_offset, get_timezone_name
+        from market_config import get_timezone_config  # noqa: F401
         dependencies['market_config'] = True
         logger.info("Market configuration module available")
     except ImportError:
@@ -129,7 +140,7 @@ def check_dependencies() -> dict[str, bool]:
 
     # Check for dual currency support
     try:
-        from dual_currency import CashBalances, get_ticker_currency
+        from dual_currency import CashBalances  # noqa: F401
         dependencies['dual_currency'] = True
         logger.info("Dual currency module available")
     except ImportError:
@@ -138,7 +149,7 @@ def check_dependencies() -> dict[str, bool]:
 
     # Check for pandas-datareader (Stooq fallback)
     try:
-        import pandas_datareader.data as pdr
+        import pandas_datareader.data as pdr  # noqa: F401
         dependencies['pandas_datareader'] = True
         logger.info("Pandas-datareader available for Stooq fallback")
     except ImportError:
@@ -147,8 +158,8 @@ def check_dependencies() -> dict[str, bool]:
 
     # Check for Rich/colorama display libraries
     try:
-        from rich.console import Console
-        from colorama import init
+        from rich.console import Console  # noqa: F401
+        from colorama import init  # noqa: F401
         dependencies['rich_display'] = True
         logger.info("Rich display libraries available")
     except ImportError:
@@ -158,23 +169,32 @@ def check_dependencies() -> dict[str, bool]:
     return dependencies
 
 
-def initialize_repository(settings: Settings) -> BaseRepository:
+def initialize_repository(settings: Settings, fund: Optional[Fund] = None) -> BaseRepository:
     """Initialize repository based on configuration.
-    
+
     Args:
         settings: System settings containing repository configuration
-        
+        fund: Optional fund object to use for repository configuration
+
     Returns:
         Initialized repository instance
-        
+
     Raises:
         InitializationError: If repository initialization fails
     """
     try:
         repo_config = settings.get_repository_config()
+
+        # Override fund name from fund object if provided
+        if fund:
+            repo_config = {**repo_config, 'fund': fund.name}
+
         repository_type = repo_config.get('type', 'csv')
 
-        logger.info(f"Initializing {repository_type} repository")
+        logger.info(f"Initializing {repository_type} repository for fund: {repo_config.get('fund', 'N/A')}")
+
+        # Clear any existing repositories to avoid stale cache
+        get_repository_container().clear()
 
         # Configure repository container
         configure_repositories({'default': repo_config})
@@ -234,7 +254,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
         )
 
         # Initialize utility components
-        backup_config = settings.get_backup_config()
+        # backup_config = settings.get_backup_config()  # Unused for now
         # Use fund-specific backup directory instead of root backups folder
         fund_backup_dir = data_dir / "backups"
         backup_manager = BackupManager(
@@ -252,7 +272,7 @@ def initialize_components(settings: Settings, repository: BaseRepository, depend
 
 def handle_graceful_degradation(dependencies: dict[str, bool]) -> None:
     """Handle graceful degradation for missing optional dependencies.
-    
+
     Args:
         dependencies: Dictionary of available dependencies
     """
@@ -280,7 +300,7 @@ def handle_graceful_degradation(dependencies: dict[str, bool]) -> None:
 
 def parse_command_line_arguments() -> argparse.Namespace:
     """Parse command-line arguments.
-    
+
     Returns:
         Parsed command-line arguments
     """
@@ -363,23 +383,23 @@ Examples:
     )
 
     args = parser.parse_args()
-    
+
     # Check for NON_INTERACTIVE environment variable
     if os.environ.get("NON_INTERACTIVE", "").lower() in ("true", "1", "yes"):
         args.non_interactive = True
-    
+
     return args
 
 
 def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepository, dict[str, bool], FundManager]:
     """Initialize the trading system with configuration and dependencies.
-    
+
     Args:
         args: Parsed command-line arguments
-        
+
     Returns:
         Tuple of (settings, repository, dependencies, fund_manager)
-        
+
     Raises:
         InitializationError: If system initialization fails
     """
@@ -427,6 +447,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Update repository configuration with fund-specific settings
         repo_config = {
             'type': fund.repository.type,
+            'fund': fund.name,  # Pass fund name to repository (matches database fund column)
             **fund.repository.settings
         }
         settings.set('repository', repo_config)
@@ -446,7 +467,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
             # Reconfigure logging with new debug level
             setup_logging(settings)
 
-        repository = initialize_repository(settings)
+        repository = initialize_repository(settings, fund)
 
         # Initialize components
         initialize_components(settings, repository, dependencies, fund)
@@ -464,7 +485,7 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
 
 def verify_script_before_action() -> None:
     """Verify script integrity before allowing sensitive operations.
-    
+
     Raises:
         ScriptIntegrityError: If script integrity cannot be verified
     """
@@ -483,7 +504,7 @@ def verify_script_before_action() -> None:
 
 def generate_benchmark_graph(settings: Settings) -> None:
     """Generate a benchmark performance graph for the last 365 days.
-    
+
     Args:
         settings: System settings containing data directory configuration
     """
@@ -494,21 +515,21 @@ def generate_benchmark_graph(settings: Settings) -> None:
         import pandas as pd
         import yfinance as yf
         from pathlib import Path
-        
+
         print_info("Setting up benchmark graph generation...")
-        
+
         # Get data directory
         data_dir = settings.get_data_directory()
         if not data_dir:
             print_error("No data directory configured")
             return
-            
+
         # Calculate date range for last 365 days
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365)
-        
+
         print_info(f"Generating benchmark graph from {start_date.date()} to {end_date.date()}")
-        
+
         # Define benchmark configurations
         benchmarks = {
             'sp500': {'ticker': '^GSPC', 'name': 'S&P 500', 'color': 'blue'},
@@ -516,100 +537,100 @@ def generate_benchmark_graph(settings: Settings) -> None:
             'russell2000': {'ticker': '^RUT', 'name': 'Russell 2000', 'color': 'green'},
             'vti': {'ticker': 'VTI', 'name': 'Total Stock Market (VTI)', 'color': 'red'}
         }
-        
+
         # Create date range for the last 365 days
         date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-        
+
         # Download and process each benchmark
         benchmark_data = {}
         for key, config in benchmarks.items():
             try:
                 print_info(f"Downloading {config['name']} data...")
-                
+
                 # Download with extra buffer days
                 download_start = start_date - timedelta(days=5)
                 download_end = end_date + timedelta(days=5)
-                
-                data = yf.download(config['ticker'], start=download_start, end=download_end, 
+
+                data = yf.download(config['ticker'], start=download_start, end=download_end,
                                  progress=False, auto_adjust=False)
-                
+
                 if data.empty:
                     print_warning(f"No data available for {config['name']}")
                     continue
-                    
+
                 # Reset index and clean up columns
                 data = data.reset_index()
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
-                
+
                 # Find baseline price (first available price in our date range)
                 data['Date_Only'] = pd.to_datetime(data['Date']).dt.date
                 baseline_data = data[data['Date_Only'] >= start_date.date()]
-                
+
                 if len(baseline_data) > 0:
                     baseline_price = baseline_data['Close'].iloc[0]
                 else:
                     # Fallback to first available price
                     baseline_price = data['Close'].iloc[0]
-                
+
                 # Normalize to $100 baseline
                 scaling_factor = 100.0 / baseline_price
                 data['Normalized_Value'] = data['Close'] * scaling_factor
-                
+
                 # Create complete date range and merge
                 portfolio_date_range = pd.DataFrame({'Date': [d.date() for d in date_range]})
                 data_clean = data[['Date_Only', 'Normalized_Value']].copy()
-                
+
                 merged = portfolio_date_range.merge(data_clean, left_on='Date', right_on='Date_Only', how='left')
                 merged['Normalized_Value'] = merged['Normalized_Value'].ffill().bfill()
-                
+
                 # Convert back to datetime and apply market timing
                 merged['Date'] = pd.to_datetime(merged['Date'])
-                
+
                 # Apply market close timing (1:00 PM PST) for consistency
                 for idx, row in merged.iterrows():
                     date_only = row['Date'].date()
                     weekday = pd.to_datetime(date_only).weekday()
-                    
+
                     if weekday < 5:  # Trading day
                         market_close_time = pd.to_datetime(date_only) + timedelta(hours=13)
                         merged.at[idx, 'Date'] = market_close_time
                     else:  # Weekend
                         weekend_market_close = pd.to_datetime(date_only) + timedelta(hours=13)
                         merged.at[idx, 'Date'] = weekend_market_close
-                
+
                 benchmark_data[key] = merged[['Date', 'Normalized_Value']].copy()
                 print_success(f"Processed {config['name']} data: {len(merged)} days")
-                
+
             except Exception as e:
                 print_warning(f"Error downloading {config['name']}: {e}")
                 continue
-        
+
         if not benchmark_data:
             print_error("No benchmark data could be downloaded")
             return
-        
+
         # Create the graph
         print_info("Creating benchmark performance graph...")
-        
+
         plt.figure(figsize=(16, 9))
         plt.style.use("seaborn-v0_8-whitegrid")
-        
+
         # Plot each benchmark
         colors = ['blue', 'orange', 'green', 'red', 'purple', 'brown']
         styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 5))]
         markers = ['o', 's', '^', 'v', 'D', 'p']
-        
+
         for i, (key, data) in enumerate(benchmark_data.items()):
             config = benchmarks[key]
             color = colors[i % len(colors)]
             style = styles[i % len(styles)]
             marker = markers[i % len(markers)]
-            
+
             # Calculate final performance
             final_value = data['Normalized_Value'].iloc[-1]
             performance = final_value - 100.0
-            
+
             plt.plot(
                 data['Date'],
                 data['Normalized_Value'],
@@ -621,69 +642,69 @@ def generate_benchmark_graph(settings: Settings) -> None:
                 markersize=3,
                 alpha=0.8
             )
-        
+
         # Add weekend shading
         def add_weekend_shading():
             current_date = start_date.date()
             end_date_only = end_date.date()
-            
+
             while current_date <= end_date_only:
                 weekday = pd.to_datetime(current_date).weekday()
-                
+
                 if weekday == 5:  # Saturday
                     weekend_start = pd.to_datetime(current_date)
                     weekend_end = weekend_start + timedelta(days=2)
-                    
-                    plt.axvspan(weekend_start, weekend_end, 
+
+                    plt.axvspan(weekend_start, weekend_end,
                                color='lightgray', alpha=0.2, zorder=0)
                     current_date += timedelta(days=2)
                 else:
                     current_date += timedelta(days=1)
-        
+
         add_weekend_shading()
-        
+
         # Add break-even line
         plt.axhline(y=100, color='gray', linestyle=':', alpha=0.7, linewidth=1.5, label='Break-even')
-        
+
         # Formatting
-        plt.title(f"Benchmark Performance Comparison\nLast 365 Days (Normalized to $100)", fontsize=14, fontweight='bold')
+        plt.title("Benchmark Performance Comparison\nLast 365 Days (Normalized to $100)", fontsize=14, fontweight='bold')
         plt.xlabel("Date", fontsize=12)
         plt.ylabel("Performance Index (100 = Break-even)", fontsize=12)
-        
+
         # Date formatting
         import matplotlib.dates as mdates
         plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         plt.gca().xaxis.set_minor_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
-        
+
         plt.grid(True, which='major', alpha=0.3)
         plt.grid(True, which='minor', alpha=0.1)
         plt.legend(loc='upper left', frameon=True, fancybox=True, shadow=True)
         plt.xticks(rotation=45)
-        
+
         # Adjust layout
         plt.subplots_adjust(left=0.08, bottom=0.12, right=0.95, top=0.88)
-        
+
         # Save the graph
         graphs_dir = Path("graphs")
         graphs_dir.mkdir(exist_ok=True)
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"benchmark_comparison_365days_{timestamp}.png"
         filepath = graphs_dir / filename
-        
+
         plt.savefig(filepath, dpi=300, bbox_inches="tight", facecolor='white', edgecolor='none')
         print_success(f"Benchmark graph saved to: {filepath.resolve()}")
-        
+
         # Close the figure to free memory
         plt.close()
-        
+
         # Try to open the graph
         try:
             import os
             import platform
             import subprocess
-            
+
             system = platform.system()
             if system == "Windows":
                 os.startfile(str(filepath))
@@ -697,7 +718,7 @@ def generate_benchmark_graph(settings: Settings) -> None:
         except Exception as e:
             print_warning(f"Could not open graph automatically: {e}")
             print_info(f"Graph saved at: {filepath.resolve()}")
-        
+
     except ImportError as e:
         print_error(f"Required packages not available: {e}")
         print_info("Please ensure matplotlib, pandas, and yfinance are installed")
@@ -708,7 +729,7 @@ def generate_benchmark_graph(settings: Settings) -> None:
 
 def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_manager: FundManager) -> None:
     """Handle fund switching workflow.
-    
+
     Args:
         args: Parsed command-line arguments
         settings: System settings
@@ -797,7 +818,7 @@ def switch_repository_workflow() -> None:
     """Handle repository switching workflow (CSV/Supabase)."""
     try:
         print_header("Switch Repository", _safe_emoji("🔄"))
-        
+
         # Check current repository status
         try:
             from simple_repository_switch import show_status
@@ -805,26 +826,26 @@ def switch_repository_workflow() -> None:
             show_status()
         except Exception as e:
             print_warning(f"Could not get current status: {e}")
-        
+
         print()
         print_info("Available repositories:")
         print("  [1] CSV (Local files)")
         print("  [2] Supabase (Cloud database)")
         print()
-        
+
         # Get user selection
         try:
             choice = input("Select repository (1-2) or 'q' to cancel: ").strip().lower()
-            
+
             if choice == 'q':
                 print_info("Repository switching cancelled")
                 return
-            
+
             if choice == '1':
                 print_info("Switching to CSV repository...")
                 import subprocess
                 import sys
-                result = subprocess.run([sys.executable, "simple_repository_switch.py", "csv"], 
+                result = subprocess.run([sys.executable, "simple_repository_switch.py", "csv"],
                                       capture_output=True, text=True)
                 if result.returncode == 0:
                     print_success("Successfully switched to CSV repository")
@@ -832,20 +853,20 @@ def switch_repository_workflow() -> None:
                 else:
                     print_error(f"Failed to switch to CSV: {result.stderr}")
                     return
-                    
+
             elif choice == '2':
                 print_info("Switching to Supabase repository...")
                 print_warning("Make sure environment variables are set:")
                 print("  SUPABASE_URL and SUPABASE_ANON_KEY")
-                
+
                 confirm = input("Continue with Supabase switch? (y/N): ").strip().lower()
                 if confirm != 'y':
                     print_info("Supabase switching cancelled")
                     return
-                
+
                 import subprocess
                 import sys
-                result = subprocess.run([sys.executable, "simple_repository_switch.py", "supabase"], 
+                result = subprocess.run([sys.executable, "simple_repository_switch.py", "supabase"],
                                       capture_output=True, text=True)
                 if result.returncode == 0:
                     print_success("Successfully switched to Supabase repository")
@@ -856,23 +877,23 @@ def switch_repository_workflow() -> None:
             else:
                 print_error("Invalid selection")
                 return
-                
+
             # Test the new repository
             print_info("Testing new repository...")
-            result = subprocess.run([sys.executable, "simple_repository_switch.py", "test"], 
+            result = subprocess.run([sys.executable, "simple_repository_switch.py", "test"],
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 print_success("Repository test passed")
             else:
                 print_warning(f"Repository test had issues: {result.stderr}")
-                
+
         except ValueError:
             print_error("Invalid input. Please enter 1, 2, or 'q'")
             return
         except KeyboardInterrupt:
             print_info("\nRepository switching cancelled")
             return
-            
+
     except Exception as e:
         error_msg = f"Repository switching failed: {e}"
         print_error(error_msg)
@@ -881,7 +902,7 @@ def switch_repository_workflow() -> None:
 
 def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface, fund_manager: FundManager = None, clear_caches: bool = False) -> None:
     """Run the main portfolio management workflow.
-    
+
     Args:
         args: Parsed command-line arguments
         settings: System settings
@@ -892,11 +913,11 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
     """
     try:
         print_header("Portfolio Management Workflow", _safe_emoji("📊"))
-        
+
         # Clear only main trading screen caches if requested (when 'r' is pressed)
         if clear_caches:
             print_info("Clearing main trading screen caches...")
-            
+
             # Clear price cache (market data used by main screen)
             try:
                 if price_cache:
@@ -907,7 +928,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception as e:
                 logger.warning(f"Failed to clear price cache: {e}")
                 print_warning(f"Failed to clear price cache: {e}")
-            
+
             # Clear exchange rate cache (currency conversion used by main screen)
             try:
                 if currency_handler:
@@ -918,7 +939,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception as e:
                 logger.warning(f"Failed to clear exchange rate cache: {e}")
                 print_warning(f"Failed to clear exchange rate cache: {e}")
-            
+
             # Clear fundamentals cache (company names and sector info used by main screen)
             try:
                 if market_data_fetcher:
@@ -927,7 +948,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         market_data_fetcher._fund_cache.clear()
                     if hasattr(market_data_fetcher, '_fund_cache_meta'):
                         market_data_fetcher._fund_cache_meta.clear()
-                    
+
                     # Clear disk-based fundamentals cache
                     fund_cache_path = market_data_fetcher._get_fund_cache_path()
                     if fund_cache_path and fund_cache_path.exists():
@@ -944,7 +965,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             except Exception as e:
                 logger.warning(f"Failed to clear fundamentals cache: {e}")
                 print_warning(f"Failed to clear fundamentals cache: {e}")
-            
+
             print_info("Cache clearing completed - ticker correction and other unrelated caches preserved")
 
         # Validate data integrity if requested
@@ -956,7 +977,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 print_error(f"Data validation failed with {len(validation_errors)} errors:")
                 for error in validation_errors:
                     print_error(f"  • {error}")
-                sys.exit(1)
+                sys.exit(1)  # sys is imported at the top of the file
             else:
                 print_success("Data validation passed - no issues found")
                 return
@@ -998,12 +1019,12 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             market_data = {}
             cache_hits = 0
             api_calls = 0
-            
+
             for ticker in tickers:
                 try:
                     # First, try to get cached data
                     cached_data = price_cache.get_cached_price(ticker, start_date, end_date)
-                    
+
                     if cached_data is not None and not cached_data.empty:
                         # Use cached data
                         market_data[ticker] = cached_data
@@ -1021,7 +1042,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         else:
                             market_data[ticker] = pd.DataFrame()
                             logger.warning(f"No data returned for {ticker}")
-                            
+
                 except Exception as e:
                     logger.warning(f"Failed to fetch data for {ticker}: {e}")
                     market_data[ticker] = pd.DataFrame()
@@ -1043,9 +1064,27 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 # Get the latest close price from the cached data and convert to Decimal
                 from decimal import Decimal
                 current_price = Decimal(str(cached_data['Close'].iloc[-1]))
+
+                # Extra debug for GLCC
+                if position.ticker == 'GLCC':
+                    logger.info(f"\n{'='*60}")
+                    logger.info("GLCC PRICE UPDATE DEBUG:")
+                    logger.info(f"  Position from DB: avg_price={position.avg_price}, current_price={position.current_price}")
+                    logger.info(f"  Cached price data: {len(cached_data)} rows")
+                    logger.info(f"  Latest cached price: ${current_price}")
+                    logger.info(f"  Shares: {position.shares}")
+
                 updated_position = position_calculator.update_position_with_price(
                     position, current_price
                 )
+
+                # Extra debug for GLCC
+                if position.ticker == 'GLCC':
+                    logger.info(f"  Updated position: avg_price={updated_position.avg_price}, current_price={updated_position.current_price}")
+                    logger.info(f"  Market value: {updated_position.market_value}")
+                    logger.info(f"  Unrealized P&L: {updated_position.unrealized_pnl}")
+                    logger.info(f"{'='*60}\n")
+
                 updated_positions.append(updated_position)
                 logger.debug(f"Updated {position.ticker} with cached price: ${current_price}")
             else:
@@ -1136,14 +1175,14 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             # If today's snapshot doesn't exist (pre-market), we use all snapshots as-is
             today_date = datetime.now().date()
             latest_snapshot_date = portfolio_snapshots[-1].timestamp.date() if portfolio_snapshots else None
-            
+
             if latest_snapshot_date == today_date:
                 # Today's snapshot exists - exclude it since we have fresh prices
                 historical_snapshots = portfolio_snapshots[:-1] if len(portfolio_snapshots) > 1 else []
             else:
                 # Pre-market or weekend - use all snapshots as-is
                 historical_snapshots = portfolio_snapshots
-            
+
             if args.non_interactive:
                 with open('debug_output.txt', 'a') as debug_file:
                     debug_file.write(f"  Calculating 1-day P&L for {position.ticker}:\n")
@@ -1536,6 +1575,24 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         except Exception:
             fund_indicator = ""
 
+        # Get data source indicator for display
+        data_source_indicator = ""
+        try:
+            # Check what type of repository we're using
+            repo_type = type(repository).__name__
+            if "CSV" in repo_type:
+                # CSV repository - show file path
+                data_source_indicator = f"{_safe_emoji('💾')} CSV"
+            elif "Supabase" in repo_type or "Database" in repo_type:
+                # Supabase/Database repository - show cloud indicator
+                data_source_indicator = f"{_safe_emoji('☁️')} Supabase"
+            else:
+                # Unknown repository type - show generic indicator
+                data_source_indicator = f"{_safe_emoji('🗄️')} {repo_type.replace('Repository', '')}"
+        except Exception:
+            # If we can't determine the repository type, don't show indicator
+            data_source_indicator = ""
+
         # Get experiment timeline for header
         timeline_info = ""
         try:
@@ -1555,49 +1612,53 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             header_parts.append(timeline_part)
         if fund_indicator:
             header_parts.append(fund_indicator)
+        if data_source_indicator:
+            header_parts.append(data_source_indicator)
 
         header_title = " | ".join(header_parts)
 
         # UPDATE CSV BEFORE DISPLAYING - This ensures the portfolio data is current
         try:
             # Create updated snapshot with current prices
-            updated_snapshot = PortfolioSnapshot(
-                positions=updated_positions,
-                timestamp=datetime.now(),
-                total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
-            )
+            # updated_snapshot = PortfolioSnapshot(  # Unused for now
+            #     positions=updated_positions,
+            #     timestamp=datetime.now(),
+            #     total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
+            # )
 
             # Check if we should update prices (market hours or no update today)
             should_update_prices = False
 
             # Use centralized portfolio update logic
             from utils.portfolio_update_logic import should_update_portfolio
-            
+
             needs_update, reason = should_update_portfolio(market_hours, portfolio_manager)
             if needs_update:
-                should_update_prices = True
+                # should_update_prices = True  # Variable is set but not used
                 logger.info(reason)
             else:
                 print_info(f"Portfolio prices not updated ({reason})")
 
-            # Use centralized portfolio refresh logic
-            from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
-            
-            was_updated, reason = refresh_portfolio_prices_if_needed(
-                    market_hours=market_hours,
-                    portfolio_manager=portfolio_manager,
-                    repository=repository,
-                    market_data_fetcher=market_data_fetcher,
-                    price_cache=price_cache,
-                    verbose=False  # Use logger instead of print for main trading script
-                )
-            
-            if was_updated:
-                logger.info(f"Portfolio prices updated: {reason}")
-                print_success("Portfolio snapshot updated successfully")
-            else:
-                logger.debug(f"Portfolio prices not updated: {reason}")
-                print_info("Portfolio prices not updated (market closed and already updated today)")
+            # DISABLED: Portfolio refresh logic - causes avg_price corruption by mutating positions
+            # The trading script already updates prices properly before display (lines 1058-1094)
+            # Refresh is redundant and was corrupting avg_price by saving mutated position objects
+            # from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+            #
+            # was_updated, reason = refresh_portfolio_prices_if_needed(
+            #         market_hours=market_hours,
+            #         portfolio_manager=portfolio_manager,
+            #         repository=repository,
+            #         market_data_fetcher=market_data_fetcher,
+            #         price_cache=price_cache,
+            #         verbose=False  # Use logger instead of print for main trading script
+            #     )
+            #
+            # if was_updated:
+            #     logger.info(f"Portfolio prices updated: {reason}")
+            #     print_success("Portfolio snapshot updated successfully")
+            # else:
+            #     logger.debug(f"Portfolio prices not updated: {reason}")
+            print_info("Portfolio prices not updated (market closed and already updated today)")
 
         except Exception as e:
             logger.warning(f"Could not save portfolio snapshot: {e}")
@@ -1621,8 +1682,14 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Calculate and display portfolio statistics
         try:
-            portfolio_metrics = position_calculator.calculate_portfolio_metrics(latest_snapshot)
-            
+            # Use the updated snapshot with current prices, not the stale latest_snapshot
+            updated_snapshot_for_metrics = PortfolioSnapshot(
+                positions=updated_positions,
+                timestamp=datetime.now(),
+                total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
+            )
+            portfolio_metrics = position_calculator.calculate_portfolio_metrics(updated_snapshot_for_metrics)
+
             webull_fx_fee = Decimal('0')
 
             # Calculate total contributions from fund data
@@ -1716,7 +1783,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 data_dir_name = Path(settings.get_data_directory()).name
                 fund_config = fund_manager_utils.get_fund_config(data_dir_name)
                 fund_type = fund_config.get('fund', {}).get('fund_type') if fund_config else None
-                
+
                 if fund_type == 'webull':
                     # Webull: $2.99 per holding + 1.5% of USD holdings
                     # Count USD holdings (positions with USD currency)
@@ -1730,7 +1797,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                                     usd_holdings_count += 1
                     except Exception as e:
                         logger.debug(f"Could not count USD holdings: {e}")
-                    
+
                     liquidation_fee = Decimal('2.99') * usd_holdings_count
                     fx_fee = estimated_fx_fee_total_cad
                     webull_fx_fee = liquidation_fee + fx_fee
@@ -1749,7 +1816,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Apply platform fees to portfolio value
             net_portfolio_value = total_portfolio_value - webull_fx_fee
-            
+
             # Prepare summary data - convert Decimal to float for JSON serialization
             # CRITICAL: Floats introduce precision loss but are required for JSON compatibility
             # All financial calculations above use Decimal for accuracy, only converted here for storage
@@ -2081,10 +2148,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 try:
                     from utils.backup_cleanup import BackupCleanupUtility
                     cleanup_util = BackupCleanupUtility()
-                    
+
                     print_header("Backup Cleanup")
                     print_info("This will remove old backup files to free up space.")
-                    
+
                     # Ask for confirmation and days
                     try:
                         days_input = input("Enter number of days (backups older than this will be deleted) [7]: ").strip()
@@ -2092,16 +2159,16 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     except ValueError:
                         print_warning("Invalid input, using default of 7 days")
                         days = 7
-                    
+
                     # Show what would be deleted
                     print_info(f"Checking for backups older than {days} days...")
                     results = cleanup_util.cleanup_old_backups_by_age(days=days, dry_run=True)
-                    
+
                     total_files = sum(results.values())
                     if total_files == 0:
                         print_success("No old backup files found to clean up!")
                         return
-                    
+
                     # Ask for confirmation
                     confirm = input(f"Found {total_files} old backup files. Delete them? (y/N): ").strip().lower()
                     if confirm in ['y', 'yes']:
@@ -2111,7 +2178,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         print_success(f"Cleaned up {total_deleted} old backup files!")
                     else:
                         print_info("Cleanup cancelled.")
-                        
+
                 except ImportError as e:
                     print_error(f"Backup cleanup not available: {e}")
                     print_info("This feature requires the backup cleanup module.")
@@ -2158,7 +2225,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
 def main() -> None:
     """Main entry point for the trading system.
-    
+
     This function orchestrates the entire trading system workflow:
     1. Parse command-line arguments
     2. Initialize system components with dependency injection

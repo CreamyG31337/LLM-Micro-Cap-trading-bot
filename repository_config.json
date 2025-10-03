@@ -1,0 +1,16 @@
+{
+  "repository": {
+    "type": "csv"
+  },
+  "web_dashboard": {
+    "data_source": "hybrid",
+    "_comment": "Options: 'supabase', 'csv', 'hybrid'. Hybrid tries Supabase first, CSV fallback for missing funds.",
+    "available_funds": [
+      "Project Chimera",
+      "RRSP Lance Webull",
+      "TFSA",
+      "TEST"
+    ],
+    "default_fund": "Project Chimera"
+  }
+}

@@ -26,6 +26,8 @@ This fork enhances the original with:
 - **Enhanced Portfolio Tracking** - Real-time price integration and improved P&L calculations with optimized table formatting
 - **FIFO Lot Tracking** - Industry-standard accounting with realized/unrealized P&L
 - **Better User Experience** - Terminal optimization, virtual environment checks, and interactive menus
+- **Single-Key Menu System** - Quick access to all functions with single key presses for maximum efficiency
+- **Dual Repository Support** - Switch between CSV (local) and Supabase (cloud) backends with a single command
 - **Comprehensive Debugging** - Multiple debug tools for troubleshooting and analysis
 - **Configurable Timezone Support** - Flexible timezone handling for different markets
 - **Cache Management System** - Monitor, clear, and update cached data with dedicated UI
@@ -68,6 +70,147 @@ python run.py  # Select 'k' -> Clear All Caches
 ```
 
 For detailed cache management documentation, see [`docs/CACHE_MANAGEMENT.md`](docs/CACHE_MANAGEMENT.md).
+
+## Single-Key Menu System
+
+The trading bot features a streamlined single-key menu system for maximum efficiency and speed:
+
+### **Quick Access Menu:**
+- **'b'** - Buy
+- **'s'** - Sell  
+- **'c'** - Log Contribution
+- **'w'** - Log Withdrawal
+- **'m'** - Manage Contributors
+- **'u'** - Update Cash Balances
+- **'r'** - Refresh Portfolio
+- **'f'** - Switch Fund (Quick fund switching - 70% faster than before!)
+- **'d'** - Switch Repository (CSV/Supabase)
+- **'o'** - Sort Portfolio
+- **'9'** - Clean Old Backups
+- **'0'** - Backup Statistics
+- **Enter** - Quit
+
+### **Benefits:**
+- **Speed & Efficiency**: Single key press for all actions
+- **No Typing**: No need to type multi-character commands
+- **Consistent**: All menu options follow same pattern
+- **Intuitive**: Easy to remember and use
+- **Professional**: Clean, efficient interface
+
+### **Usage:**
+1. **Run Trading Script**: `python trading_script.py`
+2. **Press Single Key**: Choose any action with one key press
+3. **Quick Navigation**: Switch between functions instantly
+4. **Reduced Errors**: Less chance of typos or mistakes
+
+### **Enhanced Fund Switching:**
+- **70% Faster**: Only 2 key presses instead of 6 for fund switching
+- **Direct Access**: Press 'f' from main menu for instant fund switching
+- **Intuitive Navigation**: Enter key for "back" and "cancel" operations
+- **Unicode Safe**: Works on all console types with emoji fallbacks
+
+## Dual Repository System
+
+The trading bot supports both local CSV files and cloud Supabase database with seamless switching:
+
+### **Repository Options:**
+- **CSV (Local)**: Fast, offline-capable, perfect for development and debugging
+- **Supabase (Cloud)**: Scalable, web-accessible, ideal for production and web dashboard
+
+### **Quick Repository Switch:**
+```bash
+# Switch to CSV (local files)
+python simple_repository_switch.py csv
+
+# Switch to Supabase (cloud database)  
+python simple_repository_switch.py supabase
+
+# Check current status
+python simple_repository_switch.py status
+
+# Test current setup
+python simple_repository_switch.py test
+```
+
+### **From Trading Script Menu:**
+- **Press 'd'** - Switch Repository (CSV/Supabase)
+- **Interactive Menu** - Shows current status and available options
+- **Automatic Testing** - Tests repository after switching
+- **Safety Prompts** - Confirmation for cloud database switch
+
+### **Architecture Benefits:**
+- **Zero Code Changes**: Business logic works with both repositories
+- **Perfect Separation**: Data access completely abstracted from business logic
+- **Easy Migration**: Switch between backends with one command
+- **Data Safety**: Both repositories can be kept in sync
+
+### **Configuration:**
+```json
+// CSV Configuration
+{
+  "repository": {
+    "type": "csv",
+    "data_directory": "trading_data/funds/Project Chimera"
+  }
+}
+
+// Supabase Configuration
+{
+  "repository": {
+    "type": "supabase", 
+    "url": "https://your-project.supabase.co",
+    "key": "your-anon-key",
+    "fund": "Project Chimera"
+  }
+}
+```
+
+### **Environment Variables:**
+```bash
+# Set Supabase credentials
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_ANON_KEY="your-anon-key"
+
+# Force repository type
+export TRADING_REPO_TYPE="supabase"  # or "csv"
+```
+
+## System Safety & Data Protection
+
+The trading bot includes comprehensive safety measures to protect your data:
+
+### **Data Safety Features:**
+- **Multiple Backups**: Timestamped backups in `backups/` directory
+- **Repository Switching**: Instant switch between CSV and Supabase backends
+- **Data Validation**: Regular integrity checks with `simple_verify.py`
+- **Recovery Procedures**: Documented recovery processes for data restoration
+
+### **Configuration Safety:**
+- **Flat Configuration**: Simplified repository configuration structure
+- **Environment Variables**: Secure credential management
+- **Error Handling**: Graceful fallbacks and recovery procedures
+- **Testing**: Automatic repository testing after configuration changes
+
+### **System Integrity:**
+- **Repository Pattern**: Perfect separation of concerns maintained
+- **Zero Downtime**: Switch between backends without code changes
+- **Validation Scripts**: Comprehensive data integrity verification
+- **Backup Strategy**: Multiple layers of data protection
+
+### **Recovery Commands:**
+```bash
+# Check system status
+python simple_repository_switch.py status
+
+# Test current setup
+python simple_repository_switch.py test
+
+# Verify data integrity
+python simple_verify.py
+
+# Switch to safe mode (CSV)
+python simple_repository_switch.py csv
+```
 
 ## Original Documentation
 

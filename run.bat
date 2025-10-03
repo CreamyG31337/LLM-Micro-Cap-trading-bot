@@ -41,10 +41,19 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 REM Run the master script using the virtual environment
+:start
 echo Starting the trading bot menu system...
 echo.
 venv\Scripts\python.exe run.py
+set exit_code=%errorlevel%
 
 echo.
-echo Trading bot session ended.
-pause
+if %exit_code%==42 (
+    echo Trading bot requested restart...
+    echo Restarting in 2 seconds...
+    timeout /t 2 /nobreak >nul
+    goto start
+) else (
+    echo Trading bot session ended.
+    pause
+)

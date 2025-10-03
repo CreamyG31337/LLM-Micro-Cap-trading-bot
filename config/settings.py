@@ -224,6 +224,18 @@ class Settings:
         Returns:
             Repository configuration dictionary
         """
+        # Check for repository configuration file first
+        repo_config_file = Path("repository_config.json")
+        if repo_config_file.exists():
+            try:
+                with open(repo_config_file, 'r') as f:
+                    repo_config = json.load(f)
+                if 'repository' in repo_config:
+                    return repo_config['repository']
+            except Exception as e:
+                logger.warning(f"Failed to load repository config file: {e}")
+        
+        # Fallback to settings
         repo_type = self.get('repository.type', 'csv')
         repo_config = self.get(f'repository.{repo_type}', {})
         

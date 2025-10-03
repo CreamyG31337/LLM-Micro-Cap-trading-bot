@@ -21,9 +21,20 @@ if [ ! -f "venv/bin/python" ]; then
 fi
 
 # Run the master script using the virtual environment
-echo "Starting the trading bot menu system..."
-echo
-venv/bin/python run.py
-
-echo
-echo "Trading bot session ended."
+while true; do
+    echo "Starting the trading bot menu system..."
+    echo
+    venv/bin/python run.py
+    exit_code=$?
+    
+    echo
+    if [ $exit_code -eq 42 ]; then
+        echo "Trading bot requested restart..."
+        echo "Restarting in 2 seconds..."
+        sleep 2
+        continue
+    else
+        echo "Trading bot session ended."
+        break
+    fi
+done

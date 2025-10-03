@@ -124,7 +124,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
         data_dir_path = Path(data_folder_name)
     
     return [
-        ("1", "🔄 Main Trading Script",
+        ("1", f"{_safe_emoji('🔄')} Main Trading Script",
          f"Run the main portfolio management and trading script (uses '{data_folder_name}' folder) - runs trading_script.py",
          ["--data-dir", str(data_dir_path)]),
         
@@ -140,55 +140,63 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          f"Generate benchmark performance graphs for last 365 days (S&P 500, QQQ, Russell 2000, VTI) - runs benchmark graphing",
          ["--data-dir", str(data_dir_path)]),
         
-        ("8", "🐛 Debug Instructions",
+        ("8", f"{_safe_emoji('🐛')} Debug Instructions",
          "Show debug information and instructions - runs debug_instructions.py",
          []),
         
-        ("9", "💡 Show Prompt",
+        ("9", f"{_safe_emoji('💡')} Show Prompt",
          "Display the current LLM prompt template - runs show_prompt.py",
          []),
         
-        ("d", "📋 Generate Daily Trading Prompt",
+        ("d", f"{_safe_emoji('📋')} Generate Daily Trading Prompt",
          f"Generate daily trading prompt with current portfolio data (uses '{data_folder_name}' folder) - runs prompt_generator.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("w", "🔬 Generate Weekly Deep Research Prompt",
+        ("w", f"{_safe_emoji('🔬')} Generate Weekly Deep Research Prompt",
          f"Generate weekly deep research prompt for comprehensive portfolio analysis (uses '{data_folder_name}' folder) - runs prompt_generator.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("u", "💰 Update Cash Balances",
+        ("u", f"{_safe_emoji('💰')} Update Cash Balances",
          f"Manually update your CAD/USD cash balances (deposits, withdrawals, corrections) (uses '{data_folder_name}' folder) - runs update_cash.py",
          ["--data-dir", str(data_dir_path)]),
 
-        ("m", "👥 Manage Contributors",
+        ("m", f"{_safe_emoji('👥')} Manage Contributors",
          f"Edit contributor names and email addresses (uses '{data_folder_name}' folder) - runs menu_actions.py",
          ["--data-dir", str(data_dir_path)]),
 
-        ("x", "📧 Get Contributor Emails",
+        ("x", f"{_safe_emoji('📧')} Get Contributor Emails",
          f"Output all contributor email addresses (semicolon-separated for mail programs) (uses '{data_folder_name}' folder) - runs get_emails.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("e", "📧 Add Trade from Email",
+        ("e", f"{_safe_emoji('📧')} Add Trade from Email",
          f"Parse and add trades from email notifications (uses '{data_folder_name}' folder) - runs add_trade_from_email.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("r", "🔧 Rebuild Portfolio",
+        ("r", f"{_safe_emoji('🔧')} Rebuild Portfolio",
          f"Rebuild portfolio CSV from trade log (fixes display issues) (uses '{data_folder_name}' folder) - runs rebuild_portfolio_from_scratch.py",
          ["--data-dir", str(data_dir_path)]),
         
-        ("c", "⚙️  Configure",
+        ("c", f"{_safe_emoji('⚙️')} Configure",
          "Configuration options and setup",
          []),
 
-        ("k", "💾 Manage Cache",
+        ("f", f"{_safe_emoji('🏦')} Switch Fund",
+         "Quickly switch between available funds",
+         []),
+
+        ("k", f"{_safe_emoji('💾')} Manage Cache",
          f"View, clear, or update cache data (uses '{data_folder_name}' folder) - runs cache management",
          []),
 
-        ("b", "📦 Archive Backups",
+        ("b", f"{_safe_emoji('📦')} Archive Backups",
          "Archive old backups into daily zip files to save space.",
          []),
 
-        ("q", "🚪 Quit",
+        ("r", f"{_safe_emoji('🔄')} Restart",
+         "Restart the application",
+         []),
+
+        ("q", f"{_safe_emoji('🚪')} Quit",
          "Exit the application",
          [])
     ]
@@ -227,12 +235,12 @@ def handle_benchmark_selection() -> str:
     print_colored("=" * 40, Colors.HEADER)
     
     benchmark_options = [
-        ("1", "📈 QQQ (Nasdaq-100)", "Technology-focused benchmark - ideal for growth/tech portfolios", "qqq"),
+        ("1", f"{_safe_emoji('📈')} QQQ (Nasdaq-100)", "Technology-focused benchmark - ideal for growth/tech portfolios", "qqq"),
         ("2", f"{_safe_emoji('📊')} S&P 500", "Broad market benchmark - 500 largest US companies", "sp500"),
-        ("3", "📉 Russell 2000", "Small-cap benchmark - smaller US companies", "russell2000"),
-        ("4", "📋 VTI (Total Market)", "Complete US stock market benchmark", "vti"),
+        ("3", f"{_safe_emoji('📉')} Russell 2000", "Small-cap benchmark - smaller US companies", "russell2000"),
+        ("4", f"{_safe_emoji('📋')} VTI (Total Market)", "Complete US stock market benchmark", "vti"),
         ("5", f"{_safe_emoji('📊')} All Benchmarks", "Show all benchmarks on one chart for comprehensive comparison", "all"),
-        ("6", "🔙 Back to Main Menu", "Return without generating graph", "back")
+        ("6", f"{_safe_emoji('🔙')} Back to Main Menu", "Return without generating graph", "back")
     ]
     
     for key, title, description, _ in benchmark_options:
@@ -251,19 +259,20 @@ def handle_benchmark_selection() -> str:
 
 def handle_configuration() -> None:
     """Handle configuration menu"""
-    print_colored("\n⚙️  CONFIGURATION OPTIONS", Colors.HEADER + Colors.BOLD)
+    print_colored(f"\n{_safe_emoji('⚙️')} CONFIGURATION OPTIONS", Colors.HEADER + Colors.BOLD)
     print_colored("=" * 40, Colors.HEADER)
     
     print_colored("\n[1] Check Virtual Environment Status", Colors.CYAN)
     print_colored("[2] Show Project Structure", Colors.CYAN)
     print_colored("[3] Check Data Directories", Colors.CYAN)
-    print_colored("[4] 🏦 Fund Management", Colors.CYAN)
-    print_colored("[5] Return to Main Menu", Colors.CYAN)
+    print_colored(f"[4] {_safe_emoji('🏦')} Fund Management", Colors.CYAN)
+    print_colored(f"[5] {_safe_emoji('📊')} Web Dashboard Data Source", Colors.CYAN)
+    print_colored("[6] Return to Main Menu", Colors.CYAN)
     
-    choice = input(f"\n{Colors.YELLOW}Select option (1-5): {Colors.ENDC}").strip()
+    choice = input(f"\n{Colors.YELLOW}Select option (1-6): {Colors.ENDC}").strip()
     
     if choice == "1":
-        print_colored(f"\n📍 Virtual Environment Status:", Colors.BLUE + Colors.BOLD)
+        print_colored(f"\n{_safe_emoji('📍')} Virtual Environment Status:", Colors.BLUE + Colors.BOLD)
         if check_venv():
             print_colored(f"{_safe_emoji('✅')} Found: {VENV_PYTHON}", Colors.GREEN)
         else:
@@ -277,7 +286,7 @@ def handle_configuration() -> None:
             print_colored("  pip install -r requirements.txt", Colors.CYAN)
     
     elif choice == "2":
-        print_colored(f"\n📁 Project Structure:", Colors.BLUE + Colors.BOLD)
+        print_colored(f"\n{_safe_emoji('📁')} Project Structure:", Colors.BLUE + Colors.BOLD)
         print_colored(f"Project Root: {PROJECT_ROOT}", Colors.ENDC)
         print_colored(f"Virtual Env:  {VENV_DIR} {_safe_emoji('✅') if VENV_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
         print_colored(f"Scripts Dir:  {SCRIPTS_DIR} {_safe_emoji('✅') if SCRIPTS_DIR.exists() else _safe_emoji('❌')}", Colors.ENDC)
@@ -294,7 +303,7 @@ def handle_configuration() -> None:
             print_colored(f"Active Fund:  Fund Management Not Available {_safe_emoji('❌')}", Colors.ENDC)
     
     elif choice == "3":
-        print_colored(f"\n📂 Data Directory Status:", Colors.BLUE + Colors.BOLD)
+        print_colored(f"\n{_safe_emoji('📂')} Data Directory Status:", Colors.BLUE + Colors.BOLD)
         
         # Check current fund data directory
         try:
@@ -302,7 +311,7 @@ def handle_configuration() -> None:
             fund_info = get_current_fund_info()
             if fund_info["exists"] and fund_info["data_directory"]:
                 data_dir = Path(fund_info["data_directory"])
-                print_colored(f"📁 Active Fund: {fund_info['name']} ({data_dir})", Colors.CYAN)
+                print_colored(f"{_safe_emoji('📁')} Active Fund: {fund_info['name']} ({data_dir})", Colors.CYAN)
                 
                 # Check for key files
                 portfolio_file = data_dir / "llm_portfolio_update.csv"
@@ -313,11 +322,11 @@ def handle_configuration() -> None:
                 print_colored(f"  {_safe_emoji('📄')} Trade Log: {_safe_emoji('✅') if trade_log_file.exists() else _safe_emoji('❌')} {trade_log_file.name}", Colors.ENDC)
                 print_colored(f"  {_safe_emoji('📄')} Cash Balances: {_safe_emoji('✅') if cash_file.exists() else _safe_emoji('❌')} {cash_file.name}", Colors.ENDC)
             else:
-                print_colored("📁 No Active Fund", Colors.YELLOW)
+                print_colored(f"{_safe_emoji('📁')} No Active Fund", Colors.YELLOW)
         except ImportError:
-            print_colored("📁 Fund Management Not Available", Colors.YELLOW)
+            print_colored(f"{_safe_emoji('📁')} Fund Management Not Available", Colors.YELLOW)
         
-        print_colored(f"\n💡 Tip: Use option 'u' from the main menu to update cash balances!", Colors.YELLOW)
+        print_colored(f"\n{_safe_emoji('💡')} Tip: Use option 'u' from the main menu to update cash balances!", Colors.YELLOW)
     
     elif choice == "4":
         try:
@@ -330,7 +339,57 @@ def handle_configuration() -> None:
             print_colored("This feature requires the fund management module.", Colors.YELLOW)
         return  # Don't show "Press Enter" after fund management
     
+    elif choice == "5":
+        handle_data_source_config()
+        return  # Don't show "Press Enter" after data source config
+    
     input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+
+def handle_fund_switch() -> None:
+    """Handle quick fund switching"""
+    print_colored(f"\n{_safe_emoji('🏦')} QUICK FUND SWITCH", Colors.HEADER + Colors.BOLD)
+    print_colored("=" * 40, Colors.HEADER)
+    
+    try:
+        from utils.fund_ui import FundUI
+        fund_ui = FundUI()
+        
+        # Get available funds
+        funds = fund_ui.fund_manager.get_available_funds()
+        if not funds:
+            print_colored(f"{_safe_emoji('❌')} No funds available", Colors.RED)
+            return
+        
+        # Display available funds
+        print_colored(f"\n{_safe_emoji('📋')} Available funds:", Colors.CYAN)
+        for i, fund in enumerate(funds, 1):
+            print_colored(f"  [{i}] {fund}", Colors.CYAN)
+        
+        # Get user selection
+        while True:
+            choice = input(f"\n{Colors.YELLOW}Select fund (1-{len(funds)}) or Enter to cancel: {Colors.ENDC}").strip()
+            
+            if choice == "" or choice == "enter":
+                print_colored("Fund switching cancelled.", Colors.YELLOW)
+                return
+            
+            try:
+                fund_index = int(choice) - 1
+                if 0 <= fund_index < len(funds):
+                    selected_fund = funds[fund_index]
+                    if fund_ui.fund_manager.set_active_fund(selected_fund):
+                        print_colored(f"{_safe_emoji('✅')} Successfully switched to fund: {selected_fund}", Colors.GREEN)
+                    else:
+                        print_colored(f"{_safe_emoji('❌')} Failed to switch fund.", Colors.RED)
+                    return
+                else:
+                    print_colored(f"Invalid choice. Please select 1-{len(funds)}.", Colors.RED)
+            except ValueError:
+                print_colored("Please enter a valid number.", Colors.RED)
+                
+    except ImportError as e:
+        print_colored(f"{_safe_emoji('❌')} Fund management not available: {e}", Colors.RED)
+        print_colored("This feature requires the fund management module.", Colors.YELLOW)
 
 def get_script_path(option: str) -> Optional[Path]:
     """Get the script path for a given menu option"""
@@ -426,6 +485,201 @@ def handle_backup_archiving() -> None:
     input("\nPress Enter to return to the main menu...")
 
 
+def handle_data_source_config() -> None:
+    """Handle data source configuration for web dashboard"""
+    print_colored(f"\n{_safe_emoji('📊')} WEB DASHBOARD DATA SOURCE CONFIGURATION", Colors.HEADER + Colors.BOLD)
+    print_colored("=" * 50, Colors.HEADER)
+    
+    # Show current configuration
+    current_info = get_data_source_info()
+    print_colored(f"\nCurrent: {current_info}", Colors.CYAN + Colors.BOLD)
+    
+    print_colored(f"\n{_safe_emoji('📋')} Data Source Options:", Colors.BLUE + Colors.BOLD)
+    print_colored("[1] CSV Files Only - Load data from CSV files in trading_data/funds/", Colors.CYAN)
+    print_colored("[2] Supabase Only - Load data from Supabase database (requires migration)", Colors.CYAN)
+    print_colored("[3] Hybrid Mode - Try Supabase first, fallback to CSV for missing funds", Colors.CYAN)
+    print_colored("[4] Cancel - Return to configuration menu", Colors.CYAN)
+    
+    choice = input(f"\n{Colors.YELLOW}Select data source (1-4): {Colors.ENDC}").strip()
+    
+    data_source_map = {
+        "1": "csv",
+        "2": "supabase", 
+        "3": "hybrid"
+    }
+    
+    if choice == "4":
+        print_colored("Configuration cancelled.", Colors.YELLOW)
+        return
+    
+    if choice not in data_source_map:
+        print_colored("Invalid choice. Configuration cancelled.", Colors.RED)
+        return
+    
+    new_data_source = data_source_map[choice]
+    
+    # Validate and switch fund based on data source
+    print_colored("\n🔍 Validating fund availability for selected data source...", Colors.CYAN)
+    
+    # Get current fund info
+    current_fund = None
+    try:
+        from utils.fund_ui import get_current_fund_info
+        fund_info = get_current_fund_info()
+        if fund_info["exists"]:
+            current_fund = fund_info["name"]
+    except ImportError:
+        current_fund = "Unknown"
+    
+    # Check fund availability based on data source
+    available_funds = []
+    recommended_fund = None
+    
+    if new_data_source == "supabase":
+        # Query Supabase for available funds
+        try:
+            import os
+            # Load .env from web_dashboard directory
+            from dotenv import load_dotenv
+            load_dotenv(Path("web_dashboard/.env"))
+            
+            from web_dashboard.supabase_client import SupabaseClient
+            
+            if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                client = SupabaseClient()
+                if client.test_connection():
+                    available_funds = client.get_available_funds()
+                    print_colored(f"  {_safe_emoji('✅')} Supabase connection successful", Colors.GREEN)
+                    print_colored(f"  {_safe_emoji('📊')} Available funds in Supabase: {', '.join(available_funds)}", Colors.CYAN)
+                    
+                    if available_funds:
+                        # Recommend first available fund if current fund not in Supabase
+                        if current_fund in available_funds:
+                            recommended_fund = current_fund
+                            print_colored(f"  {_safe_emoji('✅')} Current fund '{current_fund}' is available in Supabase", Colors.GREEN)
+                        else:
+                            recommended_fund = available_funds[0]
+                            print_colored(f"  ⚠️  Current fund '{current_fund}' not found in Supabase", Colors.YELLOW)
+                            print_colored(f"  {_safe_emoji('📁')} Will switch to: {recommended_fund}", Colors.CYAN)
+                    else:
+                        print_colored(f"  ❌ No funds found in Supabase database", Colors.RED)
+                        print_colored(f"  {_safe_emoji('📊')} You need to migrate fund data first", Colors.YELLOW)
+                        return
+                else:
+                    print_colored(f"  ❌ Supabase connection failed", Colors.RED)
+                    print_colored(f"  {_safe_emoji('📊')} Cannot switch to Supabase mode", Colors.YELLOW)
+                    return
+            else:
+                print_colored(f"  ❌ Supabase environment variables not configured", Colors.RED)
+                print_colored(f"  {_safe_emoji('📊')} Check web_dashboard/.env file", Colors.YELLOW)
+                return
+        except Exception as e:
+            print_colored(f"  ❌ Error checking Supabase: {e}", Colors.RED)
+            return
+    
+    elif new_data_source == "csv":
+        # Use CSV funds list
+        available_funds = ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]
+        recommended_fund = current_fund if current_fund in available_funds else available_funds[0]
+        print_colored(f"  {_safe_emoji('📊')} CSV mode - all funds available: {', '.join(available_funds)}", Colors.CYAN)
+    
+    else:  # hybrid
+        # For hybrid, we don't need to switch funds since it handles fallbacks
+        print_colored(f"  {_safe_emoji('📊')} Hybrid mode - will try Supabase first, then CSV fallback", Colors.CYAN)
+    
+    # Update configuration
+    try:
+        import json
+        config_file = Path("repository_config.json")
+        
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        else:
+            config = {"repository": {"type": "csv"}}
+        
+        # Ensure web_dashboard section exists
+        if "web_dashboard" not in config:
+            config["web_dashboard"] = {}
+        
+        config["web_dashboard"]["data_source"] = new_data_source
+        config["web_dashboard"]["_comment"] = "Options: 'supabase', 'csv', 'hybrid'. Hybrid tries Supabase first, CSV fallback for missing funds."
+        
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        data_source_names = {"csv": "CSV Files", "supabase": "Supabase Database", "hybrid": "Hybrid Mode"}
+        print_colored(f"\n{_safe_emoji('✅')} Data source updated to: {data_source_names[new_data_source]}", Colors.GREEN)
+        
+        # Switch fund if needed
+        if recommended_fund and recommended_fund != current_fund and new_data_source in ["supabase", "csv"]:
+            try:
+                from utils.fund_ui import FundUI
+                fund_ui = FundUI()
+                if fund_ui.fund_manager.set_active_fund(recommended_fund):
+                    print_colored(f"{_safe_emoji('✅')} Switched to fund: {recommended_fund}", Colors.GREEN)
+                else:
+                    print_colored(f"❌ Failed to switch to fund: {recommended_fund}", Colors.RED)
+            except Exception as e:
+                print_colored(f"⚠️  Could not switch fund automatically: {e}", Colors.YELLOW)
+                print_colored(f"  You may need to manually switch to a compatible fund", Colors.YELLOW)
+        
+        print_colored(f"\n{_safe_emoji('📋')} Changes will take effect:", Colors.CYAN)
+        print_colored("  - Immediately for new web dashboard sessions", Colors.CYAN)
+        print_colored("  - After restart for existing sessions", Colors.CYAN)
+        
+        if new_data_source == "supabase":
+            print_colored(f"\n{_safe_emoji('📊')} Supabase Mode Active:", Colors.GREEN + Colors.BOLD)
+            print_colored(f"  - Available funds: {', '.join(available_funds)}", Colors.GREEN)
+            print_colored(f"  - Active fund: {recommended_fund or 'None'}", Colors.GREEN)
+        
+    except Exception as e:
+        print_colored(f"❌ Error updating configuration: {e}", Colors.RED)
+    
+    input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+
+def get_data_source_info() -> str:
+    """Get information about the current data source configuration"""
+    try:
+        import json
+        config_file = Path("repository_config.json")
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            
+            # Check web dashboard configuration
+            web_config = config.get("web_dashboard", {})
+            data_source = web_config.get("data_source", "hybrid")
+            
+            # Check if Supabase is actually available
+            supabase_available = False
+            try:
+                from web_dashboard.supabase_client import SupabaseClient
+                import os
+                if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                    client = SupabaseClient()
+                    supabase_available = client.test_connection()
+            except Exception:
+                pass
+            
+            if data_source == "csv":
+                return f"{_safe_emoji('📊')} Data Source: CSV Files"
+            elif data_source == "supabase":
+                if supabase_available:
+                    return f"{_safe_emoji('📊')} Data Source: Supabase Database {_safe_emoji('✅')}"
+                else:
+                    return f"{_safe_emoji('📊')} Data Source: Supabase Database ❌ (Not Available)"
+            else:  # hybrid
+                if supabase_available:
+                    return f"{_safe_emoji('📊')} Data Source: Hybrid (Supabase + CSV fallback) {_safe_emoji('✅')}"
+                else:
+                    return f"{_safe_emoji('📊')} Data Source: Hybrid (CSV only - Supabase unavailable) ⚠️"
+        
+    except Exception as e:
+        return f"{_safe_emoji('📊')} Data Source: Unknown (Error: {e})"
+    
+    return f"{_safe_emoji('📊')} Data Source: CSV Files (Default)"
+
 def main() -> None:
     """Main application loop"""
     print_colored(f"{_safe_emoji('🚀')} Initializing LLM Micro-Cap Trading Bot...", Colors.GREEN)
@@ -435,11 +689,15 @@ def main() -> None:
         from utils.fund_ui import get_current_fund_info
         fund_info = get_current_fund_info()
         if fund_info["exists"]:
-            print_colored(f"📁 Using fund data folder: {fund_info['data_directory']}", Colors.CYAN)
+            print_colored(f"{_safe_emoji('📁')} Using fund data folder: {fund_info['data_directory']}", Colors.CYAN)
         else:
-            print_colored("📁 No active fund configured - please set up a fund first", Colors.YELLOW)
+            print_colored(f"{_safe_emoji('📁')} No active fund configured - please set up a fund first", Colors.YELLOW)
     except ImportError:
-        print_colored("📁 Fund management not available - using legacy mode", Colors.YELLOW)
+        print_colored(f"{_safe_emoji('📁')} Fund management not available - using legacy mode", Colors.YELLOW)
+    
+    # Show data source information
+    data_source_info = get_data_source_info()
+    print_colored(data_source_info, Colors.CYAN)
     
     # Ensure legacy directories exist for backward compatibility
     LEGACY_MY_TRADING_DIR.mkdir(exist_ok=True)
@@ -462,9 +720,21 @@ def main() -> None:
             print_colored("\n👋 Thanks for using LLM Micro-Cap Trading Bot!", Colors.GREEN)
             break
         
+        elif choice == "r":
+            print_colored(f"\n{_safe_emoji('🔄')} Restarting the application...", Colors.YELLOW)
+            print_colored("Please wait while the application restarts...", Colors.CYAN)
+            # Exit with code 42 to signal restart
+            sys.exit(42)
+        
         elif choice == "c":
             handle_configuration()
             # Refresh options after configuration changes (fund switching, etc.)
+            options = get_menu_options()
+            continue
+
+        elif choice == "f":
+            handle_fund_switch()
+            # Refresh options after fund switching
             options = get_menu_options()
             continue
 

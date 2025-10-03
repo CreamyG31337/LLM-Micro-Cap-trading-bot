@@ -23,15 +23,17 @@ class SupabaseRepository(BaseRepository):
     uses Supabase as the backend storage.
     """
     
-    def __init__(self, supabase_url: str = None, supabase_key: str = None):
+    def __init__(self, url: str = None, key: str = None, fund: str = None, **kwargs):
         """Initialize Supabase repository.
         
         Args:
-            supabase_url: Supabase project URL
-            supabase_key: Supabase anon key
+            url: Supabase project URL
+            key: Supabase anon key
+            fund: Fund name (optional)
         """
-        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
-        self.supabase_key = supabase_key or os.getenv("SUPABASE_ANON_KEY")
+        self.supabase_url = url or os.getenv("SUPABASE_URL")
+        self.supabase_key = key or os.getenv("SUPABASE_ANON_KEY")
+        self.fund = fund or "Project Chimera"
         
         if not self.supabase_url or not self.supabase_key:
             raise RepositoryError("Supabase URL and key must be provided")
@@ -101,7 +103,7 @@ class SupabaseRepository(BaseRepository):
             logger.error(f"Failed to get portfolio data: {e}")
             raise RepositoryError(f"Failed to get portfolio data: {e}")
     
-    def save_portfolio_data(self, snapshot: PortfolioSnapshot) -> None:
+    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
         """Save portfolio data to Supabase.
         
         Args:
@@ -134,7 +136,7 @@ class SupabaseRepository(BaseRepository):
             logger.error(f"Failed to save portfolio data: {e}")
             raise RepositoryError(f"Failed to save portfolio data: {e}")
     
-    def get_trade_history(self, date_range: Optional[Tuple[datetime, datetime]] = None) -> List[Trade]:
+    def get_trade_history(self, ticker: Optional[str] = None, date_range: Optional[Tuple[datetime, datetime]] = None) -> List[Trade]:
         """Get trade history from Supabase.
         
         Args:
@@ -322,3 +324,71 @@ class SupabaseRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to save cash balances: {e}")
             raise RepositoryError(f"Failed to save cash balances: {e}")
+    
+    def get_latest_portfolio_snapshot(self) -> Optional[PortfolioSnapshot]:
+        """Get the most recent portfolio snapshot."""
+        try:
+            result = self.supabase.table("portfolio_positions").select("*").order("date", desc=True).limit(1).execute()
+            
+            if not result.data:
+                return None
+            
+            # Convert to PortfolioSnapshot
+            # This is a simplified implementation
+            return self.get_portfolio_data()[-1] if self.get_portfolio_data() else None
+            
+        except Exception as e:
+            logger.error(f"Failed to get latest portfolio snapshot: {e}")
+            raise RepositoryError(f"Failed to get latest portfolio snapshot: {e}")
+    
+    def get_positions_by_ticker(self, ticker: str) -> List[Position]:
+        """Get all positions for a specific ticker across time."""
+        try:
+            result = self.supabase.table("portfolio_positions").select("*").eq("ticker", ticker).execute()
+            
+            positions = []
+            for row in result.data:
+                position = Position(
+                    ticker=row["ticker"],
+                    shares=Decimal(str(row["shares"])),
+                    price=Decimal(str(row["price"])),
+                    cost_basis=Decimal(str(row["cost_basis"])),
+                    pnl=Decimal(str(row["pnl"])),
+                    currency=row.get("currency", "USD"),
+                    date=datetime.fromisoformat(row["date"].replace("Z", "+00:00"))
+                )
+                positions.append(position)
+            
+            return positions
+            
+        except Exception as e:
+            logger.error(f"Failed to get positions by ticker: {e}")
+            raise RepositoryError(f"Failed to get positions by ticker: {e}")
+    
+    def restore_from_backup(self, backup_path: str) -> None:
+        """Restore data from a backup."""
+        # This would need to be implemented based on backup format
+        logger.warning("Data restore from backup not implemented yet")
+        raise RepositoryError("Data restore from backup not implemented yet")
+    
+    def validate_data_integrity(self) -> List[str]:
+        """Validate data integrity and return list of issues found."""
+        issues = []
+        
+        try:
+            # Check if portfolio positions exist
+            result = self.supabase.table("portfolio_positions").select("id").limit(1).execute()
+            if not result.data:
+                issues.append("No portfolio positions found")
+            
+            # Check if trade log exists
+            result = self.supabase.table("trade_log").select("id").limit(1).execute()
+            if not result.data:
+                issues.append("No trade log found")
+            
+            # Add more validation checks as needed
+            
+        except Exception as e:
+            issues.append(f"Database connection error: {e}")
+        
+        return issues

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Repository Switch Utility
-Switch between CSV and Supabase repositories with a simple command
+Simple Repository Switch Utility
+Switch between CSV and Supabase repositories without emojis
 """
 
 import os
@@ -16,11 +16,7 @@ def create_config_file(repo_type: str, **kwargs):
         config = {
             "repository": {
                 "type": "csv",
-                "csv": {
-                    "data_directory": kwargs.get("data_directory", "trading_data/funds/Project Chimera"),
-                    "backup_enabled": True,
-                    "backup_retention_days": 30
-                }
+                "data_directory": kwargs.get("data_directory", "trading_data/funds/Project Chimera")
             }
         }
     elif repo_type == "supabase":
@@ -61,7 +57,7 @@ def switch_to_csv(data_directory: str = None):
 
 def switch_to_supabase(supabase_url: str = None, supabase_key: str = None, fund: str = None):
     """Switch to Supabase repository."""
-    print("🔄 Switching to Supabase repository...")
+    print("Switching to Supabase repository...")
     
     if not supabase_url:
         supabase_url = os.getenv("SUPABASE_URL")
@@ -69,7 +65,7 @@ def switch_to_supabase(supabase_url: str = None, supabase_key: str = None, fund:
         supabase_key = os.getenv("SUPABASE_ANON_KEY")
     
     if not supabase_url or not supabase_key:
-        print("❌ Supabase URL and key must be provided")
+        print("ERROR: Supabase URL and key must be provided")
         print("   Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables")
         return None
     
@@ -86,7 +82,7 @@ def switch_to_supabase(supabase_url: str = None, supabase_key: str = None, fund:
     with open(config_file, "w") as f:
         json.dump(config, f, indent=2)
     
-    print(f"✅ Switched to Supabase repository")
+    print(f"OK: Switched to Supabase repository")
     print(f"   Supabase URL: {supabase_url}")
     print(f"   Fund: {fund}")
     print(f"   Config saved to: {config_file}")
@@ -95,7 +91,7 @@ def switch_to_supabase(supabase_url: str = None, supabase_key: str = None, fund:
 
 def test_repository():
     """Test the current repository configuration."""
-    print("🧪 Testing repository configuration...")
+    print("Testing repository configuration...")
     
     try:
         from data.repositories.repository_factory import RepositoryFactory
@@ -103,23 +99,23 @@ def test_repository():
         # Load configuration
         config_file = Path("repository_config.json")
         if not config_file.exists():
-            print("❌ No repository configuration found")
-            print("   Run: python switch_repository.py csv")
-            print("   Or: python switch_repository.py supabase")
+            print("ERROR: No repository configuration found")
+            print("   Run: python simple_repository_switch.py csv")
+            print("   Or: python simple_repository_switch.py supabase")
             return False
         
         with open(config_file, "r") as f:
             config = json.load(f)
         
         repo_type = config["repository"]["type"]
-        repo_config = config["repository"][repo_type]
+        repo_config = {k: v for k, v in config["repository"].items() if k != "type"}
         
         print(f"   Repository type: {repo_type}")
         print(f"   Configuration: {repo_config}")
         
         # Create repository instance
         repository = RepositoryFactory.create_repository(repo_type, **repo_config)
-        print(f"✅ Repository created successfully: {type(repository).__name__}")
+        print(f"OK: Repository created successfully: {type(repository).__name__}")
         
         # Test basic operations
         if repo_type == "csv":
@@ -133,16 +129,16 @@ def test_repository():
             try:
                 # Test basic connection
                 result = repository.supabase.table("portfolio_positions").select("id").limit(1).execute()
-                print(f"   ✅ Supabase connection successful")
+                print(f"   OK: Supabase connection successful")
             except Exception as e:
-                print(f"   ❌ Supabase connection failed: {e}")
+                print(f"   ERROR: Supabase connection failed: {e}")
                 return False
         
-        print("✅ Repository test passed")
+        print("OK: Repository test passed")
         return True
         
     except Exception as e:
-        print(f"❌ Repository test failed: {e}")
+        print(f"ERROR: Repository test failed: {e}")
         return False
 
 def show_status():
@@ -152,9 +148,9 @@ def show_status():
     
     config_file = Path("repository_config.json")
     if not config_file.exists():
-        print("❌ No repository configuration found")
-        print("   Run: python switch_repository.py csv")
-        print("   Or: python switch_repository.py supabase")
+        print("ERROR: No repository configuration found")
+        print("   Run: python simple_repository_switch.py csv")
+        print("   Or: python simple_repository_switch.py supabase")
         return
     
     with open(config_file, "r") as f:
@@ -168,9 +164,9 @@ def show_status():
     
     # Test connection
     if test_repository():
-        print("✅ Repository is working")
+        print("OK: Repository is working")
     else:
-        print("❌ Repository has issues")
+        print("ERROR: Repository has issues")
 
 def main():
     """Main function."""
@@ -178,16 +174,16 @@ def main():
         print("Repository Switch Utility")
         print("=" * 30)
         print("Usage:")
-        print("  python switch_repository.py csv [data_directory]")
-        print("  python switch_repository.py supabase [url] [key] [fund]")
-        print("  python switch_repository.py test")
-        print("  python switch_repository.py status")
+        print("  python simple_repository_switch.py csv [data_directory]")
+        print("  python simple_repository_switch.py supabase [url] [key] [fund]")
+        print("  python simple_repository_switch.py test")
+        print("  python simple_repository_switch.py status")
         print("")
         print("Examples:")
-        print("  python switch_repository.py csv")
-        print("  python switch_repository.py csv 'trading_data/funds/TEST'")
-        print("  python switch_repository.py supabase")
-        print("  python switch_repository.py test")
+        print("  python simple_repository_switch.py csv")
+        print("  python simple_repository_switch.py csv 'trading_data/funds/TEST'")
+        print("  python simple_repository_switch.py supabase")
+        print("  python simple_repository_switch.py test")
         return
     
     command = sys.argv[1].lower()

@@ -6,7 +6,17 @@ Handles all database operations
 
 import os
 import json
-import pandas as pd
+
+# Check critical dependencies first
+try:
+    import pandas as pd
+except ImportError:
+    print("❌ ERROR: pandas not available")
+    print("🔔 SOLUTION: Activate the virtual environment first!")
+    print("   PowerShell: & '..\\venv\\Scripts\\Activate.ps1'")
+    print("   You should see (venv) in your prompt when activated.")
+    raise ImportError("pandas not available. Activate virtual environment.")
+
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
@@ -19,10 +29,11 @@ load_dotenv()
 try:
     from supabase import create_client, Client
 except ImportError:
-    print("Installing supabase client...")
-    import subprocess
-    subprocess.check_call(["pip", "install", "supabase"])
-    from supabase import create_client, Client
+    print("❌ ERROR: Supabase client not available")
+    print("🔔 SOLUTION: Activate the virtual environment first!")
+    print("   PowerShell: & '..\\venv\\Scripts\\Activate.ps1'")
+    print("   You should see (venv) in your prompt when activated.")
+    raise ImportError("Supabase client not available. Activate virtual environment.")
 
 logger = logging.getLogger(__name__)
 
@@ -218,35 +229,30 @@ class SupabaseClient:
     def get_daily_performance_data(self, days: int = 30) -> List[Dict]:
         """Get daily performance data for charting"""
         try:
-            # Get positions grouped by date
-            result = self.supabase.table("portfolio_positions").select(
-                "date, ticker, shares, price, cost_basis, pnl, total_value"
-            ).gte("date", (datetime.now() - pd.Timedelta(days=days)).isoformat()).execute()
+            # Get performance metrics data
+            result = self.supabase.table("performance_metrics").select(
+                "date, total_value, cost_basis, unrealized_pnl, performance_pct"
+            ).gte("date", (datetime.now() - pd.Timedelta(days=days)).isoformat()).order("date").execute()
             
             if not result.data:
                 return []
             
-            # Group by date and calculate daily totals
+            # Process performance metrics data - return as DataFrame-like structure
             df = pd.DataFrame(result.data)
             df["date"] = pd.to_datetime(df["date"]).dt.date
+            df["performance_index"] = df["performance_pct"] + 100
             
+            # Return as list of dictionaries with the exact format the chart expects
             daily_data = []
-            for date, group in df.groupby("date"):
-                current_positions = group[group["shares"] > 0]
-                if not current_positions.empty:
-                    total_value = current_positions["total_value"].sum()
-                    total_cost_basis = current_positions["cost_basis"].sum()
-                    unrealized_pnl = current_positions["pnl"].sum()
-                    performance_pct = (unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
-                    
-                    daily_data.append({
-                        "date": date.isoformat(),
-                        "total_value": round(total_value, 2),
-                        "cost_basis": round(total_cost_basis, 2),
-                        "unrealized_pnl": round(unrealized_pnl, 2),
-                        "performance_pct": round(performance_pct, 2),
-                        "performance_index": round(performance_pct + 100, 2)
-                    })
+            for _, row in df.iterrows():
+                daily_data.append({
+                    "date": row["date"],
+                    "performance_index": round(float(row["performance_index"]), 2),
+                    "total_value": round(float(row["total_value"]), 2),
+                    "cost_basis": round(float(row["cost_basis"]), 2),
+                    "unrealized_pnl": round(float(row["unrealized_pnl"]), 2),
+                    "performance_pct": round(float(row["performance_pct"]), 2)
+                })
             
             return sorted(daily_data, key=lambda x: x["date"])
             

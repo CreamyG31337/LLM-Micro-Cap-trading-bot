@@ -14,11 +14,16 @@ from typing import Optional
 def _can_handle_unicode() -> bool:
     """Check if the current environment can handle Unicode characters."""
     try:
-        # Test encoding a common emoji and box drawing character
-        test_emoji = "📊"
-        test_box = "┌"
-        test_emoji.encode(sys.stdout.encoding or 'utf-8')
-        test_box.encode(sys.stdout.encoding or 'utf-8')
+        # Get the current encoding
+        encoding = sys.stdout.encoding or 'utf-8'
+        
+        # Check if encoding supports Unicode
+        if encoding.lower() in ['cp1252', 'latin1', 'ascii']:
+            return False
+        
+        # Test encoding a simple Unicode character using escape sequence
+        test_char = "\U0001f4c8"  # 📈 emoji using escape sequence
+        test_char.encode(encoding)
         
         # Additional check for Windows Terminal vs Command Prompt
         import os
@@ -48,45 +53,45 @@ _FORCE_COLORAMA_ONLY = os.environ.get("FORCE_COLORAMA_ONLY", "").lower() in ("tr
 
 def _safe_emoji(emoji: str) -> str:
     """Return emoji if supported, otherwise return a safe alternative."""
-    try:
-        # Test if we can encode the emoji
-        emoji.encode(sys.stdout.encoding or 'utf-8')
-        return emoji
-    except (UnicodeEncodeError, LookupError):
+    # Check if we can handle Unicode first
+    if not _can_handle_unicode():
         # Return safe alternatives for common emojis
         emoji_map = {
             "🔥": "*",
             "🚀": ">>",
-            "💼": "[P]",
+            "💼": "[PORT]",
             "⚡": "!",
-            "📊": "[S]",
+            "📊": "[STATS]",
             "💰": "$",
-            "🛒": "[B]",
-            "📤": "[S]",
+            "🛒": "[BUY]",
+            "📤": "[SELL]",
             "💵": "$",
             "💸": "-$",
             "🔄": "~",
             "🔗": "&",
-            "💾": "[B]",
+            "💾": "[BACKUP]",
             "❌": "X",
-            "📋": "[L]",
+            "📋": "[LIST]",
             "🔷": "◆",
             "✅": "OK",
             "⚠️": "!",
-            "ℹ️": "i",
+            "ℹ️": "INFO",
             "🤖": "[AI]",
             "➤": "->",
-            "🎯": "[T]",
-            "🏢": "[C]",
-            "📅": "[D]",
+            "🎯": "[TARGET]",
+            "🏢": "[COMPANY]",
+            "📅": "[DATE]",
             "📈": "[^]",
-            "🍕": "[W]",
-            "🛑": "[!]",
-            "💹": "[P]",
-            "👥": "[O]",
-            "🏦": "[E]"
+            "🍕": "[WORK]",
+            "🛑": "[STOP]",
+            "💹": "[PROFIT]",
+            "👥": "[ORG]",
+            "🏦": "[BANK]"
         }
         return emoji_map.get(emoji, "*")
+    
+    # If we can handle Unicode, return the emoji
+    return emoji
 
 # Color and formatting imports with fallback handling
 try:

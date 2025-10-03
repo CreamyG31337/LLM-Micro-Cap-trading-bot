@@ -793,6 +793,92 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
         logger.error(error_msg, exc_info=True)
 
 
+def switch_repository_workflow() -> None:
+    """Handle repository switching workflow (CSV/Supabase)."""
+    try:
+        print_header("Switch Repository", _safe_emoji("🔄"))
+        
+        # Check current repository status
+        try:
+            from simple_repository_switch import show_status
+            print_info("Current repository status:")
+            show_status()
+        except Exception as e:
+            print_warning(f"Could not get current status: {e}")
+        
+        print()
+        print_info("Available repositories:")
+        print("  [1] CSV (Local files)")
+        print("  [2] Supabase (Cloud database)")
+        print()
+        
+        # Get user selection
+        try:
+            choice = input("Select repository (1-2) or 'q' to cancel: ").strip().lower()
+            
+            if choice == 'q':
+                print_info("Repository switching cancelled")
+                return
+            
+            if choice == '1':
+                print_info("Switching to CSV repository...")
+                import subprocess
+                import sys
+                result = subprocess.run([sys.executable, "simple_repository_switch.py", "csv"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    print_success("Successfully switched to CSV repository")
+                    print_info("You can now use local CSV files for data storage")
+                else:
+                    print_error(f"Failed to switch to CSV: {result.stderr}")
+                    return
+                    
+            elif choice == '2':
+                print_info("Switching to Supabase repository...")
+                print_warning("Make sure environment variables are set:")
+                print("  SUPABASE_URL and SUPABASE_ANON_KEY")
+                
+                confirm = input("Continue with Supabase switch? (y/N): ").strip().lower()
+                if confirm != 'y':
+                    print_info("Supabase switching cancelled")
+                    return
+                
+                import subprocess
+                import sys
+                result = subprocess.run([sys.executable, "simple_repository_switch.py", "supabase"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    print_success("Successfully switched to Supabase repository")
+                    print_info("You can now use cloud database for data storage")
+                else:
+                    print_error(f"Failed to switch to Supabase: {result.stderr}")
+                    return
+            else:
+                print_error("Invalid selection")
+                return
+                
+            # Test the new repository
+            print_info("Testing new repository...")
+            result = subprocess.run([sys.executable, "simple_repository_switch.py", "test"], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                print_success("Repository test passed")
+            else:
+                print_warning(f"Repository test had issues: {result.stderr}")
+                
+        except ValueError:
+            print_error("Invalid input. Please enter 1, 2, or 'q'")
+            return
+        except KeyboardInterrupt:
+            print_info("\nRepository switching cancelled")
+            return
+            
+    except Exception as e:
+        error_msg = f"Repository switching failed: {e}"
+        print_error(error_msg)
+        logger.error(error_msg, exc_info=True)
+
+
 def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, repository: BaseRepository, trading_interface: TradingInterface, fund_manager: FundManager = None, clear_caches: bool = False) -> None:
     """Run the main portfolio management workflow.
     
@@ -1826,6 +1912,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print(create_menu_line(f"{_safe_emoji('📊')} '0'       Backup Statistics"))
             print(create_menu_line(f"{_safe_emoji('🔄')} 'r'       Refresh Portfolio (clear cache)"))
             print(create_menu_line(f"{_safe_emoji('🏦')} 'f'       Switch Fund"))
+            print(create_menu_line(f"{_safe_emoji('🔄')} 'd'       Switch Repository (CSV/Supabase)"))
             print(create_menu_line(f"{_safe_emoji('🔧')} 'rebuild' Rebuild Portfolio from Trade Log"))
             print(create_menu_line(f"{_safe_emoji('📊')} 'o'       Sort Portfolio"))
             print(create_menu_line(f"{_safe_emoji('💾')} 'cache'   Manage Cache"))
@@ -1846,6 +1933,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print("| '0' [0] Backup Statistics                                   |")
             print("| 'r' ~ Refresh Portfolio (clear cache)                      |")
             print("| 'f' ~ Switch Fund                                           |")
+            print("| 'd' [D] Switch Repository (CSV/Supabase)                    |")
             print("| 'rebuild' [R] Rebuild Portfolio from Trade Log              |")
             print("| 'o' [O] Sort Portfolio                                      |")
             print(f"| 'cache' {_safe_emoji('💾')} Manage Cache                                     |")
@@ -1871,6 +1959,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     print_error("Fund manager not available")
                     return
                 switch_fund_workflow(args, settings, fund_manager)
+                return
+            elif action == 'd':
+                switch_repository_workflow()
                 return
             elif action == 'rebuild':
                 verify_script_before_action()

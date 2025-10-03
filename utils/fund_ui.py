@@ -7,7 +7,7 @@ through the command-line interface.
 from typing import Optional, List, Dict, Any
 import sys
 
-from display.console_output import print_success, print_error, print_warning, print_info, print_header
+from display.console_output import print_success, print_error, print_warning, print_info, print_header, _safe_emoji
 from utils.fund_manager import get_fund_manager, FundManager
 
 # Colors for consistent styling (matching run.py)
@@ -39,9 +39,11 @@ class FundUI:
         while True:
             self._display_fund_management_menu()
             
-            choice = input(f"\n{Colors.YELLOW}Select option (1-7): {Colors.ENDC}").strip()
+            choice = input(f"\n{Colors.YELLOW}Select option (1-6) or Enter to go back: {Colors.ENDC}").strip()
             
-            if choice == "1":
+            if choice == "" or choice == "enter":
+                break
+            elif choice == "1":
                 self._list_all_funds()
             elif choice == "2":
                 self._switch_active_fund()
@@ -53,12 +55,10 @@ class FundUI:
                 self._import_fund_data()
             elif choice == "6":
                 self._delete_fund()
-            elif choice == "7":
-                break
             else:
-                print_error("Invalid choice. Please select 1-7.")
+                print_error("Invalid choice. Please select 1-6 or press Enter to go back.")
             
-            if choice != "7":
+            if choice not in ["", "enter"]:
                 input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
     
     def _display_fund_management_menu(self) -> None:
@@ -66,22 +66,22 @@ class FundUI:
         active_fund = self.fund_manager.get_active_fund()
         active_display = f"Current Fund: {active_fund}" if active_fund else "No Active Fund"
         
-        print_colored("\n🏦 FUND MANAGEMENT", Colors.HEADER + Colors.BOLD)
+        print_colored(f"\n{_safe_emoji('🏦')} FUND MANAGEMENT", Colors.HEADER + Colors.BOLD)
         print_colored("=" * 40, Colors.HEADER)
         print_colored(f"{active_display}", Colors.GREEN + Colors.BOLD)
         print_colored("=" * 40, Colors.HEADER)
         
-        print_colored("\n[1] 📋 List All Funds", Colors.CYAN)
-        print_colored("[2] 🔄 Switch Active Fund", Colors.CYAN)
-        print_colored("[3] ➕ Create New Fund", Colors.CYAN)
-        print_colored("[4] ⚙️  Edit Fund Settings", Colors.CYAN)
-        print_colored("[5] 📁 Import Fund Data", Colors.CYAN)
-        print_colored("[6] 🗑️  Delete Fund", Colors.CYAN)
-        print_colored("[7] 🔙 Back to Configuration", Colors.CYAN)
+        print_colored(f"\n[1] {_safe_emoji('📋')} List All Funds", Colors.CYAN)
+        print_colored(f"[2] {_safe_emoji('🔄')} Switch Active Fund", Colors.CYAN)
+        print_colored(f"[3] {_safe_emoji('➕')} Create New Fund", Colors.CYAN)
+        print_colored(f"[4] {_safe_emoji('⚙️')} Edit Fund Settings", Colors.CYAN)
+        print_colored(f"[5] {_safe_emoji('📁')} Import Fund Data", Colors.CYAN)
+        print_colored(f"[6] {_safe_emoji('🗑️')} Delete Fund", Colors.CYAN)
+        print_colored(f"Enter - {_safe_emoji('🔙')} Back to Configuration", Colors.CYAN)
     
     def _list_all_funds(self) -> None:
         """List all available funds with detailed information."""
-        print_header("📋 Available Funds")
+        print_header(f"{_safe_emoji('📋')} Available Funds")
         
         funds = self.fund_manager.get_available_funds()
         if not funds:
@@ -99,15 +99,15 @@ class FundUI:
             is_active = fund_info["is_active"]
             
             # Display fund header
-            status = "🟢 ACTIVE" if is_active else "⚪ Inactive"
+            status = f"{_safe_emoji('🟢')} ACTIVE" if is_active else f"{_safe_emoji('⚪')} Inactive"
             print_colored(f"\n{status} {fund_name}", Colors.BOLD + (Colors.GREEN if is_active else Colors.CYAN))
             print_colored("-" * (len(fund_name) + 10), Colors.HEADER)
             
             # Display fund details
-            print(f"  📄 Description: {config.get('description', 'N/A')}")
-            print(f"  💰 Currency: {config.get('display_currency', 'N/A')}")
-            print(f"  🏷️  Type: {config.get('fund_type', 'N/A')}")
-            print(f"  📅 Created: {config.get('created_date', 'N/A')[:10]}")
+            print(f"  {_safe_emoji('📄')} Description: {config.get('description', 'N/A')}")
+            print(f"  {_safe_emoji('💰')} Currency: {config.get('display_currency', 'N/A')}")
+            print(f"  {_safe_emoji('🏷️')} Type: {config.get('fund_type', 'N/A')}")
+            print(f"  {_safe_emoji('📅')} Created: {config.get('created_date', 'N/A')[:10]}")
             
             # Display data file status
             files = fund_info["files"]
@@ -115,13 +115,13 @@ class FundUI:
             trades_exists = files.get("llm_trade_log.csv", {}).get("exists", False)
             cash_exists = files.get("cash_balances.json", {}).get("exists", False)
             
-            print(f"  📊 Portfolio: {'✅' if portfolio_exists else '❌'}")
-            print(f"  📈 Trades: {'✅' if trades_exists else '❌'}")
-            print(f"  💵 Cash: {'✅' if cash_exists else '❌'}")
+            print(f"  {_safe_emoji('📊')} Portfolio: {_safe_emoji('✅') if portfolio_exists else _safe_emoji('❌')}")
+            print(f"  {_safe_emoji('📈')} Trades: {_safe_emoji('✅') if trades_exists else _safe_emoji('❌')}")
+            print(f"  {_safe_emoji('💵')} Cash: {_safe_emoji('✅') if cash_exists else _safe_emoji('❌')}")
     
     def _switch_active_fund(self) -> None:
         """Allow user to switch the active fund."""
-        print_header("🔄 Switch Active Fund")
+        print_header(f"{_safe_emoji('🔄')} Switch Active Fund")
         
         funds = self.fund_manager.get_available_funds()
         if not funds:
@@ -171,7 +171,7 @@ class FundUI:
     
     def _create_new_fund(self) -> None:
         """Interactive fund creation wizard."""
-        print_header("➕ Create New Fund")
+        print_header(f"{_safe_emoji('➕')} Create New Fund")
         
         # Get fund name
         while True:
@@ -330,7 +330,7 @@ class FundUI:
     
     def _edit_fund_settings(self) -> None:
         """Allow editing of fund settings."""
-        print_header("⚙️ Edit Fund Settings")
+        print_header(f"{_safe_emoji('⚙️')} Edit Fund Settings")
         
         funds = self.fund_manager.get_available_funds()
         if not funds:
@@ -600,7 +600,7 @@ class FundUI:
     
     def _import_fund_data(self) -> None:
         """Import data from external sources."""
-        print_header("📁 Import Fund Data")
+        print_header(f"{_safe_emoji('📁')} Import Fund Data")
         
         print("Available import options:")
         print("  [1] Import Webull Trade Data")
@@ -624,7 +624,7 @@ class FundUI:
     
     def _import_webull_data(self) -> None:
         """Import Webull trade data."""
-        print_header("📈 Import Webull Trade Data")
+        print_header(f"{_safe_emoji('📈')} Import Webull Trade Data")
         
         # Get CSV file path
         csv_path = input(f"{Colors.YELLOW}Enter path to Webull CSV file: {Colors.ENDC}").strip()

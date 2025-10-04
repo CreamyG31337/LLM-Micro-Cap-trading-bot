@@ -13,13 +13,20 @@ The portfolio performance graph uses a sophisticated normalization system to ens
   - Portfolio value: Actual invested amount (e.g., $76,205.76)
   - Purpose: Shows real performance from first investment
 
-### 2. Benchmark Normalization
+### 2. Performance Normalization
 - **Baseline Date**: Uses the first actual trading day (not the baseline day)
-- **Normalization**: Benchmarks are normalized to start at exactly $100
-- **Rationale**: Ensures fair comparison by starting both portfolio and benchmarks from the same reference point
+- **Fund Normalization**: Fund performance is adjusted so first trading day starts at 0% (Performance Index 100)
+- **Benchmark Normalization**: Benchmarks are normalized to start at exactly $100 on first trading day  
+- **Rationale**: Ensures fair comparison by starting both fund and benchmarks from the same reference point (100)
 
 ### 3. Performance Index Calculation
 ```python
+# Fund Performance Normalization (NEW)
+# Adjust performance so first trading day starts at 0% (Performance Index 100)
+first_day_performance = llm_totals.loc[first_trading_day_idx, "Performance_Pct"]
+adjustment = -first_day_performance
+llm_totals["Performance_Pct"] = llm_totals["Performance_Pct"] + adjustment
+
 # Portfolio Performance Index
 llm_totals["Performance_Index"] = llm_totals["Performance_Pct"] + 100
 
@@ -33,10 +40,10 @@ benchmark_data[column_name] = benchmark_data["Close"] * scaling_factor
 ```
 Date        Portfolio Value    Portfolio Index    Benchmark Index
 2025-08-24  $0.00 (baseline)  100.00 (baseline)  N/A (weekend)
-2025-08-25  $75,865.76       99.55 (-0.45%)     100.00 (baseline)
-2025-08-26  $89,086.77       99.74 (-0.26%)     100.15 (+0.15%)
+2025-08-25  $75,865.76       100.00 (0.00%)     100.00 (baseline)
+2025-08-26  $89,086.77       100.19 (+0.19%)    100.15 (+0.15%)
 ...
-2025-09-22  $230,003.07      106.17 (+6.17%)     105.50 (+5.50%)
+2025-09-22  $230,003.07      106.62 (+6.62%)     105.50 (+5.50%)
 ```
 
 ## Key Benefits

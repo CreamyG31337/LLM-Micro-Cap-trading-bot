@@ -29,11 +29,16 @@ class PositionMapper:
     @staticmethod
     def model_to_db(position: Any, fund: str, timestamp: datetime) -> Dict[str, Any]:
         """Convert Position model to database format."""
+        # Use current_price if available, otherwise fall back to avg_price
+        price = float(position.current_price) if position.current_price is not None else float(position.avg_price)
+        
         return {
             'ticker': position.ticker,
+            'company': position.company,
             'shares': float(position.shares),
-            'avg_price': float(position.avg_price),
+            'price': price,  # Current market price (or avg_price if current not available)
             'cost_basis': float(position.cost_basis),
+            'pnl': float(position.unrealized_pnl or position.calculated_unrealized_pnl),
             'currency': position.currency,
             'fund': fund,
             'date': timestamp.isoformat(),
@@ -45,12 +50,43 @@ class PositionMapper:
         """Convert database row to Position model."""
         from ..models.portfolio import Position
 
+        # Handle avg_price field - use 'avg_price' if available (from views), otherwise calculate from cost_basis
+        avg_price = row.get('avg_price')
+        if avg_price is None:
+            # Calculate avg_price from cost_basis and shares (DON'T use 'price' field - that's current price!)
+            shares = Decimal(str(row.get('shares', row.get('total_shares', 0))))
+            cost_basis = Decimal(str(row.get('cost_basis', row.get('total_cost_basis', 0))))
+            avg_price = cost_basis / shares if shares > 0 else Decimal('0')
+        else:
+            avg_price = Decimal(str(avg_price))
+
+        # Handle market_value and current_price mapping
+        market_value = row.get('total_market_value') or row.get('market_value')
+        current_price = row.get('current_price') or row.get('price')  # Also check 'price' field
+
+        # If we don't have current_price but have market_value and shares, calculate it
+        if current_price is None and market_value is not None:
+            shares = Decimal(str(row.get('shares', row.get('total_shares', 0))))
+            if shares > 0:
+                current_price = Decimal(str(market_value)) / shares
+
+        # Handle pnl mapping (use pnl field from database)
+        pnl = row.get('pnl')
+
+        # Handle company field
+        company = row.get('company')
+
         return Position(
             ticker=row['ticker'],
-            shares=Decimal(str(row['shares'])),
-            avg_price=Decimal(str(row['avg_price'])),
-            cost_basis=Decimal(str(row['cost_basis'])),
-            currency=row.get('currency', 'CAD')
+            shares=Decimal(str(row.get('shares', row.get('total_shares', 0)))),
+            avg_price=avg_price,
+            cost_basis=Decimal(str(row.get('cost_basis', row.get('total_cost_basis', 0)))),
+            currency=row.get('currency', 'CAD'),
+            company=company,
+            current_price=Decimal(str(current_price)) if current_price is not None else None,
+            market_value=Decimal(str(market_value)) if market_value is not None else None,
+            unrealized_pnl=Decimal(str(pnl)) if pnl is not None else None,
+            stop_loss=None  # Not stored in database
         )
 
 
@@ -65,6 +101,9 @@ class TradeMapper:
             'action': trade.action,
             'shares': float(trade.shares),
             'price': float(trade.price),
+            'cost_basis': float(trade.cost_basis) if trade.cost_basis else 0.0,
+            'pnl': float(trade.pnl) if trade.pnl else 0.0,
+            'reason': trade.reason or '',
             'currency': trade.currency,
             'fund': fund,
             'date': trade.timestamp.isoformat(),
@@ -76,13 +115,26 @@ class TradeMapper:
         """Convert database row to Trade model."""
         from ..models.trade import Trade
 
+        # Handle missing 'action' field - derive from reason or other indicators
+        action = row.get('action')
+        if not action:
+            # Try to derive action from reason field
+            reason = row.get('reason', '').lower()
+            if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
+                action = 'SELL'
+            else:
+                action = 'BUY'  # Default to BUY for trades
+
         return Trade(
             ticker=row['ticker'],
-            action=row['action'],
+            action=action,
             shares=Decimal(str(row['shares'])),
             price=Decimal(str(row['price'])),
             currency=row.get('currency', 'CAD'),
-            timestamp=TypeTransformers.iso_to_datetime(row['date'])
+            timestamp=TypeTransformers.iso_to_datetime(row['date']),
+            cost_basis=Decimal(str(row.get('cost_basis', 0))) if row.get('cost_basis') else None,
+            pnl=Decimal(str(row.get('pnl', 0))) if row.get('pnl') else None,
+            reason=row.get('reason')
         )
 
 
@@ -135,14 +187,14 @@ class SnapshotMapper:
         # Convert positions to domain models
         position_objects = [PositionMapper.db_to_model(pos) for pos in positions]
 
-        # Calculate totals
-        total_value = sum(pos.cost_basis for pos in position_objects)
-        total_shares = sum(pos.shares for pos in position_objects)
-
-        return PortfolioSnapshot(
+        # Create snapshot and calculate totals
+        snapshot = PortfolioSnapshot(
             timestamp=timestamp,
-            positions=position_objects,
-            total_value=total_value,
-            total_shares=total_shares,
-            fund=positions[0].get('fund', 'Unknown') if positions else 'Unknown'
+            positions=position_objects
         )
+
+        # Calculate and set totals
+        snapshot.total_value = snapshot.calculate_total_value()
+        snapshot.total_shares = snapshot.calculate_total_shares()
+
+        return snapshot

@@ -15,7 +15,7 @@ import sys
 # Add the parent directory to the path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.fund_manager import FundManager
+from utils.fund_manager import FundManager, get_fund_manager, invalidate_fund_manager_cache
 from utils.fund_ui import FundUI
 from config.settings import get_settings
 
@@ -75,16 +75,89 @@ class TestFundManager(unittest.TestCase):
         # Create two funds
         self.fund_manager.create_fund("Fund A", "investment")
         self.fund_manager.create_fund("Fund B", "tfsa")
-        
+
         # Switch to Fund A
         result = self.fund_manager.set_active_fund("Fund A")
         self.assertTrue(result)
         self.assertEqual(self.fund_manager.get_active_fund(), "Fund A")
-        
+
         # Switch to Fund B
         result = self.fund_manager.set_active_fund("Fund B")
         self.assertTrue(result)
         self.assertEqual(self.fund_manager.get_active_fund(), "Fund B")
+
+    def test_fund_manager_cache_invalidation(self):
+        """Test that fund manager cache invalidation works correctly after switching funds.
+
+        This test prevents regression of the issue where fund switching would update
+        the local fund manager instance but not invalidate the global cache, causing
+        other parts of the system to still see the old active fund.
+        """
+        # Use the global fund manager for this test
+        global_fund_manager = get_fund_manager()
+
+        # Get the current active fund before making changes
+        original_active_fund = global_fund_manager.get_active_fund()
+
+        # Create test funds if they don't exist
+        available_funds = global_fund_manager.get_available_funds()
+        if "Test Fund A" not in available_funds:
+            global_fund_manager.create_fund("Test Fund A", "investment")
+        if "Test Fund B" not in available_funds:
+            global_fund_manager.create_fund("Test Fund B", "tfsa")
+
+        # Set initial active fund
+        global_fund_manager.set_active_fund("Test Fund A")
+        self.assertEqual(global_fund_manager.get_active_fund(), "Test Fund A")
+
+        # Switch to the other fund
+        global_fund_manager.set_active_fund("Test Fund B")
+        self.assertEqual(global_fund_manager.get_active_fund(), "Test Fund B")
+
+        # Test cache invalidation function
+        # The cache invalidation should force creation of a new fund manager instance
+        # that reads the active fund from the file system
+        invalidate_fund_manager_cache()
+
+        # After invalidation, get_fund_manager() should return a new instance
+        # that correctly reads the active fund from the file
+        new_fund_manager = get_fund_manager()
+        self.assertEqual(new_fund_manager.get_active_fund(), "Test Fund B")
+
+        # Clean up - reset to original active fund for other tests
+        try:
+            if original_active_fund:
+                global_fund_manager.set_active_fund(original_active_fund)
+            else:
+                # If no original fund, try to set to a known fund or clear it
+                try:
+                    global_fund_manager.set_active_fund("Project Chimera")
+                except:
+                    pass  # Ignore if fund doesn't exist
+        except:
+            pass  # Ignore cleanup errors
+
+    def test_fund_manager_methods_exist(self):
+        """Test that FundManager has all required methods for fund switching.
+
+        This test prevents regression of missing method errors that could occur
+        during fund switching operations.
+        """
+        # Test that required methods exist
+        required_methods = [
+            'set_active_fund',
+            'get_active_fund',
+            'create_fund',
+            'get_available_funds',
+            'get_fund_config',
+            'get_fund_data_directory'
+        ]
+
+        for method_name in required_methods:
+            self.assertTrue(hasattr(self.fund_manager, method_name),
+                          f"FundManager missing required method: {method_name}")
+            self.assertTrue(callable(getattr(self.fund_manager, method_name)),
+                          f"FundManager method {method_name} is not callable")
     
     def test_get_fund_list(self):
         """Test getting list of available funds."""

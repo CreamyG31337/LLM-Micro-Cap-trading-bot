@@ -1,0 +1,26 @@
+{
+  "fund": {
+    "name": "Test Fund A",
+    "description": "INVESTMENT Investment Portfolio",
+    "display_currency": "CAD",
+    "fund_type": "investment",
+    "created_date": "2025-10-03T17:07:22.198310",
+    "tax_status": "taxable"
+  },
+  "repository": {
+    "type": "csv",
+    "csv": {
+      "data_directory": "trading_data/funds/Test Fund A"
+    }
+  },
+  "market_data": {
+    "primary_source": "yahoo",
+    "fallback_source": "stooq",
+    "cache_enabled": true
+  },
+  "backup": {
+    "enabled": true,
+    "directory": "backups",
+    "max_backups": 10
+  }
+}

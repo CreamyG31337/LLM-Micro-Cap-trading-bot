@@ -7,9 +7,16 @@ import yfinance as yf
 from pathlib import Path
 import sys
 import argparse
+import json
+import os
 from decimal import Decimal
+from dotenv import load_dotenv
 sys.path.append(str(Path(__file__).parent.parent))
 from display.console_output import _safe_emoji
+from data.repositories.repository_factory import RepositoryFactory
+
+# Load environment variables
+load_dotenv(Path(__file__).parent.parent / 'web_dashboard' / '.env')
 
 # Command line argument parsing
 def parse_arguments():
@@ -39,10 +46,113 @@ def parse_arguments():
         choices=['sp500', 'qqq', 'russell2000', 'vti', 'all'],
         help='Benchmark to compare against (default: qqq - Nasdaq-100, all: show all benchmarks)'
     )
+    parser.add_argument(
+        '--fund',
+        type=str,
+        default=None,
+        help='Fund name for repository-based data loading (default: auto-detect)'
+    )
     return parser.parse_args()
 
 # Parse arguments early
 args = parse_arguments()
+
+def get_data_source_config() -> str:
+    """Get the configured data source from repository config"""
+    try:
+        config_file = Path("repository_config.json")
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            return config.get("web_dashboard", {}).get("data_source", "hybrid")
+    except Exception:
+        pass
+    return "hybrid"  # Default fallback
+
+def load_portfolio_from_repository(fund_name: str = None) -> pd.DataFrame:
+    """Load portfolio data from repository (Supabase or CSV based on config)"""
+    try:
+        data_source = get_data_source_config()
+        print(f"{_safe_emoji('🔧')} Using data source: {data_source}")
+        
+        if data_source == "csv":
+            # Use CSV loading logic (existing behavior)
+            return load_portfolio_from_csv()
+        elif data_source == "supabase":
+            # Use Supabase repository
+            return load_portfolio_from_supabase(fund_name)
+        else:  # hybrid
+            # Try Supabase first, fallback to CSV
+            try:
+                return load_portfolio_from_supabase(fund_name)
+            except Exception as e:
+                print(f"{_safe_emoji('⚠️')} Supabase failed, falling back to CSV: {e}")
+                return load_portfolio_from_csv()
+    except Exception as e:
+        print(f"{_safe_emoji('❌')} Repository loading failed: {e}")
+        return load_portfolio_from_csv()
+
+def load_portfolio_from_csv() -> pd.DataFrame:
+    """Load portfolio data from CSV (original behavior)"""
+    llm_df = pd.read_csv(PORTFOLIO_CSV)
+    print(f"{_safe_emoji('📊')} Loaded portfolio data from CSV with {len(llm_df)} rows")
+    return llm_df
+
+def load_portfolio_from_supabase(fund_name: str = None) -> pd.DataFrame:
+    """Load portfolio data from Supabase repository"""
+    # Check Supabase credentials
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if not supabase_url or not supabase_key:
+        raise Exception("Missing Supabase credentials")
+    
+    # Create repository
+    repository = RepositoryFactory.create_repository(
+        'supabase',
+        url=supabase_url,
+        key=supabase_key,
+        fund=fund_name
+    )
+    
+    # Get portfolio data
+    snapshots = repository.get_portfolio_data()
+    
+    if not snapshots:
+        raise Exception("No portfolio data found in Supabase")
+    
+    # Convert snapshots to DataFrame format compatible with graph generator
+    all_positions = []
+    for snapshot in snapshots:
+        if hasattr(snapshot, 'positions') and snapshot.positions:
+            for position in snapshot.positions:
+                # Get current price, fallback to avg_price if not available
+                current_price_raw = getattr(position, 'current_price', None) or position.avg_price
+                current_price = float(current_price_raw) if current_price_raw is not None else float(position.avg_price)
+                shares_float = float(position.shares)
+                
+                pos_dict = {
+                    'Date': snapshot.timestamp,
+                    'Ticker': position.ticker,
+                    'Shares': shares_float,
+                    'Average Price': float(position.avg_price),
+                    'Cost Basis': float(position.cost_basis),
+                    'PnL': float(getattr(position, 'unrealized_pnl', 0) or getattr(position, 'pnl', 0) or 0),
+                    'Currency': position.currency,
+                    'Company': getattr(position, 'company', ''),
+                    'Total Value': shares_float * current_price,
+                    'Current Price': current_price,
+                    'Stop Loss': float(getattr(position, 'stop_loss', 0) or 0),
+                    'Action': 'HOLD'  # Default action for historical data
+                }
+                all_positions.append(pos_dict)
+    
+    if not all_positions:
+        raise Exception("No individual positions found in Supabase snapshots")
+    
+    df = pd.DataFrame(all_positions)
+    print(f"{_safe_emoji('📊')} Loaded portfolio data from Supabase with {len(df)} rows")
+    return df
 
 # Data directory resolution logic
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -230,7 +340,18 @@ def open_graph_file(file_path: Path) -> None:
 
 def load_portfolio_totals() -> pd.DataFrame:
     """Load portfolio equity history and calculate daily totals from individual positions."""
-    llm_df = pd.read_csv(PORTFOLIO_CSV)
+    # Use repository-based loading (respects config settings)
+    # Priority: 1) --fund argument, 2) fund name from data directory, 3) default
+    global fund_name
+    if args.fund:
+        fund_to_load = args.fund
+    elif 'fund_name' in globals() and fund_name:
+        fund_to_load = fund_name
+    else:
+        fund_to_load = "Project Chimera"  # Default fallback
+    
+    print(f"{_safe_emoji('📊')} Loading data for fund: {fund_to_load}")
+    llm_df = load_portfolio_from_repository(fund_to_load)
     
     # IMPORTANT: Portfolio refresh uses the same centralized logic as the main trading system
     # The graph generation intelligently refreshes data when needed (e.g., during market hours
@@ -399,6 +520,21 @@ def load_portfolio_totals() -> pd.DataFrame:
     llm_totals = pd.DataFrame(daily_snapshots)
     print(f"{_safe_emoji('📈')} Calculated {len(llm_totals)} daily portfolio totals")
 
+    # Normalize fund performance to start at 100 on first trading day (same as benchmarks)
+    # Find the first actual trading day (not the baseline day)
+    first_trading_day_idx = llm_totals[llm_totals["Cost_Basis"] > 0].index.min() if len(llm_totals[llm_totals["Cost_Basis"] > 0]) > 0 else 0
+    
+    if first_trading_day_idx is not None and not pd.isna(first_trading_day_idx):
+        # Get the performance percentage on the first trading day
+        first_day_performance = llm_totals.loc[first_trading_day_idx, "Performance_Pct"]
+        
+        # Adjust all performance percentages so the first trading day starts at 0% (index 100)
+        # This ensures fund and benchmarks start at the same baseline
+        adjustment = -first_day_performance
+        llm_totals["Performance_Pct"] = llm_totals["Performance_Pct"] + adjustment
+        
+        print(f"{_safe_emoji('🎯')} Normalized fund performance: first trading day adjusted from {first_day_performance:+.2f}% to 0.00% (baseline)")
+    
     llm_totals["Performance_Index"] = llm_totals["Performance_Pct"] + 100
     
     start_invested = llm_totals["Cost_Basis"].iloc[0]

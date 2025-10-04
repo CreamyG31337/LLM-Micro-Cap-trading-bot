@@ -35,8 +35,21 @@ CREATE TABLE portfolio_positions (
     currency VARCHAR(10) NOT NULL DEFAULT 'USD',
     date TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    -- Additional fields to match Position model expectations
+    unrealized_pnl DECIMAL(10, 2) DEFAULT 0,
+    stop_loss DECIMAL(10, 2) DEFAULT NULL,
+    current_price DECIMAL(10, 2) DEFAULT NULL,
+    avg_price DECIMAL(10, 2) GENERATED ALWAYS AS (cost_basis / NULLIF(shares, 0)) STORED
 );
+
+-- Migration: Add missing columns to existing portfolio_positions table (if upgrading)
+-- This should be run after creating the new table structure
+ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS company VARCHAR(255);
+ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS unrealized_pnl DECIMAL(10, 2) DEFAULT 0;
+ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS stop_loss DECIMAL(10, 2) DEFAULT NULL;
+ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS current_price DECIMAL(10, 2) DEFAULT NULL;
+ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS avg_price DECIMAL(10, 2) GENERATED ALWAYS AS (cost_basis / NULLIF(shares, 0)) STORED;
 
 -- Trade log table
 CREATE TABLE trade_log (
@@ -44,6 +57,7 @@ CREATE TABLE trade_log (
     fund VARCHAR(50) NOT NULL,
     date TIMESTAMP WITH TIME ZONE NOT NULL,
     ticker VARCHAR(20) NOT NULL,
+    action VARCHAR(10) NOT NULL DEFAULT 'BUY',  -- BUY/SELL/HOLD
     shares DECIMAL(15, 6) NOT NULL,
     price DECIMAL(10, 2) NOT NULL,
     cost_basis DECIMAL(10, 2) NOT NULL,
@@ -52,6 +66,9 @@ CREATE TABLE trade_log (
     currency VARCHAR(10) NOT NULL DEFAULT 'USD',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Migration: Add action column to existing trade_log table (if upgrading)
+ALTER TABLE trade_log ADD COLUMN IF NOT EXISTS action VARCHAR(10) NOT NULL DEFAULT 'BUY';
 
 -- Cash balances table
 CREATE TABLE cash_balances (
@@ -135,6 +152,7 @@ SELECT
     fund,
     ticker,
     currency,
+    MAX(company) as company,
     SUM(shares) as total_shares,
     AVG(price) as avg_price,
     SUM(cost_basis) as total_cost_basis,

@@ -67,7 +67,8 @@ from data.models.portfolio import PortfolioSnapshot
 
 # Business logic modules
 from portfolio.portfolio_manager import PortfolioManager
-from portfolio.fund_manager import FundManager, Fund
+from utils.fund_manager import get_fund_manager, invalidate_fund_manager_cache
+from portfolio.fund_manager import FundManager as ConfigFundManager
 from portfolio.fifo_trade_processor import FIFOTradeProcessor
 from portfolio.position_calculator import PositionCalculator
 from portfolio.trading_interface import TradingInterface
@@ -190,6 +191,13 @@ def initialize_repository(settings: Settings, fund: Optional[Fund] = None) -> Ba
             repo_config = {**repo_config, 'fund': fund.name}
 
         repository_type = repo_config.get('type', 'csv')
+
+        # Force Supabase if configured or environment variable set
+        force_supabase = repo_config.get('force_supabase', False) or os.getenv('REPOSITORY_TYPE') == 'supabase'
+        if force_supabase and repository_type != 'supabase':
+            logger.info("Forcing Supabase repository as per configuration or environment variable")
+            repository_type = 'supabase'
+            repo_config = {**repo_config, 'type': 'supabase'}
 
         logger.info(f"Initializing {repository_type} repository for fund: {repo_config.get('fund', 'N/A')}")
 
@@ -412,8 +420,15 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Setup logging
         setup_logging(settings)
 
-        # Initialize Fund Manager
-        fund_manager = FundManager(Path('funds.yml'))
+        # Initialize Fund Manager for fund configuration loading
+        config_fund_manager = ConfigFundManager(Path('funds.yml'))
+
+        # Also initialize the active fund manager for fund switching functionality
+        from utils.fund_manager import FundManager as ActiveFundManager
+        import tempfile
+        temp_dir = Path(tempfile.gettempdir()) / "trading_data_active"
+        temp_dir.mkdir(exist_ok=True)
+        fund_manager = ActiveFundManager(temp_dir)
 
         # Check dependencies
         dependencies = check_dependencies()
@@ -424,23 +439,23 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Determine which fund to use
         if args.data_dir:
             # Find fund by data directory
-            fund_name = fund_manager.get_fund_by_data_directory(args.data_dir)
+            fund_name = config_fund_manager.get_fund_by_data_directory(args.data_dir)
             if fund_name:
-                fund = fund_manager.get_fund_by_id(fund_name)
+                fund = config_fund_manager.get_fund_by_id(fund_name)
                 if not fund:
                     raise InitializationError(f"Fund '{fund_name}' not found in funds.yml")
                 print_warning(f"Command line data directory override: {args.data_dir}")
                 print_info(f"Using fund: {Path(args.data_dir).name}")
             else:
                 # Data directory doesn't match any fund, use default but override directory
-                fund = fund_manager.get_fund_by_id('default')
+                fund = config_fund_manager.get_fund_by_id('default')
                 if not fund:
                     raise InitializationError("Default fund not found in funds.yml")
                 print_warning(f"Command line data directory override: {args.data_dir}")
                 print_warning(f"Data directory doesn't match any fund, using default fund: {fund.name}")
         else:
             # Use default fund
-            fund = fund_manager.get_fund_by_id('default')
+            fund = config_fund_manager.get_fund_by_id('default')
             if not fund:
                 raise InitializationError("Default fund not found in funds.yml")
 
@@ -733,13 +748,15 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
     Args:
         args: Parsed command-line arguments
         settings: System settings
-        fund_manager: Fund manager instance
+        fund_manager: Active fund manager instance (for set_active_fund functionality)
     """
     try:
         print_header("Switch Fund", _safe_emoji("🏦"))
 
-        # Get available funds
-        funds = fund_manager.get_all_funds()
+        # Get available funds from the config fund manager
+        from portfolio.fund_manager import FundManager as ConfigFundManager
+        config_fund_manager = ConfigFundManager(Path('funds.yml'))
+        funds = config_fund_manager.get_all_funds()
         if not funds:
             print_error("No funds available")
             return
@@ -790,6 +807,12 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
 
             # Re-initialize components with new fund
             initialize_components(settings, new_repository, check_dependencies(), selected_fund)
+
+            # Update fund manager's active fund
+            fund_manager.set_active_fund(selected_fund.name)
+
+            # Invalidate the global fund manager cache to ensure all instances pick up the new active fund
+            invalidate_fund_manager_cache()
 
             # Update global references
             global repository, portfolio_manager
@@ -1143,9 +1166,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             else:
                 pos_dict['position_weight'] = "N/A"
 
-            # Add total_pnl field for sorting (maps to unrealized_pnl from position)
-            if position.unrealized_pnl is not None:
-                pos_dict['total_pnl'] = f"${position.unrealized_pnl:.2f}"
+            # Add total_pnl field for sorting (use calculated unrealized_pnl)
+            calculated_pnl = position.calculated_unrealized_pnl
+            if calculated_pnl != 0:
+                pos_dict['total_pnl'] = f"${calculated_pnl:.2f}"
             else:
                 pos_dict['total_pnl'] = "$0.00"
 
@@ -1778,7 +1802,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Determine if the Webull FX fee should be applied for display
             try:
-                from utils.fund_manager import get_fund_manager
                 fund_manager_utils = get_fund_manager()
                 data_dir_name = Path(settings.get_data_directory()).name
                 fund_config = fund_manager_utils.get_fund_config(data_dir_name)

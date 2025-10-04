@@ -43,22 +43,9 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
 # Configure CORS to allow credentials from Vercel deployment
-# Using regex pattern to match all Vercel deployment URLs
-import re
-
-def is_allowed_origin(origin):
-    """Check if origin is allowed for CORS"""
-    allowed_patterns = [
-        r"^https://webdashboard.*\.vercel\.app$",  # All Vercel deployments
-        r"^https://.*-creamyg31337s-projects\.vercel\.app$",  # Project deployments
-        r"^http://localhost:5000$",  # Local development
-        r"^http://127\.0\.0\.1:5000$"  # Local development (IP)
-    ]
-    return any(re.match(pattern, origin) for pattern in allowed_patterns)
-
 CORS(app, 
      supports_credentials=True,
-     origins=is_allowed_origin,  # Dynamic origin validation
+     origins=["https://webdashboard-hazel.vercel.app", "http://localhost:5000"],
      allow_headers=["Content-Type", "Authorization"],
      expose_headers=["Content-Type"])
 

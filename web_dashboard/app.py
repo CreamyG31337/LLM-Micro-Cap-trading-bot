@@ -45,7 +45,11 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 # Configure CORS to allow credentials from Vercel deployment
 CORS(app, 
      supports_credentials=True,
-     origins=["https://webdashboard-hazel.vercel.app", "http://localhost:5000"],
+     origins=[
+         "https://webdashboard-azy5ubsb5-creamyg31337s-projects.vercel.app",
+         "https://webdashboard-hazel.vercel.app",  # Legacy URL
+         "http://localhost:5000"
+     ],
      allow_headers=["Content-Type", "Authorization"],
      expose_headers=["Content-Type"])
 

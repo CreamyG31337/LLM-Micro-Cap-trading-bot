@@ -33,6 +33,7 @@ import plotly.utils
 from typing import Dict, List, Optional, Tuple
 import logging
 import requests
+from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +41,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
+
+# Configure CORS to allow credentials from Vercel deployment
+CORS(app, 
+     supports_credentials=True,
+     origins=["https://webdashboard-hazel.vercel.app", "http://localhost:5000"],
+     allow_headers=["Content-Type", "Authorization"],
+     expose_headers=["Content-Type"])
 
 # Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
@@ -491,7 +499,16 @@ def login():
             })
             
             # Set the session token as a cookie
-            response.set_cookie('session_token', session_token, max_age=86400, httponly=True, secure=False)
+            # Use secure cookies for production (Vercel), allow non-secure for local dev
+            is_production = request.host != 'localhost:5000' and not request.host.startswith('127.0.0.1')
+            response.set_cookie(
+                'session_token', 
+                session_token, 
+                max_age=86400, 
+                httponly=True, 
+                secure=is_production,  # True for HTTPS (Vercel), False for localhost
+                samesite='None' if is_production else 'Lax'  # None required for cross-origin cookies
+            )
             
             return response
         else:
@@ -568,7 +585,14 @@ def register():
 def logout():
     """Handle user logout"""
     response = jsonify({"message": "Logged out successfully"})
-    response.set_cookie('session_token', '', expires=0)
+    is_production = request.host != 'localhost:5000' and not request.host.startswith('127.0.0.1')
+    response.set_cookie(
+        'session_token', 
+        '', 
+        expires=0,
+        secure=is_production,
+        samesite='None' if is_production else 'Lax'
+    )
     return response
 
 # =====================================================

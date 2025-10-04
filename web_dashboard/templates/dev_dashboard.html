@@ -6,7 +6,7 @@
     <title>Developer Dashboard - Trading Bot</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -146,7 +146,7 @@
         async function loadDashboardData() {
             try {
                 // Load performance data
-                const performanceResponse = await fetch('/api/export/performance');
+                const performanceResponse = await fetch('/api/export/performance', { credentials: 'include' });
                 const performanceData = await performanceResponse.json();
                 
                 if (performanceData.success) {
@@ -155,7 +155,7 @@
                 }
 
                 // Load recent trades
-                const tradesResponse = await fetch('/api/export/trades?limit=10');
+                const tradesResponse = await fetch('/api/export/trades?limit=10', { credentials: 'include' });
                 const tradesData = await tradesResponse.json();
                 
                 if (tradesData.success) {
@@ -163,7 +163,7 @@
                 }
 
                 // Load portfolio data
-                const portfolioResponse = await fetch('/api/export/portfolio');
+                const portfolioResponse = await fetch('/api/export/portfolio', { credentials: 'include' });
                 const portfolioData = await portfolioResponse.json();
                 
                 if (portfolioData.success) {
@@ -171,7 +171,7 @@
                 }
 
                 // Load cash balances
-                const cashResponse = await fetch('/api/export/cash');
+                const cashResponse = await fetch('/api/export/cash', { credentials: 'include' });
                 const cashData = await cashResponse.json();
                 
                 if (cashData.success) {

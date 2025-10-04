@@ -81,6 +81,35 @@
 
 ---
 
+## ⚠️ Dependency Warnings
+
+### Issue: Outdated Plotly CDN Link
+
+**Problem**: Console warning about using `plotly-latest.min.js` which is stuck at v1.58.5 (July 2021).
+
+**Warning Message**:
+```
+WARNING: plotly-latest.min.js and plotly-latest.js are NO LONGER 
+the latest releases of plotly.js. They are v1.58.5 (released July 2021)
+```
+
+**Root Cause**: Using the `plotly-latest` CDN link which no longer updates automatically.
+
+**Solution**: Update to explicit version number.
+
+**Code Changes Made**:
+- `templates/index.html`: Changed to `plotly-2.27.0.min.js` (latest stable)
+- `templates/dev_dashboard.html`: Changed to `plotly-2.27.0.min.js`
+
+**Impact**: 
+- Removes console warning
+- Access to latest Plotly features and bug fixes
+- Better performance and security
+
+**Maintenance**: Check https://github.com/plotly/plotly.js/releases periodically for updates.
+
+---
+
 ## 📊 Data Analysis Findings
 
 ### Portfolio Spike Analysis (September 2nd)

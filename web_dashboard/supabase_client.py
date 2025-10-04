@@ -226,27 +226,32 @@ class SupabaseClient:
                 "losing_trades": 0
             }
     
-    def get_daily_performance_data(self, days: int = 30) -> List[Dict]:
-        """Get daily performance data for charting"""
+    def get_daily_performance_data(self, days: int = 30, fund: Optional[str] = None) -> List[Dict]:
+        """Get daily performance data for charting, optionally filtered by fund"""
         try:
             # Get performance metrics data
-            result = self.supabase.table("performance_metrics").select(
-                "date, total_value, cost_basis, unrealized_pnl, performance_pct"
-            ).gte("date", (datetime.now() - pd.Timedelta(days=days)).isoformat()).order("date").execute()
+            query = self.supabase.table("performance_metrics").select(
+                "date, total_value, cost_basis, unrealized_pnl, performance_pct, fund"
+            ).gte("date", (datetime.now() - pd.Timedelta(days=days)).isoformat()).order("date")
+            
+            if fund:
+                query = query.eq("fund", fund)
+            
+            result = query.execute()
             
             if not result.data:
                 return []
             
             # Process performance metrics data - return as DataFrame-like structure
             df = pd.DataFrame(result.data)
-            df["date"] = pd.to_datetime(df["date"]).dt.date
+            df["date"] = pd.to_datetime(df["date"])
             df["performance_index"] = df["performance_pct"] + 100
             
             # Return as list of dictionaries with the exact format the chart expects
             daily_data = []
             for _, row in df.iterrows():
                 daily_data.append({
-                    "date": row["date"],
+                    "date": row["date"].strftime('%Y-%m-%d'),  # Convert to string for JSON serialization
                     "performance_index": round(float(row["performance_index"]), 2),
                     "total_value": round(float(row["total_value"]), 2),
                     "cost_basis": round(float(row["cost_basis"]), 2),

@@ -791,7 +791,18 @@ def main() -> None:
                     if benchmark == "back":
                         continue  # Return to main menu
                     args.extend(["--benchmark", benchmark])
-                    print_colored(f"\n{_safe_emoji('📊')} Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
+                    
+                    # Get the current fund name and pass it to the graph script
+                    try:
+                        from utils.fund_ui import get_current_fund_info
+                        fund_info = get_current_fund_info()
+                        if fund_info["exists"] and fund_info["name"]:
+                            args.extend(["--fund", fund_info["name"]])
+                            print_colored(f"\n{_safe_emoji('📊')} Generating graph for fund: {fund_info['name']} with {benchmark.upper()} benchmark...", Colors.CYAN)
+                        else:
+                            print_colored(f"\n{_safe_emoji('📊')} Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
+                    except ImportError:
+                        print_colored(f"\n{_safe_emoji('📊')} Generating graph with {benchmark.upper()} benchmark...", Colors.CYAN)
                 
                 # Special handling for prompt generator
                 elif choice == "d":

@@ -432,3 +432,46 @@ class SupabaseRepository(BaseRepository):
             issues.append(f"Database connection error: {e}")
         
         return issues
+
+    def get_current_positions(self, fund: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get current portfolio positions, optionally filtered by fund.
+
+        This method returns aggregated data from the current_positions view,
+        compatible with web dashboard expectations.
+        """
+        try:
+            # Use provided fund or default to repository's fund
+            target_fund = fund or self.fund
+            query = self.supabase.table("current_positions").select("*")
+            if target_fund:
+                query = query.eq("fund", target_fund)
+            result = query.execute()
+            return result.data
+        except Exception as e:
+            logger.error(f"Failed to get current positions: {e}")
+            raise RepositoryError(f"Failed to get current positions: {e}")
+
+    def get_trade_log(self, limit: int = 1000, fund: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get recent trade log entries, optionally filtered by fund."""
+        try:
+            # Use provided fund or default to repository's fund
+            target_fund = fund or self.fund
+            query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
+            if target_fund:
+                query = query.eq("fund", target_fund)
+            result = query.execute()
+            return result.data
+        except Exception as e:
+            logger.error(f"Failed to get trade log: {e}")
+            raise RepositoryError(f"Failed to get trade log: {e}")
+
+    def get_available_funds(self) -> List[str]:
+        """Get list of available funds in the database."""
+        try:
+            # Get unique fund names from portfolio_positions table
+            result = self.supabase.table("portfolio_positions").select("fund").execute()
+            funds = list(set(row['fund'] for row in result.data if row.get('fund')))
+            return sorted(funds)
+        except Exception as e:
+            logger.error(f"Failed to get available funds: {e}")
+            raise RepositoryError(f"Failed to get available funds: {e}")

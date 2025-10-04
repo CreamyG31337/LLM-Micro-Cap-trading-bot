@@ -44,10 +44,11 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 # Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
 
-# Import Supabase client and auth
+# Import Supabase client, auth, and repository system
 try:
     from supabase_client import SupabaseClient
     from auth import auth_manager, require_auth, require_admin, get_user_funds, is_admin
+    from data.repositories.repository_factory import RepositoryFactory
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     logger.error(f"Failed to import required modules: {e}")
@@ -147,63 +148,77 @@ def load_portfolio_data(fund_name=None) -> Dict:
         
         elif data_source == "supabase":
             logger.info("Configured for Supabase-only mode")
-            client = get_supabase_client()
-            if not client:
-                logger.error("Supabase not available but configured as data source")
-                return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": [], "current_fund": None, "error": "Supabase not available"}
-            
-            # Get available funds
-            available_funds = client.get_available_funds()
-            if fund_name and fund_name not in available_funds:
-                logger.warning(f"Fund '{fund_name}' not found in Supabase")
-                return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": available_funds, "current_fund": None, "error": f"Fund '{fund_name}' not found"}
-            
-            # Get data from Supabase (filtered by fund if specified)
-            positions = client.get_current_positions(fund=fund_name)
-            trades = client.get_trade_log(limit=1000, fund=fund_name)
-            cash_balances = client.get_cash_balances(fund=fund_name)
+            try:
+                # Use repository system for consistency
+                repository = RepositoryFactory.create_repository(
+                    'supabase',
+                    url=os.getenv("SUPABASE_URL"),
+                    key=os.getenv("SUPABASE_ANON_KEY"),
+                    fund=fund_name
+                )
 
-            # Convert to DataFrames for compatibility with existing code
-            portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-            trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
+                # Get available funds
+                available_funds = repository.get_available_funds()
+                if fund_name and fund_name not in available_funds:
+                    logger.warning(f"Fund '{fund_name}' not found in Supabase")
+                    return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": available_funds, "current_fund": None, "error": f"Fund '{fund_name}' not found"}
 
-            return {
-                "portfolio": portfolio_df,
-                "trades": trades_df,
-                "cash_balances": cash_balances,
-                "available_funds": available_funds,
-                "current_fund": fund_name
-            }
+                # Get data from Supabase using repository (filtered by fund if specified)
+                positions = repository.get_current_positions(fund=fund_name)
+                trades = repository.get_trade_log(limit=1000, fund=fund_name)
+                cash_balances = repository.get_cash_balances()
+
+                # Convert to DataFrames for compatibility with existing code
+                portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
+                trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
+
+                return {
+                    "portfolio": portfolio_df,
+                    "trades": trades_df,
+                    "cash_balances": cash_balances,
+                    "available_funds": available_funds,
+                    "current_fund": fund_name
+                }
+            except Exception as e:
+                logger.error(f"Error using Supabase repository: {e}")
+                return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": [], "current_fund": None, "error": f"Supabase error: {e}"}
         
         else:  # hybrid mode (default)
             logger.info("Configured for hybrid mode (Supabase with CSV fallback)")
-            client = get_supabase_client()
-            if not client:
-                logger.warning("Supabase not available, falling back to CSV data")
+            try:
+                # Try to use repository system first
+                repository = RepositoryFactory.create_repository(
+                    'supabase',
+                    url=os.getenv("SUPABASE_URL"),
+                    key=os.getenv("SUPABASE_ANON_KEY"),
+                    fund=fund_name
+                )
+
+                # Get available funds
+                available_funds = repository.get_available_funds()
+                if fund_name and fund_name not in available_funds:
+                    logger.warning(f"Fund '{fund_name}' not found in Supabase, falling back to CSV")
+                    return load_csv_portfolio_data(fund_name)
+
+                # Get data from Supabase using repository (filtered by fund if specified)
+                positions = repository.get_current_positions(fund=fund_name)
+                trades = repository.get_trade_log(limit=1000, fund=fund_name)
+                cash_balances = repository.get_cash_balances()
+
+                # Convert to DataFrames for compatibility with existing code
+                portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
+                trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
+
+                return {
+                    "portfolio": portfolio_df,
+                    "trades": trades_df,
+                    "cash_balances": cash_balances,
+                    "available_funds": available_funds,
+                    "current_fund": fund_name
+                }
+            except Exception as e:
+                logger.warning(f"Supabase repository error, falling back to CSV data: {e}")
                 return load_csv_portfolio_data(fund_name)
-
-            # Get available funds
-            available_funds = client.get_available_funds()
-            if fund_name and fund_name not in available_funds:
-                logger.warning(f"Fund '{fund_name}' not found in Supabase, falling back to CSV")
-                return load_csv_portfolio_data(fund_name)
-
-            # Get data (filtered by fund if specified)
-            positions = client.get_current_positions(fund=fund_name)
-            trades = client.get_trade_log(limit=1000, fund=fund_name)
-            cash_balances = client.get_cash_balances(fund=fund_name)
-
-            # Convert to DataFrames for compatibility with existing code
-            portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-            trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
-
-            return {
-                "portfolio": portfolio_df,
-                "trades": trades_df,
-                "cash_balances": cash_balances,
-                "available_funds": available_funds,
-                "current_fund": fund_name
-            }
     except Exception as e:
         logger.error(f"Error loading portfolio data from Supabase, falling back to CSV: {e}")
         return load_csv_portfolio_data(fund_name)
@@ -303,8 +318,8 @@ def create_performance_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str
     try:
         client = get_supabase_client()
         if client:
-            # Use Supabase for chart data
-            daily_data = client.get_daily_performance_data(days=30)
+            # Use Supabase for chart data, filtered by fund
+            daily_data = client.get_daily_performance_data(days=30, fund=fund_name)
             if not daily_data:
                 return json.dumps({})
             
@@ -316,9 +331,7 @@ def create_performance_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str
             
             # Load exchange rates for currency conversion
             from utils.currency_converter import load_exchange_rates, convert_usd_to_cad, is_us_ticker
-            from pathlib import Path
             from decimal import Decimal
-            import json
             
             # Load exchange rates from common location (USD/CAD rates apply to all funds)
             exchange_rates_path = Path("trading_data/exchange_rates")
@@ -781,8 +794,8 @@ def api_portfolio():
                     'price': round(row['avg_price'], 2),
                     'cost_basis': round(row['total_cost_basis'], 2),
                     'market_value': round(row['total_market_value'], 2),
-                    'pnl': round(row['total_pnl'], 2),
-                    'pnl_pct': round((row['total_pnl'] / row['total_cost_basis'] * 100), 2) if row['total_cost_basis'] > 0 else 0
+                    'pnl': float(row['total_pnl']),
+                    'pnl_pct': float((row['total_pnl'] / row['total_cost_basis'] * 100)) if row['total_cost_basis'] > 0 else 0.0
                 })
         else:
             # CSV format fallback
@@ -1028,7 +1041,7 @@ def export_performance():
         
         # Get performance data
         performance_data = client.get_performance_metrics()
-        daily_data = client.get_daily_performance_data(days)
+        daily_data = client.get_daily_performance_data(days, fund=fund)
         
         return jsonify({
             "success": True,

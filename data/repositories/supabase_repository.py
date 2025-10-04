@@ -440,8 +440,9 @@ class SupabaseRepository(BaseRepository):
         compatible with web dashboard expectations.
         """
         try:
-            # Use provided fund or default to repository's fund
-            target_fund = fund or self.fund
+            # Use provided fund if explicitly given (including None for all funds)
+            # Empty string means "all funds" so treat it as None
+            target_fund = fund if fund else None
             query = self.supabase.table("current_positions").select("*")
             if target_fund:
                 query = query.eq("fund", target_fund)
@@ -454,8 +455,9 @@ class SupabaseRepository(BaseRepository):
     def get_trade_log(self, limit: int = 1000, fund: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get recent trade log entries, optionally filtered by fund."""
         try:
-            # Use provided fund or default to repository's fund
-            target_fund = fund or self.fund
+            # Use provided fund if explicitly given (including None for all funds)
+            # Empty string means "all funds" so treat it as None  
+            target_fund = fund if fund else None
             query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
             if target_fund:
                 query = query.eq("fund", target_fund)

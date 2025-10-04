@@ -1,6 +1,11 @@
 {
   "repository": {
-    "type": "supabase"
+    "type": "supabase",
+    "fund": "Project Chimera"
+  },
+  "trading_script": {
+    "data_source": "supabase",
+    "force_supabase": true
   },
   "web_dashboard": {
     "data_source": "hybrid",

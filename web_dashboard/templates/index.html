@@ -417,8 +417,11 @@
         // Handle fund selection change
         function setupFundSelection() {
             const fundSelect = document.getElementById('fund-select');
+            console.log('Setting up fund selection listener');
+            
             fundSelect.addEventListener('change', function() {
                 const selectedFund = this.value;
+                console.log('Fund changed to:', selectedFund);
 
                 // Update URL
                 const url = new URL(window.location);
@@ -429,9 +432,19 @@
                 }
                 window.history.pushState({}, '', url);
 
-                // Reload dashboard data
-                initDashboard();
+                // Reload dashboard data (don't reload funds)
+                reloadDashboardData();
             });
+        }
+
+        // Reload dashboard data without reloading funds list
+        async function reloadDashboardData() {
+            console.log('Reloading dashboard data for selected fund...');
+            await Promise.all([
+                loadPortfolioData(),
+                loadPerformanceChart(),
+                loadRecentTrades()
+            ]);
         }
 
         // Show error message
@@ -442,13 +455,18 @@
 
         // Initialize dashboard
         async function initDashboard() {
+            console.log('Initializing dashboard...');
+            // Load funds first (needed for dropdown to work)
+            await loadFunds();
+            
+            // Then load everything else in parallel
             await Promise.all([
-                loadFunds(),
                 loadPortfolioData(),
                 loadPerformanceChart(),
                 loadRecentTrades(),
                 checkAdminStatus()
             ]);
+            console.log('Dashboard initialized successfully');
         }
 
         // Auto-refresh every 5 minutes

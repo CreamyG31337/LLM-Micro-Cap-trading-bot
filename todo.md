@@ -19,6 +19,12 @@
 
 ## 🚀 NEXT PRIORITIES (Optional Enhancements)
 
+### 🐛 Bug Investigation & Data Quality (New - Oct 2025)
+- [ ] **Web Dashboard API Audit** - Check all endpoints for data source inconsistencies like performance chart issue
+- [ ] **Performance Metrics Automation** - Auto-populate performance_metrics table when new portfolio data added
+- [ ] **Data Validation System** - Ensure portfolio_positions and performance_metrics tables stay synchronized
+- [ ] **Integration Tests for Fund Filtering** - Test fund-specific queries across all web dashboard endpoints
+
 ### High Impact Features
 - [ ] **Enhanced Position Display** - Individual P&L percentages and performance metrics
 - [ ] **Basic Risk Metrics** - Portfolio concentration analysis and risk scores  

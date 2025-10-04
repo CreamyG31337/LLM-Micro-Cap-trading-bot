@@ -31,7 +31,7 @@ def get_real_performance_data():
             
             # Convert to DataFrame
             df = pd.DataFrame(positions)
-            df['date'] = pd.to_datetime(df['date'])
+            df['date'] = pd.to_datetime(df['date'], format='ISO8601')
             
             # Group by date to get daily portfolio values
             daily_data = []

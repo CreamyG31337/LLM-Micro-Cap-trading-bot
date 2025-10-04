@@ -1,0 +1,26 @@
+{
+  "fund": {
+    "name": "Test Fund B",
+    "description": "TFSA Investment Portfolio",
+    "display_currency": "CAD",
+    "fund_type": "tfsa",
+    "created_date": "2025-10-03T17:07:22.316057",
+    "tax_status": "tax_free"
+  },
+  "repository": {
+    "type": "csv",
+    "csv": {
+      "data_directory": "trading_data/funds/Test Fund B"
+    }
+  },
+  "market_data": {
+    "primary_source": "yahoo",
+    "fallback_source": "stooq",
+    "cache_enabled": true
+  },
+  "backup": {
+    "enabled": true,
+    "directory": "backups",
+    "max_backups": 10
+  }
+}

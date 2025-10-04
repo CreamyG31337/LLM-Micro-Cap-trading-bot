@@ -8,11 +8,10 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Any
 import json
 
-
 @dataclass
 class Position:
     """Represents a single position in the portfolio.
-    
+
     This model is designed to work with both CSV and database backends,
     supporting serialization to/from dictionaries for CSV rows and JSON.
     """
@@ -27,6 +26,26 @@ class Position:
     unrealized_pnl: Optional[Decimal] = None
     stop_loss: Optional[Decimal] = None
     position_id: Optional[str] = None  # For database primary key
+
+    @property
+    def calculated_unrealized_pnl(self) -> Decimal:
+        """Calculate unrealized P&L if not already set.
+
+        Returns:
+            Calculated unrealized P&L or 0 if cannot be calculated
+        """
+        if self.unrealized_pnl is not None:
+            return self.unrealized_pnl
+
+        # Try to calculate from market_value and cost_basis
+        if self.market_value is not None and self.cost_basis is not None:
+            return self.market_value - self.cost_basis
+
+        # Try to calculate from current_price, shares, and cost_basis
+        if self.current_price is not None and self.cost_basis is not None:
+            return (self.current_price * self.shares) - self.cost_basis
+
+        return Decimal('0')
     
     def __post_init__(self):
         """Convert string values to Decimal for financial fields."""
@@ -191,7 +210,7 @@ class Position:
 @dataclass
 class PortfolioSnapshot:
     """Represents a complete portfolio snapshot at a specific point in time.
-    
+
     This model aggregates all positions and metadata for a portfolio state,
     designed for both CSV and database storage.
     """
@@ -199,6 +218,7 @@ class PortfolioSnapshot:
     timestamp: datetime
     total_value: Optional[Decimal] = None
     cash_balance: Optional[Decimal] = None
+    total_shares: Optional[Decimal] = None
     snapshot_id: Optional[str] = None  # For database primary key
     
     def to_dict(self) -> Dict[str, Any]:
@@ -212,6 +232,7 @@ class PortfolioSnapshot:
             'timestamp': self.timestamp.isoformat(),
             'total_value': float(self.total_value) if self.total_value is not None else None,
             'cash_balance': float(self.cash_balance) if self.cash_balance is not None else None,
+            'total_shares': float(self.total_shares) if self.total_shares is not None else None,
             'snapshot_id': self.snapshot_id
         }
     
@@ -233,12 +254,13 @@ class PortfolioSnapshot:
             timestamp=timestamp,
             total_value=Decimal(str(data['total_value'])) if data.get('total_value') is not None else None,
             cash_balance=Decimal(str(data['cash_balance'])) if data.get('cash_balance') is not None else None,
+            total_shares=Decimal(str(data['total_shares'])) if data.get('total_shares') is not None else None,
             snapshot_id=data.get('snapshot_id')
         )
     
     def calculate_total_value(self) -> Decimal:
         """Calculate total portfolio value from positions.
-        
+
         Returns:
             Total value of all positions
         """
@@ -246,6 +268,17 @@ class PortfolioSnapshot:
         for position in self.positions:
             if position.market_value is not None:
                 total += position.market_value
+        return total
+
+    def calculate_total_shares(self) -> Decimal:
+        """Calculate total shares from positions.
+
+        Returns:
+            Total shares across all positions
+        """
+        total = Decimal('0')
+        for position in self.positions:
+            total += position.shares
         return total
     
     def get_position_by_ticker(self, ticker: str) -> Optional[Position]:

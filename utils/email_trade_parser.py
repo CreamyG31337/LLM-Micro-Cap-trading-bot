@@ -68,10 +68,6 @@ class EmailTradeParser:
                 r'Date:\s*([^\\n]+)',
                 r'Executed:\s*([^\\n]+)',
                 r'Fill time:\s*([^\\n]+)',
-            ],
-            'account': [
-                r'Account:\s*([^\\n]+)',
-                r'Account type:\s*([^\\n]+)',
             ]
         }
     

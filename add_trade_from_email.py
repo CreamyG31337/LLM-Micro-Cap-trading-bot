@@ -101,7 +101,6 @@ Examples:
             # Convert trade object back to email text for the parser
             # This ensures we use the proper processing flow that updates portfolio
             email_text = f"""
-Account: TFSA
 Type: {trade_obj.action}
 Symbol: {trade_obj.ticker}
 Shares: {trade_obj.shares}

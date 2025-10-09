@@ -1,192 +1,116 @@
 #!/usr/bin/env python3
-"""
-Fix Company Names in Portfolio CSV
-
-This script updates existing portfolio CSV files to replace "Unknown" company names
-with proper company names using our improved ticker lookup logic.
-"""
+"""Fix incorrect company names in Supabase database."""
 
 import sys
-import csv
-import argparse
-from pathlib import Path
-from typing import Dict, List
+import os
+from decimal import Decimal
+from datetime import datetime
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.repositories.supabase_repository import SupabaseRepository
 from utils.ticker_utils import get_company_name
-from display.console_output import print_success, print_error, print_warning, print_info
 
-
-def fix_portfolio_company_names(csv_file_path: str, dry_run: bool = False) -> Dict[str, int]:
-    """
-    Fix company names in portfolio CSV file.
+def fix_company_names():
+    """Fix incorrect company names in the database."""
+    print("🔧 Fixing Company Names in Supabase...")
     
-    Args:
-        csv_file_path: Path to the portfolio CSV file
-        dry_run: If True, only preview changes without applying them
-        
-    Returns:
-        Dictionary with statistics about the fixes applied
-    """
-    csv_path = Path(csv_file_path)
-    if not csv_path.exists():
-        print_error(f"CSV file not found: {csv_file_path}")
-        return {"error": 1}
+    # Set environment variables
+    os.environ["SUPABASE_URL"] = "https://injqbxdqyxfvannygadt.supabase.co"
+    os.environ["SUPABASE_ANON_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImluanFieGRxeXhmdmFubnlnYWR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyNjY1MjEsImV4cCI6MjA3Mzg0MjUyMX0.gcR-dNuW8zFd9werFRhM90Z3QvRdmjyPVlmIcQo_9fo"
     
-    # Read the CSV file
-    rows = []
-    unknown_tickers = set()
+    # Initialize Supabase repository
+    repository = SupabaseRepository(fund="TEST")
     
+    print("✅ Initialized Supabase repository")
+    
+    # Get current portfolio data
+    latest_snapshot = repository.get_latest_portfolio_snapshot()
+    if not latest_snapshot:
+        print("❌ No portfolio data found")
+        return False
+    
+    print(f"📊 Found {len(latest_snapshot.positions)} positions")
+    
+    # Check the actual company names for the problematic tickers
+    problematic_tickers = ["XMA", "DRX", "VEE", "XMA.TO", "DRX.TO", "VEE.TO", "CTRN"]
+    print("\n🔍 Current company names in database:")
+    found_tickers = []
+    for position in latest_snapshot.positions:
+        if position.ticker in problematic_tickers:
+            found_tickers.append(position.ticker)
+            print(f"   {position.ticker}: '{position.company}'")
+    
+    if not found_tickers:
+        print("   No problematic tickers found. Showing first 10 tickers:")
+        for i, position in enumerate(latest_snapshot.positions[:10]):
+            print(f"   {position.ticker}: '{position.company}'")
+    
+    # Also check for any tickers that might be the wrong ones
+    print("\n🔍 Looking for wrong company names:")
+    wrong_names = ["XTM Inc", "DRI Healthcare Trust", "Veeva Systems Inc", "Core & Main"]
+    for position in latest_snapshot.positions:
+        if position.company in wrong_names:
+            print(f"   FOUND WRONG: {position.ticker}: '{position.company}'")
+    
+    # Define the corrections needed
+    corrections = {
+        "XMA": "iShares S&P/TSX Capped Materials Index ETF",
+        "DRX": "ADF Group Inc.", 
+        "VEE": "Vanguard FTSE Emerging Markets All Cap Index ETF",
+        "CTRN": "Citi Trends, Inc."
+    }
+    
+    # Check which positions need fixing
+    positions_to_fix = []
+    for position in latest_snapshot.positions:
+        if position.ticker in corrections:
+            current_name = position.company or "Unknown"
+            correct_name = corrections[position.ticker]
+            if current_name != correct_name:
+                positions_to_fix.append((position.ticker, current_name, correct_name))
+                print(f"🔍 {position.ticker}: '{current_name}' → '{correct_name}'")
+    
+    if not positions_to_fix:
+        print("✅ All company names are already correct")
+        return True
+    
+    print(f"\n🔄 Fixing {len(positions_to_fix)} company names...")
+    
+    # Update each position with correct company name
+    for ticker, old_name, new_name in positions_to_fix:
+        try:
+            # Find the position in the snapshot
+            position = latest_snapshot.get_position_by_ticker(ticker)
+            if position:
+                # Update the company name
+                position.company = new_name
+                print(f"✅ Updated {ticker}: '{old_name}' → '{new_name}'")
+            else:
+                print(f"❌ Position not found for {ticker}")
+        except Exception as e:
+            print(f"❌ Failed to update {ticker}: {e}")
+    
+    # Save the updated snapshot
     try:
-        with open(csv_path, 'r', newline='', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            fieldnames = reader.fieldnames
-            
-            if 'Company' not in fieldnames or 'Ticker' not in fieldnames:
-                print_error("CSV file must have 'Company' and 'Ticker' columns")
-                return {"error": 1}
-            
-            for row in reader:
-                rows.append(row)
-                if row.get('Company', '').strip().lower() in ['unknown', '']:
-                    unknown_tickers.add(row['Ticker'])
-    
+        repository.save_portfolio_snapshot(latest_snapshot)
+        print("✅ Saved updated portfolio snapshot to Supabase")
     except Exception as e:
-        print_error(f"Error reading CSV file: {e}")
-        return {"error": 1}
+        print(f"❌ Failed to save updated snapshot: {e}")
+        return False
     
-    if not unknown_tickers:
-        print_info("No 'Unknown' company names found in the CSV file")
-        return {"no_changes": 1}
-    
-    print_info(f"Found {len(unknown_tickers)} tickers with 'Unknown' company names:")
-    for ticker in sorted(unknown_tickers):
-        print(f"  • {ticker}")
-    
-    # Look up company names for unknown tickers
-    ticker_to_company = {}
-    successful_lookups = 0
-    failed_lookups = 0
-    
-    print_info("Looking up company names...")
-    for ticker in sorted(unknown_tickers):
-        print(f"Looking up {ticker}...", end=" ")
-        company_name = get_company_name(ticker)
-        
-        if company_name and company_name != 'Unknown' and company_name != ticker:
-            ticker_to_company[ticker] = company_name
-            successful_lookups += 1
-            print(f"✅ {company_name}")
+    # Verify the changes
+    print("\n🔍 Verifying changes...")
+    updated_snapshot = repository.get_latest_portfolio_snapshot()
+    for ticker, old_name, new_name in positions_to_fix:
+        position = updated_snapshot.get_position_by_ticker(ticker)
+        if position and position.company == new_name:
+            print(f"✅ {ticker}: {position.company}")
         else:
-            failed_lookups += 1
-            print(f"❌ Still unknown")
+            print(f"❌ {ticker}: Update failed")
     
-    if not ticker_to_company:
-        print_warning("No company names could be resolved")
-        return {"failed_lookups": failed_lookups}
-    
-    # Update the rows
-    updated_rows = 0
-    for row in rows:
-        ticker = row['Ticker']
-        if ticker in ticker_to_company:
-            old_company = row.get('Company', '')
-            if old_company.strip().lower() in ['unknown', '']:
-                row['Company'] = ticker_to_company[ticker]
-                updated_rows += 1
-    
-    if dry_run:
-        print_info(f"DRY RUN: Would update {updated_rows} rows with company names")
-        print_info("Use --apply to actually make the changes")
-        return {
-            "dry_run": 1,
-            "would_update": updated_rows,
-            "successful_lookups": successful_lookups,
-            "failed_lookups": failed_lookups
-        }
-    
-    # Write the updated CSV file
-    backup_path = csv_path.with_suffix('.backup' + csv_path.suffix)
-    
-    try:
-        # Create backup
-        import shutil
-        shutil.copy2(csv_path, backup_path)
-        print_info(f"Created backup: {backup_path}")
-        
-        # Write updated file
-        with open(csv_path, 'w', newline='', encoding='utf-8') as file:
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
-        
-        print_success(f"Updated {updated_rows} rows with company names")
-        print_success(f"Successfully looked up {successful_lookups} company names")
-        
-        if failed_lookups > 0:
-            print_warning(f"{failed_lookups} tickers still have unknown company names")
-        
-        return {
-            "success": 1,
-            "updated_rows": updated_rows,
-            "successful_lookups": successful_lookups,
-            "failed_lookups": failed_lookups,
-            "backup_created": str(backup_path)
-        }
-        
-    except Exception as e:
-        print_error(f"Error writing updated CSV file: {e}")
-        return {"error": 1}
-
-
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Fix company names in portfolio CSV files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Preview changes without applying them
-  python fix_company_names.py portfolio.csv
-  
-  # Actually apply the fixes
-  python fix_company_names.py portfolio.csv --apply
-  
-  # Fix specific fund's portfolio
-  python fix_company_names.py "trading_data/funds/RRSP Lance Webull/llm_portfolio_update.csv" --apply
-        """
-    )
-    
-    parser.add_argument(
-        "csv_file",
-        help="Path to the portfolio CSV file to fix"
-    )
-    
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Actually apply the fixes (default is dry run)"
-    )
-    
-    args = parser.parse_args()
-    
-    print_info(f"Fixing company names in: {args.csv_file}")
-    
-    if not args.apply:
-        print_warning("This is a DRY RUN - no changes will be made")
-        print_warning("Use --apply to actually fix the company names")
-    
-    result = fix_portfolio_company_names(args.csv_file, dry_run=not args.apply)
-    
-    if result.get("error"):
-        sys.exit(1)
-    elif result.get("success"):
-        print_success("Company name fix completed successfully!")
-    elif result.get("dry_run"):
-        print_info("Dry run completed - use --apply to make changes")
-
+    return True
 
 if __name__ == "__main__":
-    main()
+    fix_company_names()

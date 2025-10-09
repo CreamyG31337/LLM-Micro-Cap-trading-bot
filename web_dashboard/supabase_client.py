@@ -46,8 +46,8 @@ class SupabaseClient:
         self.key = os.getenv("SUPABASE_ANON_KEY")
         
         # Debug logging for environment variables
-        logger.info(f"SUPABASE_URL exists: {bool(self.url)}")
-        logger.info(f"SUPABASE_ANON_KEY exists: {bool(self.key)}")
+        logger.debug(f"SUPABASE_URL exists: {bool(self.url)}")
+        logger.debug(f"SUPABASE_ANON_KEY exists: {bool(self.key)}")
         
         if not self.url or not self.key:
             logger.error(f"Missing environment variables - URL: {bool(self.url)}, KEY: {bool(self.key)}")

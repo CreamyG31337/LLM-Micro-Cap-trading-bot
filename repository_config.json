@@ -1,21 +1,10 @@
 {
   "repository": {
-    "type": "supabase",
-    "fund": "Project Chimera"
-  },
-  "trading_script": {
-    "data_source": "supabase",
-    "force_supabase": true
+    "type": "supabase-dual-write",
+    "data_directory": "trading_data/funds/Project Chimera"
   },
   "web_dashboard": {
-    "data_source": "hybrid",
-    "_comment": "Options: 'supabase', 'csv', 'hybrid'. Hybrid tries Supabase first, CSV fallback for missing funds.",
-    "available_funds": [
-      "Project Chimera",
-      "RRSP Lance Webull",
-      "TFSA",
-      "TEST"
-    ],
-    "default_fund": "RRSP Lance Webull"
+    "data_source": "supabase",
+    "_comment": "Web dashboard always uses Supabase (hosted on Vercel)"
   }
 }

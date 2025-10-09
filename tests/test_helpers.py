@@ -2,7 +2,7 @@
 Test helper functions for creating mock objects and common test utilities.
 """
 
-from portfolio.fund_manager import Fund, RepositorySettings
+from portfolio.fund_manager import Fund
 
 
 def create_mock_fund(fund_id: str = "test", name: str = "TEST", fund_type: str = "test") -> Fund:
@@ -19,6 +19,5 @@ def create_mock_fund(fund_id: str = "test", name: str = "TEST", fund_type: str =
     return Fund(
         id=fund_id,
         name=name,
-        description=f"Test {fund_type.title()} Fund",
-        repository=RepositorySettings(type="csv", settings={})
+        description=f"Test {fund_type.title()} Fund"
     )

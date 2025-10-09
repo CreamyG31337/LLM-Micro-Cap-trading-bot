@@ -47,10 +47,11 @@ def debug_5day_pnl():
         
         # Initialize repository
         repository_container = RepositoryContainer()
+        fund_data_dir = f"trading_data/funds/{default_fund.name}"
         repo_config = {
             'default': {
-                'type': default_fund.repository.type,
-                'data_directory': default_fund.repository.settings.get('directory', 'trading_data/funds/TEST')
+                'type': 'csv',
+                'data_directory': fund_data_dir
             }
         }
         repository_container.configure(repo_config)

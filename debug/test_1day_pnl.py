@@ -26,10 +26,11 @@ def test_portfolio_snapshots():
         )
 
         print(f"📁 Using fund: {dev_fund.name}")
-        print(f"📁 Repository directory: {dev_fund.repository.settings['directory']}")
+        fund_data_dir = f"trading_data/funds/{dev_fund.name}"
+        print(f"📁 Repository directory: {fund_data_dir}")
 
         # Initialize portfolio manager
-        repo = CSVRepository(dev_fund.repository.settings['directory'])
+        repo = CSVRepository(fund_data_dir)
         pm = PortfolioManager(repo, dev_fund)
 
         # Load portfolio snapshots

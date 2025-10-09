@@ -310,15 +310,14 @@ class TestModularComponentIntegration:
         """Test portfolio manager integration with repository."""
         from data.repositories.csv_repository import CSVRepository
         from portfolio.portfolio_manager import PortfolioManager
-        from portfolio.fund_manager import Fund, RepositorySettings
+        from portfolio.fund_manager import Fund
         
         repository = CSVRepository(self.test_data_dir)
         # Create a mock fund for testing
         mock_fund = Fund(
             id="test",
             name="TEST",
-            description="Test Fund",
-            repository=RepositorySettings(type="csv", settings={})
+            description="Test Fund"
         )
         portfolio_manager = PortfolioManager(repository, mock_fund)
         

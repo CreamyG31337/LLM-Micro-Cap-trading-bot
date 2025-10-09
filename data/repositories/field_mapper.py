@@ -64,6 +64,12 @@ class PositionMapper:
         market_value = row.get('total_market_value') or row.get('market_value')
         current_price = row.get('current_price') or row.get('price')  # Also check 'price' field
 
+        # If we don't have market_value but have current_price and shares, calculate it
+        if market_value is None and current_price is not None:
+            shares = Decimal(str(row.get('shares', row.get('total_shares', 0))))
+            if shares > 0:
+                market_value = Decimal(str(current_price)) * shares
+        
         # If we don't have current_price but have market_value and shares, calculate it
         if current_price is None and market_value is not None:
             shares = Decimal(str(row.get('shares', row.get('total_shares', 0))))
@@ -96,9 +102,9 @@ class TradeMapper:
     @staticmethod
     def model_to_db(trade: Any, fund: str) -> Dict[str, Any]:
         """Convert Trade model to database format."""
-        return {
+        # Base fields that should always be present
+        db_data = {
             'ticker': trade.ticker,
-            'action': trade.action,
             'shares': float(trade.shares),
             'price': float(trade.price),
             'cost_basis': float(trade.cost_basis) if trade.cost_basis else 0.0,
@@ -109,6 +115,11 @@ class TradeMapper:
             'date': trade.timestamp.isoformat(),
             'created_at': datetime.now().isoformat()
         }
+        
+        # Note: action field is not included as it's not in the current database schema
+        # TODO: Add action column to trade_log table in Supabase
+        
+        return db_data
 
     @staticmethod
     def db_to_model(row: Dict[str, Any]) -> Any:

@@ -50,8 +50,6 @@ set exit_code=%errorlevel%
 echo.
 if %exit_code%==42 (
     echo Trading bot requested restart...
-    echo Restarting in 2 seconds...
-    timeout /t 2 /nobreak >nul
     goto start
 ) else (
     echo Trading bot session ended.

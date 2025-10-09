@@ -70,33 +70,13 @@ MARKET_CLOSE_TIMES = {
 }
 
 def get_company_name(ticker):
-    """Get company name for ticker (simplified version)"""
-    company_names = {
-        'CNR.TO': 'Canadian National Railway',
-        'CRWD': 'CrowdStrike',
-        'CTRN': 'Core & Main',
-        'DRX.TO': 'DRI Healthcare Trust',
-        'FTS.TO': 'Fortis Inc',
-        'GLO.TO': 'Global Atomic Corporation',
-        'GMIN.TO': 'G Mining Ventures Corp',
-        'HLIT.TO': 'HLS Therapeutics Inc',
-        'KO': 'Coca-Cola Company',
-        'LTRX': 'Lantronix Inc',
-        'MRK': 'Merck & Co Inc',
-        'PLTR': 'Palantir Technologies',
-        'QCOM': 'Qualcomm Inc',
-        'RAIL': 'FreightCar America Inc',
-        'SMH': 'VanEck Semiconductor ETF',
-        'STLD': 'Steel Dynamics Inc',
-        'TRP.TO': 'TC Energy Corporation',
-        'URNJ': 'Sprott Junior Uranium Miners ETF',
-        'URNM': 'Sprott Uranium Miners ETF',
-        'VEE.TO': 'Veeva Systems Inc',
-        'WEB.V': 'Webis Holdings Inc',
-        'XMA.TO': 'XTM Inc',
-        'ZCH.TO': 'BMO MSCI China ESG Leaders Index ETF'
-    }
-    return company_names.get(ticker, ticker)
+    """Get company name for ticker using the proper utility function"""
+    try:
+        from utils.ticker_utils import get_company_name as lookup_company_name
+        return lookup_company_name(ticker)
+    except Exception as e:
+        print(f"Warning: Could not lookup company name for {ticker}: {e}")
+        return ticker  # Fallback to ticker if lookup fails
 
 def get_currency(ticker):
     """Get currency for ticker"""

@@ -17,9 +17,42 @@ class CacheUI:
         """Initialize cache UI."""
         self.cache_manager = get_cache_manager()
 
+    def _get_current_fund_info(self) -> Dict[str, Any]:
+        """Get information about the currently active fund.
+        
+        Returns:
+            Dictionary with current fund information
+        """
+        try:
+            from utils.fund_ui import get_current_fund_info
+            return get_current_fund_info()
+        except ImportError:
+            # Fund management not available
+            return {
+                "name": "Fund Management Not Available",
+                "data_directory": None,
+                "exists": False
+            }
+        except Exception as e:
+            # Any other error
+            return {
+                "name": f"Error: {e}",
+                "data_directory": None,
+                "exists": False
+            }
+
     def show_cache_status(self) -> None:
         """Display comprehensive cache status."""
         print_header("📊 Cache Status", _safe_emoji("💾"))
+
+        # Show current fund information
+        fund_info = self._get_current_fund_info()
+        if fund_info["exists"]:
+            print_info(f"📁 Active Fund: {fund_info['name']}")
+            if fund_info.get('data_directory'):
+                print_info(f"📂 Data Directory: {fund_info['data_directory']}")
+        else:
+            print_warning("⚠️ No active fund selected")
 
         # Initialize components
         if not self.cache_manager.initialize_components():
@@ -55,7 +88,19 @@ class CacheUI:
     def show_cache_menu(self) -> None:
         """Display cache management menu."""
         while True:
+            # Get current fund information
+            fund_info = self._get_current_fund_info()
+            
             print_header("💾 Cache Management Menu", _safe_emoji("🗂️"))
+            
+            # Display current fund information
+            if fund_info["exists"]:
+                print_info(f"📁 Active Fund: {fund_info['name']}")
+                if fund_info.get('data_directory'):
+                    print_info(f"📂 Data Directory: {fund_info['data_directory']}")
+            else:
+                print_warning("⚠️ No active fund selected")
+                print_info("💡 Use the fund management menu to select a fund")
 
             print("\nAvailable cache operations:")
             print(f"  [1] {_safe_emoji('📊')} View Cache Status")
@@ -90,6 +135,13 @@ class CacheUI:
     def clear_all_caches_menu(self) -> None:
         """Menu for clearing all caches."""
         print_header("🗑️ Clear All Caches", _safe_emoji("⚠️"))
+
+        # Show current fund information
+        fund_info = self._get_current_fund_info()
+        if fund_info["exists"]:
+            print_info(f"📁 Active Fund: {fund_info['name']}")
+        else:
+            print_warning("⚠️ No active fund selected")
 
         # Show current status first
         status = self.cache_manager.get_cache_status()

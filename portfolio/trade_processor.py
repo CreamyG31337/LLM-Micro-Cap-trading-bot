@@ -466,13 +466,17 @@ class TradeProcessor:
                     stop_loss=stop_loss or existing_position.stop_loss
                 )
             else:
-                # Create new position
+                # Create new position with company name lookup (pass currency to ensure correct exchange)
+                from utils.ticker_utils import get_company_name
+                company_name = get_company_name(trade.ticker, currency=trade.currency)
+                
                 updated_position = Position(
                     ticker=trade.ticker,
                     shares=trade.shares,
                     avg_price=trade.price,
                     cost_basis=trade.cost_basis,
                     currency=trade.currency,
+                    company=company_name,
                     stop_loss=stop_loss
                 )
             

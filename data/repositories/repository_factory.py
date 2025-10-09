@@ -22,6 +22,8 @@ class RepositoryFactory:
     _repositories: Dict[str, type] = {
         'csv': CSVRepository,
         'supabase': SupabaseRepository,
+        'dual-write': 'DualWriteRepository',  # Will be imported dynamically
+        'supabase-dual-write': 'SupabaseDualWriteRepository',  # Will be imported dynamically
         # Future repository types can be added here
         # 'database': DatabaseRepository,
         # 'memory': InMemoryRepository,
@@ -50,9 +52,35 @@ class RepositoryFactory:
         
         repository_class = cls._repositories[repository_type]
         
+        # Handle dual-write repository creation
+        if repository_type == 'dual-write':
+            from .dual_write_repository import DualWriteRepository
+            repository_class = DualWriteRepository
+        elif repository_type == 'supabase-dual-write':
+            from .supabase_dual_write_repository import SupabaseDualWriteRepository
+            repository_class = SupabaseDualWriteRepository
+        
+        # Remove 'type' from kwargs if present (it's already extracted as repository_type)
+        clean_kwargs = {k: v for k, v in kwargs.items() if k != 'type'}
+        
+        # Standardize parameter names - all repositories use fund_name
+        if 'fund' in clean_kwargs and 'fund_name' not in clean_kwargs:
+            clean_kwargs['fund_name'] = clean_kwargs.pop('fund')
+        
+        # Filter kwargs based on repository type to avoid unsupported parameters
+        if repository_type == 'csv':
+            # CSV repository accepts fund_name and optional data_directory
+            clean_kwargs = {k: v for k, v in clean_kwargs.items() if k in ['fund_name', 'data_directory']}
+        elif repository_type == 'supabase':
+            # Supabase repository accepts fund_name and supabase config
+            clean_kwargs = {k: v for k, v in clean_kwargs.items() if k in ['fund_name', 'url', 'key', 'supabase']}
+        elif repository_type in ['dual-write', 'supabase-dual-write']:
+            # Dual-write repositories accept fund_name and optional data_directory
+            clean_kwargs = {k: v for k, v in clean_kwargs.items() if k in ['fund_name', 'data_directory']}
+        
         try:
-            logger.info(f"Creating {repository_type} repository with args: {kwargs}")
-            return repository_class(**kwargs)
+            logger.info(f"Creating {repository_type} repository with args: {clean_kwargs}")
+            return repository_class(**clean_kwargs)
         except Exception as e:
             logger.error(f"Failed to create {repository_type} repository: {e}")
             raise
@@ -81,6 +109,22 @@ class RepositoryFactory:
             List of available repository type names
         """
         return list(cls._repositories.keys())
+    
+    @classmethod
+    def create_dual_write_repository(cls, fund_name: str, data_directory: str = None) -> 'DualWriteRepository':
+        """Create a dual-write repository with both CSV and Supabase repositories.
+        
+        Args:
+            fund_name: Name of the fund
+            data_directory: Optional path to CSV data directory (defaults to trading_data/funds/{fund_name})
+            
+        Returns:
+            DualWriteRepository instance for dual-write operations
+        """
+        from .dual_write_repository import DualWriteRepository
+        
+        # Create dual-write repository
+        return DualWriteRepository(fund_name=fund_name, data_directory=data_directory)
 
 
 class RepositoryContainer:
@@ -153,8 +197,8 @@ class RepositoryContainer:
         # Remove 'type' from kwargs before passing to constructor
         kwargs = {k: v for k, v in repo_config.items() if k != 'type'}
         
-        # Create repository instance
-        repository = RepositoryFactory.create_repository(repository_type, **kwargs)
+        # Create repository instance - pass repository_type as positional arg
+        repository = RepositoryFactory.create_repository(repository_type=repository_type, **kwargs)
         self._repositories[name] = repository
         
         logger.info(f"Created repository '{name}' of type '{repository_type}'")

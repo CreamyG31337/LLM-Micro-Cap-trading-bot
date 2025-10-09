@@ -15,6 +15,7 @@ from config.settings import Settings, get_settings
 from market_data.price_cache import PriceCache
 from market_data.data_fetcher import MarketDataFetcher
 from financial.currency_handler import CurrencyHandler
+from utils.windows_cache_utils import is_windows, clear_cache_directory_windows
 
 logger = logging.getLogger(__name__)
 
@@ -144,12 +145,18 @@ class CacheManager:
 
         for name, cache_dir in cache_dirs.items():
             if cache_dir.exists():
-                try:
-                    shutil.rmtree(cache_dir)
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    results[name] = {"success": True, "message": f"Cleared {name}"}
-                except Exception as e:
-                    results[name] = {"success": False, "message": f"Failed to clear {name}: {e}"}
+                if is_windows():
+                    # Use Windows-specific cache clearing
+                    success, message = clear_cache_directory_windows(cache_dir)
+                    results[name] = {"success": success, "message": message}
+                else:
+                    # Use standard clearing for non-Windows systems
+                    try:
+                        shutil.rmtree(cache_dir)
+                        cache_dir.mkdir(parents=True, exist_ok=True)
+                        results[name] = {"success": True, "message": f"Cleared {name}"}
+                    except Exception as e:
+                        results[name] = {"success": False, "message": f"Failed to clear {name}: {e}"}
             else:
                 results[name] = {"success": True, "message": f"{name} already clear"}
 
@@ -186,12 +193,18 @@ class CacheManager:
             cache_dirs = self.get_cache_directories()
             cache_dir = cache_dirs["price_cache"]
             if cache_dir.exists():
-                try:
-                    shutil.rmtree(cache_dir)
-                    cache_dir.mkdir(parents=True, exist_ok=True)
-                    results["disk_cache"] = {"success": True, "message": "Cleared price cache disk files"}
-                except Exception as e:
-                    results["disk_cache"] = {"success": False, "message": f"Failed to clear disk cache: {e}"}
+                if is_windows():
+                    # Use Windows-specific cache clearing
+                    success, message = clear_cache_directory_windows(cache_dir)
+                    results["disk_cache"] = {"success": success, "message": message}
+                else:
+                    # Use standard clearing for non-Windows systems
+                    try:
+                        shutil.rmtree(cache_dir)
+                        cache_dir.mkdir(parents=True, exist_ok=True)
+                        results["disk_cache"] = {"success": True, "message": "Cleared price cache disk files"}
+                    except Exception as e:
+                        results["disk_cache"] = {"success": False, "message": f"Failed to clear disk cache: {e}"}
 
             # Clear in-memory cache
             try:
@@ -208,9 +221,19 @@ class CacheManager:
                 try:
                     # Remove only fundamentals cache files
                     fundamentals_files = list(cache_dir.glob("fundamentals*"))
-                    for file in fundamentals_files:
-                        file.unlink()
-                    results["fundamentals"] = {"success": True, "message": f"Removed {len(fundamentals_files)} fundamentals cache files"}
+                    if is_windows():
+                        # Use Windows-specific file deletion for each file
+                        from utils.windows_cache_utils import force_delete_file
+                        deleted_count = 0
+                        for file in fundamentals_files:
+                            if force_delete_file(file):
+                                deleted_count += 1
+                        results["fundamentals"] = {"success": True, "message": f"Removed {deleted_count} fundamentals cache files"}
+                    else:
+                        # Use standard deletion for non-Windows systems
+                        for file in fundamentals_files:
+                            file.unlink()
+                        results["fundamentals"] = {"success": True, "message": f"Removed {len(fundamentals_files)} fundamentals cache files"}
                 except Exception as e:
                     results["fundamentals"] = {"success": False, "message": f"Failed to clear fundamentals cache: {e}"}
 

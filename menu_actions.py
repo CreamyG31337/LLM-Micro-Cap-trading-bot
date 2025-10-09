@@ -90,10 +90,80 @@ class MenuActionSystem:
             else:
                 logging.basicConfig(level=logging.INFO)
             
-            # Initialize repository
+            # Initialize repository with dual-write support
             repo_config = self.settings.get_repository_config()
-            configure_repositories({'default': repo_config})
-            self.repository = get_repository_container().get_repository('default')
+            repository_type = repo_config.get('type', 'csv')
+            
+            # Check if we should use dual-write mode based on repository type
+            use_dual_write = False
+            use_supabase_dual_write = False
+            
+            if repository_type == 'csv':
+                # CSV mode: Check if Supabase is available for dual-write
+                try:
+                    from data.repositories.supabase_repository import SupabaseRepository
+                    # Test if Supabase credentials are available
+                    import os
+                    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                        # Get fund name for testing
+                        fund_name = repo_config.get('fund', 'Project Chimera')
+                        # Test connection
+                        test_repo = SupabaseRepository(fund_name)
+                        if test_repo.test_connection():
+                            use_dual_write = True
+                            logger.info("CSV mode with Supabase available - enabling CSV dual-write mode")
+                        else:
+                            logger.warning("Supabase credentials available but connection failed - using CSV-only mode")
+                except Exception as e:
+                    logger.debug(f"Supabase not available for dual-write: {e}")
+                    
+            elif repository_type == 'supabase':
+                # Supabase mode: Check if Supabase is available for dual-write
+                try:
+                    from data.repositories.supabase_repository import SupabaseRepository
+                    # Test if Supabase credentials are available
+                    import os
+                    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                        # Get fund name for testing
+                        fund_name = repo_config.get('fund', 'Project Chimera')
+                        # Test connection
+                        test_repo = SupabaseRepository(fund_name)
+                        if test_repo.test_connection():
+                            use_supabase_dual_write = True
+                            logger.info("Supabase mode with Supabase available - enabling Supabase dual-write mode")
+                        else:
+                            logger.warning("Supabase credentials available but connection failed - falling back to CSV-only mode")
+                            repository_type = 'csv'  # Fall back to CSV
+                except Exception as e:
+                    logger.debug(f"Supabase not available - falling back to CSV mode: {e}")
+                    repository_type = 'csv'  # Fall back to CSV
+            
+            if use_dual_write:
+                logger.info(f"Initializing CSV dual-write repository (CSV read, CSV+Supabase write) for fund: {repo_config.get('fund', 'N/A')}")
+                # Clear any existing repositories to avoid stale cache
+                get_repository_container().clear()
+                
+                # Create CSV dual-write repository
+                from data.repositories.repository_factory import RepositoryFactory
+                self.repository = RepositoryFactory.create_dual_write_repository(
+                    fund_name=repo_config.get('fund', 'Project Chimera'),
+                    data_directory=self.settings.get_data_directory()
+                )
+            elif use_supabase_dual_write:
+                logger.info(f"Initializing Supabase dual-write repository (Supabase read, CSV+Supabase write) for fund: {repo_config.get('fund', 'N/A')}")
+                # Clear any existing repositories to avoid stale cache
+                get_repository_container().clear()
+                
+                # Create Supabase dual-write repository
+                from data.repositories.repository_factory import RepositoryFactory
+                self.repository = RepositoryFactory.create_repository(
+                    repository_type='supabase-dual-write',
+                    fund_name=repo_config.get('fund', 'Project Chimera'),
+                    data_directory=self.settings.get_data_directory()
+                )
+            else:
+                configure_repositories({'default': repo_config})
+                self.repository = get_repository_container().get_repository('default')
             
             # Initialize business logic components
             self.trade_processor = FIFOTradeProcessor(self.repository)

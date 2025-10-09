@@ -82,10 +82,11 @@ def migrate_portfolio_data(client, portfolio_df, fund_name="Project Chimera"):
             record = {
                 "fund": fund_name,
                 "ticker": str(row.get("Ticker", "")),
+                "company": str(row.get("Company", "")),
                 "shares": float(row.get("Shares", 0)),
-                "price": float(row.get("Price", 0)),
+                "price": float(row.get("Current Price", 0)),
                 "cost_basis": float(row.get("Cost Basis", 0)),
-                "pnl": float(row.get("P&L", 0)),
+                "pnl": float(row.get("PnL", 0)),
                 "currency": str(row.get("Currency", "USD")),
                 "date": datetime.now().isoformat(),
                 "created_at": datetime.now().isoformat()

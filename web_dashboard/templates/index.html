@@ -162,6 +162,17 @@
                 </div>
             </div>
         </div>
+
+        <!-- Fund Contributors/Holders -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mt-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">👥 Fund Contributors</h2>
+            <div id="contributors-container">
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Loading contributors...</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Footer -->
@@ -240,6 +251,39 @@
                 console.error('Error loading recent trades:', error);
                 document.getElementById('trades-container').innerHTML =
                     '<div class="text-center text-red-500 py-8"><p>Error loading trades</p></div>';
+            }
+        }
+
+        // Load contributors
+        async function loadContributors() {
+            try {
+                const fundSelect = document.getElementById('fund-select');
+                const fund = fundSelect ? fundSelect.value : '';
+                
+                if (!fund) {
+                    document.getElementById('contributors-container').innerHTML =
+                        '<div class="text-center text-gray-500 py-8"><p>Select a fund to view contributors</p></div>';
+                    return;
+                }
+                
+                const url = `/api/contributors?fund=${encodeURIComponent(fund)}`;
+                const response = await fetch(url, { credentials: 'include' });
+                
+                if (response.status === 401) {
+                    window.location.href = '/auth';
+                    return;
+                }
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                displayContributors(data);
+            } catch (error) {
+                console.error('Error loading contributors:', error);
+                document.getElementById('contributors-container').innerHTML =
+                    '<div class="text-center text-red-500 py-8"><p>Error loading contributors</p></div>';
             }
         }
 
@@ -367,6 +411,76 @@
             container.innerHTML = html;
         }
 
+        function displayContributors(data) {
+            const container = document.getElementById('contributors-container');
+            
+            if (!data.contributors || data.contributors.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No contributors found</p></div>';
+                return;
+            }
+
+            let html = `
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                        <div>
+                            <p class="text-sm text-gray-600">Total Contributors</p>
+                            <p class="text-2xl font-bold text-blue-600">${data.total_contributors}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Total Contributions</p>
+                            <p class="text-2xl font-bold text-green-600">$${data.total_net_contributions.toLocaleString()}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Average per Contributor</p>
+                            <p class="text-2xl font-bold text-purple-600">$${Math.round(data.total_net_contributions / data.total_contributors).toLocaleString()}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3">
+            `;
+
+            data.contributors.forEach((contributor, index) => {
+                const rankClass = index === 0 ? 'bg-yellow-50 border-yellow-200' : 
+                                 index === 1 ? 'bg-gray-50 border-gray-200' : 
+                                 index === 2 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200';
+                
+                html += `
+                    <div class="border rounded-lg p-4 hover:bg-gray-50 ${rankClass}">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <h3 class="font-bold text-lg">${contributor.contributor}</h3>
+                                    ${index < 3 ? `<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">#${index + 1}</span>` : ''}
+                                </div>
+                                ${contributor.email ? `<p class="text-sm text-gray-600">${contributor.email}</p>` : ''}
+                                <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                    <div>
+                                        <p class="text-gray-500">Net Contribution</p>
+                                        <p class="font-bold text-green-600">$${contributor.net_contribution.toLocaleString()}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Ownership</p>
+                                        <p class="font-bold text-blue-600">${contributor.ownership_percentage}%</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">Transactions</p>
+                                        <p class="font-bold">${contributor.transaction_count}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-500">First Contribution</p>
+                                        <p class="text-xs">${new Date(contributor.first_contribution).toLocaleDateString()}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
         // Load available funds
         async function loadFunds() {
             try {
@@ -443,7 +557,8 @@
             await Promise.all([
                 loadPortfolioData(),
                 loadPerformanceChart(),
-                loadRecentTrades()
+                loadRecentTrades(),
+                loadContributors()
             ]);
         }
 
@@ -464,6 +579,7 @@
                 loadPortfolioData(),
                 loadPerformanceChart(),
                 loadRecentTrades(),
+                loadContributors(),
                 checkAdminStatus()
             ]);
             console.log('Dashboard initialized successfully');

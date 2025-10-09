@@ -76,6 +76,7 @@ def migrate_fund(client: SupabaseClient, fund_name: str, fund_data: Dict[str, pd
             positions.append({
                 "fund": fund_name,  # Add fund name!
                 "ticker": str(row["Ticker"]),  # Clean ticker name!
+                "company": str(row["Company"]),
                 "shares": float(row["Shares"]),
                 "price": float(row["Current Price"]),
                 "cost_basis": float(row["Cost Basis"]),

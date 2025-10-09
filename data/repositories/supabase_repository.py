@@ -34,23 +34,24 @@ class SupabaseRepository(BaseRepository):
     uses Supabase as the backend storage.
     """
     
-    def __init__(self, url: str = None, key: str = None, fund: str = None, **kwargs):
+    def __init__(self, fund_name: str, url: str = None, key: str = None, **kwargs):
         """Initialize Supabase repository.
         
         Args:
+            fund_name: Fund name (REQUIRED - no default)
             url: Supabase project URL
             key: Supabase anon key
-            fund: Fund name (REQUIRED - no default)
         """
         self.supabase_url = url or os.getenv("SUPABASE_URL")
         self.supabase_key = key or os.getenv("SUPABASE_ANON_KEY")
         
-        if not fund:
+        if not fund_name:
             raise RepositoryError(
                 "Fund name is required for SupabaseRepository. "
                 "This should be provided by the repository factory using the active fund name."
             )
-        self.fund = fund
+        self.fund = fund_name  # Keep for backward compatibility
+        self.fund_name = fund_name
         
         # Add data_dir for compatibility with code expecting it (exchange rates, etc.)
         # Point to the common shared data directory where exchange rates are stored
@@ -327,6 +328,57 @@ class SupabaseRepository(BaseRepository):
             logger.error(f"Failed to save cash balances: {e}")
             raise RepositoryError(f"Failed to save cash balances: {e}")
     
+    def get_latest_portfolio_snapshot_with_pnl(self) -> Optional[PortfolioSnapshot]:
+        """Get the most recent portfolio snapshot with calculated P&L from database view.
+        
+        This uses the Supabase view 'position_with_historical_pnl' which calculates
+        1-day and 5-day P&L server-side for better performance.
+        
+        Returns:
+            Portfolio snapshot with positions including historical P&L metrics
+        """
+        try:
+            result = self.supabase.table("position_with_historical_pnl") \
+                .select("*") \
+                .eq("fund", self.fund) \
+                .execute()
+            
+            if not result.data:
+                logger.debug(f"No portfolio data found for fund: {self.fund}")
+                return None
+            
+            # Convert view rows to Position objects
+            from .field_mapper import TypeTransformers
+            positions = []
+            
+            for row in result.data:
+                # The view returns enriched data with P&L calculations
+                position = PositionMapper.db_to_model(row)
+                
+                # Add the calculated P&L fields from the view
+                position.daily_pnl = row.get('daily_pnl')
+                position.daily_pnl_pct = row.get('daily_pnl_pct')
+                position.five_day_pnl = row.get('five_day_pnl')
+                position.five_day_pnl_pct = row.get('five_day_pnl_pct')
+                
+                positions.append(position)
+            
+            # Get timestamp from first position
+            timestamp = TypeTransformers.iso_to_datetime(result.data[0]['current_date'])
+            
+            # Calculate total value
+            total_value = sum(pos.market_value for pos in positions if pos.market_value)
+            
+            return PortfolioSnapshot(
+                positions=positions,
+                timestamp=timestamp,
+                total_value=total_value
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get portfolio snapshot with P&L: {e}", exc_info=True)
+            raise RepositoryError(f"Failed to get portfolio snapshot with P&L: {e}") from e
+    
     def get_latest_portfolio_snapshot(self) -> Optional[PortfolioSnapshot]:
         """Get the most recent portfolio snapshot.
         
@@ -369,8 +421,23 @@ class SupabaseRepository(BaseRepository):
             
             logger.debug(f"Found {len(positions_query.data)} positions for latest snapshot: {latest_timestamp}")
             
+            # Group by ticker and take the latest timestamp for each ticker
+            # This handles cases where there are multiple updates on the same day
+            ticker_positions = {}
+            for row in positions_query.data:
+                ticker = row['ticker']
+                row_timestamp = TypeTransformers.iso_to_datetime(row['date'])
+                
+                # Keep only the latest position for each ticker
+                if ticker not in ticker_positions:
+                    ticker_positions[ticker] = row
+                else:
+                    existing_timestamp = TypeTransformers.iso_to_datetime(ticker_positions[ticker]['date'])
+                    if row_timestamp > existing_timestamp:
+                        ticker_positions[ticker] = row
+            
             # Convert to Position objects
-            positions = [PositionMapper.db_to_model(row) for row in positions_query.data]
+            positions = [PositionMapper.db_to_model(row) for row in ticker_positions.values()]
             
             # Calculate total value
             total_value = Decimal('0')

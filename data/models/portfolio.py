@@ -26,6 +26,11 @@ class Position:
     unrealized_pnl: Optional[Decimal] = None
     stop_loss: Optional[Decimal] = None
     position_id: Optional[str] = None  # For database primary key
+    # Server-calculated P&L fields (from database views)
+    daily_pnl: Optional[Decimal] = None
+    daily_pnl_pct: Optional[Decimal] = None
+    five_day_pnl: Optional[Decimal] = None
+    five_day_pnl_pct: Optional[Decimal] = None
 
     @property
     def calculated_unrealized_pnl(self) -> Decimal:

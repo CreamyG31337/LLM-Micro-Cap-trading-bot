@@ -1,0 +1,114 @@
++-----------------------------------------------------------------------------+
+|                      * Trading System Initialization *                      |
++-----------------------------------------------------------------------------+
+2025-10-06 22:13:29,310 - __main__ - INFO - Logging configured - Level: INFO
+2025-10-06 22:13:29,310 - portfolio.fund_manager - INFO - Loading funds from funds.yml
+2025-10-06 22:13:29,315 - portfolio.fund_manager - INFO - Loaded 5 funds
+2025-10-06 22:13:29,332 - __main__ - INFO - Market configuration module available
+2025-10-06 22:13:29,335 - __main__ - INFO - Dual currency module available
+2025-10-06 22:13:29,336 - __main__ - INFO - Pandas-datareader available for Stooq fallback
+2025-10-06 22:13:29,336 - __main__ - INFO - Rich display libraries available
+* Command line data directory override: trading_data/funds/TEST
+* Data directory doesn't match any fund, using default fund: Project Chimera
+* 
+============================================================
+*   * DEVELOPMENT ENVIRONMENT *
+*   [BANK] Fund: TEST
+*   [LIST] Type: WEALTHSIMPLE
+*   * Data Directory: trading_data/funds/TEST
+*   !  Safe to modify - This is test data
+* ============================================================
+
+2025-10-06 22:13:29,357 - __main__ - INFO - Initializing supabase repository for fund: Project Chimera
+2025-10-06 22:13:29,357 - data.repositories.repository_factory - INFO - Cleared all repository instances
+2025-10-06 22:13:30,947 - data.repositories.supabase_repository - INFO - Supabase client initialized successfully
+2025-10-06 22:13:30,947 - __main__ - INFO - Repository initialized: SupabaseRepository
+2025-10-06 22:13:30,948 - __main__ - INFO - Initializing system components...
+2025-10-06 22:13:30,948 - portfolio.portfolio_manager - INFO - Portfolio manager initialized for fund 'Project Chimera' with SupabaseRepository
+2025-10-06 22:13:31,994 - portfolio.position_calculator - INFO - Position calculator initialized with SupabaseRepository
+2025-10-06 22:13:31,995 - portfolio.trading_interface - INFO - Trading interface initialized
+2025-10-06 22:13:32,096 - __main__ - INFO - All system components initialized successfully
+* System initialization completed successfully
++-----------------------------------------------------------------------------+
+|                      * Portfolio Management Workflow *                      |
++-----------------------------------------------------------------------------+
+INFO Creating data backup...
+2025-10-06 22:13:32,183 - utils.backup_manager - INFO - Created backup '20251006_221332' with 5 files: llm_trade_log.csv, llm_portfolio_update.csv, fund_contributions.csv, exchange_rates.csv, cash_balances.json
+* Backup created: 20251006_221332
+* Terminal width may be too narrow for optimal table display
+*    Current width: 80 characters
+*    Recommended: 130+ characters for best experience
+* 
+* Command Prompt detected - To fix this:
+*    1. Right-click title bar -> Properties -> Layout
+*    2. Set 'Window Size Width' to 130 or higher
+*    3. Or maximize this window (click maximize button)
+*    4. Or press F11 for full screen mode
+*    5. Consider upgrading to Windows Terminal for better experience
+* 
+INFO Loading portfolio data...
+* Loaded portfolio with 21 positions
+INFO Updating exchange rates...
+INFO Fetching current market data...
+* Updated market data for 21 tickers
+INFO Calculating portfolio metrics...
+INFO Portfolio prices not updated (Portfolio was updated today (Monday) - no 
+update needed)
+INFO Portfolio prices not updated (market closed and already updated today)
++-----------------------------------------------------------------------------+
+|    * Portfolio Summary | * 22:13:39 PDT | * CLOSED | OPEN in 08:16:20 |     |
+|                         [STATS] TEST | * Supabase *                         |
++-----------------------------------------------------------------------------+
+                    [STATS] Portfolio Snapshot - 2025-10-06                    
++-----------------------------------------------------------------------------+
+||                  |    |   |  $ |   |     |  [STATS] |     [^] | [STAà |  | |
+|| [COMPANY]        | [à | à | Aà | $ |   $ |    Total |   1-Day | 5-Day |  | |
+|| Company          | Oà | à | Pà | à | Vaà |      P&L |     P&L |   P&L |  | |
+|+------------------+----+---+----+---+-----+----------+---------+-------+--+-|
+|| XTM Inc          | 0à | à | $à | à | $1à |  $219.05 | $219.05 |   N/A |  | |
+||                  |    |   |    |   |     |   +12.7% |  +12.7% |       |  | |
+|| G Mining Venturà | 0à | à | $à | à | $1à |  $378.33 | $378.33 |   N/A |  | |
+||                  |    |   |    |   |     |   +36.1% |  +36.1% |       |  | |
+|| VanEck Semicondà | 0à | à | $à | à | $9à |  $114.22 | $114.22 |   N/A |  | |
+||                  |    |   |    |   |     |   +14.3% |  +14.3% |       |  | |
+|| FreightCar Amerà | 0à | à | $à | à | $7à |   $65.45 |  $65.45 |   N/A |  | |
+||                  |    |   |    |   |     |   +10.1% |  +10.1% |       |  | |
+|| DRI Healthcare à | 0à | à | $à | à | $7à |   $42.57 |  $42.57 |   N/A |  | |
+||                  |    |   |    |   |     |    -5.7% |   -5.7% |       |  | |
+|| Webis Holdings à | 0à | à | $à | à | $6à |  $136.36 | $136.36 |   N/A |  | |
+||                  |    |   |    |   |     |   +27.3% |  +27.3% |       |  | |
+|| Palantir Technoà | 0à | à | $à | à | $5à |   $45.17 |  $45.17 |   N/A |  | |
+||                  |    |   |    |   |     |    +8.7% |   +8.7% |       |  | |
+|| Global Atomic Cà | 0à | à | $à | à | $5à |   $22.06 |  $22.06 |   N/A |  | |
+||                  |    |   |    |   |     |    +4.4% |   +4.4% |       |  | |
+|| Core & Main      | 0à | à | $à | à | $4à |   $63.74 |  $63.74 |   N/A |  | |
+||                  |    |   |    |   |     |   -13.1% |  -13.1% |       |  | |
+|| CrowdStrike      | 0à | à | $à | à | $3à |   $49.39 |  $49.39 |   N/A |  | |
+||                  |    |   |    |   |     |   +15.9% |  +15.9% |       |  | |
+|| Veeva Systems Ià | 0à | à | $à | à | $3à |   $14.46 |  $14.46 |   N/A |  | |
+||                  |    |   |    |   |     |    +4.4% |   +4.4% |       |  | |
+|| Canadian Nationà | 0à | à | $à | à | $3à |   $11.54 |  $11.54 |   N/A |  | |
+||                  |    |   |    |   |     |    +3.8% |   +3.8% |       |  | |
+|| Sprott Uranium à | 0à | à | $à | à | $2à |   $34.52 |  $34.52 |   N/A |  | |
+||                  |    |   |    |   |     |   +13.8% |  +13.8% |       |  | |
+|| Steel Dynamics à | 0à | à | $à | à | $2à |   $18.55 |  $18.55 |   N/A |  | |
+||                  |    |   |    |   |     |    +8.4% |   +8.4% |       |  | |
+|| Sprott Junior Uà | 0à | à | $à | à | $2à |   $31.20 |  $31.20 |   N/A |  | |
+||                  |    |   |    |   |     |   +17.8% |  +17.8% |       |  | |
+|| TC Energy Corpoà | 0à | à | $à | à | $1à |    $8.42 |   $8.42 |   N/A |  | |
+||                  |    |   |    |   |     |    +4.8% |   +4.8% |       |  | |
+|| Fortis Inc       | 0à | à | $à | à | $1à |    $4.55 |   $4.55 |   N/A |  | |
+||                  |    |   |    |   |     |    +3.0% |   +3.0% |       |  | |
+|| Coca-Cola Compaà | 0à | à | $à | à | $1à |    $2.02 |   $2.02 |   N/A |  | |
+||                  |    |   |    |   |     |    -1.4% |   -1.4% |       |  | |
+|| Lantronix Inc    | 0à | à | $à | à | $1à |    $8.29 |   $8.29 |   N/A |  | |
+||                  |    |   |    |   |     |    +8.2% |   +8.2% |       |  | |
+|| Qualcomm Inc     | 0à | à | $à | à | $1à |    $4.44 |   $4.44 |   N/A |  | |
+||                  |    |   |    |   |     |    +4.4% |   +4.4% |       |  | |
+|| Merck & Co Inc   | 0à | 1 | $à | à | $8à |    $6.47 |   $6.47 |   N/A |  | |
+||                  |    |   |    |   |     |    +7.9% |   +7.9% |       |  | |
++-----------------------------------------------------------------------------+
+
+WARNING: Could not display portfolio metrics: 'charmap' codec can't encode character '\U0001f4b0' in position 24: character maps to <undefined>
+INFO: Running in non-interactive mode - exiting after display
+2025-10-06 22:13:40,870 - __main__ - INFO - System cleanup completed

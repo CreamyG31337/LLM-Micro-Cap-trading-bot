@@ -157,7 +157,7 @@ def show_status():
         config = json.load(f)
     
     repo_type = config["repository"]["type"]
-    repo_config = config["repository"][repo_type]
+    repo_config = config["repository"]
     
     print(f"Current repository: {repo_type}")
     print(f"Configuration: {json.dumps(repo_config, indent=2)}")

@@ -68,6 +68,11 @@ Examples:
     )
     
     parser.add_argument(
+        '--fund-name',
+        help='Fund name for Supabase operations (enables dual-write mode)'
+    )
+    
+    parser.add_argument(
         '--test', '--dry-run',
         action='store_true',
         help='Test mode - parse and display trade without adding to system'
@@ -87,20 +92,28 @@ Examples:
     
     args = parser.parse_args()
     
-    # Helper: add a single parsed trade to trade log only
+    # Helper: add a single parsed trade and update portfolio
     def _save_trade_only(trade_obj) -> bool:
         try:
-            repo = CSVRepository(args.data_dir)
-            # Idempotency guard: avoid duplicates
-            from utils.email_trade_parser import is_duplicate_trade
-            if is_duplicate_trade(trade_obj, repo):
-                print("ℹ️  Duplicate trade detected; skipping insert.")
-                return True
-            # Save trade; do not update portfolio here
-            repo.save_trade(trade_obj)
-            return True
-        except Exception as ex:
-            print(f"❌ Failed to save trade: {ex}")
+            # Use the proper email trade parser function that handles portfolio updates
+            from utils.email_trade_parser import add_trade_from_email
+            
+            # Convert trade object back to email text for the parser
+            # This ensures we use the proper processing flow that updates portfolio
+            email_text = f"""
+Account: TFSA
+Type: {trade_obj.action}
+Symbol: {trade_obj.ticker}
+Shares: {trade_obj.shares}
+Average price: ${trade_obj.price}
+Total cost: ${trade_obj.shares * trade_obj.price}
+Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
+"""
+            
+            # Use the proper email trade parser that handles portfolio updates
+            return add_trade_from_email(email_text, args.data_dir, args.fund_name)
+        except Exception as e:
+            print(f"❌ Error saving trade: {e}")
             return False
     
     def _print_trade(trade_obj) -> None:

@@ -23,7 +23,7 @@ class FundManagerError(Exception):
 
 @dataclass
 class RepositorySettings:
-    """Settings for a fund's data repository."""
+    """Repository configuration settings for a fund."""
     type: str
     settings: Dict[str, Any] = field(default_factory=dict)
 
@@ -34,7 +34,7 @@ class Fund:
     id: str
     name: str
     description: str
-    repository: RepositorySettings
+    repository: RepositorySettings = field(default_factory=lambda: RepositorySettings(type="csv", settings={}))
 
 
 class FundManager:
@@ -61,12 +61,10 @@ class FundManager:
                 raise FundManagerError("Invalid YAML format: 'funds' key not found")
 
             for fund_data in config['funds']:
-                repo_settings = RepositorySettings(**fund_data['repository'])
                 fund = Fund(
                     id=fund_data['id'],
                     name=fund_data['name'],
-                    description=fund_data['description'],
-                    repository=repo_settings
+                    description=fund_data['description']
                 )
                 self.funds.append(fund)
             
@@ -113,22 +111,19 @@ class FundManager:
         """
         data_path = Path(data_directory).resolve()
         
-        # Check each fund's repository settings for directory match
+        # Check each fund's data directory
         for fund in self.funds:
-            if 'directory' in fund.repository.settings:
-                fund_dir = Path(fund.repository.settings['directory']).resolve()
-                if data_path == fund_dir:
-                    return fund.id
+            fund_dir = Path(f"trading_data/funds/{fund.name}").resolve()
+            if data_path == fund_dir:
+                return fund.id
         
         # Check if the data directory is actually a fund directory by looking at the folder name
         # This handles cases where the path doesn't match exactly but the folder name does
         if data_path.parent.name == 'funds':
             folder_name = data_path.name
-            # Find fund by matching the folder name to the directory setting
+            # Find fund by matching the folder name to the fund name
             for fund in self.funds:
-                if 'directory' in fund.repository.settings:
-                    fund_dir = Path(fund.repository.settings['directory'])
-                    if fund_dir.name == folder_name:
-                        return fund.id
+                if fund.name == folder_name:
+                    return fund.id
         
         return None

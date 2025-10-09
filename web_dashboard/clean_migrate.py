@@ -31,6 +31,7 @@ def migrate_portfolio_data():
         record = {
             "fund": "Project Chimera",
             "ticker": str(row["Ticker"]),
+            "company": str(row["Company"]),
             "shares": float(row["Shares"]),
             "price": float(row["Current Price"]),
             "cost_basis": float(row["Cost Basis"]),

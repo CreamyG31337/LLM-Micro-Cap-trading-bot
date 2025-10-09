@@ -429,7 +429,7 @@ class WebullImporter:
                     "Total Value": float(quantity * price),
                     "PnL": 0.0,
                     "Action": "Buy",
-                    "Company": self._get_company_name(symbol),
+                    "Company": self._get_company_name(symbol, currency=trade["currency"]),
                     "Currency": trade["currency"]
                 }
                 portfolio_data.append(new_position)
@@ -543,11 +543,11 @@ class WebullImporter:
         # No hardcoded lists - rely on Currency field in trade log
         return 'USD'
 
-    def _get_company_name(self, ticker: str) -> str:
+    def _get_company_name(self, ticker: str, currency: str = None) -> str:
         """Get company name for ticker symbol using the ticker_utils function."""
         try:
             from utils.ticker_utils import get_company_name
-            return get_company_name(ticker)
+            return get_company_name(ticker, currency=currency)
         except Exception as e:
             logger.warning(f"Failed to get company name for {ticker}: {e}")
             return ticker  # Fallback to ticker symbol

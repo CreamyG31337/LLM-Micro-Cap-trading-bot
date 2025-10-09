@@ -40,6 +40,9 @@ class EmailTradeParser:
             ],
             'price': [
                 r'Average price:\s*.*?\$([0-9,]+\.?[0-9]*)',
+                r'Average price:\s*[A-Z]*\$([0-9,]+\.?[0-9]*)',
+                r'Average price:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Average price:\s*CAD\$([0-9,]+\.?[0-9]*)',
                 r'Price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
                 r'Fill price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
                 r'Executed at:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',
@@ -384,12 +387,13 @@ def is_duplicate_trade(trade: Trade, repository) -> bool:
         return False
 
 
-def add_trade_from_email(email_text: str, data_dir: str) -> bool:
+def add_trade_from_email(email_text: str, data_dir: str, fund_name: str = None) -> bool:
     """Parse email text and add the trade to the trading system.
 
     Args:
         email_text: Raw email text containing trade information
         data_dir: Directory containing trading data files
+        fund_name: Fund name for Supabase operations (optional)
 
     Returns:
         True if trade was successfully added, False otherwise
@@ -403,10 +407,20 @@ def add_trade_from_email(email_text: str, data_dir: str) -> bool:
 
         # Import here to avoid circular imports
         from data.repositories.csv_repository import CSVRepository
+        from data.repositories.repository_factory import RepositoryFactory
         from portfolio.trade_processor import TradeProcessor
 
-        # Initialize repository and processor
-        repository = CSVRepository(data_dir)
+        # Initialize repository - use dual write if fund_name provided, otherwise CSV only
+        if fund_name:
+            try:
+                repository = RepositoryFactory.create_dual_write_repository(data_dir, fund_name)
+                print(f"Using dual-write repository (CSV + Supabase) for fund: {fund_name}")
+            except Exception as e:
+                print(f"Warning: Failed to create dual-write repository: {e}")
+                print("Falling back to CSV-only repository")
+                repository = CSVRepository(data_dir)
+        else:
+            repository = CSVRepository(data_dir)
 
         # Idempotency guard: skip exact duplicates
         if is_duplicate_trade(trade, repository):

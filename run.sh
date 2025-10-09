@@ -30,8 +30,6 @@ while true; do
     echo
     if [ $exit_code -eq 42 ]; then
         echo "Trading bot requested restart..."
-        echo "Restarting in 2 seconds..."
-        sleep 2
         continue
     else
         echo "Trading bot session ended."

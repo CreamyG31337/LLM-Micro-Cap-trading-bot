@@ -25,9 +25,24 @@ Design Philosophy:
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 from typing import Any, Dict, List, Optional
+from display.console_output import _safe_emoji
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Try to load from web_dashboard/.env first, then fallback to root .env
+    if Path("web_dashboard/.env").exists():
+        load_dotenv("web_dashboard/.env")
+    elif Path(".env").exists():
+        load_dotenv(".env")
+except ImportError:
+    # dotenv not available, continue without it
+    pass
 
 # Modular startup check - handles path setup and dependency checking
 try:
@@ -121,12 +136,14 @@ class PromptGenerator:
         self.price_cache = PriceCache()
         self.market_data_fetcher = MarketDataFetcher(cache_instance=self.price_cache)
         
-        # Initialize repository and portfolio manager
-        from data.repositories.csv_repository import CSVRepository
-        self.repository = CSVRepository(self.data_dir)
+        # Initialize repository and portfolio manager based on configuration
+        self.repository = self._get_configured_repository()
+        
+        # Display data source configuration
+        self._display_data_source_info()
         
         # Get fund information from data directory
-        from portfolio.fund_manager import Fund, RepositorySettings
+        from portfolio.fund_manager import Fund
         from utils.fund_manager import get_fund_manager
         fund_manager = get_fund_manager()
         
@@ -134,33 +151,24 @@ class PromptGenerator:
         fund_name = fund_manager.get_fund_by_data_directory(str(self.data_dir))
         if fund_name is None:
             # Fallback: create a default fund object
-            repo_settings = RepositorySettings(type="csv", settings={})
             fund = Fund(
                 id="unknown",
                 name="Unknown",
-                description="Unknown fund",
-                repository=repo_settings
+                description="Unknown fund"
             )
         else:
             fund_config = fund_manager.get_fund_config(fund_name)
             if fund_config:
-                repo_settings = RepositorySettings(
-                    type=fund_config.get("repository", {}).get("type", "csv"),
-                    settings=fund_config.get("repository", {}).get("csv", {})
-                )
                 fund = Fund(
                     id=fund_name,
                     name=fund_config.get("fund", {}).get("name", fund_name),
-                    description=fund_config.get("fund", {}).get("description", ""),
-                    repository=repo_settings
+                    description=fund_config.get("fund", {}).get("description", "")
                 )
             else:
-                repo_settings = RepositorySettings(type="csv", settings={})
                 fund = Fund(
                     id=fund_name,
                     name=fund_name,
-                    description="Fund",
-                    repository=repo_settings
+                    description="Fund"
                 )
         
         self.portfolio_manager = PortfolioManager(self.repository, fund)
@@ -856,23 +864,33 @@ class PromptGenerator:
                 except Exception:
                     pos_dict['opened_date'] = "N/A"
                 
-                # Calculate daily P&L using shared function
-                # Smart logic: If today's snapshot exists in CSV (after refresh), exclude it
-                # If pre-market, use all snapshots as-is
-                from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
-                from datetime import datetime
-                snapshots = self.portfolio_manager.load_portfolio()
-                today_date = datetime.now().date()
-                latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
-                
-                if latest_snapshot_date == today_date:
-                    # Today's snapshot exists - exclude it since we have fresh prices
-                    historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                # Calculate daily P&L - now handled in SQL for Supabase
+                if hasattr(self.portfolio_manager.repository, 'get_historical_snapshots_for_pnl'):
+                    # Supabase repository - P&L is calculated in SQL
+                    # The daily_pnl_dollar and daily_pnl_pct are already in the position data
+                    daily_pnl_dollar = getattr(position, 'daily_pnl_dollar', 0)
+                    daily_pnl_pct = getattr(position, 'daily_pnl_pct', 0)
+                    
+                    if daily_pnl_dollar != 0:
+                        pos_dict['daily_pnl'] = f"${daily_pnl_dollar:+.2f}"
+                    else:
+                        pos_dict['daily_pnl'] = "$0.00"
                 else:
-                    # Pre-market or weekend - use all snapshots as-is
-                    historical_snapshots = snapshots
-                
-                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
+                    # CSV repository - use traditional calculation
+                    from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+                    from datetime import datetime
+                    snapshots = self.portfolio_manager.load_portfolio()
+                    today_date = datetime.now().date()
+                    latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
+                    
+                    if latest_snapshot_date == today_date:
+                        # Today's snapshot exists - exclude it since we have fresh prices
+                        historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                    else:
+                        # Pre-market or weekend - use all snapshots as-is
+                        historical_snapshots = snapshots
+                    
+                    pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
             
@@ -1027,20 +1045,31 @@ class PromptGenerator:
                 except Exception:
                     pos_dict['opened_date'] = "N/A"
                 
-                # Calculate daily P&L using shared function
-                # Smart logic: If today's snapshot exists in CSV, exclude it; otherwise use all
-                from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
-                from datetime import datetime
-                snapshots = self.portfolio_manager.load_portfolio()
-                today_date = datetime.now().date()
-                latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
-                
-                if latest_snapshot_date == today_date:
-                    historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                # Calculate daily P&L - now handled in SQL for Supabase
+                if hasattr(self.portfolio_manager.repository, 'get_historical_snapshots_for_pnl'):
+                    # Supabase repository - P&L is calculated in SQL
+                    # The daily_pnl_dollar and daily_pnl_pct are already in the position data
+                    daily_pnl_dollar = getattr(position, 'daily_pnl_dollar', 0)
+                    daily_pnl_pct = getattr(position, 'daily_pnl_pct', 0)
+                    
+                    if daily_pnl_dollar != 0:
+                        pos_dict['daily_pnl'] = f"${daily_pnl_dollar:+.2f}"
+                    else:
+                        pos_dict['daily_pnl'] = "$0.00"
                 else:
-                    historical_snapshots = snapshots
-                
-                pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
+                    # CSV repository - use traditional calculation
+                    from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
+                    from datetime import datetime
+                    snapshots = self.portfolio_manager.load_portfolio()
+                    today_date = datetime.now().date()
+                    latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
+                    
+                    if latest_snapshot_date == today_date:
+                        historical_snapshots = snapshots[:-1] if len(snapshots) > 1 else []
+                    else:
+                        historical_snapshots = snapshots
+                    
+                    pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
             
@@ -1099,24 +1128,40 @@ class PromptGenerator:
         # 2. Get fund name from settings or active fund
         fund_name = self._get_fund_name()
 
-        # 3. Load and format the thesis from YAML
-        thesis_path = self._get_thesis_path()
-        try:
-            with open(thesis_path, "r") as f:
-                thesis_data = yaml.safe_load(f)
+        # 3. Load and format the thesis from Supabase or YAML
+        thesis_data = self._get_thesis_data()
+        
+        # Validate required structure
+        if 'guiding_thesis' not in thesis_data:
+            raise ValueError(f"Invalid thesis data structure: missing 'guiding_thesis' key")
+        
+        guiding_thesis = thesis_data['guiding_thesis']
+        if 'title' not in guiding_thesis or 'overview' not in guiding_thesis or 'pillars' not in guiding_thesis:
+            raise ValueError(f"Invalid thesis data structure: missing required keys")
+        
+        # Replace placeholder in thesis title and overview
+        thesis_title = guiding_thesis['title'].replace('{fund_name}', fund_name)
+        thesis_overview = guiding_thesis['overview'].replace('{fund_name}', fund_name)
+        
+        thesis_text = f"{thesis_title}\n{thesis_overview}\n\n"
+        for pillar in guiding_thesis['pillars']:
+            if 'name' not in pillar or 'allocation' not in pillar:
+                raise ValueError(f"Invalid pillar structure: missing 'name' or 'allocation'")
             
-            # Replace placeholder in thesis title and overview
-            thesis_title = thesis_data['guiding_thesis']['title'].replace('{fund_name}', fund_name)
-            thesis_overview = thesis_data['guiding_thesis']['overview'].replace('{fund_name}', fund_name)
+            thesis_text += f"{pillar['name']} ({pillar['allocation']})\n"
             
-            thesis_text = f"{thesis_title}\n{thesis_overview}\n\n"
-            for pillar in thesis_data['guiding_thesis']['pillars']:
-                thesis_text += f"{pillar['name']} ({pillar['allocation']})\n"
-                thesis_text += f"Thesis: {pillar['thesis']}\n\n"
-        except FileNotFoundError:
-            thesis_text = f"ERROR: {thesis_path} not found."
-        except Exception as e:
-            thesis_text = f"ERROR: Could not parse {thesis_path}: {e}"
+            # Handle different pillar structures - look for 'thesis' or 'strategy' or 'objective'
+            pillar_text = ""
+            if 'thesis' in pillar:
+                pillar_text = pillar['thesis']
+            elif 'strategy' in pillar:
+                pillar_text = pillar['strategy']
+            elif 'objective' in pillar:
+                pillar_text = pillar['objective']
+            else:
+                raise ValueError(f"Invalid pillar structure: pillar must have 'thesis', 'strategy', or 'objective'")
+            
+            thesis_text += f"Thesis: {pillar_text}\n\n"
 
         # 4. Format the portfolio data
         portfolio_tables = []
@@ -1225,6 +1270,37 @@ class PromptGenerator:
         # Default to the generic daily template
         return "prompts/daily_template.txt"
     
+    def _get_thesis_data(self) -> Dict[str, Any]:
+        """Get thesis data from Supabase or fallback to YAML file."""
+        try:
+            # Try to get thesis from Supabase first
+            from data.repositories.repository_factory import get_repository_container
+            repository = get_repository_container()
+            
+            if hasattr(repository, 'get_fund_thesis'):
+                try:
+                    thesis_data = repository.get_fund_thesis()
+                    print("📊 Thesis data source: Supabase database")
+                    logger.info("Loaded thesis data from Supabase")
+                    return thesis_data
+                except Exception as e:
+                    print(f"⚠️  Supabase thesis load failed: {e}")
+                    print("📄 Falling back to YAML file...")
+                    logger.warning(f"Failed to load thesis from Supabase: {e}")
+                    # Fall back to YAML file
+                    pass
+            
+            # Fallback to YAML file
+            thesis_path = self._get_thesis_path()
+            with open(thesis_path, "r") as f:
+                thesis_data = yaml.safe_load(f)
+            print("📄 Thesis data source: YAML file")
+            logger.info("Loaded thesis data from YAML file")
+            return thesis_data
+            
+        except Exception as e:
+            raise RuntimeError(f"Could not load thesis data: {e}")
+    
     def _get_thesis_path(self) -> str:
         """Get the appropriate thesis file path based on active fund."""
         try:
@@ -1236,19 +1312,18 @@ class PromptGenerator:
                 fund_thesis_path = Path(fund_info["data_directory"]) / "thesis.yaml"
                 if fund_thesis_path.exists():
                     return str(fund_thesis_path)
+                else:
+                    raise FileNotFoundError(f"Thesis file not found: {fund_thesis_path}")
+            else:
+                raise ValueError("No active fund data directory found")
         
         except ImportError:
-            # Fund management not available, use default
-            pass
+            raise ImportError("Fund management module not available - cannot determine thesis path")
         except Exception as e:
-            # Any other error, fall back to default
-            print(f"⚠️  Could not determine thesis path: {e}")
-        
-        # Default to the legacy thesis location
-        return "prompts/thesis.yaml"
+            raise RuntimeError(f"Could not determine thesis path: {e}")
     
     def _get_fund_name(self) -> str:
-        """Get the fund name from active fund or settings."""
+        """Get the fund name from active fund."""
         try:
             # Try to get fund name from active fund
             from utils.fund_ui import get_current_fund_info
@@ -1259,21 +1334,122 @@ class PromptGenerator:
                 fund_name = fund_config.get("fund", {}).get("name")
                 if fund_name:
                     return fund_name
+                else:
+                    raise ValueError("Fund name not found in active fund configuration")
+            else:
+                raise ValueError("No active fund configuration found")
         
         except ImportError:
-            # Fund management not available, use settings
-            pass
+            raise ImportError("Fund management module not available - cannot determine fund name")
         except Exception as e:
-            # Any other error, fall back to settings
-            print(f"⚠️  Could not get fund name from active fund: {e}")
+            raise RuntimeError(f"Could not get fund name from active fund: {e}")
+    
+    def _get_configured_repository(self):
+        """Get the repository based on configuration."""
+        try:
+            # Check repository configuration
+            config_file = Path("repository_config.json")
+            if config_file.exists():
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                
+                # Check web dashboard data source configuration
+                web_config = config.get("web_dashboard", {})
+                data_source = web_config.get("data_source", "hybrid")
+                
+                if data_source == "supabase":
+                    # Use Supabase repository
+                    from data.repositories.supabase_repository import SupabaseRepository
+                    import os
+                    repository = SupabaseRepository(
+                        url=os.getenv("SUPABASE_URL"),
+                        key=os.getenv("SUPABASE_ANON_KEY"),
+                        fund=self._get_fund_name_from_data_dir()
+                    )
+                    print("📊 Portfolio data source: Supabase database")
+                    return repository
+                
+                elif data_source == "csv":
+                    # Use CSV repository
+                    from data.repositories.csv_repository import CSVRepository
+                    repository = CSVRepository(self.data_dir)
+                    print("📄 Portfolio data source: CSV files")
+                    return repository
+                
+                else:  # hybrid mode
+                    # Try Supabase first, fallback to CSV
+                    try:
+                        from data.repositories.supabase_repository import SupabaseRepository
+                        import os
+                        repository = SupabaseRepository(
+                            url=os.getenv("SUPABASE_URL"),
+                            key=os.getenv("SUPABASE_ANON_KEY"),
+                            fund=self._get_fund_name_from_data_dir()
+                        )
+                        print(f"{_safe_emoji('📊')} Portfolio data source: Supabase database (hybrid mode)")
+                        return repository
+                    except Exception as e:
+                        print(f"{_safe_emoji('⚠️')}  Supabase failed: {e}")
+                        print(f"{_safe_emoji('📄')} Falling back to CSV files...")
+                        from data.repositories.csv_repository import CSVRepository
+                        repository = CSVRepository(self.data_dir)
+                        print(f"{_safe_emoji('📄')} Portfolio data source: CSV files (fallback)")
+                        return repository
+            
+        except Exception as e:
+            print(f"{_safe_emoji('⚠️')}  Configuration error: {e}")
         
-        # Fallback to settings or generic name - graceful handling
-        fund_name = self.settings.get('fund_details', {}).get('name')
-        if not fund_name:
-            print("⚠️  No fund name configured - using 'Trading Fund' as default")
-            print("   💡 Tip: Set up a proper fund configuration for better organization")
-            return "Trading Fund"
-        return fund_name
+        # Default fallback to CSV
+        from data.repositories.csv_repository import CSVRepository
+        repository = CSVRepository(self.data_dir)
+        print(f"{_safe_emoji('📄')} Portfolio data source: CSV files (default)")
+        return repository
+    
+    def _get_fund_name_from_data_dir(self) -> str:
+        """Extract fund name from data directory path."""
+        data_dir_str = str(self.data_dir)
+        if "Project Chimera" in data_dir_str:
+            return "Project Chimera"
+        elif "RRSP Lance Webull" in data_dir_str:
+            return "RRSP Lance Webull"
+        elif "TEST" in data_dir_str:
+            return "TEST"
+        elif "TFSA" in data_dir_str:
+            return "TFSA"
+        else:
+            # Extract from path like "trading_data/funds/FundName"
+            parts = data_dir_str.split("/")
+            if len(parts) >= 3 and parts[-2] == "funds":
+                return parts[-1]
+            return "Unknown"
+    
+    def _display_data_source_info(self) -> None:
+        """Display information about data sources being used."""
+        print("\n" + "="*60)
+        print("📊 DATA SOURCE CONFIGURATION")
+        print("="*60)
+        
+        # Check repository type
+        repo_type = type(self.repository).__name__
+        if "Supabase" in repo_type:
+            print("✅ Supabase: Available for portfolio and thesis data")
+        else:
+            print("❌ Supabase: Not available for portfolio data")
+        
+        # Check if Supabase is available for thesis
+        try:
+            from data.repositories.repository_factory import get_repository_container
+            repository = get_repository_container()
+            if hasattr(repository, 'get_fund_thesis'):
+                print("✅ Supabase: Available for thesis data")
+            else:
+                print("❌ Supabase: Not available for thesis data")
+        except Exception as e:
+            print(f"❌ Supabase: Not available for thesis data ({e})")
+        
+        print("✅ CSV Files: Available for portfolio data")
+        print("✅ YAML Files: Available for thesis data (fallback)")
+        print("="*60)
 
 
 def generate_daily_prompt(data_dir: Path | str | None = None) -> None:

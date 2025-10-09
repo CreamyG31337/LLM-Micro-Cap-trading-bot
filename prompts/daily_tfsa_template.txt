@@ -14,6 +14,6 @@ Key Constraints:
 - Risk Tolerance: Accept higher volatility for greater upside potential within TFSA contribution limits
 
 Today's Trading Plan:
-Based on the portfolio data above, provide your daily assessment and any recommended actions for today. Focus on maintaining the three-pillar TFSA strategy: Growth Technology, Emerging Markets, and Opportunistic Investments.
+Based on the portfolio data above, provide your daily assessment and any recommended actions for today.
 
 Keep recommendations growth-focused and aligned with tax-free maximization objectives.

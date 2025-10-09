@@ -248,6 +248,12 @@ class Settings:
             **repo_config
         }
         
+        # Add data directory for CSV repositories
+        if repo_type == 'csv':
+            data_dir = self.get_data_directory()
+            config['data_directory'] = data_dir
+            print(f"DEBUG: Added data_directory to config: {data_dir}")
+        
         # Add fund name for Supabase repositories
         if repo_type == 'supabase':
             config['fund'] = self.get_fund_name()

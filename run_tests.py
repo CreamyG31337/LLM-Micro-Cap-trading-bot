@@ -61,6 +61,10 @@ def main():
         "emoji_unicode": ["python", "-m", "pytest", "tests/test_emoji_unicode_bugs.py", "-q", "--tb=line", "--durations=3"],
         "financial": ["python", "-m", "pytest", "tests/test_financial_calculations.py", "-q", "--tb=line", "--durations=5"],
         "integration": ["python", "-m", "pytest", "tests/test_integration.py", "-q", "--tb=line", "--durations=5"],
+        "bug_prevention": ["python", "-m", "pytest", "tests/test_historical_bug_prevention.py", "-q", "--tb=line", "--durations=5"],
+        "supabase_pnl": ["python", "-m", "pytest", "tests/test_supabase_pnl_calculation_bug.py", "-q", "--tb=line", "--durations=5"],
+        "price_update": ["python", "-m", "pytest", "tests/test_price_update_functionality_preservation.py", "-q", "--tb=line", "--durations=5"],
+        "graph_normalization": ["python", "-m", "pytest", "tests/test_graph_normalization_bug_prevention.py", "-q", "--tb=line", "--durations=5"],
         "quick": ["python", "-m", "pytest", "tests/", "-q", "--tb=line", "-x"],
         "verbose": ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
     }

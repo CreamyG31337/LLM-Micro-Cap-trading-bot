@@ -809,16 +809,27 @@ def api_portfolio():
     if not data['portfolio'].empty:
         # Handle both Supabase and CSV data formats
         if 'ticker' in data['portfolio'].columns:
-            # Supabase format
+            # Supabase format - using latest_positions view with P&L calculations
             for _, row in data['portfolio'].iterrows():
+                # Calculate market value and total P&L
+                market_value = float(row['shares']) * float(row['price'])
+                total_pnl = market_value - float(row['cost_basis'])
+                
                 current_positions.append({
                     'ticker': row['ticker'],
-                    'shares': round(row['total_shares'], 4),
-                    'price': round(row['avg_price'], 2),
-                    'cost_basis': round(row['total_cost_basis'], 2),
-                    'market_value': round(row['total_market_value'], 2),
-                    'pnl': float(row['total_pnl']),
-                    'pnl_pct': float((row['total_pnl'] / row['total_cost_basis'] * 100)) if row['total_cost_basis'] > 0 else 0.0
+                    'shares': round(float(row['shares']), 4),
+                    'price': round(float(row['price']), 2),
+                    'cost_basis': round(float(row['cost_basis']), 2),
+                    'market_value': round(market_value, 2),
+                    'pnl': round(total_pnl, 2),
+                    'pnl_pct': round((total_pnl / float(row['cost_basis']) * 100), 2) if float(row['cost_basis']) > 0 else 0.0,
+                    # Add SQL-calculated P&L metrics
+                    'daily_pnl_dollar': round(float(row.get('daily_pnl_dollar', 0)), 2),
+                    'daily_pnl_pct': round(float(row.get('daily_pnl_pct', 0)), 2),
+                    'weekly_pnl_dollar': round(float(row.get('weekly_pnl_dollar', 0)), 2),
+                    'weekly_pnl_pct': round(float(row.get('weekly_pnl_pct', 0)), 2),
+                    'monthly_pnl_dollar': round(float(row.get('monthly_pnl_dollar', 0)), 2),
+                    'monthly_pnl_pct': round(float(row.get('monthly_pnl_pct', 0)), 2)
                 })
         else:
             # CSV format fallback
@@ -855,6 +866,58 @@ def api_performance_chart():
     data = load_portfolio_data(fund)
     chart_data = create_performance_chart(data['portfolio'], fund)
     return chart_data
+
+@app.route('/api/contributors')
+@require_auth
+def api_contributors():
+    """API endpoint for fund contributors/holders"""
+    fund = request.args.get('fund')
+    
+    if not fund:
+        return jsonify({"error": "Fund parameter required"}), 400
+    
+    try:
+        # Get contributor data from Supabase
+        client = SupabaseClient()
+        
+        # Get contributor ownership data
+        result = client.supabase.table('contributor_ownership').select('*').eq('fund', fund).execute()
+        
+        if not result.data:
+            return jsonify([])
+        
+        # Format the data for frontend
+        contributors = []
+        total_net = sum([float(c['net_contribution']) for c in result.data])
+        
+        for contributor in result.data:
+            net_contrib = float(contributor['net_contribution'])
+            ownership_pct = (net_contrib / total_net * 100) if total_net > 0 else 0
+            
+            contributors.append({
+                'contributor': contributor['contributor'],
+                'email': contributor['email'],
+                'net_contribution': net_contrib,
+                'total_contributions': float(contributor['total_contributions']),
+                'total_withdrawals': float(contributor['total_withdrawals']),
+                'ownership_percentage': round(ownership_pct, 2),
+                'transaction_count': contributor['transaction_count'],
+                'first_contribution': contributor['first_contribution'],
+                'last_transaction': contributor['last_transaction']
+            })
+        
+        # Sort by net contribution (highest first)
+        contributors.sort(key=lambda x: x['net_contribution'], reverse=True)
+        
+        return jsonify({
+            'contributors': contributors,
+            'total_contributors': len(contributors),
+            'total_net_contributions': total_net
+        })
+        
+    except Exception as e:
+        print(f"Error fetching contributors: {e}")
+        return jsonify({"error": "Failed to fetch contributors"}), 500
 
 @app.route('/api/recent-trades')
 @require_auth

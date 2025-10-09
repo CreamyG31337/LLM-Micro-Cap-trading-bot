@@ -134,6 +134,7 @@ class FundMigrator:
                 position = {
                     "fund": fund_name,
                     "ticker": str(row.get("Ticker", "")),
+                    "company": str(row.get("Company", "")),
                     "shares": float(row.get("Shares", 0)),
                     "price": float(row.get("Price", row.get("Current Price", 0))),
                     "cost_basis": float(row.get("Cost Basis", 0)),

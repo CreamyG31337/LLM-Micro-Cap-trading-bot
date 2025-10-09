@@ -67,8 +67,8 @@ from data.models.portfolio import PortfolioSnapshot
 
 # Business logic modules
 from portfolio.portfolio_manager import PortfolioManager
-from utils.fund_manager import get_fund_manager, invalidate_fund_manager_cache
-from portfolio.fund_manager import FundManager as ConfigFundManager
+from utils.fund_manager import get_fund_manager, invalidate_fund_manager_cache, FundManager
+from portfolio.fund_manager import FundManager as ConfigFundManager, Fund
 from portfolio.fifo_trade_processor import FIFOTradeProcessor
 from portfolio.position_calculator import PositionCalculator
 from portfolio.trading_interface import TradingInterface
@@ -459,19 +459,21 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
             if not fund:
                 raise InitializationError("Default fund not found in funds.yml")
 
-        # Update repository configuration with fund-specific settings
-        repo_config = {
-            'type': fund.repository.type,
-            'fund': fund.name,  # Pass fund name to repository (matches database fund column)
-            **fund.repository.settings
-        }
+        # Get repository configuration from repository_config.json
+        # (Funds no longer specify repository type - it's global)
+        repo_config = settings.get_repository_config()
+        
+        # Add fund name to repository config
+        repo_config['fund'] = fund.name
         settings.set('repository', repo_config)
 
-        # Set data directory (either from fund or command line override)
+        # Set data directory (either from command line or derive from fund name)
         if args.data_dir:
             settings.set('repository.csv.data_directory', args.data_dir)
-        elif 'directory' in fund.repository.settings:
-            settings.set('repository.csv.data_directory', fund.repository.settings['directory'])
+        else:
+            # Derive data directory from fund name
+            fund_data_dir = f"trading_data/funds/{fund.name}"
+            settings.set('repository.csv.data_directory', fund_data_dir)
 
         # Show environment banner (after command-line overrides)
         data_dir = settings.get_data_directory()
@@ -768,7 +770,6 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
             print(f"  [{i}] {fund.name}")
             print(f"      ID: {fund.id}")
             print(f"      Description: {fund.description}")
-            print(f"      Repository: {fund.repository.type}")
             print()
 
         # Get user selection
@@ -787,16 +788,14 @@ def switch_fund_workflow(args: argparse.Namespace, settings: Settings, fund_mana
             selected_fund = funds[fund_index]
             print_success(f"Switching to fund: {selected_fund.name}")
 
-            # Update settings with new fund's repository configuration
-            repo_config = {
-                'type': selected_fund.repository.type,
-                **selected_fund.repository.settings
-            }
+            # Get global repository configuration (funds don't specify repository type anymore)
+            repo_config = settings.get_repository_config()
+            repo_config['fund'] = selected_fund.name
             settings.set('repository', repo_config)
 
-            # Also update the data directory setting to match the fund
-            if 'directory' in selected_fund.repository.settings:
-                settings.set('repository.csv.data_directory', selected_fund.repository.settings['directory'])
+            # Update the data directory setting to match the fund
+            fund_data_dir = f"trading_data/funds/{selected_fund.name}"
+            settings.set('repository.csv.data_directory', fund_data_dir)
 
             # Clear the repository cache to force a fresh instance
             from data.repositories.repository_factory import get_repository_container
@@ -1697,10 +1696,32 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         # Load fund contributions data first
         fund_contributions = []
         try:
-            fund_file = Path(repository.data_dir) / "fund_contributions.csv"
-            if fund_file.exists():
-                df = pd.read_csv(fund_file)
-                fund_contributions = df.to_dict('records')
+            # Check if using Supabase repository
+            if hasattr(repository, 'supabase') and repository.supabase:
+                # Read from Supabase
+                from web_dashboard.supabase_client import SupabaseClient
+                client = SupabaseClient()
+                result = client.supabase.table('fund_contributions').select('*').eq('fund', repository.fund).execute()
+                
+                if result.data:
+                    # Convert Supabase format to CSV format for compatibility
+                    for record in result.data:
+                        fund_contributions.append({
+                            'Contributor': record['contributor'],
+                            'Amount': record['amount'],
+                            'Type': record['contribution_type'],
+                            'Email': record.get('email', ''),
+                            'Notes': record.get('notes', ''),
+                            'Timestamp': record['timestamp']
+                        })
+                    logger.debug(f"Loaded {len(fund_contributions)} contributions from Supabase")
+            else:
+                # Read from CSV file (original behavior)
+                fund_file = Path(repository.data_dir) / "fund_contributions.csv"
+                if fund_file.exists():
+                    df = pd.read_csv(fund_file)
+                    fund_contributions = df.to_dict('records')
+                    logger.debug(f"Loaded {len(fund_contributions)} contributions from CSV")
         except Exception as e:
             logger.debug(f"Could not load fund contributions: {e}")
 

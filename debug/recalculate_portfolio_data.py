@@ -52,7 +52,10 @@ def recalculate_portfolio_data(data_dir: str = "trading_data/funds/TEST"):
     
     try:
         # BACKUP THE FILE FIRST
-        backup_file = portfolio_file.with_suffix(f'.backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        backup_dir = portfolio_file.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_dir / f"{portfolio_file.stem}.backup_{timestamp}.csv"
         portfolio_df = pd.read_csv(portfolio_file)
         portfolio_df.to_csv(backup_file, index=False)
         print(f"{_safe_emoji('💾')} Backed up portfolio to: {backup_file}")

@@ -50,14 +50,25 @@ class EmailTradeParser:
                 r'price:\s*[A-Z]*\$?([0-9,]+\.?[0-9]*)',  # Case insensitive
             ],
             'total_cost': [
-                r'Total cost:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Total value:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Total:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Amount:\s*\$?([0-9,]+\.?[0-9]*)',
-                r'Value:\s*\$?([0-9,]+\.?[0-9]*)',
+                r'Total cost:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Total cost:\s*CA\$([0-9,]+\.?[0-9]*)',
+                r'Total cost:\s*\$([0-9,]+\.?[0-9]*)',
+                r'Total value:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Total value:\s*CA\$([0-9,]+\.?[0-9]*)',
+                r'Total value:\s*\$([0-9,]+\.?[0-9]*)',
+                r'Total:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Total:\s*CA\$([0-9,]+\.?[0-9]*)',
+                r'Total:\s*\$([0-9,]+\.?[0-9]*)',
+                r'Amount:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Amount:\s*CA\$([0-9,]+\.?[0-9]*)',
+                r'Amount:\s*\$([0-9,]+\.?[0-9]*)',
+                r'Value:\s*US\$([0-9,]+\.?[0-9]*)',
+                r'Value:\s*CA\$([0-9,]+\.?[0-9]*)',
+                r'Value:\s*\$([0-9,]+\.?[0-9]*)',
             ],
             'action': [
                 r'Type:\s*(Market\s+)?(Buy|Sell|Bought|Sold)',
+                r'Type:\s*(Limit\s+)?(Buy|Sell|Bought|Sold)',
                 r'Type:\s*(Fractional\s+)?(Buy|Sell|Bought|Sold)',
                 r'Action:\s*(Buy|Sell|Bought|Sold)',
                 r'(Buy|Sell|Bought|Sold)\s+order',
@@ -192,7 +203,7 @@ class EmailTradeParser:
     def _extract_currency(self, text: str) -> str:
         """Extract currency from text (CAD, USD, etc.)."""
         # Look for currency indicators in the text
-        if re.search(r'US\$|USD|US\s+Dollar', text, re.IGNORECASE):
+        if re.search(r'US\$|USD|US\s+Dollar|Average price:\s*US\$|Total cost:\s*US\$', text, re.IGNORECASE):
             return 'USD'
         elif re.search(r'CA\$|CAD|Canadian|C\$', text, re.IGNORECASE):
             return 'CAD'
@@ -462,6 +473,92 @@ def add_trade_from_email(email_text: str, data_dir: str, fund_name: str = None) 
         else:
             print(f"Unsupported action: {trade.action}")
             return False
+
+        # Check if this is a backdated trade that needs targeted rebuild
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).date()
+        trade_date = trade.timestamp.date()
+        
+        if trade_date < today:
+            print(f"📅 Backdated trade detected: {trade.ticker} on {trade_date}")
+            
+            # Check if portfolio has entries for this ticker after the trade date
+            try:
+                from pathlib import Path
+                portfolio_file = f'{data_dir}/llm_portfolio_update.csv'
+                if Path(portfolio_file).exists():
+                    import pandas as pd
+                    portfolio_df = pd.read_csv(portfolio_file)
+                    portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
+                    
+                    # Check for entries of this ticker after the trade date
+                    ticker_entries_after = portfolio_df[
+                        (portfolio_df['Ticker'] == trade.ticker.upper().strip()) &
+                        (portfolio_df['Date'].dt.date > trade_date)
+                    ]
+                    
+                    if not ticker_entries_after.empty:
+                        print(f"🔄 Found {len(ticker_entries_after)} outdated HOLD entries for {trade.ticker}")
+                        print(f"   Rebuilding {trade.ticker} from {trade_date} forward...")
+                        
+                        # Import and call the targeted rebuild function
+                        from debug.rebuild_portfolio_from_scratch import rebuild_ticker_from_date
+                        success = rebuild_ticker_from_date(trade.ticker, trade.timestamp, data_dir)
+                        
+                        if success:
+                            print(f"✅ Successfully rebuilt {trade.ticker} portfolio entries")
+                        else:
+                            print(f"❌ Failed to rebuild {trade.ticker} - manual rebuild may be needed")
+                    else:
+                        print(f"ℹ️  No outdated entries found for {trade.ticker}")
+                        
+            except Exception as e:
+                print(f"⚠️  Could not check for outdated entries: {e}")
+                print("   Manual portfolio rebuild may be needed")
+
+        # Check if this is a sell trade that might close the position
+        if trade.action == 'SELL':
+            try:
+                # Get current position after the sell to check remaining shares
+                current_position = processor._get_current_position(trade.ticker)
+                remaining_shares = current_position.shares if current_position else Decimal('0')
+                
+                # If remaining position value is small (likely a fractional remainder), ask user
+                if remaining_shares > Decimal('0'):
+                    # Calculate remaining position value
+                    remaining_value = remaining_shares * trade.price
+                    if remaining_value < Decimal('1.00'):  # Less than $1 remaining
+                        print(f"\n📊 Remaining position: {remaining_shares} shares of {trade.ticker} (${remaining_value:.2f})")
+                        response = input(f"Did you sell your entire position in {trade.ticker}? (y/N): ").strip().lower()
+                        
+                        if response in ('y', 'yes'):
+                            print(f"✅ Marking {trade.ticker} position as completely closed")
+                        
+                            # Create a corrective trade to zero out the position
+                            corrective_trade = Trade(
+                                ticker=trade.ticker,
+                                action='SELL',
+                                shares=remaining_shares,
+                                price=Decimal('0.01'),  # Minimal price for cleanup
+                                timestamp=trade.timestamp,
+                                cost_basis=Decimal('0'),
+                                pnl=Decimal('0'),
+                                reason=f"POSITION CLEANUP - Close remaining {remaining_shares} shares",
+                                currency=trade.currency
+                            )
+                            
+                            # Save the corrective trade
+                            repository.save_trade(corrective_trade)
+                            
+                            # Update position to zero
+                            processor._update_position_after_sell(corrective_trade)
+                            
+                            print(f"   Added cleanup trade: {remaining_shares} shares @ $0.01")
+                            print(f"   Position in {trade.ticker} is now zero")
+                        
+            except Exception as e:
+                print(f"⚠️  Could not check position closure: {e}")
+                logger.warning(f"Could not check position closure for {trade.ticker}: {e}")
 
         print(f"Successfully added trade: {trade.ticker} {trade.action} {trade.shares} @ {trade.price}")
         return True

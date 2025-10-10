@@ -9,6 +9,22 @@
 - **Use trading_data/funds/TEST directory** for development (not "trading_data/funds/Project Chimera" which is production)
 - **Copy CSVs between funds** anytime: Copy files from `trading_data/funds/Project Chimera/` to `trading_data/funds/TEST/` for testing
 
+## PowerShell Command Line Issues
+- **Avoid multi-line Python strings** in `run_terminal_cmd` as they cause PowerShell `>>` continuation prompts
+- **Use simple one-liners** or create separate `.py` files for complex testing
+- **If stuck at `>>` prompt:** Press `Ctrl+C` to cancel and return to normal prompt
+- **Example problematic command:**
+  ```powershell
+  python -c "
+  text = '''multi-line string
+  >> # PowerShell waits for completion
+  ```
+- **Better approach:**
+  ```powershell
+  # Create test_script.py and run it
+  python test_script.py
+  ```
+
 ## Build/Lint/Test Commands
 
 ### Type Checking

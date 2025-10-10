@@ -8,6 +8,7 @@ while removing all the duplicates that were created by the bug.
 """
 
 import pandas as pd
+import shutil
 from pathlib import Path
 import sys
 from datetime import datetime
@@ -31,9 +32,13 @@ def clean_duplicate_snapshots(csv_file_path: str) -> None:
         return
     
     # Create backup
-    backup_path = csv_path.with_suffix('.csv.backup')
+    backup_dir = csv_path.parent / "backups"
+    backup_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = backup_dir / f"{csv_path.stem}.backup_{timestamp}.csv"
     logger.info(f"Creating backup: {backup_path}")
-    csv_path.rename(backup_path)
+    shutil.copy2(csv_path, backup_path)
+    csv_path.unlink()  # Remove original file
     
     try:
         # Load the CSV file

@@ -252,6 +252,76 @@ class SupabaseRepository(BaseRepository):
         # For now, do nothing as market data is typically fetched live
         logger.warning("Market data saving to Supabase not implemented yet")
     
+    def get_recent_trades(self, days: int = 30, limit: int = 100) -> List[Trade]:
+        """Get recent trades for easier debugging.
+        
+        Args:
+            days: Number of days back to look
+            limit: Maximum number of trades to return
+            
+        Returns:
+            List of recent trades sorted by date
+        """
+        from datetime import timedelta
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        return self.get_trade_history(date_range=(start_date, end_date))[:limit]
+    
+    def get_trades_by_ticker(self, ticker: str, limit: int = 50) -> List[Trade]:
+        """Get all trades for a specific ticker.
+        
+        Args:
+            ticker: Ticker symbol to filter by
+            limit: Maximum number of trades to return
+            
+        Returns:
+            List of trades for the ticker
+        """
+        trades = self.get_trade_history(ticker=ticker)
+        return sorted(trades, key=lambda x: x.timestamp, reverse=True)[:limit]
+    
+    def get_fund_summary(self) -> Dict[str, Any]:
+        """Get a summary of trades for this fund.
+        
+        Returns:
+            Dictionary with fund statistics
+        """
+        try:
+            # Get all trades for this fund
+            all_trades = self.get_trade_history()
+            
+            if not all_trades:
+                return {
+                    'fund': self.fund,
+                    'total_trades': 0,
+                    'unique_tickers': 0,
+                    'date_range': None,
+                    'total_value': 0
+                }
+            
+            # Calculate statistics
+            tickers = set(trade.ticker for trade in all_trades)
+            dates = [trade.timestamp for trade in all_trades]
+            total_value = sum(float(trade.cost_basis or 0) for trade in all_trades)
+            
+            return {
+                'fund': self.fund,
+                'total_trades': len(all_trades),
+                'unique_tickers': len(tickers),
+                'date_range': {
+                    'first': min(dates).strftime('%Y-%m-%d'),
+                    'last': max(dates).strftime('%Y-%m-%d')
+                },
+                'total_value': total_value,
+                'tickers': sorted(tickers)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get fund summary: {e}")
+            raise RepositoryError(f"Failed to get fund summary: {e}")
+
     def backup_data(self, backup_path: str) -> None:
         """Backup data from Supabase.
         

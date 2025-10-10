@@ -36,7 +36,9 @@ def main():
     # Create backup if requested
     if args.backup:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = portfolio_file.with_suffix(f".backup_exchange_rate_fix_{timestamp}.csv")
+        backup_dir = portfolio_file.parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        backup_file = backup_dir / f"{portfolio_file.stem}.backup_exchange_rate_fix_{timestamp}.csv"
         shutil.copy2(portfolio_file, backup_file)
         print(f"💾 Backup created: {backup_file}")
     

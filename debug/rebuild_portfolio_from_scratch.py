@@ -238,7 +238,7 @@ def get_historical_close_price(ticker: str, date_str: str, trade_price: float = 
     except Exception:
         return 0.0
 
-def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", timezone_str: str = None):
+def rebuild_portfolio_from_scratch(data_dir: str = None, timezone_str: str = None):
     """
     Completely rebuild portfolio CSV from trade log with full recalculation.
     
@@ -272,6 +272,10 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
     trade_log_file = data_path / "llm_trade_log.csv"
     portfolio_file = data_path / "llm_portfolio_update.csv"
     
+    # Require data directory to be provided
+    if data_dir is None:
+        raise ValueError("data_dir parameter is required - no defaults allowed")
+        
     print(f"{_safe_emoji('🔄')} Rebuilding Portfolio from Trade Log")
     print("=" * 50)
     print(f"📁 Using data directory: {data_dir}")
@@ -316,12 +320,12 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         # Backup portfolio file
         if portfolio_file.exists():
             portfolio_df = pd.read_csv(portfolio_file)
-            portfolio_backup = backup_dir / f"{portfolio_file.name}.backup_{timestamp}"
+            portfolio_backup = backup_dir / f"{portfolio_file.stem}.backup_{timestamp}.csv"
             portfolio_df.to_csv(portfolio_backup, index=False)
             print(f"{_safe_emoji('💾')} Backed up portfolio to: {portfolio_backup}")
         
         # Backup trade log file (IMPORTANT!)
-        trade_log_backup = backup_dir / f"{trade_log_file.name}.backup_{timestamp}"
+        trade_log_backup = backup_dir / f"{trade_log_file.stem}.backup_{timestamp}.csv"
         shutil.copy2(trade_log_file, trade_log_backup)
         print(f"{_safe_emoji('💾')} Backed up trade log to: {trade_log_backup}")
         
@@ -451,7 +455,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
         print(f"\n💰 Pre-calculating currencies for all tickers...")
         ticker_currencies = {}
         for ticker in unique_tickers:
-            ticker_currencies[ticker] = get_currency(ticker)
+            ticker_currencies[ticker] = get_currency_for_ticker_from_data_dir(ticker, data_dir)
         print(f"   Pre-calculated currencies for {len(ticker_currencies)} tickers")
         
         # Process trades chronologically to build complete portfolio
@@ -495,7 +499,7 @@ def rebuild_portfolio_from_scratch(data_dir: str = "trading_data/funds/TEST", ti
                     'PnL': pnl,  # Use actual PnL from trade log
                     'Action': 'SELL',
                     'Company': get_company_name(ticker),
-                    'Currency': get_currency(ticker)
+                    'Currency': get_currency_for_ticker_from_data_dir(ticker, data_dir)
                 })
                 
                 # Reset position after sell but preserve last trade info for HOLD entries
@@ -788,7 +792,15 @@ def get_company_name(ticker: str) -> str:
 
 def get_currency(ticker: str) -> str:
     """
-    Get currency for ticker from the trade log data.
+    Get currency for ticker (backward compatibility function).
+    Uses default data directory.
+    """
+    # This function requires data_dir to be provided explicitly
+    raise ValueError("get_currency() function requires explicit data_dir - use get_currency_for_ticker_from_data_dir() instead")
+
+def get_currency_for_ticker_from_data_dir(ticker: str, data_dir: str) -> str:
+    """
+    Get currency for ticker from the trade log data in a specific directory.
     
     This function uses the trade log currency data to determine
     the correct currency, ensuring consistency with the source data.
@@ -820,14 +832,227 @@ def get_currency(ticker: str) -> str:
             return 'CAD'
         return 'USD'
 
+def rebuild_ticker_from_date(ticker: str, from_date: datetime, data_dir: str = None, timezone_str: str = None) -> bool:
+    """
+    Rebuild portfolio entries for a specific ticker from a specific date forward.
+    
+    This is much faster than a full rebuild since it only processes one ticker
+    and only from the specified date forward.
+    
+    Args:
+        ticker: Ticker symbol to rebuild
+        from_date: Date to start rebuilding from (inclusive)
+        data_dir: Directory containing trading data files
+        timezone_str: Timezone string (optional, will auto-detect)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Require data directory to be provided
+        if data_dir is None:
+            raise ValueError("data_dir parameter is required - no defaults allowed")
+            
+        print(f"\n🔄 Targeted rebuild: {ticker} from {from_date.strftime('%Y-%m-%d')} forward")
+        
+        # Set up timezone
+        if not timezone_str:
+            timezone_str = DEFAULT_TIMEZONE
+        
+        # Load existing portfolio
+        portfolio_file = f'{data_dir}/llm_portfolio_update.csv'
+        if not Path(portfolio_file).exists():
+            print(f"❌ Portfolio file not found: {portfolio_file}")
+            return False
+            
+        portfolio_df = pd.read_csv(portfolio_file)
+        if portfolio_df.empty:
+            print("❌ Portfolio file is empty")
+            return False
+        
+        # Convert Date column to datetime for filtering
+        portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
+        
+        # Make from_date timezone-naive for comparison with pandas datetime
+        from_date_naive = from_date.replace(tzinfo=None) if from_date.tzinfo else from_date
+        
+        # Find and remove all entries for this ticker on/after from_date
+        ticker_mask = (portfolio_df['Ticker'] == ticker.upper().strip())
+        date_mask = (portfolio_df['Date'] >= from_date_naive)
+        entries_to_remove = ticker_mask & date_mask
+        
+        removed_count = entries_to_remove.sum()
+        if removed_count > 0:
+            print(f"   🗑️  Removing {removed_count} outdated entries for {ticker}")
+            portfolio_df = portfolio_df[~entries_to_remove]
+        
+        # Load trade log
+        trade_log_file = f'{data_dir}/llm_trade_log.csv'
+        if not Path(trade_log_file).exists():
+            print(f"❌ Trade log file not found: {trade_log_file}")
+            return False
+            
+        trade_df = pd.read_csv(trade_log_file)
+        if trade_df.empty:
+            print("❌ Trade log is empty")
+            return False
+        
+        # Convert Date column to datetime
+        trade_df['Date'] = pd.to_datetime(trade_df['Date'])
+        
+        # Filter trades for this ticker
+        ticker_trades = trade_df[trade_df['Ticker'] == ticker.upper().strip()].copy()
+        if ticker_trades.empty:
+            print(f"❌ No trades found for {ticker}")
+            return False
+        
+        # Sort by date
+        ticker_trades = ticker_trades.sort_values('Date')
+        
+        # Calculate positions up to from_date
+        position_at_from_date = {'shares': Decimal('0'), 'cost': Decimal('0')}
+        
+        for _, trade in ticker_trades.iterrows():
+            trade_date = trade['Date']
+            if trade_date.date() < from_date_naive.date():
+                shares = Decimal(str(trade['Shares']))
+                cost = Decimal(str(trade['Cost Basis']))
+                reason = trade['Reason']
+                
+                is_sell = 'SELL' in reason.upper() or 'sell' in reason.lower()
+                
+                if is_sell:
+                    # For sells, reduce position
+                    position_at_from_date['shares'] = max(Decimal('0'), position_at_from_date['shares'] - shares)
+                    if position_at_from_date['shares'] == 0:
+                        position_at_from_date['cost'] = Decimal('0')
+                    else:
+                        # Proportional cost reduction
+                        cost_ratio = position_at_from_date['shares'] / (position_at_from_date['shares'] + shares)
+                        position_at_from_date['cost'] *= cost_ratio
+                else:
+                    # For buys, add to position
+                    position_at_from_date['shares'] += shares
+                    position_at_from_date['cost'] += cost
+        
+        print(f"   📊 Position at {from_date_naive.strftime('%Y-%m-%d')}: {position_at_from_date['shares']} shares, ${position_at_from_date['cost']}")
+        
+        # If no position at from_date, we're done
+        if position_at_from_date['shares'] <= 0:
+            print(f"   ✅ No position to rebuild for {ticker}")
+            # Save the cleaned portfolio
+            portfolio_df.to_csv(portfolio_file, index=False)
+            return True
+        
+        # Generate new entries from from_date to today
+        from datetime import timedelta
+        import pytz
+        
+        tz = pytz.timezone(timezone_str)
+        current_date = from_date_naive.date()
+        today = datetime.now(tz).date()
+        
+        new_entries = []
+        running_position = position_at_from_date.copy()
+        
+        # Get currency for this ticker
+        currency = get_currency_for_ticker_from_data_dir(ticker, data_dir)
+        
+        while current_date <= today:
+            # Skip weekends
+            if not MARKET_HOURS.is_trading_day(current_date):
+                current_date += timedelta(days=1)
+                continue
+            
+            # Process any trades on this date
+            date_trades = ticker_trades[ticker_trades['Date'].dt.date == current_date]
+            for _, trade in date_trades.iterrows():
+                shares = Decimal(str(trade['Shares']))
+                cost = Decimal(str(trade['Cost Basis']))
+                reason = trade['Reason']
+                
+                is_sell = 'SELL' in reason.upper() or 'sell' in reason.lower()
+                
+                if is_sell:
+                    running_position['shares'] = max(Decimal('0'), running_position['shares'] - shares)
+                    if running_position['shares'] == 0:
+                        running_position['cost'] = Decimal('0')
+                    else:
+                        cost_ratio = running_position['shares'] / (running_position['shares'] + shares)
+                        running_position['cost'] *= cost_ratio
+                else:
+                    running_position['shares'] += shares
+                    running_position['cost'] += cost
+            
+            # Only create HOLD entry if we have shares
+            if running_position['shares'] > 0:
+                # Create HOLD entry for this date
+                hold_datetime = tz.localize(datetime.combine(current_date, datetime.min.time().replace(hour=16, minute=0)))
+                
+                # Get historical price for this date
+                price_value = get_historical_close_price(ticker, hold_datetime.strftime('%Y-%m-%d %H:%M:%S'))
+                if not price_value or price_value <= 0:
+                    # Use last known price from trades
+                    last_trade = ticker_trades[ticker_trades['Date'].dt.date <= current_date].iloc[-1]
+                    price_value = float(last_trade['Price'])
+                
+                avg_price = float(running_position['cost'] / running_position['shares'])
+                total_value = float(running_position['shares'] * Decimal(str(price_value)))
+                pnl = total_value - float(running_position['cost'])
+                
+                new_entry = {
+                    'Date': hold_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+                    'Ticker': ticker.upper().strip(),
+                    'Shares': float(running_position['shares']),
+                    'Average Price': avg_price,
+                    'Cost Basis': float(running_position['cost']),
+                    'Stop Loss': 0.0,
+                    'Current Price': price_value,
+                    'Total Value': total_value,
+                    'PnL': pnl,
+                    'Action': 'HOLD',
+                    'Company': get_company_name(ticker),
+                    'Currency': currency
+                }
+                new_entries.append(new_entry)
+            
+            current_date += timedelta(days=1)
+        
+        # Add new entries to portfolio
+        if new_entries:
+            new_df = pd.DataFrame(new_entries)
+            portfolio_df = pd.concat([portfolio_df, new_df], ignore_index=True)
+            
+            # Sort by date to maintain chronological order
+            portfolio_df = portfolio_df.sort_values('Date')
+            
+            print(f"   ✅ Added {len(new_entries)} new HOLD entries for {ticker}")
+        
+        # Save updated portfolio
+        portfolio_df.to_csv(portfolio_file, index=False)
+        print(f"   💾 Portfolio updated successfully")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in targeted rebuild: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main():
     """Main function to rebuild portfolio from scratch"""
     # Check if data directory argument provided
-    data_dir = "trading_data/funds/TEST"
+    if len(sys.argv) < 2:
+        print("❌ Error: data_dir parameter is required")
+        print("Usage: python rebuild_portfolio_from_scratch.py <data_dir> [timezone]")
+        print("Example: python rebuild_portfolio_from_scratch.py 'trading_data/funds/Project Chimera'")
+        sys.exit(1)
+    
+    data_dir = sys.argv[1]
     timezone_str = None
     
-    if len(sys.argv) > 1:
-        data_dir = sys.argv[1]
     if len(sys.argv) > 2:
         timezone_str = sys.argv[2]
     

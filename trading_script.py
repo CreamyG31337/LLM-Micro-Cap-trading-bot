@@ -1662,26 +1662,23 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             else:
                 print_info(f"Portfolio prices not updated ({reason})")
 
-            # DISABLED: Portfolio refresh logic - causes avg_price corruption by mutating positions
-            # The trading script already updates prices properly before display (lines 1058-1094)
-            # Refresh is redundant and was corrupting avg_price by saving mutated position objects
-            # from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
-            #
-            # was_updated, reason = refresh_portfolio_prices_if_needed(
-            #         market_hours=market_hours,
-            #         portfolio_manager=portfolio_manager,
-            #         repository=repository,
-            #         market_data_fetcher=market_data_fetcher,
-            #         price_cache=price_cache,
-            #         verbose=False  # Use logger instead of print for main trading script
-            #     )
-            #
-            # if was_updated:
-            #     logger.info(f"Portfolio prices updated: {reason}")
-            #     print_success("Portfolio snapshot updated successfully")
-            # else:
-            #     logger.debug(f"Portfolio prices not updated: {reason}")
-            print_info("Portfolio prices not updated (market closed and already updated today)")
+            # Portfolio refresh logic - creates missing HOLD entries and updates prices
+            from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+            
+            was_updated, reason = refresh_portfolio_prices_if_needed(
+                market_hours=market_hours,
+                portfolio_manager=portfolio_manager,
+                repository=repository,
+                market_data_fetcher=market_data_fetcher,
+                price_cache=price_cache,
+                verbose=False  # Use logger instead of print for main trading script
+            )
+            
+            if was_updated:
+                logger.info(f"Portfolio prices updated: {reason}")
+                print_success("Portfolio snapshot updated successfully")
+            else:
+                logger.debug(f"Portfolio prices not updated: {reason}")
 
         except Exception as e:
             logger.warning(f"Could not save portfolio snapshot: {e}")
@@ -2086,19 +2083,20 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 data_dir = settings.get_data_directory()
 
                 # Run the rebuild script
-                rebuild_script = Path(__file__).parent / "debug" / "rebuild_portfolio_from_scratch.py"
+                rebuild_script = Path(__file__).parent / "debug" / "rebuild_portfolio_complete.py"
                 if rebuild_script.exists():
                     try:
                         result = subprocess.run([
                             sys.executable, str(rebuild_script), data_dir
-                        ], capture_output=True, text=True, cwd=Path(__file__).parent.parent)
+                        ], capture_output=True, text=True)
 
                         if result.returncode == 0:
                             print_success("Portfolio rebuilt successfully!")
                             print(result.stdout)
                         else:
                             print_error("Portfolio rebuild failed!")
-                            print(result.stderr)
+                            print("STDOUT:", result.stdout)
+                            print("STDERR:", result.stderr)
                     except Exception as e:
                         print_error(f"Error running rebuild script: {e}")
                 else:

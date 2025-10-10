@@ -153,6 +153,7 @@ The system is architected for seamless migration from CSV to database:
 - Always use `trading_data/funds/TEST/` directory for development (not `trading_data/funds/Project Chimera/` which is production)
 - Activate virtual environment with `.\\venv\\Scripts\\activate`
 
+
 ### Code Quality Requirements
 - **Python 3.11+** required
 - **Strict typing** with mypy enabled

@@ -16,6 +16,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
+from decimal import Decimal
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent
@@ -95,29 +96,59 @@ Examples:
     # Helper: add a single parsed trade and update portfolio
     def _save_trade_only(trade_obj) -> bool:
         try:
-            # Use the proper email trade parser function that handles portfolio updates
-            from utils.email_trade_parser import add_trade_from_email
+            # Import here to avoid circular imports
+            from data.repositories.csv_repository import CSVRepository
+            from data.repositories.repository_factory import RepositoryFactory
+            from portfolio.trade_processor import TradeProcessor
+
+            # Initialize repository - use dual write if fund_name provided, otherwise CSV only
+            if args.fund_name:
+                try:
+                    repository = RepositoryFactory.create_dual_write_repository(args.data_dir, args.fund_name)
+                except Exception as e:
+                    print(f"Warning: Failed to create dual-write repository: {e}")
+                    print("Falling back to CSV-only repository")
+                    repository = CSVRepository(args.data_dir)
+            else:
+                repository = CSVRepository(args.data_dir)
+
+            # Check for duplicates
+            from utils.email_trade_parser import is_duplicate_trade
+            if is_duplicate_trade(trade_obj, repository):
+                print("ℹ️  Duplicate trade detected; skipping insert.")
+                return True
+
+            # Save the trade
+            repository.save_trade(trade_obj)
             
-            # Convert trade object back to email text for the parser
-            # This ensures we use the proper processing flow that updates portfolio
-            email_text = f"""
-Type: {trade_obj.action}
-Symbol: {trade_obj.ticker}
-Shares: {trade_obj.shares}
-Average price: ${trade_obj.price}
-Total cost: ${trade_obj.shares * trade_obj.price}
-Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
-"""
+            # Update portfolio position
+            processor = TradeProcessor(repository)
+            if trade_obj.action == 'BUY':
+                processor._update_position_after_buy(trade_obj, None)
+            elif trade_obj.action == 'SELL':
+                processor._update_position_after_sell(trade_obj)
             
-            # Use the proper email trade parser that handles portfolio updates
-            return add_trade_from_email(email_text, args.data_dir, args.fund_name)
+            print(f"Successfully added trade: {trade_obj.ticker} {trade_obj.action} {trade_obj.shares} @ {trade_obj.price}")
+            return True
+            
         except Exception as e:
             print(f"❌ Error saving trade: {e}")
             return False
     
     def _print_trade(trade_obj) -> None:
+        # Get company name for better confirmation
+        try:
+            from utils.ticker_utils import get_company_name
+            company_name = get_company_name(trade_obj.ticker, trade_obj.currency)
+            if company_name and company_name != trade_obj.ticker and company_name != 'Unknown':
+                company_display = f"{trade_obj.ticker} ({company_name})"
+            else:
+                company_display = trade_obj.ticker
+        except Exception:
+            company_display = trade_obj.ticker
+        
         print("✅ Parsed trade:")
-        print(f"   Symbol: {trade_obj.ticker}")
+        print(f"   Symbol: {company_display}")
         print(f"   Action: {trade_obj.action}")
         print(f"   Shares: {trade_obj.shares}")
         print(f"   Price: ${trade_obj.price}")
@@ -132,7 +163,7 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
         print("Press Enter 4 times when you're done pasting all emails.")
         print("=" * 60)
         
-        # Collect all input lines
+        # FIRST: Collect all email input upfront (before any processing)
         all_lines = []
         empty_line_count = 0
         
@@ -145,7 +176,7 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
                 if line.strip() == "":
                     empty_line_count += 1
                     if empty_line_count >= 3:
-                        # Three consecutive empty lines means we're done
+                        # Three consecutive empty lines means we're done collecting
                         break
                 else:
                     empty_line_count = 0
@@ -157,7 +188,7 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
             print("\nCancelled.")
             return 0
         
-        # Split emails by double newlines (empty lines)
+        # SECOND: Parse the collected input into email blocks
         email_blocks = []
         current_block = []
         
@@ -177,6 +208,8 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
             print("No email content provided.")
             return 0
         
+        # THIRD: Process each email and ask for confirmation
+        # This happens AFTER all email collection is complete
         print(f"\n📊 Found {len(email_blocks)} email(s) to process...")
         saved_count = 0
         
@@ -207,17 +240,9 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
                 else:
                     print("Trade not saved.")
         
-        # After processing all emails, optionally rebuild
-        if saved_count > 0 and not args.test:
-            resp = input(f"\nRebuild portfolio CSV from trade log now? ({saved_count} trades added) (Y/n): ").strip().lower()
-            if resp in ('', 'y', 'yes'):
-                print("\n🔄 Rebuilding portfolio from trade log...")
-                ok = rebuild_portfolio_from_scratch(args.data_dir)
-                if ok:
-                    print("✅ Portfolio rebuilt successfully.")
-                else:
-                    print("❌ Failed to rebuild portfolio.")
-        elif saved_count == 0 and not args.test:
+        # Note: Portfolio updates are handled automatically by backdated trade detection
+        # Manual rebuild is only available via debug tools
+        if saved_count == 0 and not args.test:
             print("\nℹ️  No trades were added to the system.")
         
         return 0
@@ -267,13 +292,6 @@ Time: {trade_obj.timestamp.strftime('%B %d, %Y %H:%M EDT')}
         return 0
     if _save_trade_only(trade):
         print("✅ Trade successfully added to your trade log!")
-        rebuild = input("Rebuild portfolio CSV now? (Y/n): ").strip().lower()
-        if rebuild in ('', 'y', 'yes'):
-            ok = rebuild_portfolio_from_scratch(args.data_dir)
-            if ok:
-                print("✅ Portfolio rebuilt successfully.")
-            else:
-                print("❌ Failed to rebuild portfolio.")
         return 0
     else:
         print("❌ Failed to add trade to system")

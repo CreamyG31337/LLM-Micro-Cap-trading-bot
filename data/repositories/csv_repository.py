@@ -411,7 +411,7 @@ class CSVRepository(BaseRepository):
             row = trade.to_csv_dict()
             
             # Create DataFrame
-            df = pd.DataFrame([row])
+            new_trade_df = pd.DataFrame([row])
             
             # Ensure proper column order
             expected_columns = [
@@ -421,18 +421,37 @@ class CSVRepository(BaseRepository):
             
             # Add missing columns with default values
             for col in expected_columns:
-                if col not in df.columns:
-                    df[col] = ''
+                if col not in new_trade_df.columns:
+                    new_trade_df[col] = ''
             
             # Reorder columns
-            df = df[expected_columns]
+            new_trade_df = new_trade_df[expected_columns]
             
-            # Ensure file ends with proper newline before appending
+            # Read existing trades, append new trade, and sort by date
             if self.trade_log_file.exists():
-                self._ensure_file_ends_with_newline(self.trade_log_file)
-                df.to_csv(self.trade_log_file, mode='a', header=False, index=False, lineterminator='\n')
+                # Read existing trades
+                existing_df = pd.read_csv(self.trade_log_file)
+                
+                # Append new trade
+                combined_df = pd.concat([existing_df, new_trade_df], ignore_index=True)
+                
+                # Convert Date column to datetime for proper sorting
+                combined_df['Date'] = pd.to_datetime(combined_df['Date'])
+                
+                # Sort by date
+                combined_df = combined_df.sort_values('Date')
+                
+                # Convert Date back to string format for CSV
+                from utils.timezone_utils import format_timestamp_for_csv
+                combined_df['Date'] = combined_df['Date'].apply(
+                    lambda x: format_timestamp_for_csv(x) if pd.notna(x) else ''
+                )
+                
+                # Write sorted trades back to file
+                combined_df.to_csv(self.trade_log_file, index=False, lineterminator='\n')
             else:
-                df.to_csv(self.trade_log_file, index=False, lineterminator='\n')
+                # First trade - just write it
+                new_trade_df.to_csv(self.trade_log_file, index=False, lineterminator='\n')
             
             logger.info(f"Saved trade: {trade.ticker} {trade.action} {trade.shares} @ {trade.price}")
             

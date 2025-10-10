@@ -171,7 +171,7 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          ["--data-dir", str(data_dir_path), "--fund-name", fund_info.get("name", "") if fund_info["exists"] else ""]),
         
         ("r", f"{_safe_emoji('🔧')} Rebuild Portfolio",
-         "Rebuild portfolio CSV from trade log (fixes display issues) - runs rebuild_portfolio_from_scratch.py",
+         "Rebuild portfolio CSV + Supabase from trade log (fixes display issues) - runs rebuild_portfolio_complete.py",
          ["--data-dir", str(data_dir_path)]),
         
         ("c", f"{_safe_emoji('⚙️')} Configure",
@@ -471,7 +471,7 @@ def get_script_path(option: str) -> Optional[Path]:
         "m": PROJECT_ROOT / "menu_actions.py",
         "x": PROJECT_ROOT / "get_emails.py",
         "e": PROJECT_ROOT / "add_trade_from_email.py",
-        "r": PROJECT_ROOT / "debug" / "rebuild_portfolio_from_scratch.py"
+        "r": PROJECT_ROOT / "debug" / "rebuild_portfolio_complete.py"
     }
     
     return script_map.get(option)

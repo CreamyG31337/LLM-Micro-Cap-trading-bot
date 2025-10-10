@@ -117,6 +117,9 @@ class TradeProcessor:
             # Update portfolio position
             self._update_position_after_buy(trade, stop_loss)
             
+            # Check for backdated trade and rebuild if needed
+            self._check_and_rebuild_backdated_trade(trade)
+            
             logger.info(f"Buy trade executed successfully: {ticker} {shares} @ {price}")
             return trade
             
@@ -193,6 +196,12 @@ class TradeProcessor:
             
             # Update portfolio position
             self._update_position_after_sell(trade)
+            
+            # Check for backdated trade and rebuild if needed
+            self._check_and_rebuild_backdated_trade(trade)
+            
+            # Check if this sell might close the position
+            self._check_position_closure(trade)
             
             logger.info(f"Sell trade executed successfully: {ticker} {shares} @ {price}, P&L: {pnl}")
             return trade
@@ -545,3 +554,121 @@ class TradeProcessor:
         except Exception as e:
             logger.error(f"Failed to update position after sell trade: {e}")
             # Don't raise here as the trade was already saved
+    
+    def _check_and_rebuild_backdated_trade(self, trade: Trade) -> None:
+        """Check if a trade is backdated and rebuild portfolio entries if needed.
+        
+        Args:
+            trade: The trade that was just executed
+        """
+        try:
+            from datetime import datetime, timezone
+            from pathlib import Path
+            import pandas as pd
+            
+            today = datetime.now(timezone.utc).date()
+            trade_date = trade.timestamp.date()
+            
+            # Only check if trade is backdated
+            if trade_date >= today:
+                return
+            
+            logger.info(f"Backdated trade detected: {trade.ticker} on {trade_date}")
+            
+            # Get data directory from repository
+            data_dir = getattr(self.repository, 'data_dir', None)
+            if not data_dir:
+                logger.warning("Could not determine data directory for backdated trade check")
+                return
+            
+            # Check if portfolio has entries for this ticker after the trade date
+            portfolio_file = f'{data_dir}/llm_portfolio_update.csv'
+            if not Path(portfolio_file).exists():
+                return
+                
+            portfolio_df = pd.read_csv(portfolio_file)
+            if portfolio_df.empty:
+                return
+                
+            portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
+            
+            # Check for entries of this ticker after the trade date
+            ticker_entries_after = portfolio_df[
+                (portfolio_df['Ticker'] == trade.ticker.upper().strip()) &
+                (portfolio_df['Date'].dt.date > trade_date)
+            ]
+            
+            if not ticker_entries_after.empty:
+                logger.info(f"Found {len(ticker_entries_after)} outdated HOLD entries for {trade.ticker}")
+                logger.info(f"Rebuilding {trade.ticker} from {trade_date} forward...")
+                
+                # Import and call the targeted rebuild function
+                from debug.rebuild_portfolio_from_scratch import rebuild_ticker_from_date
+                success = rebuild_ticker_from_date(trade.ticker, trade.timestamp, data_dir)
+                
+                if success:
+                    logger.info(f"Successfully rebuilt {trade.ticker} portfolio entries")
+                else:
+                    logger.warning(f"Failed to rebuild {trade.ticker} - manual rebuild may be needed")
+            else:
+                logger.info(f"No outdated entries found for {trade.ticker}")
+                
+        except Exception as e:
+            logger.warning(f"Could not check for backdated trade: {e}")
+            # Don't raise here as the trade was already saved successfully
+    
+    def _check_position_closure(self, trade: Trade) -> None:
+        """Check if a sell trade might close the position and prompt user if needed.
+        
+        Args:
+            trade: The sell trade that was just executed
+        """
+        try:
+            from decimal import Decimal
+            
+            # Only check for sell trades
+            if trade.action != 'SELL':
+                return
+            
+            # Get current position after the sell
+            current_position = self._get_current_position(trade.ticker)
+            remaining_shares = current_position.shares if current_position else Decimal('0')
+            
+            # If remaining position value is small (likely a fractional remainder), ask user
+            if remaining_shares > Decimal('0'):
+                # Calculate remaining position value
+                remaining_value = remaining_shares * trade.price
+                if remaining_value < Decimal('1.00'):  # Less than $1 remaining
+                    print(f"\n📊 Remaining position: {remaining_shares} shares of {trade.ticker} (${remaining_value:.2f})")
+                    response = input(f"Did you sell your entire position in {trade.ticker}? (y/N): ").strip().lower()
+                
+                    if response in ('y', 'yes'):
+                        print(f"✅ Marking {trade.ticker} position as completely closed")
+                        
+                        # Create a corrective trade to zero out the position
+                    corrective_trade = Trade(
+                        ticker=trade.ticker,
+                        action='SELL',
+                        shares=remaining_shares,
+                        price=Decimal('0.01'),  # Minimal price for cleanup
+                        timestamp=trade.timestamp,
+                        cost_basis=Decimal('0'),
+                        pnl=Decimal('0'),
+                        reason=f"POSITION CLEANUP - Close remaining {remaining_shares} shares",
+                        currency=trade.currency
+                    )
+                    
+                    # Save the corrective trade
+                    self.repository.save_trade(corrective_trade)
+                    
+                    # Update position to zero
+                    self._update_position_after_sell(corrective_trade)
+                    
+                    print(f"   Added cleanup trade: {remaining_shares} shares @ $0.01")
+                    print(f"   Position in {trade.ticker} is now zero")
+                    
+                    logger.info(f"Position closure confirmed for {trade.ticker}: added cleanup trade")
+                    
+        except Exception as e:
+            logger.warning(f"Could not check position closure: {e}")
+            # Don't raise here as the trade was already saved successfully

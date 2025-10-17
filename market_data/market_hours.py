@@ -62,6 +62,7 @@ class MarketHours:
             now = now.astimezone(tz)
         
         # Check if it's a trading day (weekday and not a holiday)
+        # Use "both" to allow trading when either US or Canadian markets are open
         if not self.holidays.is_trading_day(now.date(), market="both"):
             return False
         

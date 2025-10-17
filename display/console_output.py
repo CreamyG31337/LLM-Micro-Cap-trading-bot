@@ -18,7 +18,7 @@ def _can_handle_unicode() -> bool:
         encoding = sys.stdout.encoding or 'utf-8'
         
         # Check if encoding supports Unicode
-        if encoding.lower() in ['cp1252', 'latin1', 'ascii']:
+        if encoding.lower() in ['cp1252', 'latin1', 'ascii', 'charmap']:
             return False
         
         # Test encoding a simple Unicode character using escape sequence

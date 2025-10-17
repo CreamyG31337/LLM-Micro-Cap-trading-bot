@@ -135,7 +135,7 @@ class TableFormatter:
         table.add_column(f"{_safe_emoji('📊')}\nTotal P&L", justify="right", style="magenta", width=17, header_style="bold magenta")
         # Column widths optimized for 1920x1080 with 125% scaling (Windows 11) - ~157 character terminal width
         table.add_column(f"{_safe_emoji('📈')}\n1-Day P&L", justify="right", style="cyan", width=16, header_style="bold magenta")
-        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=14, header_style="bold magenta")
+        table.add_column(f"{_safe_emoji('📊')}\n5-Day P&L", justify="right", style="bright_magenta", width=15, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🍕')}\nWght", justify="right", style="bright_blue", width=8, header_style="bold magenta")
         table.add_column(f"{_safe_emoji('🛑')}\nStop Loss", justify="right", style="red", width=8, header_style="bold magenta")
         
@@ -1406,6 +1406,167 @@ class TableFormatter:
             print(f"{Fore.CYAN}'backup'{Style.RESET_ALL} {_safe_emoji('💾')} Create Backup")
             print(f"{Fore.CYAN}'restore'{Style.RESET_ALL} {_safe_emoji('🔄')} Restore from Backup")
             print(f"{Fore.CYAN}Enter{Style.RESET_ALL} {_safe_emoji('➤')} Continue to Portfolio Processing")
+
+    def create_trade_log_table(self, trades: List[Any], title: str = "Trade Log") -> None:
+        """Create and display a trade log table.
+        
+        Args:
+            trades: List of trade objects or dictionaries
+            title: Title for the table
+        """
+        if not trades:
+            print_info("No trades found in trade log")
+            return
+        
+        # Sort trades chronologically (oldest first)
+        sorted_trades = sorted(trades, key=lambda x: getattr(x, 'timestamp', getattr(x, 'date', '')))
+        
+        if has_rich_support() and self.console:
+            self._create_rich_trade_log_table(sorted_trades, title)
+        else:
+            self._create_plain_trade_log_table(sorted_trades, title)
+    
+    def _create_rich_trade_log_table(self, trades: List[Any], title: str) -> None:
+        """Create Rich-formatted trade log table."""
+        from utils.timezone_utils import format_timestamp_for_display
+        
+        table = Table(title=title, show_header=True, header_style="bold magenta")
+        table.add_column("Date", style="cyan", no_wrap=True)
+        table.add_column("Ticker", style="green", no_wrap=True)
+        table.add_column("Action", style="bold", no_wrap=True)
+        table.add_column("Shares", justify="right", style="yellow")
+        table.add_column("Price", justify="right", style="yellow")
+        table.add_column("Cost Basis", justify="right", style="yellow")
+        table.add_column("PnL", justify="right", style="yellow")
+        table.add_column("Currency", style="blue", no_wrap=True)
+        table.add_column("Reason", style="dim")
+        
+        total_pnl = 0
+        buy_count = 0
+        sell_count = 0
+        
+        for trade in trades:
+            # Extract trade data
+            timestamp = getattr(trade, 'timestamp', getattr(trade, 'date', ''))
+            ticker = getattr(trade, 'ticker', getattr(trade, 'symbol', ''))
+            action = getattr(trade, 'action', getattr(trade, 'side', ''))
+            shares = getattr(trade, 'shares', getattr(trade, 'quantity', 0))
+            price = getattr(trade, 'price', getattr(trade, 'execution_price', 0))
+            cost_basis = getattr(trade, 'cost_basis', getattr(trade, 'total_cost', 0))
+            pnl = getattr(trade, 'pnl', getattr(trade, 'profit_loss', 0))
+            currency = getattr(trade, 'currency', 'USD')
+            reason = getattr(trade, 'reason', getattr(trade, 'notes', ''))
+            
+            # Format timestamp
+            if timestamp:
+                try:
+                    if hasattr(timestamp, 'strftime'):
+                        formatted_date = format_timestamp_for_display(timestamp)
+                    else:
+                        formatted_date = str(timestamp)
+                except:
+                    formatted_date = str(timestamp)
+            else:
+                formatted_date = "N/A"
+            
+            # Format values
+            shares_str = f"{shares:,.0f}" if shares else "0"
+            price_str = f"${price:,.2f}" if price else "$0.00"
+            cost_basis_str = f"${cost_basis:,.2f}" if cost_basis else "$0.00"
+            pnl_str = f"${pnl:,.2f}" if pnl else "$0.00"
+            
+            # Color code action
+            if action.upper() == 'BUY':
+                action_style = "bold green"
+                buy_count += 1
+            elif action.upper() == 'SELL':
+                action_style = "bold red"
+                sell_count += 1
+            else:
+                action_style = "bold blue"
+            
+            # Add row
+            table.add_row(
+                formatted_date,
+                ticker,
+                f"[{action_style}]{action}[/]",
+                shares_str,
+                price_str,
+                cost_basis_str,
+                pnl_str,
+                currency,
+                reason
+            )
+            
+            total_pnl += pnl or 0
+        
+        # Display table
+        self.console.print(table)
+        
+        # Add summary panel
+        summary_text = f"Total Trades: {len(trades)} | Buy: {buy_count} | Sell: {sell_count} | Total P&L: ${total_pnl:,.2f}"
+        summary_panel = Panel(summary_text, title="Trade Summary", border_style="green")
+        self.console.print(summary_panel)
+    
+    def _create_plain_trade_log_table(self, trades: List[Any], title: str) -> None:
+        """Create plain text trade log table."""
+        from utils.timezone_utils import format_timestamp_for_display
+        
+        print(f"\n{title}")
+        print("=" * len(title))
+        
+        # Header
+        print(f"{'Date':<20} {'Ticker':<8} {'Action':<6} {'Shares':<10} {'Price':<10} {'Cost Basis':<12} {'PnL':<10} {'Currency':<8} {'Reason'}")
+        print("-" * 100)
+        
+        total_pnl = 0
+        buy_count = 0
+        sell_count = 0
+        
+        for trade in trades:
+            # Extract trade data
+            timestamp = getattr(trade, 'timestamp', getattr(trade, 'date', ''))
+            ticker = getattr(trade, 'ticker', getattr(trade, 'symbol', ''))
+            action = getattr(trade, 'action', getattr(trade, 'side', ''))
+            shares = getattr(trade, 'shares', getattr(trade, 'quantity', 0))
+            price = getattr(trade, 'price', getattr(trade, 'execution_price', 0))
+            cost_basis = getattr(trade, 'cost_basis', getattr(trade, 'total_cost', 0))
+            pnl = getattr(trade, 'pnl', getattr(trade, 'profit_loss', 0))
+            currency = getattr(trade, 'currency', 'USD')
+            reason = getattr(trade, 'reason', getattr(trade, 'notes', ''))
+            
+            # Format timestamp
+            if timestamp:
+                try:
+                    if hasattr(timestamp, 'strftime'):
+                        formatted_date = format_timestamp_for_display(timestamp)
+                    else:
+                        formatted_date = str(timestamp)
+                except:
+                    formatted_date = str(timestamp)
+            else:
+                formatted_date = "N/A"
+            
+            # Format values
+            shares_str = f"{shares:,.0f}" if shares else "0"
+            price_str = f"${price:,.2f}" if price else "$0.00"
+            cost_basis_str = f"${cost_basis:,.2f}" if cost_basis else "$0.00"
+            pnl_str = f"${pnl:,.2f}" if pnl else "$0.00"
+            
+            # Count actions
+            if action.upper() == 'BUY':
+                buy_count += 1
+            elif action.upper() == 'SELL':
+                sell_count += 1
+            
+            # Print row
+            print(f"{formatted_date:<20} {ticker:<8} {action:<6} {shares_str:<10} {price_str:<10} {cost_basis_str:<12} {pnl_str:<10} {currency:<8} {reason}")
+            
+            total_pnl += pnl or 0
+        
+        # Print summary
+        print("-" * 100)
+        print(f"Total Trades: {len(trades)} | Buy: {buy_count} | Sell: {sell_count} | Total P&L: ${total_pnl:,.2f}")
 
 
 # Convenience functions for backward compatibility

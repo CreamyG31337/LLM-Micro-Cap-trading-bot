@@ -24,7 +24,7 @@ class TestWriteCoordinator:
         self.test_data_dir.mkdir(parents=True, exist_ok=True)
         
         # Create CSV repository
-        self.csv_repo = CSVRepository(self.test_data_dir)
+        self.csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
         
         # Create mock Supabase repository
         self.supabase_repo = Mock()
@@ -225,8 +225,8 @@ class TestRepositoryFactoryDualWrite:
         
         # Execute
         coordinator = RepositoryFactory.create_dual_write_repository(
-            data_dir=str(self.test_data_dir),
-            fund_name=fund_name
+            fund_name=fund_name,
+            data_directory=str(self.test_data_dir)
         )
         
         # Verify
@@ -258,8 +258,8 @@ class TestDualWriteIntegration:
         
         # Setup - use TEST fund to avoid affecting production data
         coordinator = RepositoryFactory.create_dual_write_repository(
-            data_dir=str(self.test_data_dir),
-            fund_name="TEST"
+            fund_name="TEST",
+            data_directory=str(self.test_data_dir)
         )
         
         processor = FIFOTradeProcessor(coordinator)
@@ -286,7 +286,7 @@ class TestDualWriteIntegration:
         """Test fallback to CSV-only when Supabase is unavailable."""
         # This test would require mocking the Supabase connection failure
         # For now, we'll just verify the CSV repository works
-        csv_repo = CSVRepository(self.test_data_dir)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
         
         trade = Trade(
             ticker="AAPL",

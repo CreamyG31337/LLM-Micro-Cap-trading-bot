@@ -43,7 +43,7 @@ class SupabaseRepository(BaseRepository):
             key: Supabase anon key
         """
         self.supabase_url = url or os.getenv("SUPABASE_URL")
-        self.supabase_key = key or os.getenv("SUPABASE_ANON_KEY")
+        self.supabase_key = key or os.getenv("SUPABASE_PUBLISHABLE_KEY")
         
         if not fund_name:
             raise RepositoryError(
@@ -140,7 +140,7 @@ class SupabaseRepository(BaseRepository):
             raise RepositoryError(f"Failed to get portfolio data: {e}")
     
     def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
-        """Save portfolio data to Supabase.
+        """Save portfolio data to Supabase with duplicate detection.
         
         Args:
             snapshot: Portfolio snapshot to save
@@ -149,14 +149,48 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data saving fails
         """
         try:
+            # Check for existing snapshots on the same date
+            from datetime import timezone
+            snapshot_date = snapshot.timestamp.date()
+            
+            # Get existing snapshots for this date
+            existing = self.get_portfolio_data(date_range=(
+                datetime.combine(snapshot_date, datetime.min.time()).replace(tzinfo=timezone.utc),
+                datetime.combine(snapshot_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+            ))
+            
+            if existing:
+                # Check if any existing snapshot is at market close (16:00:00)
+                market_close_exists = any(
+                    s.timestamp.hour == 16 and s.timestamp.minute == 0 
+                    for s in existing
+                )
+                
+                # If we're trying to save a market close snapshot and one already exists
+                if (snapshot.timestamp.hour == 16 and snapshot.timestamp.minute == 0 
+                    and market_close_exists):
+                    logger.warning(f"Market close snapshot already exists for {snapshot_date}")
+                    # Don't crash, just update the existing one
+                    pass
+                
+                # If we're trying to save an intraday snapshot but market close exists
+                elif market_close_exists and not (snapshot.timestamp.hour == 16 and snapshot.timestamp.minute == 0):
+                    logger.warning(f"⚠️  Attempting to save intraday snapshot but market close snapshot already exists for {snapshot_date}")
+                    logger.warning(f"   Skipping save to preserve market close snapshot at 16:00:00")
+                    return  # Don't save, preserve market close snapshot
+            
             # Use PositionMapper to convert positions to Supabase format
             positions_data = [
                 PositionMapper.model_to_db(position, self.fund, snapshot.timestamp)
                 for position in snapshot.positions
             ]
             
-            # Batch upsert positions (insert or update)
-            result = self.supabase.table("portfolio_positions").upsert(positions_data).execute()
+            # Clear existing positions for this fund and date first
+            snapshot_date = snapshot.timestamp.date()
+            delete_result = self.supabase.table("portfolio_positions").delete().eq("fund", self.fund).eq("date", snapshot.timestamp.isoformat()).execute()
+            
+            # Insert new positions
+            result = self.supabase.table("portfolio_positions").insert(positions_data).execute()
             
             logger.info(f"Saved {len(positions_data)} portfolio positions to Supabase")
             
@@ -573,14 +607,14 @@ class SupabaseRepository(BaseRepository):
     def get_current_positions(self, fund: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get current portfolio positions, optionally filtered by fund.
 
-        This method returns aggregated data from the current_positions view,
-        compatible with web dashboard expectations.
+        This method returns aggregated data from the latest_positions view,
+        which includes pre-calculated daily P&L data.
         """
         try:
             # Use provided fund if explicitly given (including None for all funds)
             # Empty string means "all funds" so treat it as None
             target_fund = fund if fund else None
-            query = self.supabase.table("current_positions").select("*")
+            query = self.supabase.table("latest_positions").select("*")
             if target_fund:
                 query = query.eq("fund", target_fund)
             result = query.execute()

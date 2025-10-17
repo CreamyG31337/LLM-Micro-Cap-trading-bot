@@ -15,8 +15,10 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from decimal import Decimal
+from collections import defaultdict
 import pandas as pd
 import pytz
+import numpy as np
 from dotenv import load_dotenv
 
 # Add project root to path
@@ -28,6 +30,8 @@ from portfolio.portfolio_manager import PortfolioManager
 from market_data.data_fetcher import MarketDataFetcher
 from market_data.price_cache import PriceCache
 from market_data.market_hours import MarketHours
+from utils.market_holidays import MarketHolidays
+from utils.ticker_utils import get_company_name
 from display.console_output import print_success, print_error, print_info, print_warning, _safe_emoji
 
 # Load environment variables
@@ -59,14 +63,14 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         # Initialize repository with Supabase dual-write capability (same as trading script)
         if fund_name:
             try:
-                repository = RepositoryFactory.create_repository('supabase-dual-write', data_directory=data_dir, fund_name=fund_name)
+                repository = RepositoryFactory.create_repository(repository_type='supabase-dual-write', data_directory=data_dir, fund_name=fund_name)
                 print(f"{_safe_emoji('✅')} Using Supabase dual-write repository (Supabase read, CSV+Supabase write)")
             except Exception as e:
                 print(f"{_safe_emoji('⚠️')} Supabase dual-write repository failed: {e}")
                 print("   Falling back to CSV-only repository")
-                repository = RepositoryFactory.create_repository('csv', data_directory=data_dir, fund_name=fund_name)
+                repository = RepositoryFactory.create_repository(repository_type='csv', data_directory=data_dir, fund_name=fund_name)
         else:
-            repository = RepositoryFactory.create_repository('csv', data_directory=data_dir, fund_name=fund_name)
+            repository = RepositoryFactory.create_repository(repository_type='csv', data_directory=data_dir, fund_name=fund_name)
             print(f"{_safe_emoji('✅')} Using CSV-only repository")
         
         # Initialize portfolio manager with Fund object
@@ -82,7 +86,8 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         
         print_info(f"{_safe_emoji('📊')} Loading trade log...")
         trade_df = pd.read_csv(trade_log_file)
-        trade_df['Date'] = pd.to_datetime(trade_df['Date'])
+        from utils.timezone_utils import safe_parse_datetime_column
+        trade_df['Date'] = safe_parse_datetime_column(trade_df['Date'], 'Date')
         trade_df = trade_df.sort_values('Date')
         
         print_success(f"{_safe_emoji('✅')} Loaded {len(trade_df)} trades")
@@ -165,10 +170,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 currency=currency
             )
             
-            # Save trade to repository (updates both CSV and Supabase)
-            repository.save_trade(trade)
-            
-            # Update running positions
+            # Update running positions (DO NOT save trade - we're only reading from trade log)
             ticker = trade.ticker
             if ticker not in running_positions:
                 running_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0'), 'currency': trade.currency}
@@ -194,10 +196,15 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         # Get all unique trading days from trades
         trade_dates = sorted(trade_df['Date'].dt.date.unique())
         
-        # Add trading days between first and last trade
+        # Add trading days from first trade to today (or last trading day)
         market_hours = MarketHours()
+        market_holidays = MarketHolidays()
         current_date = trade_dates[0]
-        end_date = trade_dates[-1]
+        
+        # Generate up to today or the last trading day
+        today = datetime.now().date()
+        last_trading_day = market_hours.last_trading_date().date()
+        end_date = max(trade_dates[-1], last_trading_day)
         
         all_trading_days = set(trade_dates)
         while current_date <= end_date:
@@ -205,37 +212,275 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 all_trading_days.add(current_date)
             current_date += timedelta(days=1)
         
-        # Create final portfolio snapshot from current positions
-        print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot...")
+        # Generate historical HOLD entries for each trading day
+        print_info(f"{_safe_emoji('📊')} Creating historical portfolio snapshots...")
         
         from data.models.portfolio import Position, PortfolioSnapshot
-        final_positions = []
+        from market_data.data_fetcher import MarketDataFetcher
+        from market_data.price_cache import PriceCache
         
-        for ticker, position in running_positions.items():
-            if position['shares'] > 0:  # Only include positions with shares
-                avg_price = position['cost'] / position['shares'] if position['shares'] > 0 else Decimal('0')
-                final_position = Position(
-                    ticker=ticker,
-                    shares=position['shares'],
-                    avg_price=avg_price,
-                    cost_basis=position['cost'],
-                    currency=position['currency'],
-                    company=ticker,  # Will be updated by company name lookup
-                    current_price=avg_price,  # Use avg_price as current_price for now
-                    market_value=position['cost'],  # Use cost_basis as market_value for now
-                    unrealized_pnl=Decimal('0')  # Will be updated by price refresh
+        # Initialize market data fetcher and price cache
+        market_fetcher = MarketDataFetcher()
+        price_cache = PriceCache()
+        
+        # Convert all_trading_days to sorted list
+        all_trading_days_list = sorted(list(all_trading_days))
+        print_info(f"   Generating snapshots for {len(all_trading_days_list)} trading days")
+        
+        # Pre-calculate positions for each trading day
+        date_positions = {}  # date -> {ticker: position_data}
+        running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'currency': 'USD'})
+        
+        for trading_day in all_trading_days_list:
+            # Process trades for this specific day only
+            day_trades = trade_df[trade_df['Date'].dt.date == trading_day]
+            
+            for _, trade in day_trades.iterrows():
+                ticker = trade['Ticker']
+                reason = trade['Reason']
+                shares = Decimal(str(trade['Shares']))
+                price = Decimal(str(trade['Price']))
+                cost = shares * price
+                
+                # Determine action from reason - look for SELL first, then default to BUY
+                if 'SELL' in reason.upper():
+                    # Simple FIFO: reduce shares and cost proportionally
+                    if running_positions[ticker]['shares'] > 0:
+                        cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
+                        running_positions[ticker]['shares'] -= shares
+                        running_positions[ticker]['cost'] -= shares * cost_per_share
+                        # Ensure we don't go negative
+                        if running_positions[ticker]['shares'] < 0:
+                            running_positions[ticker]['shares'] = Decimal('0')
+                        if running_positions[ticker]['cost'] < 0:
+                            running_positions[ticker]['cost'] = Decimal('0')
+                else:
+                    # Default to BUY for all other trades (including imported ones)
+                    running_positions[ticker]['shares'] += shares
+                    running_positions[ticker]['cost'] += cost
+                    # Handle NaN currency values
+                    currency = trade.get('Currency', 'USD')
+                    if pd.isna(currency):
+                        currency = 'USD'
+                    running_positions[ticker]['currency'] = currency
+            
+            # Store current running positions for this date
+            date_positions[trading_day] = dict(running_positions)
+        
+        # Generate portfolio snapshots for each trading day
+        snapshots_created = 0
+        
+        # Pre-fetch prices for all unique tickers across all dates for better performance
+        print_info("   Pre-fetching historical prices...")
+        all_tickers = set()
+        for positions in date_positions.values():
+            all_tickers.update(positions.keys())
+        
+        # Fetch prices for all tickers and dates
+        price_cache_dict = {}  # {(ticker, date): price}
+        for ticker in all_tickers:
+            print_info(f"   Fetching prices for {ticker}...")
+            try:
+                # Fetch all historical data for this ticker at once
+                result = market_fetcher.fetch_price_data(ticker, start=all_trading_days_list[0], end=all_trading_days_list[-1])
+                if result.df is not None and not result.df.empty:
+                    # Cache the full dataset
+                    price_cache.cache_price_data(ticker, result.df)
+                    # Extract prices for each trading day
+                    for trading_day in all_trading_days_list:
+                        day_data = result.df[result.df.index.date == trading_day]
+                        if not day_data.empty:
+                            price_cache_dict[(ticker, trading_day)] = Decimal(str(day_data['Close'].iloc[0]))
+            except Exception as e:
+                print(f"WARNING: Failed to fetch prices for {ticker}: {e}")
+        
+        today = datetime.now().date()
+        for trading_day in all_trading_days_list:
+            # Skip today - it will be handled by the final snapshot
+            if trading_day >= today:
+                continue
+            
+            # Skip days when markets were closed - no point generating snapshots
+            # Check if any of our positions' markets were open on this day
+            positions_for_date = date_positions.get(trading_day, {})
+            active_positions = {k: v for k, v in positions_for_date.items() if v['shares'] > 0}
+            
+            if len(active_positions) == 0:
+                continue
+            
+            # Check if any market was open for our positions
+            any_market_open = False
+            for ticker in active_positions.keys():
+                # Determine market based on ticker (.TO = Toronto, .V = Vancouver)
+                if ticker.endswith(('.TO', '.V')):
+                    market = 'canadian'
+                else:
+                    market = 'us'
+                
+                if market_holidays.is_trading_day(trading_day, market=market):
+                    any_market_open = True
+                    break
+            
+            if not any_market_open:
+                print_info(f"   Skipping {trading_day} - no markets were open for our positions")
+                continue
+            else:
+                print_info(f"   Processing {trading_day} - at least one market was open")
+            
+            # Create positions list for this date
+            daily_positions = []
+            for ticker, position in positions_for_date.items():
+                if position['shares'] > 0:  # Only include positions with shares
+                    # Check if this stock's market was open on this day (.TO = Toronto, .V = Vancouver)
+                    if ticker.endswith(('.TO', '.V')):
+                        market = 'canadian'
+                    else:
+                        market = 'us'
+                    
+                    if not market_holidays.is_trading_day(trading_day, market=market):
+                        print_info(f"     Skipping {ticker} - {market} market was closed on {trading_day}")
+                        continue
+                    # Ensure no division by zero
+                    if position['shares'] > 0:
+                        avg_price = position['cost'] / position['shares']
+                    else:
+                        avg_price = Decimal('0')
+                    
+                    # Use pre-fetched historical price - NO FALLBACKS ALLOWED
+                    price_key = (ticker, trading_day)
+                    if price_key in price_cache_dict:
+                        current_price = price_cache_dict[price_key]
+                    else:
+                        # NO FALLBACKS - fail if historical price not available
+                        raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
+                    market_value = position['shares'] * current_price
+                    unrealized_pnl = market_value - position['cost']
+                    
+                    # Ensure all values are valid (no NaN, no infinity)
+                    # Check for NaN by converting to float and back
+                    try:
+                        avg_price_float = float(avg_price)
+                        if avg_price_float != avg_price_float or avg_price_float == float('inf') or avg_price_float == float('-inf'):
+                            print(f"WARNING: Invalid avg_price for {ticker}: {avg_price} -> 0")
+                            avg_price = Decimal('0')
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"ERROR: avg_price conversion failed for {ticker}: {avg_price} - {e}")
+                        avg_price = Decimal('0')
+                    
+                    try:
+                        current_price_float = float(current_price)
+                        if current_price_float != current_price_float or current_price_float == float('inf') or current_price_float == float('-inf'):
+                            print(f"WARNING: Invalid current_price for {ticker}: {current_price} -> 0")
+                            current_price = Decimal('0')
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"ERROR: current_price conversion failed for {ticker}: {current_price} - {e}")
+                        current_price = Decimal('0')
+                    
+                    try:
+                        market_value_float = float(market_value)
+                        if market_value_float != market_value_float or market_value_float == float('inf') or market_value_float == float('-inf'):
+                            print(f"WARNING: Invalid market_value for {ticker}: {market_value} -> 0")
+                            market_value = Decimal('0')
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"ERROR: market_value conversion failed for {ticker}: {market_value} - {e}")
+                        market_value = Decimal('0')
+                    
+                    try:
+                        unrealized_pnl_float = float(unrealized_pnl)
+                        if unrealized_pnl_float != unrealized_pnl_float or unrealized_pnl_float == float('inf') or unrealized_pnl_float == float('-inf'):
+                            print(f"WARNING: Invalid unrealized_pnl for {ticker}: {unrealized_pnl} -> 0")
+                            unrealized_pnl = Decimal('0')
+                    except (ValueError, TypeError, OverflowError) as e:
+                        print(f"ERROR: unrealized_pnl conversion failed for {ticker}: {unrealized_pnl} - {e}")
+                        unrealized_pnl = Decimal('0')
+                    
+                    position_obj = Position(
+                        ticker=ticker,
+                        shares=position['shares'],
+                        avg_price=avg_price,
+                        cost_basis=position['cost'],
+                        currency=position['currency'],
+                        company=get_company_name(ticker),
+                        current_price=current_price,
+                        market_value=market_value,
+                        unrealized_pnl=unrealized_pnl
+                    )
+                    daily_positions.append(position_obj)
+            
+            # Create and save portfolio snapshot for this date
+            if daily_positions:
+                # Create timestamp for this trading day at market close
+                snapshot_timestamp = datetime.combine(trading_day, datetime.min.time().replace(hour=16, minute=0))
+                
+                # Calculate total value with NaN checking
+                total_value = Decimal('0')
+                for p in daily_positions:
+                    try:
+                        market_val_float = float(p.market_value)
+                        if market_val_float != market_val_float:  # Check for NaN
+                            print(f"WARNING: NaN market_value for {p.ticker}: {p.market_value}")
+                            p.market_value = Decimal('0')
+                        total_value += p.market_value
+                    except Exception as e:
+                        print(f"ERROR: Invalid market_value for {p.ticker}: {p.market_value} - {e}")
+                        p.market_value = Decimal('0')
+                        total_value += Decimal('0')
+                
+                snapshot = PortfolioSnapshot(
+                    positions=daily_positions,
+                    timestamp=snapshot_timestamp,
+                    total_value=total_value
                 )
-                final_positions.append(final_position)
+                
+                repository.save_portfolio_snapshot(snapshot)
+                snapshots_created += 1
+                
+                if snapshots_created % 10 == 0:  # Status update every 10 snapshots
+                    print_info(f"   Created {snapshots_created} historical snapshots...")
         
-        # Create and save final portfolio snapshot
-        if final_positions:
-            final_snapshot = PortfolioSnapshot(
-                positions=final_positions,
-                timestamp=datetime.now(),
-                total_value=sum(p.cost_basis for p in final_positions)
-            )
-            repository.save_portfolio_snapshot(final_snapshot)
-            print_info(f"   Saved final portfolio snapshot with {len(final_positions)} positions")
+        print_info(f"   Created {snapshots_created} historical portfolio snapshots")
+        
+        # Create final portfolio snapshot from current positions
+        # Only create if today is a trading day and market is open
+        from config.settings import Settings
+        
+        settings = Settings()
+        today = datetime.now().date()
+        
+        if market_hours.is_trading_day(today) and market_hours.is_market_open():
+            print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot...")
+            
+            from data.models.portfolio import Position, PortfolioSnapshot
+            final_positions = []
+            
+            for ticker, position in running_positions.items():
+                if position['shares'] > 0:  # Only include positions with shares
+                    avg_price = position['cost'] / position['shares'] if position['shares'] > 0 else Decimal('0')
+                    final_position = Position(
+                        ticker=ticker,
+                        shares=position['shares'],
+                        avg_price=avg_price,
+                        cost_basis=position['cost'],
+                        currency=position['currency'],
+                        company=get_company_name(ticker),
+                        current_price=avg_price,  # Use avg_price as current_price for now
+                        market_value=position['cost'],  # Use cost_basis as market_value for now
+                        unrealized_pnl=Decimal('0')  # Will be updated by price refresh
+                    )
+                    final_positions.append(final_position)
+            
+            # Create and save final portfolio snapshot
+            if final_positions:
+                from datetime import timezone
+                final_snapshot = PortfolioSnapshot(
+                    positions=final_positions,
+                    timestamp=datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0),
+                    total_value=sum(p.cost_basis for p in final_positions)
+                )
+                repository.save_portfolio_snapshot(final_snapshot)
+                print_info(f"   Saved final portfolio snapshot with {len(final_positions)} positions")
+        else:
+            print_info(f"   Skipping final snapshot - today ({today}) is not a trading day or market is closed")
         
         # Create final portfolio CSV from current positions
         print_info(f"{_safe_emoji('📊')} Creating final portfolio CSV...")
@@ -253,7 +498,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     'Total Value': 0.0,   # Will be updated by price refresh
                     'PnL': 0.0,           # Will be updated by price refresh
                     'Action': 'HOLD',
-                    'Company': ticker,  # Will be updated by company name lookup
+                    'Company': get_company_name(ticker),
                     'Currency': position.get('currency', 'USD')
                 })
         

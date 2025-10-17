@@ -46,7 +46,7 @@ class PortfolioManager:
         logger.info(f"Portfolio manager initialized for fund '{self.fund.name}' with {type(repository).__name__}")
     
     def load_portfolio(self, date_range: Optional[Tuple[datetime, datetime]] = None) -> List[PortfolioSnapshot]:
-        """Load portfolio snapshots from repository.
+        """Load portfolio snapshots from repository with duplicate detection.
         
         Args:
             date_range: Optional tuple of (start_date, end_date) to filter results
@@ -61,6 +61,35 @@ class PortfolioManager:
             logger.info(f"Loading portfolio data with date range: {date_range}")
             snapshots = self.repository.get_portfolio_data(date_range)
             logger.info(f"Loaded {len(snapshots)} portfolio snapshots")
+            
+            # Validate for duplicates
+            from collections import defaultdict
+            date_counts = defaultdict(list)
+            for snapshot in snapshots:
+                date_only = snapshot.timestamp.date()
+                date_counts[date_only].append(snapshot.timestamp)
+            
+            # Check for duplicates
+            duplicates_found = False
+            for date_key, timestamps in date_counts.items():
+                if len(timestamps) > 1:
+                    duplicates_found = True
+                    logger.error(f"DUPLICATE SNAPSHOTS DETECTED for {date_key}:")
+                    for ts in timestamps:
+                        logger.error(f"   - {ts}")
+            
+            if duplicates_found:
+                # Option 1: Crash the app
+                raise PortfolioManagerError(
+                    "Duplicate portfolio snapshots detected! "
+                    "Multiple snapshots found for the same date. "
+                    "This will cause incorrect P&L calculations. "
+                    "Please run the rebuild script to fix."
+                )
+                
+                # Option 2: Just warn (comment out the raise above)
+                # logger.warning("⚠️  Duplicate snapshots detected but continuing...")
+            
             return snapshots
             
         except RepositoryError as e:

@@ -390,7 +390,7 @@ class TestRepositoryPatternAbstraction(unittest.TestCase):
         self.data_dir = Path(self.temp_dir)
         
         # Create both repository types
-        self.csv_repo = CSVRepository(str(self.data_dir))
+        self.csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
         self.db_repo = MockDatabaseRepository("mock://test/db")
         
         # Sample data
@@ -579,7 +579,7 @@ class TestBackupRestoreFunctionality(unittest.TestCase):
         self.backup_dir = Path(self.temp_dir) / "backups"
         
         # Create repositories
-        self.csv_repo = CSVRepository(str(self.data_dir))
+        self.csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
         self.db_repo = MockDatabaseRepository("mock://test/db")
         
         # Create backup managers
@@ -872,7 +872,7 @@ class TestMigrationScenarios(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.data_dir = Path(self.temp_dir)
         
-        self.csv_repo = CSVRepository(str(self.data_dir))
+        self.csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
         self.db_repo = MockDatabaseRepository("mock://migration/test")
     
     def tearDown(self):

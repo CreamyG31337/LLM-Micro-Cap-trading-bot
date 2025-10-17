@@ -98,10 +98,33 @@ def refresh_portfolio_prices_if_needed(
             # Create a NEW snapshot for today with updated prices
             # Don't modify the existing snapshot object to avoid reference issues
             from data.models.portfolio import PortfolioSnapshot
+            from datetime import timezone
+            
+            # Check if market is closed - if so, use market close time (16:00)
+            # Otherwise, use current time (can be overwritten later)
+            current_time = datetime.now(timezone.utc)
+            is_market_closed = not market_hours.is_market_open()
+            
+            if is_market_closed:
+                # Use market close time (16:00:00 UTC) for final snapshot
+                snapshot_time = current_time.replace(hour=16, minute=0, second=0, microsecond=0)
+            else:
+                # Use current time for intraday snapshot (can be overwritten)
+                snapshot_time = current_time
+            
+            # Check if we should overwrite existing snapshot
+            existing_snapshot = portfolio_manager.get_latest_portfolio()
+            if existing_snapshot and existing_snapshot.timestamp.date() == snapshot_time.date():
+                # Check if existing snapshot is at market close (16:00:00)
+                if existing_snapshot.timestamp.hour == 16 and existing_snapshot.timestamp.minute == 0:
+                    # Don't overwrite market close snapshot
+                    if verbose:
+                        print(f"ℹ️ Market close snapshot already exists, skipping update")
+                    return False, "Market close snapshot already exists"
             
             updated_snapshot = PortfolioSnapshot(
                 positions=updated_positions,
-                timestamp=datetime.now()
+                timestamp=snapshot_time
             )
             
             repository.update_daily_portfolio_snapshot(updated_snapshot)

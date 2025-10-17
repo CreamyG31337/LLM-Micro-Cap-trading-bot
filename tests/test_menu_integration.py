@@ -232,7 +232,7 @@ class TestTradingInterfaceIntegration:
         from portfolio.trade_processor import TradeProcessor
         from portfolio.trading_interface import TradingInterface
         
-        self.repository = CSVRepository(self.test_data_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
         self.trade_processor = TradeProcessor(self.repository)
         self.trading_interface = TradingInterface(self.repository, self.trade_processor)
     
@@ -312,7 +312,7 @@ class TestModularComponentIntegration:
         from portfolio.portfolio_manager import PortfolioManager
         from portfolio.fund_manager import Fund
         
-        repository = CSVRepository(self.test_data_dir)
+        repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
         # Create a mock fund for testing
         mock_fund = Fund(
             id="test",

@@ -54,8 +54,8 @@ class TestPnLCalculationConsistency:
     def test_basic_pnl_calculation_consistency(self):
         """Test that basic P&L calculations are consistent between CSV and Supabase."""
         # Create repositories
-        csv_repo = CSVRepository(str(self.test_data_dir))
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create test position
         test_position = Position(
@@ -111,8 +111,8 @@ class TestPnLCalculationConsistency:
     def test_daily_pnl_calculation_consistency(self):
         """Test that daily P&L calculations are consistent between CSV and Supabase."""
         # Create repositories
-        csv_repo = CSVRepository(str(self.test_data_dir))
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create two snapshots with different prices to test daily P&L
         yesterday = datetime.now(timezone.utc) - timedelta(days=1)
@@ -200,8 +200,8 @@ class TestPnLCalculationConsistency:
     def test_fifo_pnl_calculation_consistency(self):
         """Test that FIFO P&L calculations are consistent between CSV and Supabase."""
         # Create repositories
-        csv_repo = CSVRepository(str(self.test_data_dir))
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create FIFO trade processor for both repositories
         csv_processor = FIFOTradeProcessor(csv_repo)
@@ -286,8 +286,8 @@ class TestPnLCalculationConsistency:
     def test_portfolio_total_pnl_consistency(self):
         """Test that total portfolio P&L calculations are consistent."""
         # Create repositories
-        csv_repo = CSVRepository(str(self.test_data_dir))
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create multiple positions
         positions = [
@@ -456,8 +456,8 @@ class TestPnLCalculationDifferences:
     def test_document_pnl_calculation_differences(self):
         """Document the actual differences in P&L calculations between CSV and Supabase."""
         # Create repositories
-        csv_repo = CSVRepository(str(self.test_data_dir))
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create a complex position with various P&L scenarios
         test_position = Position(

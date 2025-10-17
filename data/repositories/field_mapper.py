@@ -10,6 +10,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float, handling None, NaN, and infinity.
+    
+    Args:
+        value: Value to convert (Decimal, float, int, etc.)
+        default: Default value to return if conversion fails
+        
+    Returns:
+        Valid float value or default
+    """
+    if value is None:
+        return default
+    
+    try:
+        # Convert to float
+        result = float(value)
+        
+        # Check for NaN or infinity
+        if result != result or result == float('inf') or result == float('-inf'):
+            return default
+            
+        return result
+    except (ValueError, TypeError, OverflowError):
+        return default
+
+
 class TypeTransformers:
     """Type conversion utilities."""
 
@@ -29,16 +55,16 @@ class PositionMapper:
     @staticmethod
     def model_to_db(position: Any, fund: str, timestamp: datetime) -> Dict[str, Any]:
         """Convert Position model to database format."""
-        # Use current_price if available, otherwise fall back to avg_price
-        price = float(position.current_price) if position.current_price is not None else float(position.avg_price)
+        # Safely convert all numeric fields, defaulting to 0.0 for invalid values
+        price = safe_float(position.current_price) if position.current_price is not None else safe_float(position.avg_price)
         
         return {
             'ticker': position.ticker,
             'company': position.company,
-            'shares': float(position.shares),
+            'shares': safe_float(position.shares),
             'price': price,  # Current market price (or avg_price if current not available)
-            'cost_basis': float(position.cost_basis),
-            'pnl': float(position.unrealized_pnl or position.calculated_unrealized_pnl),
+            'cost_basis': safe_float(position.cost_basis),
+            'pnl': safe_float(position.unrealized_pnl or position.calculated_unrealized_pnl),
             'currency': position.currency,
             'fund': fund,
             'date': timestamp.isoformat(),

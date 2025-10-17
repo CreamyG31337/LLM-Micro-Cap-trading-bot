@@ -102,7 +102,7 @@ def load_portfolio_from_supabase(fund_name: str = None) -> pd.DataFrame:
     """Load portfolio data from Supabase repository"""
     # Check Supabase credentials
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
     
     if not supabase_url or not supabase_key:
         raise Exception("Missing Supabase credentials")
@@ -556,6 +556,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     - Trading data points represent market close time (~13:00 PST)
     - Weekend/holiday values are forward-filled from last trading day
     - Missing trading days are forward-filled to create continuous timeline
+    - Excludes today if market hasn't opened yet
     """
     if df.empty:
         return df
@@ -563,6 +564,25 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     # Get the date range - ensure we have proper datetime objects
     start_date = pd.to_datetime(df['Date'].min()).date()
     end_date = pd.to_datetime(df['Date'].max()).date()
+    
+    # Check if we should exclude today (if market hasn't opened yet)
+    from market_data.market_hours import MarketHours
+    from config.settings import Settings
+    from datetime import datetime
+    
+    settings = Settings()
+    market_hours = MarketHours(settings=settings)
+    today = datetime.now().date()
+    
+    # If today is in the data but market hasn't opened, exclude it
+    if today in [start_date, end_date] and not market_hours.is_market_open():
+        print(f"ℹ️ Excluding today ({today}) from graph - market hasn't opened yet")
+        # Filter out today's data
+        df = df[df['Date'].dt.date != today]
+        if df.empty:
+            return df
+        # Update end_date to exclude today
+        end_date = pd.to_datetime(df['Date'].max()).date()
     
     # Create complete date range (every single day at midnight for grid reference)
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -990,9 +1010,10 @@ def create_historical_snapshots_for_missing_days(data_dir_path, market_hours, po
                 else:
                     snapshot_date = missing_day  # missing_day is already date
                     
+                from datetime import timezone
                 historical_snapshot = PortfolioSnapshot(
                     positions=historical_positions,
-                    timestamp=datetime.combine(snapshot_date, datetime.min.time().replace(hour=16))  # Market close time
+                    timestamp=datetime.combine(snapshot_date, datetime.min.time().replace(hour=16, minute=0, second=0, microsecond=0)).replace(tzinfo=timezone.utc)
                 )
                 
                 # Save historical snapshot

@@ -33,7 +33,7 @@ class TestTimezoneNormalization(unittest.TestCase):
         """Set up test environment."""
         # Create temporary directory for test data
         self.test_dir = Path(tempfile.mkdtemp(prefix="test_timezone_"))
-        self.repository = CSVRepository(str(self.test_dir))
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_dir))
         
         # Get trading timezone for consistent testing - use pytz for localize capability
         import pytz

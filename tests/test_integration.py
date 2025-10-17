@@ -41,7 +41,7 @@ class TestCompleteWorkflow(unittest.TestCase):
         self.data_dir.mkdir(parents=True)
         
         # Create repository and managers
-        self.repository = CSVRepository(self.data_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
         from tests.test_helpers import create_mock_fund
         mock_fund = create_mock_fund()
         self.portfolio_manager = PortfolioManager(self.repository, mock_fund)
@@ -374,7 +374,7 @@ class TestCSVFileCompatibility(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.data_dir = Path(self.temp_dir)
-        self.repository = CSVRepository(self.data_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
     
     def tearDown(self):
         """Clean up test fixtures."""
@@ -589,7 +589,7 @@ class TestDataIntegrity(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.data_dir = Path(self.temp_dir)
-        self.repository = CSVRepository(self.data_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
     
     def tearDown(self):
         """Clean up test fixtures."""
@@ -894,14 +894,14 @@ class TestCommandLineInterface(unittest.TestCase):
         non_existent_dir = self.data_dir / "non_existent"
         
         # Repository should create directory if it doesn't exist
-        repository = CSVRepository(non_existent_dir)
+        repository = CSVRepository(fund_name="TEST", data_directory=str(non_existent_dir))
         self.assertTrue(non_existent_dir.exists())
         
         # Test with existing directory
         existing_dir = self.data_dir / "existing"
         existing_dir.mkdir()
         
-        repository = CSVRepository(existing_dir)
+        repository = CSVRepository(fund_name="TEST", data_directory=str(existing_dir))
         self.assertTrue(existing_dir.exists())
     
     def test_error_handling_and_logging(self):
@@ -913,7 +913,7 @@ class TestCommandLineInterface(unittest.TestCase):
         
         try:
             # This should handle the permission error gracefully
-            repository = CSVRepository(readonly_dir)
+            repository = CSVRepository(fund_name="TEST", data_directory=str(readonly_dir))
             
             # Try to save data (should fail gracefully)
             trade = Trade(
@@ -949,7 +949,7 @@ class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
         self.data_dir.mkdir(parents=True)
         
         # Create repository and managers
-        self.repository = CSVRepository(self.data_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.data_dir))
         from tests.test_helpers import create_mock_fund
         mock_fund = create_mock_fund()
         self.portfolio_manager = PortfolioManager(self.repository, mock_fund)
@@ -1172,7 +1172,7 @@ class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
         """Test that the validation system catches duplicates."""
         from datetime import datetime, timezone
         import pandas as pd
-        from utils.validation import validate_portfolio_data
+        from utils.validation import check_duplicate_snapshots
         
         # Create a position
         ticker = "TEST"
@@ -1208,13 +1208,14 @@ class TestDuplicatePreventionAndDataIntegrity(unittest.TestCase):
         df = pd.concat([df, duplicate_row], ignore_index=True)
         df.to_csv(portfolio_file, index=False)
         
-        # Now validate the data using the proper validation function
-        validation_errors = validate_portfolio_data(df)
+        # Now validate the data using the new validation function
+        # Load portfolio snapshots and check for duplicates
+        snapshots = self.repository.get_portfolio_data()
+        has_duplicates, duplicates = check_duplicate_snapshots(snapshots, strict=False)
         
-        # Should have validation errors about duplicates
-        self.assertGreater(len(validation_errors), 0)
-        duplicate_errors = [error for error in validation_errors if "duplicate" in error.lower()]
-        self.assertGreater(len(duplicate_errors), 0)
+        # Should have duplicates
+        self.assertTrue(has_duplicates)
+        self.assertGreater(len(duplicates), 0)
     
     def test_realistic_trading_scenario(self):
         """Test a realistic trading scenario with buys, sells, and price updates."""
@@ -1322,7 +1323,7 @@ class TestRepositoryFactory(unittest.TestCase):
     
     def test_repository_factory_csv_creation(self):
         """Test creating CSV repository through factory."""
-        repository = RepositoryFactory.create_repository("csv", data_directory=self.data_dir)
+        repository = RepositoryFactory.create_repository("csv", fund_name="TEST", data_directory=str(self.data_dir))
         
         self.assertIsInstance(repository, CSVRepository)
         self.assertEqual(repository.data_dir, Path(self.data_dir))

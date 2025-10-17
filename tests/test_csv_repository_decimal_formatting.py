@@ -29,7 +29,7 @@ class TestCSVRepositoryDecimalFormatting(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         
         # Create CSV repository with temporary directory
-        self.repository = CSVRepository(data_directory=self.temp_dir)
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.temp_dir))
         
         # Create test portfolio file
         self.portfolio_file = os.path.join(self.temp_dir, "llm_portfolio_update.csv")
@@ -295,7 +295,7 @@ class TestCSVRepositoryDecimalFormattingIntegration(unittest.TestCase):
         
         try:
             # Create CSV repository
-            repository = CSVRepository(data_directory=temp_dir)
+            repository = CSVRepository(fund_name="TEST", data_directory=str(temp_dir))
             
             # Create positions with the exact values that caused the original issue
             positions = [

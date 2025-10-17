@@ -138,10 +138,26 @@ def create_portfolio_snapshot(fund_name: str, positions: List[Position]) -> bool
         # Calculate total value
         total_value = sum(pos.market_value or Decimal('0') for pos in positions)
         
+        # Check if market is closed - if so, use market close time (16:00)
+        current_time = datetime.now(timezone.utc)
+        from market_data.market_hours import MarketHours
+        from config.settings import Settings
+        
+        settings = Settings()
+        market_hours = MarketHours(settings=settings)
+        is_market_closed = not market_hours.is_market_open()
+        
+        if is_market_closed:
+            # Use market close time (16:00:00 UTC) for final snapshot
+            snapshot_time = current_time.replace(hour=16, minute=0, second=0, microsecond=0)
+        else:
+            # Use current time for intraday snapshot
+            snapshot_time = current_time
+        
         # Create snapshot
         snapshot = PortfolioSnapshot(
             positions=positions,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=snapshot_time,
             total_value=total_value
         )
         

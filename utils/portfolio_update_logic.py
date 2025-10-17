@@ -81,7 +81,21 @@ class PortfolioUpdateLogic:
         else:
             # Last update was today or in the future
             if last_update_date == today and self.market_hours.is_trading_day(today):
-                return False, f"Portfolio was updated today ({today.strftime('%A')}) - no update needed"
+                # Check if market is currently open
+                if self.market_hours.is_market_open():
+                    # Market is open - always update for live prices
+                    return True, f"Market is open - updating for live prices"
+                else:
+                    # Market is closed - check if we have a market close snapshot
+                    snapshot_time = latest_snapshot.timestamp.time()
+                    print(f"DEBUG: Snapshot time: {snapshot_time}, Market close time: {self.market_close_time}")
+                    print(f"DEBUG: snapshot_time >= market_close_time: {snapshot_time >= self.market_close_time}")
+                    if snapshot_time >= self.market_close_time:
+                        # We have a market close snapshot - don't overwrite it
+                        return False, f"Portfolio was updated today ({today.strftime('%A')}) with market close data - no update needed"
+                    else:
+                        # We have an intraday snapshot but market is closed - update to get market close prices
+                        return True, f"Market is closed - updating to get market close prices"
             else:
                 return False, f"Portfolio was updated on {last_update_date.strftime('%Y-%m-%d')} - no update needed"
     
@@ -96,9 +110,10 @@ class PortfolioUpdateLogic:
         Returns:
             Tuple of (should_update: bool, reason: str)
         """
-        # Only update if markets are open
-        if self.market_hours.is_market_open():
-            return True, f"Today ({today.strftime('%A')}) is a trading day and markets are open - update needed"
+        # Update if any market is open (not just when all markets are open)
+        # This ensures US stocks get updated even when Canadian markets are closed
+        if self.market_hours.is_trading_day(today):
+            return True, f"Today ({today.strftime('%A')}) is a trading day - update needed"
         else:
             # Markets are closed - check if we have data from after the most recent market close
             # This works for both same-day (after 4 PM today) and next-day (3 AM) scenarios

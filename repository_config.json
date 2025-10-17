@@ -1,7 +1,8 @@
 {
   "repository": {
     "type": "supabase-dual-write",
-    "data_directory": "trading_data/funds/Project Chimera"
+    "data_directory": null,
+    "fund": "Project Chimera"
   },
   "web_dashboard": {
     "data_source": "supabase",

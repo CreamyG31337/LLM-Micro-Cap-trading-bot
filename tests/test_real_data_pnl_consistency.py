@@ -48,8 +48,8 @@ class TestRealDataPnLConsistency:
     def test_real_data_basic_pnl_consistency(self):
         """Test basic P&L calculations with real data."""
         # Create repositories
-        csv_repo = CSVRepository(self.test_data_dir)
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create test position with real data
         test_position = Position(
@@ -105,8 +105,8 @@ class TestRealDataPnLConsistency:
     def test_real_data_fifo_consistency(self):
         """Test FIFO P&L calculations with real data."""
         # Create repositories
-        csv_repo = CSVRepository(self.test_data_dir)
-        supabase_repo = SupabaseRepository(fund=self.test_fund)
+        csv_repo = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
+        supabase_repo = SupabaseRepository(fund_name=self.test_fund)
         
         # Create FIFO trade processor for both repositories
         csv_processor = FIFOTradeProcessor(csv_repo)

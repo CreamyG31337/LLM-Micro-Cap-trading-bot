@@ -311,3 +311,21 @@ def convert_from_database_timestamp(dt: datetime) -> datetime:
     
     tz = get_trading_timezone()
     return dt.astimezone(tz)
+
+
+def format_timestamp_for_display(dt: Optional[datetime] = None) -> str:
+    """Format timestamps for display with timezone information.
+    
+    Args:
+        dt: The datetime to format. If None, uses current trading time.
+    
+    Returns:
+        str: Formatted timestamp string for display
+    """
+    if dt is None:
+        dt = get_current_trading_time()
+    
+    # Get timezone name for display
+    tz_name = get_timezone_name()
+    
+    return dt.strftime(f"%Y-%m-%d %H:%M:%S {tz_name}")

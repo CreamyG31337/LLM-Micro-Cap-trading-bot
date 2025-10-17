@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 import pandas as pd
+from datetime import datetime
 
 # Add the parent directory to the path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -49,14 +50,14 @@ class TestPriceUpdateFunctionalityPreservation(unittest.TestCase):
         
         # Mock portfolio manager
         portfolio_manager = Mock()
-        portfolio_manager.get_latest_snapshot_date.return_value = None
+        portfolio_manager.get_latest_portfolio.return_value = None
         
         # Test the logic
         should_update, reason = should_update_portfolio(market_hours, portfolio_manager)
         
         # Should update when no existing data and it's a trading day
         self.assertTrue(should_update)
-        self.assertIn("No existing data", reason)
+        self.assertIn("No existing portfolio data", reason)
         
         # Test weekend scenario
         market_hours.is_trading_day.return_value = False
@@ -210,7 +211,9 @@ class TestPriceUpdateFunctionalityPreservation(unittest.TestCase):
         - Can replace with direct Position creation or property assignment
         """
         # Test the current PositionCalculator
-        calculator = PositionCalculator()
+        # Create a mock repository for testing
+        mock_repository = Mock()
+        calculator = PositionCalculator(mock_repository)
         
         original_position = Position(
             ticker="TEST",
@@ -305,7 +308,10 @@ class TestPriceUpdateFunctionalityPreservation(unittest.TestCase):
         
         # Mock portfolio manager
         portfolio_manager = Mock()
-        portfolio_manager.get_latest_snapshot_date.return_value = "2024-01-05"  # Friday
+        # Mock the latest portfolio snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.timestamp.date.return_value = datetime(2024, 1, 5).date()  # Friday
+        portfolio_manager.get_latest_portfolio.return_value = mock_snapshot
         
         # Test weekend scenario
         should_update, reason = should_update_portfolio(market_hours, portfolio_manager)
@@ -328,7 +334,10 @@ class TestPriceUpdateFunctionalityPreservation(unittest.TestCase):
         
         # Mock portfolio manager with today's data
         portfolio_manager = Mock()
-        portfolio_manager.get_latest_snapshot_date.return_value = "2024-01-06"  # Today
+        # Mock the latest portfolio snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.timestamp.date.return_value = datetime(2024, 1, 6).date()  # Today
+        portfolio_manager.get_latest_portfolio.return_value = mock_snapshot
         
         # Test duplicate update prevention
         should_update, reason = should_update_portfolio(market_hours, portfolio_manager)
@@ -352,7 +361,10 @@ class TestPriceUpdateFunctionalityPreservation(unittest.TestCase):
         
         # Mock portfolio manager
         portfolio_manager = Mock()
-        portfolio_manager.get_latest_snapshot_date.return_value = "2024-01-05"  # Yesterday
+        # Mock the latest portfolio snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.timestamp.date.return_value = datetime(2024, 1, 5).date()  # Yesterday
+        portfolio_manager.get_latest_portfolio.return_value = mock_snapshot
         
         # Test market open scenario
         should_update, reason = should_update_portfolio(market_hours, portfolio_manager)

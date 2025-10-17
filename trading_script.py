@@ -20,7 +20,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
 
 # Load environment variables from .env file (for Supabase credentials)
 try:
@@ -170,7 +169,7 @@ def check_dependencies() -> dict[str, bool]:
     return dependencies
 
 
-def initialize_repository(settings: Settings, fund: Optional[Fund] = None) -> BaseRepository:
+def initialize_repository(settings: Settings, fund: Fund | None = None) -> BaseRepository:
     """Initialize repository based on configuration.
 
     Args:
@@ -462,18 +461,24 @@ def initialize_system(args: argparse.Namespace) -> tuple[Settings, BaseRepositor
         # Get repository configuration from repository_config.json
         # (Funds no longer specify repository type - it's global)
         repo_config = settings.get_repository_config()
-        
+
         # Add fund name to repository config
         repo_config['fund'] = fund.name
-        settings.set('repository', repo_config)
 
         # Set data directory (either from command line or derive from fund name)
         if args.data_dir:
             settings.set('repository.csv.data_directory', args.data_dir)
+            # Also update the main data_directory in repository config
+            repo_config['data_directory'] = args.data_dir
         else:
             # Derive data directory from fund name
             fund_data_dir = f"trading_data/funds/{fund.name}"
             settings.set('repository.csv.data_directory', fund_data_dir)
+            # Also update the main data_directory in repository config
+            repo_config['data_directory'] = fund_data_dir
+
+        # Update the repository config with the correct data directory
+        settings.set('repository', repo_config)
 
         # Show environment banner (after command-line overrides)
         data_dir = settings.get_data_directory()
@@ -1015,7 +1020,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
         # Load portfolio data
         print_info("Loading portfolio data...")
-        portfolio_snapshots = portfolio_manager.load_portfolio()
+        portfolio_snapshots = portfolio_manager.load_portfolio()  # This will now crash if duplicates found
 
         if not portfolio_snapshots:
             print_warning("No portfolio data found")
@@ -1023,6 +1028,19 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
         latest_snapshot = portfolio_snapshots[-1]
         print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions")
+
+        # Optional: Additional validation
+        from utils.validation import check_duplicate_snapshots, validate_snapshot_timestamps
+
+        # Check for duplicates (with strict=False to just warn in production)
+        has_duplicates, duplicates = check_duplicate_snapshots(portfolio_snapshots, strict=False)
+        if has_duplicates:
+            print_warning(f"WARNING: Found duplicate snapshots for {len(duplicates)} dates")
+            print_warning("   Run 'rebuild' from the menu to fix")
+
+        # Validate timestamps
+        if not validate_snapshot_timestamps(portfolio_snapshots):
+            print_info("INFO: Some snapshots have non-standard timestamps")
 
         # Update exchange rates CSV with current rates
         print_info("Updating exchange rates...")
@@ -1216,13 +1234,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     debug_file.write(f"    Using {len(historical_snapshots)} snapshots for comparison\n")
                     debug_file.flush()
 
+            # Calculate daily P&L from historical snapshots
             from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
             pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
 
-            if args.non_interactive:
-                with open('debug_output.txt', 'a') as debug_file:
-                    debug_file.write(f"    Result: {pos_dict['daily_pnl']}\n")
-                    debug_file.flush()
 
             # 5-day P&L with open-date check (show N/A if opened < 5 trading days ago)
             try:
@@ -1649,9 +1664,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             #     total_value=sum(((pos.market_value or Decimal('0')) for pos in updated_positions), Decimal('0'))
             # )
 
-            # Check if we should update prices (market hours or no update today)
-            should_update_prices = False
-
             # Use centralized portfolio update logic
             from utils.portfolio_update_logic import should_update_portfolio
 
@@ -1664,7 +1676,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
             # Portfolio refresh logic - creates missing HOLD entries and updates prices
             from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
-            
+
             was_updated, reason = refresh_portfolio_prices_if_needed(
                 market_hours=market_hours,
                 portfolio_manager=portfolio_manager,
@@ -1673,7 +1685,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 price_cache=price_cache,
                 verbose=False  # Use logger instead of print for main trading script
             )
-            
+
             if was_updated:
                 logger.info(f"Portfolio prices updated: {reason}")
                 print_success("Portfolio snapshot updated successfully")
@@ -1699,7 +1711,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 from web_dashboard.supabase_client import SupabaseClient
                 client = SupabaseClient()
                 result = client.supabase.table('fund_contributions').select('*').eq('fund', repository.fund).execute()
-                
+
                 if result.data:
                     # Convert Supabase format to CSV format for compatibility
                     for record in result.data:

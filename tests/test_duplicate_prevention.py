@@ -57,7 +57,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         """Set up test environment."""
         # Create temporary directory for test data
         self.test_dir = Path(tempfile.mkdtemp(prefix="test_duplicate_"))
-        self.repository = CSVRepository(str(self.test_dir))
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_dir))
         
         # Create test positions
         self.test_positions = [
@@ -451,7 +451,7 @@ class TestDuplicatePreventionIntegration(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         self.test_dir = Path(tempfile.mkdtemp(prefix="test_duplicate_integration_"))
-        self.repository = CSVRepository(str(self.test_dir))
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_dir))
     
     def tearDown(self):
         """Clean up test environment."""

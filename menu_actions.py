@@ -204,6 +204,7 @@ class MenuActionSystem:
             'buy_stock': self._buy_stock,
             'sell_stock': self._sell_stock,
             'sync_fund_contributions': self._sync_fund_contributions,
+            'view_trade_log': self._view_trade_log,
         }
         
         if action_name not in action_map:
@@ -261,6 +262,29 @@ class MenuActionSystem:
     def _sync_fund_contributions(self, **kwargs) -> bool:
         """Execute fund contribution sync action."""
         return self.trading_interface.sync_fund_contributions()
+    
+    def _view_trade_log(self, **kwargs) -> bool:
+        """Execute view trade log action."""
+        try:
+            from display.table_formatter import TableFormatter
+            
+            # Get all trades from repository
+            trades = self.repository.get_trade_history()
+            
+            if not trades:
+                print_info("No trades found in trade log")
+                return True
+            
+            # Create and display trade log table
+            formatter = TableFormatter()
+            formatter.create_trade_log_table(trades, "Complete Trade History")
+            
+            return True
+            
+        except Exception as e:
+            print_error(f"Error viewing trade log: {e}")
+            logger.error(f"Error viewing trade log: {e}", exc_info=True)
+            return False
 
 
 def create_standalone_action_script(action_name: str, title: str, emoji: str = "⚙️") -> Callable:
@@ -287,6 +311,12 @@ def create_standalone_action_script(action_name: str, title: str, emoji: str = "
             type=str,
             default=None,
             help='Data directory path (uses default from config if not specified)'
+        )
+        
+        parser.add_argument(
+            '--action',
+            type=str,
+            help='Specific action to run'
         )
         
         parser.add_argument(
@@ -375,6 +405,25 @@ def get_contributor_emails_main():
     script_func()
 
 
+def view_trade_log_main():
+    """Standalone script for viewing trade log."""
+    script_func = create_standalone_action_script(
+        action_name="view_trade_log",
+        title="View Trade Log",
+        emoji="📜"
+    )
+    script_func()
+
+
 if __name__ == "__main__":
-    # Default to contributor management if run directly
-    manage_contributors_main()
+    # Parse command line arguments for specific actions
+    import argparse
+    parser = argparse.ArgumentParser(description="Menu Actions")
+    parser.add_argument("--action", help="Specific action to run")
+    args = parser.parse_args()
+    
+    if args.action == "view_trade_log":
+        view_trade_log_main()
+    else:
+        # Default to contributor management if run directly
+        manage_contributors_main()

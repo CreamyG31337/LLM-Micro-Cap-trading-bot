@@ -39,7 +39,7 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         self.test_data_dir = Path(tempfile.mkdtemp())
 
         # Create test repository
-        self.repository = CSVRepository(data_directory=str(self.test_data_dir))
+        self.repository = CSVRepository(fund_name="TEST", data_directory=str(self.test_data_dir))
 
         # Create both processors
         self.average_processor = TradeProcessor(self.repository)
@@ -68,8 +68,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)
@@ -125,8 +125,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)
@@ -181,8 +181,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)
@@ -234,8 +234,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)
@@ -309,8 +309,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)
@@ -371,8 +371,8 @@ class TestFIFOVsAverageCost(unittest.TestCase):
         avg_data_dir = Path(tempfile.mkdtemp())
         fifo_data_dir = Path(tempfile.mkdtemp())
 
-        avg_repo = CSVRepository(data_directory=str(avg_data_dir))
-        fifo_repo = CSVRepository(data_directory=str(fifo_data_dir))
+        avg_repo = CSVRepository(fund_name="TEST", data_directory=str(avg_data_dir))
+        fifo_repo = CSVRepository(fund_name="TEST", data_directory=str(fifo_data_dir))
 
         avg_processor = TradeProcessor(avg_repo)
         fifo_processor = FIFOTradeProcessor(fifo_repo)

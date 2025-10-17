@@ -232,9 +232,12 @@ class Settings:
                     repo_config = json.load(f)
                 if 'repository' in repo_config:
                     config = repo_config['repository'].copy()
-                    # Add fund name for Supabase repositories
-                    if config.get('type') == 'supabase':
+                    # Add fund name for repositories that need it (supabase, dual-write, supabase-dual-write)
+                    if config.get('type') in ['supabase', 'supabase-dual-write', 'dual-write']:
                         config['fund'] = self.get_fund_name()
+                    # Override data_directory if it's been set in settings
+                    if 'data_directory' in self._config.get('repository', {}):
+                        config['data_directory'] = self._config['repository']['data_directory']
                     return config
             except Exception as e:
                 logger.warning(f"Failed to load repository config file: {e}")
@@ -254,8 +257,8 @@ class Settings:
             config['data_directory'] = data_dir
             print(f"DEBUG: Added data_directory to config: {data_dir}")
         
-        # Add fund name for Supabase repositories
-        if repo_type == 'supabase':
+        # Add fund name for repositories that need it (supabase, dual-write, supabase-dual-write)
+        if repo_type in ['supabase', 'supabase-dual-write', 'dual-write']:
             config['fund'] = self.get_fund_name()
         
         return config

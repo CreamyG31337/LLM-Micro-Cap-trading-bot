@@ -192,6 +192,25 @@ class CSVRepository(BaseRepository):
                     today_data = existing_df[existing_df['Date_Only'] == today]
                     
                     if not today_data.empty:
+                        # Check if any existing snapshot is at market close (16:00:00)
+                        market_close_exists = any(
+                            pd.to_datetime(row['Date']).hour == 16 and pd.to_datetime(row['Date']).minute == 0
+                            for _, row in today_data.iterrows()
+                        )
+                        
+                        # If we're trying to save a market close snapshot and one already exists
+                        if (normalized_timestamp.hour == 16 and normalized_timestamp.minute == 0 
+                            and market_close_exists):
+                            logger.warning(f"Market close snapshot already exists for {today}")
+                            # Don't crash, just update the existing one
+                            pass
+                        
+                        # If we're trying to save an intraday snapshot but market close exists
+                        elif market_close_exists and not (normalized_timestamp.hour == 16 and normalized_timestamp.minute == 0):
+                            logger.warning(f"⚠️  Attempting to save intraday snapshot but market close snapshot already exists for {today}")
+                            logger.warning(f"   Skipping save to preserve market close snapshot at 16:00:00")
+                            return  # Don't save, preserve market close snapshot
+                        
                         logger.debug(f"Portfolio data for {today} already exists. Use update_daily_portfolio_snapshot() instead of save_portfolio_snapshot() to prevent duplicates.")
                         # Remove existing today's data to prevent duplicates
                         existing_df = existing_df[existing_df['Date_Only'] != today]

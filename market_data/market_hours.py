@@ -62,8 +62,8 @@ class MarketHours:
             now = now.astimezone(tz)
         
         # Check if it's a trading day (weekday and not a holiday)
-        # Use "both" to allow trading when either US or Canadian markets are open
-        if not self.holidays.is_trading_day(now.date(), market="both"):
+        # Use "any" to allow trading when either US or Canadian markets are open
+        if not self.holidays.is_trading_day(now.date(), market="any"):
             return False
         
         # Market hours: 6:30 AM to 1:00 PM PST (9:30 AM to 4:00 PM EST)
@@ -227,7 +227,7 @@ class MarketHours:
         target_date = date or datetime.now()
         if isinstance(target_date, datetime):
             target_date = target_date.date()
-        return self.holidays.is_trading_day(target_date, market="both")
+        return self.holidays.is_trading_day(target_date, market="any")
     
     def next_trading_day(self, date: Optional[datetime] = None) -> pd.Timestamp:
         """

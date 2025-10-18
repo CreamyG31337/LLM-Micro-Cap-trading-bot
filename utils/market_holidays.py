@@ -196,7 +196,7 @@ class MarketHolidays:
         
         Args:
             check_date: Date to check
-            market: "us", "canadian", or "both" (default)
+            market: "us", "canadian", "both", or "any" (default)
             
         Returns:
             True if markets are open, False if closed
@@ -209,8 +209,12 @@ class MarketHolidays:
             # Both markets must be open
             return (not self.is_us_market_closed(check_date) and 
                     not self.is_canadian_market_closed(check_date))
+        elif market == "any":
+            # Either market is open
+            return (not self.is_us_market_closed(check_date) or 
+                    not self.is_canadian_market_closed(check_date))
         else:
-            raise ValueError("Market must be 'us', 'canadian', or 'both'")
+            raise ValueError("Market must be 'us', 'canadian', 'both', or 'any'")
     
     def get_next_trading_day(self, start_date: date, market: str = "both") -> date:
         """
@@ -218,7 +222,7 @@ class MarketHolidays:
         
         Args:
             start_date: Starting date
-            market: "us", "canadian", or "both"
+            market: "us", "canadian", "both", or "any"
             
         Returns:
             Next trading day
@@ -235,7 +239,7 @@ class MarketHolidays:
         
         Args:
             start_date: Starting date
-            market: "us", "canadian", or "both"
+            market: "us", "canadian", "both", or "any"
             
         Returns:
             Previous trading day
@@ -253,7 +257,7 @@ class MarketHolidays:
         Args:
             start_date: Start date (inclusive)
             end_date: End date (inclusive)
-            market: "us", "canadian", or "both"
+            market: "us", "canadian", "both", or "any"
             
         Returns:
             List of trading days

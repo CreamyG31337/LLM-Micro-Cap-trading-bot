@@ -152,6 +152,60 @@ test_fund = f"TEST_{uuid.uuid4().hex[:8]}"
 - Consistency validation
 - Error rate monitoring
 
+## 📊 Portfolio Snapshot Logic
+
+### Core Principle
+**"Get data whenever we can"** - Only skip if not a trading day OR we already have market close data
+
+### Common Pitfalls
+```python
+# ❌ WRONG - Don't skip just because market is closed
+if market_hours.is_trading_day(today) and market_hours.is_market_open():
+    create_snapshot()
+
+# ✅ CORRECT - Create if trading day, use market close time if closed
+if market_hours.is_trading_day(today):
+    create_snapshot()  # Use 16:00 timestamp if market closed
+```
+
+### When to Use `is_market_open()`
+- ✅ **Timestamp decisions**: 16:00 if closed, current time if open
+- ✅ **Check existing data**: See if we have market close snapshot
+- ❌ **NOT for skipping**: Don't skip creation/updates
+
+### Centralized Logic
+```python
+# Always use centralized logic
+from utils.portfolio_update_logic import should_update_portfolio
+from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
+
+# Don't implement custom logic in debug scripts
+```
+
+## 🌍 Timezone Handling
+
+### Timezone Roles
+- **Market Timezone (EST/EDT)**: Markets operate in Eastern Time
+- **User Display Timezone**: Configurable in `config/settings.py` (default: PST/PDT)
+- **Storage**: All timestamps stored with timezone information
+
+### Key Functions
+```python
+# Get current time in user's timezone
+from utils.timezone_utils import get_current_trading_time
+current_time = get_current_trading_time()
+
+# Get market close hour in user's timezone
+from utils.timezone_utils import get_market_close_time_local
+market_close_hour = get_market_close_time_local()  # 13 for PST, 16 for EST
+```
+
+### Common Timezone Issues
+- ❌ **DON'T**: Use `datetime.now(timezone.utc)` for date calculations
+- ❌ **DON'T**: Hardcode timezone offsets
+- ✅ **DO**: Use `get_current_trading_time()` for consistent date handling
+- ✅ **DO**: Use `get_market_close_time_local()` for market close timestamps
+
 ## 🚀 Quick Fixes
 
 ### FIFO Bug
@@ -171,6 +225,18 @@ test_fund = f"TEST_{uuid.uuid4().hex[:8]}"
 ```python
 # Clear test data
 python utils/clear_fund_data.py --fund test --data-dir "trading_data/funds/TEST" --confirm
+```
+
+### Portfolio Snapshot Issues
+```python
+# Check if portfolio needs update
+python -c "
+from utils.portfolio_update_logic import should_update_portfolio
+# ... test logic
+"
+
+# Test rebuild script
+python debug/rebuild_portfolio_complete.py --data-dir "trading_data/funds/TEST"
 ```
 
 ---

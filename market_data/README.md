@@ -53,9 +53,34 @@ Provides market timing and trading day calculations:
 
 ### Key Functions
 - `is_market_open()`: Check if markets are currently open
+- `is_trading_day(date)`: Check if a specific date is a trading day
 - `last_trading_date()`: Get the most recent trading day
 - `trading_day_window()`: Calculate trading day ranges
 - `get_market_timezone()`: Get appropriate timezone for markets
+
+### Important: When to Use `is_market_open()`
+
+**✅ Correct Usage:**
+- **Timestamp decisions**: Use 16:00 if closed, current time if open
+- **Check existing data**: See if we already have market close snapshot
+- **Avoid overwriting**: Don't replace market close with intraday data
+
+**❌ Incorrect Usage:**
+- **Skip creation**: Don't skip creating snapshots just because market is closed
+- **Skip fetching**: Don't skip fetching data just because market is closed
+- **Skip updates**: Don't skip updates just because market is closed
+
+**Example:**
+```python
+# ❌ WRONG - Don't skip just because market is closed
+if market_hours.is_trading_day(today) and market_hours.is_market_open():
+    create_snapshot()
+
+# ✅ CORRECT - Create if trading day, use market close time if closed
+if market_hours.is_trading_day(today):
+    timestamp = datetime.now() if market_hours.is_market_open() else market_close_time
+    create_snapshot(timestamp)
+```
 
 ### Market Support
 - **North American Markets**: NYSE, NASDAQ (Eastern Time)

@@ -65,9 +65,16 @@ class Settings:
                 'volume_format_threshold': 1000  # Threshold for formatting volume in thousands
             },
             'timezone': {
-                'name': 'PST',
-                'offset_hours': -8,
-                'utc_offset': '-08:00'
+                'user_display': {  # For CSV and user-facing displays
+                    'name': 'PST',
+                    'offset_hours': -8,
+                    'utc_offset': '-08:00'
+                },
+                'market': {  # Market operates in EST
+                    'name': 'EST',
+                    'offset_hours': -5,
+                    'utc_offset': '-05:00'
+                }
             },
             'logging': {
                 'level': 'INFO',

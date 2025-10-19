@@ -278,21 +278,50 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         
         # Fetch prices for all tickers and dates
         price_cache_dict = {}  # {(ticker, date): price}
+        successful_fetches = 0
+        failed_fetches = 0
+
+        print_info(f"   Date range: {all_trading_days_list[0]} to {all_trading_days_list[-1]}")
+        print_info(f"   Total trading days: {len(all_trading_days_list)}")
+
         for ticker in all_tickers:
             print_info(f"   Fetching prices for {ticker}...")
             try:
+                # Convert date objects to datetime for API compatibility
+                start_dt = datetime.combine(all_trading_days_list[0], datetime.min.time())
+                end_dt = datetime.combine(all_trading_days_list[-1], datetime.max.time())
+                
                 # Fetch all historical data for this ticker at once
-                result = market_fetcher.fetch_price_data(ticker, start=all_trading_days_list[0], end=all_trading_days_list[-1])
+                result = market_fetcher.fetch_price_data(ticker, start=start_dt, end=end_dt)
+                
                 if result.df is not None and not result.df.empty:
                     # Cache the full dataset
                     price_cache.cache_price_data(ticker, result.df)
+                    
                     # Extract prices for each trading day
+                    dates_cached = 0
                     for trading_day in all_trading_days_list:
                         day_data = result.df[result.df.index.date == trading_day]
                         if not day_data.empty:
                             price_cache_dict[(ticker, trading_day)] = Decimal(str(day_data['Close'].iloc[0]))
+                            dates_cached += 1
+                    
+                    print_info(f"     ✓ {ticker}: Cached {dates_cached}/{len(all_trading_days_list)} dates")
+                    successful_fetches += 1
+                else:
+                    print_error(f"     ✗ {ticker}: No data returned (empty dataframe)")
+                    failed_fetches += 1
+                    
             except Exception as e:
-                print(f"WARNING: Failed to fetch prices for {ticker}: {e}")
+                print_error(f"     ✗ {ticker}: Fetch failed - {e}")
+                import traceback
+                print_error(f"        {traceback.format_exc()}")
+                failed_fetches += 1
+
+        print_info(f"   Batch fetch complete: {successful_fetches} succeeded, {failed_fetches} failed")
+
+        if failed_fetches > 0:
+            print_error(f"   WARNING: {failed_fetches} tickers failed to fetch - rebuild may be incomplete")
         
         today = datetime.now().date()
         for trading_day in all_trading_days_list:
@@ -352,6 +381,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                         current_price = price_cache_dict[price_key]
                     else:
                         # NO FALLBACKS - fail if historical price not available
+                        # This ensures we don't create corrupted data with wrong prices
                         raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
                     market_value = position['shares'] * current_price
                     unrealized_pnl = market_value - position['cost']
@@ -441,13 +471,17 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         print_info(f"   Created {snapshots_created} historical portfolio snapshots")
         
         # Create final portfolio snapshot from current positions
-        # Only create if today is a trading day and market is open
+        # Create snapshot if today is a trading day (regardless of current market status)
+        # 
+        # NOTE: This should use the same logic as the centralized portfolio update system
+        # See utils/portfolio_update_logic.py for the correct decision logic
+        # Core principle: "Get data whenever we can" - only skip if not a trading day
         from config.settings import Settings
         
         settings = Settings()
         today = datetime.now().date()
         
-        if market_hours.is_trading_day(today) and market_hours.is_market_open():
+        if market_hours.is_trading_day(today):
             print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot...")
             
             from data.models.portfolio import Position, PortfolioSnapshot
@@ -472,15 +506,24 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             # Create and save final portfolio snapshot
             if final_positions:
                 from datetime import timezone
+                # Use market close time in Eastern timezone for proper historical price fetching
+                # Market closes at 16:00 ET (Eastern Time)
+                from market_config import _is_dst
+                from datetime import timezone as dt_timezone
+                utc_now = datetime.now(dt_timezone.utc)
+                is_dst = _is_dst(utc_now)
+                # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
+                market_close_hour_utc = 20 if is_dst else 21
+                
                 final_snapshot = PortfolioSnapshot(
                     positions=final_positions,
-                    timestamp=datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0),
+                    timestamp=today.replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0),
                     total_value=sum(p.cost_basis for p in final_positions)
                 )
                 repository.save_portfolio_snapshot(final_snapshot)
                 print_info(f"   Saved final portfolio snapshot with {len(final_positions)} positions")
         else:
-            print_info(f"   Skipping final snapshot - today ({today}) is not a trading day or market is closed")
+            print_info(f"   Skipping final snapshot - today ({today}) is not a trading day")
         
         # Create final portfolio CSV from current positions
         print_info(f"{_safe_emoji('📊')} Creating final portfolio CSV...")

@@ -174,6 +174,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Rebuild portfolio CSV + Supabase from trade log (fixes display issues) - runs rebuild_portfolio_complete.py",
          ["--data-dir", str(data_dir_path)]),
         
+        ("l", f"{_safe_emoji('📜')} View Trade Log",
+         "Display complete trade history in a formatted table - runs menu_actions.py",
+         ["--action", "view_trade_log", "--data-dir", str(data_dir_path)]),
+        
         ("c", f"{_safe_emoji('⚙️')} Configure",
          "Configuration options and setup",
          []),
@@ -471,7 +475,8 @@ def get_script_path(option: str) -> Optional[Path]:
         "m": PROJECT_ROOT / "menu_actions.py",
         "x": PROJECT_ROOT / "get_emails.py",
         "e": PROJECT_ROOT / "add_trade_from_email.py",
-        "r": PROJECT_ROOT / "debug" / "rebuild_portfolio_complete.py"
+        "r": PROJECT_ROOT / "debug" / "rebuild_portfolio_complete.py",
+        "l": PROJECT_ROOT / "menu_actions.py"
     }
     
     return script_map.get(option)

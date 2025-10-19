@@ -267,9 +267,17 @@ class MenuActionSystem:
         """Execute view trade log action."""
         try:
             from display.table_formatter import TableFormatter
+            from data.repositories.csv_repository import CSVRepository
             
-            # Get all trades from repository
-            trades = self.repository.get_trade_history()
+            # Force CSV mode for trade log viewer to avoid Supabase dependency
+            fund_name = self.repository.fund_name if hasattr(self.repository, 'fund_name') else 'Project Chimera'
+            data_directory = self.repository.data_dir if hasattr(self.repository, 'data_dir') else None
+            
+            # Create CSV repository directly for trade log viewing
+            csv_repo = CSVRepository(fund_name=fund_name, data_directory=data_directory)
+            
+            # Get all trades from CSV repository
+            trades = csv_repo.get_trade_history()
             
             if not trades:
                 print_info("No trades found in trade log")
@@ -407,12 +415,65 @@ def get_contributor_emails_main():
 
 def view_trade_log_main():
     """Standalone script for viewing trade log."""
-    script_func = create_standalone_action_script(
-        action_name="view_trade_log",
-        title="View Trade Log",
-        emoji="📜"
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="View Trade Log - Standalone Script",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    script_func()
+    
+    parser.add_argument(
+        '--data-dir',
+        type=str,
+        default=None,
+        help='Data directory path (uses default from config if not specified)'
+    )
+    
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
+    
+    args = parser.parse_args()
+    
+    # Show header
+    print_header("View Trade Log", "📜")
+    
+    try:
+        from display.table_formatter import TableFormatter
+        from data.repositories.csv_repository import CSVRepository
+        from utils.fund_ui import get_current_fund_info
+        
+        # Get current fund info
+        fund_info = get_current_fund_info()
+        if not fund_info["exists"]:
+            print_error("No active fund found. Please select a fund first.")
+            return
+        
+        fund_name = fund_info["name"]
+        data_directory = args.data_dir or fund_info["data_directory"]
+        
+        print_info(f"Using fund: {fund_name}")
+        print_info(f"Data directory: {data_directory}")
+        
+        # Create CSV repository directly
+        csv_repo = CSVRepository(fund_name=fund_name, data_directory=data_directory)
+        
+        # Get all trades from CSV repository
+        trades = csv_repo.get_trade_history()
+        
+        if not trades:
+            print_info("No trades found in trade log")
+            return
+        
+        # Create and display trade log table
+        formatter = TableFormatter()
+        formatter.create_trade_log_table(trades, "Complete Trade History")
+        
+    except Exception as e:
+        print_error(f"Error viewing trade log: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
@@ -420,9 +481,18 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Menu Actions")
     parser.add_argument("--action", help="Specific action to run")
+    parser.add_argument("--data-dir", help="Data directory path")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
     
     if args.action == "view_trade_log":
+        # Pass arguments to the trade log viewer
+        import sys
+        sys.argv = ["menu_actions.py"]
+        if args.data_dir:
+            sys.argv.extend(["--data-dir", args.data_dir])
+        if args.debug:
+            sys.argv.append("--debug")
         view_trade_log_main()
     else:
         # Default to contributor management if run directly

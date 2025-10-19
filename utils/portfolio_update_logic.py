@@ -42,6 +42,11 @@ class PortfolioUpdateLogic:
         """
         Determine if portfolio should be updated based on smart logic.
         
+        Core Principle: "Get data whenever we can"
+        - Only skip if: (1) not a trading day, OR (2) we already have market close data
+        - Market being closed = opportunity to get official close prices (16:00 timestamp)
+        - Market being open = opportunity to get live prices (current timestamp)
+        
         Args:
             target_date: Optional specific date to check (defaults to today)
             

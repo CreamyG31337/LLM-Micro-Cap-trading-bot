@@ -30,6 +30,11 @@ def refresh_portfolio_prices_if_needed(
     - After market close: Only refresh if missing today's data (gets official close prices)
     - Prevents overwriting good market close prices with after-hours trading data
     
+    Core Principle: "Get data whenever we can"
+    - Uses centralized logic from utils.portfolio_update_logic
+    - Only skips if: (1) not a trading day, OR (2) we already have market close data
+    - Market being closed = opportunity to get official close prices (16:00 timestamp)
+    
     Args:
         market_hours: MarketHours instance for market status
         portfolio_manager: PortfolioManager instance
@@ -86,10 +91,27 @@ def refresh_portfolio_prices_if_needed(
             market_hours=market_hours
         )
         
-        # Update prices for all positions (uses current prices, not historical)
+        # Update prices for all positions
+        # When market is closed, use historical close prices (official end-of-day)
+        # When market is open, use current prices (real-time)
+        use_historical = is_market_closed
+
+        # For historical mode, we need to provide start_date and end_date
+        if use_historical:
+            from utils.timezone_utils import get_current_trading_time
+            current_time = get_current_trading_time()
+            # Use today as both start and end date for historical close prices
+            start_date = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = current_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+        else:
+            start_date = None
+            end_date = None
+
         updated_positions, _, success_count = price_service.update_positions_with_prices(
             positions=latest_snapshot.positions,
-            use_historical=False,  # Use current prices only
+            use_historical=use_historical,  # Use historical close prices when market closed
+            start_date=start_date,  # Required for historical mode
+            end_date=end_date,      # Required for historical mode
             verbose=verbose
         )
         
@@ -100,14 +122,24 @@ def refresh_portfolio_prices_if_needed(
             from data.models.portfolio import PortfolioSnapshot
             from datetime import timezone
             
-            # Check if market is closed - if so, use market close time (16:00)
+            # Check if market is closed - if so, use market close time in user's timezone
             # Otherwise, use current time (can be overwritten later)
-            current_time = datetime.now(timezone.utc)
+            from utils.timezone_utils import get_current_trading_time
+            current_time = get_current_trading_time()  # Gets current time in user's timezone
             is_market_closed = not market_hours.is_market_open()
             
             if is_market_closed:
-                # Use market close time (16:00:00 UTC) for final snapshot
-                snapshot_time = current_time.replace(hour=16, minute=0, second=0, microsecond=0)
+                # Use market close time in Eastern timezone for proper historical price fetching
+                # Market closes at 16:00 ET (Eastern Time)
+                # During EDT (March-November): 16:00 ET = 20:00 UTC
+                # During EST (November-March): 16:00 ET = 21:00 UTC
+                from market_config import _is_dst
+                from datetime import timezone as dt_timezone
+                utc_now = datetime.now(dt_timezone.utc)
+                is_dst = _is_dst(utc_now)
+                # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
+                market_close_hour_utc = 20 if is_dst else 21
+                snapshot_time = current_time.replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0)
             else:
                 # Use current time for intraday snapshot (can be overwritten)
                 snapshot_time = current_time

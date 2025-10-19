@@ -1010,10 +1010,24 @@ def create_historical_snapshots_for_missing_days(data_dir_path, market_hours, po
                 else:
                     snapshot_date = missing_day  # missing_day is already date
                     
-                from datetime import timezone
+                # Use proper timezone handling for historical snapshots
+                # Market closes at 16:00 ET (Eastern Time)
+                from market_config import _is_dst
+                from datetime import timezone as dt_timezone
+                utc_now = datetime.now(dt_timezone.utc)
+                is_dst = _is_dst(utc_now)
+                # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
+                market_close_hour_utc = 20 if is_dst else 21
+
+                # Create timestamp for market close in Eastern timezone
+                historical_timestamp = datetime.combine(
+                    snapshot_date,
+                    datetime.min.time().replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0)
+                ).replace(tzinfo=dt_timezone.utc)
+                
                 historical_snapshot = PortfolioSnapshot(
                     positions=historical_positions,
-                    timestamp=datetime.combine(snapshot_date, datetime.min.time().replace(hour=16, minute=0, second=0, microsecond=0)).replace(tzinfo=timezone.utc)
+                    timestamp=historical_timestamp
                 )
                 
                 # Save historical snapshot
@@ -1134,9 +1148,9 @@ def refresh_portfolio_data_if_needed(data_dir_path):
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
     
-    # Use centralized portfolio refresh logic from the trading system
-    # This ensures consistency and avoids code duplication
-    refresh_portfolio_data_if_needed(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
+    # DISABLED: Portfolio refresh was creating duplicate/corrupted snapshots
+    # The graph should use existing data, not create new snapshots
+    # refresh_portfolio_data_if_needed(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
     
     llm_totals = load_portfolio_totals()
 
@@ -1466,7 +1480,7 @@ def main(args) -> dict:
     plt.grid(True, which='minor', axis='x', alpha=0.2, linewidth=0.5)  # Minor vertical grid lines
     plt.grid(True, which='major', axis='y', alpha=0.3, linewidth=0.8)  # Horizontal grid lines
 
-    plt.xlabel("Date")
+    plt.xlabel("Date (Times shown in EST - market timezone)")
     plt.ylabel("Performance Index (100 = Break-even)")
     plt.xticks(rotation=45)  # Keep rotation for better readability
     plt.legend(loc='upper left', frameon=True, fancybox=True, shadow=True)

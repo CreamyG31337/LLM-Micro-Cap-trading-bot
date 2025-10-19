@@ -20,8 +20,14 @@ def get_trading_timezone() -> timezone:
         from market_config import get_timezone_offset
         offset_hours = get_timezone_offset()
     except ImportError:
-        # Fallback to PST if market_config is not available
-        offset_hours = -8
+        # Fallback to settings if market_config is not available
+        try:
+            from config.settings import Settings
+            settings = Settings()
+            offset_hours = settings.get('timezone.offset_hours', -8)
+        except:
+            # Final fallback to PST if all else fails
+            offset_hours = -8
     
     return timezone(timedelta(hours=offset_hours))
 
@@ -249,6 +255,38 @@ def safe_parse_datetime_column(series_or_str: Union[str, pd.Series], column_name
     else:
         # Fallback for other types
         return pd.to_datetime(series_or_str)
+
+
+def get_market_close_time_local() -> int:
+    """Get market close hour in user's local timezone.
+    
+    Market closes at 4:00 PM EST, which varies by user timezone:
+    - EST user: 4:00 PM local
+    - PST user: 1:00 PM local  
+    - MST user: 2:00 PM local
+    - CST user: 3:00 PM local
+    
+    Returns:
+        int: Market close hour in user's local timezone
+    """
+    try:
+        from market_config import get_timezone_offset
+        user_offset = get_timezone_offset()  # e.g., -8 for PST
+    except ImportError:
+        # Fallback to settings if market_config is not available
+        try:
+            from config.settings import Settings
+            settings = Settings()
+            user_offset = settings.get('timezone.user_display.offset_hours', -8)
+        except:
+            # Final fallback to PST if all else fails
+            user_offset = -8
+    
+    market_offset = -5  # EST is UTC-5 (standard time)
+    # Market closes at 16:00 EST
+    # Convert to user's timezone
+    return 16 + (user_offset - market_offset)
+    # For PST: 16 + (-8 - (-5)) = 16 + (-3) = 13 (1 PM PST)
 
 
 def get_timezone_config() -> dict:

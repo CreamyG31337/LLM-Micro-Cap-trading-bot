@@ -297,11 +297,53 @@ class PriceService:
                 updated_positions.append(updated_position)
                 logger.debug(f"Updated {position.ticker} with price: ${price}")
             else:
-                # Fallback: Use existing price from position (CSV/database)
+                # Enhanced fallback logic:
+                # 1. First try existing current_price from position
+                # 2. If not available, try to fetch previous close price
+                # 3. Only as last resort, keep position without price update
+
                 if position.current_price is not None and position.current_price > 0:
+                    # Use existing current_price from position (CSV/database)
                     updated_positions.append(position)
                     logger.debug(f"Using existing price for {position.ticker}: ${position.current_price}")
                 else:
+                    # Try to fetch previous close price for fallback
+                    try:
+                        if use_historical and start_date and end_date:
+                            # For historical mode, try to get the close price from the previous trading day
+                            from datetime import timedelta
+                            prev_day = start_date.date() - timedelta(days=1)
+
+                            # Try to get previous close price
+                            prev_price_data = self.market_data_fetcher.fetch_price_data(
+                                position.ticker, prev_day, prev_day
+                            )
+
+                            if prev_price_data.df is not None and not prev_price_data.df.empty:
+                                prev_close = prev_price_data.df['Close'].iloc[-1]
+                                if prev_close > 0:
+                                    # Use previous close price as fallback
+                                    fallback_price = Decimal(str(prev_close))
+                                    updated_position = Position(
+                                        ticker=position.ticker,
+                                        shares=position.shares,
+                                        avg_price=position.avg_price,
+                                        cost_basis=position.cost_basis,
+                                        currency=position.currency,
+                                        company=position.company,
+                                        current_price=fallback_price,
+                                        market_value=position.shares * fallback_price,
+                                        unrealized_pnl=(fallback_price - position.avg_price) * position.shares,
+                                        stop_loss=position.stop_loss,
+                                        position_id=position.position_id
+                                    )
+                                    updated_positions.append(updated_position)
+                                    logger.debug(f"Using previous close price for {position.ticker}: ${fallback_price}")
+                                    continue
+
+                    except Exception as e:
+                        logger.debug(f"Failed to get previous close price for {position.ticker}: {e}")
+
                     # No price available - keep position but log warning
                     updated_positions.append(position)
                     logger.warning(f"No price data available for {position.ticker}")

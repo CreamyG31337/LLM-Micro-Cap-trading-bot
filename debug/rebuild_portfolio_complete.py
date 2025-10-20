@@ -344,17 +344,32 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             if trading_day >= today:
                 continue
             
-            # Skip days when markets were closed - no point generating snapshots
-            # Check if any of our positions' markets were open on this day
-            positions_for_date = date_positions.get(trading_day, {})
-            active_positions = {k: v for k, v in positions_for_date.items() if v['shares'] > 0}
+            # Get ALL positions that were held on this day (not just traded)
+            # This includes positions from previous days that weren't sold
+            all_held_positions = {}
             
-            if len(active_positions) == 0:
+            # Start with positions that were actively traded on this day
+            positions_for_date = date_positions.get(trading_day, {})
+            for ticker, pos in positions_for_date.items():
+                if pos['shares'] > 0:
+                    all_held_positions[ticker] = pos
+            
+            # Add positions from previous days that weren't sold
+            for prev_day in all_trading_days_list:
+                if prev_day >= trading_day:
+                    break
+                prev_positions = date_positions.get(prev_day, {})
+                for ticker, pos in prev_positions.items():
+                    if pos['shares'] > 0 and ticker not in all_held_positions:
+                        # This position was held from a previous day
+                        all_held_positions[ticker] = pos
+            
+            if len(all_held_positions) == 0:
                 continue
             
             # Check if any market was open for our positions
             any_market_open = False
-            for ticker in active_positions.keys():
+            for ticker in all_held_positions.keys():
                 # Determine market based on ticker (.TO = Toronto, .V = Vancouver)
                 if ticker.endswith(('.TO', '.V')):
                     market = 'canadian'
@@ -374,7 +389,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             
             # Create positions list for this date
             daily_positions = []
-            for ticker, position in positions_for_date.items():
+            for ticker, position in all_held_positions.items():
                 if position['shares'] > 0:  # Only include positions with shares
                     # Check if this stock's market was open on this day (.TO = Toronto, .V = Vancouver)
                     if ticker.endswith(('.TO', '.V')):

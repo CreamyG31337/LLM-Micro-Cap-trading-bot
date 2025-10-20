@@ -576,7 +576,7 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     
     # If today is in the data but market hasn't opened, exclude it
     if today in [start_date, end_date] and not market_hours.is_market_open():
-        print(f"ℹ️ Excluding today ({today}) from graph - market hasn't opened yet")
+        print(f"INFO Excluding today ({today}) from graph - market hasn't opened yet")
         # Filter out today's data
         df = df[df['Date'].dt.date != today]
         if df.empty:

@@ -60,6 +60,36 @@ class TableFormatter:
         self.optimal_width = get_optimal_table_width(data_dir)
         self.using_test_data = is_using_test_data(data_dir)
     
+    def _format_shares_for_display(self, shares_value) -> str:
+        """Format shares for display with at least 2 decimal places when needed.
+        
+        Args:
+            shares_value: The number of shares to format
+            
+        Returns:
+            Formatted string with appropriate decimal places
+        """
+        if not shares_value or shares_value == 0:
+            return "0"
+        
+        try:
+            shares_float = float(shares_value)
+            
+            # Always show at least 2 decimal places for fractional shares
+            if shares_float == int(shares_float):
+                # Whole number - show as integer
+                return f"{int(shares_float):,}"
+            else:
+                # Fractional shares - show with at least 2 decimal places
+                # Format with 2 decimals and remove trailing zeros
+                formatted = f"{shares_float:,.2f}".rstrip('0').rstrip('.')
+                # If we removed too much, ensure we have at least 2 decimal places
+                if '.' not in formatted:
+                    formatted = f"{shares_float:,.2f}"
+                return formatted
+        except (ValueError, TypeError):
+            return str(shares_value)
+    
     def create_portfolio_table(self, portfolio_data: Union[List[Dict[str, Any]], 'pd.DataFrame'], 
                              current_date: Optional[str] = None,
                              output_format: str = "display") -> Optional[str]:
@@ -1470,7 +1500,7 @@ class TableFormatter:
                 formatted_date = "N/A"
             
             # Format values
-            shares_str = f"{shares:,.0f}" if shares else "0"
+            shares_str = self._format_shares_for_display(shares)
             price_str = f"${price:,.2f}" if price else "$0.00"
             cost_basis_str = f"${cost_basis:,.2f}" if cost_basis else "$0.00"
             pnl_str = f"${pnl:,.2f}" if pnl else "$0.00"
@@ -1548,7 +1578,7 @@ class TableFormatter:
                 formatted_date = "N/A"
             
             # Format values
-            shares_str = f"{shares:,.0f}" if shares else "0"
+            shares_str = self._format_shares_for_display(shares)
             price_str = f"${price:,.2f}" if price else "$0.00"
             cost_basis_str = f"${cost_basis:,.2f}" if cost_basis else "$0.00"
             pnl_str = f"${pnl:,.2f}" if pnl else "$0.00"

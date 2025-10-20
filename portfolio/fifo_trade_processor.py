@@ -449,7 +449,7 @@ class FIFOTradeProcessor:
             
             tracker = self.lot_trackers[ticker]
             
-            # Update or remove position
+            # Update or mark position as sold
             if tracker.get_total_remaining_shares() > 0:
                 # Update position with remaining shares
                 position = Position(
@@ -462,9 +462,16 @@ class FIFOTradeProcessor:
                 
                 latest_snapshot.add_position(position)
             else:
-                # Remove position entirely
-                latest_snapshot.remove_position(ticker)
-                logger.info(f"Position removed after FIFO sell: {ticker}")
+                # Mark position as sold with 0 shares (don't remove it)
+                sold_position = Position(
+                    ticker=ticker,
+                    shares=Decimal('0'),
+                    avg_price=Decimal('0'),
+                    cost_basis=Decimal('0'),
+                    currency=trade.currency
+                )
+                latest_snapshot.add_position(sold_position)  # Keep it with 0 values
+                logger.info(f"Position marked as sold (0 shares) after FIFO sell: {ticker}")
             
             # Update snapshot timestamp
             latest_snapshot.timestamp = timestamp or trade.timestamp

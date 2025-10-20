@@ -122,11 +122,19 @@ class CSVRepository(BaseRepository):
             logger.error(f"Failed to load portfolio data: {e}")
             raise RepositoryError(f"Failed to load portfolio data: {e}") from e
     
-    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot, is_trade_execution: bool = False) -> None:
         """Save portfolio snapshot to CSV file.
         
+        ARCHITECTURE NOTE: This should receive a COMPLETE snapshot with ALL positions for that date,
+        not a partial snapshot with just new positions. For backdated trades, the caller should
+        skip calling this and instruct the user to run the rebuild script.
+        
+        This method handles replacing existing snapshots for the same date (by date-only,
+        not exact timestamp) to maintain the rule: ONE snapshot per trading day.
+        
         Args:
-            snapshot: PortfolioSnapshot to save
+            snapshot: Complete portfolio snapshot with all positions
+            is_trade_execution: Whether this is triggered by a trade execution (bypasses market-close protection)
         """
         try:
             # Prepare data for CSV - use normalized timestamp
@@ -454,8 +462,8 @@ class CSVRepository(BaseRepository):
                 # Append new trade
                 combined_df = pd.concat([existing_df, new_trade_df], ignore_index=True)
                 
-                # Convert Date column to datetime for proper sorting
-                combined_df['Date'] = pd.to_datetime(combined_df['Date'])
+                # Convert Date column to datetime for proper sorting using timezone-aware parsing
+                combined_df['Date'] = combined_df['Date'].apply(self._parse_csv_timestamp)
                 
                 # Sort by date
                 combined_df = combined_df.sort_values('Date')
@@ -755,3 +763,127 @@ class CSVRepository(BaseRepository):
         except ImportError:
             # Fallback to basic formatting if timezone_utils not available
             return timestamp.strftime("%Y-%m-%d %H:%M:%S PST")
+    
+    def update_ticker_in_future_snapshots(self, ticker: str, trade_timestamp: datetime) -> None:
+        """Update a ticker's position in all snapshots after the trade timestamp.
+        
+        This method rebuilds the ticker's position using FIFO lot tracking from the
+        trade date forward, ensuring accurate historical snapshots after backdated trades.
+        
+        Args:
+            ticker: Ticker symbol to update
+            trade_timestamp: Timestamp of the backdated trade
+            
+        Raises:
+            RepositoryError: If update operation fails
+        """
+        try:
+            from datetime import timezone
+            from portfolio.fifo_trade_processor import FIFOTradeProcessor
+            from data.models.lot import LotTracker
+            import pandas as pd
+            
+            logger.info(f"Rebuilding {ticker} positions from {trade_timestamp} forward due to backdated trade")
+            
+            # Get all trades for this ticker from the trade date forward
+            trade_date = trade_timestamp.date()
+            start_date = datetime.combine(trade_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            end_date = datetime.now(timezone.utc)
+            
+            all_trades = self.get_trade_history(ticker=ticker, date_range=(start_date, end_date))
+            
+            if not all_trades:
+                logger.info(f"No trades found for {ticker} from {trade_date} forward")
+                return
+            
+            # Sort trades chronologically
+            all_trades.sort(key=lambda x: x.timestamp)
+            
+            # Get all snapshots from trade date forward
+            snapshots = self.get_portfolio_data(date_range=(start_date, end_date))
+            
+            if not snapshots:
+                logger.info(f"No snapshots found from {trade_date} forward")
+                return
+            
+            # For each snapshot, rebuild the ticker's position
+            for snapshot in snapshots:
+                # Normalize both timestamps to UTC for comparison
+                from datetime import timezone as tz
+                snapshot_ts = snapshot.timestamp if snapshot.timestamp.tzinfo else snapshot.timestamp.replace(tzinfo=tz.utc)
+                trade_ts = trade_timestamp if trade_timestamp.tzinfo else trade_timestamp.replace(tzinfo=tz.utc)
+                
+                if snapshot_ts < trade_ts:
+                    continue  # Skip snapshots before the trade
+                
+                # Rebuild lots up to this snapshot's timestamp
+                tracker = LotTracker(ticker)
+                
+                # Process all trades up to this snapshot's timestamp
+                for trade in all_trades:
+                    trade_ts_loop = trade.timestamp if trade.timestamp.tzinfo else trade.timestamp.replace(tzinfo=tz.utc)
+                    if trade_ts_loop > snapshot_ts:
+                        break
+                    
+                    if trade.is_buy():
+                        tracker.add_lot(
+                            shares=trade.shares,
+                            price=trade.price,
+                            purchase_date=trade.timestamp,
+                            currency=trade.currency
+                        )
+                    elif trade.is_sell():
+                        try:
+                            tracker.sell_shares_fifo(
+                                shares_to_sell=trade.shares,
+                                sell_price=trade.price,
+                                sell_date=trade.timestamp
+                            )
+                        except Exception as e:
+                            logger.warning(f"Error processing sell trade for {ticker}: {e}")
+                
+                # Calculate the position at this snapshot time
+                total_shares = sum(lot.remaining_shares for lot in tracker.lots)
+                total_cost_basis = sum(lot.remaining_cost_basis for lot in tracker.lots)
+                avg_price = total_cost_basis / total_shares if total_shares > 0 else Decimal('0')
+                
+                # Create new position for this ticker
+                if total_shares > 0:
+                    # Find the original position to get current price and other details
+                    original_position = None
+                    for pos in snapshot.positions:
+                        if pos.ticker == ticker:
+                            original_position = pos
+                            break
+                    
+                    new_position = Position(
+                        ticker=ticker,
+                        shares=total_shares,
+                        avg_price=avg_price,
+                        cost_basis=total_cost_basis,
+                        currency=trade.currency if all_trades else "CAD",
+                        company=original_position.company if original_position else None,
+                        current_price=original_position.current_price if original_position else None,
+                        market_value=original_position.current_price * total_shares if original_position and original_position.current_price else None,
+                        unrealized_pnl=None  # Will be calculated
+                    )
+                    
+                    # Remove old position and add new one
+                    snapshot.remove_position(ticker)
+                    snapshot.add_position(new_position)
+                else:
+                    # No shares remaining, remove position
+                    snapshot.remove_position(ticker)
+                
+                # Recalculate snapshot totals
+                snapshot.total_value = snapshot.calculate_total_value()
+                
+                # Save the updated snapshot
+                self.save_portfolio_snapshot(snapshot)
+                logger.info(f"Updated {ticker} position in snapshot {snapshot.timestamp}")
+            
+            logger.info(f"Successfully rebuilt {ticker} positions from {trade_timestamp} forward")
+            
+        except Exception as e:
+            logger.error(f"Failed to update ticker {ticker} in future snapshots: {e}")
+            raise RepositoryError(f"Failed to update ticker {ticker} in future snapshots: {e}") from e

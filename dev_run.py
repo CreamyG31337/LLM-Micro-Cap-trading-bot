@@ -11,13 +11,18 @@ from pathlib import Path
 # Set development mode
 os.environ["TRADING_BOT_DEV"] = "true"
 
-# Configure logging for development
+# Configure logging for development with UTF-8 encoding for Windows compatibility
+import io
+
+# Create a UTF-8 encoded stdout wrapper for Windows emoji support
+utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('trading_bot_dev.log')
+        logging.StreamHandler(utf8_stdout),
+        logging.FileHandler('trading_bot_dev.log', encoding='utf-8')
     ]
 )
 

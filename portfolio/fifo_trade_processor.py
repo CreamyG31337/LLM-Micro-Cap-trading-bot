@@ -247,6 +247,13 @@ class FIFOTradeProcessor:
                                   timestamp: Optional[datetime] = None) -> None:
         """Update portfolio position after a buy trade."""
         try:
+            # Handle backdated trades by rebuilding affected snapshots
+            trade_date = (timestamp or trade.timestamp).date()
+            if trade_date < datetime.now().date():
+                logger.info(f"Backdated trade detected: {ticker} on {trade_date}")
+                logger.info("Rebuilding historical snapshots to include this trade...")
+                self._rebuild_snapshots_from_date(trade_date)
+                return
             # Get latest portfolio snapshot
             latest_snapshot = self.repository.get_latest_portfolio_snapshot()
             if latest_snapshot is None:
@@ -276,17 +283,159 @@ class FIFOTradeProcessor:
                 latest_snapshot.add_position(position)
                 latest_snapshot.timestamp = timestamp or trade.timestamp
                 
-                # Save updated snapshot
-                self.repository.save_portfolio_snapshot(latest_snapshot)
+                # Save updated snapshot (mark as trade execution to bypass market-close protection)
+                self.repository.save_portfolio_snapshot(latest_snapshot, is_trade_execution=True)
                 
                 logger.info(f"Position updated after FIFO buy: {ticker}")
             
         except Exception as e:
             logger.error(f"Failed to update position after FIFO buy trade: {e}")
     
+    def _rebuild_snapshots_from_date(self, start_date) -> None:
+        """Rebuild portfolio snapshots from a specific date onwards.
+        
+        This method processes all trades from the start_date onwards and rebuilds
+        the portfolio snapshots to ensure they include the backdated trade.
+        
+        Args:
+            start_date: Date to start rebuilding from (inclusive)
+        """
+        try:
+            from datetime import datetime, timedelta
+            from portfolio.portfolio_manager import PortfolioManager
+            from portfolio.fund_manager import Fund
+            
+            logger.info(f"Rebuilding snapshots from {start_date} onwards...")
+            
+            # Get all trades from start_date onwards
+            end_date = datetime.now().date()
+            all_trades = self.repository.get_trade_history()
+            
+            # Filter trades from start_date onwards
+            relevant_trades = [
+                trade for trade in all_trades 
+                if trade.timestamp.date() >= start_date
+            ]
+            
+            if not relevant_trades:
+                logger.info("No trades found for rebuild period")
+                return
+            
+            logger.info(f"Found {len(relevant_trades)} trades to process")
+            
+            # Group trades by date
+            trades_by_date = {}
+            for trade in relevant_trades:
+                trade_date = trade.timestamp.date()
+                if trade_date not in trades_by_date:
+                    trades_by_date[trade_date] = []
+                trades_by_date[trade_date].append(trade)
+            
+            # Process each date and rebuild snapshots
+            for trade_date in sorted(trades_by_date.keys()):
+                logger.info(f"Rebuilding snapshot for {trade_date}")
+                
+                # Get all trades up to and including this date
+                trades_up_to_date = [
+                    trade for trade in all_trades 
+                    if trade.timestamp.date() <= trade_date
+                ]
+                
+                # Calculate positions for this date
+                positions = self._calculate_positions_from_trades(trades_up_to_date)
+                
+                # Create snapshot for this date
+                from data.models.portfolio import PortfolioSnapshot
+                snapshot_timestamp = datetime.combine(trade_date, datetime.min.time().replace(hour=16, minute=0))
+                
+                snapshot = PortfolioSnapshot(
+                    positions=positions,
+                    timestamp=snapshot_timestamp
+                )
+                
+                # Save the snapshot (this will replace any existing snapshot for this date)
+                self.repository.save_portfolio_snapshot(snapshot)
+                logger.info(f"Rebuilt snapshot for {trade_date} with {len(positions)} positions")
+            
+            logger.info("Historical snapshot rebuild completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to rebuild snapshots from {start_date}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _calculate_positions_from_trades(self, trades) -> list:
+        """Calculate final positions from a list of trades.
+        
+        Args:
+            trades: List of Trade objects
+            
+        Returns:
+            List of Position objects representing final state
+        """
+        from data.models.portfolio import Position
+        from collections import defaultdict
+        from decimal import Decimal
+        
+        # Track running positions
+        running_positions = defaultdict(lambda: {
+            'shares': Decimal('0'), 
+            'cost': Decimal('0'), 
+            'currency': 'USD'
+        })
+        
+        # Process trades chronologically
+        for trade in sorted(trades, key=lambda t: t.timestamp):
+            ticker = trade.ticker
+            
+            if trade.action == 'SELL':
+                # Reduce shares and cost proportionally
+                if running_positions[ticker]['shares'] > 0:
+                    cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
+                    running_positions[ticker]['shares'] -= trade.shares
+                    running_positions[ticker]['cost'] -= trade.shares * cost_per_share
+                    # Ensure we don't go negative
+                    if running_positions[ticker]['shares'] < 0:
+                        running_positions[ticker]['shares'] = Decimal('0')
+                    if running_positions[ticker]['cost'] < 0:
+                        running_positions[ticker]['cost'] = Decimal('0')
+            else:
+                # Default to BUY for all other trades
+                running_positions[ticker]['shares'] += trade.shares
+                running_positions[ticker]['cost'] += trade.cost_basis
+                running_positions[ticker]['currency'] = trade.currency
+        
+        # Convert to Position objects
+        positions = []
+        for ticker, data in running_positions.items():
+            if data['shares'] > 0:  # Only include positions with shares
+                avg_price = data['cost'] / data['shares'] if data['shares'] > 0 else Decimal('0')
+                
+                position = Position(
+                    ticker=ticker,
+                    shares=data['shares'],
+                    avg_price=avg_price,
+                    cost_basis=data['cost'],
+                    currency=data['currency'],
+                    company=f"Company {ticker}",  # Could be enhanced to get real company name
+                    current_price=Decimal('0'),  # Will be updated by market data
+                    market_value=Decimal('0'),
+                    unrealized_pnl=Decimal('0')
+                )
+                positions.append(position)
+        
+        return positions
+    
     def _update_position_after_sell(self, ticker: str, trade: Trade, timestamp: Optional[datetime] = None) -> None:
         """Update portfolio position after a sell trade."""
         try:
+            # Handle backdated trades by rebuilding affected snapshots
+            trade_date = (timestamp or trade.timestamp).date()
+            if trade_date < datetime.now().date():
+                logger.info(f"Backdated trade detected: {ticker} on {trade_date}")
+                logger.info("Rebuilding historical snapshots to include this trade...")
+                self._rebuild_snapshots_from_date(trade_date)
+                return
             # Get latest portfolio snapshot
             latest_snapshot = self.repository.get_latest_portfolio_snapshot()
             if latest_snapshot is None:
@@ -320,8 +469,14 @@ class FIFOTradeProcessor:
             # Update snapshot timestamp
             latest_snapshot.timestamp = timestamp or trade.timestamp
             
-            # Save updated snapshot
-            self.repository.save_portfolio_snapshot(latest_snapshot)
+            # Save updated snapshot (mark as trade execution to bypass market-close protection)
+            self.repository.save_portfolio_snapshot(latest_snapshot, is_trade_execution=True)
+            
+            # If this is a backdated trade, update the ticker in all future snapshots
+            from datetime import timezone
+            if trade.timestamp.date() < datetime.now(timezone.utc).date():
+                logger.info(f"Backdated trade detected for {ticker}, updating future snapshots")
+                self.repository.update_ticker_in_future_snapshots(ticker, trade.timestamp)
             
             logger.info(f"Position updated after FIFO sell: {ticker}")
             

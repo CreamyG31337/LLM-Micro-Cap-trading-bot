@@ -105,13 +105,18 @@ def setup_logging(settings: Settings) -> None:
     """
     log_config = settings.get_logging_config()
 
-    # Configure root logger
+    # Configure root logger with UTF-8 encoding for Windows compatibility
+    import io
+    
+    # Create a UTF-8 encoded stdout wrapper for Windows emoji support
+    utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    
     logging.basicConfig(
         level=getattr(logging, log_config.get('level', 'INFO')),
         format=log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s'),
         handlers=[
-            logging.FileHandler(log_config.get('file', LOG_FILE)),
-            logging.StreamHandler(sys.stdout)
+            logging.FileHandler(log_config.get('file', LOG_FILE), encoding='utf-8'),
+            logging.StreamHandler(utf8_stdout)
         ]
     )
 
@@ -578,7 +583,7 @@ def generate_benchmark_graph(settings: Settings) -> None:
 
                 if data.empty:
                     print_warning(f"No data available for {config['name']}")
-                    continue
+                    return
 
                 # Reset index and clean up columns
                 data = data.reset_index()
@@ -626,7 +631,7 @@ def generate_benchmark_graph(settings: Settings) -> None:
 
             except Exception as e:
                 print_warning(f"Error downloading {config['name']}: {e}")
-                continue
+                return
 
         if not benchmark_data:
             print_error("No benchmark data could be downloaded")
@@ -1806,14 +1811,14 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     for pos in updated_positions:
                         try:
                             if pos.market_value is None:
-                                continue
+                                return
                             # Use the currency field from the position data instead of detecting from ticker
                             if pos.currency == 'USD':
                                 usd_positions_value_usd += (pos.market_value or Decimal('0'))
                             elif pos.currency == 'CAD':
                                 cad_positions_value_cad += (pos.market_value or Decimal('0'))
                         except Exception:
-                            continue
+                            return
                 except Exception:
                     usd_positions_value_usd = Decimal('0')
                     cad_positions_value_cad = Decimal('0')
@@ -2186,12 +2191,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             elif action == 'u':
                 verify_script_before_action()
                 trading_interface.update_cash_balances()
-            elif action == 'b':
-                verify_script_before_action()
-                trading_interface.buy_stock()
-            elif action == 's':
-                verify_script_before_action()
-                trading_interface.sell_stock()
             elif action == 'sync':
                 verify_script_before_action()
                 trading_interface.sync_fund_contributions()

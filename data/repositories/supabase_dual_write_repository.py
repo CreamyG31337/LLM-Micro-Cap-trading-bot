@@ -60,15 +60,15 @@ class SupabaseDualWriteRepository(BaseRepository):
         """Get latest portfolio snapshot from Supabase."""
         return self.supabase_repo.get_latest_portfolio_snapshot()
     
-    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot, is_trade_execution: bool = False) -> None:
         """Save portfolio snapshot to both Supabase and CSV."""
         try:
             # Save to Supabase first (primary)
-            self.supabase_repo.save_portfolio_snapshot(snapshot)
+            self.supabase_repo.save_portfolio_snapshot(snapshot, is_trade_execution)
             logger.info(f"Saved portfolio snapshot to Supabase")
             
             # Save to CSV (backup)
-            self.csv_repo.save_portfolio_snapshot(snapshot)
+            self.csv_repo.save_portfolio_snapshot(snapshot, is_trade_execution)
             logger.info(f"Saved portfolio snapshot to CSV")
             
         except Exception as e:
@@ -155,3 +155,30 @@ class SupabaseDualWriteRepository(BaseRepository):
     def validate_data_integrity(self) -> bool:
         """Validate data integrity using Supabase repository."""
         return self.supabase_repo.validate_data_integrity()
+    
+    def update_ticker_in_future_snapshots(self, ticker: str, trade_timestamp: datetime) -> None:
+        """Update a ticker's position in all snapshots after the trade timestamp.
+        
+        This method calls both underlying repositories to ensure consistency.
+        
+        Args:
+            ticker: Ticker symbol to update
+            trade_timestamp: Timestamp of the backdated trade
+            
+        Raises:
+            RepositoryError: If update operation fails
+        """
+        try:
+            logger.info(f"Updating {ticker} positions in both Supabase and CSV repositories")
+            
+            # Update Supabase repository
+            self.supabase_repo.update_ticker_in_future_snapshots(ticker, trade_timestamp)
+            logger.info(f"Updated {ticker} positions in Supabase")
+            
+            # Update CSV repository
+            self.csv_repo.update_ticker_in_future_snapshots(ticker, trade_timestamp)
+            logger.info(f"Updated {ticker} positions in CSV")
+            
+        except Exception as e:
+            logger.error(f"Failed to update ticker {ticker} in dual-write repositories: {e}")
+            raise RepositoryError(f"Failed to update ticker {ticker} in dual-write repositories: {e}") from e

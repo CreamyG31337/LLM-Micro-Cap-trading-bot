@@ -43,14 +43,13 @@ class TradingInterface:
         """
         from datetime import time
 
-        print_info("Select trade timestamp:")
-        print("1. Market Open (6:30 AM)")
-        print("2. Current Time (Now)")
-        print("3. Custom Date/Time")
+        print_info("Select trade timestamp (Eastern Time - EDT/EST):")
+        print("1. Market Open (9:30 AM EDT)")
+        print("2. Custom Date/Time (enter in EDT/EST)")
 
         while True:
             try:
-                choice = input("Enter choice (1-3): ").strip()
+                choice = input("Enter choice (1-2): ").strip()
 
                 if choice == '1':
                     # Market open (6:30 AM)
@@ -59,19 +58,13 @@ class TradingInterface:
                     return timestamp
 
                 elif choice == '2':
-                    # Current time
-                    timestamp = datetime.now()
-                    print_success(f"Selected: Current Time ({timestamp.strftime('%Y-%m-%d %H:%M:%S')})")
-                    return timestamp
-
-                elif choice == '3':
                     # Custom date/time
                     try:
                         date_str = input("Enter date (YYYY-MM-DD) [today]: ").strip()
                         if not date_str:
                             date_str = datetime.now().strftime('%Y-%m-%d')
 
-                        time_str = input("Enter time (HH:MM) [current]: ").strip()
+                        time_str = input("Enter time (HH:MM in EDT/EST) [current]: ").strip()
                         if not time_str:
                             time_str = datetime.now().strftime('%H:%M')
 
@@ -86,11 +79,41 @@ class TradingInterface:
                         continue
 
                 else:
-                    print_error("Invalid choice. Please enter 1, 2, or 3")
+                    print_error("Invalid choice. Please enter 1 or 2")
 
             except KeyboardInterrupt:
                 print_info("\nUsing current time as default")
                 return datetime.now()
+    
+    def _validate_and_confirm_ticker(self, raw_ticker: str, price_hint: Optional[Decimal] = None) -> Optional[tuple[str, str, str]]:
+        """Validate ticker and get user confirmation.
+        
+        Returns:
+            Tuple of (corrected_ticker, currency, company_name) or None if user cancels
+        """
+        from utils.ticker_utils import detect_and_correct_ticker, get_company_name
+        from financial.currency_handler import CurrencyHandler
+        
+        # Step 1: Auto-detect ticker with suffix (this may prompt user if multiple matches)
+        corrected_ticker = detect_and_correct_ticker(raw_ticker, float(price_hint) if price_hint else None)
+        
+        # Step 2: Detect currency
+        currency_handler = CurrencyHandler(Path(self.repository.data_dir))
+        detected_currency = currency_handler.get_ticker_currency(corrected_ticker)
+        
+        # Step 3: Get company name
+        company_name = get_company_name(corrected_ticker, detected_currency)
+        
+        # Step 4: Show final confirmation (no additional prompting)
+        print_info("Stock Confirmation:")
+        print(f"  Selected: {corrected_ticker} - {company_name} ({detected_currency})")
+        
+        # Just confirm the selection (no alternative options to avoid double-prompting)
+        confirm = input("Proceed with this stock? (y/N): ").strip().lower()
+        if confirm not in ('y', 'yes'):
+            return None
+        
+        return (corrected_ticker, detected_currency, company_name)
     
     def log_contribution(self) -> bool:
         """Handle contribution logging action with enhanced contributor selection.
@@ -424,245 +447,7 @@ class TradingInterface:
             print_error(f"Failed to update cash balances: {e}")
             return False
     
-    def buy_stock(self) -> bool:
-        """Handle stock purchase action.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            print_info("Buy Stock", "🛒")
-            
-            # Get order type
-            order_type = input("Order type (limit/market): ").strip().lower()
-            if order_type in ['l', 'limit']:
-                order_type = 'limit'
-            elif order_type in ['m', 'market']:
-                order_type = 'market'
-            else:
-                print_error("Order type must be 'limit' or 'market' (or 'l'/'m')")
-                return False
-            
-            # Get ticker
-            ticker = input("Enter ticker symbol: ").strip().upper()
-            if not ticker:
-                print_error("Ticker symbol cannot be empty")
-                return False
-            
-            # Get shares
-            try:
-                shares_str = input("Enter number of shares: ").strip()
-                shares = Decimal(shares_str)
-                if shares <= 0:
-                    print_error("Number of shares must be positive")
-                    return False
-            except (ValueError, TypeError):
-                print_error("Invalid shares format")
-                return False
-            
-            # Get price
-            try:
-                if order_type == 'limit':
-                    price_str = input("Enter limit price: $").strip()
-                else:
-                    price_str = input("Enter market price: $").strip()
-                price = Decimal(price_str)
-                if price <= 0:
-                    print_error("Price must be positive")
-                    return False
-            except (ValueError, TypeError):
-                print_error("Invalid price format")
-                return False
-            
-            # Get optional stop loss
-            stop_loss = None
-            stop_loss_str = input("Enter stop loss price (optional): $").strip()
-            if stop_loss_str:
-                try:
-                    stop_loss = Decimal(stop_loss_str)
-                    if stop_loss <= 0:
-                        print_error("Stop loss must be positive")
-                        return False
-                except (ValueError, TypeError):
-                    print_error("Invalid stop loss format")
-                    return False
-            
-            # Get timestamp for the trade
-            trade_timestamp = self._get_trade_timestamp()
-
-            # Show trade summary and ask for confirmation
-            print_info("Trade Summary:")
-            print(f"  Action: BUY {shares} shares of {ticker}")
-            print(f"  Price: ${price} ({order_type.title()} order)")
-            if stop_loss:
-                print(f"  Stop Loss: ${stop_loss}")
-            print(f"  Total Cost: ${shares * price}")
-            print(f"  Timestamp: {trade_timestamp}")
-            
-            # Ask for confirmation
-            confirm = input("\nExecute this trade? (y/N): ").strip().lower()
-            if confirm not in ('y', 'yes'):
-                print_info("Trade cancelled")
-                return False
-
-            # Detect currency based on ticker
-            from financial.currency_handler import CurrencyHandler
-            currency_handler = CurrencyHandler(Path(self.repository.data_dir))
-            detected_currency = currency_handler.get_ticker_currency(ticker)
-            
-            # Execute trade
-            trade = self.trade_processor.execute_buy_trade(
-                ticker=ticker,
-                shares=shares,
-                price=price,
-                stop_loss=stop_loss,
-                reason=f"{order_type.title()} order",
-                currency=detected_currency,
-                trade_timestamp=trade_timestamp
-            )
-            
-            if trade:
-                print_success(f"Buy order executed: {shares} shares of {ticker} at ${price}")
-                return True
-            else:
-                print_error("Failed to execute buy order")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Error executing buy order: {e}")
-            print_error(f"Failed to execute buy order: {e}")
-            return False
     
-    def sell_stock(self) -> bool:
-        """Handle stock sale action.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            print_info("Sell Stock", "📤")
-
-            # Get latest portfolio snapshot
-            snapshot = self.repository.get_latest_portfolio_snapshot()
-            if not snapshot or not snapshot.positions:
-                print_error("No portfolio positions found")
-                return False
-
-            # Display holdings in numbered list
-            print_info("Current Holdings:")
-            print("─" * 80)
-            print(f"{'#':<3} {'Ticker':<8} {'Shares':<10} {'Avg Price':<12} {'Current Price':<14} {'Market Value':<14} {'P&L':<10}")
-            print("─" * 80)
-
-            for i, position in enumerate(snapshot.positions, 1):
-                ticker = position.ticker
-                shares = f"{position.shares:.4f}"
-                avg_price = f"${position.avg_price:.2f}" if position.avg_price else "N/A"
-                current_price = f"${position.current_price:.2f}" if position.current_price else "N/A"
-                market_value = f"${position.market_value:.2f}" if position.market_value else "N/A"
-                pnl = f"${position.unrealized_pnl:.2f}" if position.unrealized_pnl else "N/A"
-
-                print(f"{i:<3} {ticker:<8} {shares:<10} {avg_price:<12} {current_price:<14} {market_value:<14} {pnl:<10}")
-
-            print("─" * 80)
-            print("Select a holding by number, or enter 'cancel' to abort")
-
-            # Get user selection
-            while True:
-                try:
-                    selection = input("Enter selection: ").strip().lower()
-
-                    if selection == 'cancel':
-                        print_info("Sell operation cancelled")
-                        return False
-
-                    selection_num = int(selection)
-                    if 1 <= selection_num <= len(snapshot.positions):
-                        selected_position = snapshot.positions[selection_num - 1]
-                        ticker = selected_position.ticker
-                        print_success(f"Selected: {ticker} ({selected_position.shares} shares)")
-                        break
-                    else:
-                        print_error(f"Invalid selection. Please enter a number between 1 and {len(snapshot.positions)}")
-                except ValueError:
-                    print_error("Invalid input. Please enter a number or 'cancel'")
-
-            # Get shares to sell (with validation against available shares)
-            while True:
-                try:
-                    shares_str = input(f"Enter number of shares to sell (max: {selected_position.shares}) [Enter for max]: ").strip()
-
-                    # Default to max shares if user just hits enter
-                    if not shares_str:
-                        shares = selected_position.shares
-                        print_info(f"Selling maximum available shares: {shares}")
-                    else:
-                        shares = Decimal(shares_str)
-                        if shares <= 0:
-                            print_error("Number of shares must be positive")
-                            continue
-                        if shares > selected_position.shares:
-                            print_error(f"You can only sell up to {selected_position.shares} shares")
-                            continue
-
-                    break
-                except (ValueError, TypeError):
-                    print_error("Invalid shares format")
-                    continue
-            
-            # Get price
-            try:
-                price_str = input("Enter limit price: $").strip()
-                price = Decimal(price_str)
-                if price <= 0:
-                    print_error("Price must be positive")
-                    return False
-            except (ValueError, TypeError):
-                print_error("Invalid price format")
-                return False
-            
-            # Get timestamp for the trade
-            trade_timestamp = self._get_trade_timestamp()
-
-            # Show trade summary and ask for confirmation
-            print_info("Trade Summary:")
-            print(f"  Action: SELL {shares} shares of {ticker}")
-            print(f"  Price: ${price} (Limit order)")
-            print(f"  Total Proceeds: ${shares * price}")
-            print(f"  Timestamp: {trade_timestamp}")
-            
-            # Ask for confirmation
-            confirm = input("\nExecute this trade? (y/N): ").strip().lower()
-            if confirm not in ('y', 'yes'):
-                print_info("Trade cancelled")
-                return False
-
-            # Detect currency based on ticker
-            from financial.currency_handler import CurrencyHandler
-            currency_handler = CurrencyHandler(Path(self.repository.data_dir))
-            detected_currency = currency_handler.get_ticker_currency(ticker)
-            
-            # Execute trade with custom timestamp
-            trade = self.trade_processor.execute_sell_trade(
-                ticker=ticker,
-                shares=shares,
-                price=price,
-                reason="Limit sell order",
-                currency=detected_currency,
-                trade_timestamp=trade_timestamp  # Pass custom timestamp
-            )
-
-            if trade:
-                print_success(f"Sell order executed: {shares} shares of {ticker} at ${price}")
-                return True
-            else:
-                print_error("Failed to execute sell order")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Error executing sell order: {e}")
-            print_error(f"Failed to execute sell order: {e}")
-            return False
     
     def sync_fund_contributions(self) -> bool:
         """Handle fund contribution sync action.

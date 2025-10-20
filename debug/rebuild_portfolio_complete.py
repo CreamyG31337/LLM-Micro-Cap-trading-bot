@@ -18,6 +18,11 @@ from decimal import Decimal
 from collections import defaultdict
 import pandas as pd
 import pytz
+
+# Add the parent directory to the path so we can import our modules
+sys.path.append(str(Path(__file__).parent.parent))
+
+from display.console_output import print_info, print_error, _safe_emoji
 import numpy as np
 from dotenv import load_dotenv
 
@@ -144,7 +149,13 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             shares = Decimal(str(trade_row['Shares']))
             
             # Determine action from Reason field (more reliable than share signs)
-            reason = trade_row.get('Reason', '').upper()
+            reason_raw = trade_row.get('Reason', '')
+            # Handle NaN and other non-string values
+            if pd.isna(reason_raw) or not isinstance(reason_raw, str):
+                reason = ''
+            else:
+                reason = str(reason_raw).upper()
+            
             if 'SELL' in reason:
                 action = 'SELL'
             elif 'BUY' in reason:
@@ -243,7 +254,13 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 cost = shares * price
                 
                 # Determine action from reason - look for SELL first, then default to BUY
-                if 'SELL' in reason.upper():
+                # Handle NaN and other non-string values
+                if pd.isna(reason) or not isinstance(reason, str):
+                    reason_str = ''
+                else:
+                    reason_str = str(reason).upper()
+                
+                if 'SELL' in reason_str:
                     # Simple FIFO: reduce shares and cost proportionally
                     if running_positions[ticker]['shares'] > 0:
                         cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
@@ -283,9 +300,9 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
 
         print_info(f"   Date range: {all_trading_days_list[0]} to {all_trading_days_list[-1]}")
         print_info(f"   Total trading days: {len(all_trading_days_list)}")
+        print_info(f"   Fetching prices for {len(all_tickers)} tickers...")
 
         for ticker in all_tickers:
-            print_info(f"   Fetching prices for {ticker}...")
             try:
                 # Convert date objects to datetime for API compatibility
                 start_dt = datetime.combine(all_trading_days_list[0], datetime.min.time())
@@ -306,16 +323,14 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                             price_cache_dict[(ticker, trading_day)] = Decimal(str(day_data['Close'].iloc[0]))
                             dates_cached += 1
                     
-                    print_info(f"     ✓ {ticker}: Cached {dates_cached}/{len(all_trading_days_list)} dates")
+                    # Only show progress for failed fetches, not every success
                     successful_fetches += 1
                 else:
-                    print_error(f"     ✗ {ticker}: No data returned (empty dataframe)")
+                    print_error(f"     {_safe_emoji('✗')} {ticker}: No data returned")
                     failed_fetches += 1
                     
             except Exception as e:
-                print_error(f"     ✗ {ticker}: Fetch failed - {e}")
-                import traceback
-                print_error(f"        {traceback.format_exc()}")
+                print_error(f"     {_safe_emoji('✗')} {ticker}: Fetch failed - {e}")
                 failed_fetches += 1
 
         print_info(f"   Batch fetch complete: {successful_fetches} succeeded, {failed_fetches} failed")
@@ -351,10 +366,11 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     break
             
             if not any_market_open:
-                print_info(f"   Skipping {trading_day} - no markets were open for our positions")
                 continue
-            else:
-                print_info(f"   Processing {trading_day} - at least one market was open")
+            
+            # Only show progress every 10 days or for important milestones
+            if len([d for d in all_trading_days_list if d <= trading_day]) % 10 == 0:
+                print_info(f"   Processing {trading_day}...")
             
             # Create positions list for this date
             daily_positions = []
@@ -367,7 +383,6 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                         market = 'us'
                     
                     if not market_holidays.is_trading_day(trading_day, market=market):
-                        print_info(f"     Skipping {ticker} - {market} market was closed on {trading_day}")
                         continue
                     # Ensure no division by zero
                     if position['shares'] > 0:
@@ -515,9 +530,12 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
                 market_close_hour_utc = 20 if is_dst else 21
                 
+                # Convert date to datetime for final snapshot
+                final_timestamp = datetime.combine(today, datetime.min.time().replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0))
+                
                 final_snapshot = PortfolioSnapshot(
                     positions=final_positions,
-                    timestamp=today.replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0),
+                    timestamp=final_timestamp,
                     total_value=sum(p.cost_basis for p in final_positions)
                 )
                 repository.save_portfolio_snapshot(final_snapshot)

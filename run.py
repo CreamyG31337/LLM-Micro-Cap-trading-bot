@@ -122,8 +122,8 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
         raise ImportError("Fund management not available. Cannot determine data directory safely.")
     
     return [
-        ("1", f"{_safe_emoji('🔄')} Main Trading Script",
-         "Run the main portfolio management and trading script - runs trading_script.py",
+        ("1", f"{_safe_emoji('📊')} View Portfolio",
+         "Display portfolio summary and performance metrics - runs trading_script.py",
          ["--data-dir", str(data_dir_path)]),
         
         ("2", f"{_safe_emoji('🤖')} Simple Automation",
@@ -186,12 +186,16 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Quickly switch between available funds",
          []),
 
-        ("k", f"{_safe_emoji('💾')} Manage Cache",
-         "View, clear, or update cache data - runs cache management",
+        ("k", f"{_safe_emoji('💾')} Backup & Cache Management",
+         "Manage backups, cache, and data - submenu",
          []),
 
-        ("b", f"{_safe_emoji('📦')} Archive Backups",
-         "Archive old backups into daily zip files to save space.",
+        ("b", f"{_safe_emoji('🛒')} Buy Stock",
+         "Enter a buy trade (limit or market order) - inline trade entry",
+         []),
+
+        ("s", f"{_safe_emoji('📤')} Sell Stock",
+         "Enter a sell trade (limit order) - inline trade entry",
          []),
 
         ("z", f"{_safe_emoji('🧹')} Clear Test Data",
@@ -817,17 +821,17 @@ def get_data_source_info() -> str:
                 if supabase_available:
                     return f"{_safe_emoji('📊')} Data Source: Supabase Mode (Supabase + CSV backup) {_safe_emoji('✅')}"
                 else:
-                    return f"{_safe_emoji('📊')} Data Source: Supabase Mode (Supabase unavailable) ⚠️"
+                    return f"{_safe_emoji('📊')} Data Source: Supabase Mode (Supabase unavailable) {_safe_emoji('⚠️')}"
             elif repo_type == "dual-write":
                 if supabase_available:
                     return f"{_safe_emoji('📊')} Data Source: CSV Dual-Write (CSV + Supabase backup) {_safe_emoji('✅')}"
                 else:
-                    return f"{_safe_emoji('📊')} Data Source: CSV Dual-Write (CSV only - Supabase unavailable) ⚠️"
+                    return f"{_safe_emoji('📊')} Data Source: CSV Dual-Write (CSV only - Supabase unavailable) {_safe_emoji('⚠️')}"
             elif repo_type == "supabase-dual-write":
                 if supabase_available:
                     return f"{_safe_emoji('📊')} Data Source: Supabase Dual-Write (Supabase + CSV backup) {_safe_emoji('✅')}"
                 else:
-                    return f"{_safe_emoji('📊')} Data Source: Supabase Dual-Write (Supabase unavailable) ⚠️"
+                    return f"{_safe_emoji('📊')} Data Source: Supabase Dual-Write (Supabase unavailable) {_safe_emoji('⚠️')}"
             else:
                 return f"{_safe_emoji('📊')} Data Source: {repo_type} (Unknown mode)"
         
@@ -835,6 +839,295 @@ def get_data_source_info() -> str:
         return f"{_safe_emoji('📊')} Data Source: Unknown (Error: {e})"
     
     return f"{_safe_emoji('📊')} Data Source: CSV Mode (Default)"
+
+def handle_buy_trade(data_dir_path: str, fund_info: dict) -> None:
+    """Handle buy trade from master menu with multi-trade loop."""
+    try:
+        from decimal import Decimal
+        from pathlib import Path
+        from data.repositories.repository_factory import get_repository_container
+        from portfolio.fifo_trade_processor import FIFOTradeProcessor
+        from portfolio.trading_interface import TradingInterface
+        from display.console_output import print_info, print_error, print_success
+        
+        print_colored(f"\n{_safe_emoji('🛒')} BUY STOCK TRADING", Colors.HEADER + Colors.BOLD)
+        print_colored("=" * 50, Colors.HEADER)
+        
+        # Get the already configured repository
+        container = get_repository_container()
+        repository = container.get_repository('default')
+        trade_processor = FIFOTradeProcessor(repository)
+        trading_interface = TradingInterface(repository, trade_processor)
+        
+        while True:  # Multi-trade loop
+            try:
+                print_info("Buy Stock", _safe_emoji('🛒'))
+                
+                # Get order type
+                order_type = input("Order type (l/m for limit/market): ").strip().lower()
+                if order_type in ['l', 'limit']:
+                    order_type = 'limit'
+                elif order_type in ['m', 'market']:
+                    order_type = 'market'
+                else:
+                    print_error("Order type must be 'limit' or 'market' (or 'l'/'m')")
+                    continue
+                
+                # Get ticker
+                ticker_input = input("Enter ticker symbol: ").strip().upper()
+                if not ticker_input:
+                    print_error("Ticker symbol cannot be empty")
+                    continue
+
+                # Validate and confirm ticker (before getting shares/price)
+                validation_result = trading_interface._validate_and_confirm_ticker(ticker_input)
+                if validation_result is None:
+                    print_info("Trade cancelled")
+                    continue
+
+                ticker, detected_currency, company_name = validation_result
+                
+                # Get shares
+                try:
+                    shares_str = input("Enter number of shares: ").strip()
+                    shares = Decimal(shares_str)
+                    if shares <= 0:
+                        print_error("Number of shares must be positive")
+                        continue
+                except (ValueError, TypeError):
+                    print_error("Invalid shares format")
+                    continue
+                
+                # Get price
+                try:
+                    if order_type == 'limit':
+                        price_str = input("Enter limit price: $").strip()
+                    else:
+                        price_str = input("Enter market price: $").strip()
+                    price = Decimal(price_str)
+                    if price <= 0:
+                        print_error("Price must be positive")
+                        continue
+                except (ValueError, TypeError):
+                    print_error("Invalid price format")
+                    continue
+                
+                # Get optional stop loss
+                stop_loss = None
+                stop_loss_str = input("Enter stop loss price (optional): $").strip()
+                if stop_loss_str:
+                    try:
+                        stop_loss = Decimal(stop_loss_str)
+                        if stop_loss <= 0:
+                            print_error("Stop loss must be positive")
+                            continue
+                    except (ValueError, TypeError):
+                        print_error("Invalid stop loss format")
+                        continue
+                
+                # Get timestamp for the trade
+                trade_timestamp = trading_interface._get_trade_timestamp()
+
+                # Show trade summary and ask for confirmation
+                print_info("Trade Summary:")
+                print(f"  Stock: {company_name} ({ticker})")
+                print(f"  Currency: {detected_currency}")
+                print(f"  Action: BUY {shares} shares")
+                print(f"  Price: ${price} {detected_currency} ({order_type.title()} order)")
+                if stop_loss:
+                    print(f"  Stop Loss: ${stop_loss} {detected_currency}")
+                print(f"  Total Cost: ${shares * price} {detected_currency}")
+                print(f"  Timestamp: {trade_timestamp}")
+                
+                # Ask for confirmation
+                confirm = input("\nExecute this trade? (y/N): ").strip().lower()
+                if confirm not in ('y', 'yes'):
+                    print_info("Trade cancelled")
+                    continue
+
+                # Execute trade (currency already detected above)
+                trade = trading_interface.trade_processor.execute_buy_trade(
+                    ticker=ticker,
+                    shares=shares,
+                    price=price,
+                    stop_loss=stop_loss,
+                    reason=f"{order_type.title()} order",
+                    currency=detected_currency,
+                    trade_timestamp=trade_timestamp
+                )
+                
+                if trade:
+                    print_success(f"Buy order executed: {shares} shares of {ticker} at ${price}")
+                else:
+                    print_error("Failed to execute buy order")
+                
+            except Exception as e:
+                print_error(f"Error executing buy order: {e}")
+            
+            # Ask if user wants another trade
+            another = input("\nEnter another buy trade? (y/N): ").strip().lower()
+            if another not in ('y', 'yes'):
+                break
+                
+    except Exception as e:
+        print_colored(f"Failed to initialize trading system: {e}", Colors.RED)
+    
+    input("\nPress Enter to return to the main menu...")
+
+def handle_sell_trade(data_dir_path: str, fund_info: dict) -> None:
+    """Handle sell trade from master menu with multi-trade loop."""
+    try:
+        from decimal import Decimal
+        from pathlib import Path
+        from data.repositories.repository_factory import get_repository_container
+        from portfolio.fifo_trade_processor import FIFOTradeProcessor
+        from portfolio.trading_interface import TradingInterface
+        from financial.currency_handler import CurrencyHandler
+        from display.console_output import print_info, print_error, print_success
+        
+        print_colored(f"\n{_safe_emoji('📤')} SELL STOCK TRADING", Colors.HEADER + Colors.BOLD)
+        print_colored("=" * 50, Colors.HEADER)
+        
+        # Get the already configured repository
+        container = get_repository_container()
+        repository = container.get_repository('default')
+        trade_processor = FIFOTradeProcessor(repository)
+        trading_interface = TradingInterface(repository, trade_processor)
+        
+        while True:  # Multi-trade loop
+            try:
+                print_info("Sell Stock", _safe_emoji('📤'))
+
+                # Get latest portfolio snapshot
+                snapshot = repository.get_latest_portfolio_snapshot()
+                if not snapshot or not snapshot.positions:
+                    print_error("No portfolio positions found")
+                    continue
+
+                # Display holdings in numbered list
+                print_info("Current Holdings:")
+                print("─" * 80)
+                print(f"{'#':<3} {'Ticker':<8} {'Shares':<10} {'Avg Price':<12} {'Current Price':<14} {'Market Value':<14} {'P&L':<10}")
+                print("─" * 80)
+
+                for i, position in enumerate(snapshot.positions, 1):
+                    ticker = position.ticker
+                    shares = f"{position.shares:.4f}"
+                    avg_price = f"${position.avg_price:.2f}" if position.avg_price else "N/A"
+                    current_price = f"${position.current_price:.2f}" if position.current_price else "N/A"
+                    market_value = f"${position.market_value:.2f}" if position.market_value else "N/A"
+                    pnl = f"${position.unrealized_pnl:.2f}" if position.unrealized_pnl else "N/A"
+
+                    print(f"{i:<3} {ticker:<8} {shares:<10} {avg_price:<12} {current_price:<14} {market_value:<14} {pnl:<10}")
+
+                print("─" * 80)
+                print("Select a holding by number, or enter 'cancel' to abort")
+
+                # Get user selection
+                while True:
+                    try:
+                        selection = input("Enter selection: ").strip().lower()
+
+                        if selection == 'cancel':
+                            print_info("Sell operation cancelled")
+                            break
+
+                        selection_num = int(selection)
+                        if 1 <= selection_num <= len(snapshot.positions):
+                            selected_position = snapshot.positions[selection_num - 1]
+                            ticker = selected_position.ticker
+                            print_success(f"Selected: {ticker} ({selected_position.shares} shares)")
+                            break
+                        else:
+                            print_error(f"Invalid selection. Please enter a number between 1 and {len(snapshot.positions)}")
+                    except ValueError:
+                        print_error("Invalid input. Please enter a number or 'cancel'")
+                
+                if selection == 'cancel':
+                    continue
+
+                # Get shares to sell (with validation against available shares)
+                while True:
+                    try:
+                        shares_str = input(f"Enter number of shares to sell (max: {selected_position.shares}) [Enter for max]: ").strip()
+
+                        # Default to max shares if user just hits enter
+                        if not shares_str:
+                            shares = selected_position.shares
+                            print_info(f"Selling maximum available shares: {shares}")
+                        else:
+                            shares = Decimal(shares_str)
+                            if shares <= 0:
+                                print_error("Number of shares must be positive")
+                                continue
+                            if shares > selected_position.shares:
+                                print_error(f"You can only sell up to {selected_position.shares} shares")
+                                continue
+
+                        break
+                    except (ValueError, TypeError):
+                        print_error("Invalid shares format")
+                        continue
+                
+                # Get price
+                try:
+                    price_str = input("Enter limit price: $").strip()
+                    price = Decimal(price_str)
+                    if price <= 0:
+                        print_error("Price must be positive")
+                        continue
+                except (ValueError, TypeError):
+                    print_error("Invalid price format")
+                    continue
+                
+                # Get timestamp for the trade
+                trade_timestamp = trading_interface._get_trade_timestamp()
+
+                # Get currency for selected position
+                currency_handler = CurrencyHandler(Path(repository.data_dir))
+                detected_currency = currency_handler.get_ticker_currency(ticker)
+
+                # Show trade summary and ask for confirmation
+                print_info("Trade Summary:")
+                print(f"  Action: SELL {shares} shares of {ticker}")
+                print(f"  Currency: {detected_currency}")
+                print(f"  Price: ${price} {detected_currency} (Limit order)")
+                print(f"  Total Proceeds: ${shares * price} {detected_currency}")
+                print(f"  Timestamp: {trade_timestamp}")
+                
+                # Ask for confirmation
+                confirm = input("\nExecute this trade? (y/N): ").strip().lower()
+                if confirm not in ('y', 'yes'):
+                    print_info("Trade cancelled")
+                    continue
+                
+                # Execute trade with custom timestamp
+                trade = trading_interface.trade_processor.execute_sell_trade(
+                    ticker=ticker,
+                    shares=shares,
+                    price=price,
+                    reason="Limit sell order",
+                    currency=detected_currency,
+                    trade_timestamp=trade_timestamp  # Pass custom timestamp
+                )
+
+                if trade:
+                    print_success(f"Sell order executed: {shares} shares of {ticker} at ${price}")
+                else:
+                    print_error("Failed to execute sell order")
+                
+            except Exception as e:
+                print_error(f"Error executing sell order: {e}")
+            
+            # Ask if user wants another trade
+            another = input("\nEnter another sell trade? (y/N): ").strip().lower()
+            if another not in ('y', 'yes'):
+                break
+                
+    except Exception as e:
+        print_colored(f"Failed to initialize trading system: {e}", Colors.RED)
+    
+    input("\nPress Enter to return to the main menu...")
 
 def main() -> None:
     """Main application loop"""
@@ -938,7 +1231,31 @@ def main() -> None:
             continue
 
         elif choice == "b":
-            handle_backup_archiving()
+            try:
+                from utils.fund_ui import get_current_fund_info
+                fund_info = get_current_fund_info()
+                if fund_info["exists"] and fund_info["data_directory"]:
+                    data_dir_path = fund_info["data_directory"]
+                    handle_buy_trade(data_dir_path, fund_info)
+                else:
+                    print_colored("❌ No active fund found - cannot execute buy trade", Colors.RED)
+                    print_colored("Please select a fund first using option 'f' (Switch Fund)", Colors.YELLOW)
+            except ImportError:
+                print_colored("❌ Fund management not available - cannot execute buy trade", Colors.RED)
+            continue
+
+        elif choice == "s":
+            try:
+                from utils.fund_ui import get_current_fund_info
+                fund_info = get_current_fund_info()
+                if fund_info["exists"] and fund_info["data_directory"]:
+                    data_dir_path = fund_info["data_directory"]
+                    handle_sell_trade(data_dir_path, fund_info)
+                else:
+                    print_colored("❌ No active fund found - cannot execute sell trade", Colors.RED)
+                    print_colored("Please select a fund first using option 'f' (Switch Fund)", Colors.YELLOW)
+            except ImportError:
+                print_colored("❌ Fund management not available - cannot execute sell trade", Colors.RED)
             continue
 
         elif choice == "z":
@@ -952,6 +1269,13 @@ def main() -> None:
             except ImportError as e:
                 print_colored(f"{_safe_emoji('❌')} Cache management not available: {e}", Colors.RED)
                 print_colored("This feature requires the cache management module.", Colors.YELLOW)
+            
+            # Also show backup archiving option
+            print_colored(f"\n{_safe_emoji('📦')} BACKUP ARCHIVING", Colors.HEADER + Colors.BOLD)
+            print_colored("=" * 30, Colors.HEADER)
+            archive_choice = input(f"{Colors.YELLOW}Archive old backups? (y/N): {Colors.ENDC}").strip().lower()
+            if archive_choice in ('y', 'yes'):
+                handle_backup_archiving()
             continue
         
         # Handle special cases first

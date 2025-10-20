@@ -35,14 +35,31 @@ class BaseRepository(ABC):
         pass
     
     @abstractmethod
-    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
+    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot, is_trade_execution: bool = False) -> None:
         """Save a portfolio snapshot.
         
         Args:
             snapshot: PortfolioSnapshot to save
+            is_trade_execution: Whether this is triggered by a trade execution (bypasses market-close protection)
             
         Raises:
             RepositoryError: If save operation fails
+        """
+        pass
+    
+    @abstractmethod
+    def update_ticker_in_future_snapshots(self, ticker: str, trade_timestamp: datetime) -> None:
+        """Update a ticker's position in all snapshots after the trade timestamp.
+        
+        This method rebuilds the ticker's position using FIFO lot tracking from the
+        trade date forward, ensuring accurate historical snapshots after backdated trades.
+        
+        Args:
+            ticker: Ticker symbol to update
+            trade_timestamp: Timestamp of the backdated trade
+            
+        Raises:
+            RepositoryError: If update operation fails
         """
         pass
     

@@ -94,7 +94,7 @@ def refresh_portfolio_prices_if_needed(
         # Update prices for all positions
         # When market is closed, use historical close prices (official end-of-day)
         # When market is open, use current prices (real-time)
-        use_historical = is_market_closed
+        use_historical = not market_hours.is_market_open()
 
         # For historical mode, we need to provide start_date and end_date
         if use_historical:

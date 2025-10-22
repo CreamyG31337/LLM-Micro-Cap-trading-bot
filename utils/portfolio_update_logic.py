@@ -115,34 +115,32 @@ class PortfolioUpdateLogic:
         Returns:
             Tuple of (should_update: bool, reason: str)
         """
-        # Update if any market is open (not just when all markets are open)
-        # This ensures US stocks get updated even when Canadian markets are closed
-        if self.market_hours.is_trading_day(today):
-            return True, f"Today ({today.strftime('%A')}) is a trading day - update needed"
-        else:
-            # Markets are closed - check if we have data from after the most recent market close
-            # This works for both same-day (after 4 PM today) and next-day (3 AM) scenarios
-            if latest_snapshot and latest_snapshot.timestamp:
-                snapshot_date = latest_snapshot.timestamp.date()
-                snapshot_time = latest_snapshot.timestamp.time()
-                
-                # Check if we have data from after market close on the most recent trading day
-                if snapshot_date == today and snapshot_time >= self.market_close_time:
-                    # We have data from after today's market close - we're good
-                    return False, f"Today ({today.strftime('%A')}) is a trading day and markets are closed - we already have post-market-close data from today, skipping update"
-                elif snapshot_date < today:
-                    # We have data from a previous day - check if it's from after market close
-                    if snapshot_time >= self.market_close_time:
-                        # We have data from after the previous day's market close - we're good
-                        return False, f"Today ({today.strftime('%A')}) is a trading day and markets are closed - we already have post-market-close data from {snapshot_date}, skipping update"
-                    else:
-                        # We have data from before market close on the previous day - we need today's data
-                        return True, f"Today ({today.strftime('%A')}) is a trading day and markets are closed - we need post-market-close data, update needed"
-                else:
-                    # We have data from the future (shouldn't happen) - we're good
-                    return False, f"Today ({today.strftime('%A')}) is a trading day and markets are closed - we have future data, skipping update"
-            else:
-                return True, f"Today ({today.strftime('%A')}) is a trading day and markets are closed - no existing data, update needed"
+        # Check if today is a trading day
+        if not self.market_hours.is_trading_day(today):
+            return False, f"Today ({today.strftime('%A')}) is not a trading day"
+        
+        # Check if market is currently open
+        if self.market_hours.is_market_open():
+            return True, f"Market is open - updating for live prices"
+        
+        # Market is closed - check if we have recent market close data
+        if latest_snapshot and latest_snapshot.timestamp:
+            snapshot_date = latest_snapshot.timestamp.date()
+            snapshot_time = latest_snapshot.timestamp.time()
+            
+            # Check if we have today's market close data
+            if snapshot_date == today and snapshot_time >= self.market_close_time:
+                return False, f"Already have today's market close data - no update needed"
+            
+            # Check if we have yesterday's market close data (and market hasn't opened today)
+            if snapshot_date < today and snapshot_time >= self.market_close_time:
+                return False, f"Have previous day's close data and market hasn't opened - no update needed"
+            
+            # We have old data but not from market close
+            return True, f"Need to update with market close prices"
+        
+        # No existing data
+        return True, f"No existing data - update needed"
     
     def get_update_reason(self, target_date: Optional[datetime] = None) -> str:
         """

@@ -1148,9 +1148,9 @@ def refresh_portfolio_data_if_needed(data_dir_path):
 def main(args) -> dict:
     """Generate and display the comparison graph; return metrics."""
     
-    # DISABLED: Portfolio refresh was creating duplicate/corrupted snapshots
-    # The graph should use existing data, not create new snapshots
-    # refresh_portfolio_data_if_needed(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
+    # Portfolio refresh now works correctly after fixing portfolio_refresh.py bug
+    # Automatically updates prices when viewing graphs
+    refresh_portfolio_data_if_needed(DATA_DIR if 'DATA_DIR' in globals() and DATA_DIR else None)
     
     llm_totals = load_portfolio_totals()
 

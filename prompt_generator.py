@@ -273,9 +273,9 @@ class PromptGenerator:
         
         # Report optimization results
         if cache_hits > 0:
-            print(f"✅ Market data: {cache_hits} from cache, {api_calls} fresh fetches")
+            print(f"{_safe_emoji('✅')} Market data: {cache_hits} from cache, {api_calls} fresh fetches")
         else:
-            print(f"✅ Market data: {api_calls} fresh fetches")
+            print(f"{_safe_emoji('✅')} Market data: {api_calls} fresh fetches")
                 
         return rows
         
@@ -580,16 +580,22 @@ class PromptGenerator:
             
             # Calculate P&L values
             if current_price > 0:
-                # Calculate total P&L percentage from unrealized_pnl and cost_basis
+                # Try multiple approaches to get P&L percentage
+                total_pnl_pct_str = "N/A"
                 pnl_amount = row.get('unrealized_pnl', 0) or 0
                 cost_basis = row.get('cost_basis', 0) or 0
                 
-                if cost_basis > 0:
+                # First, try using unrealized_pnl and cost_basis
+                if cost_basis > 0 and pnl_amount != 0:
                     total_pnl_pct = (pnl_amount / cost_basis) * 100
                     total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
+                # Fallback 1: use current price vs buy price
                 elif buy_price > 0:
-                    # Fallback calculation using current vs buy price
                     total_pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                    total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
+                # Fallback 2: if we have dollar P&L and total value, use that
+                elif dollar_pnl != 0 and total_value > 0:
+                    total_pnl_pct = (dollar_pnl / total_value) * 100
                     total_pnl_pct_str = f"{total_pnl_pct:+.1f}%"
                 else:
                     total_pnl_pct_str = "N/A"
@@ -814,7 +820,8 @@ class PromptGenerator:
             self.data_dir = Path(data_dir)
             # Reinitialize repository with new data dir
             from data.repositories.csv_repository import CSVRepository
-            self.repository = CSVRepository(self.data_dir)
+            fund_name = self._get_fund_name_from_data_dir()
+            self.repository = CSVRepository(fund_name, str(self.data_dir))
             self.portfolio_manager = PortfolioManager(self.repository)
             
         # Load portfolio data with smart price refresh
@@ -835,10 +842,10 @@ class PromptGenerator:
             # Load the (potentially refreshed) portfolio data
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
             if latest_snapshot is None:
-                print(f"❌ No portfolio data found in {self.data_dir}")
+                print(f"{_safe_emoji('❌')} No portfolio data found in {self.data_dir}")
                 print("Please run the main trading script first to create portfolio data.")
                 return
-            print(f"✅ Loaded portfolio with {len(latest_snapshot.positions)} positions")
+            print(f"{_safe_emoji('✅')} Loaded portfolio with {len(latest_snapshot.positions)} positions")
             
             # Convert to DataFrame with enhanced data (same as main trading script)
             portfolio_data = []
@@ -909,7 +916,7 @@ class PromptGenerator:
                 cash = 0.0
                 
         except Exception as e:
-            print(f"❌ Error loading portfolio data: {e}")
+            print(f"{_safe_emoji('❌')} Error loading portfolio data: {e}")
             return
             
         # Get portfolio tickers
@@ -920,12 +927,12 @@ class PromptGenerator:
         # Fetch market data
         print("Fetching current market data...")
         market_rows = self._get_market_data_table(portfolio_tickers)
-        print(f"✅ Updated market data for {len(market_rows)} tickers")
+        print(f"{_safe_emoji('✅')} Updated market data for {len(market_rows)} tickers")
 
         # Calculate comprehensive financial overview data
         print("Calculating portfolio metrics...")
         financial_data = self._calculate_financial_overview_data(latest_snapshot)
-        print("✅ Portfolio metrics calculated successfully")
+        print(f"{_safe_emoji('✅')} Portfolio metrics calculated successfully")
         
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
@@ -1010,7 +1017,8 @@ class PromptGenerator:
             self.data_dir = Path(data_dir)
             # Reinitialize repository with new data dir
             from data.repositories.csv_repository import CSVRepository
-            self.repository = CSVRepository(self.data_dir)
+            fund_name = self._get_fund_name_from_data_dir()
+            self.repository = CSVRepository(fund_name, str(self.data_dir))
             self.portfolio_manager = PortfolioManager(self.repository)
             
         try:
@@ -1280,12 +1288,12 @@ class PromptGenerator:
             if hasattr(repository, 'get_fund_thesis'):
                 try:
                     thesis_data = repository.get_fund_thesis()
-                    print("📊 Thesis data source: Supabase database")
+                    print(f"{_safe_emoji('📊')} Thesis data source: Supabase database")
                     logger.info("Loaded thesis data from Supabase")
                     return thesis_data
                 except Exception as e:
-                    print(f"⚠️  Supabase thesis load failed: {e}")
-                    print("📄 Falling back to YAML file...")
+                    print(f"{_safe_emoji('⚠️')}  Supabase thesis load failed: {e}")
+                    print(f"{_safe_emoji('📄')} Falling back to YAML file...")
                     logger.warning(f"Failed to load thesis from Supabase: {e}")
                     # Fall back to YAML file
                     pass
@@ -1294,7 +1302,7 @@ class PromptGenerator:
             thesis_path = self._get_thesis_path()
             with open(thesis_path, "r") as f:
                 thesis_data = yaml.safe_load(f)
-            print("📄 Thesis data source: YAML file")
+            print(f"{_safe_emoji('📄')} Thesis data source: YAML file")
             logger.info("Loaded thesis data from YAML file")
             return thesis_data
             
@@ -1362,18 +1370,19 @@ class PromptGenerator:
                     from data.repositories.supabase_repository import SupabaseRepository
                     import os
                     repository = SupabaseRepository(
+                        fund_name=self._get_fund_name_from_data_dir(),
                         url=os.getenv("SUPABASE_URL"),
-                        key=os.getenv("SUPABASE_ANON_KEY"),
-                        fund=self._get_fund_name_from_data_dir()
+                        key=os.getenv("SUPABASE_ANON_KEY")
                     )
-                    print("📊 Portfolio data source: Supabase database")
+                    print(f"{_safe_emoji('📊')} Portfolio data source: Supabase database")
                     return repository
                 
                 elif data_source == "csv":
                     # Use CSV repository
                     from data.repositories.csv_repository import CSVRepository
-                    repository = CSVRepository(self.data_dir)
-                    print("📄 Portfolio data source: CSV files")
+                    fund_name = self._get_fund_name_from_data_dir()
+                    repository = CSVRepository(fund_name, str(self.data_dir))
+                    print(f"{_safe_emoji('📄')} Portfolio data source: CSV files")
                     return repository
                 
                 else:  # hybrid mode
@@ -1382,9 +1391,9 @@ class PromptGenerator:
                         from data.repositories.supabase_repository import SupabaseRepository
                         import os
                         repository = SupabaseRepository(
+                            fund_name=self._get_fund_name_from_data_dir(),
                             url=os.getenv("SUPABASE_URL"),
-                            key=os.getenv("SUPABASE_ANON_KEY"),
-                            fund=self._get_fund_name_from_data_dir()
+                            key=os.getenv("SUPABASE_ANON_KEY")
                         )
                         print(f"{_safe_emoji('📊')} Portfolio data source: Supabase database (hybrid mode)")
                         return repository
@@ -1392,7 +1401,8 @@ class PromptGenerator:
                         print(f"{_safe_emoji('⚠️')}  Supabase failed: {e}")
                         print(f"{_safe_emoji('📄')} Falling back to CSV files...")
                         from data.repositories.csv_repository import CSVRepository
-                        repository = CSVRepository(self.data_dir)
+                        fund_name = self._get_fund_name_from_data_dir()
+                        repository = CSVRepository(fund_name, str(self.data_dir))
                         print(f"{_safe_emoji('📄')} Portfolio data source: CSV files (fallback)")
                         return repository
             
@@ -1401,7 +1411,8 @@ class PromptGenerator:
         
         # Default fallback to CSV
         from data.repositories.csv_repository import CSVRepository
-        repository = CSVRepository(self.data_dir)
+        fund_name = self._get_fund_name_from_data_dir()
+        repository = CSVRepository(fund_name, str(self.data_dir))
         print(f"{_safe_emoji('📄')} Portfolio data source: CSV files (default)")
         return repository
     
@@ -1426,29 +1437,29 @@ class PromptGenerator:
     def _display_data_source_info(self) -> None:
         """Display information about data sources being used."""
         print("\n" + "="*60)
-        print("📊 DATA SOURCE CONFIGURATION")
+        print(f"{_safe_emoji('📊')} DATA SOURCE CONFIGURATION")
         print("="*60)
         
         # Check repository type
         repo_type = type(self.repository).__name__
         if "Supabase" in repo_type:
-            print("✅ Supabase: Available for portfolio and thesis data")
+            print(f"{_safe_emoji('✅')} Supabase: Available for portfolio and thesis data")
         else:
-            print("❌ Supabase: Not available for portfolio data")
+            print(f"{_safe_emoji('❌')} Supabase: Not available for portfolio data")
         
         # Check if Supabase is available for thesis
         try:
             from data.repositories.repository_factory import get_repository_container
             repository = get_repository_container()
             if hasattr(repository, 'get_fund_thesis'):
-                print("✅ Supabase: Available for thesis data")
+                print(f"{_safe_emoji('✅')} Supabase: Available for thesis data")
             else:
-                print("❌ Supabase: Not available for thesis data")
+                print(f"{_safe_emoji('❌')} Supabase: Not available for thesis data")
         except Exception as e:
-            print(f"❌ Supabase: Not available for thesis data ({e})")
+            print(f"{_safe_emoji('❌')} Supabase: Not available for thesis data ({e})")
         
-        print("✅ CSV Files: Available for portfolio data")
-        print("✅ YAML Files: Available for thesis data (fallback)")
+        print(f"{_safe_emoji('✅')} CSV Files: Available for portfolio data")
+        print(f"{_safe_emoji('✅')} YAML Files: Available for thesis data (fallback)")
         print("="*60)
 
 
@@ -1468,9 +1479,9 @@ def show_prompt_menu(args) -> None:
     """Show a small menu after generating the prompt with options to refresh or exit."""
     while True:
         print("\n" + "="*50)
-        print("📋 Prompt Generator Options")
+        print(f"{_safe_emoji('📋')} Prompt Generator Options")
         print("="*50)
-        print("[r] 🔄 Refresh (Clear Market Data Cache & Reload)")
+        print(f"[r] {_safe_emoji('🔄')} Refresh (Clear Market Data Cache & Reload)") 
         print("[Enter] 🚺 Exit")
         
         try:

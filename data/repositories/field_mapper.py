@@ -103,7 +103,28 @@ class PositionMapper:
                 current_price = Decimal(str(market_value)) / shares
 
         # Handle pnl mapping (use pnl field from database)
+        # This can come from either 'pnl' (standard) or 'unrealized_pnl' (some views) or 'total_unrealized_pnl' (enriched views)
         pnl = row.get('pnl')
+        if pnl is None:
+            pnl = row.get('unrealized_pnl')
+        if pnl is None:
+            pnl = row.get('total_unrealized_pnl')
+        
+        # Convert pnl to Decimal if it's not None, handling different numeric types
+        if pnl is not None:
+            try:
+                pnl_decimal = Decimal(str(pnl))
+                # Keep the value, even if it's zero (0 is valid P&L)
+                pnl = pnl_decimal
+            except (ValueError, TypeError, ArithmeticError):
+                pnl = None
+        
+        # If we don't have P&L from database but have market_value and cost_basis, calculate it
+        if pnl is None and market_value is not None and cost_basis is not None:
+            try:
+                pnl = Decimal(str(market_value)) - Decimal(str(cost_basis))
+            except (ValueError, TypeError, ArithmeticError):
+                pnl = None
 
         # Handle company field
         company = row.get('company')
@@ -117,7 +138,7 @@ class PositionMapper:
             company=company,
             current_price=Decimal(str(current_price)) if current_price is not None else None,
             market_value=Decimal(str(market_value)) if market_value is not None else None,
-            unrealized_pnl=Decimal(str(pnl)) if pnl is not None else None,
+            unrealized_pnl=pnl,
             stop_loss=None  # Not stored in database
         )
 

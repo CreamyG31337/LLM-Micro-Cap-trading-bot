@@ -107,6 +107,18 @@ class PortfolioManager:
         """
         try:
             logger.debug("Loading latest portfolio snapshot")
+            
+            # Try to use P&L-enhanced method if available (for Supabase with views)
+            if hasattr(self.repository, 'get_latest_portfolio_snapshot_with_pnl'):
+                try:
+                    snapshot = self.repository.get_latest_portfolio_snapshot_with_pnl()
+                    if snapshot:
+                        logger.debug(f"Loaded latest portfolio with P&L from view - {len(snapshot.positions)} positions")
+                        return snapshot
+                except Exception as e:
+                    logger.warning(f"Failed to load portfolio from P&L view, falling back to standard method: {e}")
+            
+            # Fallback to standard method
             snapshot = self.repository.get_latest_portfolio_snapshot()
             if snapshot:
                 logger.debug(f"Loaded latest portfolio with {len(snapshot.positions)} positions")

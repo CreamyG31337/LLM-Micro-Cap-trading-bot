@@ -10,6 +10,7 @@ from typing import Tuple, Optional
 from pathlib import Path
 from datetime import datetime
 import logging
+from display.console_output import _safe_emoji
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,10 @@ def refresh_portfolio_prices_if_needed(
         
         if needs_update:
             if verbose:
-                print(f"🔄 {reason}")
+                print(f"{_safe_emoji('🔄')} {reason}")
         else:
             if verbose:
-                print(f"ℹ️ {reason}")
+                print(f"{_safe_emoji('ℹ️')} {reason}")
             return False, reason
         
         if not needs_update:
@@ -77,11 +78,11 @@ def refresh_portfolio_prices_if_needed(
         latest_snapshot = portfolio_manager.get_latest_portfolio()
         if not latest_snapshot or not latest_snapshot.positions:
             if verbose:
-                print("⚠️  No portfolio positions found to refresh")
+                print(f"{_safe_emoji('⚠️')}  No portfolio positions found to refresh")
             return False, "No positions to refresh"
         
         if verbose:
-            print(f"💰 Refreshing prices for {len(latest_snapshot.positions)} positions...")
+            print(f"{_safe_emoji('💰')} Refreshing prices for {len(latest_snapshot.positions)} positions...")
         
         # Initialize PriceService
         from utils.price_service import PriceService
@@ -151,7 +152,7 @@ def refresh_portfolio_prices_if_needed(
                 if existing_snapshot.timestamp.hour == 16 and existing_snapshot.timestamp.minute == 0:
                     # Don't overwrite market close snapshot
                     if verbose:
-                        print(f"ℹ️ Market close snapshot already exists, skipping update")
+                        print(f"{_safe_emoji('ℹ️')} Market close snapshot already exists, skipping update")
                     return False, "Market close snapshot already exists"
             
             updated_snapshot = PortfolioSnapshot(
@@ -161,7 +162,7 @@ def refresh_portfolio_prices_if_needed(
             
             repository.update_daily_portfolio_snapshot(updated_snapshot)
             if verbose:
-                print(f"✅ Portfolio data refreshed successfully ({success_count}/{len(updated_positions)} prices updated)")
+                print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully ({success_count}/{len(updated_positions)} prices updated)")
             
             return True, f"Updated {success_count} positions"
         else:
@@ -170,6 +171,6 @@ def refresh_portfolio_prices_if_needed(
     except Exception as e:
         error_msg = f"Failed to refresh portfolio prices: {e}"
         if verbose:
-            print(f"❌ {error_msg}")
+            print(f"{_safe_emoji('❌')} {error_msg}")
         logger.error(error_msg)
         return False, error_msg

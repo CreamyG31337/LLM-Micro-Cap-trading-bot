@@ -274,7 +274,7 @@ class MenuActionSystem:
             data_directory = self.repository.data_dir if hasattr(self.repository, 'data_dir') else None
             
             # Create CSV repository directly for trade log viewing
-            csv_repo = CSVRepository(fund_name=fund_name, data_directory=data_directory)
+            csv_repo = CSVRepository(fund_name, data_directory)
             
             # Get all trades from CSV repository
             trades = csv_repo.get_trade_history()
@@ -457,7 +457,7 @@ def view_trade_log_main():
         print_info(f"Data directory: {data_directory}")
         
         # Create CSV repository directly
-        csv_repo = CSVRepository(fund_name=fund_name, data_directory=data_directory)
+        csv_repo = CSVRepository(fund_name, data_directory)
         
         # Get all trades from CSV repository
         trades = csv_repo.get_trade_history()

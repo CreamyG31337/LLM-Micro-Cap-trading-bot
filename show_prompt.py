@@ -269,7 +269,9 @@ def show_complete_prompt(data_dir: str = None):
         
         print(f"{Fore.YELLOW}📂 Loading data repository...{Style.RESET_ALL}")
         data_dir = Path(data_dir)
-        repository = CSVRepository(data_dir)
+        # Extract fund name from data directory path (e.g., trading_data/funds/Project Chimera -> Project Chimera)
+        fund_name = data_dir.name if data_dir.name else 'Unknown'
+        repository = CSVRepository(fund_name, str(data_dir))
         print(f"{Fore.GREEN}✅ Repository initialized{Style.RESET_ALL}")
         
         print(f"{Fore.YELLOW}\ud83d\udcca Creating portfolio manager...{Style.RESET_ALL}")

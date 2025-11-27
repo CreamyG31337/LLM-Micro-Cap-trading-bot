@@ -86,6 +86,12 @@ The system automatically:
 - `SupabaseRepository`: Cloud database storage
 - `SupabaseDualWriteRepository`: Both CSV and Supabase
 
+**CRITICAL RULE: Always use repository interface, never access files directly**
+- ✅ Use `repository.get_portfolio_data()` to read data
+- ✅ Use `repository.save_portfolio_snapshot()` to write data
+- ❌ Never use `pd.read_csv()` or direct file access
+- This ensures code works with all backends (CSV, Supabase, etc.)
+
 ### Snapshot Creation
 - **Today's trades**: Update snapshot immediately
 - **Backdated trades**: Skip snapshot update, warn user

@@ -37,6 +37,24 @@ class PortfolioUpdateLogic:
         self.market_hours = market_hours
         self.portfolio_manager = portfolio_manager
         self.market_close_time = time(16, 0)  # 4:00 PM EST
+        self.market_open_time = time(9, 30)  # 9:30 AM EST
+    
+    def _get_time_of_day_status(self, current_time: time) -> str:
+        """
+        Determine where we are in the trading day based on current time.
+        
+        Args:
+            current_time: Current time to check
+            
+        Returns:
+            String describing time of day: 'before_open', 'during_hours', 'after_close'
+        """
+        if current_time < self.market_open_time:
+            return 'before_open'
+        elif current_time <= self.market_close_time:
+            return 'during_hours'
+        else:
+            return 'after_close'
     
     def should_update_portfolio(self, target_date: Optional[datetime] = None) -> Tuple[bool, str]:
         """
@@ -119,11 +137,15 @@ class PortfolioUpdateLogic:
         if not self.market_hours.is_trading_day(today):
             return False, f"Today ({today.strftime('%A')}) is not a trading day"
         
+        # Get current time to determine time of day
+        current_time = datetime.now().time()
+        time_of_day = self._get_time_of_day_status(current_time)
+        
         # Check if market is currently open
         if self.market_hours.is_market_open():
             return True, f"Market is open - updating for live prices"
         
-        # Market is closed - check if we have recent market close data
+        # Market is closed - check what data we have
         if latest_snapshot and latest_snapshot.timestamp:
             snapshot_date = latest_snapshot.timestamp.date()
             snapshot_time = latest_snapshot.timestamp.time()
@@ -132,15 +154,31 @@ class PortfolioUpdateLogic:
             if snapshot_date == today and snapshot_time >= self.market_close_time:
                 return False, f"Already have today's market close data - no update needed"
             
-            # Check if we have yesterday's market close data (and market hasn't opened today)
-            if snapshot_date < today and snapshot_time >= self.market_close_time:
-                return False, f"Have previous day's close data and market hasn't opened - no update needed"
-            
-            # We have old data but not from market close
-            return True, f"Need to update with market close prices"
-        
-        # No existing data
-        return True, f"No existing data - update needed"
+            # Handle different scenarios based on time of day
+            if time_of_day == 'before_open':
+                # Before market open - check if we have yesterday's close data
+                if snapshot_date < today and snapshot_time >= self.market_close_time:
+                    return False, f"Market opens at 9:30 AM ET - will update then"
+                else:
+                    return True, f"Getting market close prices from yesterday"
+            elif time_of_day == 'after_close':
+                # After market close - we need today's close data
+                if snapshot_date < today:
+                    return True, f"Getting today's market close prices"
+                else:
+                    # We have today's data but not from market close
+                    return True, f"Updating to get today's market close prices"
+            else:
+                # This shouldn't happen since we already checked is_market_open()
+                return True, f"Market status unclear - updating to be safe"
+        else:
+            # No existing data
+            if time_of_day == 'before_open':
+                return True, f"Market opens at 9:30 AM ET - will update then"
+            elif time_of_day == 'after_close':
+                return True, f"Getting today's market close prices"
+            else:
+                return True, f"No existing data - update needed"
     
     def get_update_reason(self, target_date: Optional[datetime] = None) -> str:
         """

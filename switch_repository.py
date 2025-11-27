@@ -17,7 +17,7 @@ def create_config_file(repo_type: str, **kwargs):
             "repository": {
                 "type": "csv",
                 "csv": {
-                    "data_directory": kwargs.get("data_directory", "trading_data/funds/Project Chimera"),
+                    "data_directory": kwargs.get("data_directory", None),  # Must be explicitly specified
                     "backup_enabled": True,
                     "backup_retention_days": 30
                 }
@@ -30,7 +30,7 @@ def create_config_file(repo_type: str, **kwargs):
                 "supabase": {
                     "url": kwargs.get("supabase_url", os.getenv("SUPABASE_URL")),
                     "key": kwargs.get("supabase_key", os.getenv("SUPABASE_ANON_KEY")),
-                    "fund": kwargs.get("fund", "Project Chimera")
+                    "fund": kwargs.get("fund", None)  # Must be explicitly specified
                 }
             }
         }
@@ -44,7 +44,9 @@ def switch_to_csv(data_directory: str = None):
     print("Switching to CSV repository...")
     
     if not data_directory:
-        data_directory = "trading_data/funds/Project Chimera"
+        print("ERROR: data_directory is required")
+        print("Usage: python switch_repository.py csv 'trading_data/funds/FUND_NAME'")
+        return None
     
     config = create_config_file("csv", data_directory=data_directory)
     
@@ -74,7 +76,9 @@ def switch_to_supabase(supabase_url: str = None, supabase_key: str = None, fund:
         return None
     
     if not fund:
-        fund = "Project Chimera"
+        print("ERROR: fund name is required")
+        print("Usage: python switch_repository.py supabase [url] [key] FUND_NAME")
+        return None
     
     config = create_config_file("supabase", 
                                supabase_url=supabase_url, 

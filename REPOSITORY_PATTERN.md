@@ -389,6 +389,47 @@ class CSVToDatabaseMigrator:
 4. **Connection Management**: Proper connection pooling and cleanup
 5. **Logging**: Comprehensive logging for debugging and monitoring
 
+### CRITICAL: Always Use Repository Interface
+
+**NEVER access data storage directly** - always use the repository interface:
+
+```python
+# ✅ CORRECT: Use repository interface
+existing_snapshots = repository.get_portfolio_data()
+existing_dates = {snapshot.timestamp.date() for snapshot in existing_snapshots}
+
+# ❌ WRONG: Direct file access violates repository pattern
+portfolio_df = pd.read_csv("llm_portfolio_update.csv")  # BUG: Assumes CSV backend!
+```
+
+**Why this matters:**
+- System supports multiple backends (CSV, Supabase, dual-write)
+- Direct file access breaks when using Supabase
+- Repository interface ensures consistent behavior across all backends
+- After creating data, repository immediately reflects changes; CSV may be stale
+
+**Common Bug Pattern:**
+- Code reads CSV directly to check existing data
+- Works fine with CSV repository
+- Breaks silently with Supabase repository (CSV may be out of date or missing)
+- Backfill functions miss existing snapshots, creating duplicates or missing data
+
+**Real Bug Example (Fixed 2025-11-26):**
+- Backfill function checked existing dates by reading CSV file directly
+- When using Supabase, CSV was out of date (didn't have newly created snapshots)
+- Backfill created snapshot for 2025-11-19
+- Checked CSV again for 2025-11-20 - CSV didn't show 2025-11-19 yet (using Supabase)
+- Backfill thought 2025-11-20+ already existed, skipped creating snapshots
+- Result: Only 2025-11-19 created, missing 2025-11-20, 2025-11-21, 2025-11-24, 2025-11-25
+- Graph showed identical values for consecutive trading days (impossible in real markets)
+- Fix: Changed to use `repository.get_portfolio_data()` which always reflects current state
+
+**Fix:**
+- Always use `repository.get_portfolio_data()` to check existing snapshots
+- Always use `repository.save_portfolio_snapshot()` to save data
+- Never use `pd.read_csv()` or direct file operations for data checks
+- Repository interface ensures you always see the current state, regardless of backend
+
 ### Data Model Design
 1. **Serialization**: Support both CSV and database serialization
 2. **Validation**: Include validation in model methods

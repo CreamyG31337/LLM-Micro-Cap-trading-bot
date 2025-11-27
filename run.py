@@ -710,14 +710,32 @@ def handle_data_source_config() -> None:
             return
     
     elif new_data_source == "csv":
-        # Use CSV funds list
-        available_funds = ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]
+        # Use CSV funds list - query actual available funds
+        try:
+            from utils.fund_manager import get_fund_manager
+            fund_mgr = get_fund_manager()
+            available_funds = fund_mgr.get_available_funds()
+            if not available_funds:
+                print_colored(f"  ⚠️  No funds found in trading_data/funds/", Colors.YELLOW)
+                return
+        except Exception as e:
+            print_colored(f"  ❌ Error loading funds: {e}", Colors.RED)
+            return
         recommended_fund = current_fund if current_fund in available_funds else available_funds[0]
-        print_colored(f"  {_safe_emoji('📊')} CSV mode - all funds available: {', '.join(available_funds)}", Colors.CYAN)
+        print_colored(f"  {_safe_emoji('📊')} CSV mode - available funds: {', '.join(available_funds)}", Colors.CYAN)
     
     elif new_data_source == "csv-dual-write":
         # CSV dual-write mode - reads CSV, writes to both
-        available_funds = ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]
+        try:
+            from utils.fund_manager import get_fund_manager
+            fund_mgr = get_fund_manager()
+            available_funds = fund_mgr.get_available_funds()
+            if not available_funds:
+                print_colored(f"  ⚠️  No funds found in trading_data/funds/", Colors.YELLOW)
+                return
+        except Exception as e:
+            print_colored(f"  ❌ Error loading funds: {e}", Colors.RED)
+            return
         recommended_fund = current_fund if current_fund in available_funds else available_funds[0]
         print_colored(f"  {_safe_emoji('📊')} CSV Dual-Write mode - reads CSV, writes to both CSV + Supabase", Colors.CYAN)
         print_colored(f"  {_safe_emoji('📁')} Available funds: {', '.join(available_funds)}", Colors.CYAN)

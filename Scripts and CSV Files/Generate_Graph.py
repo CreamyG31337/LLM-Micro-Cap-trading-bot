@@ -405,6 +405,29 @@ def load_portfolio_totals() -> pd.DataFrame:
     print(f"{_safe_emoji('📅')} Portfolio data available from: {llm_df['Date'].min().date()} to {llm_df['Date'].max().date()}")
     print(f"{_safe_emoji('ℹ️')} Graph shows continuous timeline with forward-filled values for missing days")
     
+    # DATA QUALITY CHECK: Verify today's data has real market prices
+    # This prevents showing stale data where Current Price = Average Price
+    # (which would result in 0.00% P&L and incorrect performance display)
+    from datetime import datetime
+    today_date = datetime.now().date()
+    today_data = llm_df[llm_df['Date'].dt.date == today_date]
+    
+    if not today_data.empty:
+        has_real_prices = False
+        for _, row in today_data.iterrows():
+            if 'Current Price' in row and 'Average Price' in row:
+                if pd.notna(row['Current Price']) and pd.notna(row['Average Price']):
+                    diff = abs(row['Current Price'] - row['Average Price'])
+                    if diff > 0.01:  # Real market data should have price differences
+                        has_real_prices = True
+                        break
+        
+        if has_real_prices:
+            print(f"INFO: Today ({today_date}) has real market data - will be included in graph")
+        else:
+            print(f"WARNING: Today ({today_date}) data appears stale - may be excluded from graph")
+            print(f"WARNING: This usually indicates price fetch failures or fallback to average prices")
+    
     # --- Load Exchange Rates ---
     from utils.currency_converter import load_exchange_rates, convert_usd_to_cad
     from pathlib import Path
@@ -574,15 +597,21 @@ def create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
     market_hours = MarketHours(settings=settings)
     today = datetime.now().date()
     
-    # If today is in the data but market hasn't opened, exclude it
-    if today in [start_date, end_date] and not market_hours.is_market_open():
-        print(f"INFO Excluding today ({today}) from graph - market hasn't opened yet")
-        # Filter out today's data
-        df = df[df['Date'].dt.date != today]
-        if df.empty:
-            return df
-        # Update end_date to exclude today
-        end_date = pd.to_datetime(df['Date'].max()).date()
+    # GRAPH INCLUSION LOGIC: Include today if we have real market data
+    # Data quality was already checked earlier in load_portfolio_totals()
+    # We include today if data exists (real prices were verified)
+    if today in [start_date, end_date]:
+        today_data = df[df['Date'].dt.date == today]
+        if not today_data.empty:
+            print(f"INFO Including today ({today}) in graph - data is available")
+        else:
+            print(f"INFO Excluding today ({today}) from graph - no data available")
+            # Filter out today's data
+            df = df[df['Date'].dt.date != today]
+            if df.empty:
+                return df
+            # Update end_date to exclude today
+            end_date = pd.to_datetime(df['Date'].max()).date()
     
     # Create complete date range (every single day at midnight for grid reference)
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -828,221 +857,6 @@ def compute_drawdown(df: pd.DataFrame) -> tuple[pd.Timestamp, float, float]:
 
 
 
-def get_historical_price_for_date(ticker, target_date, market_data_fetcher):
-    """
-    Get historical closing price for a ticker on a specific date.
-    
-    This uses the same logic as the rebuild script to fetch historical prices.
-    
-    Args:
-        ticker: Stock ticker symbol
-        target_date: datetime.date object for the target date
-        market_data_fetcher: MarketDataFetcher instance
-        
-    Returns:
-        Historical close price as float, or None if not available
-    """
-    try:
-        from datetime import timedelta
-        import pandas as pd
-        
-        # Try multiple date ranges to find available data
-        date_ranges = [
-            (target_date, target_date + timedelta(days=1)),  # Exact day
-            (target_date - timedelta(days=1), target_date + timedelta(days=2)),  # 3-day window
-            (target_date - timedelta(days=3), target_date + timedelta(days=4)),  # 7-day window
-        ]
-        
-        for start_date, end_date in date_ranges:
-            result = market_data_fetcher.fetch_price_data(ticker, pd.Timestamp(start_date), pd.Timestamp(end_date))
-            df = result.df
-            
-            if df is not None and not df.empty and 'Close' in df.columns and result.source != "empty":
-                # Find row matching the target date or closest available
-                day_rows = df[df.index.date == target_date]
-                if not day_rows.empty:
-                    return float(day_rows['Close'].iloc[0])
-                # If no exact match, try to find closest date within range
-                available_dates = df.index.date
-                closest_dates = [d for d in available_dates if d <= target_date]
-                if closest_dates:
-                    closest_date = max(closest_dates)
-                    closest_rows = df[df.index.date == closest_date]
-                    if not closest_rows.empty:
-                        return float(closest_rows['Close'].iloc[0])
-        
-        return None
-    except Exception as e:
-        print(f"       Error fetching historical price for {ticker}: {e}")
-        return None
-
-
-def create_historical_snapshots_for_missing_days(data_dir_path, market_hours, portfolio_manager, repository, market_data_fetcher):
-    """
-    Create historical portfolio snapshots for ACTUAL missing trading days only.
-    
-    Requirements:
-    1. Weekends/Holidays: Do NOT create snapshots (will be forward-filled in graph)
-    2. Missing Trading Days: Create snapshots with REAL historical prices from API
-    
-    This uses the same historical price fetching logic as the rebuild script.
-    
-    Args:
-        data_dir_path: Path to the data directory
-        market_hours: MarketHours instance
-        portfolio_manager: PortfolioManager instance
-        repository: Repository instance
-        market_data_fetcher: MarketDataFetcher instance
-    """
-    try:
-        from utils.missing_trading_days import MissingTradingDayDetector
-        from datetime import datetime, timedelta
-        import pandas as pd
-        
-        detector = MissingTradingDayDetector(market_hours, portfolio_manager)
-        needs_update, missing_days, most_recent = detector.check_for_missing_trading_days()
-        
-        if not needs_update or not missing_days:
-            print(f"{_safe_emoji('ℹ️')} No missing trading days detected")
-            return
-        
-        # Load the CSV to check which days actually have data
-        csv_path = Path(data_dir_path) / "llm_portfolio_update.csv"
-        if not csv_path.exists():
-            print(f"{_safe_emoji('⚠️')} Portfolio CSV not found")
-            return
-        
-        portfolio_df = pd.read_csv(csv_path)
-        
-        # Parse dates handling timezone info (PDT/PST)
-        def parse_date_with_tz(date_str):
-            if pd.isna(date_str):
-                return pd.NaT
-            date_str = str(date_str).strip()
-            # Strip timezone abbreviations before parsing
-            if " PDT" in date_str:
-                date_str = date_str.replace(" PDT", "").strip()
-            elif " PST" in date_str:
-                date_str = date_str.replace(" PST", "").strip()
-            return pd.to_datetime(date_str, errors='coerce')
-        
-        portfolio_df['Parsed_Date'] = portfolio_df['Date'].apply(parse_date_with_tz)
-        
-        # Extract date objects, handling any that didn't parse
-        def extract_date(dt_value):
-            if pd.isna(dt_value):
-                return None
-            if hasattr(dt_value, 'date'):
-                return dt_value.date()
-            return None
-        
-        existing_dates = set(filter(None, portfolio_df['Parsed_Date'].apply(extract_date).unique()))
-        
-        # Filter to only truly missing trading days (days with NO data in CSV) and are trading days
-        truly_missing_days = [day for day in missing_days if (day not in existing_dates and market_hours.is_trading_day(day))]
-        
-        if not truly_missing_days:
-            print(f"{_safe_emoji('✅')} No trading days need backfill - only weekends/holidays missing or already present")
-            return
-        
-        print(f"{_safe_emoji('🔄')} Backfilling {len(truly_missing_days)} missing TRADING days with historical prices...")
-        
-        # Get the latest portfolio positions to work with
-        latest_snapshot = portfolio_manager.get_latest_portfolio()
-        if not latest_snapshot or not latest_snapshot.positions:
-            print(f"{_safe_emoji('⚠️')} No portfolio positions found to create historical snapshots")
-            return
-        
-        # Create snapshots for each truly missing trading day
-        for missing_day in truly_missing_days:
-            try:
-                print(f"   Creating snapshot for {missing_day.strftime('%Y-%m-%d')}...")
-                
-                # Create a new snapshot for this historical day
-                historical_positions = []
-                
-                for position in latest_snapshot.positions:
-                    # Get historical price for this position on this day
-                    # Convert missing_day to date if it's a datetime
-                    target_date = missing_day.date() if hasattr(missing_day, 'date') else missing_day
-                    
-                    try:
-                        # Use the same historical price fetching logic as the rebuild script
-                        historical_price = get_historical_price_for_date(position.ticker, target_date, market_data_fetcher)
-                        
-                        if historical_price:
-                            # Create updated position with historical price and proper calculations
-                            from data.models.portfolio import Position
-                            from decimal import Decimal
-                            
-                            hist_price_decimal = Decimal(str(historical_price))
-                            market_value = position.shares * hist_price_decimal
-                            unrealized_pnl = market_value - position.cost_basis
-                            
-                            historical_position = Position(
-                                ticker=position.ticker,
-                                shares=position.shares,
-                                avg_price=position.avg_price,
-                                cost_basis=position.cost_basis,
-                                current_price=hist_price_decimal,
-                                market_value=market_value,
-                                unrealized_pnl=unrealized_pnl,
-                                currency=position.currency,
-                                company=position.company
-                            )
-                            historical_positions.append(historical_position)
-                            print(f"     {position.ticker}: ${historical_price:.2f} (value: ${market_value:.2f}, PnL: ${unrealized_pnl:.2f})")
-                        else:
-                            # Keep existing position data if no historical price found
-                            historical_positions.append(position)
-                            print(f"     {position.ticker}: No historical price found, using last known")
-                            
-                    except Exception as e:
-                        # Keep existing position data if there's an error
-                        historical_positions.append(position)
-                        print(f"     {position.ticker}: Error fetching historical price - {e}")
-                
-                # Create historical snapshot
-                from data.models.portfolio import PortfolioSnapshot
-                # Create timestamp for market close on the missing day
-                if hasattr(missing_day, 'date'):
-                    snapshot_date = missing_day.date()  # missing_day is datetime
-                else:
-                    snapshot_date = missing_day  # missing_day is already date
-                    
-                # Use proper timezone handling for historical snapshots
-                # Market closes at 16:00 ET (Eastern Time)
-                from market_config import _is_dst
-                from datetime import timezone as dt_timezone
-                utc_now = datetime.now(dt_timezone.utc)
-                is_dst = _is_dst(utc_now)
-                # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
-                market_close_hour_utc = 20 if is_dst else 21
-
-                # Create timestamp for market close in Eastern timezone
-                historical_timestamp = datetime.combine(
-                    snapshot_date,
-                    datetime.min.time().replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0)
-                ).replace(tzinfo=dt_timezone.utc)
-                
-                historical_snapshot = PortfolioSnapshot(
-                    positions=historical_positions,
-                    timestamp=historical_timestamp
-                )
-                
-                # Save historical snapshot
-                repository.save_portfolio_snapshot(historical_snapshot)
-                print(f"     ✅ Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
-                
-            except Exception as e:
-                print(f"     ⚠️ Error creating snapshot for {missing_day.strftime('%Y-%m-%d')}: {e}")
-        
-        print(f"✅ Completed creating historical snapshots for missing trading days")
-        
-    except Exception as e:
-        print(f"⚠️ Error creating historical snapshots: {e}")
-
-
 def refresh_portfolio_data_if_needed(data_dir_path):
     """
     Refresh portfolio data using the centralized trading system logic.
@@ -1106,26 +920,7 @@ def refresh_portfolio_data_if_needed(data_dir_path):
         price_cache = PriceCache(settings=settings)
         market_data_fetcher = MarketDataFetcher(cache_instance=price_cache)
         
-        # STEP 1: Backfill missing trading days with historical prices
-        # This ensures we have complete data before refreshing current prices
-        create_historical_snapshots_for_missing_days(
-            data_dir_path=data_dir_path if data_dir_path else DATA_DIR,
-            market_hours=market_hours,
-            portfolio_manager=portfolio_manager,
-            repository=repository,
-            market_data_fetcher=market_data_fetcher
-        )
-        
-        # Recreate portfolio manager to reload data from disk after backfilling
-        # This ensures the refresh logic sees the freshly backfilled data
-        portfolio_manager = PortfolioManager(repository, fund)
-        
-        # Clear price cache to ensure fresh prices are fetched for today
-        # This prevents reusing historical prices from the backfill step
-        if hasattr(price_cache, '_price_cache'):
-            price_cache._price_cache = {}
-        
-        # STEP 2: Refresh current prices for today's snapshot
+        # Refresh portfolio prices (this now automatically backfills missing trading days)
         was_updated, reason = refresh_portfolio_prices_if_needed(
             market_hours=market_hours,
             portfolio_manager=portfolio_manager,

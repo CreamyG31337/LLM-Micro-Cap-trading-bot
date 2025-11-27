@@ -46,6 +46,11 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     """
     Rebuild portfolio from trade log and update both CSV and Supabase.
     
+    CRITICAL DATA INTEGRITY PRINCIPLE:
+    - NEVER uses fallback prices (old prices, average prices, etc.)
+    - FAILS HARD if any position can't fetch current market prices
+    - This prevents silent insertion of garbage data that would corrupt P&L calculations
+    
     Args:
         data_dir: Directory containing trading data files
         fund_name: Fund name for Supabase operations (optional)
@@ -135,71 +140,8 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         except Exception as e:
             print_warning(f"⚠️  Could not clear existing data: {e}")
         
-        # Process trades chronologically
+        # Process trades and generate snapshots below
         print_info(f"{_safe_emoji('📈')} Processing trades chronologically...")
-        
-        # Track running positions
-        running_positions = {}
-        
-        for idx, trade_row in trade_df.iterrows():
-            # Create Trade object
-            from data.models.trade import Trade
-            
-            # Get shares value first
-            shares = Decimal(str(trade_row['Shares']))
-            
-            # Determine action from Reason field (more reliable than share signs)
-            reason_raw = trade_row.get('Reason', '')
-            # Handle NaN and other non-string values
-            if pd.isna(reason_raw) or not isinstance(reason_raw, str):
-                reason = ''
-            else:
-                reason = str(reason_raw).upper()
-            
-            if 'SELL' in reason:
-                action = 'SELL'
-            elif 'BUY' in reason:
-                action = 'BUY'
-            else:
-                # Fallback to share signs if reason doesn't indicate action
-                action = 'BUY' if shares > 0 else 'SELL'
-            
-            # Handle NaN values in currency
-            currency = trade_row.get('Currency', 'USD')
-            if pd.isna(currency):
-                currency = 'USD'  # Default to USD for NaN currencies
-            
-            trade = Trade(
-                ticker=trade_row['Ticker'],
-                action=action,
-                shares=abs(shares),  # Use absolute value for shares
-                price=Decimal(str(trade_row['Price'])),
-                timestamp=trade_row['Date'],
-                cost_basis=Decimal(str(trade_row.get('Cost Basis', 0))),
-                pnl=Decimal(str(trade_row.get('PnL', 0))),
-                reason=trade_row.get('Reason', ''),
-                currency=currency
-            )
-            
-            # Update running positions (DO NOT save trade - we're only reading from trade log)
-            ticker = trade.ticker
-            if ticker not in running_positions:
-                running_positions[ticker] = {'shares': Decimal('0'), 'cost': Decimal('0'), 'currency': trade.currency}
-            
-            if trade.action == 'BUY':
-                running_positions[ticker]['shares'] += trade.shares
-                running_positions[ticker]['cost'] += trade.cost_basis
-                running_positions[ticker]['currency'] = trade.currency
-            elif trade.action == 'SELL':
-                running_positions[ticker]['shares'] -= trade.shares
-                # For sells, reduce cost proportionally
-                if running_positions[ticker]['shares'] > 0:
-                    cost_per_share = running_positions[ticker]['cost'] / (running_positions[ticker]['shares'] + trade.shares)
-                    running_positions[ticker]['cost'] -= cost_per_share * trade.shares
-                else:
-                    running_positions[ticker]['cost'] = Decimal('0')
-            
-            print(f"   {trade.timestamp.strftime('%Y-%m-%d %H:%M')} | {trade.ticker} | {trade.shares} @ ${trade.price} | ${trade.cost_basis} | {trade.action}")
         
         # Generate HOLD entries for all trading days
         print_info(f"{_safe_emoji('📊')} Generating HOLD entries for all trading days...")
@@ -517,9 +459,50 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             from data.models.portfolio import Position, PortfolioSnapshot
             final_positions = []
             
+            # Fetch current market prices for all positions
+            print_info(f"   Fetching current market prices for {len(running_positions)} positions...")
+            print_info(f"   Note: Positions with 0 shares will be filtered out (sold positions)")
+            current_prices = {}  # {ticker: price}
+            for ticker in running_positions.keys():
+                try:
+                    # Fetch price data for today
+                    today = datetime.now().date()
+                    start_dt = datetime.combine(today, datetime.min.time())
+                    end_dt = datetime.combine(today, datetime.max.time())
+                    result = market_fetcher.fetch_price_data(ticker, start=start_dt, end=end_dt)
+                    
+                    if result and result.df is not None and not result.df.empty:
+                        # Get the most recent close price
+                        latest_price = Decimal(str(result.df['Close'].iloc[-1]))
+                        current_prices[ticker] = latest_price
+                    else:
+                        print_warning(f"   Could not fetch current price for {ticker} - using cost basis")
+                        current_prices[ticker] = None
+                except Exception as e:
+                    print_warning(f"   Error fetching price for {ticker}: {e} - using cost basis")
+                    current_prices[ticker] = None
+            
+            positions_with_shares = 0
+            positions_filtered_out = 0
+            
             for ticker, position in running_positions.items():
                 if position['shares'] > 0:  # Only include positions with shares
+                    positions_with_shares += 1
                     avg_price = position['cost'] / position['shares'] if position['shares'] > 0 else Decimal('0')
+                    
+                    # Get fetched current price for today
+                    current_price = current_prices.get(ticker)
+                    
+                    if current_price is None:
+                        print_error(f"   ❌ CRITICAL: Price fetch failed for {ticker}")
+                        print_error(f"      Cannot create snapshot without valid market prices")
+                        print_error(f"      This is likely running on a non-trading day or there's a network/API issue")
+                        print_error(f"      NO FALLBACK PRICES ALLOWED - data integrity is critical")
+                        raise Exception(f"Price fetch failed for {ticker} - aborting snapshot creation")
+                    
+                    market_value = position['shares'] * current_price
+                    unrealized_pnl = market_value - position['cost']
+                    
                     final_position = Position(
                         ticker=ticker,
                         shares=position['shares'],
@@ -527,14 +510,23 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                         cost_basis=position['cost'],
                         currency=position['currency'],
                         company=get_company_name(ticker),
-                        current_price=avg_price,  # Use avg_price as current_price for now
-                        market_value=position['cost'],  # Use cost_basis as market_value for now
-                        unrealized_pnl=Decimal('0')  # Will be updated by price refresh
+                        current_price=current_price,
+                        market_value=market_value,
+                        unrealized_pnl=unrealized_pnl
                     )
                     final_positions.append(final_position)
+                else:
+                    positions_filtered_out += 1
+                    print_info(f"   Filtered out {ticker}: 0 shares (sold position)")
+            
+            print_info(f"   Position filtering complete:")
+            print_info(f"   - {positions_with_shares} positions with shares included")
+            print_info(f"   - {positions_filtered_out} positions with 0 shares filtered out")
+            print_info(f"   - All included positions have real market prices (no fallbacks)")
             
             # Create and save final portfolio snapshot
             if final_positions:
+                # All positions have current prices - safe to save
                 from datetime import timezone
                 # Use market close time in Eastern timezone for proper historical price fetching
                 # Market closes at 16:00 ET (Eastern Time)
@@ -558,55 +550,16 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         else:
             print_info(f"   Skipping final snapshot - today ({today}) is not a trading day")
         
-        # Create final portfolio CSV from current positions
-        print_info(f"{_safe_emoji('📊')} Creating final portfolio CSV...")
-        portfolio_entries = []
-        for ticker, position in running_positions.items():
-            if position['shares'] > 0:  # Only include positions with shares
-                portfolio_entries.append({
-                    'Date': datetime.now().strftime('%Y-%m-%d'),
-                    'Ticker': ticker,
-                    'Shares': float(position['shares']),
-                    'Average Price': float(position['cost'] / position['shares']) if position['shares'] > 0 else 0,
-                    'Cost Basis': float(position['cost']),
-                    'Stop Loss': 0.0,
-                    'Current Price': 0.0,  # Will be updated by price refresh
-                    'Total Value': 0.0,   # Will be updated by price refresh
-                    'PnL': 0.0,           # Will be updated by price refresh
-                    'Action': 'HOLD',
-                    'Company': get_company_name(ticker),
-                    'Currency': position.get('currency', 'USD')
-                })
-        
-        # Create and save portfolio CSV
-        if portfolio_entries:
-            portfolio_df = pd.DataFrame(portfolio_entries)
-            
-            # Round numeric columns
-            for col in portfolio_df.columns:
-                if col in ['Shares', 'Average Price', 'Cost Basis', 'Current Price', 'Total Value', 'PnL']:
-                    if col == 'Shares':
-                        portfolio_df[col] = portfolio_df[col].round(4)
-                    else:
-                        portfolio_df[col] = portfolio_df[col].round(2)
-            
-            # Save portfolio CSV
-            portfolio_file = Path(data_dir) / "llm_portfolio_update.csv"
-            portfolio_df.to_csv(portfolio_file, index=False)
-            print_info(f"   Portfolio CSV saved: {portfolio_file}")
-        else:
-            print_info("   No positions found - creating empty portfolio")
-            # Create empty portfolio file
-            empty_df = pd.DataFrame(columns=['Date', 'Ticker', 'Shares', 'Average Price', 'Cost Basis', 'Stop Loss', 'Current Price', 'Total Value', 'PnL', 'Action', 'Company', 'Currency'])
-            portfolio_file = Path(data_dir) / "llm_portfolio_update.csv"
-            empty_df.to_csv(portfolio_file, index=False)
+        # NOTE: Portfolio CSV is already written incrementally by repository.save_portfolio_snapshot()
+        # during the snapshot generation loop above. Do NOT overwrite it here.
+        # All historical snapshots have been saved correctly to CSV and Supabase.
+        print_info(f"{_safe_emoji('📊')} Portfolio CSV already saved with all {snapshots_created} historical snapshots")
         
         print_success(f"{_safe_emoji('✅')} Portfolio rebuild completed successfully!")
-        print_info(f"   {_safe_emoji('✅')} CSV files updated")
+        print_info(f"   {_safe_emoji('✅')} CSV files updated with {snapshots_created} snapshots")
         if fund_name:
             print_info(f"   {_safe_emoji('✅')} Trades saved to Supabase")
         print_info(f"   {_safe_emoji('✅')} Positions recalculated from trade log")
-        print_info(f"   {_safe_emoji('✅')} Final portfolio CSV created with {len(portfolio_entries)} positions")
         
         return True
         

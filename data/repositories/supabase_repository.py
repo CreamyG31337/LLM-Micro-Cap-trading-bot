@@ -447,14 +447,14 @@ class SupabaseRepository(BaseRepository):
     def get_latest_portfolio_snapshot_with_pnl(self) -> Optional[PortfolioSnapshot]:
         """Get the most recent portfolio snapshot with calculated P&L from database view.
         
-        This uses the Supabase view 'position_with_historical_pnl' which calculates
+        This uses the Supabase view 'latest_positions' which calculates
         1-day and 5-day P&L server-side for better performance.
         
         Returns:
             Portfolio snapshot with positions including historical P&L metrics
         """
         try:
-            result = self.supabase.table("position_with_historical_pnl") \
+            result = self.supabase.table("latest_positions") \
                 .select("*") \
                 .eq("fund", self.fund) \
                 .execute()
@@ -480,7 +480,7 @@ class SupabaseRepository(BaseRepository):
                 positions.append(position)
             
             # Get timestamp from first position
-            timestamp = TypeTransformers.iso_to_datetime(result.data[0]['current_date'])
+            timestamp = TypeTransformers.iso_to_datetime(result.data[0]['date'])
             
             # Calculate total value
             total_value = sum(pos.market_value for pos in positions if pos.market_value)

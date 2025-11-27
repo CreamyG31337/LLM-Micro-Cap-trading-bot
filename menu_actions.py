@@ -106,7 +106,10 @@ class MenuActionSystem:
                     import os
                     if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
                         # Get fund name for testing
-                        fund_name = repo_config.get('fund', 'Project Chimera')
+                        fund_name = repo_config.get('fund')
+                        if not fund_name:
+                            logger.error("No fund name configured for Supabase")
+                            raise ValueError("Fund name required for Supabase mode")
                         # Test connection
                         test_repo = SupabaseRepository(fund_name)
                         if test_repo.test_connection():
@@ -125,7 +128,10 @@ class MenuActionSystem:
                     import os
                     if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
                         # Get fund name for testing
-                        fund_name = repo_config.get('fund', 'Project Chimera')
+                        fund_name = repo_config.get('fund')
+                        if not fund_name:
+                            logger.error("No fund name configured for Supabase")
+                            raise ValueError("Fund name required for Supabase mode")
                         # Test connection
                         test_repo = SupabaseRepository(fund_name)
                         if test_repo.test_connection():
@@ -145,8 +151,11 @@ class MenuActionSystem:
                 
                 # Create CSV dual-write repository
                 from data.repositories.repository_factory import RepositoryFactory
+                fund_name = repo_config.get('fund')
+                if not fund_name:
+                    raise ValueError("Fund name must be specified in repository configuration")
                 self.repository = RepositoryFactory.create_dual_write_repository(
-                    fund_name=repo_config.get('fund', 'Project Chimera'),
+                    fund_name=fund_name,
                     data_directory=self.settings.get_data_directory()
                 )
             elif use_supabase_dual_write:
@@ -156,9 +165,12 @@ class MenuActionSystem:
                 
                 # Create Supabase dual-write repository
                 from data.repositories.repository_factory import RepositoryFactory
+                fund_name = repo_config.get('fund')
+                if not fund_name:
+                    raise ValueError("Fund name must be specified in repository configuration")
                 self.repository = RepositoryFactory.create_repository(
                     repository_type='supabase-dual-write',
-                    fund_name=repo_config.get('fund', 'Project Chimera'),
+                    fund_name=fund_name,
                     data_directory=self.settings.get_data_directory()
                 )
             else:

@@ -71,6 +71,45 @@ The system should always try to create or update portfolio snapshots when possib
 - ❌ Custom logic in debug/rebuild scripts
 - ❌ Checking `is_market_open()` to decide whether to skip
 - ❌ Different behavior across entry points
+- ❌ **Reading CSV files directly instead of using repository interface** (causes bugs with Supabase)
+
+## Missing Trading Days and Backfill
+
+### Automatic Backfill
+The system automatically backfills missing trading days when detected:
+- **When**: Portfolio refresh detects gap between last snapshot and today
+- **What**: Creates historical snapshots for each missing trading day
+- **How**: Uses `utils/portfolio_refresh.py` → `_create_historical_snapshots_for_missing_days()`
+- **Prices**: Fetches historical close prices for each day from market data API
+
+### CRITICAL: Repository Pattern for Backfill
+**Always check existing dates from repository, NOT from CSV files:**
+
+```python
+# ✅ CORRECT: Use repository to check existing snapshots
+existing_snapshots = repository.get_portfolio_data()
+existing_dates = {snapshot.timestamp.date() for snapshot in existing_snapshots}
+
+# ❌ WRONG: Reading CSV directly breaks with Supabase backend
+portfolio_df = pd.read_csv("llm_portfolio_update.csv")  # BUG!
+```
+
+**Why this matters:**
+- When using Supabase, CSV may be out of date or non-existent
+- Repository interface works with all backends (CSV, Supabase, dual-write)
+- After creating snapshots, repository immediately reflects new data
+- CSV won't reflect new data until explicitly written
+
+### Backfill Process
+1. Detect missing trading days using `MissingTradingDayDetector`
+2. Check existing dates from **repository** (not CSV) to avoid duplicates
+3. For each missing trading day:
+   - Get latest portfolio positions
+   - Fetch historical prices for that specific date
+   - Create snapshot with market close timestamp (16:00 ET)
+   - Save via repository interface
+4. Reload portfolio manager to pick up new snapshots
+5. Continue with normal refresh for today's snapshot
 
 ## Examples
 

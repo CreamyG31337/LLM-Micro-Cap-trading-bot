@@ -64,9 +64,17 @@ def load_exchange_rates(data_dir: Path) -> Dict[str, Decimal]:
             
             # Apply timezone conversion to each element
             converted_dates = rates_df.index.map(convert_timezone_abbreviation)
-            rates_df.index = pd.to_datetime(converted_dates)
+            # Parse dates with UTC normalization, then convert to timezone-naive
+            # This ensures all dates have the same timezone (or are timezone-naive)
+            # Exchange rates are date-based, so timezone-naive is appropriate
+            rates_df.index = pd.to_datetime(converted_dates, utc=True).tz_localize(None)
+        else:
+            # If already a DatetimeIndex but timezone-aware, normalize to timezone-naive
+            if rates_df.index.tz is not None:
+                rates_df.index = rates_df.index.tz_localize(None)
         
         # Create a full date range from the first to the last available date
+        # All dates are now timezone-naive, so this will work without timezone conflicts
         full_date_range = pd.date_range(start=rates_df.index.min(), end=rates_df.index.max(), freq='D')
         
         # Reindex the DataFrame to include all dates in the range, then forward-fill missing values

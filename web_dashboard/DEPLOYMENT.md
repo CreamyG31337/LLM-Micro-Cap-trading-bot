@@ -4,6 +4,8 @@
 
 This Streamlit dashboard replaces the previous Flask app. It displays historical portfolio performance graphs and current positions from Supabase.
 
+**Note:** The dashboard requires user authentication. Users must log in to view their assigned funds' data.
+
 ## Files Created
 
 ### Streamlit Application

@@ -1,3 +1,21 @@
+# Streamlit Dashboard Build and Deploy Pipeline
+#
+# This pipeline builds the Streamlit dashboard Docker image and deploys it to the server.
+# It uses Docker socket mounting to build directly on the server (no SSH needed).
+#
+# Build Process:
+# 1. Build Docker image from web_dashboard/Dockerfile
+# 2. Tag image with commit SHA for version tracking
+# 3. Stop and remove existing container (if running)
+# 4. Deploy new container with environment variables from Woodpecker secrets
+#
+# Available Secrets (configure in Woodpecker):
+# - SUPABASE_URL: Your Supabase project URL
+# - SUPABASE_PUBLISHABLE_KEY: For user authentication
+# - SUPABASE_SECRET_KEY: For admin scripts and debug operations
+#
+# Note: Repository must be marked as "Trusted" in Woodpecker settings to use volumes
+
 steps:
   build-and-deploy:
     image: docker:24
@@ -6,10 +24,10 @@ steps:
     environment:
       TZ: America/Vancouver
     commands:
-      # Set timezone
+      # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
       
-      # Build Docker image
+      # Build Docker image from web_dashboard/Dockerfile
       - docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest .
       - docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
       
@@ -17,7 +35,7 @@ steps:
       - docker stop trading-dashboard || true
       - docker rm trading-dashboard || true
       
-      # Run new container with environment variables
+      # Deploy new container with environment variables from Woodpecker secrets
       - docker run -d \
         --name trading-dashboard \
         --restart unless-stopped \

@@ -1,4 +1,6 @@
-# Use python:3.11-slim to match existing containers
+# Streamlit Dashboard Dockerfile
+# Uses python:3.11-slim to match existing containers on the server
+
 FROM python:3.11-slim
 
 # Set working directory

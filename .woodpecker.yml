@@ -9,10 +9,12 @@
 # 3. Stop and remove existing container (if running)
 # 4. Deploy new container with environment variables from Woodpecker secrets
 #
-# Available Secrets (configure in Woodpecker):
-# - SUPABASE_URL: Your Supabase project URL
-# - SUPABASE_PUBLISHABLE_KEY: For user authentication
-# - SUPABASE_SECRET_KEY: For admin scripts and debug operations
+# Available Secrets (configure in Woodpecker - use lowercase names):
+# - supabase_url: Your Supabase project URL
+# - supabase_publishable_key: For user authentication
+# - supabase_secret_key: For admin scripts and debug operations
+#
+# Note: Woodpecker converts secret names to lowercase, so use lowercase names in secrets: section
 #
 # Note: Repository must be marked as "Trusted" in Woodpecker settings to use volumes
 
@@ -23,6 +25,7 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: America/Vancouver
+    secrets: [supabase_url, supabase_publishable_key, supabase_secret_key]
     commands:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -35,17 +38,16 @@ steps:
       - docker stop trading-dashboard || true
       - docker rm trading-dashboard || true
       
-      # Deploy new container with environment variables from Woodpecker secrets
-      - docker run -d \
-        --name trading-dashboard \
-        --restart unless-stopped \
-        -p 8501:8501 \
-        -e SUPABASE_URL=${SUPABASE_URL} \
-        -e SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY} \
-        -e SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY} \
-        -e STREAMLIT_SERVER_HEADLESS=true \
-        -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
-        trading-dashboard:latest
+      # Verify secrets are set
+      - |
+        if [ -z "$supabase_url" ] || [ -z "$supabase_publishable_key" ] || [ -z "$supabase_secret_key" ]; then
+          echo "❌ ERROR: Missing required secrets"
+          echo "Make sure supabase_url, supabase_publishable_key, and supabase_secret_key are set in Woodpecker"
+          exit 1
+        fi
+      
+      # Deploy new container (single line to avoid parsing issues)
+      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 -e SUPABASE_URL="$supabase_url" -e SUPABASE_PUBLISHABLE_KEY="$supabase_publishable_key" -e SUPABASE_SECRET_KEY="$supabase_secret_key" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
       
       - echo "✅ Build and deployment complete!"
     when:

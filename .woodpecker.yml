@@ -1,0 +1,37 @@
+steps:
+  build-and-deploy:
+    image: docker:24
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: America/Vancouver
+    commands:
+      # Set timezone
+      - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+      
+      # Build Docker image
+      - docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest .
+      - docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
+      
+      # Stop and remove existing container if it exists
+      - docker stop trading-dashboard || true
+      - docker rm trading-dashboard || true
+      
+      # Run new container with environment variables
+      - docker run -d \
+        --name trading-dashboard \
+        --restart unless-stopped \
+        -p 8501:8501 \
+        -e SUPABASE_URL=${SUPABASE_URL} \
+        -e SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY} \
+        -e SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY} \
+        -e STREAMLIT_SERVER_HEADLESS=true \
+        -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+        trading-dashboard:latest
+      
+      - echo "✅ Build and deployment complete!"
+    when:
+      event: push
+      branch: [main, master]
+
+

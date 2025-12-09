@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""
+Streamlit Portfolio Performance Dashboard
+Displays historical performance graphs and current portfolio data
+"""
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from streamlit_utils import (
+    get_available_funds,
+    get_current_positions,
+    get_trade_log,
+    get_cash_balances,
+    calculate_portfolio_value_over_time
+)
+from chart_utils import (
+    create_portfolio_value_chart,
+    create_performance_by_fund_chart,
+    create_pnl_chart,
+    create_trades_timeline_chart
+)
+from auth_utils import (
+    login_user,
+    register_user,
+    is_authenticated,
+    logout_user,
+    set_user_session,
+    get_user_email,
+    get_user_token
+)
+
+# Page configuration
+st.set_page_config(
+    page_title="Portfolio Performance Dashboard",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS
+st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        margin-bottom: 1rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
+def show_login_page():
+    """Display login/register page"""
+    st.markdown('<div class="main-header">📈 Portfolio Performance Dashboard</div>', unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Login", "Register"])
+    
+    with tab1:
+        st.markdown("### Login")
+        with st.form("login_form"):
+            email = st.text_input("Email", type="default")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+            
+            if submit:
+                if email and password:
+                    result = login_user(email, password)
+                    if result and "access_token" in result:
+                        set_user_session(result["access_token"], result["user"])
+                        st.success("Login successful!")
+                        st.rerun()
+                    else:
+                        error_msg = result.get("error", "Login failed") if result else "Login failed"
+                        st.error(f"Login failed: {error_msg}")
+                else:
+                    st.error("Please enter both email and password")
+    
+    with tab2:
+        st.markdown("### Register")
+        with st.form("register_form"):
+            email = st.text_input("Email", type="default", key="reg_email")
+            password = st.text_input("Password", type="password", key="reg_password")
+            confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm")
+            submit = st.form_submit_button("Register")
+            
+            if submit:
+                if email and password and confirm_password:
+                    if password != confirm_password:
+                        st.error("Passwords do not match")
+                    else:
+                        result = register_user(email, password)
+                        if result and "access_token" in result:
+                            set_user_session(result["access_token"], result["user"])
+                            st.success("Registration successful! Please check your email to confirm your account.")
+                            st.rerun()
+                        else:
+                            error_msg = result.get("error", "Registration failed") if result else "Registration failed"
+                            st.error(f"Registration failed: {error_msg}")
+                else:
+                    st.error("Please fill in all fields")
+
+
+def main():
+    """Main dashboard function"""
+    
+    # Check authentication
+    if not is_authenticated():
+        show_login_page()
+        return
+    
+    # Header with user info and logout
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown('<div class="main-header">📈 Portfolio Performance Dashboard</div>', unsafe_allow_html=True)
+    with col2:
+        user_email = get_user_email()
+        if user_email:
+            st.write(f"Logged in as: **{user_email}**")
+        if st.button("Logout"):
+            logout_user()
+            st.rerun()
+    
+    # Sidebar - Fund selector
+    st.sidebar.title("Filters")
+    
+    # Get available funds
+    try:
+        funds = get_available_funds()
+        if not funds:
+            st.sidebar.warning("No funds found in database")
+            funds = ["All Funds"]
+        else:
+            funds = ["All Funds"] + funds
+    except Exception as e:
+        st.sidebar.error(f"Error loading funds: {e}")
+        funds = ["All Funds"]
+    
+    selected_fund = st.sidebar.selectbox(
+        "Select Fund",
+        funds,
+        index=0
+    )
+    
+    # Convert "All Funds" to None
+    fund_filter = None if selected_fund == "All Funds" else selected_fund
+    
+    # Display fund name
+    if fund_filter:
+        st.sidebar.info(f"Viewing: **{fund_filter}**")
+    
+    # Main content
+    try:
+        # Load data
+        with st.spinner("Loading portfolio data..."):
+            positions_df = get_current_positions(fund_filter)
+            trades_df = get_trade_log(limit=1000, fund=fund_filter)
+            cash_balances = get_cash_balances(fund_filter)
+            portfolio_value_df = calculate_portfolio_value_over_time(fund_filter)
+        
+        # Metrics row
+        st.markdown("### Performance Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Calculate total portfolio value
+        total_value = 0.0
+        total_pnl = 0.0
+        if not positions_df.empty and 'market_value' in positions_df.columns:
+            total_value = float(positions_df['market_value'].sum())
+            total_pnl = float(positions_df['pnl'].sum()) if 'pnl' in positions_df.columns else 0.0
+        
+        # Add cash to total value
+        total_value += cash_balances.get('CAD', 0.0) + cash_balances.get('USD', 0.0)
+        
+        with col1:
+            st.metric("Total Portfolio Value", f"${total_value:,.2f}")
+        
+        with col2:
+            pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
+            st.metric("Total P&L", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
+        
+        with col3:
+            st.metric("CAD Balance", f"${cash_balances.get('CAD', 0.0):,.2f}")
+        
+        with col4:
+            st.metric("USD Balance", f"${cash_balances.get('USD', 0.0):,.2f}")
+        
+        # Charts section
+        st.markdown("---")
+        st.markdown("### Performance Charts")
+        
+        # Portfolio value over time
+        if not portfolio_value_df.empty:
+            st.markdown("#### Portfolio Value Over Time")
+            fig = create_portfolio_value_chart(portfolio_value_df, fund_filter)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No historical portfolio value data available")
+        
+        # Trades timeline
+        if not trades_df.empty:
+            st.markdown("#### Trades Timeline")
+            fig = create_trades_timeline_chart(trades_df, fund_filter)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Current positions
+        st.markdown("---")
+        st.markdown("### Current Positions")
+        
+        if not positions_df.empty:
+            # P&L chart
+            if 'pnl' in positions_df.columns:
+                st.markdown("#### P&L by Position")
+                fig = create_pnl_chart(positions_df, fund_filter)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Positions table
+            st.markdown("#### Positions Table")
+            # Select relevant columns for display
+            display_cols = ['ticker', 'shares', 'price', 'cost_basis']
+            if 'market_value' in positions_df.columns:
+                display_cols.append('market_value')
+            if 'pnl' in positions_df.columns:
+                display_cols.append('pnl')
+            if 'pnl_pct' in positions_df.columns:
+                display_cols.append('pnl_pct')
+            
+            # Filter to only columns that exist
+            display_cols = [col for col in display_cols if col in positions_df.columns]
+            
+            if display_cols:
+                st.dataframe(
+                    positions_df[display_cols].style.format({
+                        'shares': '{:.4f}',
+                        'price': '${:.2f}',
+                        'cost_basis': '${:.2f}',
+                        'market_value': '${:.2f}',
+                        'pnl': '${:.2f}',
+                        'pnl_pct': '{:.2f}%'
+                    }),
+                    use_container_width=True,
+                    height=400
+                )
+            else:
+                st.dataframe(positions_df, use_container_width=True, height=400)
+        else:
+            st.info("No current positions found")
+        
+        # Recent trades
+        st.markdown("---")
+        st.markdown("### Recent Trades")
+        
+        if not trades_df.empty:
+            # Limit to last 50 trades for display
+            recent_trades = trades_df.head(50)
+            
+            # Select relevant columns
+            trade_cols = ['date', 'ticker', 'type', 'shares', 'price']
+            if 'cost_basis' in recent_trades.columns:
+                trade_cols.append('cost_basis')
+            if 'pnl' in recent_trades.columns:
+                trade_cols.append('pnl')
+            
+            trade_cols = [col for col in trade_cols if col in recent_trades.columns]
+            
+            if trade_cols:
+                st.dataframe(
+                    recent_trades[trade_cols].style.format({
+                        'shares': '{:.4f}',
+                        'price': '${:.2f}',
+                        'cost_basis': '${:.2f}',
+                        'pnl': '${:.2f}'
+                    }),
+                    use_container_width=True,
+                    height=400
+                )
+            else:
+                st.dataframe(recent_trades, use_container_width=True, height=400)
+        else:
+            st.info("No recent trades found")
+        
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        st.exception(e)
+
+
+if __name__ == "__main__":
+    main()
+
+

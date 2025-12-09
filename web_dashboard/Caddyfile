@@ -1,0 +1,28 @@
+# Caddyfile for Streamlit reverse proxy
+# Replace example.com with your actual domain
+
+example.com {
+    # Reverse proxy to Streamlit
+    reverse_proxy localhost:8501 {
+        # WebSocket support for Streamlit
+        transport http {
+            versions 1.1 2
+        }
+    }
+    
+    # Health check endpoint
+    handle /health {
+        reverse_proxy localhost:8501
+    }
+}
+
+# For local development (uncomment if needed)
+# localhost:8080 {
+#     reverse_proxy localhost:8501 {
+#         transport http {
+#             versions 1.1 2
+#         }
+#     }
+# }
+
+

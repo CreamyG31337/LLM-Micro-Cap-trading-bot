@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Flask app files (archived)
+archive/
+templates/
+app.py
+auth.py
+*.html
+
+# Deployment configs (old)
+vercel.json
+Procfile
+railway.json
+
+# Test files
+test_*.py
+*_test.py
+debug_*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Documentation
+*.md
+!schema/README.md
+
+# Migration scripts (keep schema, but not migration scripts in root)
+migrate*.py
+admin_*.py
+setup_*.py
+fix_*.py
+clean_*.py
+apply_*.py
+assign_*.py
+create_*.py
+generate_*.py
+run_*.py
+verify_*.py
+check_*.py
+calculate_*.py
+
+# Keep these
+!schema/
+!supabase_client.py
+!streamlit_*.py
+!chart_utils.py
+
+

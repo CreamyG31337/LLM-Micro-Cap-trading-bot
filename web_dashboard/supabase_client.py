@@ -40,18 +40,34 @@ logger = logging.getLogger(__name__)
 class SupabaseClient:
     """Client for interacting with Supabase database"""
     
-    def __init__(self):
-        """Initialize Supabase client"""
+    def __init__(self, user_token: Optional[str] = None, use_service_role: bool = False):
+        """Initialize Supabase client
+        
+        Args:
+            user_token: Optional JWT token from authenticated user (respects RLS)
+            use_service_role: If True, use service role key (bypasses RLS, admin only)
+        """
         self.url = os.getenv("SUPABASE_URL")
-        self.key = os.getenv("SUPABASE_ANON_KEY")
+        
+        if use_service_role:
+            # Use service role key for admin operations (bypasses RLS)
+            self.key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if not self.key:
+                raise ValueError("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY must be set for admin operations")
+        elif user_token:
+            # Use user's JWT token (respects RLS)
+            self.key = user_token
+        else:
+            # Fallback to publishable key (limited access, may not work with RLS)
+            self.key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         
         # Debug logging for environment variables
         logger.debug(f"SUPABASE_URL exists: {bool(self.url)}")
-        logger.debug(f"SUPABASE_ANON_KEY exists: {bool(self.key)}")
+        logger.debug(f"Using key type: {'service_role' if use_service_role else 'user_token' if user_token else 'publishable'}")
         
         if not self.url or not self.key:
             logger.error(f"Missing environment variables - URL: {bool(self.url)}, KEY: {bool(self.key)}")
-            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY environment variables must be set")
+            raise ValueError("SUPABASE_URL and appropriate key must be set")
         
         self.supabase: Client = create_client(self.url, self.key)
     

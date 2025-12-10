@@ -7,10 +7,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies and uv (faster Python package installer)
+# Note: uv install script installs to ~/.cargo/bin/uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && test -f /root/.cargo/bin/uv || (echo "uv installation failed" && exit 1) \
     && rm -rf /var/lib/apt/lists/*
 
 # Add uv to PATH
@@ -18,7 +20,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy requirements and install Python dependencies with uv (faster than pip)
 COPY web_dashboard/requirements.txt ./requirements.txt
-RUN export PATH="/root/.cargo/bin:${PATH}" && uv pip install --system --no-cache -r requirements.txt
+RUN /root/.cargo/bin/uv pip install --system --no-cache -r requirements.txt
 
 # Copy web_dashboard files
 COPY web_dashboard/ ./web_dashboard/

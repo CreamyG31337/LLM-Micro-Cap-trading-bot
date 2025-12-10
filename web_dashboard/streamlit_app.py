@@ -161,6 +161,71 @@ def show_login_page():
 def main():
     """Main dashboard function"""
     
+    # Handle magic link/OAuth callback from URL hash
+    # Streamlit can't read hash fragments directly, so we use JavaScript to extract and redirect
+    import base64
+    import json
+    
+    if "magic_link_processed" not in st.session_state:
+        # Inject JavaScript to extract token from URL hash and redirect with query param
+        st.markdown("""
+        <script>
+        (function() {
+            // Check URL hash for access_token
+            if (window.location.hash && window.location.hash.includes('access_token')) {
+                const hash = window.location.hash.substring(1);
+                const params = new URLSearchParams(hash);
+                const accessToken = params.get('access_token');
+                
+                if (accessToken) {
+                    // Redirect to same page with token as query parameter (Streamlit can read this)
+                    const url = new URL(window.location);
+                    url.hash = '';  // Remove hash
+                    url.searchParams.set('magic_token', accessToken);
+                    window.location.replace(url.toString());  // Use replace to avoid adding to history
+                }
+            }
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+        
+        st.session_state.magic_link_processed = True
+    
+    # Check for magic link token in query params
+    query_params = st.query_params
+    if "magic_token" in query_params and not is_authenticated():
+        access_token = query_params["magic_token"]
+        
+        # Decode JWT to get user info
+        try:
+            # Decode JWT payload (middle part)
+            token_parts = access_token.split('.')
+            if len(token_parts) >= 2:
+                # Decode base64url (JWT uses base64url)
+                payload = token_parts[1]
+                # Add padding if needed
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                
+                # Create user dict from token
+                user = {
+                    "id": user_data.get("sub"),
+                    "email": user_data.get("email")
+                }
+                
+                # Set session
+                set_user_session(access_token, user)
+                
+                # Clear query params
+                st.query_params.clear()
+                
+                st.success("Magic link login successful!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error processing magic link: {e}")
+            st.query_params.clear()
+    
     # Check authentication
     if not is_authenticated():
         show_login_page()

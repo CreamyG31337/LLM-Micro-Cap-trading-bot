@@ -18,7 +18,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy requirements and install Python dependencies with uv (faster than pip)
 COPY web_dashboard/requirements.txt ./requirements.txt
-RUN uv pip install --system --no-cache -r requirements.txt
+RUN export PATH="/root/.cargo/bin:${PATH}" && uv pip install --system --no-cache -r requirements.txt
 
 # Copy web_dashboard files
 COPY web_dashboard/ ./web_dashboard/

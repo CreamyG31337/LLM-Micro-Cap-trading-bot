@@ -67,27 +67,51 @@ def show_login_page():
     """Display login/register page"""
     st.markdown('<div class="main-header">📈 Portfolio Performance Dashboard</div>', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    tab1, tab2, tab3 = st.tabs(["Login", "Register", "Forgot Password"])
     
     with tab1:
         st.markdown("### Login")
+        
+        # Magic link option
+        use_magic_link = st.checkbox("Send magic link instead", key="use_magic_link")
+        
         with st.form("login_form"):
             email = st.text_input("Email", type="default")
-            password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
+            
+            if not use_magic_link:
+                password = st.text_input("Password", type="password")
+            else:
+                password = None
+                st.info("A magic link will be sent to your email. Click the link to log in.")
+            
+            submit = st.form_submit_button("Login" if not use_magic_link else "Send Magic Link")
             
             if submit:
-                if email and password:
-                    result = login_user(email, password)
-                    if result and "access_token" in result:
-                        set_user_session(result["access_token"], result["user"])
-                        st.success("Login successful!")
-                        st.rerun()
+                if email:
+                    if use_magic_link:
+                        # Send magic link
+                        from auth_utils import send_magic_link
+                        result = send_magic_link(email)
+                        if result and result.get("success"):
+                            st.success(result.get("message", "Magic link sent! Check your email."))
+                        else:
+                            error_msg = result.get("error", "Failed to send magic link") if result else "Failed to send magic link"
+                            st.error(f"Error: {error_msg}")
                     else:
-                        error_msg = result.get("error", "Login failed") if result else "Login failed"
-                        st.error(f"Login failed: {error_msg}")
+                        # Regular password login
+                        if password:
+                            result = login_user(email, password)
+                            if result and "access_token" in result:
+                                set_user_session(result["access_token"], result["user"])
+                                st.success("Login successful!")
+                                st.rerun()
+                            else:
+                                error_msg = result.get("error", "Login failed") if result else "Login failed"
+                                st.error(f"Login failed: {error_msg}")
+                        else:
+                            st.error("Please enter your password")
                 else:
-                    st.error("Please enter both email and password")
+                    st.error("Please enter your email")
     
     with tab2:
         st.markdown("### Register")
@@ -112,6 +136,26 @@ def show_login_page():
                             st.error(f"Registration failed: {error_msg}")
                 else:
                     st.error("Please fill in all fields")
+    
+    with tab3:
+        st.markdown("### Reset Password")
+        st.info("Enter your email address and we'll send you a password reset link.")
+        
+        with st.form("reset_password_form"):
+            email = st.text_input("Email", type="default", key="reset_email")
+            submit = st.form_submit_button("Send Reset Link")
+            
+            if submit:
+                if email:
+                    from auth_utils import request_password_reset
+                    result = request_password_reset(email)
+                    if result and result.get("success"):
+                        st.success(result.get("message", "Password reset email sent! Check your inbox."))
+                    else:
+                        error_msg = result.get("error", "Failed to send reset email") if result else "Failed to send reset email"
+                        st.error(f"Error: {error_msg}")
+                else:
+                    st.error("Please enter your email address")
 
 
 def main():

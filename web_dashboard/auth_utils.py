@@ -122,3 +122,56 @@ def set_user_session(access_token: str, user: Dict):
     st.session_state.user_id = user.get("id")
     st.session_state.user_email = user.get("email")
 
+
+def request_password_reset(email: str) -> Optional[Dict]:
+    """Request password reset email from Supabase"""
+    if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
+        return None
+    
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers={
+                "apikey": SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "email": email
+            }
+        )
+        
+        if response.status_code == 200:
+            return {"success": True, "message": "Password reset email sent"}
+        else:
+            error_data = response.json() if response.text else {}
+            return {"error": error_data.get("msg", "Failed to send reset email")}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def send_magic_link(email: str) -> Optional[Dict]:
+    """Send magic link login email from Supabase"""
+    if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
+        return None
+    
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/auth/v1/otp",
+            headers={
+                "apikey": SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "email": email,
+                "type": "magiclink"
+            }
+        )
+        
+        if response.status_code == 200:
+            return {"success": True, "message": "Magic link sent to your email"}
+        else:
+            error_data = response.json() if response.text else {}
+            return {"error": error_data.get("msg", "Failed to send magic link")}
+    except Exception as e:
+        return {"error": str(e)}
+

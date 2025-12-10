@@ -63,13 +63,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Inject JavaScript early to handle URL hash (magic links and errors)
-# This runs on every page load to catch hash fragments
-st.markdown("""
+# Use components.v1.html for more reliable JavaScript execution
+import streamlit.components.v1 as components
+
+# Always check for hash on page load (runs every time)
+components.html("""
 <script>
 (function() {
-    // Only process if we haven't already processed this hash
     const hash = window.location.hash;
-    if (hash && !sessionStorage.getItem('hash_processed_' + hash)) {
+    if (hash && hash.length > 1) {
         const hashParams = new URLSearchParams(hash.substring(1));
         
         // Check for errors first
@@ -84,7 +86,6 @@ st.markdown("""
             url.searchParams.set('auth_error', error);
             if (errorCode) url.searchParams.set('error_code', errorCode);
             if (errorDesc) url.searchParams.set('error_desc', decodeURIComponent(errorDesc));
-            sessionStorage.setItem('hash_processed_' + hash, 'true');
             window.location.replace(url.toString());
             return;
         }
@@ -96,14 +97,13 @@ st.markdown("""
             const url = new URL(window.location);
             url.hash = '';
             url.searchParams.set('magic_token', accessToken);
-            sessionStorage.setItem('hash_processed_' + hash, 'true');
             window.location.replace(url.toString());
             return;
         }
     }
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 
 def show_login_page():
@@ -204,52 +204,9 @@ def show_login_page():
 def main():
     """Main dashboard function"""
     
-    # Handle magic link/OAuth callback from URL hash
-    # Streamlit can't read hash fragments directly, so we use JavaScript to extract and redirect
+    # Handle magic link token from query params (set by JavaScript hash processor above)
     import base64
     import json
-    
-    # Check for errors in URL hash first
-    if "hash_error_checked" not in st.session_state:
-        # Inject JavaScript to check for errors in hash and redirect with error message
-        st.markdown("""
-        <script>
-        (function() {
-            if (window.location.hash) {
-                const hash = window.location.hash.substring(1);
-                const params = new URLSearchParams(hash);
-                
-                // Check for errors
-                if (params.get('error')) {
-                    const error = params.get('error');
-                    const errorCode = params.get('error_code') || '';
-                    const errorDesc = params.get('error_description') || '';
-                    
-                    // Redirect with error as query param
-                    const url = new URL(window.location);
-                    url.hash = '';
-                    url.searchParams.set('auth_error', error);
-                    if (errorCode) url.searchParams.set('error_code', errorCode);
-                    if (errorDesc) url.searchParams.set('error_desc', decodeURIComponent(errorDesc));
-                    window.location.replace(url.toString());
-                    return;
-                }
-                
-                // Check for access_token
-                const accessToken = params.get('access_token');
-                if (accessToken) {
-                    // Redirect to same page with token as query parameter (Streamlit can read this)
-                    const url = new URL(window.location);
-                    url.hash = '';  // Remove hash
-                    url.searchParams.set('magic_token', accessToken);
-                    window.location.replace(url.toString());  // Use replace to avoid adding to history
-                }
-            }
-        })();
-        </script>
-        """, unsafe_allow_html=True)
-        
-        st.session_state.hash_error_checked = True
     
     # Check for authentication errors in query params
     query_params = st.query_params

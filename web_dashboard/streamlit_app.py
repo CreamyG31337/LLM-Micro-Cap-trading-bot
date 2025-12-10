@@ -62,6 +62,49 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Inject JavaScript early to handle URL hash (magic links and errors)
+# This runs on every page load to catch hash fragments
+st.markdown("""
+<script>
+(function() {
+    // Only process if we haven't already processed this hash
+    const hash = window.location.hash;
+    if (hash && !sessionStorage.getItem('hash_processed_' + hash)) {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        
+        // Check for errors first
+        if (hashParams.get('error')) {
+            const error = hashParams.get('error');
+            const errorCode = hashParams.get('error_code') || '';
+            const errorDesc = hashParams.get('error_description') || '';
+            
+            // Redirect with error as query param
+            const url = new URL(window.location);
+            url.hash = '';
+            url.searchParams.set('auth_error', error);
+            if (errorCode) url.searchParams.set('error_code', errorCode);
+            if (errorDesc) url.searchParams.set('error_desc', decodeURIComponent(errorDesc));
+            sessionStorage.setItem('hash_processed_' + hash, 'true');
+            window.location.replace(url.toString());
+            return;
+        }
+        
+        // Check for access_token (magic link success)
+        const accessToken = hashParams.get('access_token');
+        if (accessToken) {
+            // Redirect to same page with token as query parameter
+            const url = new URL(window.location);
+            url.hash = '';
+            url.searchParams.set('magic_token', accessToken);
+            sessionStorage.setItem('hash_processed_' + hash, 'true');
+            window.location.replace(url.toString());
+            return;
+        }
+    }
+})();
+</script>
+""", unsafe_allow_html=True)
+
 
 def show_login_page():
     """Display login/register page"""
@@ -166,17 +209,34 @@ def main():
     import base64
     import json
     
-    if "magic_link_processed" not in st.session_state:
-        # Inject JavaScript to extract token from URL hash and redirect with query param
+    # Check for errors in URL hash first
+    if "hash_error_checked" not in st.session_state:
+        # Inject JavaScript to check for errors in hash and redirect with error message
         st.markdown("""
         <script>
         (function() {
-            // Check URL hash for access_token
-            if (window.location.hash && window.location.hash.includes('access_token')) {
+            if (window.location.hash) {
                 const hash = window.location.hash.substring(1);
                 const params = new URLSearchParams(hash);
-                const accessToken = params.get('access_token');
                 
+                // Check for errors
+                if (params.get('error')) {
+                    const error = params.get('error');
+                    const errorCode = params.get('error_code') || '';
+                    const errorDesc = params.get('error_description') || '';
+                    
+                    // Redirect with error as query param
+                    const url = new URL(window.location);
+                    url.hash = '';
+                    url.searchParams.set('auth_error', error);
+                    if (errorCode) url.searchParams.set('error_code', errorCode);
+                    if (errorDesc) url.searchParams.set('error_desc', decodeURIComponent(errorDesc));
+                    window.location.replace(url.toString());
+                    return;
+                }
+                
+                // Check for access_token
+                const accessToken = params.get('access_token');
                 if (accessToken) {
                     // Redirect to same page with token as query parameter (Streamlit can read this)
                     const url = new URL(window.location);
@@ -189,7 +249,24 @@ def main():
         </script>
         """, unsafe_allow_html=True)
         
-        st.session_state.magic_link_processed = True
+        st.session_state.hash_error_checked = True
+    
+    # Check for authentication errors in query params
+    query_params = st.query_params
+    if "auth_error" in query_params:
+        error_code = query_params.get("error_code", "")
+        error_desc = query_params.get("error_desc", "")
+        
+        # Show user-friendly error message
+        if error_code == "otp_expired":
+            st.error("❌ **Magic link expired** - The login link has expired. Please request a new magic link.")
+        elif error_code:
+            st.error(f"❌ **Authentication Error** - {error_desc or error_code}")
+        else:
+            st.error(f"❌ **Authentication Error** - {error_desc or 'An error occurred during authentication'}")
+        
+        # Clear error params
+        st.query_params.clear()
     
     # Check for magic link token in query params
     query_params = st.query_params

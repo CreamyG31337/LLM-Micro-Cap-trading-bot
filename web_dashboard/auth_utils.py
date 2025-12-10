@@ -8,6 +8,8 @@ import os
 import streamlit as st
 from typing import Optional, Dict
 import requests
+import base64
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -116,11 +118,32 @@ def logout_user():
         del st.session_state.user_email
 
 
-def set_user_session(access_token: str, user: Dict):
-    """Store user session data"""
+def set_user_session(access_token: str, user: Optional[Dict] = None):
+    """Store user session data. If user is None, decode from JWT token."""
     st.session_state.user_token = access_token
-    st.session_state.user_id = user.get("id")
-    st.session_state.user_email = user.get("email")
+    
+    if user:
+        st.session_state.user_id = user.get("id")
+        st.session_state.user_email = user.get("email")
+    else:
+        # Decode user info from JWT token if user object not provided
+        try:
+            token_parts = access_token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                # Add padding if needed (JWT uses base64url)
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                st.session_state.user_id = user_data.get("sub")
+                st.session_state.user_email = user_data.get("email")
+            else:
+                st.session_state.user_id = None
+                st.session_state.user_email = None
+        except Exception:
+            # If decoding fails, just store token
+            st.session_state.user_id = None
+            st.session_state.user_email = None
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

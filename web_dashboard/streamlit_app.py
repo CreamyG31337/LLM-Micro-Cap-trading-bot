@@ -44,6 +44,56 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# CRITICAL: Inject JavaScript in page config to run before anything else
+# This handles magic link callbacks from URL hash
+st.markdown("""
+<script>
+// Run immediately on page load - must be in head/early body
+window.addEventListener('DOMContentLoaded', function() {
+    const hash = window.location.hash;
+    console.log('[Magic Link] Checking hash:', hash);
+    if (hash && hash.length > 1) {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        
+        // Check for errors
+        if (hashParams.get('error')) {
+            console.log('[Magic Link] Found error, redirecting...');
+            const url = new URL(window.location);
+            url.hash = '';
+            url.searchParams.set('auth_error', hashParams.get('error'));
+            if (hashParams.get('error_code')) url.searchParams.set('error_code', hashParams.get('error_code'));
+            if (hashParams.get('error_description')) url.searchParams.set('error_desc', decodeURIComponent(hashParams.get('error_description')));
+            window.location.replace(url.toString());
+            return;
+        }
+        
+        // Check for access_token
+        const accessToken = hashParams.get('access_token');
+        if (accessToken) {
+            console.log('[Magic Link] Found access_token, redirecting...');
+            const url = new URL(window.location);
+            url.hash = '';
+            url.searchParams.set('magic_token', accessToken);
+            window.location.replace(url.toString());
+            return;
+        }
+    }
+});
+
+// Also try immediately (in case DOMContentLoaded already fired)
+(function() {
+    const hash = window.location.hash;
+    if (hash && hash.length > 1) {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        if (hashParams.get('access_token') || hashParams.get('error')) {
+            console.log('[Magic Link] Immediate check, hash found');
+            // Let DOMContentLoaded handler process it
+        }
+    }
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # Custom CSS
 st.markdown("""
     <style>
@@ -62,15 +112,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Inject JavaScript early to handle URL hash (magic links and errors)
-# Use components.v1.html for more reliable JavaScript execution
-import streamlit.components.v1 as components
-
-# Always check for hash on page load (runs every time)
-components.html("""
+# Inject JavaScript immediately to handle URL hash (magic links and errors)
+# This must run before Streamlit renders to catch the hash
+st.markdown("""
 <script>
+// Run immediately, don't wait for anything
 (function() {
     const hash = window.location.hash;
+    console.log('Checking hash:', hash);
     if (hash && hash.length > 1) {
         const hashParams = new URLSearchParams(hash.substring(1));
         
@@ -80,7 +129,7 @@ components.html("""
             const errorCode = hashParams.get('error_code') || '';
             const errorDesc = hashParams.get('error_description') || '';
             
-            // Redirect with error as query param
+            console.log('Found error in hash, redirecting...');
             const url = new URL(window.location);
             url.hash = '';
             url.searchParams.set('auth_error', error);
@@ -93,7 +142,7 @@ components.html("""
         // Check for access_token (magic link success)
         const accessToken = hashParams.get('access_token');
         if (accessToken) {
-            // Redirect to same page with token as query parameter
+            console.log('Found access_token in hash, redirecting...');
             const url = new URL(window.location);
             url.hash = '';
             url.searchParams.set('magic_token', accessToken);
@@ -103,7 +152,7 @@ components.html("""
     }
 })();
 </script>
-""", height=0)
+""", unsafe_allow_html=True)
 
 
 def show_login_page():

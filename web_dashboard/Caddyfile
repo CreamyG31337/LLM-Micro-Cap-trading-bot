@@ -1,8 +1,21 @@
 # Caddyfile for Streamlit reverse proxy
-# Replace example.com with your actual domain
+# Replace ai-trading.hobo.cash with your actual domain
 
-example.com {
-    # Reverse proxy to Streamlit
+ai-trading.hobo.cash {
+    # Serve auth callback HTML (handles magic links & password resets)
+    handle /auth_callback.html {
+        root * /ai-trading/frontend
+        file_server
+    }
+    
+    # Future: If you build a frontend, you can add:
+    # handle /static/* {
+    #     root * /ai-trading/frontend/dist
+    #     file_server
+    #     uri strip_prefix /static
+    # }
+    
+    # Reverse proxy everything else to Streamlit
     reverse_proxy localhost:8501 {
         # WebSocket support for Streamlit
         transport http {

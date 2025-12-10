@@ -154,6 +154,9 @@ def send_magic_link(email: str) -> Optional[Dict]:
     if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
         return None
     
+    # Redirect to auth callback page which processes hash and redirects to Streamlit
+    redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", "https://ai-trading.hobo.cash/auth_callback.html")
+    
     try:
         response = requests.post(
             f"{SUPABASE_URL}/auth/v1/otp",
@@ -163,7 +166,10 @@ def send_magic_link(email: str) -> Optional[Dict]:
             },
             json={
                 "email": email,
-                "type": "magiclink"
+                "type": "magiclink",
+                "options": {
+                    "email_redirect_to": redirect_url
+                }
             }
         )
         

@@ -314,11 +314,11 @@ def main():
                         if new_password != confirm_password:
                             st.error("Passwords do not match")
                         else:
-                            # Update password using the access_token directly
-                            # The access_token from the recovery link is already verified and can be used directly
+                            # Update password using Supabase client with proper session validation
+                            # The access_token from the recovery link needs to be validated and used to establish a session
                             try:
                                 import os
-                                import requests
+                                from supabase import create_client
                                 
                                 supabase_url = os.getenv("SUPABASE_URL")
                                 supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
@@ -327,79 +327,133 @@ def main():
                                     st.error("❌ **Error**: Supabase configuration missing. Please contact support.")
                                     return
                                 
-                                # Show processing message
-                                with st.spinner("Updating password..."):
-                                    # Use REST API directly with the access_token
-                                    # The access_token is already a verified JWT token from Supabase
-                                    response = requests.put(
-                                        f"{supabase_url}/auth/v1/user",
-                                        headers={
-                                            "apikey": supabase_key,
-                                            "Authorization": f"Bearer {access_token}",
-                                            "Content-Type": "application/json"
-                                        },
-                                        json={"password": new_password},
-                                        timeout=10
-                                    )
+                                # Extract email from token for verification
+                                user_email = None
+                                try:
+                                    token_parts = access_token.split('.')
+                                    if len(token_parts) >= 2:
+                                        payload = token_parts[1]
+                                        payload += '=' * (4 - len(payload) % 4)
+                                        decoded = base64.urlsafe_b64decode(payload)
+                                        user_data = json.loads(decoded)
+                                        user_email = user_data.get("email")
+                                except Exception as decode_error:
+                                    st.error(f"❌ **Error**: Failed to decode recovery token: {decode_error}. Please request a new reset link.")
+                                    return
                                 
-                                # Check response
-                                if response.status_code == 200:
-                                    response_data = response.json() if response.text else {}
+                                if not user_email:
+                                    st.error("❌ **Error**: Could not extract email from recovery token. Please request a new reset link.")
+                                    return
+                                
+                                # Show processing message
+                                with st.spinner("Verifying recovery token and updating password..."):
+                                    # Create Supabase client
+                                    supabase = create_client(supabase_url, supabase_key)
                                     
-                                    # Verify the response contains user data (indicates success)
-                                    if "id" in response_data or "user" in response_data or response_data.get("email"):
-                                        # Success - password was updated
-                                        st.session_state.password_reset_completed = True
-                                        
-                                        # Show success message with confirmation
-                                        st.success("✅ **Password updated successfully!**")
-                                        st.info("🔄 **Redirecting to login page...** You can now log in with your new password.")
-                                        
-                                        # Clear session and query params
-                                        logout_user()
-                                        if "reset_token" in st.session_state:
-                                            del st.session_state.reset_token
-                                        
-                                        # Clean URL and redirect after a short delay
-                                        st.markdown("""
-                                        <script>
-                                        setTimeout(function() {
-                                            window.history.replaceState({}, document.title, window.location.pathname);
-                                            window.location.href = window.location.origin;
-                                        }, 3000);
-                                        </script>
-                                        """, unsafe_allow_html=True)
-                                        
-                                        st.query_params.clear()
-                                        st.rerun()
-                                    else:
-                                        # Response was 200 but doesn't contain expected user data
-                                        st.error("❌ **Error**: Password update response was invalid. Please try again or request a new reset link.")
-                                        st.json(response_data)  # Show response for debugging
-                                else:
-                                    # API returned an error
+                                    # Establish session with the recovery token
+                                    # This validates the token and creates a proper session
+                                    # Recovery tokens may not have refresh_token, so we handle that
                                     try:
-                                        error_data = response.json() if response.text else {}
-                                        error_msg = error_data.get("msg") or error_data.get("message") or error_data.get("error_description") or f"HTTP {response.status_code}"
+                                        # Try to set session with the access_token
+                                        # For recovery tokens, we may only have access_token, not refresh_token
+                                        session_response = supabase.auth.set_session(
+                                            access_token=access_token,
+                                            refresh_token=""  # Recovery tokens may not have refresh_token
+                                        )
                                         
-                                        # Provide helpful error messages
-                                        if response.status_code == 401:
-                                            st.error("❌ **Error**: Reset link expired or invalid. Please request a new password reset link.")
-                                        elif response.status_code == 400:
-                                            st.error(f"❌ **Error**: {error_msg}")
+                                        # Verify session was established
+                                        if not session_response or not hasattr(session_response, 'user') or not session_response.user:
+                                            raise Exception("Failed to establish session with recovery token")
+                                        
+                                    except Exception as session_error:
+                                        # If set_session fails, try alternative: use verify_otp if token is OTP format
+                                        # But since we have access_token (JWT), we'll use REST API as fallback
+                                        import requests
+                                        
+                                        # Fallback: Use REST API with access_token directly
+                                        # This still validates the token server-side via JWT verification
+                                        response = requests.put(
+                                            f"{supabase_url}/auth/v1/user",
+                                            headers={
+                                                "apikey": supabase_key,
+                                                "Authorization": f"Bearer {access_token}",
+                                                "Content-Type": "application/json"
+                                            },
+                                            json={"password": new_password},
+                                            timeout=10
+                                        )
+                                        
+                                        if response.status_code == 200:
+                                            response_data = response.json() if response.text else {}
+                                            # Check truthiness consistently for all fields
+                                            if response_data.get("id") or response_data.get("user") or response_data.get("email"):
+                                                # Success via REST API fallback
+                                                st.session_state.password_reset_completed = True
+                                                st.success("✅ **Password updated successfully!**")
+                                                st.info("🔄 **Redirecting to login page...** You can now log in with your new password.")
+                                                
+                                                logout_user()
+                                                if "reset_token" in st.session_state:
+                                                    del st.session_state.reset_token
+                                                
+                                                st.markdown("""
+                                                <script>
+                                                setTimeout(function() {
+                                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                                    window.location.href = window.location.origin;
+                                                }, 3000);
+                                                </script>
+                                                """, unsafe_allow_html=True)
+                                                
+                                                st.query_params.clear()
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ **Error**: Password update response was invalid. Please try again or request a new reset link.")
+                                                return
                                         else:
-                                            st.error(f"❌ **Error**: Failed to update password. {error_msg}")
+                                            error_data = response.json() if response.text else {}
+                                            error_msg = error_data.get("msg") or error_data.get("message") or f"HTTP {response.status_code}"
+                                            st.error(f"❌ **Error**: Failed to update password. Session setup failed: {session_error}. API error: {error_msg}. Please request a new reset link.")
+                                            return
+                                    
+                                    # Session established successfully, now update password
+                                    try:
+                                        user_response = supabase.auth.update_user({"password": new_password})
                                         
-                                        # Show full error for debugging
+                                        if user_response and hasattr(user_response, 'user') and user_response.user:
+                                            # Success - password was updated
+                                            st.session_state.password_reset_completed = True
+                                            
+                                            # Show success message with confirmation
+                                            st.success("✅ **Password updated successfully!**")
+                                            st.info("🔄 **Redirecting to login page...** You can now log in with your new password.")
+                                            
+                                            # Clear session and query params
+                                            logout_user()
+                                            if "reset_token" in st.session_state:
+                                                del st.session_state.reset_token
+                                            
+                                            # Clean URL and redirect after a short delay
+                                            st.markdown("""
+                                            <script>
+                                            setTimeout(function() {
+                                                window.history.replaceState({}, document.title, window.location.pathname);
+                                                window.location.href = window.location.origin;
+                                            }, 3000);
+                                            </script>
+                                            """, unsafe_allow_html=True)
+                                            
+                                            st.query_params.clear()
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ **Error**: Password update response was invalid. Please try again or request a new reset link.")
+                                            
+                                    except Exception as update_error:
+                                        error_details = str(update_error)
+                                        st.error(f"❌ **Error**: Failed to update password after session establishment: {error_details}. Please try again or request a new reset link.")
                                         with st.expander("Error Details"):
-                                            st.json(error_data)
-                                    except Exception:
-                                        st.error(f"❌ **Error**: Failed to update password (HTTP {response.status_code}). Please try again or request a new reset link.")
+                                            st.exception(update_error)
                                         
-                            except requests.exceptions.Timeout:
-                                st.error("❌ **Error**: Request timed out. Please check your connection and try again.")
-                            except requests.exceptions.RequestException as e:
-                                st.error(f"❌ **Error**: Network error - {str(e)}. Please try again.")
                             except Exception as e:
                                 error_msg = str(e)
                                 st.error(f"❌ **Error**: Unexpected error updating password: {error_msg}. Please try again or request a new reset link.")

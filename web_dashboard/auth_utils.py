@@ -177,23 +177,19 @@ def request_password_reset(email: str) -> Optional[Dict]:
     redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", "https://ai-trading.hobo.cash/auth_callback.html")
     
     try:
-        response = requests.post(
-            f"{SUPABASE_URL}/auth/v1/recover",
-            headers={
-                "apikey": SUPABASE_PUBLISHABLE_KEY,
-                "Content-Type": "application/json"
-            },
-            json={
-                "email": email,
+        # Use Supabase client library which handles redirect_to correctly
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+        response = supabase.auth.reset_password_for_email(
+            email,
+            {
                 "redirect_to": redirect_url
             }
         )
         
-        if response.status_code == 200:
+        if response:
             return {"success": True, "message": "Password reset email sent"}
         else:
-            error_data = response.json() if response.text else {}
-            return {"error": error_data.get("msg", "Failed to send reset email")}
+            return {"error": "Failed to send reset email"}
     except Exception as e:
         return {"error": str(e)}
 

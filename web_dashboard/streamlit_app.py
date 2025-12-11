@@ -44,56 +44,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CRITICAL: Inject JavaScript in page config to run before anything else
-# This handles magic link callbacks from URL hash
-st.markdown("""
-<script>
-// Run immediately on page load - must be in head/early body
-window.addEventListener('DOMContentLoaded', function() {
-    const hash = window.location.hash;
-    console.log('[Magic Link] Checking hash:', hash);
-    if (hash && hash.length > 1) {
-        const hashParams = new URLSearchParams(hash.substring(1));
-        
-        // Check for errors
-        if (hashParams.get('error')) {
-            console.log('[Magic Link] Found error, redirecting...');
-            const url = new URL(window.location);
-            url.hash = '';
-            url.searchParams.set('auth_error', hashParams.get('error'));
-            if (hashParams.get('error_code')) url.searchParams.set('error_code', hashParams.get('error_code'));
-            if (hashParams.get('error_description')) url.searchParams.set('error_desc', decodeURIComponent(hashParams.get('error_description')));
-            window.location.replace(url.toString());
-            return;
-        }
-        
-        // Check for access_token
-        const accessToken = hashParams.get('access_token');
-        if (accessToken) {
-            console.log('[Magic Link] Found access_token, redirecting...');
-            const url = new URL(window.location);
-            url.hash = '';
-            url.searchParams.set('magic_token', accessToken);
-            window.location.replace(url.toString());
-            return;
-        }
-    }
-});
-
-// Also try immediately (in case DOMContentLoaded already fired)
-(function() {
-    const hash = window.location.hash;
-    if (hash && hash.length > 1) {
-        const hashParams = new URLSearchParams(hash.substring(1));
-        if (hashParams.get('access_token') || hashParams.get('error')) {
-            console.log('[Magic Link] Immediate check, hash found');
-            // Let DOMContentLoaded handler process it
-        }
-    }
-})();
-</script>
-""", unsafe_allow_html=True)
-
 # Custom CSS
 st.markdown("""
     <style>
@@ -110,48 +60,6 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     </style>
-""", unsafe_allow_html=True)
-
-# Inject JavaScript immediately to handle URL hash (magic links and errors)
-# This must run before Streamlit renders to catch the hash
-st.markdown("""
-<script>
-// Run immediately, don't wait for anything
-(function() {
-    const hash = window.location.hash;
-    console.log('Checking hash:', hash);
-    if (hash && hash.length > 1) {
-        const hashParams = new URLSearchParams(hash.substring(1));
-        
-        // Check for errors first
-        if (hashParams.get('error')) {
-            const error = hashParams.get('error');
-            const errorCode = hashParams.get('error_code') || '';
-            const errorDesc = hashParams.get('error_description') || '';
-            
-            console.log('Found error in hash, redirecting...');
-            const url = new URL(window.location);
-            url.hash = '';
-            url.searchParams.set('auth_error', error);
-            if (errorCode) url.searchParams.set('error_code', errorCode);
-            if (errorDesc) url.searchParams.set('error_desc', decodeURIComponent(errorDesc));
-            window.location.replace(url.toString());
-            return;
-        }
-        
-        // Check for access_token (magic link success)
-        const accessToken = hashParams.get('access_token');
-        if (accessToken) {
-            console.log('Found access_token in hash, redirecting...');
-            const url = new URL(window.location);
-            url.hash = '';
-            url.searchParams.set('magic_token', accessToken);
-            window.location.replace(url.toString());
-            return;
-        }
-    }
-})();
-</script>
 """, unsafe_allow_html=True)
 
 
@@ -280,40 +188,118 @@ def main():
         # Clear error params
         st.query_params.clear()
     
-    # Check for magic link token in query params
+    # Check for magic link or password reset token in query params
     query_params = st.query_params
     if "magic_token" in query_params and not is_authenticated():
         access_token = query_params["magic_token"]
+        auth_type = query_params.get("auth_type", "magiclink")
         
-        # Decode JWT to get user info
-        try:
-            # Decode JWT payload (middle part)
-            token_parts = access_token.split('.')
-            if len(token_parts) >= 2:
-                # Decode base64url (JWT uses base64url)
-                payload = token_parts[1]
-                # Add padding if needed
-                payload += '=' * (4 - len(payload) % 4)
-                decoded = base64.urlsafe_b64decode(payload)
-                user_data = json.loads(decoded)
+        # Handle password reset
+        if auth_type == "recovery":
+            # Set session with reset token first (required for password update)
+            if "reset_token" not in st.session_state or st.session_state.reset_token != access_token:
+                try:
+                    # Decode JWT to get user info
+                    token_parts = access_token.split('.')
+                    if len(token_parts) >= 2:
+                        payload = token_parts[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        decoded = base64.urlsafe_b64decode(payload)
+                        user_data = json.loads(decoded)
+                        
+                        user = {
+                            "id": user_data.get("sub"),
+                            "email": user_data.get("email")
+                        }
+                        
+                        # Set session with reset token
+                        set_user_session(access_token, user)
+                        st.session_state.reset_token = access_token
+                except Exception as e:
+                    st.error(f"Error processing reset token: {e}")
+                    st.query_params.clear()
+                    return
+            
+            # Show password reset form
+            st.markdown("### Reset Your Password")
+            st.info("Enter your new password below.")
+            
+            with st.form("new_password_form"):
+                new_password = st.text_input("New Password", type="password", key="new_password")
+                confirm_password = st.text_input("Confirm Password", type="password", key="confirm_new_password")
+                submit = st.form_submit_button("Update Password")
                 
-                # Create user dict from token
-                user = {
-                    "id": user_data.get("sub"),
-                    "email": user_data.get("email")
-                }
-                
-                # Set session
-                set_user_session(access_token, user)
-                
-                # Clear query params
+                if submit:
+                    if new_password and confirm_password:
+                        if new_password != confirm_password:
+                            st.error("Passwords do not match")
+                        else:
+                            # Update password using REST API with reset token
+                            try:
+                                import requests
+                                import os
+                                supabase_url = os.getenv("SUPABASE_URL")
+                                supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+                                
+                                # Update password using the reset token
+                                response = requests.put(
+                                    f"{supabase_url}/auth/v1/user",
+                                    headers={
+                                        "apikey": supabase_key,
+                                        "Authorization": f"Bearer {access_token}",
+                                        "Content-Type": "application/json"
+                                    },
+                                    json={
+                                        "password": new_password
+                                    }
+                                )
+                                
+                                if response.status_code == 200:
+                                    st.success("✅ Password updated successfully! You can now log in with your new password.")
+                                    # Clear session and query params
+                                    logout_user()
+                                    if "reset_token" in st.session_state:
+                                        del st.session_state.reset_token
+                                    st.query_params.clear()
+                                    st.rerun()
+                                else:
+                                    error_data = response.json() if response.text else {}
+                                    error_msg = error_data.get("msg", "Failed to update password")
+                                    st.error(f"Error: {error_msg}. Please try again or request a new reset link.")
+                            except Exception as e:
+                                st.error(f"Error updating password: {e}")
+                    else:
+                        st.error("Please fill in both password fields")
+        else:
+            # Handle magic link login
+            try:
+                # Decode JWT payload (middle part)
+                token_parts = access_token.split('.')
+                if len(token_parts) >= 2:
+                    # Decode base64url (JWT uses base64url)
+                    payload = token_parts[1]
+                    # Add padding if needed
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = base64.urlsafe_b64decode(payload)
+                    user_data = json.loads(decoded)
+                    
+                    # Create user dict from token
+                    user = {
+                        "id": user_data.get("sub"),
+                        "email": user_data.get("email")
+                    }
+                    
+                    # Set session
+                    set_user_session(access_token, user)
+                    
+                    # Clear query params
+                    st.query_params.clear()
+                    
+                    st.success("Magic link login successful!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error processing magic link: {e}")
                 st.query_params.clear()
-                
-                st.success("Magic link login successful!")
-                st.rerun()
-        except Exception as e:
-            st.error(f"Error processing magic link: {e}")
-            st.query_params.clear()
     
     # Check authentication
     if not is_authenticated():

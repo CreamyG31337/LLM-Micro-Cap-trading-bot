@@ -29,6 +29,10 @@
                 // Check for access_token (magic link or password reset success)
                 else if (params.get('access_token')) {
                     streamlitUrl.searchParams.set('magic_token', params.get('access_token'));
+                    // Pass type to distinguish between magic link and password reset
+                    if (params.get('type')) {
+                        streamlitUrl.searchParams.set('auth_type', params.get('type'));
+                    }
                 }
                 
                 window.location.replace(streamlitUrl.toString());

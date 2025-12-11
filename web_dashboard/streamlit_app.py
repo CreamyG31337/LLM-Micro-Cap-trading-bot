@@ -311,27 +311,115 @@ def main():
                         if new_password != confirm_password:
                             st.error("Passwords do not match")
                         else:
-                            # Update password using REST API with reset token
+                            # Update password using Supabase client with recovery token
                             try:
-                                import requests
                                 import os
+                                from supabase import create_client
+                                
                                 supabase_url = os.getenv("SUPABASE_URL")
                                 supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
                                 
-                                # Update password using the reset token
-                                response = requests.put(
-                                    f"{supabase_url}/auth/v1/user",
-                                    headers={
-                                        "apikey": supabase_key,
-                                        "Authorization": f"Bearer {access_token}",
-                                        "Content-Type": "application/json"
-                                    },
-                                    json={
-                                        "password": new_password
-                                    }
-                                )
+                                if not supabase_url or not supabase_key:
+                                    st.error("Error: Supabase configuration missing")
+                                    return
                                 
-                                if response.status_code == 200:
+                                # Create Supabase client
+                                supabase = create_client(supabase_url, supabase_key)
+                                
+                                # Verify the recovery token using verify_otp() with type "recovery"
+                                # This is the correct way to authenticate with a recovery token in Supabase
+                                # The access_token from the recovery link needs to be verified first
+                                session_verified = False
+                                verification_error = None
+                                user_email_for_verification = None
+                                
+                                # Extract email from the access_token for verify_otp
+                                try:
+                                    token_parts = access_token.split('.')
+                                    if len(token_parts) >= 2:
+                                        payload = token_parts[1]
+                                        payload += '=' * (4 - len(payload) % 4)
+                                        decoded = base64.urlsafe_b64decode(payload)
+                                        user_data = json.loads(decoded)
+                                        user_email_for_verification = user_data.get("email")
+                                except Exception as decode_error:
+                                    st.error(f"Error: Failed to decode recovery token: {decode_error}. Please request a new reset link.")
+                                    return
+                                
+                                if not user_email_for_verification:
+                                    st.error("Error: Could not extract email from recovery token. Please request a new reset link.")
+                                    return
+                                
+                                # Verify the recovery token using verify_otp
+                                try:
+                                    # verify_otp requires email, token, and type="recovery"
+                                    # The access_token from the recovery link is the token to verify
+                                    verification_response = supabase.auth.verify_otp({
+                                        "email": user_email_for_verification,
+                                        "token": access_token,
+                                        "type": "recovery"
+                                    })
+                                    
+                                    if verification_response and hasattr(verification_response, 'user') and verification_response.user:
+                                        session_verified = True
+                                    else:
+                                        verification_error = "Verification response was invalid"
+                                except Exception as e:
+                                    # Verification failed, store error for proper error reporting
+                                    verification_error = str(e)
+                                
+                                # Try to update password using Supabase client
+                                user_response = None
+                                update_success = False
+                                
+                                if session_verified:
+                                    # Token verified successfully, use client method to update password
+                                    try:
+                                        user_response = supabase.auth.update_user({"password": new_password})
+                                        if user_response and hasattr(user_response, 'user') and user_response.user:
+                                            update_success = True
+                                    except Exception as update_error:
+                                        # Client method failed even with verified session
+                                        error_details = str(update_error)
+                                        st.error(f"Error: Failed to update password after token verification: {error_details}. Please try again or request a new reset link.")
+                                        return
+                                else:
+                                    # Token verification failed, fall back to REST API with proper error handling
+                                    import requests
+                                    try:
+                                        response = requests.put(
+                                            f"{supabase_url}/auth/v1/user",
+                                            headers={
+                                                "apikey": supabase_key,
+                                                "Authorization": f"Bearer {access_token}",
+                                                "Content-Type": "application/json"
+                                            },
+                                            json={"password": new_password},
+                                            timeout=10
+                                        )
+                                        
+                                        if response.status_code == 200:
+                                            # REST API succeeded
+                                            update_success = True
+                                            # Create a mock response object for consistency
+                                            class MockResponse:
+                                                def __init__(self):
+                                                    self.user = {"id": "updated"}  # Indicate success
+                                            user_response = MockResponse()
+                                        else:
+                                            # REST API failed
+                                            error_data = response.json() if response.text else {}
+                                            error_msg = error_data.get("msg") or error_data.get("message") or f"HTTP {response.status_code}"
+                                            st.error(f"Error: Failed to update password via API. Token verification failed: {verification_error}. API error: {error_msg}. Please request a new reset link.")
+                                            return
+                                    except Exception as api_error:
+                                        # REST API call itself failed
+                                        error_details = str(api_error)
+                                        st.error(f"Error: Failed to update password. Token verification failed: {verification_error}. API call failed: {error_details}. Please request a new reset link.")
+                                        return
+                                
+                                # Check if update was successful
+                                if update_success and user_response and hasattr(user_response, 'user') and user_response.user:
                                     # Mark password reset as completed
                                     st.session_state.password_reset_completed = True
                                     st.success("✅ Password updated successfully! You can now log in with your new password.")
@@ -354,11 +442,10 @@ def main():
                                     st.query_params.clear()
                                     st.rerun()
                                 else:
-                                    error_data = response.json() if response.text else {}
-                                    error_msg = error_data.get("msg", "Failed to update password")
-                                    st.error(f"Error: {error_msg}. Please try again or request a new reset link.")
+                                    st.error("Error: Failed to update password. The response was invalid. Please try again or request a new reset link.")
                             except Exception as e:
-                                st.error(f"Error updating password: {e}")
+                                error_msg = str(e)
+                                st.error(f"Error updating password: {error_msg}. Please try again or request a new reset link.")
                     else:
                         st.error("Please fill in both password fields")
         else:

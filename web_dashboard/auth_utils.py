@@ -11,6 +11,7 @@ import requests
 import base64
 import json
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
@@ -206,24 +207,19 @@ def send_magic_link(email: str) -> Optional[Dict]:
     redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", "https://ai-trading.hobo.cash/auth_callback.html")
     
     try:
-        response = requests.post(
-            f"{SUPABASE_URL}/auth/v1/otp",
-            headers={
-                "apikey": SUPABASE_PUBLISHABLE_KEY,
-                "Content-Type": "application/json"
-            },
-            json={
-                "email": email,
-                "type": "magiclink",
-                "redirect_to": redirect_url
+        # Use Supabase client library which handles redirect_to correctly
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+        response = supabase.auth.sign_in_with_otp({
+            "email": email,
+            "options": {
+                "email_redirect_to": redirect_url
             }
-        )
+        })
         
-        if response.status_code == 200:
+        if response:
             return {"success": True, "message": "Magic link sent to your email"}
         else:
-            error_data = response.json() if response.text else {}
-            return {"error": error_data.get("msg", "Failed to send magic link")}
+            return {"error": "Failed to send magic link"}
     except Exception as e:
         return {"error": str(e)}
 

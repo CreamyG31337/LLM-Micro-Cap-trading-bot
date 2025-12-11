@@ -70,14 +70,35 @@ def register_user(email: str, password: str) -> Optional[Dict]:
         
         if response.status_code == 200:
             auth_data = response.json()
+            # Supabase may return user without access_token if email confirmation is required
             return {
                 "access_token": auth_data.get("access_token"),
                 "user": auth_data.get("user"),
-                "expires_at": auth_data.get("expires_at")
+                "expires_at": auth_data.get("expires_at"),
+                "requires_confirmation": auth_data.get("access_token") is None
             }
         else:
-            error_data = response.json() if response.text else {}
-            return {"error": error_data.get("msg", "Registration failed")}
+            error_data = {}
+            try:
+                error_data = response.json() if response.text else {}
+            except:
+                error_data = {"message": response.text or "Unknown error"}
+            
+            error_msg = error_data.get("msg") or error_data.get("message") or error_data.get("error_description") or "Registration failed"
+            error_code = error_data.get("error") or error_data.get("error_code", "")
+            
+            if "database" in error_msg.lower() or "Database error" in error_msg:
+                return {
+                    "error": f"Database error: {error_msg}. This might be due to a database trigger failing. Check Supabase logs for details.",
+                    "error_code": error_code,
+                    "details": error_data
+                }
+            
+            return {
+                "error": error_msg,
+                "error_code": error_code,
+                "details": error_data
+            }
     except Exception as e:
         return {"error": str(e)}
 

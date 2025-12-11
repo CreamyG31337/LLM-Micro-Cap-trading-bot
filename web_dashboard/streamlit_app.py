@@ -219,13 +219,19 @@ def show_login_page():
                         st.error("Passwords do not match")
                     else:
                         result = register_user(email, password)
-                        if result and "access_token" in result:
-                            set_user_session(result["access_token"], result["user"])
-                            st.success("Registration successful! Please check your email to confirm your account.")
-                            st.rerun()
+                        if result and not result.get("error"):
+                            # Registration succeeded
+                            if result.get("access_token"):
+                                # User is logged in immediately (email confirmation not required)
+                                set_user_session(result["access_token"], result.get("user"))
+                                st.success("✅ Registration successful! You are now logged in.")
+                                st.rerun()
+                            else:
+                                # Email confirmation required
+                                st.info("📧 **Registration successful!** Please check your email to confirm your account. Click the confirmation link in the email to complete registration.")
                         else:
                             error_msg = result.get("error", "Registration failed") if result else "Registration failed"
-                            st.error(f"Registration failed: {error_msg}")
+                            st.error(f"❌ Registration failed: {error_msg}")
                 else:
                     st.error("Please fill in all fields")
     

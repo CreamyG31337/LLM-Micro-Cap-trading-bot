@@ -138,6 +138,13 @@ def logout_user():
         del st.session_state.user_id
     if "user_email" in st.session_state:
         del st.session_state.user_email
+    
+    # Clear token from localStorage
+    st.markdown("""
+    <script>
+    localStorage.removeItem('auth_token');
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
@@ -166,6 +173,15 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             # If decoding fails, just store token
             st.session_state.user_id = None
             st.session_state.user_email = None
+    
+    # Store token in localStorage for persistence across browser windows/tabs
+    # Escape single quotes in token to prevent JavaScript errors
+    escaped_token = access_token.replace("'", "\\'").replace("\n", "\\n")
+    st.markdown(f"""
+    <script>
+    localStorage.setItem('auth_token', '{escaped_token}');
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def request_password_reset(email: str) -> Optional[Dict]:
@@ -178,18 +194,16 @@ def request_password_reset(email: str) -> Optional[Dict]:
     
     try:
         # Use Supabase client library which handles redirect_to correctly
+        # Note: reset_password_for_email() returns None on success, raises exception on failure
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
-        response = supabase.auth.reset_password_for_email(
+        supabase.auth.reset_password_for_email(
             email,
             {
                 "redirect_to": redirect_url
             }
         )
-        
-        if response:
-            return {"success": True, "message": "Password reset email sent"}
-        else:
-            return {"error": "Failed to send reset email"}
+        # If we get here, no exception was raised = success
+        return {"success": True, "message": "Password reset email sent"}
     except Exception as e:
         return {"error": str(e)}
 

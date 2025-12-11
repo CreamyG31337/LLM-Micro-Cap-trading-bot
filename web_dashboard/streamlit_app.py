@@ -170,6 +170,53 @@ def main():
     # Handle magic link token from query params (set by JavaScript hash processor above)
     import base64
     import json
+    import time
+    
+    # Check localStorage for persisted session (before checking authentication)
+    if not is_authenticated():
+        st.markdown("""
+        <script>
+        (function() {
+            const token = localStorage.getItem('auth_token');
+            if (token && !window.location.search.includes('magic_token') && !window.location.search.includes('restore_token')) {
+                // Redirect with token to restore session
+                const url = new URL(window.location);
+                url.searchParams.set('restore_token', token);
+                window.location.replace(url.toString());
+            }
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+        
+        # Handle restore_token from localStorage
+        if "restore_token" in st.query_params:
+            token = st.query_params["restore_token"]
+            # Validate token (check expiration)
+            try:
+                token_parts = token.split('.')
+                if len(token_parts) >= 2:
+                    payload = token_parts[1]
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = base64.urlsafe_b64decode(payload)
+                    user_data = json.loads(decoded)
+                    exp = user_data.get("exp", 0)
+                    
+                    if exp > int(time.time()):
+                        # Token valid, restore session
+                        set_user_session(token)
+                        st.query_params.clear()
+                        st.rerun()
+                    else:
+                        # Token expired, clear localStorage
+                        st.markdown("""
+                        <script>
+                        localStorage.removeItem('auth_token');
+                        </script>
+                        """, unsafe_allow_html=True)
+                        st.query_params.clear()
+            except Exception:
+                # Invalid token, clear
+                st.query_params.clear()
     
     # Check for authentication errors in query params
     query_params = st.query_params
@@ -196,6 +243,36 @@ def main():
         
         # Handle password reset
         if auth_type == "recovery":
+            # Check if password reset already completed
+            if st.session_state.get("password_reset_completed"):
+                st.info("✅ Password reset already completed. Please log in with your new password.")
+                st.query_params.clear()
+                return
+            
+            # Check token expiration before showing form
+            try:
+                token_parts = access_token.split('.')
+                if len(token_parts) >= 2:
+                    payload = token_parts[1]
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = base64.urlsafe_b64decode(payload)
+                    user_data = json.loads(decoded)
+                    exp = user_data.get("exp", 0)
+                    current_time = int(time.time())
+                    
+                    if exp < current_time:
+                        st.error("❌ **Reset link expired** - This password reset link has expired. Please request a new one.")
+                        st.query_params.clear()
+                        return
+                else:
+                    st.error("❌ **Invalid reset token** - The reset link is invalid.")
+                    st.query_params.clear()
+                    return
+            except Exception as e:
+                st.error(f"❌ **Error processing reset token** - {e}")
+                st.query_params.clear()
+                return
+            
             # Set session with reset token first (required for password update)
             if "reset_token" not in st.session_state or st.session_state.reset_token != access_token:
                 try:
@@ -255,11 +332,25 @@ def main():
                                 )
                                 
                                 if response.status_code == 200:
+                                    # Mark password reset as completed
+                                    st.session_state.password_reset_completed = True
                                     st.success("✅ Password updated successfully! You can now log in with your new password.")
+                                    
                                     # Clear session and query params
                                     logout_user()
                                     if "reset_token" in st.session_state:
                                         del st.session_state.reset_token
+                                    
+                                    # Clean URL and redirect after a short delay
+                                    st.markdown("""
+                                    <script>
+                                    setTimeout(function() {
+                                        window.history.replaceState({}, document.title, window.location.pathname);
+                                        window.location.href = window.location.origin;
+                                    }, 2000);
+                                    </script>
+                                    """, unsafe_allow_html=True)
+                                    
                                     st.query_params.clear()
                                     st.rerun()
                                 else:

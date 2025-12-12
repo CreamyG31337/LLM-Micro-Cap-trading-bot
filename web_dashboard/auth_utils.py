@@ -143,11 +143,16 @@ def logout_user():
         del st.session_state.user_email
     
     # Clear token from cookie using JavaScript
-    st.markdown("""
+    # Must use st.components.v1.html - st.markdown strips scripts
+    import streamlit.components.v1 as components
+    components.html("""
     <script>
+    // Access parent window's document to set cookie (iframe -> parent)
     document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    // Also try parent in case we're in iframe
+    try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
@@ -180,18 +185,21 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             st.session_state.user_email = None
     
     # Store token in cookie for persistence across page refreshes
-    # Using direct JavaScript for reliability (components can fail)
+    # Must use st.components.v1.html - st.markdown strips scripts
     # Set cookie with 7-day expiration
-    escaped_token = access_token.replace("'", "\\'")
-    st.markdown(f"""
+    import streamlit.components.v1 as components
+    escaped_token = access_token.replace("'", "\\'").replace('"', '\\"')
+    components.html(f"""
     <script>
     (function() {{
         var expires = new Date();
         expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days
         document.cookie = 'auth_token={escaped_token}; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
+        // Also try parent in case we're in iframe
+        try {{ parent.document.cookie = 'auth_token={escaped_token}; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict'; }} catch(e) {{}}
     }})();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

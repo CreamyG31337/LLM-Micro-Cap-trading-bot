@@ -506,11 +506,13 @@ def main():
     import time
     
     # ===== SESSION PERSISTENCE VIA COOKIES =====
-    # Using direct JavaScript for cookie manipulation (more reliable than components)
+    # Using st.components.v1.html for JavaScript execution (st.markdown strips scripts)
     # Flow: 
     # 1. On login: set_user_session() injects JS to set cookie
     # 2. On page load: inject JS to read cookie and pass via query param if not authenticated
     # 3. On restore_token in query param: restore session from token
+    
+    import streamlit.components.v1 as components
     
     # Check for restore_token query param (passed by JavaScript after reading cookie)
     if "restore_token" in st.query_params:
@@ -535,23 +537,25 @@ def main():
                     st.rerun()
                 else:
                     # Token expired, clear cookie via JavaScript
-                    st.markdown("""
+                    components.html("""
                     <script>
                     document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
                     </script>
-                    """, unsafe_allow_html=True)
+                    """, height=0)
         except Exception:
             # Invalid token, clear cookie
-            st.markdown("""
+            components.html("""
             <script>
             document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
             </script>
-            """, unsafe_allow_html=True)
+            """, height=0)
     
     # If not authenticated, inject JavaScript to check cookie and redirect with token
     elif not is_authenticated():
         # This JavaScript checks for auth_token cookie and redirects with restore_token param
-        st.markdown("""
+        components.html("""
         <script>
         (function() {
             // Parse cookies
@@ -571,7 +575,7 @@ def main():
             }
         })();
         </script>
-        """, unsafe_allow_html=True)
+        """, height=0)
     
     # Check for authentication errors in query params
     query_params = st.query_params

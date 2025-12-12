@@ -524,6 +524,13 @@ def main():
         # Debug: Show what cookies we got (remove after debugging)
         st.write(f"DEBUG: Cookies received: {list(all_cookies.keys()) if all_cookies else 'None'}")
         
+        # Display any debug messages from set_user_session
+        if "_debug_msgs" in st.session_state and st.session_state["_debug_msgs"]:
+            for msg in st.session_state["_debug_msgs"]:
+                st.write(f"DEBUG: {msg}")
+            # Clear after display
+            st.session_state["_debug_msgs"] = []
+        
         # Try to restore session from cookie
         auth_token = all_cookies.get("auth_token") if all_cookies else None
         

@@ -181,14 +181,18 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
     
     # Store token in cookie for persistence across page refreshes
     # Use extra-streamlit-components cookie_manager
-    # DEBUG: Check if cookie_manager exists
-    st.write(f"DEBUG set_user_session: cookie_manager in session_state = {'cookie_manager' in st.session_state}")
+    # DEBUG: Store debug info in session_state so it persists across reruns
+    debug_msgs = st.session_state.get("_debug_msgs", [])
+    debug_msgs.append(f"set_user_session called, cookie_manager exists: {'cookie_manager' in st.session_state}")
     if "cookie_manager" in st.session_state:
         try:
             st.session_state.cookie_manager.set("auth_token", access_token)
-            st.write("DEBUG set_user_session: cookie_manager.set() called successfully")
+            debug_msgs.append("cookie_manager.set() called successfully")
         except Exception as e:
-            st.write(f"DEBUG set_user_session: cookie_manager.set() FAILED: {e}")
+            debug_msgs.append(f"cookie_manager.set() FAILED: {e}")
+    else:
+        debug_msgs.append("cookie_manager NOT in session_state - cookie will not be saved!")
+    st.session_state["_debug_msgs"] = debug_msgs
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

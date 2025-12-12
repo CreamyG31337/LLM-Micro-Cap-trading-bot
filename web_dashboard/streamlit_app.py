@@ -781,6 +781,17 @@ def main():
         else:
             st.info("No recent trades found")
         
+        # Admin section - Scheduled Tasks
+        st.markdown("---")
+        with st.expander("⚙️ Admin: Scheduled Tasks", expanded=False):
+            try:
+                from scheduler_ui import render_scheduler_admin
+                render_scheduler_admin()
+            except ImportError as e:
+                st.warning(f"Scheduler UI not available: {e}")
+                st.info("The scheduler module may not be running in this environment.")
+            except Exception as e:
+                st.error(f"Error loading scheduler: {e}")
     except Exception as e:
         st.error(f"Error loading data: {e}")
         st.exception(e)

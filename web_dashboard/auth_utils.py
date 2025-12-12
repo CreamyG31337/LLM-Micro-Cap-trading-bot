@@ -145,8 +145,14 @@ def logout_user():
     if "session_restored_from_cookie" in st.session_state:
         del st.session_state.session_restored_from_cookie
     
-    # Note: Cookie clearing happens via set_cookie.html on next login
-    # We can't clear cookies from Streamlit due to iframe sandboxing
+    # Redirect through set_cookie.html to clear the cookie
+    # (Streamlit can't clear cookies directly due to iframe sandboxing)
+    st.markdown(
+        '<meta http-equiv="refresh" content="0; url=/set_cookie.html?action=clear">',
+        unsafe_allow_html=True
+    )
+    st.write("Logging out...")
+    st.stop()
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False):

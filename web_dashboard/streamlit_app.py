@@ -522,16 +522,10 @@ def main():
                 if exp > int(time.time()):
                     # Token valid, restore session
                     set_user_session(token)
-                    # Use JavaScript redirect instead of st.rerun() to ensure session state is set before next load
-                    st.markdown("""
-                    <script>
-                    // Redirect to same page without restore_token to ensure session is restored
-                    const url = new URL(window.location);
-                    url.searchParams.delete('restore_token');
-                    window.location.replace(url.toString());
-                    </script>
-                    """, unsafe_allow_html=True)
-                    return
+                    # Clear the restore_token param and rerun to continue with authenticated state
+                    # Using st.rerun() preserves session_state; JavaScript redirect would lose it
+                    st.query_params.clear()
+                    st.rerun()
                 else:
                     # Token expired, clear localStorage and redirect (JavaScript executes before redirect)
                     st.markdown("""

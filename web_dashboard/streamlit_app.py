@@ -525,36 +525,42 @@ def main():
                     st.query_params.clear()
                     st.rerun()
                 else:
-                    # Token expired, clear localStorage and query params
+                    # Token expired, clear localStorage and redirect (JavaScript executes before redirect)
                     st.markdown("""
                     <script>
                     localStorage.removeItem('auth_token');
+                    // Redirect to same page without restore_token to show login page
+                    const url = new URL(window.location);
+                    url.searchParams.delete('restore_token');
+                    window.location.replace(url.toString());
                     </script>
                     """, unsafe_allow_html=True)
-                    st.query_params.clear()
-                    st.rerun()  # Rerun to show login page
                     return
             else:
                 # Invalid token format (not a valid JWT - fewer than 2 parts)
-                # Clear localStorage and query params to prevent redirect loop
+                # Clear localStorage and redirect to prevent redirect loop
                 st.markdown("""
                 <script>
                 localStorage.removeItem('auth_token');
+                // Redirect to same page without restore_token to show login page
+                const url = new URL(window.location);
+                url.searchParams.delete('restore_token');
+                window.location.replace(url.toString());
                 </script>
                 """, unsafe_allow_html=True)
-                st.query_params.clear()
-                st.rerun()  # Rerun to show login page
                 return
         except Exception:
-            # Invalid token (decoding failed), clear localStorage and query params
+            # Invalid token (decoding failed), clear localStorage and redirect
             # This prevents redirect loops with malformed tokens
             st.markdown("""
             <script>
             localStorage.removeItem('auth_token');
+            // Redirect to same page without restore_token to show login page
+            const url = new URL(window.location);
+            url.searchParams.delete('restore_token');
+            window.location.replace(url.toString());
             </script>
             """, unsafe_allow_html=True)
-            st.query_params.clear()
-            st.rerun()  # Rerun to show login page
             return
     
     # THEN: Check localStorage via JavaScript (only if not authenticated and not already restoring)

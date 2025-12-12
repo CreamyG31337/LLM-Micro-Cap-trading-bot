@@ -510,6 +510,11 @@ def main():
         from streamlit_cookies_manager import CookieManager
         st.session_state.cookies = CookieManager()
     
+    # Wait for cookie manager to be ready before any operations
+    cookies = st.session_state.cookies
+    if not cookies.ready():
+        st.stop()  # Stop execution until cookies are ready
+    
     # Restore session from cookie on every page load
     # This handles refresh, new tabs, etc. - cookies persist automatically
     from auth_utils import restore_session_from_cookie

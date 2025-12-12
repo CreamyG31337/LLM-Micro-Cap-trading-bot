@@ -506,19 +506,19 @@ def main():
     import time
     
     # Initialize cookie manager for session persistence using extra-streamlit-components
-    # This library doesn't require ready() checks and works more reliably
+    # IMPORTANT: CookieManager must be created fresh each run (not cached) so the component renders
+    cookie_manager = None
     try:
         import extra_streamlit_components as stx
         
-        # Initialize cookie manager in session_state (not cached - widgets can't be cached)
-        # This ensures one instance per session without using cache decorator
-        if "cookie_manager" not in st.session_state:
-            st.session_state.cookie_manager = stx.CookieManager()
+        # Create CookieManager fresh each run - it's a component that needs to render
+        # Using a key ensures consistent component identity
+        cookie_manager = stx.CookieManager(key="auth_cookie_manager")
         
-        cookie_manager = st.session_state.cookie_manager
+        # Store reference for auth_utils to use
+        st.session_state.cookie_manager = cookie_manager
         
         # Get all cookies at once - this is the recommended pattern
-        # The component needs to render first, so cookies may be empty on first run
         all_cookies = cookie_manager.get_all()
         
         # Debug: Show what cookies we got (remove after debugging)

@@ -94,20 +94,20 @@ class SupabaseClient:
             # This is the key fix - we need to set the Authorization header on the underlying postgrest client
             try:
                 # The Supabase client uses postgrest for database queries
-                # We need to set the Authorization header on the postgrest client's session
+                # We need to call the auth() method (not assign to auth property) to set the Authorization header
                 if hasattr(self.supabase, 'postgrest'):
-                    # Set the auth token on the postgrest client
-                    # The postgrest client uses this for Authorization header
-                    self.supabase.postgrest.auth = user_token
-                    logger.debug("User token set on postgrest client")
+                    # Call the auth() method with the token to set Authorization header
+                    # The postgrest client uses this for Authorization header in all queries
+                    self.supabase.postgrest.auth(user_token)
+                    logger.debug("User token set on postgrest client via auth() method")
                 else:
                     # Fallback: try to access via table client
                     # Create a dummy table query to access the underlying client
                     dummy_table = self.supabase.table("_dummy_table_for_auth")
                     if hasattr(dummy_table, '_client'):
-                        # Set auth on the underlying postgrest client
-                        dummy_table._client.auth = user_token
-                        logger.debug("User token set on table client's postgrest client")
+                        # Call auth() method on the underlying postgrest client
+                        dummy_table._client.auth(user_token)
+                        logger.debug("User token set on table client's postgrest client via auth() method")
             except Exception as header_error:
                 logger.warning(f"Could not set Authorization header: {header_error}")
                 # Token is stored in self._user_token as fallback

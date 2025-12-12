@@ -506,93 +506,40 @@ def main():
     import time
     
     # ===== SESSION PERSISTENCE VIA COOKIES =====
-    # Using st.components.v1.html for JavaScript execution (st.markdown strips scripts)
-    # Flow: 
-    # 1. On login: set_user_session() injects JS to set cookie
-    # 2. On page load: inject JS to read cookie and pass via query param if not authenticated
-    # 3. On restore_token in query param: restore session from token
+    # Cookie is set in auth_callback.html (regular HTML page, not iframe)
+    # Cookie is read here using st.context.cookies (server-side, Streamlit 1.37+)
     
-    import streamlit.components.v1 as components
-    
-    # Check for restore_token query param (passed by JavaScript after reading cookie)
-    if "restore_token" in st.query_params:
-        token = st.query_params["restore_token"]
-        # Clear the query param immediately
-        del st.query_params["restore_token"]
-        
-        # Validate and restore session
+    # Try to restore session from cookie if not already authenticated
+    if not is_authenticated():
         try:
-            token_parts = token.split('.')
-            if len(token_parts) >= 2:
-                payload = token_parts[1]
-                payload += '=' * (4 - len(payload) % 4)
-                decoded = base64.urlsafe_b64decode(payload)
-                user_data = json.loads(decoded)
-                exp = user_data.get("exp", 0)
-                
-                if exp > int(time.time()):
-                    # Token valid, restore session
-                    set_user_session(token)
-                    # Rerun to show authenticated state
-                    st.rerun()
-                else:
-                    # Token expired, clear cookie via JavaScript
-                    components.html("""
-                    <script>
-                    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                    try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
-                    </script>
-                    """, height=0)
-        except Exception:
-            # Invalid token, clear cookie
-            components.html("""
-            <script>
-            document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-            try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
-            </script>
-            """, height=0)
-    
-    # If not authenticated, inject JavaScript to check cookie and redirect with token
-    elif not is_authenticated():
-        # This JavaScript checks for auth_token cookie and redirects with restore_token param
-        components.html("""
-        <script>
-        (function() {
-            // Parse cookies - try parent document first (for iframe context), fallback to current document
-            function getCookie(name) {
-                let cookieString = "";
-                try {
-                    // Try parent document first (when running in iframe)
-                    cookieString = parent.document.cookie || document.cookie;
-                } catch(e) {
-                    // If parent access fails (cross-origin), use current document
-                    cookieString = document.cookie;
-                }
-                const value = "; " + cookieString;
-                const parts = value.split("; " + name + "=");
-                if (parts.length === 2) return parts.pop().split(";").shift();
-                return null;
-            }
+            # st.context.cookies is available in Streamlit 1.37+
+            # It's a read-only dict of cookies sent in the initial HTTP request
+            cookies = st.context.cookies
+            auth_token = cookies.get("auth_token")
             
-            const token = getCookie('auth_token');
-            if (token) {
-                // Access parent window location (Streamlit page) since we're in an iframe
-                try {
-                    const parentLocation = parent.location || window.top.location;
-                    // Only redirect if we have a token and not already have restore_token in URL
-                    if (!parentLocation.search.includes('restore_token')) {
-                        const url = new URL(parentLocation);
-                        url.searchParams.set('restore_token', token);
-                        parentLocation.replace(url.toString());
-                    }
-                } catch(e) {
-                    // If parent access fails (cross-origin), can't redirect
-                    console.warn('Cannot access parent window for redirect:', e);
-                }
-            }
-        })();
-        </script>
-        """, height=0)
+            if auth_token:
+                # Validate token
+                token_parts = auth_token.split('.')
+                if len(token_parts) >= 2:
+                    payload = token_parts[1]
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = base64.urlsafe_b64decode(payload)
+                    user_data = json.loads(decoded)
+                    exp = user_data.get("exp", 0)
+                    
+                    if exp > int(time.time()):
+                        # Token valid, restore session (skip redirect since we're restoring from cookie)
+                        set_user_session(auth_token, skip_cookie_redirect=True)
+                        # No rerun needed - we're already in the right state
+                    # If expired, we could clear the cookie but since st.context.cookies is read-only,
+                    # we'd need JavaScript for that. For now, just don't restore expired tokens.
+        except AttributeError:
+            # st.context.cookies not available (older Streamlit version)
+            st.warning("⚠️ Session persistence requires Streamlit 1.37+. Please update.")
+        except Exception as e:
+            # Other errors - log but don't block
+            import logging
+            logging.warning(f"Cookie restoration error: {e}")
     
     # Check for authentication errors in query params
     query_params = st.query_params

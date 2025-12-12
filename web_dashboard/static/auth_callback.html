@@ -9,6 +9,13 @@
     <p>Authenticating, please wait...</p>
     <script>
         (function() {
+            // Helper function to set cookie
+            function setCookie(name, value, days) {
+                var expires = new Date();
+                expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+                document.cookie = name + '=' + value + '; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
+            }
+            
             // Extract tokens from URL hash
             const hash = window.location.hash.substring(1);
             if (hash) {
@@ -28,7 +35,13 @@
                 } 
                 // Check for access_token (magic link or password reset success)
                 else if (params.get('access_token')) {
-                    streamlitUrl.searchParams.set('magic_token', params.get('access_token'));
+                    const token = params.get('access_token');
+                    
+                    // SET THE AUTH COOKIE HERE - this page is NOT in an iframe!
+                    // Cookie will persist across page refreshes
+                    setCookie('auth_token', token, 7); // 7 days expiration
+                    
+                    streamlitUrl.searchParams.set('magic_token', token);
                     // Pass type to distinguish between magic link and password reset
                     if (params.get('type')) {
                         streamlitUrl.searchParams.set('auth_type', params.get('type'));

@@ -155,11 +155,15 @@ def logout_user():
     """, height=0)
 
 
-def set_user_session(access_token: str, user: Optional[Dict] = None):
-    """Store user session data. If user is None, decode from JWT token."""
+def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False):
+    """Store user session data. If user is None, decode from JWT token.
+    
+    Args:
+        access_token: The JWT access token
+        user: Optional user dict with id and email
+        skip_cookie_redirect: If True, don't redirect to set cookie (used when restoring from cookie)
+    """
     st.session_state.user_token = access_token
-    # Mark that we've restored from cookie (if we did)
-    st.session_state.session_restored_from_cookie = True
     
     if user:
         st.session_state.user_id = user.get("id")
@@ -184,22 +188,23 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             st.session_state.user_id = None
             st.session_state.user_email = None
     
-    # Store token in cookie for persistence across page refreshes
-    # Must use st.components.v1.html - st.markdown strips scripts
-    # Set cookie with 7-day expiration
-    import streamlit.components.v1 as components
-    escaped_token = access_token.replace("'", "\\'").replace('"', '\\"')
-    components.html(f"""
-    <script>
-    (function() {{
-        var expires = new Date();
-        expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days
-        document.cookie = 'auth_token={escaped_token}; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
-        // Also try parent in case we're in iframe
-        try {{ parent.document.cookie = 'auth_token={escaped_token}; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict'; }} catch(e) {{}}
-    }})();
-    </script>
-    """, height=0)
+    # For email/password login, redirect through set_cookie.html to persist the cookie
+    # (Streamlit can't set cookies directly due to iframe sandboxing)
+    # Skip if restoring from cookie (to avoid infinite loop)
+    if not skip_cookie_redirect and "session_restored_from_cookie" not in st.session_state:
+        import streamlit.components.v1 as components
+        import urllib.parse
+        encoded_token = urllib.parse.quote(access_token, safe='')
+        # Redirect to set_cookie.html which sets the cookie and redirects back
+        components.html(f"""
+        <script>
+        window.top.location.href = '/static/set_cookie.html?token={encoded_token}';
+        </script>
+        """, height=0)
+        st.stop()  # Stop execution - we'll continue after redirect back
+    
+    # Mark that session is set (either from cookie restore or after redirect)
+    st.session_state.session_restored_from_cookie = True
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

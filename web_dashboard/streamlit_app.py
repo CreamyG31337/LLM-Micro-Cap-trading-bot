@@ -505,70 +505,15 @@ def main():
     import json
     import time
     
-    # ALWAYS check for restore_token first (set by JavaScript on page load)
-    # Don't rely on session_state persisting - localStorage is the source of truth
-    # This handles ALL cases: refresh, new tab, session lost, etc.
-    if "restore_token" in st.query_params:
-        token = st.query_params["restore_token"]
-        # Validate token (check expiration)
-        try:
-            token_parts = token.split('.')
-            if len(token_parts) >= 2:
-                payload = token_parts[1]
-                payload += '=' * (4 - len(payload) % 4)
-                decoded = base64.urlsafe_b64decode(payload)
-                user_data = json.loads(decoded)
-                exp = user_data.get("exp", 0)
-                
-                if exp > int(time.time()):
-                    # Token valid, restore session and continue (no rerun needed)
-                    set_user_session(token)
-                    st.query_params.clear()
-                    # Continue execution - is_authenticated() will now return True
-                else:
-                    # Token expired, clear localStorage
-                    st.markdown("""
-                    <script>
-                    localStorage.removeItem('auth_token');
-                    </script>
-                    """, unsafe_allow_html=True)
-                    st.query_params.clear()
-            else:
-                # Invalid token format, clear localStorage
-                st.markdown("""
-                <script>
-                localStorage.removeItem('auth_token');
-                </script>
-                """, unsafe_allow_html=True)
-                st.query_params.clear()
-        except Exception:
-            # Invalid token (decoding failed), clear localStorage
-            st.markdown("""
-            <script>
-            localStorage.removeItem('auth_token');
-            </script>
-            """, unsafe_allow_html=True)
-            st.query_params.clear()
+    # Initialize cookie manager for session persistence
+    if "cookies" not in st.session_state:
+        from streamlit_cookies_manager import CookieManager
+        st.session_state.cookies = CookieManager()
     
-    # If not authenticated and no restore_token, check localStorage via JavaScript
-    # This runs on initial page load to set restore_token if token exists
-    elif not is_authenticated():
-        st.markdown("""
-        <script>
-        (function() {
-            const token = localStorage.getItem('auth_token');
-            if (token && !window.location.search.includes('magic_token') && !window.location.search.includes('restore_token')) {
-                // Immediately redirect with token to restore session
-                const url = new URL(window.location);
-                url.searchParams.set('restore_token', token);
-                window.location.replace(url.toString());
-            }
-            // If no token, do nothing - just show login page
-        })();
-        </script>
-        """, unsafe_allow_html=True)
-        # Don't return - let JavaScript redirect if token exists, or show login page if no token
-        # JavaScript will redirect immediately if token is found, otherwise login page shows
+    # Restore session from cookie on every page load
+    # This handles refresh, new tabs, etc. - cookies persist automatically
+    from auth_utils import restore_session_from_cookie
+    restore_session_from_cookie()
     
     # Check for authentication errors in query params
     query_params = st.query_params

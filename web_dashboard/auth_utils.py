@@ -10,8 +10,10 @@ from typing import Optional, Dict
 import requests
 import base64
 import json
+import time
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from streamlit_cookies_manager import CookieManager
 
 load_dotenv()
 
@@ -125,8 +127,59 @@ def get_user_email() -> Optional[str]:
     return None
 
 
+def get_token_from_cookie() -> Optional[str]:
+    """Get authentication token from cookie"""
+    if "cookies" in st.session_state:
+        cookies = st.session_state.cookies
+        token = cookies.get("auth_token")
+        if token:
+            return token
+    return None
+
+
+def restore_session_from_cookie() -> bool:
+    """Restore user session from cookie if token exists and is valid"""
+    token = get_token_from_cookie()
+    if not token:
+        return False
+    
+    # Validate token (check expiration)
+    try:
+        token_parts = token.split('.')
+        if len(token_parts) >= 2:
+            payload = token_parts[1]
+            payload += '=' * (4 - len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload)
+            user_data = json.loads(decoded)
+            exp = user_data.get("exp", 0)
+            
+            if exp > int(time.time()):
+                # Token valid, restore session
+                set_user_session(token)
+                return True
+            else:
+                # Token expired, clear cookie
+                if "cookies" in st.session_state:
+                    cookies = st.session_state.cookies
+                    cookies.delete("auth_token")
+                return False
+        else:
+            # Invalid token format, clear cookie
+            if "cookies" in st.session_state:
+                cookies = st.session_state.cookies
+                cookies.delete("auth_token")
+            return False
+    except Exception:
+        # Invalid token, clear cookie
+        if "cookies" in st.session_state:
+            cookies = st.session_state.cookies
+            cookies.delete("auth_token")
+        return False
+
+
 def is_authenticated() -> bool:
-    """Check if user is authenticated"""
+    """Check if user is authenticated (checks session_state only)"""
+    # Session should be restored from cookie at app start, so just check session_state
     return "user_token" in st.session_state and st.session_state.user_token is not None
 
 
@@ -139,21 +192,17 @@ def logout_user():
     if "user_email" in st.session_state:
         del st.session_state.user_email
     
-    # Clear session check flag to allow checking localStorage again on next login attempt
-    if "session_check_complete" in st.session_state:
-        del st.session_state.session_check_complete
-    
-    # Clear token from localStorage
-    st.markdown("""
-    <script>
-    localStorage.removeItem('auth_token');
-    </script>
-    """, unsafe_allow_html=True)
+    # Clear token from cookie
+    if "cookies" in st.session_state:
+        cookies = st.session_state.cookies
+        cookies.delete("auth_token")
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
     """Store user session data. If user is None, decode from JWT token."""
     st.session_state.user_token = access_token
+    # Mark that we've restored from cookie (if we did)
+    st.session_state.session_restored_from_cookie = True
     
     if user:
         st.session_state.user_id = user.get("id")
@@ -178,18 +227,32 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             st.session_state.user_id = None
             st.session_state.user_email = None
     
-    # Store token in localStorage for persistence across browser windows/tabs
-    # Escape single quotes in token to prevent JavaScript errors
-    escaped_token = access_token.replace("'", "\\'").replace("\n", "\\n")
-    st.markdown(f"""
-    <script>
-    localStorage.setItem('auth_token', '{escaped_token}');
-    </script>
-    """, unsafe_allow_html=True)
+    # Store token in cookie for persistence across page refreshes
+    # Calculate expiration from JWT (default to 1 hour if not found)
+    try:
+        token_parts = access_token.split('.')
+        if len(token_parts) >= 2:
+            payload = token_parts[1]
+            payload += '=' * (4 - len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload)
+            user_data = json.loads(decoded)
+            exp = user_data.get("exp", 0)
+            if exp > 0:
+                # Cookie expires when JWT expires
+                max_age = exp - int(time.time())
+                if max_age > 0:
+                    # Set cookie with expiration matching JWT
+                    if "cookies" in st.session_state:
+                        cookies = st.session_state.cookies
+                        cookies.set("auth_token", access_token, max_age=max_age)
+                    return
+    except Exception:
+        pass
     
-    # Clear session check flag since we've successfully established a session
-    if "session_check_complete" in st.session_state:
-        del st.session_state.session_check_complete
+    # Fallback: Set cookie with 1 hour expiration
+    if "cookies" in st.session_state:
+        cookies = st.session_state.cookies
+        cookies.set("auth_token", access_token, max_age=3600)
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

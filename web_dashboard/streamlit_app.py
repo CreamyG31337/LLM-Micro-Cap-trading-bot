@@ -506,54 +506,43 @@ def main():
     import time
     
     # Initialize cookie manager for session persistence
-    # Use non-blocking approach with timeout to prevent page from freezing
+    # Cookie manager requires its component to render before it's ready
+    # Using st.stop() allows the component to render, then Streamlit auto-reruns
+    cookies = None
+    cookies_ready = False
+    
     try:
+        from streamlit_cookies_manager import CookieManager
+        
+        # Create cookie manager once and cache it
         if "cookies" not in st.session_state:
-            from streamlit_cookies_manager import CookieManager
             st.session_state.cookies = CookieManager()
-            # Initialize retry counter for cookie readiness
-            if "cookie_init_retries" not in st.session_state:
-                st.session_state.cookie_init_retries = 0
         
         cookies = st.session_state.cookies
         
-        # Check if cookies are ready, but don't block forever
-        # Allow up to 5 retries (about 2-3 seconds) before continuing without cookies
+        # Check if cookies are ready - if not, st.stop() to allow component to render
+        # The component will trigger a rerun once it's ready
         if not cookies.ready():
-            if st.session_state.cookie_init_retries < 5:
-                st.session_state.cookie_init_retries += 1
-                # Show loading message
-                st.info("🔄 Initializing session...")
-                st.rerun()  # Rerun to check again
-            else:
-                # Timeout - continue without cookies (user can still log in)
-                st.session_state.cookie_init_retries = 0
-                st.warning("⚠️ Session persistence temporarily unavailable. You can still log in.")
-        else:
-            # Cookies ready - reset retry counter
-            st.session_state.cookie_init_retries = 0
-            
-            # Restore session from cookie on every page load
-            # This handles refresh, new tabs, etc. - cookies persist automatically
-            from auth_utils import restore_session_from_cookie
-            restore_session_from_cookie()
-    except Exception as e:
-        # Check if this is a StopException (normal behavior when cookies aren't ready)
-        # StopException is raised by st.stop() and should be re-raised, not treated as an error
-        # Check by exception type name and module to avoid import issues
-        exception_type_name = type(e).__name__
-        exception_module = type(e).__module__
-        if exception_type_name == "StopException" and "streamlit" in exception_module:
-            raise  # Re-raise StopException - this is normal behavior
+            # Show a loading message while waiting for cookies
+            st.info("🔄 Loading session...")
+            st.stop()  # This allows the cookie component to render
         
-        # Display error so user can see what went wrong (only for actual errors, not StopException)
-        # Use a container to persist the error message
-        error_container = st.container()
-        with error_container:
-            st.error(f"❌ **Error initializing authentication**: {str(e)}")
-            with st.expander("🔍 Full Error Details"):
-                st.exception(e)
-        st.stop()  # Stop execution to prevent further errors
+        # Cookies are ready - restore session if we have a token
+        cookies_ready = True
+        from auth_utils import restore_session_from_cookie
+        restore_session_from_cookie()
+        
+    except ImportError:
+        # streamlit-cookies-manager not installed, continue without cookie persistence
+        st.warning("⚠️ Cookie manager not available. Sessions won't persist across page refreshes.")
+    except Exception as e:
+        # Handle other errors gracefully - don't block login
+        exception_type = type(e).__name__
+        if exception_type == "StopException":
+            raise  # Re-raise StopException - this is normal behavior
+        # Log but don't block - user can still log in
+        import logging
+        logging.warning(f"Cookie manager error: {e}")
     
     # Check for authentication errors in query params
     query_params = st.query_params

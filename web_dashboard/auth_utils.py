@@ -141,18 +141,12 @@ def logout_user():
         del st.session_state.user_id
     if "user_email" in st.session_state:
         del st.session_state.user_email
+    # Clear cookie flag so next login will set a fresh cookie
+    if "session_restored_from_cookie" in st.session_state:
+        del st.session_state.session_restored_from_cookie
     
-    # Clear token from cookie using JavaScript
-    # Must use st.components.v1.html - st.markdown strips scripts
-    import streamlit.components.v1 as components
-    components.html("""
-    <script>
-    // Access parent window's document to set cookie (iframe -> parent)
-    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    // Also try parent in case we're in iframe
-    try { parent.document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'; } catch(e) {}
-    </script>
-    """, height=0)
+    # Note: Cookie clearing happens via set_cookie.html on next login
+    # We can't clear cookies from Streamlit due to iframe sandboxing
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False):
@@ -192,15 +186,20 @@ def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie
     # (Streamlit can't set cookies directly due to iframe sandboxing)
     # Skip if restoring from cookie (to avoid infinite loop)
     if not skip_cookie_redirect and "session_restored_from_cookie" not in st.session_state:
-        import streamlit.components.v1 as components
         import urllib.parse
         encoded_token = urllib.parse.quote(access_token, safe='')
-        # Redirect to set_cookie.html which sets the cookie and redirects back
-        components.html(f"""
-        <script>
-        window.top.location.href = '/static/set_cookie.html?token={encoded_token}';
-        </script>
-        """, height=0)
+        
+        # Store token temporarily in session state (will be cleared after redirect)
+        st.session_state._pending_cookie_token = access_token
+        
+        # Use JavaScript via st.markdown with meta refresh (not stripped like script tags)
+        # This will redirect the ENTIRE page, not just an iframe
+        redirect_url = f'/static/set_cookie.html?token={encoded_token}'
+        st.markdown(
+            f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
+            unsafe_allow_html=True
+        )
+        st.write("Saving session... Redirecting...")
         st.stop()  # Stop execution - we'll continue after redirect back
     
     # Mark that session is set (either from cookie restore or after redirect)

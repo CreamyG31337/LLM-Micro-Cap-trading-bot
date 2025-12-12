@@ -567,10 +567,8 @@ def main():
         })();
         </script>
         """, unsafe_allow_html=True)
-        # Show loading message while JavaScript redirects (only if we're waiting for redirect)
-        if "restore_token" not in st.query_params:
-            st.info("🔄 Restoring session...")
-            return
+        # Don't return - let JavaScript redirect if token exists, or show login page if no token
+        # JavaScript will redirect immediately if token is found, otherwise login page shows
     
     # Check for authentication errors in query params
     query_params = st.query_params

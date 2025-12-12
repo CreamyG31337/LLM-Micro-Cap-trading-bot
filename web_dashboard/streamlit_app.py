@@ -169,16 +169,20 @@ def show_login_page():
 
 def show_password_reset_page(access_token: str):
     """Display dedicated password reset page"""
+    # Add link back to main page
+    st.markdown('[← Back to Main Page](/)', unsafe_allow_html=True)
     st.markdown('<div class="main-header">🔐 Reset Your Password</div>', unsafe_allow_html=True)
     
     # Check if password reset already completed
     if st.session_state.get("password_reset_completed"):
-        st.info("✅ Password reset already completed. Please log in with your new password.")
+        st.success("✅ **Password reset completed successfully!**")
+        st.info("You can now log in with your new password.")
+        st.markdown(f'[Click here to go to the main page](/) or wait 5 seconds to be redirected automatically.')
         st.markdown("""
         <script>
         setTimeout(function() {
             window.location.href = window.location.origin;
-        }, 3000);
+        }, 5000);
         </script>
         """, unsafe_allow_html=True)
         return
@@ -196,31 +200,34 @@ def show_password_reset_page(access_token: str):
             
             if exp < current_time:
                 st.error("❌ **Reset link expired** - This password reset link has expired. Please request a new one.")
+                st.markdown(f'[Click here to go back to the main page](/) or wait 5 seconds to be redirected automatically.')
                 st.markdown("""
                 <script>
                 setTimeout(function() {
                     window.location.href = window.location.origin;
-                }, 3000);
+                }, 5000);
                 </script>
                 """, unsafe_allow_html=True)
                 return
         else:
             st.error("❌ **Invalid reset token** - The reset link is invalid.")
+            st.markdown(f'[Click here to go back to the main page](/) or wait 5 seconds to be redirected automatically.')
             st.markdown("""
             <script>
             setTimeout(function() {
                 window.location.href = window.location.origin;
-            }, 3000);
+            }, 5000);
             </script>
             """, unsafe_allow_html=True)
             return
     except Exception as e:
         st.error(f"❌ **Error processing reset token** - {e}")
+        st.markdown(f'[Click here to go back to the main page](/) or wait 5 seconds to be redirected automatically.')
         st.markdown("""
         <script>
         setTimeout(function() {
             window.location.href = window.location.origin;
-        }, 3000);
+        }, 5000);
         </script>
         """, unsafe_allow_html=True)
         return
@@ -337,7 +344,8 @@ def show_password_reset_page(access_token: str):
                                     
                                     st.session_state.password_reset_completed = True
                                     st.success("✅ **Password updated successfully!**")
-                                    st.info("🔄 **Redirecting to login page...** You can now log in with your new password.")
+                                    st.info("🔄 **Redirecting to main page...** You can now log in with your new password.")
+                                    st.markdown(f'[Click here to go to the main page](/) or wait 5 seconds to be redirected automatically.')
                                     
                                     logout_user()
                                     if "reset_token" in st.session_state:
@@ -347,7 +355,7 @@ def show_password_reset_page(access_token: str):
                                     <script>
                                     setTimeout(function() {
                                         window.location.href = window.location.origin;
-                                    }, 3000);
+                                    }, 5000);
                                     </script>
                                     """, unsafe_allow_html=True)
                                     
@@ -400,7 +408,8 @@ def show_password_reset_page(access_token: str):
                                     
                                     st.session_state.password_reset_completed = True
                                     st.success("✅ **Password updated successfully!**")
-                                    st.info("🔄 **Redirecting to login page...** You can now log in with your new password.")
+                                    st.info("🔄 **Redirecting to main page...** You can now log in with your new password.")
+                                    st.markdown(f'[Click here to go to the main page](/) or wait 5 seconds to be redirected automatically.')
                                     
                                     logout_user()
                                     if "reset_token" in st.session_state:
@@ -410,7 +419,7 @@ def show_password_reset_page(access_token: str):
                                     <script>
                                     setTimeout(function() {
                                         window.location.href = window.location.origin;
-                                    }, 3000);
+                                    }, 5000);
                                     </script>
                                     """, unsafe_allow_html=True)
                                     

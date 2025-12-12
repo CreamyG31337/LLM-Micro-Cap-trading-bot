@@ -506,20 +506,37 @@ def main():
     import time
     
     # Initialize cookie manager for session persistence
+    # Use non-blocking approach with timeout to prevent page from freezing
     try:
         if "cookies" not in st.session_state:
             from streamlit_cookies_manager import CookieManager
             st.session_state.cookies = CookieManager()
+            # Initialize retry counter for cookie readiness
+            if "cookie_init_retries" not in st.session_state:
+                st.session_state.cookie_init_retries = 0
         
-        # Wait for cookie manager to be ready before any operations
         cookies = st.session_state.cookies
-        if not cookies.ready():
-            st.stop()  # Stop execution until cookies are ready (raises StopException)
         
-        # Restore session from cookie on every page load
-        # This handles refresh, new tabs, etc. - cookies persist automatically
-        from auth_utils import restore_session_from_cookie
-        restore_session_from_cookie()
+        # Check if cookies are ready, but don't block forever
+        # Allow up to 5 retries (about 2-3 seconds) before continuing without cookies
+        if not cookies.ready():
+            if st.session_state.cookie_init_retries < 5:
+                st.session_state.cookie_init_retries += 1
+                # Show loading message
+                st.info("🔄 Initializing session...")
+                st.rerun()  # Rerun to check again
+            else:
+                # Timeout - continue without cookies (user can still log in)
+                st.session_state.cookie_init_retries = 0
+                st.warning("⚠️ Session persistence temporarily unavailable. You can still log in.")
+        else:
+            # Cookies ready - reset retry counter
+            st.session_state.cookie_init_retries = 0
+            
+            # Restore session from cookie on every page load
+            # This handles refresh, new tabs, etc. - cookies persist automatically
+            from auth_utils import restore_session_from_cookie
+            restore_session_from_cookie()
     except Exception as e:
         # Check if this is a StopException (normal behavior when cookies aren't ready)
         # StopException is raised by st.stop() and should be re-raised, not treated as an error

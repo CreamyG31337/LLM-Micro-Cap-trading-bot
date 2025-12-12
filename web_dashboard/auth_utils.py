@@ -13,7 +13,7 @@ import json
 import time
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from streamlit_cookies_manager import CookieManager
+# CookieManager imported in functions where needed to avoid import errors at module level
 
 load_dotenv()
 
@@ -129,24 +129,31 @@ def get_user_email() -> Optional[str]:
 
 def get_token_from_cookie() -> Optional[str]:
     """Get authentication token from cookie"""
-    if "cookies" in st.session_state:
-        cookies = st.session_state.cookies
-        # Ensure cookie manager is ready before operations
-        if cookies.ready():
-            token = cookies.get("auth_token")
-            if token:
-                return token
+    try:
+        if "cookies" in st.session_state:
+            cookies = st.session_state.cookies
+            # Ensure cookie manager is ready before operations
+            if cookies.ready():
+                token = cookies.get("auth_token")
+                if token:
+                    return token
+    except Exception as e:
+        # Log error but don't break the app - only show if it's a real error
+        # (not just "no cookie found" which is normal)
+        import traceback
+        st.error(f"Error reading cookie: {e}")
+        st.code(traceback.format_exc())
     return None
 
 
 def restore_session_from_cookie() -> bool:
     """Restore user session from cookie if token exists and is valid"""
-    token = get_token_from_cookie()
-    if not token:
-        return False
-    
-    # Validate token (check expiration)
     try:
+        token = get_token_from_cookie()
+        if not token:
+            return False
+        
+        # Validate token (check expiration)
         token_parts = token.split('.')
         if len(token_parts) >= 2:
             payload = token_parts[1]
@@ -175,13 +182,16 @@ def restore_session_from_cookie() -> bool:
                     del cookies["auth_token"]
                     cookies.save()
             return False
-    except Exception:
-        # Invalid token, clear cookie
-        if "cookies" in st.session_state:
-            cookies = st.session_state.cookies
-            if cookies.ready():
-                del cookies["auth_token"]
-                cookies.save()
+    except Exception as e:
+        # Invalid token or error, clear cookie if possible
+        try:
+            if "cookies" in st.session_state:
+                cookies = st.session_state.cookies
+                if cookies.ready():
+                    del cookies["auth_token"]
+                    cookies.save()
+        except Exception:
+            pass  # Ignore errors when clearing cookie
         return False
 
 

@@ -506,19 +506,25 @@ def main():
     import time
     
     # Initialize cookie manager for session persistence
-    if "cookies" not in st.session_state:
-        from streamlit_cookies_manager import CookieManager
-        st.session_state.cookies = CookieManager()
-    
-    # Wait for cookie manager to be ready before any operations
-    cookies = st.session_state.cookies
-    if not cookies.ready():
-        st.stop()  # Stop execution until cookies are ready
-    
-    # Restore session from cookie on every page load
-    # This handles refresh, new tabs, etc. - cookies persist automatically
-    from auth_utils import restore_session_from_cookie
-    restore_session_from_cookie()
+    try:
+        if "cookies" not in st.session_state:
+            from streamlit_cookies_manager import CookieManager
+            st.session_state.cookies = CookieManager()
+        
+        # Wait for cookie manager to be ready before any operations
+        cookies = st.session_state.cookies
+        if not cookies.ready():
+            st.stop()  # Stop execution until cookies are ready
+        
+        # Restore session from cookie on every page load
+        # This handles refresh, new tabs, etc. - cookies persist automatically
+        from auth_utils import restore_session_from_cookie
+        restore_session_from_cookie()
+    except Exception as e:
+        # Display error so user can see what went wrong
+        st.error(f"❌ **Error initializing authentication**: {str(e)}")
+        st.exception(e)  # Show full traceback
+        st.stop()  # Stop execution to prevent further errors
     
     # Check for authentication errors in query params
     query_params = st.query_params

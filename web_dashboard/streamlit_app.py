@@ -562,7 +562,10 @@ def main():
         </script>
         """, unsafe_allow_html=True)
         # If we're restoring, wait for the redirect - don't show login page yet
-        if "restore_token" not in st.query_params and "no_token" not in st.query_params:
+        # BUT: Don't wait if magic_token is present (magic link should be processed immediately)
+        if ("restore_token" not in st.query_params and 
+            "no_token" not in st.query_params and 
+            "magic_token" not in st.query_params):
             # No restore_token yet, but we're waiting for JavaScript redirect
             # Show a loading message briefly
             st.info("🔄 Restoring session...")
@@ -585,12 +588,9 @@ def main():
             # Reconstruct query params without no_token
             st.query_params.clear()
             for key, value in current_params.items():
-                if isinstance(value, list):
-                    # Handle multi-value params
-                    for v in value:
-                        st.query_params[key] = v
-                else:
-                    st.query_params[key] = value
+                # Assign the value directly (handles both single values and lists)
+                # Streamlit query_params preserves lists when assigned directly
+                st.query_params[key] = value
     
     # Check for authentication errors in query params
     query_params = st.query_params

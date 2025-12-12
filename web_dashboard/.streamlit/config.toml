@@ -9,6 +9,10 @@ enableXsrfProtection = false
 gatherUsageStats = false
 serverAddress = "localhost"
 
+[client]
+# Suppress deprecation warnings and error details to prevent brief flashes
+showErrorDetails = false
+
 [theme]
 primaryColor = "#1f77b4"
 backgroundColor = "#ffffff"

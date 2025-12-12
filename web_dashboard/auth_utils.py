@@ -138,11 +138,11 @@ def get_token_from_cookie() -> Optional[str]:
                 if token:
                     return token
     except Exception as e:
-        # Log error but don't break the app - only show if it's a real error
-        # (not just "no cookie found" which is normal)
-        import traceback
-        st.error(f"Error reading cookie: {e}")
-        st.code(traceback.format_exc())
+        # Silently handle cookie errors - these are often transient (cookie not ready, etc.)
+        # Only log to console for debugging, don't show to user
+        import logging
+        logging.debug(f"Error reading cookie (this is often normal): {e}")
+        # Don't show error to user - cookie operations can fail normally
     return None
 
 

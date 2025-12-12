@@ -514,16 +514,28 @@ def main():
         # Wait for cookie manager to be ready before any operations
         cookies = st.session_state.cookies
         if not cookies.ready():
-            st.stop()  # Stop execution until cookies are ready
+            st.stop()  # Stop execution until cookies are ready (raises StopException)
         
         # Restore session from cookie on every page load
         # This handles refresh, new tabs, etc. - cookies persist automatically
         from auth_utils import restore_session_from_cookie
         restore_session_from_cookie()
     except Exception as e:
-        # Display error so user can see what went wrong
-        st.error(f"❌ **Error initializing authentication**: {str(e)}")
-        st.exception(e)  # Show full traceback
+        # Check if this is a StopException (normal behavior when cookies aren't ready)
+        # StopException is raised by st.stop() and should be re-raised, not treated as an error
+        # Check by exception type name and module to avoid import issues
+        exception_type_name = type(e).__name__
+        exception_module = type(e).__module__
+        if exception_type_name == "StopException" and "streamlit" in exception_module:
+            raise  # Re-raise StopException - this is normal behavior
+        
+        # Display error so user can see what went wrong (only for actual errors, not StopException)
+        # Use a container to persist the error message
+        error_container = st.container()
+        with error_container:
+            st.error(f"❌ **Error initializing authentication**: {str(e)}")
+            with st.expander("🔍 Full Error Details"):
+                st.exception(e)
         st.stop()  # Stop execution to prevent further errors
     
     # Check for authentication errors in query params

@@ -596,15 +596,9 @@ def main():
         })();
         </script>
         """, unsafe_allow_html=True)
-        # If we're restoring, wait for the redirect - don't show login page yet
-        # BUT: Don't wait if magic_token is present (magic link should be processed immediately)
-        if ("restore_token" not in st.query_params and 
-            "no_token" not in st.query_params and 
-            "magic_token" not in st.query_params):
-            # No restore_token yet, but we're waiting for JavaScript redirect
-            # Show a loading message briefly
-            st.info("🔄 Restoring session...")
-            return
+        # Don't return early - let the login page show immediately
+        # JavaScript will redirect in the background if a token is found
+        # If no token, JavaScript will redirect with no_token=1, and the handler below will process it
     
     # Handle case where JavaScript found no token in localStorage
     if "no_token" in st.query_params:

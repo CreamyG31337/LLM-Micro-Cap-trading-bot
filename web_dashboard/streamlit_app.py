@@ -507,12 +507,9 @@ def main():
     
     # FIRST: Check for restore_token from localStorage (before any auth checks)
     # This handles the case where user refreshes the page - we restore session from localStorage
-    # IMPORTANT: After restoring, we continue execution (no redirect/rerun) so session state is used immediately
-    session_just_restored = False
+    # We process the token and set session, then clean the URL via JavaScript AFTER page renders
     if "restore_token" in st.query_params:
         token = st.query_params["restore_token"]
-        # Clear query params immediately to prevent re-processing on widget interactions
-        st.query_params.clear()
         # Validate token (check expiration)
         try:
             token_parts = token.split('.')
@@ -524,15 +521,26 @@ def main():
                 exp = user_data.get("exp", 0)
                 
                 if exp > int(time.time()):
-                    # Token valid, restore session and continue (no redirect needed)
+                    # Token valid, restore session
                     set_user_session(token)
-                    session_just_restored = True
-                    # Don't rerun or redirect - continue execution and is_authenticated() will return True
+                    # Clean the URL by removing restore_token (JavaScript runs after page renders)
+                    st.markdown("""
+                    <script>
+                    // Clean URL by removing restore_token param after page has loaded
+                    const url = new URL(window.location);
+                    url.searchParams.delete('restore_token');
+                    window.history.replaceState({}, '', url.toString());
+                    </script>
+                    """, unsafe_allow_html=True)
+                    # Don't return - continue to render dashboard since is_authenticated() will return True
                 else:
-                    # Token expired, clear localStorage (will show login page naturally)
+                    # Token expired, clear localStorage and query params
                     st.markdown("""
                     <script>
                     localStorage.removeItem('auth_token');
+                    const url = new URL(window.location);
+                    url.searchParams.delete('restore_token');
+                    window.history.replaceState({}, '', url.toString());
                     </script>
                     """, unsafe_allow_html=True)
             else:
@@ -540,6 +548,9 @@ def main():
                 st.markdown("""
                 <script>
                 localStorage.removeItem('auth_token');
+                const url = new URL(window.location);
+                url.searchParams.delete('restore_token');
+                window.history.replaceState({}, '', url.toString());
                 </script>
                 """, unsafe_allow_html=True)
         except Exception:
@@ -547,18 +558,15 @@ def main():
             st.markdown("""
             <script>
             localStorage.removeItem('auth_token');
+            const url = new URL(window.location);
+            url.searchParams.delete('restore_token');
+            window.history.replaceState({}, '', url.toString());
             </script>
             """, unsafe_allow_html=True)
     
-    # THEN: Check localStorage via JavaScript (only if not authenticated and not already checked)
+    # THEN: Check localStorage via JavaScript (only if not authenticated)
     # This injects JavaScript to check localStorage and redirect with restore_token if found
-    # Skip if we just restored the session above
-    if session_just_restored or is_authenticated():
-        # User is already authenticated, skip localStorage check entirely
-        pass
-    elif "session_check_complete" not in st.session_state:
-        # Set flag immediately to prevent re-checking on subsequent reruns
-        st.session_state.session_check_complete = True
+    elif not is_authenticated():
         st.markdown("""
         <script>
         (function() {
@@ -573,8 +581,6 @@ def main():
         })();
         </script>
         """, unsafe_allow_html=True)
-        # Don't return early - let the login page show immediately
-        # JavaScript will redirect in the background if a token is found
     
     # Check for authentication errors in query params
     query_params = st.query_params

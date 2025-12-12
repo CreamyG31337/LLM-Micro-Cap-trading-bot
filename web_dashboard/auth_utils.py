@@ -127,74 +127,6 @@ def get_user_email() -> Optional[str]:
     return None
 
 
-def get_token_from_cookie() -> Optional[str]:
-    """Get authentication token from cookie"""
-    try:
-        if "cookies" in st.session_state:
-            cookies = st.session_state.cookies
-            # Ensure cookie manager is ready before operations
-            if cookies.ready():
-                token = cookies.get("auth_token")
-                if token:
-                    return token
-    except Exception as e:
-        # Silently handle cookie errors - these are often transient (cookie not ready, etc.)
-        # Only log to console for debugging, don't show to user
-        import logging
-        logging.debug(f"Error reading cookie (this is often normal): {e}")
-        # Don't show error to user - cookie operations can fail normally
-    return None
-
-
-def restore_session_from_cookie() -> bool:
-    """Restore user session from cookie if token exists and is valid"""
-    try:
-        token = get_token_from_cookie()
-        if not token:
-            return False
-        
-        # Validate token (check expiration)
-        token_parts = token.split('.')
-        if len(token_parts) >= 2:
-            payload = token_parts[1]
-            payload += '=' * (4 - len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(payload)
-            user_data = json.loads(decoded)
-            exp = user_data.get("exp", 0)
-            
-            if exp > int(time.time()):
-                # Token valid, restore session
-                set_user_session(token)
-                return True
-            else:
-                # Token expired, clear cookie
-                if "cookies" in st.session_state:
-                    cookies = st.session_state.cookies
-                    if cookies.ready():
-                        del cookies["auth_token"]
-                        cookies.save()
-                return False
-        else:
-            # Invalid token format, clear cookie
-            if "cookies" in st.session_state:
-                cookies = st.session_state.cookies
-                if cookies.ready():
-                    del cookies["auth_token"]
-                    cookies.save()
-            return False
-    except Exception as e:
-        # Invalid token or error, clear cookie if possible
-        try:
-            if "cookies" in st.session_state:
-                cookies = st.session_state.cookies
-                if cookies.ready():
-                    del cookies["auth_token"]
-                    cookies.save()
-        except Exception:
-            pass  # Ignore errors when clearing cookie
-        return False
-
-
 def is_authenticated() -> bool:
     """Check if user is authenticated (checks session_state only)"""
     # Session should be restored from cookie at app start, so just check session_state
@@ -210,12 +142,12 @@ def logout_user():
     if "user_email" in st.session_state:
         del st.session_state.user_email
     
-    # Clear token from cookie
-    if "cookies" in st.session_state:
-        cookies = st.session_state.cookies
-        if cookies.ready():
-            del cookies["auth_token"]
-            cookies.save()
+    # Clear token from cookie using extra-streamlit-components
+    if "cookie_manager" in st.session_state:
+        try:
+            st.session_state.cookie_manager.delete("auth_token")
+        except Exception:
+            pass  # Ignore cookie errors on logout
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
@@ -248,12 +180,12 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             st.session_state.user_email = None
     
     # Store token in cookie for persistence across page refreshes
-    # Use dict-like assignment (cookie expiration handled by browser/cookie manager)
-    if "cookies" in st.session_state:
-        cookies = st.session_state.cookies
-        if cookies.ready():
-            cookies["auth_token"] = access_token
-            cookies.save()  # Save to persist cookie changes
+    # Use extra-streamlit-components cookie_manager
+    if "cookie_manager" in st.session_state:
+        try:
+            st.session_state.cookie_manager.set("auth_token", access_token)
+        except Exception:
+            pass  # Ignore cookie errors - session still works in memory
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

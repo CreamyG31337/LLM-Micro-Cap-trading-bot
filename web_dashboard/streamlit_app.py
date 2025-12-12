@@ -505,42 +505,52 @@ def main():
     import json
     import time
     
-    # Initialize cookie manager for session persistence
-    # Cookie manager requires its component to render before it's ready
-    # Using st.stop() allows the component to render, then Streamlit auto-reruns
-    cookies = None
-    cookies_ready = False
-    
+    # Initialize cookie manager for session persistence using extra-streamlit-components
+    # This library doesn't require ready() checks and works more reliably
     try:
-        from streamlit_cookies_manager import CookieManager
+        import extra_streamlit_components as stx
         
-        # Create cookie manager once and cache it
-        if "cookies" not in st.session_state:
-            st.session_state.cookies = CookieManager()
+        # Use st.cache_resource to ensure singleton cookie manager
+        @st.cache_resource(hash_funcs={"_thread.RLock": lambda _: None})
+        def get_cookie_manager():
+            return stx.CookieManager()
         
-        cookies = st.session_state.cookies
+        cookie_manager = get_cookie_manager()
         
-        # Check if cookies are ready - if not, st.stop() to allow component to render
-        # The component will trigger a rerun once it's ready
-        if not cookies.ready():
-            # Show a loading message while waiting for cookies
-            st.info("🔄 Loading session...")
-            st.stop()  # This allows the cookie component to render
+        # Store in session_state for access by auth_utils
+        st.session_state.cookie_manager = cookie_manager
         
-        # Cookies are ready - restore session if we have a token
-        cookies_ready = True
-        from auth_utils import restore_session_from_cookie
-        restore_session_from_cookie()
+        # Try to restore session from cookie
+        auth_token = cookie_manager.get("auth_token")
+        if auth_token and not is_authenticated():
+            # Validate and restore session
+            try:
+                token_parts = auth_token.split('.')
+                if len(token_parts) >= 2:
+                    payload = token_parts[1]
+                    payload += '=' * (4 - len(payload) % 4)
+                    decoded = base64.urlsafe_b64decode(payload)
+                    user_data = json.loads(decoded)
+                    exp = user_data.get("exp", 0)
+                    
+                    if exp > int(time.time()):
+                        # Token valid, restore session
+                        set_user_session(auth_token)
+                    else:
+                        # Token expired, clear cookie
+                        cookie_manager.delete("auth_token")
+            except Exception:
+                # Invalid token, clear cookie
+                cookie_manager.delete("auth_token")
         
     except ImportError:
-        # streamlit-cookies-manager not installed, continue without cookie persistence
-        st.warning("⚠️ Cookie manager not available. Sessions won't persist across page refreshes.")
+        # extra-streamlit-components not installed
+        st.warning("⚠️ Cookie manager not available. Sessions won't persist across refreshes.")
     except Exception as e:
-        # Handle other errors gracefully - don't block login
+        # Handle errors gracefully - don't block login
         exception_type = type(e).__name__
         if exception_type == "StopException":
-            raise  # Re-raise StopException - this is normal behavior
-        # Log but don't block - user can still log in
+            raise
         import logging
         logging.warning(f"Cookie manager error: {e}")
     

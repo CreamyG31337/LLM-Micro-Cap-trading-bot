@@ -54,10 +54,11 @@ steps:
       # Deploy new container (single line to avoid parsing issues)
       - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
       
-      # Deploy static files (auth callback HTML)
+      # Deploy static files (auth callback HTML and cookie setting page)
       - echo "Deploying static files..."
       - mkdir -p /deploy_target/frontend
       - cp web_dashboard/static/auth_callback.html /deploy_target/frontend/auth_callback.html
+      - cp web_dashboard/static/set_cookie.html /deploy_target/frontend/set_cookie.html
       
       - echo "✅ Build and deployment complete!"
     when:

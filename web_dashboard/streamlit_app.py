@@ -532,7 +532,8 @@ def main():
                     </script>
                     """, unsafe_allow_html=True)
                     st.query_params.clear()
-                    return  # Don't continue - token was expired
+                    st.rerun()  # Rerun to show login page
+                    return
             else:
                 # Invalid token format (not a valid JWT - fewer than 2 parts)
                 # Clear localStorage and query params to prevent redirect loop
@@ -542,7 +543,8 @@ def main():
                 </script>
                 """, unsafe_allow_html=True)
                 st.query_params.clear()
-                return  # Don't continue - token format is invalid
+                st.rerun()  # Rerun to show login page
+                return
         except Exception:
             # Invalid token (decoding failed), clear localStorage and query params
             # This prevents redirect loops with malformed tokens
@@ -552,7 +554,8 @@ def main():
             </script>
             """, unsafe_allow_html=True)
             st.query_params.clear()
-            return  # Don't continue - token is invalid
+            st.rerun()  # Rerun to show login page
+            return
     
     # THEN: Check localStorage via JavaScript (only if not authenticated and not already restoring)
     # This injects JavaScript to check localStorage and redirect with restore_token if found

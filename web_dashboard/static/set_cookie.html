@@ -8,30 +8,50 @@
 </head>
 
 <body>
-    <p>Setting session, please wait...</p>
+    <p id="status">Setting session, please wait...</p>
     <script>
         (function () {
+            var statusEl = document.getElementById('status');
+
             // Helper function to set cookie
             function setCookie(name, value, days) {
                 var expires = new Date();
                 expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
-                document.cookie = name + '=' + value + '; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
+                var cookieStr = name + '=' + value + '; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
+                document.cookie = cookieStr;
+                return cookieStr;
             }
 
             // Get token from URL query param
-            const params = new URLSearchParams(window.location.search);
-            const token = params.get('token');
+            var params = new URLSearchParams(window.location.search);
+            var token = params.get('token');
+
+            statusEl.textContent = 'Token found: ' + (token ? 'Yes (' + token.substring(0, 20) + '...)' : 'No');
 
             if (token) {
                 // Set the cookie
-                setCookie('auth_token', token, 7); // 7 days expiration
+                var cookieResult = setCookie('auth_token', token, 7); // 7 days expiration
+                statusEl.textContent = 'Cookie set! Redirecting...';
+
+                // Verify cookie was set
+                console.log('Cookie string:', cookieResult);
+                console.log('document.cookie:', document.cookie);
 
                 // Redirect back to Streamlit (remove the token from URL for security)
-                const baseUrl = window.location.origin;
-                window.location.replace(baseUrl + '/?session_set=1');
+                var baseUrl = window.location.origin;
+                var redirectUrl = baseUrl + '/?session_set=1';
+                statusEl.textContent = 'Redirecting to: ' + redirectUrl;
+
+                // Small delay to ensure cookie is written
+                setTimeout(function () {
+                    window.location.replace(redirectUrl);
+                }, 100);
             } else {
+                statusEl.textContent = 'No token found, redirecting to home...';
                 // No token, redirect to main page
-                window.location.replace('/');
+                setTimeout(function () {
+                    window.location.replace('/');
+                }, 100);
             }
         })();
     </script>

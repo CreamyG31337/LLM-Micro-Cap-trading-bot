@@ -194,7 +194,7 @@ def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie
         
         # Use JavaScript via st.markdown with meta refresh (not stripped like script tags)
         # This will redirect the ENTIRE page, not just an iframe
-        redirect_url = f'/static/set_cookie.html?token={encoded_token}'
+        redirect_url = f'/set_cookie.html?token={encoded_token}'
         st.markdown(
             f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
             unsafe_allow_html=True

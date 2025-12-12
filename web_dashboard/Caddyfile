@@ -8,12 +8,11 @@ ai-trading.hobo.cash {
         file_server
     }
     
-    # Future: If you build a frontend, you can add:
-    # handle /static/* {
-    #     root * /ai-trading/frontend/dist
-    #     file_server
-    #     uri strip_prefix /static
-    # }
+    # Serve set_cookie.html (sets auth cookie and redirects back)
+    handle /set_cookie.html {
+        root * /ai-trading/frontend
+        file_server
+    }
     
     # Reverse proxy everything else to Streamlit
     reverse_proxy localhost:8501 {

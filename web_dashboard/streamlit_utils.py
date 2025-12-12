@@ -73,8 +73,7 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
 def get_available_funds(return_debug_info: bool = False) -> Union[List[str], Tuple[List[str], Dict[str, Any]]]:
     """Get list of available funds from Supabase
     
-    First queries user_funds table to get funds assigned to the authenticated user.
-    Falls back to querying portfolio_positions, trade_log, and cash_balances tables if needed.
+    Queries user_funds table to get funds assigned to the authenticated user.
     Returns a sorted list of unique fund names.
     
     Args:
@@ -175,7 +174,7 @@ def get_available_funds(return_debug_info: bool = False) -> Union[List[str], Tup
         return sorted_funds
     else:
         debug_info["total_funds"] = 0
-        logger.warning("No funds found in any table (portfolio_positions, trade_log, cash_balances)")
+        logger.warning("No funds found in user_funds table")
         if return_debug_info:
             return [], debug_info
         return []

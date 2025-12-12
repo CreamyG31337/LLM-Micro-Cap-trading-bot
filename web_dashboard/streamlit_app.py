@@ -630,12 +630,23 @@ def main():
     try:
         funds = get_available_funds()
         if not funds:
-            st.sidebar.warning("No funds found in database")
+            st.sidebar.warning("⚠️ No funds found in database")
+            st.sidebar.info("💡 **Troubleshooting:**\n"
+                          "- Check that data exists in `portfolio_positions`, `trade_log`, or `cash_balances` tables\n"
+                          "- Verify Supabase connection and environment variables\n"
+                          "- Check browser console and server logs for detailed error messages")
             funds = ["All Funds"]
         else:
             funds = ["All Funds"] + funds
+            st.sidebar.success(f"✅ Found {len(funds) - 1} fund(s)")
     except Exception as e:
-        st.sidebar.error(f"Error loading funds: {e}")
+        st.sidebar.error(f"❌ Error loading funds: {e}")
+        with st.sidebar.expander("🔍 Debug Information"):
+            st.exception(e)
+            st.write("**Possible causes:**")
+            st.write("- Supabase client initialization failed")
+            st.write("- Database connection error")
+            st.write("- Missing environment variables (SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)")
         funds = ["All Funds"]
     
     selected_fund = st.sidebar.selectbox(

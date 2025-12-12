@@ -558,20 +558,37 @@ def main():
         components.html("""
         <script>
         (function() {
-            // Parse cookies
+            // Parse cookies - try parent document first (for iframe context), fallback to current document
             function getCookie(name) {
-                const value = "; " + document.cookie;
+                let cookieString = "";
+                try {
+                    // Try parent document first (when running in iframe)
+                    cookieString = parent.document.cookie || document.cookie;
+                } catch(e) {
+                    // If parent access fails (cross-origin), use current document
+                    cookieString = document.cookie;
+                }
+                const value = "; " + cookieString;
                 const parts = value.split("; " + name + "=");
                 if (parts.length === 2) return parts.pop().split(";").shift();
                 return null;
             }
             
             const token = getCookie('auth_token');
-            // Only redirect if we have a token and not already have restore_token in URL
-            if (token && !window.location.search.includes('restore_token')) {
-                const url = new URL(window.location);
-                url.searchParams.set('restore_token', token);
-                window.location.replace(url.toString());
+            if (token) {
+                // Access parent window location (Streamlit page) since we're in an iframe
+                try {
+                    const parentLocation = parent.location || window.top.location;
+                    // Only redirect if we have a token and not already have restore_token in URL
+                    if (!parentLocation.search.includes('restore_token')) {
+                        const url = new URL(parentLocation);
+                        url.searchParams.set('restore_token', token);
+                        parentLocation.replace(url.toString());
+                    }
+                } catch(e) {
+                    // If parent access fails (cross-origin), can't redirect
+                    console.warn('Cannot access parent window for redirect:', e);
+                }
             }
         })();
         </script>

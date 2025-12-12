@@ -139,6 +139,10 @@ def logout_user():
     if "user_email" in st.session_state:
         del st.session_state.user_email
     
+    # Clear session check flag to allow checking localStorage again on next login attempt
+    if "session_check_complete" in st.session_state:
+        del st.session_state.session_check_complete
+    
     # Clear token from localStorage
     st.markdown("""
     <script>
@@ -182,6 +186,10 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
     localStorage.setItem('auth_token', '{escaped_token}');
     </script>
     """, unsafe_allow_html=True)
+    
+    # Clear session check flag since we've successfully established a session
+    if "session_check_complete" in st.session_state:
+        del st.session_state.session_check_complete
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

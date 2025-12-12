@@ -563,9 +563,10 @@ def main():
             """, unsafe_allow_html=True)
             return
     
-    # THEN: Check localStorage via JavaScript (only if not authenticated and not already restoring)
+    # THEN: Check localStorage via JavaScript (only if not authenticated and not already checked)
     # This injects JavaScript to check localStorage and redirect with restore_token if found
-    if not is_authenticated() and "session_restoring" not in st.session_state:
+    # Use persistent flag to prevent infinite loops after we've determined there's no token
+    if not is_authenticated() and "session_check_complete" not in st.session_state:
         st.session_state.session_restoring = True  # Prevent multiple attempts
         st.markdown("""
         <script>
@@ -600,10 +601,13 @@ def main():
     
     # Handle case where JavaScript found no token in localStorage
     if "no_token" in st.query_params:
-        # No token found, clear restoration flag and continue to login
+        # No token found, mark session check as complete and continue to login
+        # This prevents infinite loops - we've determined there's no token to restore
         # BUT: Don't clear params if magic_token is present (would break magic link auth)
         if "session_restoring" in st.session_state:
             del st.session_state.session_restoring
+        # Set persistent flag to prevent checking localStorage again on subsequent reruns
+        st.session_state.session_check_complete = True
         if "magic_token" not in st.query_params:
             # Only clear params if magic_token is not present
             st.query_params.clear()

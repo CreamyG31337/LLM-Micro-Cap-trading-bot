@@ -522,9 +522,16 @@ def main():
                 if exp > int(time.time()):
                     # Token valid, restore session
                     set_user_session(token)
-                    st.query_params.clear()
-                    st.rerun()
-                    return  # Return after rerun to prevent fall-through
+                    # Use JavaScript redirect instead of st.rerun() to ensure session state is set before next load
+                    st.markdown("""
+                    <script>
+                    // Redirect to same page without restore_token to ensure session is restored
+                    const url = new URL(window.location);
+                    url.searchParams.delete('restore_token');
+                    window.location.replace(url.toString());
+                    </script>
+                    """, unsafe_allow_html=True)
+                    return
                 else:
                     # Token expired, clear localStorage and redirect (JavaScript executes before redirect)
                     st.markdown("""
@@ -569,7 +576,8 @@ def main():
     # Use persistent flag to prevent infinite loops after we've determined there's no token
     # Early return if already authenticated - no need to check localStorage
     if is_authenticated():
-        # User is already authenticated, skip localStorage check
+        # User is already authenticated, skip localStorage check entirely
+        # Continue to show dashboard (authentication check below will handle it)
         pass
     elif "session_check_complete" not in st.session_state:
         # Set flag immediately to prevent re-checking on subsequent reruns

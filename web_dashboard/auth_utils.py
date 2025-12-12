@@ -165,6 +165,7 @@ def restore_session_from_cookie() -> bool:
                     cookies = st.session_state.cookies
                     if cookies.ready():
                         del cookies["auth_token"]
+                        cookies.save()
                 return False
         else:
             # Invalid token format, clear cookie
@@ -172,6 +173,7 @@ def restore_session_from_cookie() -> bool:
                 cookies = st.session_state.cookies
                 if cookies.ready():
                     del cookies["auth_token"]
+                    cookies.save()
             return False
     except Exception:
         # Invalid token, clear cookie
@@ -179,6 +181,7 @@ def restore_session_from_cookie() -> bool:
             cookies = st.session_state.cookies
             if cookies.ready():
                 del cookies["auth_token"]
+                cookies.save()
         return False
 
 
@@ -202,6 +205,7 @@ def logout_user():
         cookies = st.session_state.cookies
         if cookies.ready():
             del cookies["auth_token"]
+            cookies.save()
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
@@ -239,6 +243,7 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
         cookies = st.session_state.cookies
         if cookies.ready():
             cookies["auth_token"] = access_token
+            cookies.save()  # Save to persist cookie changes
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

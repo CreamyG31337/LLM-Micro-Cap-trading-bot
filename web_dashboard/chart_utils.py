@@ -9,8 +9,15 @@ from typing import Optional, List, Dict
 from datetime import datetime
 
 
-def create_portfolio_value_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
-    """Create a line chart showing portfolio value over time"""
+def create_portfolio_value_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str] = None, 
+                                   show_normalized: bool = False) -> go.Figure:
+    """Create a line chart showing portfolio value over time.
+    
+    Args:
+        portfolio_df: DataFrame with portfolio data
+        fund_name: Optional fund name for title
+        show_normalized: If True, shows performance index (baseline 100) instead of raw value
+    """
     if portfolio_df.empty or 'date' not in portfolio_df.columns:
         # Return empty chart
         fig = go.Figure()
@@ -27,23 +34,56 @@ def create_portfolio_value_chart(portfolio_df: pd.DataFrame, fund_name: Optional
     # Create the chart
     fig = go.Figure()
     
+    # Determine which column to use for y-axis
+    if show_normalized and 'performance_index' in df.columns:
+        y_col = 'performance_index'
+        y_label = "Performance Index (Baseline 100)"
+        chart_name = "Performance"
+        # Add reference line at 100
+        fig.add_hline(y=100, line_dash="dash", line_color="gray", 
+                      annotation_text="Baseline", annotation_position="right")
+    elif 'value' in df.columns:
+        y_col = 'value'
+        y_label = "Portfolio Value ($)"
+        chart_name = "Portfolio Value"
+    elif 'total_value' in df.columns:
+        y_col = 'total_value'
+        y_label = "Portfolio Value ($)"
+        chart_name = "Portfolio Value"
+    else:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No value data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+    
+    # Calculate return percentage for label
+    if len(df) > 1 and 'performance_pct' in df.columns:
+        current_return = df['performance_pct'].iloc[-1]
+        label_suffix = f" ({current_return:+.2f}%)"
+    else:
+        label_suffix = ""
+    
     fig.add_trace(go.Scatter(
         x=df['date'],
-        y=df['value'],
+        y=df[y_col],
         mode='lines+markers',
-        name='Portfolio Value',
+        name=f'{chart_name}{label_suffix}',
         line=dict(color='#1f77b4', width=2),
-        marker=dict(size=4)
+        marker=dict(size=4),
+        hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
     ))
     
-    title = f"Portfolio Value Over Time"
+    title = f"Portfolio {'Performance' if show_normalized else 'Value'} Over Time"
     if fund_name:
         title += f" - {fund_name}"
     
     fig.update_layout(
         title=title,
         xaxis_title="Date",
-        yaxis_title="Portfolio Value ($)",
+        yaxis_title=y_label,
         hovermode='x unified',
         template='plotly_white',
         height=400

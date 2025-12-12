@@ -182,7 +182,16 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
-    actual market values (shares * price), not just cost basis from trades.
+    actual market values (shares * price), with proper normalization and
+    continuous timeline handling like the console app.
+    
+    Returns DataFrame with columns:
+    - date: datetime
+    - value: total market value
+    - cost_basis: total cost basis
+    - pnl: unrealized P&L
+    - performance_pct: P&L as percentage of cost basis
+    - performance_index: Normalized to start at 100 (for charting)
     """
     client = get_supabase_client()
     if not client:
@@ -215,12 +224,147 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
         
         daily_totals.columns = ['date', 'value', 'cost_basis', 'pnl']
         daily_totals['date'] = pd.to_datetime(daily_totals['date'])
-        daily_totals = daily_totals.sort_values('date')
+        daily_totals = daily_totals.sort_values('date').reset_index(drop=True)
+        
+        if daily_totals.empty:
+            return pd.DataFrame()
+        
+        # Calculate performance percentage (P&L / cost_basis * 100)
+        daily_totals['performance_pct'] = daily_totals.apply(
+            lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
+            axis=1
+        )
+        
+        # Normalize performance to start at 100 on first trading day
+        # This matches the console app's approach for fair benchmark comparison
+        first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
+        if not first_day_with_investment.empty:
+            first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
+            # Adjust all performance so first day starts at 0%
+            daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
+        
+        # Create Performance Index (baseline 100 + performance %)
+        daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
+        
+        # Create continuous timeline with forward-fill for weekends
+        daily_totals = _create_continuous_timeline(daily_totals)
         
         return daily_totals
         
     except Exception as e:
         print(f"Error calculating portfolio value: {e}")
         return pd.DataFrame()
+
+
+def _create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
+    """Create a continuous timeline with forward-fill for weekends/holidays.
+    
+    This ensures the chart shows a continuous line without gaps, with
+    weekend values carried forward from the last trading day.
+    """
+    if df.empty or 'date' not in df.columns:
+        return df
+    
+    # Get date range
+    start_date = df['date'].min()
+    end_date = df['date'].max()
+    
+    # Create complete date range (every day)
+    all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
+    
+    # Create DataFrame with all dates
+    continuous_df = pd.DataFrame({'date': all_dates})
+    continuous_df['date_only'] = continuous_df['date'].dt.date
+    
+    # Prepare original data for merge
+    df_for_merge = df.copy()
+    df_for_merge['date_only'] = df_for_merge['date'].dt.date
+    
+    # Merge with all dates
+    merged = continuous_df.merge(
+        df_for_merge.drop('date', axis=1),
+        on='date_only',
+        how='left'
+    )
+    
+    # Forward-fill numeric columns (weekend values = last trading day)
+    numeric_cols = ['value', 'cost_basis', 'pnl', 'performance_pct', 'performance_index']
+    for col in numeric_cols:
+        if col in merged.columns:
+            merged[col] = merged[col].ffill()
+    
+    # Drop helper column
+    merged = merged.drop('date_only', axis=1)
+    
+    return merged
+
+
+def calculate_performance_metrics(fund: Optional[str] = None) -> Dict[str, Any]:
+    """Calculate key performance metrics like the console app.
+    
+    Returns dict with:
+    - peak_date: Date of peak performance
+    - peak_gain_pct: Peak gain percentage 
+    - max_drawdown_pct: Maximum drawdown percentage
+    - max_drawdown_date: Date of max drawdown
+    - total_return_pct: Current total return
+    - current_value: Current portfolio value
+    - total_invested: Total cost basis
+    """
+    df = calculate_portfolio_value_over_time(fund)
+    
+    if df.empty or 'performance_index' not in df.columns:
+        return {
+            'peak_date': None,
+            'peak_gain_pct': 0.0,
+            'max_drawdown_pct': 0.0,
+            'max_drawdown_date': None,
+            'total_return_pct': 0.0,
+            'current_value': 0.0,
+            'total_invested': 0.0
+        }
+    
+    try:
+        # Peak performance
+        peak_idx = df['performance_index'].idxmax()
+        peak_date = df.loc[peak_idx, 'date']
+        peak_gain_pct = float(df.loc[peak_idx, 'performance_index']) - 100.0
+        
+        # Max drawdown calculation
+        df_sorted = df.sort_values('date').copy()
+        df_sorted['running_max'] = df_sorted['performance_index'].cummax()
+        df_sorted['drawdown_pct'] = (df_sorted['performance_index'] / df_sorted['running_max'] - 1.0) * 100.0
+        
+        dd_idx = df_sorted['drawdown_pct'].idxmin()
+        max_drawdown_pct = float(df_sorted.loc[dd_idx, 'drawdown_pct'])
+        max_drawdown_date = df_sorted.loc[dd_idx, 'date']
+        
+        # Current stats (last row)
+        last_row = df.iloc[-1]
+        total_return_pct = float(last_row['performance_pct'])
+        current_value = float(last_row['value'])
+        total_invested = float(last_row['cost_basis'])
+        
+        return {
+            'peak_date': peak_date,
+            'peak_gain_pct': peak_gain_pct,
+            'max_drawdown_pct': max_drawdown_pct,
+            'max_drawdown_date': max_drawdown_date,
+            'total_return_pct': total_return_pct,
+            'current_value': current_value,
+            'total_invested': total_invested
+        }
+        
+    except Exception as e:
+        print(f"Error calculating metrics: {e}")
+        return {
+            'peak_date': None,
+            'peak_gain_pct': 0.0,
+            'max_drawdown_pct': 0.0,
+            'max_drawdown_date': None,
+            'total_return_pct': 0.0,
+            'current_value': 0.0,
+            'total_invested': 0.0
+        }
 
 

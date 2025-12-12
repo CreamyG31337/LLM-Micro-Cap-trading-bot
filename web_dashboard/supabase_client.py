@@ -54,22 +54,63 @@ class SupabaseClient:
             self.key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
             if not self.key:
                 raise ValueError("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY must be set for admin operations")
-        elif user_token:
-            # Use user's JWT token (respects RLS)
-            self.key = user_token
         else:
-            # Fallback to publishable key (limited access, may not work with RLS)
+            # Always use publishable key to initialize client (required by Supabase Python library)
             self.key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+            if not self.key:
+                raise ValueError("SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY must be set")
         
         # Debug logging for environment variables
         logger.debug(f"SUPABASE_URL exists: {bool(self.url)}")
-        logger.debug(f"Using key type: {'service_role' if use_service_role else 'user_token' if user_token else 'publishable'}")
+        logger.debug(f"Using key type: {'service_role' if use_service_role else 'publishable'}")
+        logger.debug(f"User token provided: {bool(user_token)}")
         
         if not self.url or not self.key:
             logger.error(f"Missing environment variables - URL: {bool(self.url)}, KEY: {bool(self.key)}")
             raise ValueError("SUPABASE_URL and appropriate key must be set")
         
+        # Create client with publishable/service role key
         self.supabase: Client = create_client(self.url, self.key)
+        
+        # If user token provided, set it as the auth session
+        if user_token and not use_service_role:
+            # Store token for use in queries
+            self._user_token = user_token
+            
+            try:
+                # Try to set the access token in the auth session
+                # Supabase client needs both access_token and refresh_token for set_session
+                # If we only have access_token, we'll manually set headers instead
+                self.supabase.auth.set_session(
+                    access_token=user_token,
+                    refresh_token=""  # Empty refresh token - may cause set_session to fail
+                )
+                logger.debug("User token set in Supabase auth session")
+            except Exception as e:
+                logger.debug(f"set_session failed (expected if no refresh token): {e}")
+                # We'll use the stored token to set headers manually in queries
+            
+            # Manually set Authorization header on postgrest client
+            # This is the key fix - we need to set the Authorization header on the underlying postgrest client
+            try:
+                # The Supabase client uses postgrest for database queries
+                # We need to set the Authorization header on the postgrest client's session
+                if hasattr(self.supabase, 'postgrest'):
+                    # Set the auth token on the postgrest client
+                    # The postgrest client uses this for Authorization header
+                    self.supabase.postgrest.auth = user_token
+                    logger.debug("User token set on postgrest client")
+                else:
+                    # Fallback: try to access via table client
+                    # Create a dummy table query to access the underlying client
+                    dummy_table = self.supabase.table("_dummy_table_for_auth")
+                    if hasattr(dummy_table, '_client'):
+                        # Set auth on the underlying postgrest client
+                        dummy_table._client.auth = user_token
+                        logger.debug("User token set on table client's postgrest client")
+            except Exception as header_error:
+                logger.warning(f"Could not set Authorization header: {header_error}")
+                # Token is stored in self._user_token as fallback
     
     def test_connection(self) -> bool:
         """Test database connection"""

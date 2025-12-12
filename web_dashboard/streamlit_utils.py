@@ -179,44 +179,48 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
 
 
 def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFrame:
-    """Calculate portfolio value over time from trade log"""
-    trades_df = get_trade_log(limit=10000, fund=fund)
+    """Calculate portfolio value over time from portfolio_positions table.
     
-    if trades_df.empty:
+    This queries the portfolio_positions table to get daily snapshots of
+    actual market values (shares * price), not just cost basis from trades.
+    """
+    client = get_supabase_client()
+    if not client:
         return pd.DataFrame()
     
-    # Sort by date
-    trades_df = trades_df.sort_values('date')
-    
-    # Calculate cumulative portfolio value
-    # This is a simplified calculation - you may want to enhance this
-    portfolio_values = []
-    current_value = 0.0
-    
-    for _, trade in trades_df.iterrows():
-        trade_type = str(trade.get('action', '')).upper()
-        shares = float(trade.get('shares', 0))
-        price = float(trade.get('price', 0))
-        cost_basis = float(trade.get('cost_basis', shares * price))
+    try:
+        # Query portfolio_positions to get daily snapshots with actual market values
+        query = client.supabase.table("portfolio_positions").select(
+            "date, total_value, cost_basis, pnl, fund"
+        ).order("date")
         
-        if trade_type == 'BUY':
-            current_value += cost_basis
-        elif trade_type == 'SELL':
-            current_value -= cost_basis
+        if fund:
+            query = query.eq("fund", fund)
         
-        portfolio_values.append({
-            'date': trade['date'],
-            'value': current_value
-        })
-    
-    if not portfolio_values:
+        result = query.execute()
+        
+        if not result.data:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(result.data)
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Aggregate by date to get daily portfolio totals
+        # Sum all positions' values for each day
+        daily_totals = df.groupby(df['date'].dt.date).agg({
+            'total_value': 'sum',
+            'cost_basis': 'sum',
+            'pnl': 'sum'
+        }).reset_index()
+        
+        daily_totals.columns = ['date', 'value', 'cost_basis', 'pnl']
+        daily_totals['date'] = pd.to_datetime(daily_totals['date'])
+        daily_totals = daily_totals.sort_values('date')
+        
+        return daily_totals
+        
+    except Exception as e:
+        print(f"Error calculating portfolio value: {e}")
         return pd.DataFrame()
-    
-    result_df = pd.DataFrame(portfolio_values)
-    # Ensure date column is datetime
-    if 'date' in result_df.columns:
-        result_df['date'] = pd.to_datetime(result_df['date'])
-    
-    return result_df
 
 

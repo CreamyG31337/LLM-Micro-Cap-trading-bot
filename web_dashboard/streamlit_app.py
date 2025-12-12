@@ -507,8 +507,12 @@ def main():
     
     # FIRST: Check for restore_token from localStorage (before any auth checks)
     # This handles the case where user refreshes the page - we restore session from localStorage
+    # IMPORTANT: After restoring, we continue execution (no redirect/rerun) so session state is used immediately
+    session_just_restored = False
     if "restore_token" in st.query_params:
         token = st.query_params["restore_token"]
+        # Clear query params immediately to prevent re-processing on widget interactions
+        st.query_params.clear()
         # Validate token (check expiration)
         try:
             token_parts = token.split('.')
@@ -520,63 +524,41 @@ def main():
                 exp = user_data.get("exp", 0)
                 
                 if exp > int(time.time()):
-                    # Token valid, restore session
+                    # Token valid, restore session and continue (no redirect needed)
                     set_user_session(token)
-                    # Clear the restore_token param and rerun to continue with authenticated state
-                    # Using st.rerun() preserves session_state; JavaScript redirect would lose it
-                    st.query_params.clear()
-                    st.rerun()
+                    session_just_restored = True
+                    # Don't rerun or redirect - continue execution and is_authenticated() will return True
                 else:
-                    # Token expired, clear localStorage and redirect (JavaScript executes before redirect)
+                    # Token expired, clear localStorage (will show login page naturally)
                     st.markdown("""
                     <script>
                     localStorage.removeItem('auth_token');
-                    // Redirect to same page without restore_token to show login page
-                    const url = new URL(window.location);
-                    url.searchParams.delete('restore_token');
-                    window.location.replace(url.toString());
                     </script>
                     """, unsafe_allow_html=True)
-                    return
             else:
-                # Invalid token format (not a valid JWT - fewer than 2 parts)
-                # Clear localStorage and redirect to prevent redirect loop
+                # Invalid token format, clear localStorage
                 st.markdown("""
                 <script>
                 localStorage.removeItem('auth_token');
-                // Redirect to same page without restore_token to show login page
-                const url = new URL(window.location);
-                url.searchParams.delete('restore_token');
-                window.location.replace(url.toString());
                 </script>
                 """, unsafe_allow_html=True)
-                return
         except Exception:
-            # Invalid token (decoding failed), clear localStorage and redirect
-            # This prevents redirect loops with malformed tokens
+            # Invalid token (decoding failed), clear localStorage
             st.markdown("""
             <script>
             localStorage.removeItem('auth_token');
-            // Redirect to same page without restore_token to show login page
-            const url = new URL(window.location);
-            url.searchParams.delete('restore_token');
-            window.location.replace(url.toString());
             </script>
             """, unsafe_allow_html=True)
-            return
     
     # THEN: Check localStorage via JavaScript (only if not authenticated and not already checked)
     # This injects JavaScript to check localStorage and redirect with restore_token if found
-    # Use persistent flag to prevent infinite loops after we've determined there's no token
-    # Early return if already authenticated - no need to check localStorage
-    if is_authenticated():
+    # Skip if we just restored the session above
+    if session_just_restored or is_authenticated():
         # User is already authenticated, skip localStorage check entirely
-        # Continue to show dashboard (authentication check below will handle it)
         pass
     elif "session_check_complete" not in st.session_state:
         # Set flag immediately to prevent re-checking on subsequent reruns
         st.session_state.session_check_complete = True
-        st.session_state.session_restoring = True  # Prevent multiple attempts
         st.markdown("""
         <script>
         (function() {
@@ -586,45 +568,13 @@ def main():
                 const url = new URL(window.location);
                 url.searchParams.set('restore_token', token);
                 window.location.replace(url.toString());
-            } else {
-                // No token in localStorage - signal that restoration attempt is complete
-                // BUT: Don't add no_token if magic_token is present (would break magic link auth)
-                if (!window.location.search.includes('no_token') && !window.location.search.includes('magic_token')) {
-                    const url = new URL(window.location);
-                    url.searchParams.set('no_token', '1');
-                    window.location.replace(url.toString());
-                }
             }
+            // If no token, do nothing - just show login page
         })();
         </script>
         """, unsafe_allow_html=True)
         # Don't return early - let the login page show immediately
         # JavaScript will redirect in the background if a token is found
-        # If no token, JavaScript will redirect with no_token=1, and the handler below will process it
-    
-    # Handle case where JavaScript found no token in localStorage
-    if "no_token" in st.query_params:
-        # No token found, mark session check as complete and continue to login
-        # This prevents infinite loops - we've determined there's no token to restore
-        # BUT: Don't clear params if magic_token is present (would break magic link auth)
-        if "session_restoring" in st.session_state:
-            del st.session_state.session_restoring
-        # Set persistent flag to prevent checking localStorage again on subsequent reruns
-        st.session_state.session_check_complete = True
-        if "magic_token" not in st.query_params:
-            # Only clear params if magic_token is not present
-            st.query_params.clear()
-        else:
-            # Remove no_token but keep magic_token and other params
-            # Use dict conversion to safely remove just no_token
-            current_params = dict(st.query_params)
-            current_params.pop("no_token", None)
-            # Reconstruct query params without no_token
-            st.query_params.clear()
-            for key, value in current_params.items():
-                # Assign the value directly (handles both single values and lists)
-                # Streamlit query_params preserves lists when assigned directly
-                st.query_params[key] = value
     
     # Check for authentication errors in query params
     query_params = st.query_params
@@ -691,10 +641,6 @@ def main():
             st.query_params.clear()
     
     # NOW: Check authentication (after restoration attempts)
-    # Clear session_restoring flag if we've made it here without restoring
-    if "session_restoring" in st.session_state:
-        # If we're here and not authenticated, restoration failed or no token exists
-        del st.session_state.session_restoring
     
     if not is_authenticated():
         show_login_page()

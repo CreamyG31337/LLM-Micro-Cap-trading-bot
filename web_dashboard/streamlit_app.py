@@ -505,14 +505,10 @@ def main():
     import json
     import time
     
-    # FIRST: Check if already authenticated (session_state persists across refreshes)
-    # If already authenticated, skip all localStorage/restore_token logic
-    if is_authenticated():
-        # User is already logged in via session_state, skip restoration logic
-        pass
-    # THEN: Check for restore_token from localStorage (only if not authenticated)
-    # This handles the case where user refreshes and session_state was lost
-    elif "restore_token" in st.query_params:
+    # ALWAYS check for restore_token first (set by JavaScript on page load)
+    # Don't rely on session_state persisting - localStorage is the source of truth
+    # This handles ALL cases: refresh, new tab, session lost, etc.
+    if "restore_token" in st.query_params:
         token = st.query_params["restore_token"]
         # Validate token (check expiration)
         try:
@@ -525,52 +521,44 @@ def main():
                 exp = user_data.get("exp", 0)
                 
                 if exp > int(time.time()):
-                    # Token valid, restore session
+                    # Token valid, restore session and continue (no rerun needed)
                     set_user_session(token)
-                    # Use st.rerun() to refresh with session state set (preserves session_state)
                     st.query_params.clear()
-                    st.rerun()
-                    return
+                    # Continue execution - is_authenticated() will now return True
                 else:
-                    # Token expired, clear localStorage and query params
+                    # Token expired, clear localStorage
                     st.markdown("""
                     <script>
                     localStorage.removeItem('auth_token');
-                    const url = new URL(window.location);
-                    url.searchParams.delete('restore_token');
-                    window.history.replaceState({}, '', url.toString());
                     </script>
                     """, unsafe_allow_html=True)
+                    st.query_params.clear()
             else:
                 # Invalid token format, clear localStorage
                 st.markdown("""
                 <script>
                 localStorage.removeItem('auth_token');
-                const url = new URL(window.location);
-                url.searchParams.delete('restore_token');
-                window.history.replaceState({}, '', url.toString());
                 </script>
                 """, unsafe_allow_html=True)
+                st.query_params.clear()
         except Exception:
             # Invalid token (decoding failed), clear localStorage
             st.markdown("""
             <script>
             localStorage.removeItem('auth_token');
-            const url = new URL(window.location);
-            url.searchParams.delete('restore_token');
-            window.history.replaceState({}, '', url.toString());
             </script>
             """, unsafe_allow_html=True)
+            st.query_params.clear()
     
-    # THEN: Check localStorage via JavaScript (only if not authenticated and no restore_token)
-    # This injects JavaScript to check localStorage and redirect with restore_token if found
+    # If not authenticated and no restore_token, check localStorage via JavaScript
+    # This runs on initial page load to set restore_token if token exists
     elif not is_authenticated():
         st.markdown("""
         <script>
         (function() {
             const token = localStorage.getItem('auth_token');
             if (token && !window.location.search.includes('magic_token') && !window.location.search.includes('restore_token')) {
-                // Redirect with token to restore session
+                // Immediately redirect with token to restore session
                 const url = new URL(window.location);
                 url.searchParams.set('restore_token', token);
                 window.location.replace(url.toString());
@@ -579,6 +567,10 @@ def main():
         })();
         </script>
         """, unsafe_allow_html=True)
+        # Show loading message while JavaScript redirects (only if we're waiting for redirect)
+        if "restore_token" not in st.query_params:
+            st.info("🔄 Restoring session...")
+            return
     
     # Check for authentication errors in query params
     query_params = st.query_params

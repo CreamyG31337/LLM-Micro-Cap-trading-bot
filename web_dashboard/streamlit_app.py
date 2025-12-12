@@ -524,6 +524,7 @@ def main():
                     set_user_session(token)
                     st.query_params.clear()
                     st.rerun()
+                    return  # Return after rerun to prevent fall-through
                 else:
                     # Token expired, clear localStorage and redirect (JavaScript executes before redirect)
                     st.markdown("""
@@ -566,7 +567,13 @@ def main():
     # THEN: Check localStorage via JavaScript (only if not authenticated and not already checked)
     # This injects JavaScript to check localStorage and redirect with restore_token if found
     # Use persistent flag to prevent infinite loops after we've determined there's no token
-    if not is_authenticated() and "session_check_complete" not in st.session_state:
+    # Early return if already authenticated - no need to check localStorage
+    if is_authenticated():
+        # User is already authenticated, skip localStorage check
+        pass
+    elif "session_check_complete" not in st.session_state:
+        # Set flag immediately to prevent re-checking on subsequent reruns
+        st.session_state.session_check_complete = True
         st.session_state.session_restoring = True  # Prevent multiple attempts
         st.markdown("""
         <script>

@@ -551,8 +551,8 @@ def main():
                 window.location.replace(url.toString());
             } else {
                 // No token in localStorage - signal that restoration attempt is complete
-                // Add a parameter to indicate no token was found
-                if (!window.location.search.includes('no_token')) {
+                // BUT: Don't add no_token if magic_token is present (would break magic link auth)
+                if (!window.location.search.includes('no_token') && !window.location.search.includes('magic_token')) {
                     const url = new URL(window.location);
                     url.searchParams.set('no_token', '1');
                     window.location.replace(url.toString());
@@ -571,9 +571,26 @@ def main():
     # Handle case where JavaScript found no token in localStorage
     if "no_token" in st.query_params:
         # No token found, clear restoration flag and continue to login
+        # BUT: Don't clear params if magic_token is present (would break magic link auth)
         if "session_restoring" in st.session_state:
             del st.session_state.session_restoring
-        st.query_params.clear()
+        if "magic_token" not in st.query_params:
+            # Only clear params if magic_token is not present
+            st.query_params.clear()
+        else:
+            # Remove no_token but keep magic_token and other params
+            # Use dict conversion to safely remove just no_token
+            current_params = dict(st.query_params)
+            current_params.pop("no_token", None)
+            # Reconstruct query params without no_token
+            st.query_params.clear()
+            for key, value in current_params.items():
+                if isinstance(value, list):
+                    # Handle multi-value params
+                    for v in value:
+                        st.query_params[key] = v
+                else:
+                    st.query_params[key] = value
     
     # Check for authentication errors in query params
     query_params = st.query_params

@@ -626,15 +626,78 @@ def main():
     # Sidebar - Fund selector
     st.sidebar.title("Filters")
     
-    # Get available funds
+    # Get available funds with debug information
     try:
-        funds = get_available_funds()
+        funds, debug_info = get_available_funds(return_debug_info=True)
+        
         if not funds:
             st.sidebar.warning("⚠️ No funds found in database")
-            st.sidebar.info("💡 **Troubleshooting:**\n"
-                          "- Check that data exists in `portfolio_positions`, `trade_log`, or `cash_balances` tables\n"
-                          "- Verify Supabase connection and environment variables\n"
-                          "- Check browser console and server logs for detailed error messages")
+            
+            # Show detailed debug information
+            with st.sidebar.expander("🔍 Debug Information", expanded=True):
+                st.write("**Client Status:**")
+                if debug_info["client_initialized"]:
+                    st.success(f"✅ Client initialized - URL: {debug_info['client_url']}")
+                    if debug_info.get("user_id"):
+                        st.info(f"👤 User ID: {debug_info['user_id']}")
+                    else:
+                        st.warning("⚠️ No user ID found - user may not be authenticated")
+                else:
+                    st.error(f"❌ Client failed: {debug_info.get('error', 'Unknown error')}")
+                
+                st.write("**Query Results:**")
+                
+                # User funds (primary source)
+                st.write("**user_funds table (PRIMARY):**")
+                if debug_info["user_funds"]["queried"]:
+                    if debug_info["user_funds"]["error"]:
+                        st.error(f"❌ Error: {debug_info['user_funds']['error']}")
+                    else:
+                        st.write(f"  - Rows returned: {debug_info['user_funds']['row_count']}")
+                        st.write(f"  - Funds found: {debug_info['user_funds']['funds_found']}")
+                        if debug_info['user_funds']['row_count'] > 0:
+                            st.success(f"✅ Found {len(debug_info['user_funds']['funds_found'])} fund(s) in user_funds")
+                else:
+                    st.write("  - Not queried (no user_id)")
+                
+                # Portfolio positions
+                st.write("**portfolio_positions table:**")
+                if debug_info["portfolio_positions"]["queried"]:
+                    if debug_info["portfolio_positions"]["error"]:
+                        st.error(f"❌ Error: {debug_info['portfolio_positions']['error']}")
+                    else:
+                        st.write(f"  - Rows returned: {debug_info['portfolio_positions']['row_count']}")
+                        st.write(f"  - Funds found: {debug_info['portfolio_positions']['funds_found']}")
+                else:
+                    st.write("  - Not queried")
+                
+                # Trade log
+                st.write("**trade_log table:**")
+                if debug_info["trade_log"]["queried"]:
+                    if debug_info["trade_log"]["error"]:
+                        st.error(f"❌ Error: {debug_info['trade_log']['error']}")
+                    else:
+                        st.write(f"  - Rows returned: {debug_info['trade_log']['row_count']}")
+                        st.write(f"  - Funds found: {debug_info['trade_log']['funds_found']}")
+                else:
+                    st.write("  - Not queried")
+                
+                # Cash balances
+                st.write("**cash_balances table:**")
+                if debug_info["cash_balances"]["queried"]:
+                    if debug_info["cash_balances"]["error"]:
+                        st.error(f"❌ Error: {debug_info['cash_balances']['error']}")
+                    else:
+                        st.write(f"  - Rows returned: {debug_info['cash_balances']['row_count']}")
+                        st.write(f"  - Funds found: {debug_info['cash_balances']['funds_found']}")
+                else:
+                    st.write("  - Not queried")
+                
+                st.write("**Troubleshooting:**")
+                st.write("- Check that data exists in the tables above")
+                st.write("- Verify Supabase connection and environment variables")
+                st.write("- Check server console logs for detailed error messages")
+            
             funds = ["All Funds"]
         else:
             funds = ["All Funds"] + funds

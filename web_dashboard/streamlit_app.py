@@ -505,10 +505,14 @@ def main():
     import json
     import time
     
-    # FIRST: Check for restore_token from localStorage (before any auth checks)
-    # This handles the case where user refreshes the page - we restore session from localStorage
-    # We process the token and set session, then clean the URL via JavaScript AFTER page renders
-    if "restore_token" in st.query_params:
+    # FIRST: Check if already authenticated (session_state persists across refreshes)
+    # If already authenticated, skip all localStorage/restore_token logic
+    if is_authenticated():
+        # User is already logged in via session_state, skip restoration logic
+        pass
+    # THEN: Check for restore_token from localStorage (only if not authenticated)
+    # This handles the case where user refreshes and session_state was lost
+    elif "restore_token" in st.query_params:
         token = st.query_params["restore_token"]
         # Validate token (check expiration)
         try:
@@ -523,16 +527,10 @@ def main():
                 if exp > int(time.time()):
                     # Token valid, restore session
                     set_user_session(token)
-                    # Clean the URL by removing restore_token (JavaScript runs after page renders)
-                    st.markdown("""
-                    <script>
-                    // Clean URL by removing restore_token param after page has loaded
-                    const url = new URL(window.location);
-                    url.searchParams.delete('restore_token');
-                    window.history.replaceState({}, '', url.toString());
-                    </script>
-                    """, unsafe_allow_html=True)
-                    # Don't return - continue to render dashboard since is_authenticated() will return True
+                    # Use st.rerun() to refresh with session state set (preserves session_state)
+                    st.query_params.clear()
+                    st.rerun()
+                    return
                 else:
                     # Token expired, clear localStorage and query params
                     st.markdown("""
@@ -564,7 +562,7 @@ def main():
             </script>
             """, unsafe_allow_html=True)
     
-    # THEN: Check localStorage via JavaScript (only if not authenticated)
+    # THEN: Check localStorage via JavaScript (only if not authenticated and no restore_token)
     # This injects JavaScript to check localStorage and redirect with restore_token if found
     elif not is_authenticated():
         st.markdown("""

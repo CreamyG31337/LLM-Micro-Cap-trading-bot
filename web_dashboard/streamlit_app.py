@@ -510,15 +510,12 @@ def main():
     try:
         import extra_streamlit_components as stx
         
-        # Use st.cache_resource to ensure singleton cookie manager
-        @st.cache_resource(hash_funcs={"_thread.RLock": lambda _: None})
-        def get_cookie_manager():
-            return stx.CookieManager()
+        # Initialize cookie manager in session_state (not cached - widgets can't be cached)
+        # This ensures one instance per session without using cache decorator
+        if "cookie_manager" not in st.session_state:
+            st.session_state.cookie_manager = stx.CookieManager()
         
-        cookie_manager = get_cookie_manager()
-        
-        # Store in session_state for access by auth_utils
-        st.session_state.cookie_manager = cookie_manager
+        cookie_manager = st.session_state.cookie_manager
         
         # Try to restore session from cookie
         auth_token = cookie_manager.get("auth_token")

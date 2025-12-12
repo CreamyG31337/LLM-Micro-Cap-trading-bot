@@ -525,16 +525,34 @@ def main():
                     st.query_params.clear()
                     st.rerun()
                 else:
-                    # Token expired, clear localStorage
+                    # Token expired, clear localStorage and query params
                     st.markdown("""
                     <script>
                     localStorage.removeItem('auth_token');
                     </script>
                     """, unsafe_allow_html=True)
                     st.query_params.clear()
+                    return  # Don't continue - token was expired
+            else:
+                # Invalid token format (not a valid JWT - fewer than 2 parts)
+                # Clear localStorage and query params to prevent redirect loop
+                st.markdown("""
+                <script>
+                localStorage.removeItem('auth_token');
+                </script>
+                """, unsafe_allow_html=True)
+                st.query_params.clear()
+                return  # Don't continue - token format is invalid
         except Exception:
-            # Invalid token, clear
+            # Invalid token (decoding failed), clear localStorage and query params
+            # This prevents redirect loops with malformed tokens
+            st.markdown("""
+            <script>
+            localStorage.removeItem('auth_token');
+            </script>
+            """, unsafe_allow_html=True)
             st.query_params.clear()
+            return  # Don't continue - token is invalid
     
     # THEN: Check localStorage via JavaScript (only if not authenticated and not already restoring)
     # This injects JavaScript to check localStorage and redirect with restore_token if found

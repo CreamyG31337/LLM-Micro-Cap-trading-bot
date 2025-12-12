@@ -517,8 +517,16 @@ def main():
         
         cookie_manager = st.session_state.cookie_manager
         
+        # Get all cookies at once - this is the recommended pattern
+        # The component needs to render first, so cookies may be empty on first run
+        all_cookies = cookie_manager.get_all()
+        
+        # Debug: Show what cookies we got (remove after debugging)
+        st.write(f"DEBUG: Cookies received: {list(all_cookies.keys()) if all_cookies else 'None'}")
+        
         # Try to restore session from cookie
-        auth_token = cookie_manager.get("auth_token")
+        auth_token = all_cookies.get("auth_token") if all_cookies else None
+        
         if auth_token and not is_authenticated():
             # Validate and restore session
             try:
@@ -533,10 +541,12 @@ def main():
                     if exp > int(time.time()):
                         # Token valid, restore session
                         set_user_session(auth_token)
+                        # Force a rerun to ensure session state is applied
+                        st.rerun()
                     else:
                         # Token expired, clear cookie
                         cookie_manager.delete("auth_token")
-            except Exception:
+            except Exception as e:
                 # Invalid token, clear cookie
                 cookie_manager.delete("auth_token")
         

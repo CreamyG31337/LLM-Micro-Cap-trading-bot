@@ -194,7 +194,7 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     current_value = 0.0
     
     for _, trade in trades_df.iterrows():
-        trade_type = str(trade.get('type', '')).upper()
+        trade_type = str(trade.get('action', '')).upper()
         shares = float(trade.get('shares', 0))
         price = float(trade.get('price', 0))
         cost_basis = float(trade.get('cost_basis', shares * price))

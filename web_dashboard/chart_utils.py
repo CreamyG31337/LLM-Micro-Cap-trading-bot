@@ -141,7 +141,8 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
 
 def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
     """Create a timeline chart showing trades over time"""
-    if trades_df.empty or 'date' not in trades_df.columns:
+    required_cols = ['date', 'action', 'shares', 'price']
+    if trades_df.empty or not all(col in trades_df.columns for col in required_cols):
         fig = go.Figure()
         fig.add_annotation(
             text="No data available",
@@ -156,8 +157,8 @@ def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[st
     df['trade_value'] = df['shares'] * df['price']
     
     # Separate buys and sells
-    buys = df[df['type'].str.upper() == 'BUY'].groupby('date')['trade_value'].sum()
-    sells = df[df['type'].str.upper() == 'SELL'].groupby('date')['trade_value'].sum()
+    buys = df[df['action'].str.upper() == 'BUY'].groupby('date')['trade_value'].sum()
+    sells = df[df['action'].str.upper() == 'SELL'].groupby('date')['trade_value'].sum()
     
     fig = go.Figure()
     

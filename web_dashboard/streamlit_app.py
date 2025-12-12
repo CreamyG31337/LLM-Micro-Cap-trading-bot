@@ -505,68 +505,73 @@ def main():
     import json
     import time
     
-    # Initialize cookie manager for session persistence using extra-streamlit-components
-    # IMPORTANT: CookieManager must be created fresh each run (not cached) so the component renders
-    cookie_manager = None
-    try:
-        import extra_streamlit_components as stx
+    # ===== SESSION PERSISTENCE VIA COOKIES =====
+    # Using direct JavaScript for cookie manipulation (more reliable than components)
+    # Flow: 
+    # 1. On login: set_user_session() injects JS to set cookie
+    # 2. On page load: inject JS to read cookie and pass via query param if not authenticated
+    # 3. On restore_token in query param: restore session from token
+    
+    # Check for restore_token query param (passed by JavaScript after reading cookie)
+    if "restore_token" in st.query_params:
+        token = st.query_params["restore_token"]
+        # Clear the query param immediately
+        del st.query_params["restore_token"]
         
-        # Create CookieManager fresh each run - it's a component that needs to render
-        # Using a key ensures consistent component identity
-        cookie_manager = stx.CookieManager(key="auth_cookie_manager")
-        
-        # Store reference for auth_utils to use
-        st.session_state.cookie_manager = cookie_manager
-        
-        # Get all cookies at once - this is the recommended pattern
-        all_cookies = cookie_manager.get_all()
-        
-        # Debug: Show what cookies we got (remove after debugging)
-        st.write(f"DEBUG: Cookies received: {list(all_cookies.keys()) if all_cookies else 'None'}")
-        
-        # Display any debug messages from set_user_session
-        if "_debug_msgs" in st.session_state and st.session_state["_debug_msgs"]:
-            for msg in st.session_state["_debug_msgs"]:
-                st.write(f"DEBUG: {msg}")
-            # Clear after display
-            st.session_state["_debug_msgs"] = []
-        
-        # Try to restore session from cookie
-        auth_token = all_cookies.get("auth_token") if all_cookies else None
-        
-        if auth_token and not is_authenticated():
-            # Validate and restore session
-            try:
-                token_parts = auth_token.split('.')
-                if len(token_parts) >= 2:
-                    payload = token_parts[1]
-                    payload += '=' * (4 - len(payload) % 4)
-                    decoded = base64.urlsafe_b64decode(payload)
-                    user_data = json.loads(decoded)
-                    exp = user_data.get("exp", 0)
-                    
-                    if exp > int(time.time()):
-                        # Token valid, restore session
-                        set_user_session(auth_token)
-                        # Force a rerun to ensure session state is applied
-                        st.rerun()
-                    else:
-                        # Token expired, clear cookie
-                        cookie_manager.delete("auth_token")
-            except Exception as e:
-                # Invalid token, clear cookie
-                cookie_manager.delete("auth_token")
-        
-    except ImportError:
-        # extra-streamlit-components not installed
-        st.warning("⚠️ Cookie manager not available. Sessions won't persist across refreshes.")
-    except Exception as e:
-        # Handle errors gracefully - don't block login
-        exception_type = type(e).__name__
-        if exception_type == "StopException":
-            raise
-        import logging
-        logging.warning(f"Cookie manager error: {e}")
+        # Validate and restore session
+        try:
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                exp = user_data.get("exp", 0)
+                
+                if exp > int(time.time()):
+                    # Token valid, restore session
+                    set_user_session(token)
+                    # Rerun to show authenticated state
+                    st.rerun()
+                else:
+                    # Token expired, clear cookie via JavaScript
+                    st.markdown("""
+                    <script>
+                    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    </script>
+                    """, unsafe_allow_html=True)
+        except Exception:
+            # Invalid token, clear cookie
+            st.markdown("""
+            <script>
+            document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            </script>
+            """, unsafe_allow_html=True)
+    
+    # If not authenticated, inject JavaScript to check cookie and redirect with token
+    elif not is_authenticated():
+        # This JavaScript checks for auth_token cookie and redirects with restore_token param
+        st.markdown("""
+        <script>
+        (function() {
+            // Parse cookies
+            function getCookie(name) {
+                const value = "; " + document.cookie;
+                const parts = value.split("; " + name + "=");
+                if (parts.length === 2) return parts.pop().split(";").shift();
+                return null;
+            }
+            
+            const token = getCookie('auth_token');
+            // Only redirect if we have a token and not already have restore_token in URL
+            if (token && !window.location.search.includes('restore_token')) {
+                const url = new URL(window.location);
+                url.searchParams.set('restore_token', token);
+                window.location.replace(url.toString());
+            }
+        })();
+        </script>
+        """, unsafe_allow_html=True)
     
     # Check for authentication errors in query params
     query_params = st.query_params

@@ -142,12 +142,12 @@ def logout_user():
     if "user_email" in st.session_state:
         del st.session_state.user_email
     
-    # Clear token from cookie using extra-streamlit-components
-    if "cookie_manager" in st.session_state:
-        try:
-            st.session_state.cookie_manager.delete("auth_token")
-        except Exception:
-            pass  # Ignore cookie errors on logout
+    # Clear token from cookie using JavaScript
+    st.markdown("""
+    <script>
+    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None):
@@ -180,19 +180,18 @@ def set_user_session(access_token: str, user: Optional[Dict] = None):
             st.session_state.user_email = None
     
     # Store token in cookie for persistence across page refreshes
-    # Use extra-streamlit-components cookie_manager
-    # DEBUG: Store debug info in session_state so it persists across reruns
-    debug_msgs = st.session_state.get("_debug_msgs", [])
-    debug_msgs.append(f"set_user_session called, cookie_manager exists: {'cookie_manager' in st.session_state}")
-    if "cookie_manager" in st.session_state:
-        try:
-            st.session_state.cookie_manager.set("auth_token", access_token)
-            debug_msgs.append("cookie_manager.set() called successfully")
-        except Exception as e:
-            debug_msgs.append(f"cookie_manager.set() FAILED: {e}")
-    else:
-        debug_msgs.append("cookie_manager NOT in session_state - cookie will not be saved!")
-    st.session_state["_debug_msgs"] = debug_msgs
+    # Using direct JavaScript for reliability (components can fail)
+    # Set cookie with 7-day expiration
+    escaped_token = access_token.replace("'", "\\'")
+    st.markdown(f"""
+    <script>
+    (function() {{
+        var expires = new Date();
+        expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+        document.cookie = 'auth_token={escaped_token}; expires=' + expires.toUTCString() + '; path=/; SameSite=Strict';
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
 
 
 def request_password_reset(email: str) -> Optional[Dict]:

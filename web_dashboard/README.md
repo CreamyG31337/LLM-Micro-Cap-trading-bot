@@ -90,9 +90,10 @@ Anon Key: your-anon-key-here
 ### Portfolio Tracking
 - **Multi-Fund Support** - Separate tracking for different funds
 - **Real-Time Data** - Live portfolio positions and performance
-- **Performance Charts** - Interactive Plotly charts
+- **Performance Charts** - Interactive Plotly charts with benchmark comparison
 - **Trade History** - Complete transaction log
 - **Cash Balances** - Multi-currency cash tracking
+- **Currency Conversion** - USD→CAD with exchange rates from Supabase
 
 ### Security & Permissions
 - **User Authentication** - Secure login/registration
@@ -104,6 +105,66 @@ Anon Key: your-anon-key-here
 - **Fund Assignment** - Assign funds to users
 - **User Management** - List and manage users
 - **Data Migration** - Import from CSV files
+- **Scheduled Tasks** - Background job management
+
+## ⏰ Background Scheduler
+
+The dashboard includes APScheduler for running background tasks inside the Docker container.
+
+### How It Works
+- **Entrypoint script** starts APScheduler before Streamlit
+- Jobs run in background threads while dashboard serves requests
+- Job status and logs accessible via admin UI
+
+### Available Jobs
+| Job | Interval | Description |
+|-----|----------|-------------|
+| `exchange_rates` | 30 min | Fetch latest USD/CAD rate from Bank of Canada API |
+
+### Admin UI
+Add to your Streamlit app:
+```python
+from scheduler_ui import render_scheduler_admin
+render_scheduler_admin()
+```
+
+Features:
+- View all scheduled jobs
+- Run jobs immediately
+- Pause/Resume jobs
+- View recent execution logs
+
+### Adding New Jobs
+1. Define job function in `scheduler/jobs.py`
+2. Add to `AVAILABLE_JOBS` dict
+3. Register in `register_default_jobs()` function
+
+Example:
+```python
+# In scheduler/jobs.py
+def my_new_job():
+    log_job_execution('my_job', success=True, message="Done!")
+
+# In register_default_jobs():
+scheduler.add_job(
+    my_new_job,
+    trigger=IntervalTrigger(hours=1),
+    id='my_job',
+    name='My Custom Job'
+)
+```
+
+### Files
+```
+web_dashboard/
+├── scheduler/
+│   ├── __init__.py       # Module exports
+│   ├── scheduler_core.py # APScheduler config & management
+│   └── jobs.py           # Job definitions
+├── scheduler_ui.py       # Streamlit admin UI
+├── entrypoint.py         # Container entrypoint
+└── Dockerfile            # Uses entrypoint.py
+```
 
 ## 🔧 Development
 

@@ -1,5 +1,6 @@
 # Streamlit Dashboard Dockerfile
 # Uses python:3.11-slim to match existing containers on the server
+# Includes APScheduler for background tasks
 
 FROM python:3.11-slim
 
@@ -29,8 +30,8 @@ COPY web_dashboard/ ./web_dashboard/
 COPY data/ ./data/
 COPY config/ ./config/
 
-# Set PYTHONPATH to include parent directory
-ENV PYTHONPATH=/app
+# Set PYTHONPATH to include parent directory and web_dashboard
+ENV PYTHONPATH=/app:/app/web_dashboard
 
 # Expose Streamlit port
 EXPOSE 8501
@@ -39,7 +40,6 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8501/_stcore/health')"
 
-# Run Streamlit
-CMD ["streamlit", "run", "web_dashboard/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
-
+# Run via entrypoint (starts scheduler + Streamlit)
+CMD ["python", "web_dashboard/entrypoint.py"]
 

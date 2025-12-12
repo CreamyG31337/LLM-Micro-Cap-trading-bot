@@ -182,25 +182,28 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
-    actual market values (shares * price), with proper normalization and
-    continuous timeline handling like the console app.
+    actual market values (shares * price), with proper normalization,
+    currency conversion (USD→CAD), and continuous timeline handling.
     
     Returns DataFrame with columns:
     - date: datetime
-    - value: total market value
-    - cost_basis: total cost basis
-    - pnl: unrealized P&L
+    - value: total market value (in CAD)
+    - cost_basis: total cost basis (in CAD)
+    - pnl: unrealized P&L (in CAD)
     - performance_pct: P&L as percentage of cost basis
     - performance_index: Normalized to start at 100 (for charting)
     """
+    from decimal import Decimal
+    
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
     
     try:
         # Query portfolio_positions to get daily snapshots with actual market values
+        # Include currency for proper USD→CAD conversion
         query = client.supabase.table("portfolio_positions").select(
-            "date, total_value, cost_basis, pnl, fund"
+            "date, total_value, cost_basis, pnl, fund, currency"
         ).order("date")
         
         if fund:
@@ -214,12 +217,81 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
         df = pd.DataFrame(result.data)
         df['date'] = pd.to_datetime(df['date'])
         
+        # Load exchange rates for currency conversion - NO FALLBACKS, errors are preferred
+        from exchange_rates_utils import get_exchange_rate_for_date_from_db, reload_exchange_rate_for_date
+        
+        # Check if we have any USD positions that need conversion
+        has_usd = False
+        if 'currency' in df.columns:
+            has_usd = df['currency'].str.upper().eq('USD').any()
+        
+        if has_usd:
+            # Get unique dates for exchange rate lookup
+            unique_dates = df['date'].dt.date.unique()
+            
+            # Build exchange rate cache for all dates
+            rate_cache = {}
+            missing_dates = []
+            
+            for date_val in unique_dates:
+                from datetime import datetime
+                dt = datetime.combine(date_val, datetime.min.time())
+                rate = get_exchange_rate_for_date_from_db(dt, 'USD', 'CAD')
+                
+                if rate is None:
+                    missing_dates.append(date_val)
+                else:
+                    rate_cache[date_val] = float(rate)
+            
+            # If we have missing rates, try to fetch them
+            if missing_dates:
+                print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
+                for date_val in missing_dates:
+                    from datetime import datetime, timezone
+                    dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
+                    fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
+                    
+                    if fetched_rate is not None:
+                        rate_cache[date_val] = float(fetched_rate)
+                        print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
+                    else:
+                        raise ValueError(
+                            f"Missing exchange rate for {date_val} and could not fetch from API. "
+                            f"Please add exchange rate data for this date."
+                        )
+            
+            # Apply currency conversion to USD positions
+            def convert_to_cad(row, column):
+                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                value = float(row.get(column, 0) or 0)
+                
+                if currency == 'USD':
+                    date_key = row['date'].date() if hasattr(row['date'], 'date') else row['date']
+                    rate = rate_cache.get(date_key)
+                    if rate is None:
+                        raise ValueError(f"No exchange rate found for {date_key}")
+                    return value * rate
+                return value
+            
+            df['total_value_cad'] = df.apply(lambda r: convert_to_cad(r, 'total_value'), axis=1)
+            df['cost_basis_cad'] = df.apply(lambda r: convert_to_cad(r, 'cost_basis'), axis=1)
+            df['pnl_cad'] = df.apply(lambda r: convert_to_cad(r, 'pnl'), axis=1)
+            
+            value_col = 'total_value_cad'
+            cost_col = 'cost_basis_cad'
+            pnl_col = 'pnl_cad'
+        else:
+            # No USD positions, use values as-is (already in CAD)
+            value_col = 'total_value'
+            cost_col = 'cost_basis'
+            pnl_col = 'pnl'
+        
         # Aggregate by date to get daily portfolio totals
         # Sum all positions' values for each day
         daily_totals = df.groupby(df['date'].dt.date).agg({
-            'total_value': 'sum',
-            'cost_basis': 'sum',
-            'pnl': 'sum'
+            value_col: 'sum',
+            cost_col: 'sum',
+            pnl_col: 'sum'
         }).reset_index()
         
         daily_totals.columns = ['date', 'value', 'cost_basis', 'pnl']

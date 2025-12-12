@@ -321,3 +321,184 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"❌ Error getting daily performance data: {e}")
             return []
+    
+    # =====================================================
+    # EXCHANGE RATES METHODS
+    # =====================================================
+    
+    def get_exchange_rate(self, date: datetime, from_currency: str = 'USD', to_currency: str = 'CAD') -> Optional[Decimal]:
+        """Get exchange rate for a specific date.
+        
+        Returns the most recent rate on or before the target date.
+        
+        Args:
+            date: Target date for the exchange rate
+            from_currency: Source currency (default: 'USD')
+            to_currency: Target currency (default: 'CAD')
+            
+        Returns:
+            Exchange rate as Decimal, or None if not found
+        """
+        try:
+            # Ensure date is timezone-aware
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            
+            query = self.supabase.table("exchange_rates").select("rate").eq(
+                "from_currency", from_currency
+            ).eq("to_currency", to_currency).lte("timestamp", date.isoformat()).order(
+                "timestamp", desc=True
+            ).limit(1)
+            
+            result = query.execute()
+            
+            if result.data and len(result.data) > 0:
+                return Decimal(str(result.data[0]['rate']))
+            else:
+                logger.debug(f"No exchange rate found for {from_currency}/{to_currency} on {date}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error getting exchange rate: {e}")
+            return None
+    
+    def get_exchange_rates(self, start_date: datetime, end_date: datetime, 
+                          from_currency: str = 'USD', to_currency: str = 'CAD') -> List[Dict]:
+        """Get exchange rates for a date range.
+        
+        Args:
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+            from_currency: Source currency (default: 'USD')
+            to_currency: Target currency (default: 'CAD')
+            
+        Returns:
+            List of dictionaries with 'timestamp' and 'rate' keys
+        """
+        try:
+            # Ensure dates are timezone-aware
+            if start_date.tzinfo is None:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            
+            query = self.supabase.table("exchange_rates").select("timestamp, rate").eq(
+                "from_currency", from_currency
+            ).eq("to_currency", to_currency).gte(
+                "timestamp", start_date.isoformat()
+            ).lte("timestamp", end_date.isoformat()).order("timestamp")
+            
+            result = query.execute()
+            
+            return result.data if result.data else []
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting exchange rates: {e}")
+            return []
+    
+    def get_latest_exchange_rate(self, from_currency: str = 'USD', to_currency: str = 'CAD') -> Optional[Decimal]:
+        """Get the most recent exchange rate.
+        
+        Args:
+            from_currency: Source currency (default: 'USD')
+            to_currency: Target currency (default: 'CAD')
+            
+        Returns:
+            Latest exchange rate as Decimal, or None if not found
+        """
+        try:
+            query = self.supabase.table("exchange_rates").select("rate").eq(
+                "from_currency", from_currency
+            ).eq("to_currency", to_currency).order("timestamp", desc=True).limit(1)
+            
+            result = query.execute()
+            
+            if result.data and len(result.data) > 0:
+                return Decimal(str(result.data[0]['rate']))
+            else:
+                logger.debug(f"No exchange rate found for {from_currency}/{to_currency}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error getting latest exchange rate: {e}")
+            return None
+    
+    def upsert_exchange_rate(self, date: datetime, rate: Decimal, 
+                            from_currency: str = 'USD', to_currency: str = 'CAD') -> bool:
+        """Insert or update a single exchange rate.
+        
+        Args:
+            date: Date for the exchange rate
+            rate: Exchange rate value
+            from_currency: Source currency (default: 'USD')
+            to_currency: Target currency (default: 'CAD')
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Ensure date is timezone-aware
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            
+            rate_data = {
+                'from_currency': from_currency,
+                'to_currency': to_currency,
+                'rate': float(rate),
+                'timestamp': date.isoformat()
+            }
+            
+            result = self.supabase.table("exchange_rates").upsert(
+                rate_data,
+                on_conflict="from_currency,to_currency,timestamp"
+            ).execute()
+            
+            logger.info(f"✅ Upserted exchange rate: {from_currency}/{to_currency} = {rate} on {date.date()}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error upserting exchange rate: {e}")
+            return False
+    
+    def upsert_exchange_rates(self, rates: List[Dict]) -> bool:
+        """Bulk insert or update exchange rates.
+        
+        Args:
+            rates: List of dictionaries with keys: 'timestamp', 'rate', 'from_currency', 'to_currency'
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not rates:
+                return True
+            
+            # Ensure all timestamps are properly formatted
+            formatted_rates = []
+            for rate in rates:
+                formatted_rate = rate.copy()
+                
+                # Ensure timestamp is ISO format
+                if isinstance(formatted_rate.get('timestamp'), datetime):
+                    timestamp = formatted_rate['timestamp']
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    formatted_rate['timestamp'] = timestamp.isoformat()
+                
+                # Ensure rate is float
+                if isinstance(formatted_rate.get('rate'), Decimal):
+                    formatted_rate['rate'] = float(formatted_rate['rate'])
+                
+                formatted_rates.append(formatted_rate)
+            
+            result = self.supabase.table("exchange_rates").upsert(
+                formatted_rates,
+                on_conflict="from_currency,to_currency,timestamp"
+            ).execute()
+            
+            logger.info(f"✅ Upserted {len(formatted_rates)} exchange rates")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error upserting exchange rates: {e}")
+            return False

@@ -44,6 +44,13 @@ An advanced AI-powered trading bot for micro-cap stock analysis with dual curren
 - **Cache Management** - Comprehensive cache monitoring and management
 - **Development Tools** - Extensive debugging and testing capabilities
 
+### **Web Dashboard**
+- **Streamlit Interface** - Modern, responsive portfolio dashboard
+- **Docker Container** - Production-ready deployment with CI/CD
+- **Background Scheduler** - APScheduler for automated tasks (exchange rates, etc.)
+- **Multi-User Auth** - Secure access with Supabase RLS policies
+- **Performance Charts** - Interactive Plotly charts with benchmark comparison
+
 ## Daily Workflow
 
 ### **Simple Daily Routine**

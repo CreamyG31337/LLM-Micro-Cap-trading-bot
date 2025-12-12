@@ -505,8 +505,41 @@ def main():
     import json
     import time
     
-    # Check localStorage for persisted session (before checking authentication)
-    if not is_authenticated():
+    # FIRST: Check for restore_token from localStorage (before any auth checks)
+    # This handles the case where user refreshes the page - we restore session from localStorage
+    if "restore_token" in st.query_params:
+        token = st.query_params["restore_token"]
+        # Validate token (check expiration)
+        try:
+            token_parts = token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                exp = user_data.get("exp", 0)
+                
+                if exp > int(time.time()):
+                    # Token valid, restore session
+                    set_user_session(token)
+                    st.query_params.clear()
+                    st.rerun()
+                else:
+                    # Token expired, clear localStorage
+                    st.markdown("""
+                    <script>
+                    localStorage.removeItem('auth_token');
+                    </script>
+                    """, unsafe_allow_html=True)
+                    st.query_params.clear()
+        except Exception:
+            # Invalid token, clear
+            st.query_params.clear()
+    
+    # THEN: Check localStorage via JavaScript (only if not authenticated and not already restoring)
+    # This injects JavaScript to check localStorage and redirect with restore_token if found
+    if not is_authenticated() and "session_restoring" not in st.session_state:
+        st.session_state.session_restoring = True  # Prevent multiple attempts
         st.markdown("""
         <script>
         (function() {
@@ -516,40 +549,31 @@ def main():
                 const url = new URL(window.location);
                 url.searchParams.set('restore_token', token);
                 window.location.replace(url.toString());
+            } else {
+                // No token in localStorage - signal that restoration attempt is complete
+                // Add a parameter to indicate no token was found
+                if (!window.location.search.includes('no_token')) {
+                    const url = new URL(window.location);
+                    url.searchParams.set('no_token', '1');
+                    window.location.replace(url.toString());
+                }
             }
         })();
         </script>
         """, unsafe_allow_html=True)
-        
-        # Handle restore_token from localStorage
-        if "restore_token" in st.query_params:
-            token = st.query_params["restore_token"]
-            # Validate token (check expiration)
-            try:
-                token_parts = token.split('.')
-                if len(token_parts) >= 2:
-                    payload = token_parts[1]
-                    payload += '=' * (4 - len(payload) % 4)
-                    decoded = base64.urlsafe_b64decode(payload)
-                    user_data = json.loads(decoded)
-                    exp = user_data.get("exp", 0)
-                    
-                    if exp > int(time.time()):
-                        # Token valid, restore session
-                        set_user_session(token)
-                        st.query_params.clear()
-                        st.rerun()
-                    else:
-                        # Token expired, clear localStorage
-                        st.markdown("""
-                        <script>
-                        localStorage.removeItem('auth_token');
-                        </script>
-                        """, unsafe_allow_html=True)
-                        st.query_params.clear()
-            except Exception:
-                # Invalid token, clear
-                st.query_params.clear()
+        # If we're restoring, wait for the redirect - don't show login page yet
+        if "restore_token" not in st.query_params and "no_token" not in st.query_params:
+            # No restore_token yet, but we're waiting for JavaScript redirect
+            # Show a loading message briefly
+            st.info("🔄 Restoring session...")
+            return
+    
+    # Handle case where JavaScript found no token in localStorage
+    if "no_token" in st.query_params:
+        # No token found, clear restoration flag and continue to login
+        if "session_restoring" in st.session_state:
+            del st.session_state.session_restoring
+        st.query_params.clear()
     
     # Check for authentication errors in query params
     query_params = st.query_params
@@ -615,7 +639,12 @@ def main():
             st.error(f"Error processing magic link: {e}")
             st.query_params.clear()
     
-    # Check authentication
+    # NOW: Check authentication (after restoration attempts)
+    # Clear session_restoring flag if we've made it here without restoring
+    if "session_restoring" in st.session_state:
+        # If we're here and not authenticated, restoration failed or no token exists
+        del st.session_state.session_restoring
+    
     if not is_authenticated():
         show_login_page()
         return

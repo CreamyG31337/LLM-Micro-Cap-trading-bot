@@ -36,6 +36,38 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
     start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
     end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
     
+    # Handle case where chart starts on weekend (Saturday or Sunday)
+    # If start date is Saturday (5) or Sunday (6), shade from previous Friday
+    start_weekday = start_date_only.weekday()
+    if start_weekday == 5:  # Saturday
+        # Find previous Friday
+        days_back = 1  # Saturday to Friday
+        prev_friday = start_date_only - timedelta(days=days_back)
+        friday_close = datetime.combine(prev_friday, datetime.min.time()) + timedelta(hours=16)
+        monday = datetime.combine(start_date_only + timedelta(days=2), datetime.min.time())  # Monday 00:00
+        
+        fig.add_vrect(
+            x0=friday_close,
+            x1=monday,
+            fillcolor="rgba(128, 128, 128, 0.1)",
+            layer="below",
+            line_width=0,
+        )
+    elif start_weekday == 6:  # Sunday
+        # Find previous Friday
+        days_back = 2  # Sunday to Friday
+        prev_friday = start_date_only - timedelta(days=days_back)
+        friday_close = datetime.combine(prev_friday, datetime.min.time()) + timedelta(hours=16)
+        monday = datetime.combine(start_date_only + timedelta(days=1), datetime.min.time())  # Monday 00:00
+        
+        fig.add_vrect(
+            x0=friday_close,
+            x1=monday,
+            fillcolor="rgba(128, 128, 128, 0.1)",
+            layer="below",
+            line_width=0,
+        )
+    
     # Iterate by date (not datetime) to ensure proper alignment
     current_date = start_date_only
     while current_date <= end_date_only:

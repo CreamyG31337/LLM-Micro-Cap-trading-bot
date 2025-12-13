@@ -131,19 +131,17 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
 
 
 def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame:
-    """Get trade log entries as DataFrame"""
+    """Get trade log entries as DataFrame with company names from securities table"""
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
     
     try:
-        query = client.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
-        if fund:
-            query = query.eq("fund", fund)
-        result = query.execute()
+        # Use client.get_trade_log() which joins with securities table for company names
+        result = client.get_trade_log(limit=limit, fund=fund)
         
-        if result.data:
-            df = pd.DataFrame(result.data)
+        if result:
+            df = pd.DataFrame(result)
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date'])
             return df
@@ -151,6 +149,7 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame
     except Exception as e:
         print(f"Error getting trade log: {e}")
         return pd.DataFrame()
+
 
 
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:

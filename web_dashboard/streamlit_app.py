@@ -969,8 +969,13 @@ def main():
             # Limit to last 50 trades for display
             recent_trades = trades_df.head(50).copy()
             
-            # Add company names by looking up from positions (if available)
-            if not positions_df.empty and 'company' in positions_df.columns:
+            # Use company_name from get_trade_log (already joined with securities table)
+            # Fall back to positions lookup only for any remaining None values
+            if 'company_name' in recent_trades.columns:
+                # Rename to 'company' for display consistency
+                recent_trades['company'] = recent_trades['company_name']
+            elif not positions_df.empty and 'company' in positions_df.columns:
+                # Fallback: lookup from current positions (won't have sold tickers)
                 ticker_to_company = dict(zip(positions_df['ticker'], positions_df['company']))
                 recent_trades['company'] = recent_trades['ticker'].map(ticker_to_company)
             

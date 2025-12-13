@@ -106,4 +106,3 @@ For **automated testing** (CI/CD):
 1. Add explicit `key` parameters to login form inputs (may help)
 2. Document that manual testing or API calls are preferred for login testing
 3. Consider adding a test script that uses direct API calls for automated testing
-

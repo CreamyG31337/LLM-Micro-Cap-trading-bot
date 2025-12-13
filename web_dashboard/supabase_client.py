@@ -141,8 +141,9 @@ class SupabaseClient:
             # Check if ticker already exists with complete metadata
             existing = self.supabase.table("securities").select("ticker, company_name").eq("ticker", ticker).execute()
             
-            # If ticker exists with company name, no need to update
-            if existing.data and existing.data[0].get('company_name'):
+            # If ticker exists with valid company name (not NULL, empty, or 'Unknown'), no need to update
+            company_name = existing.data[0].get('company_name')
+            if existing.data and company_name and company_name != 'Unknown':
                 logger.debug(f"Ticker {ticker} already exists in securities table with company name")
                 return True
             

@@ -47,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS (dark mode compatible)
 st.markdown("""
     <style>
     .main-header {
@@ -57,7 +57,7 @@ st.markdown("""
         margin-bottom: 1rem;
     }
     .metric-card {
-        background-color: #f0f2f6;
+        background-color: var(--secondary-background-color);
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
@@ -691,13 +691,18 @@ def main():
         # Portfolio value over time
         if not portfolio_value_df.empty:
             st.markdown("#### Portfolio Performance (Baseline 100)")
+            
+            # Add solid lines toggle for mobile users
+            use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
+            
             # Use normalized performance index (baseline 100) like the console app
             fig = create_portfolio_value_chart(
                 portfolio_value_df, 
                 fund_filter,
                 show_normalized=True,  # Show percentage change from baseline
                 show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],  # All benchmarks
-                show_weekend_shading=True
+                show_weekend_shading=True,
+                use_solid_lines=use_solid
             )
             st.plotly_chart(fig, use_container_width=True)
             
@@ -747,7 +752,8 @@ def main():
                         holdings_df,
                         fund_name=fund_filter,
                         show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],
-                        show_weekend_shading=True
+                        show_weekend_shading=True,
+                        use_solid_lines=use_solid  # Use same setting as main chart
                     )  
                     st.plotly_chart(holdings_fig, use_container_width=True)
                     

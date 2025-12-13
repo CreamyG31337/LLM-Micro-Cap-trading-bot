@@ -14,10 +14,11 @@ serverAddress = "localhost"
 showErrorDetails = true
 
 [theme]
-# Remove explicit colors to respect OS dark/light mode preference
-# Streamlit will automatically use dark mode if OS is set to dark
+# Force dark mode theme (more reliable than OS detection on Windows)
+base = "dark"
 primaryColor = "#1f77b4"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
 font = "sans serif"
-# backgroundColor, secondaryBackgroundColor, and textColor are omitted
-# to allow Streamlit to respect OS theme preference
 

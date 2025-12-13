@@ -133,7 +133,8 @@ def create_portfolio_value_chart(
     fund_name: Optional[str] = None, 
     show_normalized: bool = False,
     show_benchmarks: Optional[List[str]] = None,
-    show_weekend_shading: bool = True
+    show_weekend_shading: bool = True,
+    use_solid_lines: bool = False
 ) -> go.Figure:
     """Create a line chart showing portfolio value/performance over time.
     
@@ -226,12 +227,15 @@ def create_portfolio_value_chart(
                     # Calculate benchmark return for label
                     bench_return = bench_data['normalized'].iloc[-1] - 100
                     
+                    # Use solid or dashed lines based on preference
+                    line_style = {} if use_solid_lines else {'dash': 'dash'}
+                    
                     fig.add_trace(go.Scatter(
                         x=bench_data['Date'],
                         y=bench_data['normalized'],
                         mode='lines',
                         name=f"{config['name']} ({bench_return:+.2f}%)",
-                        line=dict(color=config['color'], width=3),
+                        line=dict(color=config['color'], width=3, **line_style),
                         opacity=0.8,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
@@ -422,7 +426,8 @@ def create_individual_holdings_chart(
     holdings_df: pd.DataFrame,
     fund_name: Optional[str] = None,
     show_benchmarks: Optional[List[str]] = None,
-    show_weekend_shading: bool = True
+    show_weekend_shading: bool = True,
+    use_solid_lines: bool = False
 ) -> go.Figure:
     """Create a chart showing individual stock performance vs benchmarks.
     
@@ -503,12 +508,15 @@ def create_individual_holdings_chart(
                 if not bench_data.empty:
                     bench_return = bench_data['normalized'].iloc[-1] - 100
                     
+                    # Use solid or dashed lines based on preference
+                    line_style = {} if use_solid_lines else {'dash': 'dash'}
+                    
                     fig.add_trace(go.Scatter(
                         x=bench_data['Date'],
                         y=bench_data['normalized'],
                         mode='lines',
                         name=f"{config['name']} ({bench_return:+.2f}%)",
-                        line=dict(color=config['color'], width=3),
+                        line=dict(color=config['color'], width=3, **line_style),
                         opacity=0.8,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))

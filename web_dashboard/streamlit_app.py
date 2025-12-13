@@ -692,6 +692,7 @@ def main():
         # Add cash to total value
         total_value += cash_balances.get('CAD', 0.0) + cash_balances.get('USD', 0.0)
         
+        
         with col1:
             st.metric("Total Portfolio Value", f"${total_value:,.2f}")
         
@@ -700,10 +701,17 @@ def main():
             st.metric("Total P&L", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
         
         with col3:
-            st.metric("CAD Balance", f"${cash_balances.get('CAD', 0.0):,.2f}")
+            # Number of holdings
+            num_holdings = len(positions_df) if not positions_df.empty else 0
+            st.metric("# of Holdings", f"{num_holdings}")
         
         with col4:
-            st.metric("USD Balance", f"${cash_balances.get('USD', 0.0):,.2f}")
+            # Today's P&L (sum of daily changes)
+            todays_pnl = 0.0
+            if not positions_df.empty and 'daily_pnl' in positions_df.columns:
+                todays_pnl = float(positions_df['daily_pnl'].sum())
+            st.metric("Today's P&L", f"${todays_pnl:,.2f}", 
+                     f"{todays_pnl:+.2f}" if todays_pnl != 0 else "0.00")
         
         # Charts section
         st.markdown("---")
@@ -725,7 +733,7 @@ def main():
                 show_weekend_shading=True,
                 use_solid_lines=use_solid
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
             
             # Debug info for diagnosing data issues
             with st.expander("🔍 Debug: Portfolio Data Info"):
@@ -776,7 +784,7 @@ def main():
                         show_weekend_shading=True,
                         use_solid_lines=use_solid  # Use same setting as main chart
                     )  
-                    st.plotly_chart(holdings_fig, use_container_width=True)
+                    st.plotly_chart(holdings_fig, use_container_width=True, key="individual_holdings_chart")
                     
                     # Show summary stats
                     num_stocks = holdings_df['ticker'].nunique()
@@ -791,7 +799,7 @@ def main():
         if not trades_df.empty:
             st.markdown("#### Trades Timeline")
             fig = create_trades_timeline_chart(trades_df, fund_filter)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="trades_timeline_chart")
         
         # Current positions
         st.markdown("---")
@@ -802,7 +810,7 @@ def main():
             if 'pnl' in positions_df.columns or 'unrealized_pnl' in positions_df.columns:
                 st.markdown("#### P&L by Position")
                 fig = create_pnl_chart(positions_df, fund_filter)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             
             # Positions table with compact/full mode toggle
             st.markdown("#### Positions Table")

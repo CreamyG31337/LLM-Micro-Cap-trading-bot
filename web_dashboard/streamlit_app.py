@@ -801,11 +801,6 @@ def main():
         else:
             st.info("No historical portfolio value data available")
         
-        # Trades timeline
-        if not trades_df.empty:
-            st.markdown("#### Trades Timeline")
-            fig = create_trades_timeline_chart(trades_df, fund_filter)
-            st.plotly_chart(fig, use_container_width=True, key="trades_timeline_chart")
         
         # Current positions
         st.markdown("---")

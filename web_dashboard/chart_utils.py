@@ -310,34 +310,41 @@ def create_performance_by_fund_chart(funds_data: Dict[str, float]) -> go.Figure:
 
 def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
     """Create a bar chart showing P&L by position"""
-    if positions_df.empty or 'pnl' not in positions_df.columns:
+    # Check for either pnl or unrealized_pnl column
+    pnl_col = None
+    if 'unrealized_pnl' in positions_df.columns:
+        pnl_col = 'unrealized_pnl'
+    elif 'pnl' in positions_df.columns:
+        pnl_col = 'pnl'
+    
+    if positions_df.empty or pnl_col is None:
         fig = go.Figure()
         fig.add_annotation(
-            text="No data available",
+            text="No P&L data available",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
         return fig
     
     # Sort by P&L
-    df = positions_df.sort_values('pnl', ascending=False).copy()
+    df = positions_df.sort_values(pnl_col, ascending=False).copy()
     
     # Limit to top/bottom 20 for readability
     if len(df) > 40:
         top = df.head(20)
         bottom = df.tail(20)
-        df = pd.concat([top, bottom]).sort_values('pnl', ascending=False)
+        df = pd.concat([top, bottom]).sort_values(pnl_col, ascending=False)
     
     # Color bars based on positive/negative
-    colors = ['#10b981' if pnl >= 0 else '#ef4444' for pnl in df['pnl']]
+    colors = ['#10b981' if pnl >= 0 else '#ef4444' for pnl in df[pnl_col]]
     
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
         x=df['ticker'],
-        y=df['pnl'],
+        y=df[pnl_col],
         marker_color=colors,
-        text=[f"${pnl:,.2f}" for pnl in df['pnl']],
+        text=[f"${pnl:,.2f}" for pnl in df[pnl_col]],
         textposition='outside'
     ))
     
@@ -348,7 +355,7 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     fig.update_layout(
         title=title,
         xaxis_title="Ticker",
-        yaxis_title="P&L ($)",
+        yaxis_title="Unrealized P&L ($)",
         template='plotly_white',
         height=500,
         xaxis={'tickangle': -45}

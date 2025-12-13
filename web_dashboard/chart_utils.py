@@ -185,10 +185,10 @@ def create_portfolio_value_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
-                # Filter to portfolio date range
+                # Filter to portfolio date range - ensure datetime types match
                 bench_data = bench_data[
-                    (bench_data['Date'] >= start_date) & 
-                    (bench_data['Date'] <= end_date)
+                    (bench_data['Date'] >= pd.Timestamp(start_date)) & 
+                    (bench_data['Date'] <= pd.Timestamp(end_date))
                 ]
                 
                 if not bench_data.empty:
@@ -459,9 +459,10 @@ def create_individual_holdings_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
+                # Filter to portfolio date range - ensure datetime types match
                 bench_data = bench_data[
-                    (bench_data['Date'] >= start_date) & 
-                    (bench_data['Date'] <= end_date)
+                    (bench_data['Date'] >= pd.Timestamp(start_date)) & 
+                    (bench_data['Date'] <= pd.Timestamp(end_date))
                 ]
                 
                 if not bench_data.empty:

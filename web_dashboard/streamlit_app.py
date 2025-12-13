@@ -708,10 +708,16 @@ def main():
         with col4:
             # Today's P&L (sum of daily changes)
             todays_pnl = 0.0
+            todays_pnl_pct = 0.0
             if not positions_df.empty and 'daily_pnl' in positions_df.columns:
                 todays_pnl = float(positions_df['daily_pnl'].sum())
+                # Calculate percentage based on yesterday's value (total_value - today's change)
+                yesterday_value = total_value - todays_pnl
+                if yesterday_value > 0:
+                    todays_pnl_pct = (todays_pnl / yesterday_value) * 100
+            
             st.metric("Today's P&L", f"${todays_pnl:,.2f}", 
-                     f"{todays_pnl:+.2f}" if todays_pnl != 0 else "0.00")
+                     f"{todays_pnl_pct:+.2f}%" if todays_pnl_pct != 0 else "0.00%")
         
         # Charts section
         st.markdown("---")
@@ -890,28 +896,82 @@ def main():
         
         if not trades_df.empty:
             # Limit to last 50 trades for display
-            recent_trades = trades_df.head(50)
+            recent_trades = trades_df.head(50).copy()
             
-            # Select relevant columns
-            trade_cols = ['date', 'ticker', 'type', 'shares', 'price']
-            if 'cost_basis' in recent_trades.columns:
-                trade_cols.append('cost_basis')
+            # Add company names by looking up from positions (if available)
+            if not positions_df.empty and 'company' in positions_df.columns:
+                ticker_to_company = dict(zip(positions_df['ticker'], positions_df['company']))
+                recent_trades['company'] = recent_trades['ticker'].map(ticker_to_company)
+            
+            # Determine action type (BUY/SELL) - check multiple possible column names
+            action_col = None
+            for col_name in ['type', 'action', 'trade_type']:
+                if col_name in recent_trades.columns:
+                    action_col = col_name
+                    break
+            
+            # If no action column, infer from shares (positive = buy, negative previously held = sell)
+            if action_col:
+                recent_trades['Action'] = recent_trades[action_col].str.upper()
+            else:
+                recent_trades['Action'] = 'BUY'  # Default
+            
+            # Build display columns
+            display_cols = ['date', 'ticker']
+            col_rename = {'date': 'Date', 'ticker': 'Ticker'}
+            
+            if 'company' in recent_trades.columns:
+                display_cols.append('company')
+                col_rename['company'] = 'Company'
+            
+            display_cols.extend(['Action', 'shares', 'price'])
+            col_rename.update({'Action': 'Action', 'shares': 'Shares', 'price': 'Price'})
+            
+            # Add P&L if available
             if 'pnl' in recent_trades.columns:
-                trade_cols.append('pnl')
+                display_cols.append('pnl')
+                col_rename['pnl'] = 'Realized P&L'
             
-            trade_cols = [col for col in trade_cols if col in recent_trades.columns]
+            # Add reason if available
+            if 'reason' in recent_trades.columns:
+                display_cols.append('reason')
+                col_rename['reason'] = 'Reason'
             
-            if trade_cols:
-                st.dataframe(
-                    recent_trades[trade_cols].style.format({
-                        'shares': '{:.4f}',
-                        'price': '${:.2f}',
-                        'cost_basis': '${:.2f}',
-                        'pnl': '${:.2f}'
-                    }),
-                    use_container_width=True,
-                    height=400
-                )
+            # Filter to existing columns
+            display_cols = [col for col in display_cols if col in recent_trades.columns]
+            
+            if display_cols:
+                display_df = recent_trades[display_cols].copy()
+                display_df = display_df.rename(columns=col_rename)
+                
+                # Format columns
+                format_dict = {}
+                if 'Shares' in display_df.columns:
+                    format_dict['Shares'] = '{:.4f}'
+                if 'Price' in display_df.columns:
+                    format_dict['Price'] = '${:.2f}'
+                if 'Realized P&L' in display_df.columns:
+                    format_dict['Realized P&L'] = '${:,.2f}'
+                
+                # Apply styling
+                styled_df = display_df.style.format(format_dict)
+                
+                # Color-code P&L
+                if 'Realized P&L' in display_df.columns:
+                    def color_trade_pnl(val):
+                        try:
+                            if isinstance(val, str):
+                                val = float(val.replace('$', '').replace(',', ''))
+                            if val > 0:
+                                return 'color: #10b981'
+                            elif val < 0:
+                                return 'color: #ef4444'
+                        except:
+                            pass
+                        return ''
+                    styled_df = styled_df.map(color_trade_pnl, subset=['Realized P&L'])
+                
+                st.dataframe(styled_df, use_container_width=True, height=400)
             else:
                 st.dataframe(recent_trades, use_container_width=True, height=400)
         else:

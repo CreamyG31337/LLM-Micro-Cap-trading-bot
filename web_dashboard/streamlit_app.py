@@ -664,11 +664,32 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         
         
-        # Calculate total portfolio value from current positions
+        # Calculate total portfolio value from current positions (with currency conversion)
         total_value = 0.0
         total_pnl = 0.0
+        usd_to_cad_rate = 1.0  # Default fallback
+        
+        # Get latest USD/CAD exchange rate from database
+        if not positions_df.empty:
+            client = get_supabase_client()
+            if client:
+                try:
+                    rate_result = client.get_latest_exchange_rate('USD', 'CAD')
+                    if rate_result:
+                        usd_to_cad_rate = float(rate_result)
+                except Exception as e:
+                    print(f"Error getting exchange rate: {e}")
+                    usd_to_cad_rate = 1.42  # Approximate fallback
+        
         if not positions_df.empty and 'market_value' in positions_df.columns:
-            total_value = float(positions_df['market_value'].sum())
+            # Convert USD positions to CAD before summing
+            for _, row in positions_df.iterrows():
+                market_value = float(row.get('market_value', 0) or 0)
+                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                if currency == 'USD':
+                    total_value += market_value * usd_to_cad_rate
+                else:
+                    total_value += market_value
         
         # Get P&L from latest portfolio_positions (has pnl column, latest_positions doesn't)
         if fund_filter:
@@ -677,21 +698,27 @@ def main():
                 try:
                     # Get most recent date's total P&L
                     pnl_result = client.supabase.table("portfolio_positions")\
-                        .select("pnl")\
+                        .select("pnl, currency")\
                         .eq("fund", fund_filter)\
                         .order("date", desc=True)\
                         .limit(100)\
                         .execute()
                     
                     if pnl_result.data:
-                        # Sum P&L from most recent snapshot
-                        total_pnl = sum(float(row.get('pnl', 0) or 0) for row in pnl_result.data[:20])  # Approx # of positions
+                        # Sum P&L from most recent snapshot (with currency conversion)
+                        for row in pnl_result.data[:20]:  # Approx # of positions
+                            pnl = float(row.get('pnl', 0) or 0)
+                            currency = str(row.get('currency', 'CAD')).upper() if row.get('currency') else 'CAD'
+                            if currency == 'USD':
+                                total_pnl += pnl * usd_to_cad_rate
+                            else:
+                                total_pnl += pnl
                 except Exception as e:
                     print(f"Error getting P&L: {e}")
                     total_pnl = 0.0
         
-        # Add cash to total value
-        total_value += cash_balances.get('CAD', 0.0) + cash_balances.get('USD', 0.0)
+        # Add cash to total value (USD cash converted to CAD)
+        total_value += cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
         
         
         with col1:

@@ -202,9 +202,10 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     try:
         # Query portfolio_positions to get daily snapshots with actual market values
         # Include currency for proper USD→CAD conversion
+        # IMPORTANT: Default Supabase limit is 1000 rows - we need more for historical data
         query = client.supabase.table("portfolio_positions").select(
             "date, total_value, cost_basis, pnl, fund, currency"
-        ).order("date")
+        ).order("date").limit(50000)  # Override default 1000 row limit
         
         if fund:
             query = query.eq("fund", fund)
@@ -215,7 +216,15 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
             return pd.DataFrame()
         
         df = pd.DataFrame(result.data)
+        print(f"[DEBUG] Loaded {len(df)} portfolio position rows from Supabase")
+        
         df['date'] = pd.to_datetime(df['date'])
+        
+        # Log date range for debugging
+        if not df.empty:
+            min_date = df['date'].min()
+            max_date = df['date'].max()
+            print(f"[DEBUG] Date range: {min_date.date()} to {max_date.date()}")
         
         # Load exchange rates for currency conversion - NO FALLBACKS, errors are preferred
         from exchange_rates_utils import get_exchange_rate_for_date_from_db, reload_exchange_rate_for_date

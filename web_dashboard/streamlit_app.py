@@ -626,30 +626,27 @@ def main():
     # Sidebar - Fund selector
     st.sidebar.title("Filters")
     
-    # Get available funds
+    # Get available funds (no "All Funds" option - default to first fund user has access to)
     try:
         funds = get_available_funds()
         if not funds:
             st.sidebar.warning("⚠️ No funds found in database")
-            funds = ["All Funds"]
-        else:
-            funds = ["All Funds"] + funds
+            st.stop()
     except Exception as e:
         st.sidebar.error(f"❌ Error loading funds: {e}")
-        funds = ["All Funds"]
+        st.stop()
     
     selected_fund = st.sidebar.selectbox(
         "Select Fund",
         funds,
-        index=0
+        index=0  # Default to first available fund
     )
     
-    # Convert "All Funds" to None
-    fund_filter = None if selected_fund == "All Funds" else selected_fund
+    # Use selected fund directly (no "All Funds" conversion needed)
+    fund_filter = selected_fund
     
     # Display fund name
-    if fund_filter:
-        st.sidebar.info(f"Viewing: **{fund_filter}**")
+    st.sidebar.info(f"Viewing: **{fund_filter}**")
     
     # Main content
     try:
@@ -699,7 +696,7 @@ def main():
                 portfolio_value_df, 
                 fund_filter,
                 show_normalized=True,  # Show percentage change from baseline
-                show_benchmarks=['qqq'],  # Compare against QQQ by default
+                show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],  # All benchmarks
                 show_weekend_shading=True
             )
             st.plotly_chart(fig, use_container_width=True)

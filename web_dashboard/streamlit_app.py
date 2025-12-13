@@ -693,8 +693,15 @@ def main():
         
         # Portfolio value over time
         if not portfolio_value_df.empty:
-            st.markdown("#### Portfolio Value Over Time")
-            fig = create_portfolio_value_chart(portfolio_value_df, fund_filter)
+            st.markdown("#### Portfolio Performance (Baseline 100)")
+            # Use normalized performance index (baseline 100) like the console app
+            fig = create_portfolio_value_chart(
+                portfolio_value_df, 
+                fund_filter,
+                show_normalized=True,  # Show percentage change from baseline
+                show_benchmarks=['qqq'],  # Compare against QQQ by default
+                show_weekend_shading=True
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No historical portfolio value data available")

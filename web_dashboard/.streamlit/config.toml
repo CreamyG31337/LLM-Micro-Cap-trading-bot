@@ -10,8 +10,8 @@ gatherUsageStats = false
 serverAddress = "localhost"
 
 [client]
-# Suppress deprecation warnings and error details to prevent brief flashes
-showErrorDetails = false
+# Show full error details for debugging (safe on LAN)
+showErrorDetails = true
 
 [theme]
 primaryColor = "#1f77b4"

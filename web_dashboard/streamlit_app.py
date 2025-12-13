@@ -891,33 +891,36 @@ def main():
                 st.dataframe(positions_df, use_container_width=True, height=400)
             
             # Holdings Info table - Company, Sector, Industry
+            # Data is already available from latest_positions view (joins with securities table)
             st.markdown("#### Holdings Info")
-            with st.spinner("Fetching sector and industry data..."):
-                holdings_info = []
-                for idx, row in positions_df.iterrows():
-                    ticker = row['ticker']
-                    try:
-                        import yfinance as yf
-                        stock = yf.Ticker(ticker)
-                        info = stock.info
-                        
-                        holdings_info.append({
-                            'Ticker': ticker,
-                            'Company': info.get('longName', info.get('shortName', 'N/A')),
-                            'Sector': info.get('sector', 'N/A'),
-                            'Industry': info.get('industry', 'N/A')
-                        })
-                    except:
-                        holdings_info.append({
-                            'Ticker': ticker,
-                            'Company': 'N/A',
-                            'Sector': 'N/A',
-                            'Industry': 'N/A'
-                        })
+            if not positions_df.empty:
+                # Extract company, sector, industry from positions_df (already loaded from database)
+                holdings_info_cols = ['ticker']
+                col_rename = {'ticker': 'Ticker'}
                 
-                if holdings_info:
-                    holdings_info_df = pd.DataFrame(holdings_info)
+                if 'company' in positions_df.columns:
+                    holdings_info_cols.append('company')
+                    col_rename['company'] = 'Company'
+                if 'sector' in positions_df.columns:
+                    holdings_info_cols.append('sector')
+                    col_rename['sector'] = 'Sector'
+                if 'industry' in positions_df.columns:
+                    holdings_info_cols.append('industry')
+                    col_rename['industry'] = 'Industry'
+                
+                # Filter to only existing columns
+                holdings_info_cols = [col for col in holdings_info_cols if col in positions_df.columns]
+                
+                if holdings_info_cols:
+                    holdings_info_df = positions_df[holdings_info_cols].copy()
+                    holdings_info_df = holdings_info_df.rename(columns=col_rename)
+                    # Remove duplicates (in case same ticker appears multiple times)
+                    holdings_info_df = holdings_info_df.drop_duplicates(subset=['Ticker'])
+                    # Fill NaN values with 'N/A' for display
+                    holdings_info_df = holdings_info_df.fillna('N/A')
                     st.dataframe(holdings_info_df, use_container_width=True, height=300)
+                else:
+                    st.info("Company, sector, and industry data not available")
         else:
             st.info("No current positions found")
         

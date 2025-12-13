@@ -27,10 +27,10 @@ BENCHMARK_CONFIG = {
 
 
 def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime) -> None:
-    """Add light gray shading for weekends (Saturday-Sunday).
+    """Add light gray shading for weekends (Friday close to Monday open).
     
     This helps users understand when markets were closed.
-    Matches console app behavior: shades from Saturday 00:00 to Monday 00:00.
+    Shades from Friday 16:00 (market close) to Monday 00:00.
     """
     # Normalize to date-only (midnight) to avoid time component misalignment
     start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
@@ -39,22 +39,21 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
     # Iterate by date (not datetime) to ensure proper alignment
     current_date = start_date_only
     while current_date <= end_date_only:
-        # Saturday = 5, Sunday = 6
-        if current_date.weekday() == 5:  # Saturday
-            # Shade from Saturday 00:00 to Monday 00:00 (matches console app)
-            # This covers the entire weekend including the gap to Monday
-            saturday = datetime.combine(current_date, datetime.min.time())
-            monday = saturday + timedelta(days=2)  # Monday 00:00
+        # Friday = 4 (start weekend shading at market close)
+        if current_date.weekday() == 4:  # Friday
+            # Shade from Friday 16:00 (market close) to Monday 00:00
+            friday_close = datetime.combine(current_date, datetime.min.time()) + timedelta(hours=16)
+            monday = datetime.combine(current_date + timedelta(days=3), datetime.min.time())  # Monday 00:00
             
             fig.add_vrect(
-                x0=saturday,
+                x0=friday_close,
                 x1=monday,
                 fillcolor="rgba(128, 128, 128, 0.1)",
                 layer="below",
                 line_width=0,
             )
-            # Skip Sunday since we already covered the full weekend
-            current_date += timedelta(days=2)
+            # Move to next week
+            current_date += timedelta(days=7)
         else:
             current_date += timedelta(days=1)
 

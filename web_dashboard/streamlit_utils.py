@@ -510,8 +510,12 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
     
     try:
         # Calculate date cutoff
+        # Query for more days than requested to account for weekends and missing days
+        # This ensures we get enough data points even when weekends/holidays are present
         if days > 0:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            # Query for at least 50% more days, or +3 days minimum (whichever is larger)
+            query_days = max(int(days * 1.5), days + 3)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=query_days)
             cutoff_str = cutoff_date.strftime('%Y-%m-%d')
         else:
             cutoff_str = None  # All time
@@ -581,6 +585,17 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             return pd.DataFrame()
         
         result_df = pd.concat(holdings_performance, ignore_index=True)
+        
+        # If days > 0, filter to the last N unique dates (not calendar days)
+        # This ensures we get exactly N data points even when weekends/missing days are present
+        if days > 0:
+            # Get unique dates, sort descending, take first N
+            unique_dates = sorted(result_df['date'].unique(), reverse=True)[:days]
+            # Filter DataFrame to only include these dates
+            result_df = result_df[result_df['date'].isin(unique_dates)]
+            # Sort by date ascending for proper chart display
+            result_df = result_df.sort_values('date').reset_index(drop=True)
+        
         return result_df
         
     except Exception as e:

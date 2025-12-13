@@ -21,7 +21,8 @@ from streamlit_utils import (
     get_current_positions,
     get_trade_log,
     get_cash_balances,
-    calculate_portfolio_value_over_time
+    calculate_portfolio_value_over_time,
+    get_supabase_client
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -661,12 +662,32 @@ def main():
         st.markdown("### Performance Metrics")
         col1, col2, col3, col4 = st.columns(4)
         
-        # Calculate total portfolio value
+        
+        # Calculate total portfolio value from current positions
         total_value = 0.0
         total_pnl = 0.0
         if not positions_df.empty and 'market_value' in positions_df.columns:
             total_value = float(positions_df['market_value'].sum())
-            total_pnl = float(positions_df['pnl'].sum()) if 'pnl' in positions_df.columns else 0.0
+        
+        # Get P&L from latest portfolio_positions (has pnl column, latest_positions doesn't)
+        if fund_filter:
+            client = get_supabase_client()
+            if client:
+                try:
+                    # Get most recent date's total P&L
+                    pnl_result = client.supabase.table("portfolio_positions")\
+                        .select("pnl")\
+                        .eq("fund", fund_filter)\
+                        .order("date", desc=True)\
+                        .limit(100)\
+                        .execute()
+                    
+                    if pnl_result.data:
+                        # Sum P&L from most recent snapshot
+                        total_pnl = sum(float(row.get('pnl', 0) or 0) for row in pnl_result.data[:20])  # Approx # of positions
+                except Exception as e:
+                    print(f"Error getting P&L: {e}")
+                    total_pnl = 0.0
         
         # Add cash to total value
         total_value += cash_balances.get('CAD', 0.0) + cash_balances.get('USD', 0.0)
@@ -778,35 +799,75 @@ def main():
         
         if not positions_df.empty:
             # P&L chart
-            if 'pnl' in positions_df.columns:
+            if 'pnl' in positions_df.columns or 'unrealized_pnl' in positions_df.columns:
                 st.markdown("#### P&L by Position")
                 fig = create_pnl_chart(positions_df, fund_filter)
                 st.plotly_chart(fig, use_container_width=True)
             
-            # Positions table
+            # Positions table with compact/full mode toggle
             st.markdown("#### Positions Table")
-            # Select relevant columns for display
-            display_cols = ['ticker', 'shares', 'price', 'cost_basis']
-            if 'market_value' in positions_df.columns:
-                display_cols.append('market_value')
-            if 'pnl' in positions_df.columns:
-                display_cols.append('pnl')
-            if 'pnl_pct' in positions_df.columns:
-                display_cols.append('pnl_pct')
+            compact_mode = st.checkbox("📱 Compact View (fewer columns)", value=False, help="Show fewer columns for mobile/narrow screens")
+            
+            # Define column sets
+            if compact_mode:
+                # Mobile-friendly: essential columns only
+                display_cols = ['ticker', 'shares', 'current_price', 'market_value', 'return_pct']
+                col_names = {'ticker': 'Ticker', 'shares': 'Shares', 'current_price': 'Price', 
+                           'market_value': 'Value', 'return_pct': 'Return %'}
+            else:
+                # Full desktop view with all details
+                display_cols = ['ticker', 'company', 'shares', 'current_price', 'cost_basis', 
+                              'market_value', 'unrealized_pnl', 'return_pct', 'daily_pnl', 
+                              'daily_pnl_pct', 'five_day_pnl_pct']
+                col_names = {'ticker': 'Ticker', 'company': 'Company', 'shares': 'Shares',
+                           'current_price': 'Price', 'cost_basis': 'Cost Basis',
+                           'market_value': 'Value', 'unrealized_pnl': 'P&L ($)',
+                           'return_pct': 'Return %', 'daily_pnl': '1-Day ($)',
+                           'daily_pnl_pct': '1-Day %', 'five_day_pnl_pct': '5-Day %'}
             
             # Filter to only columns that exist
             display_cols = [col for col in display_cols if col in positions_df.columns]
             
             if display_cols:
+                display_df = positions_df[display_cols].copy()
+                
+                # Rename columns for display
+                display_df = display_df.rename(columns={c: col_names.get(c, c) for c in display_cols})
+                
+                # Format numeric columns
+                format_dict = {}
+                for col in display_df.columns:
+                    if col == 'Shares':
+                        format_dict[col] = '{:.4f}'
+                    elif col in ['Price', 'Cost Basis', 'Value', 'P&L ($)', '1-Day ($)']:
+                        format_dict[col] = '${:,.2f}'
+                    elif col in ['Return %', '1-Day %', '5-Day %']:
+                        format_dict[col] = '{:+.2f}%'
+                
+                # Apply color styling to P&L columns
+                def color_pnl(val):
+                    """Color positive values green, negative red"""
+                    try:
+                        if isinstance(val, str):
+                            val = float(val.replace('$', '').replace('%', '').replace(',', '').replace('+', ''))
+                        if val > 0:
+                            return 'color: #10b981'  # Green
+                        elif val < 0:
+                            return 'color: #ef4444'  # Red
+                    except:
+                        pass
+                    return ''
+                
+                # Style the dataframe
+                pnl_cols = [c for c in display_df.columns if any(x in c for x in ['P&L', 'Return', '1-Day', '5-Day'])]
+                styled_df = display_df.style.format(format_dict)
+                
+                for col in pnl_cols:
+                    if col in display_df.columns:
+                        styled_df = styled_df.map(color_pnl, subset=[col])
+                
                 st.dataframe(
-                    positions_df[display_cols].style.format({
-                        'shares': '{:.4f}',
-                        'price': '${:.2f}',
-                        'cost_basis': '${:.2f}',
-                        'market_value': '${:.2f}',
-                        'pnl': '${:.2f}',
-                        'pnl_pct': '{:.2f}%'
-                    }),
+                    styled_df,
                     use_container_width=True,
                     height=400
                 )

@@ -65,7 +65,7 @@ from data.repositories.base_repository import BaseRepository, RepositoryError
 from data.models.portfolio import PortfolioSnapshot
 
 # Business logic modules
-from portfolio.portfolio_manager import PortfolioManager
+from portfolio.portfolio_manager import PortfolioManager, PortfolioManagerError
 from utils.fund_manager import get_fund_manager, invalidate_fund_manager_cache, FundManager
 from portfolio.fund_manager import FundManager as ConfigFundManager, Fund
 from portfolio.fifo_trade_processor import FIFOTradeProcessor
@@ -1036,7 +1036,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions")
         
         # Load historical snapshots for duplicate checking (separate from display data)
-        portfolio_snapshots = portfolio_manager.load_portfolio()
+        # Use repository directly to avoid duplicate check raising exception
+        # We'll check duplicates ourselves with strict=False to just warn
+        try:
+            portfolio_snapshots = portfolio_manager.load_portfolio()
+        except PortfolioManagerError as e:
+            # If load_portfolio() raised due to duplicates, load data directly from repository
+            # to allow us to check and warn instead of crashing
+            print_warning("Duplicate snapshots detected during load - loading data directly for validation")
+            portfolio_snapshots = portfolio_manager.repository.get_portfolio_data()
 
         # Optional: Additional validation
         from utils.validation import check_duplicate_snapshots, validate_snapshot_timestamps

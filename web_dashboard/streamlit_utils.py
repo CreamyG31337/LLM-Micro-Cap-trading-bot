@@ -573,7 +573,7 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             # Calculate performance index
             ticker_df['performance_index'] = (ticker_df['total_value'].astype(float) / baseline_value) * 100
             
-           holdings_performance.append(ticker_df[['ticker', 'date', 'performance_index']])
+            holdings_performance.append(ticker_df[['ticker', 'date', 'performance_index']])
         
         if not holdings_performance:
             return pd.DataFrame()

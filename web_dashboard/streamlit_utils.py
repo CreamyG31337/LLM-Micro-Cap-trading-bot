@@ -178,12 +178,15 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
         return {"CAD": 0.0, "USD": 0.0}
 
 
-def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFrame:
+def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
     actual market values (shares * price), with proper normalization,
     currency conversion (USD→CAD), and continuous timeline handling.
+    
+    Args:
+        fund: Fund name (REQUIRED - we always filter by fund for performance)
     
     Returns DataFrame with columns:
     - date: datetime
@@ -194,6 +197,10 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     - performance_index: Normalized to start at 100 (for charting)
     """
     from decimal import Decimal
+    
+    # Fund is required - fail fast if not provided
+    if not fund:
+        raise ValueError("Fund name is required - cannot load all funds' data")
     
     client = get_supabase_client()
     if not client:

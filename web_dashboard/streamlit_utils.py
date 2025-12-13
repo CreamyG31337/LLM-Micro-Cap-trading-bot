@@ -202,13 +202,17 @@ def calculate_portfolio_value_over_time(fund: Optional[str] = None) -> pd.DataFr
     try:
         # Query portfolio_positions to get daily snapshots with actual market values
         # Include currency for proper USD→CAD conversion
-        # IMPORTANT: Default Supabase limit is 1000 rows - we need more for historical data
+        # IMPORTANT: Apply fund filter BEFORE limit to get correct data subset
         query = client.supabase.table("portfolio_positions").select(
             "date, total_value, cost_basis, pnl, fund, currency"
-        ).order("date").limit(50000)  # Override default 1000 row limit
+        )
         
+        # Apply fund filter FIRST (before limit)
         if fund:
             query = query.eq("fund", fund)
+        
+        # THEN apply order and limit
+        query = query.order("date").limit(50000)
         
         result = query.execute()
         

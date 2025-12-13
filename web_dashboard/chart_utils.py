@@ -459,10 +459,13 @@ def create_individual_holdings_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
-                # Filter to portfolio date range - ensure datetime types match
+                # Filter to portfolio date range - strip timezone for comparison
+                start_naive = pd.Timestamp(start_date).tz_localize(None) if hasattr(start_date, 'tzinfo') and start_date.tzinfo else pd.Timestamp(start_date)
+                end_naive = pd.Timestamp(end_date).tz_localize(None) if hasattr(end_date, 'tzinfo') and end_date.tzinfo else pd.Timestamp(end_date)
+                
                 bench_data = bench_data[
-                    (bench_data['Date'] >= pd.Timestamp(start_date)) & 
-                    (bench_data['Date'] <= pd.Timestamp(end_date))
+                    (bench_data['Date'] >= start_naive) & 
+                    (bench_data['Date'] <= end_naive)
                 ]
                 
                 if not bench_data.empty:

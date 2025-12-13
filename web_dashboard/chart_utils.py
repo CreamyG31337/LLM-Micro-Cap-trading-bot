@@ -231,7 +231,8 @@ def create_portfolio_value_chart(
                         y=bench_data['normalized'],
                         mode='lines',
                         name=f"{config['name']} ({bench_return:+.2f}%)",
-                        line=dict(color=config['color'], width=2, dash='dash'),
+                        line=dict(color=config['color'], width=3),
+                        opacity=0.8,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
     
@@ -507,8 +508,9 @@ def create_individual_holdings_chart(
                         y=bench_data['normalized'],
                         mode='lines',
                         name=f"{config['name']} ({bench_return:+.2f}%)",
-                        line=dict(color=config['color'], width=3, dash='dot'),
-                        hovertemplate='%{x|%Y-%m-%d}\u003cbr\u003e%{y:,.2f}\u003cextra\u003e\u003c/extra\u003e'
+                        line=dict(color=config['color'], width=3),
+                        opacity=0.8,
+                        hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
     
     # Add weekend shading

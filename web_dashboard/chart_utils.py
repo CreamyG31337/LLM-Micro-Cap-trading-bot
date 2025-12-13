@@ -444,9 +444,9 @@ def create_individual_holdings_chart(
             x=ticker_data['date'],
             y=ticker_data['performance_index'],
             mode='lines',
-            name=f\"{ticker} ({stock_return:+.2f}%)\",
+            name=f"{ticker} ({stock_return:+.2f}%)",
             line=dict(color=color, width=1.5),
-            hovertemplate=f'{ticker}\u003cbr\u003e%{{x|%Y-%m-%d}}\u003cbr\u003e%{{y:,.2f}}\u003cextra\u003e\u003c/extra\u003e'
+            hovertemplate=f'{ticker}<br>%{{x|%Y-%m-%d}}<br>%{{y:,.2f}}<extra></extra>'
         ))
     
     # Add benchmarks
@@ -471,7 +471,7 @@ def create_individual_holdings_chart(
                         x=bench_data['Date'],
                         y=bench_data['normalized'],
                         mode='lines',
-                        name=f\"{config['name']} ({bench_return:+.2f%)\",
+                        name=f"{config['name']} ({bench_return:+.2f}%)",
                         line=dict(color=config['color'], width=3, dash='dot'),
                         hovertemplate='%{x|%Y-%m-%d}\u003cbr\u003e%{y:,.2f}\u003cextra\u003e\u003c/extra\u003e'
                     ))

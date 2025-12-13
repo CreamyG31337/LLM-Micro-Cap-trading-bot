@@ -97,7 +97,7 @@ def populate_performance_metrics_job() -> None:
         positions_result = client.supabase.table("portfolio_positions")\
             .select("fund, total_value, cost_basis, pnl, currency, date")\
             .gte("date", f"{yesterday}T00:00:00")\
-            .lt("date", f"{yesterday}T23:59:59")\
+            .lt("date", f"{yesterday}T23:59:59.999999")\
             .execute()
         
         if not positions_result.data:

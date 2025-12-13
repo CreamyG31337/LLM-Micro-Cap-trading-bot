@@ -713,6 +713,50 @@ def main():
                 
                 st.write("**Last 5 days data:**")
                 st.dataframe(portfolio_value_df.tail(5))
+            
+            # Individual holdings performance chart (lazy loading)
+            st.markdown("---")
+            show_holdings = st.checkbox("📊 Show Individual Stock Performance", value=False)
+            
+            if show_holdings:
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    date_range = st.radio(
+                        "Date Range:",
+                        options=["Last 7 Days", "Last 30 Days", "All Time"],
+                        horizontal=True,
+                        index=0  # Default to 7 days
+                    )
+                
+                # Map selection to days parameter
+                days_map = {
+                    "Last 7 Days": 7,
+                    "Last 30 Days": 30,
+                    "All Time": 0  # 0 = all time
+                }
+                days = days_map[date_range]
+                
+                with st.spinner(f"Loading {date_range.lower()} of stock data..."):
+                    from streamlit_utils import get_individual_holdings_performance
+                    holdings_df = get_individual_holdings_performance(fund_filter, days=days)
+                
+                if not holdings_df.empty:
+                    from chart_utils import create_individual_holdings_chart
+                    holdings_fig = create_individual_holdings_chart(
+                        holdings_df,
+                        fund_name=fund_filter,
+                        show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],
+                        show_weekend_shading=True
+                    )  
+                    st.plotly_chart(holdings_fig, use_container_width=True)
+                    
+                    # Show summary stats
+                    num_stocks = holdings_df['ticker'].nunique()
+                    st.caption(f"Showing {num_stocks} individual stocks over {date_range.lower()}")
+                else:
+                    st.info(f"No holdings data available for {date_range.lower()}")
+        
         else:
             st.info("No historical portfolio value data available")
         

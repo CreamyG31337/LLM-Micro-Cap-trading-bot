@@ -30,23 +30,33 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
     """Add light gray shading for weekends (Saturday-Sunday).
     
     This helps users understand when markets were closed.
+    Matches console app behavior: shades from Saturday 00:00 to Monday 00:00.
     """
-    current = start_date
-    while current <= end_date:
+    # Normalize to date-only (midnight) to avoid time component misalignment
+    start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
+    end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
+    
+    # Iterate by date (not datetime) to ensure proper alignment
+    current_date = start_date_only
+    while current_date <= end_date_only:
         # Saturday = 5, Sunday = 6
-        if current.weekday() == 5:  # Saturday
-            # Shade from Saturday 00:00 to Sunday 23:59
-            saturday = current
-            sunday = current + timedelta(days=1)
+        if current_date.weekday() == 5:  # Saturday
+            # Shade from Saturday 00:00 to Monday 00:00 (matches console app)
+            # This covers the entire weekend including the gap to Monday
+            saturday = datetime.combine(current_date, datetime.min.time())
+            monday = saturday + timedelta(days=2)  # Monday 00:00
             
             fig.add_vrect(
                 x0=saturday,
-                x1=sunday + timedelta(hours=23, minutes=59),
+                x1=monday,
                 fillcolor="rgba(128, 128, 128, 0.1)",
                 layer="below",
                 line_width=0,
             )
-        current += timedelta(days=1)
+            # Skip Sunday since we already covered the full weekend
+            current_date += timedelta(days=2)
+        else:
+            current_date += timedelta(days=1)
 
 
 def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
@@ -376,3 +386,129 @@ def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[st
 def get_available_benchmarks() -> Dict[str, str]:
     """Return available benchmark options for UI."""
     return {key: config['name'] for key, config in BENCHMARK_CONFIG.items()}
+def create_individual_holdings_chart(
+    holdings_df: pd.DataFrame,
+    fund_name: Optional[str] = None,
+    show_benchmarks: Optional[List[str]] = None,
+    show_weekend_shading: bool = True
+) -> go.Figure:
+    """Create a chart showing individual stock performance vs benchmarks.
+    
+    Args:
+        holdings_df: DataFrame with columns: ticker, date, performance_index
+        fund_name: Optional fund name for title
+        show_benchmarks: List of benchmark keys to display
+        show_weekend_shading: Add weekend shading
+        
+    Returns:
+        Plotly Figure object
+    """
+    fig = go.Figure()
+    
+    if holdings_df.empty:
+        fig.add_annotation(
+            text="No holdings data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16)
+        )
+        return fig
+    
+    # Get date range
+    start_date = pd.to_datetime(holdings_df['date']).min()
+    end_date = pd.to_datetime(holdings_df['date']).max()
+    
+    # Color palette for stocks
+    stock_colors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+        '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5'
+    ]
+    
+    # Plot each stock
+    tickers = holdings_df['ticker'].unique()
+    for idx, ticker in enumerate(sorted(tickers)):
+        ticker_data = holdings_df[holdings_df['ticker'] == ticker].copy()
+        ticker_data = ticker_data.sort_values('date')
+        
+        if len(ticker_data) < 2:
+            continue  # Skip if insufficient data
+        
+        # Calculate return for label
+        final_perf = ticker_data['performance_index'].iloc[-1]
+        stock_return = final_perf - 100
+        
+        color = stock_colors[idx % len(stock_colors)]
+        
+        fig.add_trace(go.Scatter(
+            x=ticker_data['date'],
+            y=ticker_data['performance_index'],
+            mode='lines',
+            name=f\"{ticker} ({stock_return:+.2f}%)\",
+            line=dict(color=color, width=1.5),
+            hovertemplate=f'{ticker}\u003cbr\u003e%{{x|%Y-%m-%d}}\u003cbr\u003e%{{y:,.2f}}\u003cextra\u003e\u003c/extra\u003e'
+        ))
+    
+    # Add benchmarks
+    if show_benchmarks:
+        for bench_key in show_benchmarks:
+            if bench_key not in BENCHMARK_CONFIG:
+                continue
+                
+            config = BENCHMARK_CONFIG[bench_key]
+            bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
+            
+            if bench_data is not None and not bench_data.empty:
+                bench_data = bench_data[
+                    (bench_data['Date'] >= start_date) & 
+                    (bench_data['Date'] <= end_date)
+                ]
+                
+                if not bench_data.empty:
+                    bench_return = bench_data['normalized'].iloc[-1] - 100
+                    
+                    fig.add_trace(go.Scatter(
+                        x=bench_data['Date'],
+                        y=bench_data['normalized'],
+                        mode='lines',
+                        name=f\"{config['name']} ({bench_return:+.2f%)\",
+                        line=dict(color=config['color'], width=3, dash='dot'),
+                        hovertemplate='%{x|%Y-%m-%d}\u003cbr\u003e%{y:,.2f}\u003cextra\u003e\u003c/extra\u003e'
+                    ))
+    
+    # Add weekend shading
+    if show_weekend_shading:
+        _add_weekend_shading(fig, start_date, end_date)
+    
+    # Add baseline reference
+    fig.add_hline(
+        y=100,
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5,
+        annotation_text="Baseline (0%)",
+        annotation_position="right"
+    )
+    
+    # Layout
+    title = f"Individual Stock Performance"
+    if fund_name:
+        title += f" - {fund_name}"
+    
+    fig.update_layout(
+        title=dict(text=title, x=0.5, xanchor='center'),
+        xaxis_title="Date",
+        yaxis_title="Performance Index (Baseline 100)",
+        hovermode='x unified',
+        height=600,
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.8)"
+        )
+    )
+    
+    return fig

@@ -54,7 +54,7 @@ def backfill_performance_metrics(
         query = query.gte("date", f"{from_date}T00:00:00")
     
     if to_date:
-        query = query.lte("date", f"{to_date}T23:59:59")
+        query = query.lte("date", f"{to_date}T23:59:59.999999")
     
     # Fetch all dates (might be large, but we need distinct dates)
     print(f"{_safe_emoji('📊')} Fetching all position dates...")
@@ -75,31 +75,18 @@ def backfill_performance_metrics(
     print(f"   Range: {dates_list[0]} to {dates_list[-1]}")
     
     # Process each date
-    successful = 0
-    skipped = 0
+    successful_dates = 0
+    skipped_funds = 0
+    inserted_funds = 0
     failed = 0
     
     for target_date in dates_list:
         try:
-            # Check if already exists
-            existing = client.supabase.table("performance_metrics")\
-                .select("id")\
-                .eq("date", str(target_date))
-            
-            if fund_filter:
-                existing = existing.eq("fund", fund_filter)
-            
-            existing_result = existing.execute()
-            
-            if existing_result.data:
-                skipped += 1
-                continue  # Already exists, skip
-            
             # Get positions for this date
             positions_result = client.supabase.table("portfolio_positions")\
                 .select("fund, total_value, cost_basis, pnl, currency")\
                 .gte("date", f"{target_date}T00:00:00")\
-                .lt("date", f"{target_date}T23:59:59")
+                .lt("date", f"{target_date}T23:59:59.999999")
             
             if fund_filter:
                 positions_result = positions_result.eq("fund", fund_filter)
@@ -107,8 +94,7 @@ def backfill_performance_metrics(
             positions = positions_result.execute().data
             
             if not positions:
-                skipped += 1
-                continue
+                continue  # No positions for this date, skip silently
             
             # Aggregate by fund
             fund_totals = defaultdict(lambda: {
@@ -144,14 +130,26 @@ def backfill_performance_metrics(
                 fund_totals[fund]['unrealized_pnl'] += pnl
                 fund_totals[fund]['total_trades'] += 1
             
-            # Insert for each fund
+            # Upsert for each fund (checks per-fund existence)
+            date_has_inserts = False
             for fund, totals in fund_totals.items():
+                # Check if this specific fund+date combination already exists
+                existing = client.supabase.table("performance_metrics")\
+                    .select("id")\
+                    .eq("fund", fund)\
+                    .eq("date", str(target_date))\
+                    .execute()
+                
+                if existing.data:
+                    skipped_funds += 1
+                    continue  # This fund+date already exists, skip
+                
                 performance_pct = (
                     (float(totals['unrealized_pnl']) / float(totals['cost_basis']) * 100)
                     if totals['cost_basis'] > 0 else 0.0
                 )
                 
-                client.supabase.table("performance_metrics").insert({
+                client.supabase.table("performance_metrics").upsert({
                     'fund': fund,
                     'date': str(target_date),
                     'total_value': float(totals['total_value']),
@@ -161,22 +159,27 @@ def backfill_performance_metrics(
                     'total_trades': totals['total_trades'],
                     'winning_trades': 0,
                     'losing_trades': 0
-                }).execute()
+                }, on_conflict='fund,date').execute()
+                
+                inserted_funds += 1
+                date_has_inserts = True
             
-            successful += 1
+            if date_has_inserts:
+                successful_dates += 1
             
             # Progress indicator
-            if successful % 10 == 0:
-                print(f"   Processed {successful}/{len(dates_list)} dates...", end='\r')
+            if successful_dates % 10 == 0:
+                print(f"   Processed {successful_dates}/{len(dates_list)} dates, {inserted_funds} fund metrics inserted...", end='\r')
         
         except Exception as e:
             print(f"\n{_safe_emoji('❌')} Error processing {target_date}: {e}")
             failed += 1
     
     print(f"\n\n{_safe_emoji('✅')} Backfill complete!")
-    print(f"   Successful: {successful}")
-    print(f"   Skipped (already exists): {skipped}")
-    print(f"   Failed: {failed}")
+    print(f"   Dates processed: {successful_dates}")
+    print(f"   Fund metrics inserted: {inserted_funds}")
+    print(f"   Fund metrics skipped (already exists): {skipped_funds}")
+    print(f"   Dates failed: {failed}")
 
 
 if __name__ == "__main__":

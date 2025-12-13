@@ -484,3 +484,103 @@ def calculate_performance_metrics(fund: Optional[str] = None) -> Dict[str, Any]:
         }
 
 
+
+
+
+def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFrame:
+    """Get performance data for individual holdings in a fund.
+    
+    Args:
+        fund: Fund name (required)
+        days: Number of days to fetch (7, 30, or 0 for all)
+        
+    Returns:
+        DataFrame with columns: ticker, date, shares, price, total_value, performance_index
+    """
+    from decimal import Decimal
+    from datetime import datetime, timedelta, timezone
+    
+    if not fund:
+        raise ValueError("Fund name is required")
+    
+    client = get_supabase_client()
+    if not client:
+        return pd.DataFrame()
+    
+    try:
+        # Calculate date cutoff
+        if days > 0:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff_date.strftime('%Y-%m-%d')
+        else:
+            cutoff_str = None  # All time
+        
+        # Fetch position data with pagination
+        all_rows = []
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            query = client.supabase.table("portfolio_positions").select(
+                "ticker, date, shares, price, total_value, currency"
+            )
+            
+            query = query.eq("fund", fund)
+            
+            if cutoff_str:
+                query = query.gte("date", f"{cutoff_str}T00:00:00")
+            
+            result = query.order("date").range(offset, offset + batch_size - 1).execute()
+            
+            rows = result.data
+            if not rows:
+                break
+            
+            all_rows.extend(rows)
+            
+            if len(rows) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit")
+                break
+        
+        if not all_rows:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(all_rows)
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Calculate performance index per ticker (baseline 100)
+        holdings_performance = []
+        
+        for ticker in df['ticker'].unique():
+            ticker_df = df[df['ticker'] == ticker].copy()
+            ticker_df = ticker_df.sort_values('date')
+            
+            if len(ticker_df) < 1:
+                continue
+            
+            # Use first date's total_value as baseline
+            baseline_value = float(ticker_df['total_value'].iloc[0])
+            
+            if baseline_value == 0:
+                continue  # Skip if no valid baseline
+            
+            # Calculate performance index
+            ticker_df['performance_index'] = (ticker_df['total_value'].astype(float) / baseline_value) * 100
+            
+           holdings_performance.append(ticker_df[['ticker', 'date', 'performance_index']])
+        
+        if not holdings_performance:
+            return pd.DataFrame()
+        
+        result_df = pd.concat(holdings_performance, ignore_index=True)
+        return result_df
+        
+    except Exception as e:
+        print(f"Error fetching individual holdings: {e}")
+        return pd.DataFrame()

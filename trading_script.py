@@ -1025,14 +1025,18 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
         # Load portfolio data
         print_info("Loading portfolio data...")
-        portfolio_snapshots = portfolio_manager.load_portfolio()  # This will now crash if duplicates found
-
-        if not portfolio_snapshots:
+        
+        # Get latest snapshot using view-based method (includes company names from securities table)
+        latest_snapshot = portfolio_manager.get_latest_portfolio()
+        
+        if not latest_snapshot:
             print_warning("No portfolio data found")
             return
-
-        latest_snapshot = portfolio_snapshots[-1]
+        
         print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions")
+        
+        # Load historical snapshots for duplicate checking (separate from display data)
+        portfolio_snapshots = portfolio_manager.load_portfolio()
 
         # Optional: Additional validation
         from utils.validation import check_duplicate_snapshots, validate_snapshot_timestamps

@@ -28,7 +28,8 @@ from chart_utils import (
     create_portfolio_value_chart,
     create_performance_by_fund_chart,
     create_pnl_chart,
-    create_trades_timeline_chart
+    create_trades_timeline_chart,
+    create_currency_exposure_chart
 )
 from auth_utils import (
     login_user,
@@ -813,6 +814,12 @@ def main():
                 fig = create_pnl_chart(positions_df, fund_filter)
                 st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             
+            # Currency exposure chart
+            if 'currency' in positions_df.columns and 'market_value' in positions_df.columns:
+                st.markdown("#### Currency Exposure")
+                fig = create_currency_exposure_chart(positions_df, fund_filter)
+                st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+            
             # Positions table with compact/full mode toggle
             st.markdown("#### Positions Table")
             compact_mode = st.checkbox("📱 Compact View (fewer columns)", value=False, help="Show fewer columns for mobile/narrow screens")
@@ -824,11 +831,11 @@ def main():
                 col_names = {'ticker': 'Ticker', 'shares': 'Shares', 'current_price': 'Price', 
                            'market_value': 'Value', 'return_pct': 'Return %'}
             else:
-                # Full desktop view with all details
-                display_cols = ['ticker', 'company', 'shares', 'current_price', 'cost_basis', 
+                # Full desktop view - removed company name (now in Holdings Info table below)
+                display_cols = ['ticker', 'shares', 'current_price', 'cost_basis', 
                               'market_value', 'unrealized_pnl', 'return_pct', 'daily_pnl', 
                               'daily_pnl_pct', 'five_day_pnl_pct']
-                col_names = {'ticker': 'Ticker', 'company': 'Company', 'shares': 'Shares',
+                col_names = {'ticker': 'Ticker', 'shares': 'Shares',
                            'current_price': 'Price', 'cost_basis': 'Cost Basis',
                            'market_value': 'Value', 'unrealized_pnl': 'P&L ($)',
                            'return_pct': 'Return %', 'daily_pnl': '1-Day ($)',
@@ -882,6 +889,35 @@ def main():
                 )
             else:
                 st.dataframe(positions_df, use_container_width=True, height=400)
+            
+            # Holdings Info table - Company, Sector, Industry
+            st.markdown("#### Holdings Info")
+            with st.spinner("Fetching sector and industry data..."):
+                holdings_info = []
+                for idx, row in positions_df.iterrows():
+                    ticker = row['ticker']
+                    try:
+                        import yfinance as yf
+                        stock = yf.Ticker(ticker)
+                        info = stock.info
+                        
+                        holdings_info.append({
+                            'Ticker': ticker,
+                            'Company': info.get('longName', info.get('shortName', 'N/A')),
+                            'Sector': info.get('sector', 'N/A'),
+                            'Industry': info.get('industry', 'N/A')
+                        })
+                    except:
+                        holdings_info.append({
+                            'Ticker': ticker,
+                            'Company': 'N/A',
+                            'Sector': 'N/A',
+                            'Industry': 'N/A'
+                        })
+                
+                if holdings_info:
+                    holdings_info_df = pd.DataFrame(holdings_info)
+                    st.dataframe(holdings_info_df, use_container_width=True, height=300)
         else:
             st.info("No current positions found")
         
@@ -905,11 +941,23 @@ def main():
                     action_col = col_name
                     break
             
-            # If no action column, infer from shares (positive = buy, negative previously held = sell)
+            # If no action column, infer from reason field (checking for "sell" keywords)
             if action_col:
                 recent_trades['Action'] = recent_trades[action_col].str.upper()
             else:
-                recent_trades['Action'] = 'BUY'  # Default
+                # Infer from reason field - check for sell keywords
+                if 'reason' in recent_trades.columns:
+                    def infer_action(reason):
+                        if pd.isna(reason) or reason is None:
+                            return 'BUY'  # Default if no reason
+                        reason_lower = str(reason).lower()
+                        if 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower:
+                            return 'SELL'
+                        return 'BUY'  # Default to BUY if no sell keywords found
+                    recent_trades['Action'] = recent_trades['reason'].apply(infer_action)
+                else:
+                    # No action or reason column - default to BUY
+                    recent_trades['Action'] = 'BUY'
             
             # Build display columns
             display_cols = ['date', 'ticker']

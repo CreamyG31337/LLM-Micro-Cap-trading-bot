@@ -61,6 +61,18 @@ class DualWriteRepository(BaseRepository):
         """Get latest portfolio snapshot from CSV."""
         return self.csv_repo.get_latest_portfolio_snapshot()
     
+    def get_latest_portfolio_snapshot_with_pnl(self) -> Optional[PortfolioSnapshot]:
+        """Get latest portfolio snapshot with P&L from Supabase view.
+        
+        This method uses the Supabase 'latest_positions' view which includes
+        company names from the securities table (after normalization).
+        
+        Returns:
+            Portfolio snapshot with positions including company names from securities table
+        """
+        # Delegate to Supabase repository to use the view with company data
+        return self.supabase_repo.get_latest_portfolio_snapshot_with_pnl()
+    
     def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> None:
         """Save portfolio snapshot to both CSV and Supabase."""
         try:

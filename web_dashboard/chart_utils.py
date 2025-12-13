@@ -364,6 +364,157 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     return fig
 
 
+def create_currency_exposure_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
+    """Create a pie chart showing USD vs CAD stock holdings exposure"""
+    if positions_df.empty or 'currency' not in positions_df.columns or 'market_value' not in positions_df.columns:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No currency data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+    
+    # Group by currency and sum market values
+    currency_totals = positions_df.groupby('currency')['market_value'].sum().reset_index()
+    currency_totals = currency_totals.sort_values('market_value', ascending=False)
+    
+    # Calculate percentages
+    total_value = currency_totals['market_value'].sum()
+    currency_totals['percentage'] = (currency_totals['market_value'] / total_value * 100).round(1)
+    
+    # Color scheme: Blue for USD, Red for CAD
+    colors = []
+    for curr in currency_totals['currency']:
+        if curr == 'USD':
+            colors.append('#3b82f6')  # Blue
+        elif curr == 'CAD':
+            colors.append('#ef4444')  # Red
+        else:
+            colors.append('#9ca3af')  # Gray for others
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Pie(
+        labels=currency_totals['currency'],
+        values=currency_totals['market_value'],
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        hovertemplate='<b>%{label}</b><br>Value: $%{value:,.2f}<br>%{percent}<extra></extra>'
+    ))
+    
+    title = "Currency Exposure (Stock Holdings)"
+    if fund_name:
+        title += f" - {fund_name}"
+    
+    fig.update_layout(
+        title=title,
+        template='plotly_white',
+        height=400,
+        showlegend=True
+    )
+    
+    return fig
+
+
+def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
+    """Create a pie chart showing sector allocation of portfolio holdings"""
+    if positions_df.empty or 'ticker' not in positions_df.columns or 'market_value' not in positions_df.columns:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No position data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+    
+    # Fetch sector info for each ticker using yfinance
+    sector_data = []
+    for idx, row in positions_df.iterrows():
+        ticker = row['ticker']
+        market_value = row['market_value']
+        
+        try:
+            # Fetch stock info from yfinance
+            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            # Get sector (will be None for ETFs or if data unavailable)
+            sector = info.get('sector', 'Unknown')
+            if not sector or sector == '':
+                sector = 'Other/ETF'
+            
+            sector_data.append({
+                'ticker': ticker,
+                'sector': sector,
+                'market_value': market_value
+            })
+        except Exception as e:
+            # If we can't fetch data, categorize as Unknown
+            sector_data.append({
+                'ticker': ticker,
+                'sector': 'Unknown',
+                'market_value': market_value
+            })
+    
+    if not sector_data:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Unable to fetch sector data",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+    
+    # Aggregate by sector
+    sector_df = pd.DataFrame(sector_data)
+    sector_totals = sector_df.groupby('sector')['market_value'].sum().reset_index()
+    sector_totals = sector_totals.sort_values('market_value', ascending=False)
+    
+    # Color palette for sectors
+    sector_colors = {
+        'Technology': '#3b82f6',
+        'Financial Services': '#10b981',
+        'Healthcare': '#ef4444',
+        'Consumer Cyclical': '#f59e0b',
+        'Industrials': '#8b5cf6',
+        'Energy': '#f97316',
+        'Basic Materials': '#06b6d4',
+        'Consumer Defensive': '#84cc16',
+        'Real Estate': '#ec4899',
+        'Communication Services': '#6366f1',
+        'Utilities': '#14b8a6',
+        'Other/ETF': '#9ca3af',
+        'Unknown': '#6b7280'
+    }
+    
+    colors = [sector_colors.get(sector, '#9ca3af') for sector in sector_totals['sector']]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Pie(
+        labels=sector_totals['sector'],
+        values=sector_totals['market_value'],
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        hovertemplate='<b>%{label}</b><br>Value: $%{value:,.2f}<br>%{percent}<extra></extra>'
+    ))
+    
+    title = "Sector Allocation"
+    if fund_name:
+        title += f" - {fund_name}"
+    
+    fig.update_layout(
+        title=title,
+        template='plotly_white',
+        height=500,
+        showlegend=True
+    )
+    
+    return fig
+
+
 def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[str] = None,
                                   show_weekend_shading: bool = True) -> go.Figure:
     """Create a timeline chart showing trades over time"""

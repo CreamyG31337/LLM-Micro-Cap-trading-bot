@@ -60,7 +60,7 @@ class PositionMapper:
         
         return {
             'ticker': position.ticker,
-            'company': position.company,
+            # 'company': position.company,  # Deprecated - now normalized in securities table
             'shares': safe_float(position.shares),
             'price': price,  # Current market price (or avg_price if current not available)
             'cost_basis': safe_float(position.cost_basis),

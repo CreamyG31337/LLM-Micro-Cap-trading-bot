@@ -700,6 +700,16 @@ def main():
                 show_weekend_shading=True
             )
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Debug info for diagnosing data issues
+            with st.expander("🔍 Debug: Portfolio Data Info"):
+                st.write(f"**Rows returned:** {len(portfolio_value_df)}")
+                if 'date' in portfolio_value_df.columns:
+                    min_date = portfolio_value_df['date'].min()
+                    max_date = portfolio_value_df['date'].max()
+                    st.write(f"**Date range:** {min_date} to {max_date}")
+                st.write("**Last 5 data points:**")
+                st.dataframe(portfolio_value_df.tail(5))
         else:
             st.info("No historical portfolio value data available")
         

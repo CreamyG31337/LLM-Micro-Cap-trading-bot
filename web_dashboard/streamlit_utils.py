@@ -209,25 +209,49 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     try:
         # Query portfolio_positions to get daily snapshots with actual market values
         # Include currency for proper USD→CAD conversion
-        # IMPORTANT: Apply fund filter BEFORE limit to get correct data subset
-        query = client.supabase.table("portfolio_positions").select(
-            "date, total_value, cost_basis, pnl, fund, currency"
-        )
         
-        # Apply fund filter FIRST (before limit)
-        if fund:
-            query = query.eq("fund", fund)
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        # THEN apply order and limit
-        query = query.order("date").limit(50000)
+        while True:
+            # Build query for this batch
+            query = client.supabase.table("portfolio_positions").select(
+                "date, total_value, cost_basis, pnl, fund, currency"
+            )
+            
+            if fund:
+                query = query.eq("fund", fund)
+            
+            # Order by date to ensure consistent pagination
+            # Use range() for pagination
+            # Note: range is 0-indexed and inclusive for start, inclusive for end in PostgREST logic usually,
+            # but supabase-py .range(start, end) handles it.
+            result = query.order("date").range(offset, offset + batch_size - 1).execute()
+            
+            rows = result.data
+            if not rows:
+                break
+                
+            all_rows.extend(rows)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(rows) < batch_size:
+                break
+                
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in pagination")
+                break
         
-        result = query.execute()
-        
-        if not result.data:
+        if not all_rows:
             return pd.DataFrame()
         
-        df = pd.DataFrame(result.data)
-        print(f"[DEBUG] Loaded {len(df)} portfolio position rows from Supabase")
+        df = pd.DataFrame(all_rows)
+        print(f"[DEBUG] Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
         
         df['date'] = pd.to_datetime(df['date'])
         

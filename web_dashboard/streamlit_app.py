@@ -815,7 +815,7 @@ def main():
         st.markdown(
             """
             <div style='text-align: center; color: #666; font-size: 0.8em;'>
-                LLM Micro-Cap Trading Bot Dashboard • Build: 2025-12-12 17:45 PST
+                LLM Micro-Cap Trading Bot Dashboard • Build: 2025-12-12 17:55 PST (Pagination Fix)
             </div>
             """, 
             unsafe_allow_html=True

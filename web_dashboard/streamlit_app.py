@@ -703,12 +703,15 @@ def main():
             
             # Debug info for diagnosing data issues
             with st.expander("🔍 Debug: Portfolio Data Info"):
-                st.write(f"**Rows returned:** {len(portfolio_value_df)}")
+                st.write("**System Status:** v1.1 (Limit Fix Applied) ✅")
+                st.write(f"**Days processed:** {len(portfolio_value_df)}")
+                
                 if 'date' in portfolio_value_df.columns:
                     min_date = portfolio_value_df['date'].min()
                     max_date = portfolio_value_df['date'].max()
-                    st.write(f"**Date range:** {min_date} to {max_date}")
-                st.write("**Last 5 data points:**")
+                    st.write(f"**Date range:** {min_date.date()} to {max_date.date()}")
+                
+                st.write("**Last 5 days data:**")
                 st.dataframe(portfolio_value_df.tail(5))
         else:
             st.info("No historical portfolio value data available")
@@ -806,6 +809,17 @@ def main():
                 st.info("The scheduler module may not be running in this environment.")
             except Exception as e:
                 st.error(f"Error loading scheduler: {e}")
+        
+        # Footer with build info
+        st.markdown("---")
+        st.markdown(
+            """
+            <div style='text-align: center; color: #666; font-size: 0.8em;'>
+                LLM Micro-Cap Trading Bot Dashboard • Build: 2025-12-12 17:45 PST
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
     except Exception as e:
         st.error(f"Error loading data: {e}")
         st.exception(e)

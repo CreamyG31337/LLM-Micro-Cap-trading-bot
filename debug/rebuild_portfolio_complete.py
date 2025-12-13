@@ -347,14 +347,36 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     else:
                         avg_price = Decimal('0')
                     
-                    # Use pre-fetched historical price - NO FALLBACKS ALLOWED
+                    # Use pre-fetched historical price - NO FALLBACKS ALLOWED (except for very recent dates)
                     price_key = (ticker, trading_day)
                     if price_key in price_cache_dict:
                         current_price = price_cache_dict[price_key]
                     else:
-                        # NO FALLBACKS - fail if historical price not available
-                        # This ensures we don't create corrupted data with wrong prices
-                        raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
+                        # Check if this is a very recent date (within 2 trading days of today)
+                        # For recent dates, allow fallback to previous day's price since data may not be available yet
+                        days_ago = (today - trading_day).days
+                        if days_ago <= 2:
+                            # Try to find the most recent available price for this ticker
+                            prev_price = None
+                            for prev_day in sorted([d for d in all_trading_days_list if d < trading_day], reverse=True):
+                                prev_key = (ticker, prev_day)
+                                if prev_key in price_cache_dict:
+                                    prev_price = price_cache_dict[prev_key]
+                                    break
+                            
+                            if prev_price is not None:
+                                current_price = prev_price
+                                print_warning(f"   Using previous day's price for {ticker} on {trading_day} (data not available yet)")
+                            elif position['cost'] > 0 and position['shares'] > 0:
+                                # Last resort: use cost basis
+                                current_price = position['cost'] / position['shares']
+                                print_warning(f"   Using cost basis for {ticker} on {trading_day} (no price data available)")
+                            else:
+                                raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
+                        else:
+                            # NO FALLBACKS for older historical data - fail if price not available
+                            # This ensures we don't create corrupted data with wrong prices
+                            raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
                     market_value = position['shares'] * current_price
                     unrealized_pnl = market_value - position['cost']
                     

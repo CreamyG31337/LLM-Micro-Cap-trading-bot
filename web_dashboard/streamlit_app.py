@@ -695,11 +695,11 @@ def main():
         
         
         with col1:
-            st.metric("Total Portfolio Value", f"${total_value:,.2f}")
+            st.metric("Total Portfolio Value (CAD)", f"${total_value:,.2f}")
         
         with col2:
             pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
-            st.metric("Total P&L", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
+            st.metric("Total P&L (CAD)", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
         
         with col3:
             # Number of holdings

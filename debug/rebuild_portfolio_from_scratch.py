@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """
-Rebuild Portfolio from Trade Log - Complete Recreation
+Rebuild Portfolio from Trade Log - CSV ONLY (for partial rebuilds)
+
+⚠️  WARNING: THIS SCRIPT ONLY WRITES TO CSV FILES, NOT SUPABASE! ⚠️
+
+For full portfolio rebuilds that sync to both CSV AND Supabase, use:
+    python debug/rebuild_portfolio_complete.py "trading_data/funds/Project Chimera"
+
+This script is kept for:
+- The `rebuild_ticker_from_date` function (used by trade_processor.py)
+- Debug/testing purposes when you only want CSV output
 
 PURPOSE:
 This script completely rebuilds the portfolio CSV from scratch based on the trade log.
@@ -15,13 +24,6 @@ WHAT IT DOES:
    - SELL entries for each sale with proper FIFO calculations
 3. Recalculates all positions, cost basis, and P&L from scratch
 4. Generates a clean, consistent portfolio CSV with proper formatting
-
-WHEN TO USE:
-- Portfolio CSV is corrupted or has inconsistent data
-- Need to recover from a backup or data loss
-- Want to verify calculations are correct
-- Adding new features that require a fresh start
-- Debugging portfolio display issues
 
 TECHNICAL DETAILS:
 - **Price Caching**: Uses PriceCache with MarketDataFetcher to minimize API calls and improve performance

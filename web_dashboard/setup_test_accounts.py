@@ -22,7 +22,7 @@ try:
     from supabase import create_client
     from admin_utils import get_admin_supabase_client
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"[ERROR] Import error: {e}")
     print("Make sure you're in the web_dashboard directory and dependencies are installed")
     sys.exit(1)
 
@@ -108,7 +108,7 @@ def assign_funds_to_user(user_id: str, fund_names: list, client) -> int:
             if result.data:
                 assigned_count += 1
         except Exception as e:
-            print(f"  ⚠️  Warning: Could not assign fund {fund_name}: {e}")
+            print(f"  [WARNING] Warning: Could not assign fund {fund_name}: {e}")
     
     return assigned_count
 
@@ -122,35 +122,35 @@ def get_available_funds(client) -> list:
             return sorted(funds)
         return []
     except Exception as e:
-        print(f"⚠️  Warning: Could not fetch funds: {e}")
+        print(f"[WARNING] Warning: Could not fetch funds: {e}")
         return []
 
 
 def main():
     """Main function to create test accounts"""
     print("=" * 60)
-    print("🧪 Test Accounts Setup")
+    print("[TEST] Test Accounts Setup")
     print("=" * 60)
     
     # Check admin access
     client = get_admin_supabase_client()
     if not client:
-        print("❌ Error: Failed to get admin Supabase client")
+        print("[ERROR] Error: Failed to get admin Supabase client")
         print("Make sure SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is set in .env")
         return False
     
     # Get available funds
-    print("\n📋 Fetching available funds...")
+    print("\n[INFO] Fetching available funds...")
     available_funds = get_available_funds(client)
     if not available_funds:
-        print("⚠️  Warning: No funds found in database")
+        print("[WARNING] Warning: No funds found in database")
         print("   Test accounts will be created but no funds will be assigned")
         available_funds = []
     else:
-        print(f"✅ Found {len(available_funds)} funds: {', '.join(available_funds)}")
+        print(f"[OK] Found {len(available_funds)} funds: {', '.join(available_funds)}")
     
     # Create admin test account
-    print("\n👑 Creating Admin Test Account...")
+    print("\n[INFO] Creating Admin Test Account...")
     admin_email = "admin.test@tradingbot.local"
     admin_password = generate_secure_password(20)
     
@@ -161,20 +161,20 @@ def main():
             full_name="Admin Test User",
             is_admin_user=True
         )
-        print(f"✅ Admin account created: {admin_user['user_id']}")
+        print(f"[OK] Admin account created: {admin_user['user_id']}")
         
         # Assign all funds to admin
         if available_funds:
-            print(f"💰 Assigning {len(available_funds)} funds to admin...")
+            print(f"[INFO] Assigning {len(available_funds)} funds to admin...")
             assigned = assign_funds_to_user(admin_user['user_id'], available_funds, client)
-            print(f"✅ Assigned {assigned}/{len(available_funds)} funds")
+            print(f"[OK] Assigned {assigned}/{len(available_funds)} funds")
         
     except Exception as e:
-        print(f"❌ Failed to create admin account: {e}")
+        print(f"[ERROR] Failed to create admin account: {e}")
         return False
     
     # Create guest test account
-    print("\n👤 Creating Guest Test Account...")
+    print("\n[INFO] Creating Guest Test Account...")
     guest_email = "guest.test@tradingbot.local"
     guest_password = generate_secure_password(20)
     
@@ -185,16 +185,16 @@ def main():
             full_name="Guest Test User",
             is_admin_user=False
         )
-        print(f"✅ Guest account created: {guest_user['user_id']}")
+        print(f"[OK] Guest account created: {guest_user['user_id']}")
         
         # Assign first fund to guest (if available)
         if available_funds:
-            print(f"💰 Assigning first fund to guest...")
+            print(f"[INFO] Assigning first fund to guest...")
             assigned = assign_funds_to_user(guest_user['user_id'], [available_funds[0]], client)
-            print(f"✅ Assigned {assigned} fund(s)")
+            print(f"[OK] Assigned {assigned} fund(s)")
         
     except Exception as e:
-        print(f"❌ Failed to create guest account: {e}")
+        print(f"[ERROR] Failed to create guest account: {e}")
         return False
     
     # Save credentials to file
@@ -217,20 +217,20 @@ def main():
     try:
         with open(credentials_file, 'w') as f:
             json.dump(credentials, f, indent=2)
-        print(f"\n✅ Credentials saved to: {credentials_file}")
+        print(f"\n[OK] Credentials saved to: {credentials_file}")
     except Exception as e:
-        print(f"⚠️  Warning: Could not save credentials file: {e}")
-        print("\n📋 Credentials (save these manually):")
+        print(f"[WARNING] Warning: Could not save credentials file: {e}")
+        print("\n[INFO] Credentials (save these manually):")
         print(json.dumps(credentials, indent=2))
         return False
     
     print("\n" + "=" * 60)
-    print("✅ Test Accounts Setup Complete!")
+    print("[OK] Test Accounts Setup Complete!")
     print("=" * 60)
-    print(f"\n📁 Credentials saved to: {credentials_file}")
-    print("📖 See TEST_CREDENTIALS.md for usage instructions")
-    print("📖 See AGENTS.md for AI agent access information")
-    print("\n⚠️  Note: test_credentials.json is gitignored for security")
+    print(f"\n[INFO] Credentials saved to: {credentials_file}")
+    print("[INFO] See TEST_CREDENTIALS.md for usage instructions")
+    print("[INFO] See AGENTS.md for AI agent access information")
+    print("\n[WARNING] Note: test_credentials.json is gitignored for security")
     
     return True
 

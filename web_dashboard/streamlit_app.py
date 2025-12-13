@@ -82,10 +82,10 @@ def show_login_page():
         use_magic_link = st.checkbox("Send magic link instead", key="use_magic_link")
         
         with st.form("login_form"):
-            email = st.text_input("Email", type="default")
+            email = st.text_input("Email", type="default", key="login_email")
             
             if not use_magic_link:
-                password = st.text_input("Password", type="password")
+                password = st.text_input("Password", type="password", key="login_password")
             else:
                 password = None
                 st.info("A magic link will be sent to your email. Click the link to log in.")

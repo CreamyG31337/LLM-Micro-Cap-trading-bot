@@ -122,11 +122,100 @@ class SupabaseClient:
             logger.error(f"❌ Supabase connection failed: {e}")
             return False
     
+    def ensure_ticker_in_securities(self, ticker: str, currency: str, company_name: Optional[str] = None) -> bool:
+        """Ensure ticker exists in securities table with metadata from yfinance.
+        
+        This method is called on first trade to populate the securities table.
+        It checks if the ticker exists and has company metadata. If not, it fetches
+        from yfinance and inserts/updates the record.
+        
+        Args:
+            ticker: Stock ticker symbol (e.g., 'AAPL', 'SHOP.TO')
+            currency: Currency code ('CAD' or 'USD')
+            company_name: Optional company name if already known (avoids yfinance call)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Check if ticker already exists with complete metadata
+            existing = self.supabase.table("securities").select("ticker, company_name").eq("ticker", ticker).execute()
+            
+            # If ticker exists with company name, no need to update
+            if existing.data and existing.data[0].get('company_name'):
+                logger.debug(f"Ticker {ticker} already exists in securities table with company name")
+                return True
+            
+            # Need to fetch metadata from yfinance
+            metadata = {
+                'ticker': ticker,
+                'currency': currency
+            }
+            
+            # If company_name was provided, use it; otherwise fetch from yfinance
+            if company_name and company_name.strip():
+                metadata['company_name'] = company_name.strip()
+            else:
+                # Fetch from yfinance
+                try:
+                    import yfinance as yf
+                    stock = yf.Ticker(ticker)
+                    info = stock.info
+                    
+                    if info:
+                        # Get company name (prefer longName over shortName)
+                        metadata['company_name'] = info.get('longName') or info.get('shortName', 'Unknown')
+                        
+                        # Get additional metadata
+                        metadata['sector'] = info.get('sector')
+                        metadata['industry'] = info.get('industry')
+                        metadata['country'] = info.get('country')
+                        
+                        # Get market cap (store as text since it can be very large)
+                        market_cap = info.get('marketCap')
+                        if market_cap:
+                            metadata['market_cap'] = str(market_cap)
+                        
+                        logger.debug(f"Fetched metadata for {ticker}: {metadata.get('company_name')}")
+                    else:
+                        logger.warning(f"No yfinance info available for {ticker}")
+                        metadata['company_name'] = 'Unknown'
+                        
+                except Exception as yf_error:
+                    logger.warning(f"Failed to fetch yfinance data for {ticker}: {yf_error}")
+                    metadata['company_name'] = 'Unknown'
+            
+            # Set last_updated timestamp
+            metadata['last_updated'] = datetime.now(timezone.utc).isoformat()
+            
+            # Upsert into securities table
+            result = self.supabase.table("securities").upsert(metadata, on_conflict="ticker").execute()
+            
+            logger.info(f"✅ Ensured {ticker} in securities table: {metadata.get('company_name')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error ensuring ticker {ticker} in securities table: {e}")
+            return False
+    
     def upsert_portfolio_positions(self, positions_df: pd.DataFrame) -> bool:
         """Insert or update portfolio positions"""
         try:
             if positions_df.empty:
                 return True
+            
+            # Extract unique tickers and ensure they exist in securities table
+            unique_tickers = positions_df['Ticker'].unique()
+            for ticker in unique_tickers:
+                # Get currency for this ticker (use first occurrence)
+                ticker_rows = positions_df[positions_df['Ticker'] == ticker]
+                currency = ticker_rows.iloc[0].get('Currency', 'USD') if 'Currency' in ticker_rows.columns else 'USD'
+                
+                # Get company name if available (avoid yfinance call if we already have it)
+                company_name = ticker_rows.iloc[0].get('Company') if 'Company' in ticker_rows.columns else None
+                
+                # Ensure ticker is in securities table
+                self.ensure_ticker_in_securities(ticker, currency, company_name)
             
             # Convert DataFrame to list of dictionaries
             positions = []
@@ -154,6 +243,16 @@ class SupabaseClient:
         try:
             if trades_df.empty:
                 return True
+            
+            # Extract unique tickers and ensure they exist in securities table
+            unique_tickers = trades_df['Ticker'].unique()
+            for ticker in unique_tickers:
+                # Get currency for this ticker (use first occurrence)
+                ticker_rows = trades_df[trades_df['Ticker'] == ticker]
+                currency = ticker_rows.iloc[0].get('Currency', 'USD') if 'Currency' in ticker_rows.columns else 'USD'
+                
+                # Ensure ticker is in securities table (no company name in trade log)
+                self.ensure_ticker_in_securities(ticker, currency, None)
             
             # Convert DataFrame to list of dictionaries
             trades = []
@@ -206,13 +305,31 @@ class SupabaseClient:
             return []
     
     def get_trade_log(self, limit: int = 100, fund: Optional[str] = None) -> List[Dict]:
-        """Get recent trade log entries, optionally filtered by fund"""
+        """Get recent trade log entries with company names, optionally filtered by fund"""
         try:
-            query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
+            # Select trade_log columns and join with securities for company_name
+            query = self.supabase.table("trade_log").select(
+                "*, securities(company_name)"
+            ).order("date", desc=True).limit(limit)
+            
             if fund:
                 query = query.eq("fund", fund)
+            
             result = query.execute()
-            return result.data
+            
+            # Flatten the nested securities object for easier consumption
+            trades = []
+            for row in result.data:
+                trade = row.copy()
+                # Extract company_name from nested securities object
+                if 'securities' in trade and trade['securities']:
+                    trade['company_name'] = trade['securities'].get('company_name')
+                    del trade['securities']  # Remove the nested object
+                else:
+                    trade['company_name'] = None
+                trades.append(trade)
+            
+            return trades
         except Exception as e:
             logger.error(f"❌ Error getting trade log: {e}")
             return []

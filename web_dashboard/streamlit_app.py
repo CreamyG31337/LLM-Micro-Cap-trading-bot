@@ -691,31 +691,16 @@ def main():
                 else:
                     total_value += market_value
         
-        # Get P&L from latest portfolio_positions (has pnl column, latest_positions doesn't)
-        if fund_filter:
-            client = get_supabase_client()
-            if client:
-                try:
-                    # Get most recent date's total P&L
-                    pnl_result = client.supabase.table("portfolio_positions")\
-                        .select("pnl, currency")\
-                        .eq("fund", fund_filter)\
-                        .order("date", desc=True)\
-                        .limit(100)\
-                        .execute()
-                    
-                    if pnl_result.data:
-                        # Sum P&L from most recent snapshot (with currency conversion)
-                        for row in pnl_result.data[:20]:  # Approx # of positions
-                            pnl = float(row.get('pnl', 0) or 0)
-                            currency = str(row.get('currency', 'CAD')).upper() if row.get('currency') else 'CAD'
-                            if currency == 'USD':
-                                total_pnl += pnl * usd_to_cad_rate
-                            else:
-                                total_pnl += pnl
-                except Exception as e:
-                    print(f"Error getting P&L: {e}")
-                    total_pnl = 0.0
+        # Get Total P&L from positions_df (unrealized_pnl from latest_positions view)
+        if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
+            # Sum unrealized_pnl with currency conversion
+            for _, row in positions_df.iterrows():
+                pnl = float(row.get('unrealized_pnl', 0) or 0)
+                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                if currency == 'USD':
+                    total_pnl += pnl * usd_to_cad_rate
+                else:
+                    total_pnl += pnl
         
         # Add cash to total value (USD cash converted to CAD)
         total_value += cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
@@ -728,24 +713,33 @@ def main():
             pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
             st.metric("Total P&L (CAD)", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
         
+        
         with col3:
             # Number of holdings
             num_holdings = len(positions_df) if not positions_df.empty else 0
             st.metric("# of Holdings", f"{num_holdings}")
         
         with col4:
-            # Today's P&L (sum of daily changes)
-            todays_pnl = 0.0
-            todays_pnl_pct = 0.0
+            # Last Trading Day P&L (sum of daily changes with currency conversion)
+            last_day_pnl = 0.0
+            last_day_pnl_pct = 0.0
             if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-                todays_pnl = float(positions_df['daily_pnl'].sum())
+                # Convert USD daily P&L to CAD before summing
+                for _, row in positions_df.iterrows():
+                    daily_pnl = float(row.get('daily_pnl', 0) or 0)
+                    currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                    if currency == 'USD':
+                        last_day_pnl += daily_pnl * usd_to_cad_rate
+                    else:
+                        last_day_pnl += daily_pnl
+                
                 # Calculate percentage based on yesterday's value (total_value - today's change)
-                yesterday_value = total_value - todays_pnl
+                yesterday_value = total_value - last_day_pnl
                 if yesterday_value > 0:
-                    todays_pnl_pct = (todays_pnl / yesterday_value) * 100
+                    last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
             
-            st.metric("Today's P&L", f"${todays_pnl:,.2f}", 
-                     f"{todays_pnl_pct:+.2f}%" if todays_pnl_pct != 0 else "0.00%")
+            st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
+                     f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
         
         # Charts section
         st.markdown("---")

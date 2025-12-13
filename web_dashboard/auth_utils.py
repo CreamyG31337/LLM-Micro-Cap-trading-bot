@@ -261,3 +261,27 @@ def send_magic_link(email: str) -> Optional[Dict]:
     except Exception as e:
         return {"error": str(e)}
 
+
+def is_admin() -> bool:
+    """Check if current user is admin by querying user_profiles table using SQL function"""
+    user_id = get_user_id()
+    if not user_id:
+        return False
+    
+    try:
+        from streamlit_utils import get_supabase_client
+        client = get_supabase_client()
+        if not client:
+            return False
+        
+        # Call the is_admin SQL function
+        result = client.supabase.rpc('is_admin', {'user_uuid': user_id}).execute()
+        
+        if result.data:
+            return result.data[0] if isinstance(result.data[0], bool) else bool(result.data[0])
+        return False
+    except Exception as e:
+        import logging
+        logging.error(f"Error checking admin status: {e}")
+        return False
+

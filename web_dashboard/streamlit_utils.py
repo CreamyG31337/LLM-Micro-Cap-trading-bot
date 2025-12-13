@@ -253,7 +253,8 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         df = pd.DataFrame(all_rows)
         print(f"[DEBUG] Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
         
-        df['date'] = pd.to_datetime(df['date'])
+        # Normalize to date-only (midnight) for consistent charting with benchmarks
+        df['date'] = pd.to_datetime(df['date']).dt.normalize()
         
         # Log date range for debugging
         if not df.empty:
@@ -552,7 +553,8 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             return pd.DataFrame()
         
         df = pd.DataFrame(all_rows)
-        df['date'] = pd.to_datetime(df['date'])
+        # Normalize to date-only (midnight) for consistent charting
+        df['date'] = pd.to_datetime(df['date']).dt.normalize()
         
         # Calculate performance index per ticker (baseline 100)
         holdings_performance = []

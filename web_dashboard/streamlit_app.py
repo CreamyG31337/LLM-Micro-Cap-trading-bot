@@ -694,8 +694,10 @@ def main():
         # Get Total P&L from positions_df (unrealized_pnl from latest_positions view)
         if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
             # Sum unrealized_pnl with currency conversion
+            # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
             for _, row in positions_df.iterrows():
-                pnl = float(row.get('unrealized_pnl', 0) or 0)
+                pnl_val = row.get('unrealized_pnl', 0)
+                pnl = 0.0 if pd.isna(pnl_val) else float(pnl_val)
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
                 if currency == 'USD':
                     total_pnl += pnl * usd_to_cad_rate
@@ -725,8 +727,10 @@ def main():
             last_day_pnl_pct = 0.0
             if not positions_df.empty and 'daily_pnl' in positions_df.columns:
                 # Convert USD daily P&L to CAD before summing
+                # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
                 for _, row in positions_df.iterrows():
-                    daily_pnl = float(row.get('daily_pnl', 0) or 0)
+                    daily_pnl_val = row.get('daily_pnl', 0)
+                    daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
                     currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
                     if currency == 'USD':
                         last_day_pnl += daily_pnl * usd_to_cad_rate

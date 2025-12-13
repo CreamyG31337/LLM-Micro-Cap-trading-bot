@@ -38,7 +38,8 @@ from auth_utils import (
     logout_user,
     set_user_session,
     get_user_email,
-    get_user_token
+    get_user_token,
+    is_admin
 )
 
 # Page configuration
@@ -625,7 +626,18 @@ def main():
             logout_user()
             st.rerun()
     
-    # Sidebar - Fund selector
+    # Sidebar - Navigation and Filters
+    st.sidebar.title("Navigation")
+    
+    # Admin link (only visible to admins)
+    # Note: Streamlit automatically shows pages in sidebar, but we conditionally show a custom link
+    if is_admin():
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Admin")
+        # Use page name without .py extension for Streamlit pages
+        st.sidebar.page_link("pages/admin.py", label="⚙️ Admin Dashboard", icon="⚙️")
+        st.sidebar.markdown("---")
+    
     st.sidebar.title("Filters")
     
     # Get available funds (no "All Funds" option - default to first fund user has access to)

@@ -275,10 +275,18 @@ def is_admin() -> bool:
             return False
         
         # Call the is_admin SQL function
+        # Note: RPC functions returning scalar BOOLEAN return the value directly in result.data
+        # (not wrapped in a list) in supabase>=2.3.4
         result = client.supabase.rpc('is_admin', {'user_uuid': user_id}).execute()
         
-        if result.data:
-            return result.data[0] if isinstance(result.data[0], bool) else bool(result.data[0])
+        # Handle both scalar boolean (newer supabase-py) and list (older versions)
+        if result.data is not None:
+            # If result.data is a boolean (scalar), return it directly
+            if isinstance(result.data, bool):
+                return result.data
+            # If result.data is a list (older versions), get first element
+            elif isinstance(result.data, list) and len(result.data) > 0:
+                return bool(result.data[0])
         return False
     except Exception as e:
         import logging

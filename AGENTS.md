@@ -140,3 +140,41 @@ python dev_run.py --data-dir "trading_data/funds/TEST"
 - Use efficient data structures
 - Profile code before optimizing
 - Consider memory usage for large datasets
+
+## Test Accounts for Web Dashboard
+
+### Location
+Test account credentials are stored in: **`web_dashboard/test_credentials.json`**
+
+⚠️ **Note**: This file is gitignored for security, but IDEs with dotfile permissions can read it.
+
+### Available Accounts
+
+1. **Admin Test Account**
+   - Email: See `web_dashboard/test_credentials.json`
+   - Role: Admin
+   - Access: Full admin dashboard, all funds
+   - Use for: Testing admin features, user management, scheduled tasks
+
+2. **Guest Test Account**
+   - Email: See `web_dashboard/test_credentials.json`
+   - Role: User
+   - Access: Regular dashboard, limited funds
+   - Use for: Testing user experience, access restrictions
+
+### Usage for Browser Testing
+
+1. Read credentials from `web_dashboard/test_credentials.json`
+2. Navigate to web dashboard using browser tools
+3. Log in with test account credentials
+4. Test features as needed
+
+### Setup
+
+To create/regenerate test accounts:
+```bash
+cd web_dashboard
+python setup_test_accounts.py
+```
+
+See `web_dashboard/TEST_CREDENTIALS.md` for detailed documentation.

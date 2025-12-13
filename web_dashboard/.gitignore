@@ -10,6 +10,9 @@
 # Credentials files (NEVER commit these)
 *credentials*
 supabase_credentials.txt
+test_credentials.json
+# Allow example file to be committed
+!test_credentials.example.json
 
 # Logs
 *.log

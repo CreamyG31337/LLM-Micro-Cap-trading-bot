@@ -56,28 +56,41 @@ def main():
     # Launch Streamlit
     logger.info("Launching Streamlit application...")
     
-    # Change to web_dashboard directory so Streamlit can find pages/ correctly
-    # Streamlit resolves pages relative to the working directory, not the script location
-    os.chdir(web_dashboard_dir)
+    # Verify pages directory exists
+    pages_dir = os.path.join(web_dashboard_dir, "pages")
+    admin_page = os.path.join(pages_dir, "admin.py")
     
-    streamlit_app = "streamlit_app.py"
+    if not os.path.exists(pages_dir):
+        logger.error(f"❌ Pages directory not found at: {pages_dir}")
+        logger.error("Streamlit pages will not work. Check Dockerfile COPY command.")
+    elif not os.path.exists(admin_page):
+        logger.warning(f"⚠️ Admin page not found at: {admin_page}")
+        logger.warning("Admin dashboard will not be accessible.")
+    else:
+        logger.info(f"✅ Pages directory found at: {pages_dir}")
+        logger.info(f"✅ Admin page found at: {admin_page}")
+    
+    streamlit_app = os.path.join(web_dashboard_dir, "streamlit_app.py")
     
     # Get port from environment or use default
     port = os.environ.get("PORT", "8501")
     
     # Build streamlit command
+    # Run Streamlit from web_dashboard directory so it can find pages/ correctly
+    # Streamlit resolves pages relative to the directory containing the main script
     cmd = [
         sys.executable, "-m", "streamlit", "run",
-        streamlit_app,
+        "streamlit_app.py",  # Use relative path - Streamlit will look for pages/ in same directory
         f"--server.port={port}",
         "--server.address=0.0.0.0",
         "--server.headless=true"
     ]
     
-    # Execute streamlit (this will block and run the web server)
+    # Execute streamlit from web_dashboard directory (this will block and run the web server)
+    # Use subprocess with cwd to ensure Streamlit runs from the correct directory
     logger.info(f"Running: {' '.join(cmd)}")
-    logger.info(f"Working directory: {os.getcwd()}")
-    os.execvp(sys.executable, cmd)
+    logger.info(f"Working directory: {web_dashboard_dir}")
+    subprocess.run(cmd, cwd=web_dashboard_dir, check=False)
 
 
 if __name__ == "__main__":

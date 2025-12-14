@@ -388,9 +388,13 @@ class PositionCalculator:
                                        current_fund_value: Decimal) -> Dict[str, Dict[str, Any]]:
         """Calculate ownership percentages based on fund contributions using NAV-based tracking.
         
-        This method now properly accounts for WHEN each contributor joined by using a 
+        This method properly accounts for WHEN each contributor joined by using a 
         unit-based system (similar to mutual fund NAV). Investors who join when the fund
         is worth more get fewer units per dollar, resulting in accurate per-investor returns.
+        
+        IMPORTANT: Since we don't have actual historical fund values, we estimate the NAV
+        at each contribution time by assuming fund gains accrued linearly over time. This
+        gives a reasonable approximation that correctly differentiates early vs late joiners.
         
         Example:
             - Day 1: Fund starts with $1,000 from Investor A. NAV = $1.00, A owns 1,000 units.
@@ -453,17 +457,45 @@ class PositionCalculator:
             # Sort by timestamp (None/unknown dates go first as they're likely the earliest)
             parsed_contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
             
-            # Track units per contributor and running totals
-            contributor_units = {}  # contributor -> total units owned
-            contributor_data = {}   # contributor -> contribution/withdrawal totals
+            # FIRST PASS: Calculate total net contributions for growth rate
+            total_net_contributions = Decimal('0')
+            for contrib in parsed_contributions:
+                if contrib['type'] == 'withdrawal':
+                    total_net_contributions -= contrib['amount']
+                else:
+                    total_net_contributions += contrib['amount']
+            
+            if total_net_contributions <= 0:
+                return {}
+            
+            # Calculate overall growth rate (how much fund has grown relative to contributions)
+            # growth_rate > 1 means fund gained, < 1 means fund lost
+            growth_rate = current_fund_value / total_net_contributions
+            logger.debug(f"Overall growth rate: {growth_rate:.4f} ({current_fund_value}/{total_net_contributions})")
+            
+            # Get time range for proportional growth distribution
+            timestamps = [c['timestamp'] for c in parsed_contributions if c['timestamp']]
+            if timestamps:
+                first_timestamp = min(timestamps)
+                last_timestamp = max(timestamps)
+                now = datetime.now()
+                total_days = max((now - first_timestamp).days, 1)
+            else:
+                first_timestamp = None
+                total_days = 1
+            
+            # SECOND PASS: Calculate units using time-weighted NAV
+            # The key insight: distribute gains/losses proportionally over time
+            contributor_units = {}
+            contributor_data = {}
             total_units = Decimal('0')
             running_contributions = Decimal('0')
             
-            # Process contributions in chronological order
-            for i, contrib in enumerate(parsed_contributions):
+            for contrib in parsed_contributions:
                 contributor = contrib['contributor']
                 amount = contrib['amount']
                 contrib_type = contrib['type']
+                timestamp = contrib['timestamp']
                 
                 # Initialize contributor tracking if needed
                 if contributor not in contributor_units:
@@ -476,38 +508,33 @@ class PositionCalculator:
                     }
                 
                 if contrib_type == 'withdrawal':
-                    # For withdrawals, redeem units proportionally
                     contributor_data[contributor]['withdrawals'] += amount
                     contributor_data[contributor]['net_contribution'] -= amount
-                    running_contributions -= amount
                     
-                    # Calculate units to redeem based on current value ratio
-                    if contributor_units[contributor] > 0 and running_contributions > 0:
-                        # Units redeemed = withdrawal_amount / current_NAV
-                        # But we don't have historical NAV at withdrawal time, so approximate
-                        # by redeeming proportional to their current unit holdings
-                        current_nav = (running_contributions + amount) / total_units if total_units > 0 else Decimal('1')
-                        units_to_redeem = amount / current_nav
+                    # For withdrawals, redeem units at current NAV
+                    if total_units > 0:
+                        elapsed_days = (timestamp - first_timestamp).days if (timestamp and first_timestamp) else 0
+                        time_fraction = elapsed_days / total_days
+                        # NAV at withdrawal = 1 + (growth_rate - 1) * time_fraction
+                        nav_at_withdrawal = Decimal('1') + (growth_rate - Decimal('1')) * Decimal(str(time_fraction))
+                        units_to_redeem = amount / nav_at_withdrawal
                         contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
                         total_units -= min(units_to_redeem, total_units)
                 else:
-                    # For contributions, calculate NAV and units purchased
                     contributor_data[contributor]['contributions'] += amount
                     contributor_data[contributor]['net_contribution'] += amount
                     
-                    # Calculate NAV at time of contribution
-                    # For the very first contribution(s), NAV = 1.0
-                    # For subsequent contributions, NAV = running_fund_value / total_units
-                    if total_units == 0 or running_contributions == 0:
-                        # First contribution(s) - NAV starts at 1.0
-                        nav_at_contribution = Decimal('1.0')
+                    # Calculate NAV at time of contribution using time-weighted growth
+                    # Estimate: gains accumulated linearly from start to now
+                    if first_timestamp and timestamp:
+                        elapsed_days = (timestamp - first_timestamp).days
+                        time_fraction = Decimal(str(elapsed_days / total_days))
                     else:
-                        # Calculate NAV based on current fund performance
-                        # Estimate: if fund is now worth current_fund_value and started at running_contributions
-                        # then growth rate = current_fund_value / initial_contributions
-                        # NAV at this point = growth_rate * initial_nav
-                        # Simplified: NAV = running_contributions / total_units (assuming linear accrual)
-                        nav_at_contribution = running_contributions / total_units
+                        time_fraction = Decimal('0')
+                    
+                    # NAV at contribution = 1 + (growth_rate - 1) * time_fraction
+                    # This distributes gains proportionally over time
+                    nav_at_contribution = Decimal('1') + (growth_rate - Decimal('1')) * time_fraction
                     
                     # Units purchased = contribution / NAV
                     units_purchased = amount / nav_at_contribution
@@ -515,10 +542,10 @@ class PositionCalculator:
                     total_units += units_purchased
                     running_contributions += amount
                     
-                    logger.debug(f"  {contributor}: +${amount} at NAV ${nav_at_contribution:.4f} = {units_purchased:.4f} units")
+                    logger.debug(f"  {contributor}: +${amount} at NAV ${nav_at_contribution:.4f} (t={time_fraction:.2f}) = {units_purchased:.4f} units")
             
             # Calculate final values based on current NAV
-            if total_units <= 0 or running_contributions <= 0:
+            if total_units <= 0:
                 return {}
             
             current_nav = current_fund_value / total_units

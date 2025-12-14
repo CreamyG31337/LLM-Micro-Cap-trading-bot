@@ -96,6 +96,54 @@ with tab2:
                     }
                 )
                 
+                # Delete user section
+                st.subheader("Delete User")
+                st.warning("⚠️ This action cannot be undone. Contributors (users with fund contributions) cannot be deleted.")
+                
+                col_del1, col_del2 = st.columns(2)
+                with col_del1:
+                    delete_email = st.selectbox(
+                        "Select User to Delete",
+                        options=[""] + users_df['email'].tolist(),
+                        key="delete_user_select"
+                    )
+                
+                with col_del2:
+                    confirm_email = st.text_input(
+                        "Type email to confirm",
+                        key="confirm_delete_email",
+                        placeholder="Type the email exactly to confirm"
+                    )
+                
+                if st.button("🗑️ Delete User", type="secondary"):
+                    if not delete_email:
+                        st.error("Please select a user to delete")
+                    elif confirm_email != delete_email:
+                        st.error("Confirmation email does not match. Please type the email exactly.")
+                    else:
+                        try:
+                            delete_result = client.supabase.rpc(
+                                'delete_user_safe',
+                                {'user_email': delete_email}
+                            ).execute()
+                            
+                            if delete_result.data:
+                                result_data = delete_result.data
+                                if result_data.get('success'):
+                                    st.success(f"✅ {result_data.get('message')}")
+                                    st.rerun()
+                                else:
+                                    if result_data.get('is_contributor'):
+                                        st.error(f"🚫 {result_data.get('message')}")
+                                    else:
+                                        st.error(result_data.get('message'))
+                            else:
+                                st.error("Failed to delete user")
+                        except Exception as e:
+                            st.error(f"Error deleting user: {e}")
+                
+                st.divider()
+                
                 # Fund assignment section
                 st.subheader("Assign Fund to User")
                 col1, col2 = st.columns(2)

@@ -274,6 +274,44 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Function to safely delete a user (admin only)
+-- Blocks deletion if user email exists in fund_contributions (is a contributor)
+CREATE OR REPLACE FUNCTION delete_user_safe(user_email TEXT)
+RETURNS JSON AS $$
+DECLARE
+    target_user_id UUID;
+    contributor_count INTEGER;
+    result JSON;
+BEGIN
+    -- Get user ID from auth.users
+    SELECT id INTO target_user_id
+    FROM auth.users
+    WHERE email = user_email;
+    
+    IF target_user_id IS NULL THEN
+        RETURN json_build_object('success', false, 'message', 'User not found');
+    END IF;
+    
+    -- Check if user email exists in fund_contributions (is a contributor)
+    SELECT COUNT(*) INTO contributor_count
+    FROM fund_contributions
+    WHERE fund_contributions.email = user_email;
+    
+    IF contributor_count > 0 THEN
+        RETURN json_build_object(
+            'success', false, 
+            'message', 'Cannot delete: User is a fund contributor with ' || contributor_count || ' contribution record(s). Remove their contributions first.',
+            'is_contributor', true
+        );
+    END IF;
+    
+    -- Safe to delete - cascade will handle user_funds and user_profiles
+    DELETE FROM auth.users WHERE id = target_user_id;
+    
+    RETURN json_build_object('success', true, 'message', 'User deleted successfully');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function to list all users with their fund assignments
 CREATE OR REPLACE FUNCTION list_users_with_funds()
 RETURNS TABLE(

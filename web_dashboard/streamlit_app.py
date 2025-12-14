@@ -969,15 +969,16 @@ def main():
             # Limit to last 50 trades for display
             recent_trades = trades_df.head(50).copy()
             
-            # Use company_name from get_trade_log (already joined with securities table)
-            # Fall back to positions lookup only for any remaining None values
+            # DEBUG: Log what columns we have
+            print(f"[DEBUG] trades_df columns: {trades_df.columns.tolist()}")
+            print(f"[DEBUG] 'company_name' in columns: {'company_name' in trades_df.columns}")
+            if 'company_name' in trades_df.columns:
+                print(f"[DEBUG] First 3 company_name values: {trades_df['company_name'].head(3).tolist()}")
+            
+            # company_name comes from get_trade_log() which joins with securities table
+            # Rename to 'company' for display column consistency
             if 'company_name' in recent_trades.columns:
-                # Rename to 'company' for display consistency
                 recent_trades['company'] = recent_trades['company_name']
-            elif not positions_df.empty and 'company' in positions_df.columns:
-                # Fallback: lookup from current positions (won't have sold tickers)
-                ticker_to_company = dict(zip(positions_df['ticker'], positions_df['company']))
-                recent_trades['company'] = recent_trades['ticker'].map(ticker_to_company)
             
             # Determine action type (BUY/SELL) - check multiple possible column names
             action_col = None

@@ -144,17 +144,18 @@ with tab2:
                 if st.button("Remove Assignment", type="secondary"):
                     if remove_email and remove_fund:
                         try:
-                            # Get user ID
-                            user_result = client.supabase.table("user_profiles").select("user_id").eq("email", remove_email).execute()
-                            if not user_result.data:
-                                st.error(f"User {remove_email} not found")
-                            else:
-                                user_id = user_result.data[0]['user_id']
-                                
-                                # Delete fund assignment
-                                delete_result = client.supabase.table("user_funds").delete().eq("user_id", user_id).eq("fund_name", remove_fund).execute()
+                            # Use RPC function that queries auth.users (same as assign_fund_to_user)
+                            # This ensures consistency - both assign and remove use the same user lookup
+                            remove_result = client.supabase.rpc(
+                                'remove_fund_from_user',
+                                {'user_email': remove_email, 'fund_name': remove_fund}
+                            ).execute()
+                            
+                            if remove_result.data:
                                 st.success(f"✅ Successfully removed {remove_fund} from {remove_email}")
                                 st.rerun()
+                            else:
+                                st.error("Failed to remove fund assignment")
                         except Exception as e:
                             st.error(f"Error removing assignment: {e}")
                     else:

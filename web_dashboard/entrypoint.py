@@ -41,17 +41,9 @@ def main():
     logger.info("Starting Trading Dashboard with Background Tasks")
     logger.info("=" * 50)
     
-    # Start the scheduler
-    try:
-        from scheduler import start_scheduler
-        started = start_scheduler()
-        if started:
-            logger.info("✅ Background scheduler started successfully")
-        else:
-            logger.info("ℹ️ Scheduler was already running")
-    except Exception as e:
-        logger.error(f"❌ Failed to start scheduler: {e}")
-        logger.error("Dashboard will continue without background tasks")
+    # NOTE: Scheduler is initialized inside streamlit_app.py via @st.cache_resource
+    # This ensures it runs in the same process as Streamlit (subprocess.run creates a new process)
+    logger.info("ℹ️ Scheduler will be initialized by Streamlit on first request")
     
     # Launch Streamlit
     logger.info("Launching Streamlit application...")

@@ -247,6 +247,33 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Function to remove fund from user (admin only)
+-- Uses auth.users for user lookup to maintain consistency with assign_fund_to_user
+CREATE OR REPLACE FUNCTION remove_fund_from_user(user_email TEXT, fund_name TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    target_user_id UUID;
+    rows_deleted INTEGER;
+BEGIN
+    -- Get user ID by email from auth.users (same as assign_fund_to_user)
+    SELECT id INTO target_user_id
+    FROM auth.users
+    WHERE email = user_email;
+    
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'User with email % not found', user_email;
+    END IF;
+    
+    -- Delete fund assignment
+    DELETE FROM user_funds
+    WHERE user_id = target_user_id AND user_funds.fund_name = remove_fund_from_user.fund_name;
+    
+    GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+    
+    RETURN rows_deleted > 0;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function to list all users with their fund assignments
 CREATE OR REPLACE FUNCTION list_users_with_funds()
 RETURNS TABLE(

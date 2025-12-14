@@ -17,6 +17,27 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Initialize scheduler once per Streamlit worker process
+# This ensures the scheduler runs in the same process as Streamlit
+@st.cache_resource
+def _init_scheduler():
+    """Initialize background scheduler once per Streamlit worker."""
+    try:
+        from scheduler import start_scheduler
+        started = start_scheduler()
+        if started:
+            import logging
+            logging.getLogger(__name__).info("✅ Background scheduler started in Streamlit process")
+        return True
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"⚠️ Scheduler initialization failed: {e}")
+        return False
+
+# Start scheduler at module load
+_init_scheduler()
+
+
 from streamlit_utils import (
     get_available_funds,
     get_current_positions,

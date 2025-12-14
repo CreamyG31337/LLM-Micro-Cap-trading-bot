@@ -689,8 +689,9 @@ def main():
     if admin_status:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Admin")
-        # Use page name without .py extension for Streamlit pages
-        st.sidebar.page_link("pages/admin.py", label="⚙️ Admin Dashboard", icon="⚙️")
+        # Use a button to navigate to admin page (more reliable than page_link)
+        if st.sidebar.button("⚙️ Admin Dashboard", use_container_width=True, type="secondary"):
+            st.switch_page("pages/admin.py")
         st.sidebar.markdown("---")
     
     # Debug section (visible to all authenticated users, requires ?debug=admin query param)

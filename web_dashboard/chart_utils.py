@@ -718,7 +718,7 @@ def create_individual_holdings_chart(
 
 
 def create_investor_allocation_chart(investors_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
-    ""\"Create a pie chart showing investor allocation by contribution amount
+    """Create a pie chart showing investor allocation by contribution amount
     
     Args:
         investors_df: DataFrame with columns: contributor_display, net_contribution, ownership_pct
@@ -727,7 +727,7 @@ def create_investor_allocation_chart(investors_df: pd.DataFrame, fund_name: Opti
     
     Returns:
         Plotly Figure object
-    ""\"
+    """
     if investors_df.empty or 'contributor_display' not in investors_df.columns or 'net_contribution' not in investors_df.columns:
         fig = go.Figure()
         fig.add_annotation(

@@ -26,66 +26,69 @@ BENCHMARK_CONFIG = {
 }
 
 
-def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime) -> None:
-    """Add light gray shading for weekends (Friday close to Monday open).
+def _adjust_to_market_close(df: pd.DataFrame, date_column: str = 'date') -> pd.DataFrame:
+    """Adjust datetime values to market close time (13:00 PST) for proper alignment.
     
-    This helps users understand when markets were closed.
-    Shades from Friday 16:00 (market close) to Monday 00:00.
+    This matches the console app's approach where all data points are set to
+    market close time, ensuring dots align correctly with weekend shading.
+    
+    Args:
+        df: DataFrame with date column
+        date_column: Name of the date column to adjust
+        
+    Returns:
+        DataFrame with adjusted datetime values
+    """
+    df = df.copy()
+    df[date_column] = pd.to_datetime(df[date_column])
+    
+    # Adjust each date to 13:00 (1 PM PST - market close time)
+    adjusted_dates = []
+    for dt in df[date_column]:
+        date_only = dt.date() if hasattr(dt, 'date') else pd.Timestamp(dt).date()
+        # Set to market close time: 13:00 PST
+        market_close = datetime.combine(date_only, datetime.min.time()) + timedelta(hours=13)
+        adjusted_dates.append(market_close)
+    
+    df[date_column] = adjusted_dates
+    return df
+
+
+def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime) -> None:
+    """Add light gray shading for weekends (Saturday 00:00 to Monday 00:00).
+    
+    This matches the console app's approach for consistent weekend visualization.
+    Shades the entire weekend period when markets are closed.
     """
     # Normalize to date-only (midnight) to avoid time component misalignment
     start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
     end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
     
-    # Handle case where chart starts on weekend (Saturday or Sunday)
-    # If start date is Saturday (5) or Sunday (6), shade from previous Friday
-    start_weekday = start_date_only.weekday()
-    if start_weekday == 5:  # Saturday
-        # Find previous Friday
-        days_back = 1  # Saturday to Friday
-        prev_friday = start_date_only - timedelta(days=days_back)
-        friday_close = datetime.combine(prev_friday, datetime.min.time()) + timedelta(hours=16)
-        monday = datetime.combine(start_date_only + timedelta(days=2), datetime.min.time())  # Monday 00:00
-        
-        fig.add_vrect(
-            x0=friday_close,
-            x1=monday,
-            fillcolor="rgba(128, 128, 128, 0.1)",
-            layer="below",
-            line_width=0,
-        )
-    elif start_weekday == 6:  # Sunday
-        # Find previous Friday
-        days_back = 2  # Sunday to Friday
-        prev_friday = start_date_only - timedelta(days=days_back)
-        friday_close = datetime.combine(prev_friday, datetime.min.time()) + timedelta(hours=16)
-        monday = datetime.combine(start_date_only + timedelta(days=1), datetime.min.time())  # Monday 00:00
-        
-        fig.add_vrect(
-            x0=friday_close,
-            x1=monday,
-            fillcolor="rgba(128, 128, 128, 0.1)",
-            layer="below",
-            line_width=0,
-        )
+    # Convert pandas Timestamp to date if needed
+    if hasattr(start_date_only, 'date'):
+        start_date_only = start_date_only.date()
+    if hasattr(end_date_only, 'date'):
+        end_date_only = end_date_only.date()
     
-    # Iterate by date (not datetime) to ensure proper alignment
+    # Iterate through all dates to find Saturdays (start of weekends)
     current_date = start_date_only
     while current_date <= end_date_only:
-        # Friday = 4 (start weekend shading at market close)
-        if current_date.weekday() == 4:  # Friday
-            # Shade from Friday 16:00 (market close) to Monday 00:00
-            friday_close = datetime.combine(current_date, datetime.min.time()) + timedelta(hours=16)
-            monday = datetime.combine(current_date + timedelta(days=3), datetime.min.time())  # Monday 00:00
+        weekday = current_date.weekday()
+        
+        if weekday == 5:  # Saturday (start of weekend)
+            # Shade from Saturday 00:00 to Monday 00:00 (entire weekend)
+            saturday_midnight = datetime.combine(current_date, datetime.min.time())
+            monday_midnight = datetime.combine(current_date + timedelta(days=2), datetime.min.time())
             
             fig.add_vrect(
-                x0=friday_close,
-                x1=monday,
+                x0=saturday_midnight,
+                x1=monday_midnight,
                 fillcolor="rgba(128, 128, 128, 0.1)",
                 layer="below",
                 line_width=0,
             )
-            # Move to next week
-            current_date += timedelta(days=7)
+            # Skip to Monday (we've covered the weekend)
+            current_date += timedelta(days=2)
         else:
             current_date += timedelta(days=1)
 
@@ -157,6 +160,9 @@ def create_portfolio_value_chart(
     # Sort by date
     df = portfolio_df.sort_values('date').copy()
     df['date'] = pd.to_datetime(df['date'])
+    
+    # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
+    df = _adjust_to_market_close(df, 'date')
     
     # Create the chart
     fig = go.Figure()
@@ -531,6 +537,10 @@ def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[st
     # Group by date and type
     df = trades_df.copy()
     df['date'] = pd.to_datetime(df['date'])
+    
+    # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
+    df = _adjust_to_market_close(df, 'date')
+    
     df['trade_value'] = df['shares'] * df['price']
     
     # Separate buys and sells
@@ -625,6 +635,10 @@ def create_individual_holdings_chart(
     for idx, ticker in enumerate(sorted(tickers)):
         ticker_data = holdings_df[holdings_df['ticker'] == ticker].copy()
         ticker_data = ticker_data.sort_values('date')
+        ticker_data['date'] = pd.to_datetime(ticker_data['date'])
+        
+        # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
+        ticker_data = _adjust_to_market_close(ticker_data, 'date')
         
         if len(ticker_data) < 2:
             continue  # Skip if insufficient data

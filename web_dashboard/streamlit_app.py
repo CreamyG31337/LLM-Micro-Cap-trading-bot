@@ -661,20 +661,43 @@ def main():
     # Sidebar - Navigation and Filters
     st.sidebar.title("Navigation")
     
+    # Show admin status
+    admin_status = is_admin()
+    user_email = get_user_email()
+    if user_email:
+        if admin_status:
+            st.sidebar.success("✅ Admin Access")
+        else:
+            # Check if user profile exists and show role
+            try:
+                client = get_supabase_client()
+                if client:
+                    profile_result = client.supabase.table("user_profiles").select("role").eq("user_id", get_user_id()).execute()
+                    if profile_result.data:
+                        role = profile_result.data[0].get('role', 'user')
+                        if role != 'admin':
+                            st.sidebar.info(f"👤 Role: {role}")
+                            with st.sidebar.expander("🔧 Need Admin Access?"):
+                                st.write("To become an admin, run this command on the server:")
+                                st.code("python web_dashboard/setup_admin.py", language="bash")
+                                st.write(f"Then enter your email: `{user_email}`")
+            except Exception:
+                pass  # Silently fail if we can't check
+    
     # Admin link (only visible to admins)
     # Note: Streamlit automatically shows pages in sidebar, but we conditionally show a custom link
-    if is_admin():
+    if admin_status:
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Admin")
         # Use page name without .py extension for Streamlit pages
         st.sidebar.page_link("pages/admin.py", label="⚙️ Admin Dashboard", icon="⚙️")
         st.sidebar.markdown("---")
     
-    # Debug section (admin-only, requires ?debug=admin query param)
+    # Debug section (visible to all authenticated users, requires ?debug=admin query param)
     query_params = st.query_params
-    if is_admin() and query_params.get("debug") == "admin":
+    if query_params.get("debug") == "admin":
         st.sidebar.markdown("---")
-        with st.sidebar.expander("🔍 Debug Info", expanded=False):
+        with st.sidebar.expander("🔍 Debug Info", expanded=True):
             user_id = get_user_id()
             user_email = get_user_email()
             admin_status = is_admin()
@@ -698,6 +721,22 @@ def main():
                             st.write(f"**RPC Result Value:** `{result.data}`")
                         except Exception as rpc_error:
                             st.write(f"**RPC Error:** `{str(rpc_error)}`")
+                        
+                        # Check user profile directly
+                        try:
+                            profile_result = client.supabase.table("user_profiles").select("role, email").eq("user_id", user_id).execute()
+                            if profile_result.data:
+                                profile = profile_result.data[0]
+                                st.write(f"**User Profile Role:** `{profile.get('role', 'N/A')}`")
+                                st.write(f"**User Profile Email:** `{profile.get('email', 'N/A')}`")
+                                
+                                if profile.get('role') != 'admin':
+                                    st.warning("⚠️ Your role in the database is not 'admin'")
+                                    st.info("💡 To become an admin, run: `python web_dashboard/setup_admin.py`")
+                            else:
+                                st.warning("⚠️ No user profile found in database")
+                        except Exception as profile_error:
+                            st.write(f"**Profile Check Error:** `{str(profile_error)}`")
                     else:
                         st.write("**Supabase Client:** ❌ Failed to initialize")
                 except Exception as e:

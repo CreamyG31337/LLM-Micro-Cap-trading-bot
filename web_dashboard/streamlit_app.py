@@ -817,31 +817,49 @@ def main():
             
             with col5:
                 # Last Trading Day P&L (sum of daily changes with currency conversion)
-            last_day_pnl = 0.0
-            last_day_pnl_pct = 0.0
-            if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-                # Convert USD daily P&L to CAD before summing
-                # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
-                for _, row in positions_df.iterrows():
-                    daily_pnl_val = row.get('daily_pnl', 0)
-                    daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
-                    currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                    if currency == 'USD':
-                        last_day_pnl += daily_pnl * usd_to_cad_rate
-                    else:
-                        last_day_pnl += daily_pnl
+                last_day_pnl = 0.0
+                last_day_pnl_pct = 0.0
+                if not positions_df.empty and 'daily_pnl' in positions_df.columns:
+                    # Convert USD daily P&L to CAD before summing
+                    # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
+                    for _, row in positions_df.iterrows():
+                        daily_pnl_val = row.get('daily_pnl', 0)
+                        daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
+                        currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                        if currency == 'USD':
+                            last_day_pnl += daily_pnl * usd_to_cad_rate
+                        else:
+                            last_day_pnl += daily_pnl
+                    
+                    # Calculate percentage based on yesterday's value (total_value - today's change)
+                    yesterday_value = total_value - last_day_pnl
+                    if yesterday_value > 0:
+                        last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
                 
-                # Calculate percentage based on yesterday's value (total_value - today's change)
-                yesterday_value = total_value - last_day_pnl
-                if yesterday_value > 0:
-                    last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
-            
-            if show_investors:
                 st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
                          f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
         else:
             with col4:
                 # Last Trading Day P&L (in col4 if not showing investors)
+                last_day_pnl = 0.0
+                last_day_pnl_pct = 0.0
+                if not positions_df.empty and 'daily_pnl' in positions_df.columns:
+                    # Convert USD daily P&L to CAD before summing
+                    # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
+                    for _, row in positions_df.iterrows():
+                        daily_pnl_val = row.get('daily_pnl', 0)
+                        daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
+                        currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                        if currency == 'USD':
+                            last_day_pnl += daily_pnl * usd_to_cad_rate
+                        else:
+                            last_day_pnl += daily_pnl
+                    
+                    # Calculate percentage based on yesterday's value (total_value - today's change)
+                    yesterday_value = total_value - last_day_pnl
+                    if yesterday_value > 0:
+                        last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
+                
                 st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
                          f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
         

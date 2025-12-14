@@ -516,7 +516,8 @@ class PositionCalculator:
                     contributor_data[contributor]['net_contribution'] -= amount
                     
                     # Redeem units at NAV on withdrawal date
-                    if total_units > 0:
+                    # IMPORTANT: Only redeem if contributor actually has units to prevent total_units corruption
+                    if total_units > 0 and contributor_units[contributor] > 0:
                         date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
                         
                         if use_historical and date_str and date_str in historical_fund_values:
@@ -530,8 +531,12 @@ class PositionCalculator:
                             nav_at_withdrawal = running_contributions / total_units if total_units > 0 else Decimal('1')
                         
                         units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
-                        contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
-                        total_units -= min(units_to_redeem, total_units)
+                        # Cap redemption at contributor's actual units to prevent going negative
+                        actual_units_redeemed = min(units_to_redeem, contributor_units[contributor])
+                        contributor_units[contributor] -= actual_units_redeemed
+                        total_units -= actual_units_redeemed
+                    elif contributor_units[contributor] <= 0 and amount > 0:
+                        logger.warning(f"⚠️  Withdrawal of ${amount} from {contributor} skipped - no units to redeem")
                     
                     running_contributions -= amount
                 else:

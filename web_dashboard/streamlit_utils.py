@@ -699,29 +699,24 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
 
 
 def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True) -> Optional[Dict[str, Any]]:
-    """Get investment metrics for the currently logged-in user.
+    """Get investment metrics for the currently logged-in user using NAV-based calculation.
     
-    Calculates the user's investment performance based on their contributions
-    and current fund value.
-    
-    TODO: BUG - This calculation is incorrect for multi-investor funds.
-    Currently all investors get the same return percentage regardless of when they joined.
-    Investors who joined later (at higher fund values) should have different returns.
-    FIX: Implement NAV-based calculation - see user_performance_analysis.md in artifacts.
-    See also: portfolio/position_calculator.py calculate_ownership_percentages() for companion fix.
+    This calculates the user's investment performance using a unit-based system 
+    (similar to mutual fund NAV). Investors who join when the fund is worth more 
+    get fewer units per dollar, resulting in accurate per-investor returns.
     
     Args:
         fund: Fund name
         total_portfolio_value: Total portfolio value (positions only, before cash)
-        include_cash: Whether to include cash in total fund value (default True, matches console app)
+        include_cash: Whether to include cash in total fund value (default True)
     
     Returns:
         Dict with keys:
         - net_contribution: User's net contribution amount
-        - current_value: Current value of their investment
+        - current_value: Current value of their investment (NAV-based)
         - gain_loss: Absolute gain/loss amount
-        - gain_loss_pct: Gain/loss percentage (NOTE: Currently incorrect - see TODO above)
-        - ownership_pct: Ownership percentage
+        - gain_loss_pct: Gain/loss percentage (accurate per-user return)
+        - ownership_pct: Ownership percentage (based on units)
         - contributor_name: Their name (for display)
         
         Returns None if:
@@ -730,6 +725,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         - User has no contributions in the fund
     """
     from auth_utils import get_user_email
+    from datetime import datetime
     
     # Get user email
     user_email = get_user_email()
@@ -741,75 +737,133 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         return None
     
     try:
-        # Query contributor_ownership view to get all contributors for this fund
-        result = client.supabase.table("contributor_ownership").select(
-            "contributor, email, net_contribution"
+        # Get ALL contributions with timestamps (not just the summary view)
+        result = client.supabase.table("fund_contributions").select(
+            "contributor, email, amount, contribution_type, timestamp"
         ).eq("fund", fund).execute()
         
         if not result.data:
             return None
         
-        df = pd.DataFrame(result.data)
-        df['net_contribution'] = df['net_contribution'].astype(float)
+        # Get cash balances for total fund value
+        cash_balances = get_cash_balances(fund)
+        usd_to_cad_rate = 1.0
+        try:
+            rate_result = client.get_latest_exchange_rate('USD', 'CAD')
+            if rate_result:
+                usd_to_cad_rate = float(rate_result)
+        except Exception:
+            usd_to_cad_rate = 1.42
         
-        # Find user's contribution record (case-insensitive email match)
-        user_email_lower = user_email.lower()
-        user_row = None
-        for _, row in df.iterrows():
-            contributor_email = row.get('email', '')
-            if contributor_email and contributor_email.lower() == user_email_lower:
-                user_row = row
-                break
+        total_cash_cad = cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
+        fund_total_value = total_portfolio_value + total_cash_cad if include_cash else total_portfolio_value
         
-        if user_row is None:
+        if fund_total_value <= 0:
             return None
         
-        user_net_contribution = float(user_row['net_contribution'])
+        # Parse and sort contributions chronologically
+        contributions = []
+        for record in result.data:
+            timestamp_raw = record.get('timestamp', '')
+            timestamp = None
+            if timestamp_raw:
+                try:
+                    if isinstance(timestamp_raw, str):
+                        for fmt in ['%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                            try:
+                                timestamp = datetime.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
+                                break
+                            except ValueError:
+                                continue
+                except Exception:
+                    pass
+            
+            contributions.append({
+                'contributor': record.get('contributor', 'Unknown'),
+                'email': record.get('email', ''),
+                'amount': float(record.get('amount', 0)),
+                'type': record.get('contribution_type', 'CONTRIBUTION').lower(),
+                'timestamp': timestamp
+            })
+        
+        contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
+        
+        # Calculate NAV-based ownership
+        contributor_units = {}
+        contributor_data = {}
+        total_units = 0.0
+        running_contributions = 0.0
+        
+        for contrib in contributions:
+            contributor = contrib['contributor']
+            amount = contrib['amount']
+            contrib_type = contrib['type']
+            
+            if contributor not in contributor_units:
+                contributor_units[contributor] = 0.0
+                contributor_data[contributor] = {
+                    'email': contrib['email'],
+                    'contributions': 0.0,
+                    'withdrawals': 0.0,
+                    'net_contribution': 0.0
+                }
+            
+            if contrib_type == 'withdrawal':
+                contributor_data[contributor]['withdrawals'] += amount
+                contributor_data[contributor]['net_contribution'] -= amount
+                running_contributions -= amount
+                
+                # Redeem units proportionally
+                if contributor_units[contributor] > 0 and total_units > 0:
+                    current_nav = (running_contributions + amount) / total_units if total_units > 0 else 1.0
+                    units_to_redeem = amount / current_nav
+                    contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
+                    total_units -= min(units_to_redeem, total_units)
+            else:
+                contributor_data[contributor]['contributions'] += amount
+                contributor_data[contributor]['net_contribution'] += amount
+                
+                # Calculate NAV and units purchased
+                if total_units == 0 or running_contributions == 0:
+                    nav_at_contribution = 1.0
+                else:
+                    nav_at_contribution = running_contributions / total_units
+                
+                units_purchased = amount / nav_at_contribution
+                contributor_units[contributor] += units_purchased
+                total_units += units_purchased
+                running_contributions += amount
+        
+        if total_units <= 0 or running_contributions <= 0:
+            return None
+        
+        # Find the current user's data
+        user_email_lower = user_email.lower()
+        user_contributor = None
+        user_units = 0.0
+        
+        for contributor, data in contributor_data.items():
+            contrib_email = data.get('email', '')
+            if contrib_email and contrib_email.lower() == user_email_lower:
+                user_contributor = contributor
+                user_units = contributor_units.get(contributor, 0.0)
+                break
+        
+        if user_contributor is None or user_units <= 0:
+            return None
+        
+        user_data = contributor_data[user_contributor]
+        user_net_contribution = user_data['net_contribution']
+        
         if user_net_contribution <= 0:
             return None
         
-        # Get cash balances for total fund value calculation
-        cash_balances = get_cash_balances(fund)
-        
-        # Calculate total fund value (matching console app: portfolio + cash)
-        # Get USD/CAD exchange rate for cash conversion
-        usd_to_cad_rate = 1.0
-        if not df.empty:
-            try:
-                rate_result = client.get_latest_exchange_rate('USD', 'CAD')
-                if rate_result:
-                    usd_to_cad_rate = float(rate_result)
-            except Exception:
-                usd_to_cad_rate = 1.42  # Approximate fallback
-        
-        total_cash_cad = cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
-        
-        # Calculate fund total value (matching console app logic)
-        if include_cash:
-            fund_total_value = total_portfolio_value + total_cash_cad
-        else:
-            fund_total_value = total_portfolio_value
-        
-        # Calculate total net contributions (sum of all contributors)
-        total_net_contributions = df['net_contribution'].sum()
-        
-        if total_net_contributions <= 0:
-            return None
-        
-        # Calculate ownership percentage (matching console app: position_calculator.py line 444)
-        ownership_pct = (user_net_contribution / total_net_contributions) * 100
-        
-        # Calculate current value (matching console app: position_calculator.py line 445)
-        current_value = fund_total_value * (user_net_contribution / total_net_contributions)
-        
-        # Calculate gain/loss (matching console app: position_calculator.py line 453)
+        # Calculate current NAV and user's value
+        current_nav = fund_total_value / total_units
+        current_value = user_units * current_nav
+        ownership_pct = (user_units / total_units) * 100
         gain_loss = current_value - user_net_contribution
-        
-        # Calculate gain/loss percentage (matching console app: position_calculator.py lines 454-456)
-        if user_net_contribution > 0:
-            gain_loss_pct = (gain_loss / user_net_contribution) * 100
-        else:
-            gain_loss_pct = 0.0
+        gain_loss_pct = (gain_loss / user_net_contribution) * 100 if user_net_contribution > 0 else 0.0
         
         return {
             'net_contribution': user_net_contribution,
@@ -817,7 +871,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             'gain_loss': gain_loss,
             'gain_loss_pct': gain_loss_pct,
             'ownership_pct': ownership_pct,
-            'contributor_name': user_row['contributor']
+            'contributor_name': user_contributor,
+            # Additional NAV transparency fields
+            'units': user_units,
+            'unit_price': current_nav
         }
         
     except Exception as e:

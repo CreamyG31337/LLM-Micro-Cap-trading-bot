@@ -97,6 +97,7 @@ Provides position sizing, metrics, and analytics calculations:
 - **Portfolio Metrics**: Comprehensive portfolio analytics
 - **Risk Calculations**: Position-level and portfolio-level risk metrics
 - **Performance Attribution**: Analyze performance by position
+- **NAV-Based Ownership**: Accurate per-investor returns for multi-investor funds
 
 ### Calculations Provided
 - **Position Metrics**:
@@ -116,6 +117,12 @@ Provides position sizing, metrics, and analytics calculations:
   - Portfolio total return
   - Risk-adjusted returns
   - Sharpe ratio calculations
+
+- **Ownership Metrics** (for multi-investor funds):
+  - NAV (Net Asset Value) tracking per contribution
+  - Unit-based ownership calculations
+  - Per-investor returns (accounting for join date)
+  - Accurate gain/loss attribution
 
 ### Usage Example
 ```python

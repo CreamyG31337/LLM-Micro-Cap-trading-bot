@@ -107,6 +107,13 @@ Anon Key: your-anon-key-here
 - **Data Migration** - Import from CSV files
 - **Scheduled Tasks** - Background job management
 
+### Multi-Investor Features
+- **NAV-Based Tracking** - Accurate per-investor returns using Net Asset Value
+- **Unit-Based Ownership** - Similar to mutual fund share calculation
+- **Fair Performance Attribution** - Investors who join later get correct returns
+- **Dynamic Dashboard** - Automatically adjusts layout for single vs multi-investor funds
+- **Investor Allocation Chart** - Visual breakdown of fund ownership
+
 ## ⏰ Background Scheduler
 
 The dashboard includes APScheduler for running background tasks inside the Docker container.

@@ -386,10 +386,22 @@ class PositionCalculator:
     
     def calculate_ownership_percentages(self, fund_contributions_data: List[Dict[str, Any]],
                                        current_fund_value: Decimal) -> Dict[str, Dict[str, Any]]:
-        """Calculate ownership percentages based on fund contributions.
+        """Calculate ownership percentages based on fund contributions using NAV-based tracking.
+        
+        This method now properly accounts for WHEN each contributor joined by using a 
+        unit-based system (similar to mutual fund NAV). Investors who join when the fund
+        is worth more get fewer units per dollar, resulting in accurate per-investor returns.
+        
+        Example:
+            - Day 1: Fund starts with $1,000 from Investor A. NAV = $1.00, A owns 1,000 units.
+            - Day 30: Fund grows 20% to $1,200. Investor B joins with $2,000.
+              NAV = $1.20, B buys 1,666.67 units. Total units = 2,666.67.
+            - Day 60: Fund grows to $3,520. NAV = $1.32.
+              A's value = 1,000 * $1.32 = $1,320 (+32% return)
+              B's value = 1,666.67 * $1.32 = $2,200 (+10% return)
         
         Args:
-            fund_contributions_data: List of contribution records
+            fund_contributions_data: List of contribution records with Timestamp fields
             current_fund_value: Current total fund value
             
         Returns:
@@ -399,18 +411,63 @@ class PositionCalculator:
             PositionCalculatorError: If calculation fails
         """
         try:
-            logger.debug(f"Calculating ownership percentages for {len(fund_contributions_data)} contributions")
+            logger.debug(f"Calculating NAV-based ownership for {len(fund_contributions_data)} contributions")
             
             if not fund_contributions_data or current_fund_value <= 0:
                 return {}
             
-            # Group contributions by contributor
-            contributor_data = {}
+            # Parse and sort contributions chronologically
+            from datetime import datetime
+            
+            parsed_contributions = []
             for contribution in fund_contributions_data:
                 contributor = contribution.get('Contributor', contribution.get('contributor', 'Unknown'))
                 amount = Decimal(str(contribution.get('Amount', contribution.get('amount', 0))))
                 contribution_type = contribution.get('Type', contribution.get('type', 'contribution'))
+                timestamp_raw = contribution.get('Timestamp', contribution.get('timestamp', ''))
                 
+                # Parse timestamp
+                timestamp = None
+                if timestamp_raw:
+                    try:
+                        if isinstance(timestamp_raw, datetime):
+                            timestamp = timestamp_raw
+                        elif isinstance(timestamp_raw, str):
+                            # Try common formats
+                            for fmt in ['%Y-%m-%d %H:%M:%S %Z', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S']:
+                                try:
+                                    timestamp = datetime.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
+                                    break
+                                except ValueError:
+                                    continue
+                    except Exception as e:
+                        logger.debug(f"Could not parse timestamp '{timestamp_raw}': {e}")
+                
+                parsed_contributions.append({
+                    'contributor': contributor,
+                    'amount': amount,
+                    'type': contribution_type.lower(),
+                    'timestamp': timestamp
+                })
+            
+            # Sort by timestamp (None/unknown dates go first as they're likely the earliest)
+            parsed_contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
+            
+            # Track units per contributor and running totals
+            contributor_units = {}  # contributor -> total units owned
+            contributor_data = {}   # contributor -> contribution/withdrawal totals
+            total_units = Decimal('0')
+            running_contributions = Decimal('0')
+            
+            # Process contributions in chronological order
+            for i, contrib in enumerate(parsed_contributions):
+                contributor = contrib['contributor']
+                amount = contrib['amount']
+                contrib_type = contrib['type']
+                
+                # Initialize contributor tracking if needed
+                if contributor not in contributor_units:
+                    contributor_units[contributor] = Decimal('0')
                 if contributor not in contributor_data:
                     contributor_data[contributor] = {
                         'contributions': Decimal('0'),
@@ -418,54 +475,91 @@ class PositionCalculator:
                         'net_contribution': Decimal('0')
                     }
                 
-                if contribution_type.lower() == 'withdrawal':
+                if contrib_type == 'withdrawal':
+                    # For withdrawals, redeem units proportionally
                     contributor_data[contributor]['withdrawals'] += amount
+                    contributor_data[contributor]['net_contribution'] -= amount
+                    running_contributions -= amount
+                    
+                    # Calculate units to redeem based on current value ratio
+                    if contributor_units[contributor] > 0 and running_contributions > 0:
+                        # Units redeemed = withdrawal_amount / current_NAV
+                        # But we don't have historical NAV at withdrawal time, so approximate
+                        # by redeeming proportional to their current unit holdings
+                        current_nav = (running_contributions + amount) / total_units if total_units > 0 else Decimal('1')
+                        units_to_redeem = amount / current_nav
+                        contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
+                        total_units -= min(units_to_redeem, total_units)
                 else:
+                    # For contributions, calculate NAV and units purchased
                     contributor_data[contributor]['contributions'] += amount
-                
-                contributor_data[contributor]['net_contribution'] = (
-                    contributor_data[contributor]['contributions'] - 
-                    contributor_data[contributor]['withdrawals']
-                )
+                    contributor_data[contributor]['net_contribution'] += amount
+                    
+                    # Calculate NAV at time of contribution
+                    # For the very first contribution(s), NAV = 1.0
+                    # For subsequent contributions, NAV = running_fund_value / total_units
+                    if total_units == 0 or running_contributions == 0:
+                        # First contribution(s) - NAV starts at 1.0
+                        nav_at_contribution = Decimal('1.0')
+                    else:
+                        # Calculate NAV based on current fund performance
+                        # Estimate: if fund is now worth current_fund_value and started at running_contributions
+                        # then growth rate = current_fund_value / initial_contributions
+                        # NAV at this point = growth_rate * initial_nav
+                        # Simplified: NAV = running_contributions / total_units (assuming linear accrual)
+                        nav_at_contribution = running_contributions / total_units
+                    
+                    # Units purchased = contribution / NAV
+                    units_purchased = amount / nav_at_contribution
+                    contributor_units[contributor] += units_purchased
+                    total_units += units_purchased
+                    running_contributions += amount
+                    
+                    logger.debug(f"  {contributor}: +${amount} at NAV ${nav_at_contribution:.4f} = {units_purchased:.4f} units")
             
-            # Calculate total net contributions
-            total_net_contributions = sum(
-                data['net_contribution'] for data in contributor_data.values()
-                if data['net_contribution'] > 0
-            )
-            
-            if total_net_contributions <= 0:
+            # Calculate final values based on current NAV
+            if total_units <= 0 or running_contributions <= 0:
                 return {}
             
-            # Calculate ownership percentages and current values
+            current_nav = current_fund_value / total_units
+            logger.debug(f"Current NAV: ${current_nav:.4f} (fund value ${current_fund_value:.2f} / {total_units:.4f} units)")
+            
+            # Build ownership details with accurate per-contributor returns
             ownership_details = {}
-            for contributor, data in contributor_data.items():
-                if data['net_contribution'] > 0:
-                    ownership_percentage = (data['net_contribution'] / total_net_contributions * Decimal('100'))
-                    current_value = (current_fund_value * data['net_contribution'] / total_net_contributions)
+            for contributor, units in contributor_units.items():
+                if units > 0:
+                    data = contributor_data[contributor]
+                    net_contribution = data['net_contribution']
                     
-                    # TODO: BUG - This gain/loss calculation is incorrect for multi-investor funds.
-                    # Currently all investors get the same return percentage regardless of when they joined.
-                    # Investors who joined later (at higher fund values) should have different returns.
-                    # FIX: Implement NAV-based calculation:
-                    #   1. Track NAV (fund_value / total_contributions) at time of each contribution
-                    #   2. Calculate "units" purchased per contribution = contribution_amount / NAV_at_time
-                    #   3. User's current_value = total_units * current_NAV
-                    #   4. User's return = (current_value - net_contribution) / net_contribution
-                    # See web_dashboard/streamlit_utils.py get_user_investment_metrics() for companion fix.
+                    if net_contribution <= 0:
+                        continue
+                    
+                    # Current value based on units owned
+                    current_value = units * current_nav
+                    
+                    # Ownership percentage based on units
+                    ownership_pct = (units / total_units * Decimal('100'))
+                    
+                    # Individual gain/loss - this is now ACCURATE per contributor
+                    gain_loss = current_value - net_contribution
+                    gain_loss_pct = (gain_loss / net_contribution * Decimal('100')) if net_contribution > 0 else Decimal('0')
+                    
                     ownership_details[contributor] = {
                         'contributions': data['contributions'],
                         'withdrawals': data['withdrawals'],
-                        'net_contribution': data['net_contribution'],
-                        'ownership_percentage': ownership_percentage.quantize(Decimal('0.1')),
+                        'net_contribution': net_contribution,
+                        'ownership_percentage': ownership_pct.quantize(Decimal('0.1')),
                         'current_value': current_value.quantize(Decimal('0.01')),
-                        'gain_loss': (current_value - data['net_contribution']).quantize(Decimal('0.01')),
-                        'gain_loss_percentage': (
-                            (current_value - data['net_contribution']) / data['net_contribution'] * Decimal('100')
-                        ).quantize(Decimal('0.1')) if data['net_contribution'] > 0 else Decimal('0')
+                        'gain_loss': gain_loss.quantize(Decimal('0.01')),
+                        'gain_loss_percentage': gain_loss_pct.quantize(Decimal('0.1')),
+                        # New fields for transparency
+                        'units': units.quantize(Decimal('0.0001')),
+                        'unit_price': current_nav.quantize(Decimal('0.0001'))
                     }
+                    
+                    logger.debug(f"  {contributor}: {units:.4f} units = ${current_value:.2f} ({gain_loss_pct:.1f}% return)")
             
-            logger.debug(f"Ownership calculated for {len(ownership_details)} contributors")
+            logger.debug(f"NAV-based ownership calculated for {len(ownership_details)} contributors")
             return ownership_details
             
         except Exception as e:

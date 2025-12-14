@@ -56,7 +56,11 @@ def main():
     # Launch Streamlit
     logger.info("Launching Streamlit application...")
     
-    streamlit_app = os.path.join(web_dashboard_dir, "streamlit_app.py")
+    # Change to web_dashboard directory so Streamlit can find pages/ correctly
+    # Streamlit resolves pages relative to the working directory, not the script location
+    os.chdir(web_dashboard_dir)
+    
+    streamlit_app = "streamlit_app.py"
     
     # Get port from environment or use default
     port = os.environ.get("PORT", "8501")
@@ -72,6 +76,7 @@ def main():
     
     # Execute streamlit (this will block and run the web server)
     logger.info(f"Running: {' '.join(cmd)}")
+    logger.info(f"Working directory: {os.getcwd()}")
     os.execvp(sys.executable, cmd)
 
 

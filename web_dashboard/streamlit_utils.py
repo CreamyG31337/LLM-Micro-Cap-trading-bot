@@ -4,6 +4,7 @@ Streamlit utilities for fetching data from Supabase
 """
 
 import os
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 import pandas as pd
 from dotenv import load_dotenv
@@ -733,16 +734,37 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         if not result.data:
             return {}
         
-        # Get exchange rates for currency conversion
-        usd_to_cad = 1.42
+        # Get exchange rates for each date we need (use historical rates for accuracy)
+        # First, get unique dates from portfolio positions
+        position_dates = sorted(set(row['date'][:10] for row in result.data))
+        
+        # Fetch historical exchange rates for these dates
+        exchange_rates_by_date = {}
+        fallback_rate = 1.42  # Default fallback
         try:
+            # Get latest rate as fallback
             rate_result = client.get_latest_exchange_rate('USD', 'CAD')
             if rate_result:
-                usd_to_cad = float(rate_result)
+                fallback_rate = float(rate_result)
+            
+            # Try to get historical rates for each date
+            for date_str in position_dates:
+                try:
+                    from datetime import datetime as dt
+                    date_obj = dt.strptime(date_str, '%Y-%m-%d')
+                    hist_rate = client.get_exchange_rate(date_obj, 'USD', 'CAD')
+                    if hist_rate:
+                        exchange_rates_by_date[date_str] = float(hist_rate)
+                    else:
+                        exchange_rates_by_date[date_str] = fallback_rate
+                except Exception:
+                    exchange_rates_by_date[date_str] = fallback_rate
         except Exception:
-            pass
+            # If we can't get any rates, use fallback for all dates
+            for date_str in position_dates:
+                exchange_rates_by_date[date_str] = fallback_rate
         
-        # Calculate total value for each date
+        # Calculate total value for each date using date-specific exchange rates
         values_by_date = {}
         for row in result.data:
             date_str = row['date'][:10]  # Get just YYYY-MM-DD
@@ -750,9 +772,10 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
             price = float(row.get('price', 0))
             currency = row.get('currency', 'USD')
             
-            # Convert to CAD
+            # Convert to CAD using date-specific exchange rate
             value = shares * price
             if currency == 'USD':
+                usd_to_cad = exchange_rates_by_date.get(date_str, fallback_rate)
                 value *= usd_to_cad
             
             if date_str not in values_by_date:
@@ -881,10 +904,28 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         historical_values = get_historical_fund_values(fund, contrib_dates)
         
         # Check if we have sufficient historical data
+        use_historical = bool(historical_values)
         if not historical_values:
             print(f"⚠️  NAV WARNING: No historical fund values found for {fund}. Using time-weighted estimation.")
         elif len(historical_values) < len(set(d.strftime('%Y-%m-%d') for d in contrib_dates if d)):
             print(f"⚠️  NAV WARNING: Only {len(historical_values)} historical dates found, some contributions will use fallback estimation.")
+        
+        # Calculate time-weighted estimation parameters for fallback
+        # This matches the logic in position_calculator.py
+        total_net_contributions = sum(
+            -c['amount'] if c['type'] == 'withdrawal' else c['amount'] 
+            for c in contributions
+        )
+        growth_rate = fund_total_value / total_net_contributions if total_net_contributions > 0 else 1.0
+        
+        timestamps = [c['timestamp'] for c in contributions if c['timestamp']]
+        if timestamps:
+            first_timestamp = min(timestamps)
+            now = datetime.now()
+            total_days = max((now - first_timestamp).days, 1)
+        else:
+            first_timestamp = None
+            total_days = 1
         
         # Calculate NAV-based ownership using actual historical data
         contributor_units = {}
@@ -918,8 +959,12 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     if date_str and date_str in historical_values:
                         fund_value_at_date = historical_values[date_str]
                         nav_at_withdrawal = fund_value_at_date / total_units if total_units > 0 else 1.0
+                    elif first_timestamp and timestamp:
+                        # Time-weighted fallback (matches position_calculator.py)
+                        elapsed_days = (timestamp - first_timestamp).days
+                        time_fraction = elapsed_days / total_days
+                        nav_at_withdrawal = 1.0 + (growth_rate - 1.0) * time_fraction
                     else:
-                        # Fallback: use proportional estimate
                         nav_at_withdrawal = (running_total_contributions / total_units) if total_units > 0 else 1.0
                     
                     units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
@@ -947,9 +992,14 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     # fund_value_at_date includes positions, not cash contributions
                     fund_value_at_date = historical_values[date_str]
                     nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
+                elif first_timestamp and timestamp:
+                    # Time-weighted fallback (matches position_calculator.py)
+                    elapsed_days = (timestamp - first_timestamp).days
+                    time_fraction = elapsed_days / total_days
+                    nav_at_contribution = 1.0 + (growth_rate - 1.0) * time_fraction
+                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Using time-weighted estimation.")
                 else:
-                    # Fallback: if no historical data, use contribution-based estimate
-                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Return may be inaccurate.")
+                    print(f"⚠️  NAV FALLBACK: No timestamp for {contributor}. Using simple estimation.")
                     nav_at_contribution = running_total_contributions / total_units if total_units > 0 else 1.0
                 
                 # Ensure NAV is at least the base value (1.0 for first contributions)

@@ -35,6 +35,16 @@ steps:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
       
+      # Format build timestamp in Pacific Time (PST/PDT)
+      # CI_PIPELINE_STARTED is Unix timestamp, convert to Pacific Time
+      # Use date command compatible with both GNU and BSD date
+      - |
+        if [ -n "$CI_PIPELINE_STARTED" ]; then
+          export BUILD_TIMESTAMP=$(TZ=America/Vancouver date -d "@$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M %Z" 2>/dev/null || TZ=America/Vancouver date -r "$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M %Z" 2>/dev/null || TZ=America/Vancouver date "+%Y-%m-%d %H:%M %Z")
+        else
+          export BUILD_TIMESTAMP=$(TZ=America/Vancouver date "+%Y-%m-%d %H:%M %Z")
+        fi
+      
       # Build Docker image from web_dashboard/Dockerfile
       - docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest .
       - docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
@@ -52,7 +62,7 @@ steps:
         fi
       
       # Deploy new container (single line to avoid parsing issues)
-      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
+      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

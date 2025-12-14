@@ -12,6 +12,7 @@ from pathlib import Path
 import base64
 import json
 import time
+import os
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1200,10 +1201,23 @@ def main():
         
         # Footer with build info
         st.markdown("---")
+        # Get build timestamp from environment variable (set by CI) or use current time
+        build_timestamp = os.getenv("BUILD_TIMESTAMP")
+        if not build_timestamp:
+            # Fallback: generate timestamp in Pacific Time
+            try:
+                from zoneinfo import ZoneInfo
+                pacific = ZoneInfo("America/Vancouver")
+                now = datetime.now(pacific)
+                build_timestamp = now.strftime("%Y-%m-%d %H:%M %Z")
+            except (ImportError, Exception):
+                # If zoneinfo not available (Python < 3.9) or other error, use simple format
+                build_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        
         st.markdown(
-            """
+            f"""
             <div style='text-align: center; color: #666; font-size: 0.8em;'>
-                LLM Micro-Cap Trading Bot Dashboard • Build: 2025-12-12 17:55 PST (Pagination Fix)
+                LLM Micro-Cap Trading Bot Dashboard • Build: {build_timestamp}
             </div>
             """, 
             unsafe_allow_html=True

@@ -687,7 +687,6 @@ def main():
             # Try to get more details about admin check
             if user_id:
                 try:
-                    from streamlit_utils import get_supabase_client
                     client = get_supabase_client()
                     if client:
                         st.write("**Supabase Client:** ✅ Initialized")

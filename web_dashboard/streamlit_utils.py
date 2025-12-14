@@ -698,6 +698,92 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         return pd.DataFrame()
 
 
+def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, float]:
+    """Get historical fund values for specific dates.
+    
+    Queries portfolio_positions to calculate total fund value at each date.
+    Returns the closest available date if exact date not found.
+    
+    Args:
+        fund: Fund name
+        dates: List of dates to get fund values for
+        
+    Returns:
+        Dict mapping date string (YYYY-MM-DD) to fund value
+    """
+    from datetime import datetime
+    
+    client = get_supabase_client()
+    if not client or not dates:
+        return {}
+    
+    try:
+        # Get all unique dates we need
+        date_strs = sorted(set(d.strftime('%Y-%m-%d') for d in dates if d))
+        if not date_strs:
+            return {}
+        
+        min_date = min(date_strs)
+        
+        # Query portfolio_positions for this fund, from earliest contribution date onwards
+        result = client.supabase.table("portfolio_positions").select(
+            "date, shares, price, currency"
+        ).eq("fund", fund).gte("date", min_date).order("date").execute()
+        
+        if not result.data:
+            return {}
+        
+        # Get exchange rates for currency conversion
+        usd_to_cad = 1.42
+        try:
+            rate_result = client.get_latest_exchange_rate('USD', 'CAD')
+            if rate_result:
+                usd_to_cad = float(rate_result)
+        except Exception:
+            pass
+        
+        # Calculate total value for each date
+        values_by_date = {}
+        for row in result.data:
+            date_str = row['date'][:10]  # Get just YYYY-MM-DD
+            shares = float(row.get('shares', 0))
+            price = float(row.get('price', 0))
+            currency = row.get('currency', 'USD')
+            
+            # Convert to CAD
+            value = shares * price
+            if currency == 'USD':
+                value *= usd_to_cad
+            
+            if date_str not in values_by_date:
+                values_by_date[date_str] = 0.0
+            values_by_date[date_str] += value
+        
+        # For each requested date, find closest available date
+        result_values = {}
+        available_dates = sorted(values_by_date.keys())
+        
+        for date_str in date_strs:
+            if date_str in values_by_date:
+                result_values[date_str] = values_by_date[date_str]
+            else:
+                # Find closest date before or on this date
+                closest = None
+                for avail_date in available_dates:
+                    if avail_date <= date_str:
+                        closest = avail_date
+                    else:
+                        break
+                if closest:
+                    result_values[date_str] = values_by_date[closest]
+        
+        return result_values
+        
+    except Exception as e:
+        print(f"Error getting historical fund values: {e}")
+        return {}
+
+
 def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True) -> Optional[Dict[str, Any]]:
     """Get investment metrics for the currently logged-in user using NAV-based calculation.
     
@@ -788,16 +874,29 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         
         contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
         
-        # Calculate NAV-based ownership
+        # Get all contribution dates for historical fund value lookup
+        contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
+        
+        # Fetch ACTUAL historical fund values from portfolio_positions
+        historical_values = get_historical_fund_values(fund, contrib_dates)
+        
+        # Check if we have sufficient historical data
+        if not historical_values:
+            print(f"⚠️  NAV WARNING: No historical fund values found for {fund}. Using time-weighted estimation.")
+        elif len(historical_values) < len(set(d.strftime('%Y-%m-%d') for d in contrib_dates if d)):
+            print(f"⚠️  NAV WARNING: Only {len(historical_values)} historical dates found, some contributions will use fallback estimation.")
+        
+        # Calculate NAV-based ownership using actual historical data
         contributor_units = {}
         contributor_data = {}
         total_units = 0.0
-        running_contributions = 0.0
+        running_total_contributions = 0.0  # Total contributions up to this point
         
         for contrib in contributions:
             contributor = contrib['contributor']
             amount = contrib['amount']
             contrib_type = contrib['type']
+            timestamp = contrib['timestamp']
             
             if contributor not in contributor_units:
                 contributor_units[contributor] = 0.0
@@ -811,30 +910,53 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             if contrib_type == 'withdrawal':
                 contributor_data[contributor]['withdrawals'] += amount
                 contributor_data[contributor]['net_contribution'] -= amount
-                running_contributions -= amount
                 
-                # Redeem units proportionally
-                if contributor_units[contributor] > 0 and total_units > 0:
-                    current_nav = (running_contributions + amount) / total_units if total_units > 0 else 1.0
-                    units_to_redeem = amount / current_nav
+                # Redeem units at NAV on withdrawal date
+                if total_units > 0:
+                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                    if date_str and date_str in historical_values:
+                        fund_value_at_date = historical_values[date_str]
+                        nav_at_withdrawal = fund_value_at_date / total_units if total_units > 0 else 1.0
+                    else:
+                        # Fallback: use proportional estimate
+                        nav_at_withdrawal = (running_total_contributions / total_units) if total_units > 0 else 1.0
+                    
+                    units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
                     contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
                     total_units -= min(units_to_redeem, total_units)
+                
+                running_total_contributions -= amount
             else:
                 contributor_data[contributor]['contributions'] += amount
                 contributor_data[contributor]['net_contribution'] += amount
                 
-                # Calculate NAV and units purchased
-                if total_units == 0 or running_contributions == 0:
+                # Calculate NAV at time of contribution using ACTUAL fund value
+                date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                
+                if total_units == 0:
+                    # First contribution(s) - NAV = 1.0
                     nav_at_contribution = 1.0
+                elif date_str and date_str in historical_values:
+                    # We have actual fund value for this date!
+                    # But we need the fund value BEFORE this contribution was added
+                    # fund_value_at_date includes positions, not cash contributions
+                    fund_value_at_date = historical_values[date_str]
+                    nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
                 else:
-                    nav_at_contribution = running_contributions / total_units
+                    # Fallback: if no historical data, use contribution-based estimate
+                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Return may be inaccurate.")
+                    nav_at_contribution = running_total_contributions / total_units if total_units > 0 else 1.0
+                
+                # Ensure NAV is at least the base value (1.0 for first contributions)
+                if nav_at_contribution <= 0:
+                    nav_at_contribution = 1.0
                 
                 units_purchased = amount / nav_at_contribution
                 contributor_units[contributor] += units_purchased
                 total_units += units_purchased
-                running_contributions += amount
+                running_total_contributions += amount
         
-        if total_units <= 0 or running_contributions <= 0:
+        if total_units <= 0:
             return None
         
         # Find the current user's data

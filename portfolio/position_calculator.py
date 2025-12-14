@@ -385,16 +385,16 @@ class PositionCalculator:
             raise PositionCalculatorError(f"Failed to calculate portfolio metrics: {e}") from e
     
     def calculate_ownership_percentages(self, fund_contributions_data: List[Dict[str, Any]],
-                                       current_fund_value: Decimal) -> Dict[str, Dict[str, Any]]:
+                                       current_fund_value: Decimal,
+                                       historical_fund_values: Optional[Dict[str, Decimal]] = None) -> Dict[str, Dict[str, Any]]:
         """Calculate ownership percentages based on fund contributions using NAV-based tracking.
         
         This method properly accounts for WHEN each contributor joined by using a 
         unit-based system (similar to mutual fund NAV). Investors who join when the fund
         is worth more get fewer units per dollar, resulting in accurate per-investor returns.
         
-        IMPORTANT: Since we don't have actual historical fund values, we estimate the NAV
-        at each contribution time by assuming fund gains accrued linearly over time. This
-        gives a reasonable approximation that correctly differentiates early vs late joiners.
+        For perfect accuracy, pass historical_fund_values with actual fund values at each
+        contribution date. Otherwise, the method estimates NAV using time-weighted growth.
         
         Example:
             - Day 1: Fund starts with $1,000 from Investor A. NAV = $1.00, A owns 1,000 units.
@@ -407,6 +407,8 @@ class PositionCalculator:
         Args:
             fund_contributions_data: List of contribution records with Timestamp fields
             current_fund_value: Current total fund value
+            historical_fund_values: Optional dict mapping date strings (YYYY-MM-DD) to 
+                                   fund values at those dates for perfect accuracy
             
         Returns:
             Dictionary mapping contributor names to ownership details
@@ -457,35 +459,37 @@ class PositionCalculator:
             # Sort by timestamp (None/unknown dates go first as they're likely the earliest)
             parsed_contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
             
-            # FIRST PASS: Calculate total net contributions for growth rate
-            total_net_contributions = Decimal('0')
-            for contrib in parsed_contributions:
-                if contrib['type'] == 'withdrawal':
-                    total_net_contributions -= contrib['amount']
+            # Check if we have historical data for perfect accuracy
+            use_historical = historical_fund_values and len(historical_fund_values) > 0
+            
+            # Fallback: calculate growth rate for time-weighted estimation
+            if not use_historical:
+                total_net_contributions = Decimal('0')
+                for contrib in parsed_contributions:
+                    if contrib['type'] == 'withdrawal':
+                        total_net_contributions -= contrib['amount']
+                    else:
+                        total_net_contributions += contrib['amount']
+                
+                if total_net_contributions <= 0:
+                    return {}
+                
+                growth_rate = current_fund_value / total_net_contributions
+                
+                timestamps = [c['timestamp'] for c in parsed_contributions if c['timestamp']]
+                if timestamps:
+                    first_timestamp = min(timestamps)
+                    now = datetime.now()
+                    total_days = max((now - first_timestamp).days, 1)
                 else:
-                    total_net_contributions += contrib['amount']
-            
-            if total_net_contributions <= 0:
-                return {}
-            
-            # Calculate overall growth rate (how much fund has grown relative to contributions)
-            # growth_rate > 1 means fund gained, < 1 means fund lost
-            growth_rate = current_fund_value / total_net_contributions
-            logger.debug(f"Overall growth rate: {growth_rate:.4f} ({current_fund_value}/{total_net_contributions})")
-            
-            # Get time range for proportional growth distribution
-            timestamps = [c['timestamp'] for c in parsed_contributions if c['timestamp']]
-            if timestamps:
-                first_timestamp = min(timestamps)
-                last_timestamp = max(timestamps)
-                now = datetime.now()
-                total_days = max((now - first_timestamp).days, 1)
+                    first_timestamp = None
+                    total_days = 1
+                    
+                logger.warning(f"⚠️  NAV FALLBACK: No historical fund values provided - using time-weighted estimation (growth_rate={growth_rate:.4f})")
             else:
-                first_timestamp = None
-                total_days = 1
+                logger.info(f"✓ Using {len(historical_fund_values)} historical fund values for accurate NAV calculation")
             
-            # SECOND PASS: Calculate units using time-weighted NAV
-            # The key insight: distribute gains/losses proportionally over time
+            # Calculate units per contributor
             contributor_units = {}
             contributor_data = {}
             total_units = Decimal('0')
@@ -511,30 +515,55 @@ class PositionCalculator:
                     contributor_data[contributor]['withdrawals'] += amount
                     contributor_data[contributor]['net_contribution'] -= amount
                     
-                    # For withdrawals, redeem units at current NAV
+                    # Redeem units at NAV on withdrawal date
                     if total_units > 0:
-                        elapsed_days = (timestamp - first_timestamp).days if (timestamp and first_timestamp) else 0
-                        time_fraction = elapsed_days / total_days
-                        # NAV at withdrawal = 1 + (growth_rate - 1) * time_fraction
-                        nav_at_withdrawal = Decimal('1') + (growth_rate - Decimal('1')) * Decimal(str(time_fraction))
-                        units_to_redeem = amount / nav_at_withdrawal
+                        date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                        
+                        if use_historical and date_str and date_str in historical_fund_values:
+                            fund_value_at_date = Decimal(str(historical_fund_values[date_str]))
+                            nav_at_withdrawal = fund_value_at_date / total_units
+                        elif not use_historical and first_timestamp and timestamp:
+                            elapsed_days = (timestamp - first_timestamp).days
+                            time_fraction = Decimal(str(elapsed_days / total_days))
+                            nav_at_withdrawal = Decimal('1') + (growth_rate - Decimal('1')) * time_fraction
+                        else:
+                            nav_at_withdrawal = running_contributions / total_units if total_units > 0 else Decimal('1')
+                        
+                        units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
                         contributor_units[contributor] -= min(units_to_redeem, contributor_units[contributor])
                         total_units -= min(units_to_redeem, total_units)
+                    
+                    running_contributions -= amount
                 else:
                     contributor_data[contributor]['contributions'] += amount
                     contributor_data[contributor]['net_contribution'] += amount
                     
-                    # Calculate NAV at time of contribution using time-weighted growth
-                    # Estimate: gains accumulated linearly from start to now
-                    if first_timestamp and timestamp:
+                    # Calculate NAV at time of contribution
+                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                    
+                    if total_units == 0:
+                        # First contribution - NAV = 1.0
+                        nav_at_contribution = Decimal('1.0')
+                    elif use_historical and date_str and date_str in historical_fund_values:
+                        # Perfect accuracy using actual fund value
+                        fund_value_at_date = Decimal(str(historical_fund_values[date_str]))
+                        nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else Decimal('1')
+                    elif use_historical and date_str:
+                        # Historical data provided but missing for this date
+                        logger.warning(f"⚠️  NAV FALLBACK: Missing historical data for {date_str} (contributor: {contributor}). Using estimation.")
+                        nav_at_contribution = running_contributions / total_units if total_units > 0 else Decimal('1')
+                    elif not use_historical and first_timestamp and timestamp:
+                        # Fallback: time-weighted growth estimation (already warned at start)
                         elapsed_days = (timestamp - first_timestamp).days
                         time_fraction = Decimal(str(elapsed_days / total_days))
+                        nav_at_contribution = Decimal('1') + (growth_rate - Decimal('1')) * time_fraction
                     else:
-                        time_fraction = Decimal('0')
+                        logger.warning(f"⚠️  NAV FALLBACK: No timestamp for contribution from {contributor}. Using simple estimation.")
+                        nav_at_contribution = running_contributions / total_units if total_units > 0 else Decimal('1')
                     
-                    # NAV at contribution = 1 + (growth_rate - 1) * time_fraction
-                    # This distributes gains proportionally over time
-                    nav_at_contribution = Decimal('1') + (growth_rate - Decimal('1')) * time_fraction
+                    # Ensure NAV is positive
+                    if nav_at_contribution <= 0:
+                        nav_at_contribution = Decimal('1')
                     
                     # Units purchased = contribution / NAV
                     units_purchased = amount / nav_at_contribution
@@ -542,7 +571,7 @@ class PositionCalculator:
                     total_units += units_purchased
                     running_contributions += amount
                     
-                    logger.debug(f"  {contributor}: +${amount} at NAV ${nav_at_contribution:.4f} (t={time_fraction:.2f}) = {units_purchased:.4f} units")
+                    logger.debug(f"  {contributor}: +${amount} at NAV ${nav_at_contribution:.4f} = {units_purchased:.4f} units")
             
             # Calculate final values based on current NAV
             if total_units <= 0:

@@ -1933,8 +1933,61 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     base_value_dec = Decimal(str(total_portfolio_value))
                     fund_total_value_dec = base_value_dec + total_cash_cad_equiv_dec if include_cash_in_ownership else base_value_dec
 
+                    # Fetch historical fund values for accurate NAV calculation
+                    historical_fund_values = {}
+                    try:
+                        # Get all contribution timestamps
+                        from datetime import datetime
+                        contribution_dates = []
+                        for contrib in fund_contributions:
+                            ts = contrib.get('Timestamp', '')
+                            if ts:
+                                try:
+                                    if isinstance(ts, datetime):
+                                        contribution_dates.append(ts)
+                                    elif isinstance(ts, str):
+                                        for fmt in ['%Y-%m-%d %H:%M:%S %Z', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                                            try:
+                                                dt = datetime.strptime(ts.split('+')[0].split('.')[0], fmt)
+                                                contribution_dates.append(dt)
+                                                break
+                                            except ValueError:
+                                                continue
+                                except Exception:
+                                    pass
+                        
+                        if contribution_dates:
+                            min_date = min(contribution_dates)
+                            max_date = max(contribution_dates)
+                            
+                            # Get portfolio snapshots for the contribution period
+                            snapshots = repository.get_portfolio_data(date_range=(min_date, datetime.now()))
+                            if snapshots:
+                                for snapshot in snapshots:
+                                    date_str = snapshot.timestamp.strftime('%Y-%m-%d')
+                                    # Calculate total value for this snapshot
+                                    total_value = sum(
+                                        pos.shares * pos.current_price 
+                                        for pos in snapshot.positions 
+                                        if pos.current_price is not None
+                                    )
+                                    if total_value > 0:
+                                        historical_fund_values[date_str] = Decimal(str(total_value))
+                                
+                                logger.debug(f"Retrieved {len(historical_fund_values)} historical fund values for NAV calculation")
+                                
+                                # Check for missing dates and warn
+                                contribution_date_strs = set(d.strftime('%Y-%m-%d') for d in contribution_dates)
+                                if len(historical_fund_values) < len(contribution_date_strs):
+                                    missing_dates = contribution_date_strs - set(historical_fund_values.keys())
+                                    print_warning(f"⚠️  NAV: Missing historical data for {len(missing_dates)} date(s): {', '.join(sorted(missing_dates)[:3])}{'...' if len(missing_dates) > 3 else ''}")
+                    except Exception as hist_err:
+                        logger.warning(f"Could not retrieve historical fund values: {hist_err}")
+                        print_warning(f"⚠️  NAV: Could not retrieve historical fund values - using time-weighted estimation")
+                        # Will fall back to time-weighted estimation in calculate_ownership_percentages
+
                     ownership_raw = position_calculator.calculate_ownership_percentages(
-                        fund_contributions, fund_total_value_dec
+                        fund_contributions, fund_total_value_dec, historical_fund_values
                     )
 
                     # Calculate total shares in portfolio for proportional ownership

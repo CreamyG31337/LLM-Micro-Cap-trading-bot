@@ -702,7 +702,13 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
     """Get investment metrics for the currently logged-in user.
     
     Calculates the user's investment performance based on their contributions
-    and current fund value. Matches the console app's calculation method exactly.
+    and current fund value.
+    
+    TODO: BUG - This calculation is incorrect for multi-investor funds.
+    Currently all investors get the same return percentage regardless of when they joined.
+    Investors who joined later (at higher fund values) should have different returns.
+    FIX: Implement NAV-based calculation - see user_performance_analysis.md in artifacts.
+    See also: portfolio/position_calculator.py calculate_ownership_percentages() for companion fix.
     
     Args:
         fund: Fund name
@@ -714,7 +720,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         - net_contribution: User's net contribution amount
         - current_value: Current value of their investment
         - gain_loss: Absolute gain/loss amount
-        - gain_loss_pct: Gain/loss percentage
+        - gain_loss_pct: Gain/loss percentage (NOTE: Currently incorrect - see TODO above)
         - ownership_pct: Ownership percentage
         - contributor_name: Their name (for display)
         

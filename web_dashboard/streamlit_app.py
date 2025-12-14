@@ -872,9 +872,13 @@ def main():
             # Separates "Your Performance" from "Fund Performance"
             
             st.markdown("#### 👤 Your Investment")
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             if user_investment:
+                # Calculate User's Day Change based on ownership
+                user_ownership_ratio = user_investment['ownership_pct'] / 100.0
+                user_day_pnl = last_day_pnl * user_ownership_ratio
+                
                 with col1:
                     st.metric(
                         "Your Value (CAD)",
@@ -883,12 +887,19 @@ def main():
                     )
                 with col2:
                     st.metric(
+                        "Your Day Change",
+                        f"${user_day_pnl:,.2f}",
+                        f"{last_day_pnl_pct:+.2f}%", 
+                        help="Estimated change in your investment value since last market close."
+                    )
+                with col3:
+                    st.metric(
                         "Your Return",
                         f"{user_investment['gain_loss_pct']:+.2f}%",
                         f"${user_investment['gain_loss']:,.2f}",
                         help="Total return on your investment (Current Value - Net Contribution)."
                     )
-                with col3:
+                with col4:
                     st.metric(
                         "Ownership",
                         f"{user_investment['ownership_pct']:.2f}%",

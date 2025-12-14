@@ -444,6 +444,15 @@ class PositionCalculator:
                     ownership_percentage = (data['net_contribution'] / total_net_contributions * Decimal('100'))
                     current_value = (current_fund_value * data['net_contribution'] / total_net_contributions)
                     
+                    # TODO: BUG - This gain/loss calculation is incorrect for multi-investor funds.
+                    # Currently all investors get the same return percentage regardless of when they joined.
+                    # Investors who joined later (at higher fund values) should have different returns.
+                    # FIX: Implement NAV-based calculation:
+                    #   1. Track NAV (fund_value / total_contributions) at time of each contribution
+                    #   2. Calculate "units" purchased per contribution = contribution_amount / NAV_at_time
+                    #   3. User's current_value = total_units * current_NAV
+                    #   4. User's return = (current_value - net_contribution) / net_contribution
+                    # See web_dashboard/streamlit_utils.py get_user_investment_metrics() for companion fix.
                     ownership_details[contributor] = {
                         'contributions': data['contributions'],
                         'withdrawals': data['withdrawals'],

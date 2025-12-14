@@ -890,6 +890,11 @@ def api_contributors():
         contributors = []
         total_net = sum([float(c['net_contribution']) for c in result.data])
         
+        # TODO: BUG - This API does not calculate per-contributor returns.
+        # When adding return calculations, ensure NAV-based approach is used.
+        # All investors should NOT have the same return percentage - see:
+        # - portfolio/position_calculator.py calculate_ownership_percentages()
+        # - web_dashboard/streamlit_utils.py get_user_investment_metrics()
         for contributor in result.data:
             net_contrib = float(contributor['net_contribution'])
             ownership_pct = (net_contrib / total_net * 100) if total_net > 0 else 0

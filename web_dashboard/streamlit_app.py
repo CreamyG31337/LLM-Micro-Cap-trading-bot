@@ -834,24 +834,11 @@ def main():
         # Get user's investment metrics (if they have contributions)
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
         
-        # Determine column layout based on whether we show investors and user investment
-        num_cols = 4  # Base: Total Value, Total P&L, Holdings, Last Day P&L
-        if show_investors:
-            num_cols += 1  # Add Investors column
-        if user_investment:
-            num_cols += 1  # Add Your Investment column
-        
-        # Create columns dynamically
-        cols = st.columns(num_cols)
-        col_idx = 0
-        
-        
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0
         last_day_pnl_pct = 0.0
         if not positions_df.empty and 'daily_pnl' in positions_df.columns:
             # Convert USD daily P&L to CAD before summing
-            # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
             for _, row in positions_df.iterrows():
                 daily_pnl_val = row.get('daily_pnl', 0)
                 daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
@@ -865,47 +852,118 @@ def main():
             yesterday_value = total_value - last_day_pnl
             if yesterday_value > 0:
                 last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
+
+        # Calculate "Unrealized P&L" (sum of open positions pnl)
+        # We already calculated total_pnl above which is exactly this
+        unrealized_pnl = total_pnl
+        unrealized_pnl_pct = (unrealized_pnl / (portfolio_value_no_cash - unrealized_pnl) * 100) if (portfolio_value_no_cash - unrealized_pnl) > 0 else 0.0
+
+        # Num holdings for display
+        num_holdings = len(positions_df) if not positions_df.empty else 0
+
+
+        # --- DYNAMIC LAYOUT LOGIC ---
         
-        # Display metrics in order: Your Investment (if available), Total Value, Total P&L, Holdings, Investors (if > 1), Last Day P&L
-        
-        # Your Investment (if user has contributions)
-        if user_investment:
-            with cols[col_idx]:
+        # Check if we should use Multi-Investor layout or Single Investor layout
+        is_multi_investor = show_investors # Calculated earlier as num_investors > 1
+
+        if is_multi_investor:
+            # === MULTI-INVESTOR LAYOUT ===
+            # Separates "Your Performance" from "Fund Performance"
+            
+            st.markdown("#### 👤 Your Investment")
+            col1, col2, col3 = st.columns(3)
+            
+            if user_investment:
+                with col1:
+                    st.metric(
+                        "Your Value (CAD)",
+                        f"${user_investment['current_value']:,.2f}",
+                        help="Current market value of your specific share in the fund."
+                    )
+                with col2:
+                    st.metric(
+                        "Your Return",
+                        f"{user_investment['gain_loss_pct']:+.2f}%",
+                        f"${user_investment['gain_loss']:,.2f}",
+                        help="Total return on your investment (Current Value - Net Contribution)."
+                    )
+                with col3:
+                    st.metric(
+                        "Ownership",
+                        f"{user_investment['ownership_pct']:.2f}%",
+                        help="Your percentage ownership of the total fund assets."
+                    )
+            else:
+                st.info("No contribution data found for your account in this fund.")
+
+            st.markdown("#### 🏦 Fund Overview")
+            f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+            
+            with f_col1:
                 st.metric(
-                    "Your Investment (CAD)",
-                    f"${user_investment['current_value']:,.2f}",
-                    f"{user_investment['gain_loss_pct']:+.2f}%"
+                    "Fund Total Value (CAD)", 
+                    f"${total_value:,.2f}",
+                    help="Total value of all assets in the fund (Cash + Positions) for ALL investors."
                 )
-            col_idx += 1
-        
-        # Total Portfolio Value
-        with cols[col_idx]:
-            st.metric("Total Portfolio Value (CAD)", f"${total_value:,.2f}")
-        col_idx += 1
-        
-        # Total P&L
-        with cols[col_idx]:
-            pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
-            st.metric("Total P&L (CAD)", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
-        col_idx += 1
-        
-        # Holdings
-        with cols[col_idx]:
-            num_holdings = len(positions_df) if not positions_df.empty else 0
-            st.metric("Holdings", f"{num_holdings}")
-        col_idx += 1
-        
-        # Investors (only show if > 1)
-        if show_investors:
-            with cols[col_idx]:
-                st.metric("Investors", f"{num_investors}")
-            col_idx += 1
-        
-        # Last Trading Day P&L
-        with cols[col_idx]:
-            st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
-                     f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
-        
+            with f_col2:
+                st.metric(
+                    "Fund Day Change",
+                    f"${last_day_pnl:,.2f}", 
+                    f"{last_day_pnl_pct:+.2f}%",
+                    help="Change in fund value since the last market close."
+                )
+            with f_col3:
+                st.metric("Investors", f"{num_investors}", help="Total number of distinct investors in this fund.")
+            with f_col4:
+                st.metric("Holdings", f"{num_holdings}", help="Number of open stock positions.")
+
+        else:
+            # === SINGLE INVESTOR LAYOUT ===
+            # Consolidated view since User == Fund
+            
+            # We want 4 main metrics: Value, Total Return (All time), Day P&L, Unrealized P&L
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            
+            with m_col1:
+                st.metric(
+                    "Portfolio Value (CAD)", 
+                    f"${total_value:,.2f}",
+                    help="Total current value of your portfolio (Cash + Positions)."
+                )
+            
+            with m_col2:
+                # Total Return - Prioritize user_investment calc as it accounts for realized gains
+                if user_investment:
+                    st.metric(
+                        "Total Return",
+                        f"{user_investment['gain_loss_pct']:+.2f}%",
+                        f"${user_investment['gain_loss']:,.2f}",
+                        help="All-time return on investment (Current Value - Net Contribution)."
+                    )
+                else:
+                    # Fallback to unrealized if no contribution data
+                    st.metric(
+                        "Unrealized Return",
+                        f"{unrealized_pnl_pct:+.2f}%",
+                        help="Return based on currently held positions only (excludes realized gains/losses)."
+                    )
+
+            with m_col3:
+                st.metric(
+                    "Day Change (CAD)", 
+                    f"${last_day_pnl:,.2f}", 
+                    f"{last_day_pnl_pct:+.2f}%",
+                    help="Change in portfolio value since the last market close."
+                )
+                
+            with m_col4:
+                 st.metric(
+                    "Open P&L (CAD)", 
+                    f"${unrealized_pnl:,.2f}",
+                    help="Unrealized Profit/Loss from currently held positions."
+                )
+
         # Charts section
         st.markdown("---")
         st.markdown("### Performance Charts")

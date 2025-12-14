@@ -25,7 +25,8 @@ from streamlit_utils import (
     calculate_portfolio_value_over_time,
     get_supabase_client,
     get_investor_count,
-    get_investor_allocations
+    get_investor_allocations,
+    get_user_investment_metrics
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -786,14 +787,8 @@ def main():
         num_investors = get_investor_count(fund_filter)
         show_investors = num_investors > 1
         
-        # Create columns based on whether we show investors metric
-        if show_investors:
-            col1, col2, col3, col4, col5 = st.columns(5)
-        else:
-            col1, col2, col3, col4 = st.columns(4)
-        
-        
         # Calculate total portfolio value from current positions (with currency conversion)
+        portfolio_value_no_cash = 0.0  # Portfolio value without cash (for investment metrics)
         total_value = 0.0
         total_pnl = 0.0
         usd_to_cad_rate = 1.0  # Default fallback
@@ -816,9 +811,9 @@ def main():
                 market_value = float(row.get('market_value', 0) or 0)
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
                 if currency == 'USD':
-                    total_value += market_value * usd_to_cad_rate
+                    portfolio_value_no_cash += market_value * usd_to_cad_rate
                 else:
-                    total_value += market_value
+                    portfolio_value_no_cash += market_value
         
         # Get Total P&L from positions_df (unrealized_pnl from latest_positions view)
         if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
@@ -834,74 +829,82 @@ def main():
                     total_pnl += pnl
         
         # Add cash to total value (USD cash converted to CAD)
-        total_value += cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
+        total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
+        
+        # Get user's investment metrics (if they have contributions)
+        user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
+        
+        # Determine column layout based on whether we show investors and user investment
+        num_cols = 4  # Base: Total Value, Total P&L, Holdings, Last Day P&L
+        if show_investors:
+            num_cols += 1  # Add Investors column
+        if user_investment:
+            num_cols += 1  # Add Your Investment column
+        
+        # Create columns dynamically
+        cols = st.columns(num_cols)
+        col_idx = 0
         
         
-        with col1:
+        # Calculate Last Trading Day P&L (used in multiple places)
+        last_day_pnl = 0.0
+        last_day_pnl_pct = 0.0
+        if not positions_df.empty and 'daily_pnl' in positions_df.columns:
+            # Convert USD daily P&L to CAD before summing
+            # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
+            for _, row in positions_df.iterrows():
+                daily_pnl_val = row.get('daily_pnl', 0)
+                daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
+                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                if currency == 'USD':
+                    last_day_pnl += daily_pnl * usd_to_cad_rate
+                else:
+                    last_day_pnl += daily_pnl
+            
+            # Calculate percentage based on yesterday's value (total_value - today's change)
+            yesterday_value = total_value - last_day_pnl
+            if yesterday_value > 0:
+                last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
+        
+        # Display metrics in order: Your Investment (if available), Total Value, Total P&L, Holdings, Investors (if > 1), Last Day P&L
+        
+        # Your Investment (if user has contributions)
+        if user_investment:
+            with cols[col_idx]:
+                st.metric(
+                    "Your Investment (CAD)",
+                    f"${user_investment['current_value']:,.2f}",
+                    f"{user_investment['gain_loss_pct']:+.2f}%"
+                )
+            col_idx += 1
+        
+        # Total Portfolio Value
+        with cols[col_idx]:
             st.metric("Total Portfolio Value (CAD)", f"${total_value:,.2f}")
+        col_idx += 1
         
-        with col2:
+        # Total P&L
+        with cols[col_idx]:
             pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
             st.metric("Total P&L (CAD)", f"${total_pnl:,.2f}", f"{pnl_pct:.2f}%")
+        col_idx += 1
         
-        
-        with col3:
-            # Number of holdings
+        # Holdings
+        with cols[col_idx]:
             num_holdings = len(positions_df) if not positions_df.empty else 0
             st.metric("Holdings", f"{num_holdings}")
+        col_idx += 1
         
+        # Investors (only show if > 1)
         if show_investors:
-            with col4:
-                # Number of investors (only show if > 1)
+            with cols[col_idx]:
                 st.metric("Investors", f"{num_investors}")
-            
-            with col5:
-                # Last Trading Day P&L (sum of daily changes with currency conversion)
-                last_day_pnl = 0.0
-                last_day_pnl_pct = 0.0
-                if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-                    # Convert USD daily P&L to CAD before summing
-                    # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
-                    for _, row in positions_df.iterrows():
-                        daily_pnl_val = row.get('daily_pnl', 0)
-                        daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
-                        currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                        if currency == 'USD':
-                            last_day_pnl += daily_pnl * usd_to_cad_rate
-                        else:
-                            last_day_pnl += daily_pnl
-                    
-                    # Calculate percentage based on yesterday's value (total_value - today's change)
-                    yesterday_value = total_value - last_day_pnl
-                    if yesterday_value > 0:
-                        last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
-                
-                st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
-                         f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
-        else:
-            with col4:
-                # Last Trading Day P&L (in col4 if not showing investors)
-                last_day_pnl = 0.0
-                last_day_pnl_pct = 0.0
-                if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-                    # Convert USD daily P&L to CAD before summing
-                    # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
-                    for _, row in positions_df.iterrows():
-                        daily_pnl_val = row.get('daily_pnl', 0)
-                        daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
-                        currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                        if currency == 'USD':
-                            last_day_pnl += daily_pnl * usd_to_cad_rate
-                        else:
-                            last_day_pnl += daily_pnl
-                    
-                    # Calculate percentage based on yesterday's value (total_value - today's change)
-                    yesterday_value = total_value - last_day_pnl
-                    if yesterday_value > 0:
-                        last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
-                
-                st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
-                         f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
+            col_idx += 1
+        
+        # Last Trading Day P&L
+        with cols[col_idx]:
+            st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
+                     f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
         
         # Charts section
         st.markdown("---")

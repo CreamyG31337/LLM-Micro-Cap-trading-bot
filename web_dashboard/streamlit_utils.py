@@ -696,3 +696,124 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
     except Exception as e:
         print(f"Error getting investor allocations: {e}")
         return pd.DataFrame()
+
+
+def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True) -> Optional[Dict[str, Any]]:
+    """Get investment metrics for the currently logged-in user.
+    
+    Calculates the user's investment performance based on their contributions
+    and current fund value. Matches the console app's calculation method exactly.
+    
+    Args:
+        fund: Fund name
+        total_portfolio_value: Total portfolio value (positions only, before cash)
+        include_cash: Whether to include cash in total fund value (default True, matches console app)
+    
+    Returns:
+        Dict with keys:
+        - net_contribution: User's net contribution amount
+        - current_value: Current value of their investment
+        - gain_loss: Absolute gain/loss amount
+        - gain_loss_pct: Gain/loss percentage
+        - ownership_pct: Ownership percentage
+        - contributor_name: Their name (for display)
+        
+        Returns None if:
+        - User not logged in
+        - No contributor record found matching user's email
+        - User has no contributions in the fund
+    """
+    from auth_utils import get_user_email
+    
+    # Get user email
+    user_email = get_user_email()
+    if not user_email:
+        return None
+    
+    client = get_supabase_client()
+    if not client:
+        return None
+    
+    try:
+        # Query contributor_ownership view to get all contributors for this fund
+        result = client.supabase.table("contributor_ownership").select(
+            "contributor, email, net_contribution"
+        ).eq("fund", fund).execute()
+        
+        if not result.data:
+            return None
+        
+        df = pd.DataFrame(result.data)
+        df['net_contribution'] = df['net_contribution'].astype(float)
+        
+        # Find user's contribution record (case-insensitive email match)
+        user_email_lower = user_email.lower()
+        user_row = None
+        for _, row in df.iterrows():
+            contributor_email = row.get('email', '')
+            if contributor_email and contributor_email.lower() == user_email_lower:
+                user_row = row
+                break
+        
+        if user_row is None:
+            return None
+        
+        user_net_contribution = float(user_row['net_contribution'])
+        if user_net_contribution <= 0:
+            return None
+        
+        # Get cash balances for total fund value calculation
+        cash_balances = get_cash_balances(fund)
+        
+        # Calculate total fund value (matching console app: portfolio + cash)
+        # Get USD/CAD exchange rate for cash conversion
+        usd_to_cad_rate = 1.0
+        if not df.empty:
+            try:
+                rate_result = client.get_latest_exchange_rate('USD', 'CAD')
+                if rate_result:
+                    usd_to_cad_rate = float(rate_result)
+            except Exception:
+                usd_to_cad_rate = 1.42  # Approximate fallback
+        
+        total_cash_cad = cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
+        
+        # Calculate fund total value (matching console app logic)
+        if include_cash:
+            fund_total_value = total_portfolio_value + total_cash_cad
+        else:
+            fund_total_value = total_portfolio_value
+        
+        # Calculate total net contributions (sum of all contributors)
+        total_net_contributions = df['net_contribution'].sum()
+        
+        if total_net_contributions <= 0:
+            return None
+        
+        # Calculate ownership percentage (matching console app: position_calculator.py line 444)
+        ownership_pct = (user_net_contribution / total_net_contributions) * 100
+        
+        # Calculate current value (matching console app: position_calculator.py line 445)
+        current_value = fund_total_value * (user_net_contribution / total_net_contributions)
+        
+        # Calculate gain/loss (matching console app: position_calculator.py line 453)
+        gain_loss = current_value - user_net_contribution
+        
+        # Calculate gain/loss percentage (matching console app: position_calculator.py lines 454-456)
+        if user_net_contribution > 0:
+            gain_loss_pct = (gain_loss / user_net_contribution) * 100
+        else:
+            gain_loss_pct = 0.0
+        
+        return {
+            'net_contribution': user_net_contribution,
+            'current_value': current_value,
+            'gain_loss': gain_loss,
+            'gain_loss_pct': gain_loss_pct,
+            'ownership_pct': ownership_pct,
+            'contributor_name': user_row['contributor']
+        }
+        
+    except Exception as e:
+        print(f"Error getting user investment metrics: {e}")
+        return None

@@ -70,6 +70,22 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
     if hasattr(end_date_only, 'date'):
         end_date_only = end_date_only.date()
     
+    # Handle case where chart starts on a Sunday - shade the weekend that includes it
+    start_weekday = start_date_only.weekday()
+    if start_weekday == 6:  # Sunday
+        # Shade from previous Saturday 00:00 to Monday 00:00 (entire weekend)
+        previous_saturday = start_date_only - timedelta(days=1)
+        saturday_midnight = datetime.combine(previous_saturday, datetime.min.time())
+        monday_midnight = datetime.combine(start_date_only + timedelta(days=1), datetime.min.time())
+        
+        fig.add_vrect(
+            x0=saturday_midnight,
+            x1=monday_midnight,
+            fillcolor="rgba(128, 128, 128, 0.1)",
+            layer="below",
+            line_width=0,
+        )
+    
     # Iterate through all dates to find Saturdays (start of weekends)
     current_date = start_date_only
     while current_date <= end_date_only:
@@ -215,6 +231,12 @@ def create_portfolio_value_chart(
         start_date = df['date'].min()
         end_date = df['date'].max()
         
+        # Normalize to date-only (midnight) for comparison with benchmark data
+        # Benchmark data from Yahoo Finance uses midnight timestamps, while portfolio
+        # dates are at 13:00 (market close). Normalizing ensures same-day data is included.
+        start_date_normalized = pd.Timestamp(start_date).normalize()  # Set to 00:00:00
+        end_date_normalized = pd.Timestamp(end_date).normalize() + timedelta(days=1)  # Include full end date
+        
         for bench_key in show_benchmarks:
             if bench_key not in BENCHMARK_CONFIG:
                 continue
@@ -223,10 +245,10 @@ def create_portfolio_value_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
-                # Filter to portfolio date range - ensure datetime types match
+                # Filter to portfolio date range - compare dates, not timestamps
                 bench_data = bench_data[
-                    (bench_data['Date'] >= pd.Timestamp(start_date)) & 
-                    (bench_data['Date'] <= pd.Timestamp(end_date))
+                    (bench_data['Date'] >= start_date_normalized) & 
+                    (bench_data['Date'] < end_date_normalized)
                 ]
                 
                 if not bench_data.empty:
@@ -660,6 +682,12 @@ def create_individual_holdings_chart(
     
     # Add benchmarks
     if show_benchmarks:
+        # Normalize to date-only (midnight) for comparison with benchmark data
+        # Benchmark data from Yahoo Finance uses midnight timestamps, while portfolio
+        # dates are at 13:00 (market close). Normalizing ensures same-day data is included.
+        start_date_normalized = pd.Timestamp(start_date).normalize()  # Set to 00:00:00
+        end_date_normalized = pd.Timestamp(end_date).normalize() + timedelta(days=1)  # Include full end date
+        
         for bench_key in show_benchmarks:
             if bench_key not in BENCHMARK_CONFIG:
                 continue
@@ -668,13 +696,10 @@ def create_individual_holdings_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
-                # Filter to portfolio date range - strip timezone for comparison
-                start_naive = pd.Timestamp(start_date).tz_localize(None) if hasattr(start_date, 'tzinfo') and start_date.tzinfo else pd.Timestamp(start_date)
-                end_naive = pd.Timestamp(end_date).tz_localize(None) if hasattr(end_date, 'tzinfo') and end_date.tzinfo else pd.Timestamp(end_date)
-                
+                # Filter to portfolio date range - compare dates, not timestamps
                 bench_data = bench_data[
-                    (bench_data['Date'] >= start_naive) & 
-                    (bench_data['Date'] <= end_naive)
+                    (bench_data['Date'] >= start_date_normalized) & 
+                    (bench_data['Date'] < end_date_normalized)
                 ]
                 
                 if not bench_data.empty:

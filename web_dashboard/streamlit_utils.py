@@ -76,11 +76,12 @@ def get_available_funds() -> List[str]:
     Queries user_funds table to get funds assigned to the authenticated user.
     Returns a sorted list of unique fund names.
     """
-    print("DEBUG: get_available_funds() called - checking console output")
+    import logging
+    logger = logging.getLogger(__name__)
     
     client = get_supabase_client()
     if not client:
-        print("DEBUG: Failed to initialize Supabase client")
+        logger.warning("get_available_funds(): Failed to initialize Supabase client")
         return []
     
     # Get user ID for querying user_funds table
@@ -88,25 +89,25 @@ def get_available_funds() -> List[str]:
         from auth_utils import get_user_id
         user_id = get_user_id()
         if not user_id:
-            print("DEBUG: No user_id available in session")
+            logger.debug("get_available_funds(): No user_id available in session")
             return []
     except Exception as e:
-        print(f"DEBUG: Could not get user ID: {e}")
+        logger.warning(f"get_available_funds(): Could not get user ID: {e}")
         return []
     
     try:
         result = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id).execute()
         
         if not result or not result.data:
-            print(f"DEBUG: Query returned no data for user_id: {user_id}")
+            logger.debug(f"get_available_funds(): Query returned no data for user_id: {user_id}")
             return []
         
         funds = [row.get('fund_name') for row in result.data if row.get('fund_name')]
         sorted_funds = sorted(funds)
-        print(f"DEBUG: Found {len(sorted_funds)} funds: {sorted_funds}")
+        logger.debug(f"get_available_funds(): Found {len(sorted_funds)} funds for user_id: {user_id}")
         return sorted_funds
     except Exception as e:
-        print(f"DEBUG: Error querying user_funds: {e}")
+        logger.error(f"get_available_funds(): Error querying user_funds: {e}", exc_info=True)
         return []
 
 
@@ -250,7 +251,9 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             return pd.DataFrame()
         
         df = pd.DataFrame(all_rows)
-        print(f"[DEBUG] Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
         
         # Normalize to date-only (midnight) for consistent charting with benchmarks
         df['date'] = pd.to_datetime(df['date']).dt.normalize()
@@ -259,7 +262,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         if not df.empty:
             min_date = df['date'].min()
             max_date = df['date'].max()
-            print(f"[DEBUG] Date range: {min_date.date()} to {max_date.date()}")
+            logger.debug(f"Date range: {min_date.date()} to {max_date.date()}")
         
         # Load exchange rates for currency conversion - NO FALLBACKS, errors are preferred
         from exchange_rates_utils import get_exchange_rate_for_date_from_db, reload_exchange_rate_for_date
@@ -593,10 +596,103 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             # Filter DataFrame to only include these dates
             result_df = result_df[result_df['date'].isin(unique_dates)]
             # Sort by date ascending for proper chart display
-            result_df = result_df.sort_values('date').reset_index(drop=True)
-        
         return result_df
         
     except Exception as e:
         print(f"Error fetching individual holdings: {e}")
+        return pd.DataFrame()
+
+
+def get_investor_count(fund: str) -> int:
+    """Get count of contributors/investors for a fund
+    
+    Args:
+        fund: Fund name
+    
+    Returns:
+        Integer count of contributors
+    """
+    client = get_supabase_client()
+    if not client:
+        return 0
+    
+    try:
+        # Query fund_contributor_summary view for total contributor count
+        result = client.supabase.table("fund_contributor_summary").select(
+            "total_contributors"
+        ).eq("fund", fund).execute()
+        
+        if result.data and len(result.data) > 0:
+            return int(result.data[0].get('total_contributors', 0))
+        return 0
+    except Exception as e:
+        print(f"Error getting investor count: {e}")
+        return 0
+
+
+def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_admin: bool = False) -> pd.DataFrame:
+    """Get investor allocation data with privacy masking
+    
+    Args:
+        fund: Fund name
+        user_email: Current user's email (to show their own name)
+        is_admin: Whether current user is admin (admins see all names)
+    
+    Returns:
+        DataFrame with columns: contributor_display, net_contribution, ownership_pct
+        - If admin: Shows all real contributor names
+        - If regular user: Shows only their name, others masked as "Investor 1", "Investor 2", etc.
+    """
+    client = get_supabase_client()
+    if not client:
+        return pd.DataFrame()
+    
+    try:
+        # Query contributor_ownership view to get net contributions
+        result = client.supabase.table("contributor_ownership").select(
+            "contributor, email, net_contribution"
+        ).eq("fund", fund).execute()
+        
+        if not result.data:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(result.data)
+        
+        # Convert net_contribution to float
+        df['net_contribution'] = df['net_contribution'].astype(float)
+        
+        # Sort by contribution amount (descending) for consistent masking
+        df = df.sort_values('net_contribution', ascending=False).reset_index(drop=True)
+        
+        # Calculate ownership percentages
+        total_contributions = df['net_contribution'].sum()
+        if total_contributions > 0:
+            df['ownership_pct'] = (df['net_contribution'] / total_contributions) * 100
+        else:
+            df['ownership_pct'] = 0.0
+        
+        # Apply privacy masking
+        def mask_name(row, idx):
+            if is_admin:
+                # Admins see all real names
+                return row['contributor']
+            else:
+                # Regular users see only their own name
+                contributor_email = row.get('email', '').lower() if pd.notna(row.get('email')) else ''
+                user_email_lower = user_email.lower() if user_email else ''
+                
+                if contributor_email and user_email_lower and contributor_email == user_email_lower:
+                    # Show user's own name
+                    return row['contributor']
+                else:
+                    # Mask as "Investor N" (sorted by contribution amount)
+                    return f"Investor {idx + 1}"
+        
+        df['contributor_display'] = df.apply(lambda row: mask_name(row, row.name), axis=1)
+        
+        # Return only necessary columns
+        return df[['contributor_display', 'net_contribution', 'ownership_pct']]
+        
+    except Exception as e:
+        print(f"Error getting investor allocations: {e}")
         return pd.DataFrame()

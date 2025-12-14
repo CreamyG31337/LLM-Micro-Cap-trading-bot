@@ -22,14 +22,18 @@ from streamlit_utils import (
     get_trade_log,
     get_cash_balances,
     calculate_portfolio_value_over_time,
-    get_supabase_client
+    get_supabase_client,
+    get_investor_count,
+    get_investor_allocations
 )
 from chart_utils import (
     create_portfolio_value_chart,
     create_performance_by_fund_chart,
     create_pnl_chart,
     create_trades_timeline_chart,
-    create_currency_exposure_chart
+    create_currency_exposure_chart,
+    create_sector_allocation_chart,
+    create_investor_allocation_chart
 )
 from auth_utils import (
     login_user,
@@ -38,6 +42,7 @@ from auth_utils import (
     logout_user,
     set_user_session,
     get_user_email,
+    get_user_id,
     get_user_token,
     is_admin
 )
@@ -297,10 +302,11 @@ def show_password_reset_page(access_token: str):
                             user_email = user_data.get("email")
                     except Exception as decode_error:
                         st.error(f"❌ **Error**: Failed to decode recovery token: {decode_error}")
-                        with st.expander("🔍 Debug Information"):
-                            st.write(f"Token length: {len(access_token)}")
-                            st.write(f"Token parts: {len(token_parts) if 'token_parts' in locals() else 'N/A'}")
-                            st.exception(decode_error)
+                        if is_admin():
+                            with st.expander("🔍 Debug Information"):
+                                st.write(f"Token length: {len(access_token)}")
+                                st.write(f"Token parts: {len(token_parts) if 'token_parts' in locals() else 'N/A'}")
+                                st.exception(decode_error)
                         return
                     
                     if not user_email:
@@ -432,11 +438,12 @@ def show_password_reset_page(access_token: str):
                                         st.error("❌ **Status**: API returned 200 but response data is invalid")
                                     st.error("❌ **Error**: Password update response was invalid. Please try again or request a new reset link.")
                                     
-                                    with st.expander("🔍 Debug Information"):
-                                        st.write("**Response Status**: 200 OK")
-                                        st.write("**Response Data**:")
-                                        st.json(response_data)
-                                        st.write("**Expected Fields**: id, user, or email")
+                                    if is_admin():
+                                        with st.expander("🔍 Debug Information"):
+                                            st.write("**Response Status**: 200 OK")
+                                            st.write("**Response Data**:")
+                                            st.json(response_data)
+                                            st.write("**Expected Fields**: id, user, or email")
                                     
                                     return
                             else:
@@ -456,43 +463,48 @@ def show_password_reset_page(access_token: str):
                                     else:
                                         st.error(f"❌ **Error**: Failed to update password. {error_msg}")
                                     
-                                    # Show full error for debugging
-                                    with st.expander("🔍 Error Details"):
-                                        st.write(f"**HTTP Status**: {response.status_code}")
-                                        st.write("**Error Response**:")
-                                        st.json(error_data)
-                                        st.write("**Request Headers**:")
-                                        st.json({
-                                            "apikey": f"{supabase_key[:10]}...",
-                                            "Authorization": "Bearer [token]",
-                                            "Content-Type": "application/json"
-                                        })
-                                        st.write("**User Email**:", user_email)
+                                    # Show full error for debugging (admin only)
+                                    if is_admin():
+                                        with st.expander("🔍 Error Details"):
+                                            st.write(f"**HTTP Status**: {response.status_code}")
+                                            st.write("**Error Response**:")
+                                            st.json(error_data)
+                                            st.write("**Request Headers**:")
+                                            st.json({
+                                                "apikey": f"{supabase_key[:10]}...",
+                                                "Authorization": "Bearer [token]",
+                                                "Content-Type": "application/json"
+                                            })
+                                            st.write("**User Email**:", user_email)
                                         
                                 except Exception as parse_error:
                                     st.error(f"❌ **Error**: Failed to update password (HTTP {response.status_code}). Could not parse error response.")
-                                    with st.expander("🔍 Debug Information"):
-                                        st.write(f"**HTTP Status**: {response.status_code}")
-                                        st.write(f"**Response Text**: {response.text[:500]}")
-                                        st.exception(parse_error)
+                                    if is_admin():
+                                        with st.expander("🔍 Debug Information"):
+                                            st.write(f"**HTTP Status**: {response.status_code}")
+                                            st.write(f"**Response Text**: {response.text[:500]}")
+                                            st.exception(parse_error)
                                 
                                 return
                                 
                     except requests.exceptions.Timeout:
                         st.error("❌ **Error**: Request timed out. Please check your connection and try again.")
-                        with st.expander("🔍 Debug Information"):
-                            st.write("**Error Type**: Network Timeout")
-                            st.write("**Timeout**: 10 seconds")
+                        if is_admin():
+                            with st.expander("🔍 Debug Information"):
+                                st.write("**Error Type**: Network Timeout")
+                                st.write("**Timeout**: 10 seconds")
                     except requests.exceptions.RequestException as e:
                         st.error(f"❌ **Error**: Network error - {str(e)}. Please try again.")
-                        with st.expander("🔍 Debug Information"):
-                            st.write("**Error Type**: Network Request Exception")
-                            st.exception(e)
+                        if is_admin():
+                            with st.expander("🔍 Debug Information"):
+                                st.write("**Error Type**: Network Request Exception")
+                                st.exception(e)
                     except Exception as e:
                         error_msg = str(e)
                         st.error(f"❌ **Error**: Unexpected error updating password: {error_msg}. Please try again or request a new reset link.")
-                        with st.expander("🔍 Error Details"):
-                            st.write("**Error Type**: Unexpected Exception")
+                        if is_admin():
+                            with st.expander("🔍 Error Details"):
+                                st.write("**Error Type**: Unexpected Exception")
                             st.exception(e)
                             st.write("**User Email**:", user_email)
                             st.write("**Supabase URL**:", supabase_url)
@@ -514,6 +526,9 @@ def main():
     
     # Try to restore session from cookie if not already authenticated
     if not is_authenticated():
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             # st.context.cookies is available in Streamlit 1.37+
             # It's a read-only dict of cookies sent in the initial HTTP request
@@ -529,20 +544,36 @@ def main():
                     decoded = base64.urlsafe_b64decode(payload)
                     user_data = json.loads(decoded)
                     exp = user_data.get("exp", 0)
+                    user_id_from_token = user_data.get("sub")
+                    user_email_from_token = user_data.get("email")
                     
                     if exp > int(time.time()):
                         # Token valid, restore session (skip redirect since we're restoring from cookie)
+                        logger.info(f"Restoring session from cookie for user_id: {user_id_from_token}, email: {user_email_from_token}")
                         set_user_session(auth_token, skip_cookie_redirect=True)
+                        
+                        # Verify user_id was set correctly
+                        restored_user_id = get_user_id()
+                        if restored_user_id == user_id_from_token:
+                            logger.debug(f"Session restored successfully, user_id verified: {restored_user_id}")
+                        else:
+                            logger.warning(f"Session restoration mismatch: expected {user_id_from_token}, got {restored_user_id}")
                         # No rerun needed - we're already in the right state
+                    else:
+                        logger.debug(f"Cookie token expired (exp: {exp}, now: {int(time.time())})")
                     # If expired, we could clear the cookie but since st.context.cookies is read-only,
                     # we'd need JavaScript for that. For now, just don't restore expired tokens.
+                else:
+                    logger.debug("Cookie token has invalid format (not enough parts)")
+            else:
+                logger.debug("No auth_token cookie found")
         except AttributeError:
             # st.context.cookies not available (older Streamlit version)
+            logger.warning("Session persistence requires Streamlit 1.37+. Please update.")
             st.warning("⚠️ Session persistence requires Streamlit 1.37+. Please update.")
         except Exception as e:
             # Other errors - log but don't block
-            import logging
-            logging.warning(f"Cookie restoration error: {e}")
+            logger.warning(f"Cookie restoration error: {e}", exc_info=True)
     
     # Check for authentication errors in query params
     query_params = st.query_params
@@ -638,6 +669,43 @@ def main():
         st.sidebar.page_link("pages/admin.py", label="⚙️ Admin Dashboard", icon="⚙️")
         st.sidebar.markdown("---")
     
+    # Debug section (admin-only, requires ?debug=admin query param)
+    query_params = st.query_params
+    if is_admin() and query_params.get("debug") == "admin":
+        st.sidebar.markdown("---")
+        with st.sidebar.expander("🔍 Debug Info", expanded=False):
+            user_id = get_user_id()
+            user_email = get_user_email()
+            admin_status = is_admin()
+            
+            st.write("**Session State:**")
+            st.write(f"- User ID: `{user_id}`" if user_id else "- User ID: *Not set*")
+            st.write(f"- User Email: `{user_email}`" if user_email else "- User Email: *Not set*")
+            st.write(f"- Admin Status: `{admin_status}`")
+            st.write(f"- Authenticated: `{is_authenticated()}`")
+            
+            # Try to get more details about admin check
+            if user_id:
+                try:
+                    from streamlit_utils import get_supabase_client
+                    client = get_supabase_client()
+                    if client:
+                        st.write("**Supabase Client:** ✅ Initialized")
+                        # Try the RPC call to see what happens
+                        try:
+                            result = client.supabase.rpc('is_admin', {'user_uuid': user_id}).execute()
+                            st.write(f"**RPC Result Type:** `{type(result.data).__name__}`")
+                            st.write(f"**RPC Result Value:** `{result.data}`")
+                        except Exception as rpc_error:
+                            st.write(f"**RPC Error:** `{str(rpc_error)}`")
+                    else:
+                        st.write("**Supabase Client:** ❌ Failed to initialize")
+                except Exception as e:
+                    st.write(f"**Error:** `{str(e)}`")
+            else:
+                st.write("**Note:** Cannot check admin status - user_id not set")
+        st.sidebar.markdown("---")
+    
     st.sidebar.title("Filters")
     
     # Get available funds (no "All Funds" option - default to first fund user has access to)
@@ -673,7 +741,16 @@ def main():
         
         # Metrics row
         st.markdown("### Performance Metrics")
-        col1, col2, col3, col4 = st.columns(4)
+        
+        # Check investor count to determine layout (hide if only 1 investor)
+        num_investors = get_investor_count(fund_filter)
+        show_investors = num_investors > 1
+        
+        # Create columns based on whether we show investors metric
+        if show_investors:
+            col1, col2, col3, col4, col5 = st.columns(5)
+        else:
+            col1, col2, col3, col4 = st.columns(4)
         
         
         # Calculate total portfolio value from current positions (with currency conversion)
@@ -731,10 +808,15 @@ def main():
         with col3:
             # Number of holdings
             num_holdings = len(positions_df) if not positions_df.empty else 0
-            st.metric("# of Holdings", f"{num_holdings}")
+            st.metric("Holdings", f"{num_holdings}")
         
-        with col4:
-            # Last Trading Day P&L (sum of daily changes with currency conversion)
+        if show_investors:
+            with col4:
+                # Number of investors (only show if > 1)
+                st.metric("Investors", f"{num_investors}")
+            
+            with col5:
+                # Last Trading Day P&L (sum of daily changes with currency conversion)
             last_day_pnl = 0.0
             last_day_pnl_pct = 0.0
             if not positions_df.empty and 'daily_pnl' in positions_df.columns:
@@ -754,8 +836,14 @@ def main():
                 if yesterday_value > 0:
                     last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
             
-            st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
-                     f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
+            if show_investors:
+                st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
+                         f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
+        else:
+            with col4:
+                # Last Trading Day P&L (in col4 if not showing investors)
+                st.metric("Last Trading Day P&L (CAD)", f"${last_day_pnl:,.2f}", 
+                         f"{last_day_pnl_pct:+.2f}%" if last_day_pnl_pct != 0 else "0.00%")
         
         # Charts section
         st.markdown("---")
@@ -779,18 +867,19 @@ def main():
             )
             st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
             
-            # Debug info for diagnosing data issues
-            with st.expander("🔍 Debug: Portfolio Data Info"):
-                st.write("**System Status:** v1.1 (Limit Fix Applied) ✅")
-                st.write(f"**Days processed:** {len(portfolio_value_df)}")
-                
-                if 'date' in portfolio_value_df.columns:
-                    min_date = portfolio_value_df['date'].min()
-                    max_date = portfolio_value_df['date'].max()
-                    st.write(f"**Date range:** {min_date.date()} to {max_date.date()}")
-                
-                st.write("**Last 5 days data:**")
-                st.dataframe(portfolio_value_df.tail(5))
+            # Debug info for diagnosing data issues (admin only)
+            if is_admin():
+                with st.expander("🔍 Debug: Portfolio Data Info"):
+                    st.write("**System Status:** v1.1 (Limit Fix Applied) ✅")
+                    st.write(f"**Days processed:** {len(portfolio_value_df)}")
+                    
+                    if 'date' in portfolio_value_df.columns:
+                        min_date = portfolio_value_df['date'].min()
+                        max_date = portfolio_value_df['date'].max()
+                        st.write(f"**Date range:** {min_date.date()} to {max_date.date()}")
+                    
+                    st.write("**Last 5 days data:**")
+                    st.dataframe(portfolio_value_df.tail(5))
             
             # Individual holdings performance chart (lazy loading)
             st.markdown("---")
@@ -856,6 +945,26 @@ def main():
                 st.markdown("#### Currency Exposure")
                 fig = create_currency_exposure_chart(positions_df, fund_filter)
                 st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+            
+            # Sector allocation chart
+            if 'ticker' in positions_df.columns and 'market_value' in positions_df.columns:
+                st.markdown("#### Sector Allocation")
+                fig = create_sector_allocation_chart(positions_df, fund_filter)
+                st.plotly_chart(fig, use_container_width=True, key="sector_allocation_chart")
+            
+            # Investor allocation chart (with privacy controls)
+            # Only show if there are multiple investors
+            if num_investors > 1:
+                st.markdown("#### Investor Allocation")
+                user_email = get_user_email()
+                admin_status = is_admin()
+                investors_df = get_investor_allocations(fund_filter, user_email, admin_status)
+                
+                if not investors_df.empty:
+                    fig = create_investor_allocation_chart(investors_df, fund_filter)
+                    st.plotly_chart(fig, use_container_width=True, key="investor_allocation_chart")
+                else:
+                    st.info("No investor data available for this fund")
             
             # Positions table with compact/full mode toggle
             st.markdown("#### Positions Table")
@@ -969,16 +1078,22 @@ def main():
             # Limit to last 50 trades for display
             recent_trades = trades_df.head(50).copy()
             
-            # DEBUG: Log what columns we have
-            print(f"[DEBUG] trades_df columns: {trades_df.columns.tolist()}")
-            print(f"[DEBUG] 'company_name' in columns: {'company_name' in trades_df.columns}")
-            if 'company_name' in trades_df.columns:
-                print(f"[DEBUG] First 3 company_name values: {trades_df['company_name'].head(3).tolist()}")
-            
             # company_name comes from get_trade_log() which joins with securities table
             # Rename to 'company' for display column consistency
+            # Fall back to positions lookup for any remaining None values
             if 'company_name' in recent_trades.columns:
                 recent_trades['company'] = recent_trades['company_name']
+            else:
+                recent_trades['company'] = None
+            
+            # Fill missing company names from positions data (if available)
+            if not positions_df.empty and 'company' in positions_df.columns and 'ticker' in recent_trades.columns:
+                # Create a lookup dictionary from positions_df: ticker -> company
+                ticker_to_company = positions_df.set_index('ticker')['company'].to_dict()
+                
+                # Fill None values in recent_trades['company'] using the lookup
+                mask = recent_trades['company'].isna() | (recent_trades['company'] == '')
+                recent_trades.loc[mask, 'company'] = recent_trades.loc[mask, 'ticker'].map(ticker_to_company)
             
             # Determine action type (BUY/SELL) - check multiple possible column names
             action_col = None

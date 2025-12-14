@@ -264,15 +264,25 @@ def send_magic_link(email: str) -> Optional[Dict]:
 
 def is_admin() -> bool:
     """Check if current user is admin by querying user_profiles table using SQL function"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     user_id = get_user_id()
     if not user_id:
+        logger.debug("is_admin(): No user_id in session state")
         return False
     
     try:
         from streamlit_utils import get_supabase_client
         client = get_supabase_client()
         if not client:
+            logger.warning(f"is_admin(): Failed to get Supabase client for user_id: {user_id}")
             return False
+        
+        # Verify client has user token set
+        user_token = get_user_token()
+        if not user_token:
+            logger.warning(f"is_admin(): No user token available for user_id: {user_id}")
         
         # Call the is_admin SQL function
         # Note: RPC functions returning scalar BOOLEAN return the value directly in result.data
@@ -283,13 +293,19 @@ def is_admin() -> bool:
         if result.data is not None:
             # If result.data is a boolean (scalar), return it directly
             if isinstance(result.data, bool):
+                logger.debug(f"is_admin(): RPC returned boolean {result.data} for user_id: {user_id}")
                 return result.data
             # If result.data is a list (older versions), get first element
             elif isinstance(result.data, list) and len(result.data) > 0:
-                return bool(result.data[0])
+                admin_value = bool(result.data[0])
+                logger.debug(f"is_admin(): RPC returned list, first element: {admin_value} for user_id: {user_id}")
+                return admin_value
+            else:
+                logger.warning(f"is_admin(): Unexpected RPC result format for user_id: {user_id}, result.data: {result.data}")
+        
+        logger.debug(f"is_admin(): RPC returned None for user_id: {user_id}")
         return False
     except Exception as e:
-        import logging
-        logging.error(f"Error checking admin status: {e}")
+        logger.error(f"is_admin(): Error checking admin status for user_id {user_id}: {e}", exc_info=True)
         return False
 

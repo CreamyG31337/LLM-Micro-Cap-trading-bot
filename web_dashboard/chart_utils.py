@@ -715,3 +715,57 @@ def create_individual_holdings_chart(
     )
     
     return fig
+
+
+def create_investor_allocation_chart(investors_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
+    ""\"Create a pie chart showing investor allocation by contribution amount
+    
+    Args:
+        investors_df: DataFrame with columns: contributor_display, net_contribution, ownership_pct
+                     contributor_display is already privacy-masked (Investor 1, Investor 2, etc.)
+        fund_name: Optional fund name for title
+    
+    Returns:
+        Plotly Figure object
+    ""\"
+    if investors_df.empty or 'contributor_display' not in investors_df.columns or 'net_contribution' not in investors_df.columns:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No investor data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+    
+    # Color palette for investors (varied colors)
+    investor_colors = [
+        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#06b6d4', '#84cc16', '#ec4899', '#6366f1', '#14b8a6',
+        '#f97316', '#a855f7', '#22c55e', '#eab308', '#f43f5e'
+    ]
+    
+    # Assign colors cycling through palette
+    colors = [investor_colors[i % len(investor_colors)] for i in range(len(investors_df))]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Pie(
+        labels=investors_df['contributor_display'],
+        values=investors_df['net_contribution'],
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        hovertemplate='<b>%{label}</b><br>Investment: $%{value:,.2f}<br>%{percent}<extra></extra>'
+    ))
+    
+    title = "Investor Allocation"
+    if fund_name:
+        title += f" - {fund_name}"
+    
+    fig.update_layout(
+        title=title,
+        template='plotly_white',
+        height=500,
+        showlegend=True
+    )
+    
+    return fig

@@ -268,14 +268,36 @@ with tab3:
     else:
         # List all funds (from distinct fund names in portfolio_positions)
         try:
-            funds_result = client.supabase.table("portfolio_positions").select("fund").execute()
+            # Use raw SQL to get distinct funds efficiently (avoids 1000-row limit issue)
+            # First try to get from funds table, fallback to portfolio_positions
+            funds_result = client.supabase.table("funds").select("name").execute()
             
             if funds_result.data:
-                # Get distinct funds with statistics
-                fund_names = list(set([row['fund'] for row in funds_result.data if row.get('fund')]))
-                fund_names = sorted(fund_names)
+                fund_names = sorted([row['name'] for row in funds_result.data if row.get('name')])
+            else:
+                # Fallback: get distinct funds from portfolio_positions using RPC or pagination
+                # Query with explicit high limit to ensure we get all funds
+                all_funds = set()
+                offset = 0
+                batch_size = 1000
                 
-                # Get statistics for each fund
+                while True:
+                    batch = client.supabase.table("portfolio_positions").select("fund").range(offset, offset + batch_size - 1).execute()
+                    if not batch.data:
+                        break
+                    for row in batch.data:
+                        if row.get('fund'):
+                            all_funds.add(row['fund'])
+                    if len(batch.data) < batch_size:
+                        break
+                    offset += batch_size
+                    if offset > 50000:  # Safety limit
+                        break
+                
+                fund_names = sorted(list(all_funds))
+            
+            # Get statistics for each fund
+            if fund_names:
                 fund_stats = []
                 for fund_name in fund_names:
                     # Get position count
@@ -296,7 +318,7 @@ with tab3:
                 st.subheader("All Funds")
                 st.dataframe(funds_df, use_container_width=True)
             else:
-                st.info("No funds found in portfolio positions")
+                st.info("No funds found")
             
             # Note: Funds are created automatically when portfolio data is added
             # There's no separate funds table - funds are identified by name in portfolio_positions

@@ -245,6 +245,17 @@ def create_portfolio_value_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
+                # Normalize bench_data dates to midnight for comparison
+                # Handle both timezone-aware and timezone-naive datetimes safely
+                bench_data['Date'] = pd.to_datetime(bench_data['Date'])
+                # Remove timezone if present, then normalize to midnight
+                if bench_data['Date'].dt.tz is not None:
+                    bench_data['Date'] = bench_data['Date'].dt.tz_convert(None)
+                bench_data['Date'] = bench_data['Date'].dt.normalize()
+                
+                # Filter out any NaT values before date range filtering
+                bench_data = bench_data[bench_data['Date'].notna()].copy()
+                
                 # Filter to portfolio date range - compare dates, not timestamps
                 bench_data = bench_data[
                     (bench_data['Date'] >= start_date_normalized) & 
@@ -696,6 +707,17 @@ def create_individual_holdings_chart(
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
             
             if bench_data is not None and not bench_data.empty:
+                # Normalize bench_data dates to midnight for comparison
+                # Handle both timezone-aware and timezone-naive datetimes safely
+                bench_data['Date'] = pd.to_datetime(bench_data['Date'])
+                # Remove timezone if present, then normalize to midnight
+                if bench_data['Date'].dt.tz is not None:
+                    bench_data['Date'] = bench_data['Date'].dt.tz_convert(None)
+                bench_data['Date'] = bench_data['Date'].dt.normalize()
+                
+                # Filter out any NaT values before date range filtering
+                bench_data = bench_data[bench_data['Date'].notna()].copy()
+                
                 # Filter to portfolio date range - compare dates, not timestamps
                 bench_data = bench_data[
                     (bench_data['Date'] >= start_date_normalized) & 

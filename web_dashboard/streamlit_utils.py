@@ -1006,15 +1006,31 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             timestamp = None
             if timestamp_raw:
                 try:
-                    if isinstance(timestamp_raw, str):
-                        for fmt in ['%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                    if isinstance(timestamp_raw, datetime):
+                        timestamp = timestamp_raw
+                    elif isinstance(timestamp_raw, str):
+                        # Use the same ISO parser that the repository uses for database timestamps
+                        try:
+                            from data.repositories.field_mapper import TypeTransformers
+                            timestamp = TypeTransformers.iso_to_datetime(timestamp_raw)
+                        except ImportError:
+                            # Fallback to manual parsing if import fails
+                            from datetime import datetime as dt
                             try:
-                                timestamp = datetime.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
-                                break
-                            except ValueError:
-                                continue
-                except Exception:
-                    pass
+                                timestamp = dt.fromisoformat(timestamp_raw.replace('Z', '+00:00'))
+                            except (ValueError, AttributeError):
+                                # Last resort: try basic formats
+                                for fmt in ['%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                                    try:
+                                        timestamp = dt.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
+                                        break
+                                    except ValueError:
+                                        continue
+                    else:
+                        # Use print for streamlit utilities (logger may not be available)
+                        print(f"⚠️  Unexpected timestamp type '{type(timestamp_raw)}' for contributor {record.get('contributor', 'Unknown')}")
+                except Exception as e:
+                    print(f"⚠️  Could not parse timestamp '{timestamp_raw}' for contributor {record.get('contributor', 'Unknown')}: {e}")
             
             contributions.append({
                 'contributor': record.get('contributor', 'Unknown'),

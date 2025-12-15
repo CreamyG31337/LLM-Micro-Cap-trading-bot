@@ -250,13 +250,26 @@ BEGIN
         user_role
     );
     
-    -- Auto-assign funds for contributors
+    -- Auto-assign funds for contributors (legacy - keep for backward compatibility)
     -- If this user's email matches a contributor in fund_contributions, assign those funds
     INSERT INTO user_funds (user_id, fund_name)
     SELECT DISTINCT NEW.id, fc.fund
     FROM fund_contributions fc
     WHERE normalize_email(fc.email) = normalize_email(NEW.email)
     ON CONFLICT (user_id, fund_name) DO NOTHING;
+    
+    -- Auto-grant contributor access (new system)
+    -- If this user's email matches a contributor's email, grant owner access
+    -- Only if contributors table exists (migration DF_009)
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'contributors') THEN
+        INSERT INTO contributor_access (contributor_id, user_id, access_level)
+        SELECT c.id, NEW.id, 'owner'
+        FROM contributors c
+        WHERE normalize_email(c.email) = normalize_email(NEW.email)
+          AND c.email IS NOT NULL
+          AND c.email != ''
+        ON CONFLICT (contributor_id, user_id) DO NOTHING;
+    END IF;
     
     RETURN NEW;
 END;

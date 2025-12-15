@@ -48,9 +48,10 @@ with st.sidebar:
     st.markdown("---")
 
 # Create tabs for different admin sections
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "⏰ Scheduled Tasks",
     "👥 User Management", 
+    "🔐 Contributor Access",
     "🏦 Fund Management",
     "📊 System Status",
     "📈 Trade Entry",
@@ -287,8 +288,176 @@ with tab2:
             st.warning(f"Could not load unregistered contributors: {e}")
             st.info("You may need to run the `list_unregistered_contributors` SQL function in Supabase.")
 
-# Tab 3: Fund Management
+# Tab 3: Contributor Access Management
 with tab3:
+    st.header("🔐 Contributor Access Management")
+    st.caption("Manage which users can view/manage which contributors' accounts")
+    
+    client = get_supabase_client()
+    if not client:
+        st.error("Failed to connect to database")
+    else:
+        try:
+            # Check if contributors table exists
+            try:
+                contributors_result = client.supabase.table("contributors").select("*").limit(1).execute()
+                has_contributors_table = True
+            except:
+                has_contributors_table = False
+                st.warning("⚠️ Contributors table not found. Run migration DF_009 first.")
+            
+            if has_contributors_table:
+                # Get all contributors
+                all_contributors = client.supabase.table("contributors").select("id, name, email").order("name").execute()
+                contributors_list = all_contributors.data if all_contributors.data else []
+                
+                # Get all users
+                users_result = client.supabase.rpc('list_users_with_funds').execute()
+                users_list = users_result.data if users_result.data else []
+                
+                if contributors_list:
+                    st.subheader("Grant Access")
+                    st.caption("Allow a user to view/manage a contributor's account")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Contributor selector
+                        contributor_options = {f"{c['name']} ({c['email'] or 'No email'})": c['id'] for c in contributors_list}
+                        selected_contributor_display = st.selectbox(
+                            "Contributor",
+                            options=[""] + list(contributor_options.keys()),
+                            key="grant_contributor"
+                        )
+                        selected_contributor_id = contributor_options.get(selected_contributor_display) if selected_contributor_display else None
+                    
+                    with col2:
+                        # User selector
+                        user_options = {u['email']: u['user_id'] for u in users_list if u.get('user_id')}
+                        selected_user_email = st.selectbox(
+                            "User Email",
+                            options=[""] + list(user_options.keys()),
+                            key="grant_user"
+                        )
+                        selected_user_id = user_options.get(selected_user_email) if selected_user_email else None
+                    
+                    with col3:
+                        access_level = st.selectbox(
+                            "Access Level",
+                            options=["viewer", "manager", "owner"],
+                            key="grant_access_level",
+                            help="viewer: Can view data | manager: Can view and manage | owner: Full control"
+                        )
+                    
+                    if st.button("🔐 Grant Access", type="primary"):
+                        if not selected_contributor_id or not selected_user_id:
+                            st.error("Please select both contributor and user")
+                        else:
+                            try:
+                                result = client.supabase.rpc(
+                                    'grant_contributor_access',
+                                    {
+                                        'contributor_email': next((c['email'] for c in contributors_list if c['id'] == selected_contributor_id), ''),
+                                        'user_email': selected_user_email,
+                                        'access_level': access_level
+                                    }
+                                ).execute()
+                                
+                                if result.data:
+                                    result_data = result.data[0] if isinstance(result.data, list) else result.data
+                                    if result_data.get('success'):
+                                        st.success(f"✅ {result_data.get('message')}")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {result_data.get('message')}")
+                            except Exception as e:
+                                st.error(f"Error granting access: {e}")
+                    
+                    st.divider()
+                    
+                    # View current access
+                    st.subheader("Current Access")
+                    st.caption("View all contributor-user access relationships")
+                    
+                    try:
+                        access_result = client.supabase.table("contributor_access").select(
+                            "id, contributor_id, user_id, access_level, granted_at"
+                        ).execute()
+                        
+                        if access_result.data:
+                            # Get contributor and user details
+                            access_list = []
+                            for access in access_result.data:
+                                # Get contributor details
+                                contrib = next((c for c in contributors_list if c['id'] == access['contributor_id']), {})
+                                # Get user details
+                                user = next((u for u in users_list if u.get('user_id') == access['user_id']), {})
+                                
+                                access_list.append({
+                                    "Contributor": contrib.get('name', 'Unknown'),
+                                    "Contributor Email": contrib.get('email', 'No email'),
+                                    "User Email": user.get('email', 'Unknown'),
+                                    "User Name": user.get('full_name', ''),
+                                    "Access Level": access.get('access_level', 'viewer'),
+                                    "Granted": access.get('granted_at', '')[:10] if access.get('granted_at') else ''
+                                })
+                            
+                            access_df = pd.DataFrame(access_list)
+                            st.dataframe(access_df, use_container_width=True)
+                            
+                            # Revoke access section
+                            st.subheader("Revoke Access")
+                            col_rev1, col_rev2 = st.columns(2)
+                            
+                            with col_rev1:
+                                revoke_contributor = st.selectbox(
+                                    "Contributor",
+                                    options=[""] + list(contributor_options.keys()),
+                                    key="revoke_contributor"
+                                )
+                            
+                            with col_rev2:
+                                revoke_user = st.selectbox(
+                                    "User Email",
+                                    options=[""] + list(user_options.keys()),
+                                    key="revoke_user"
+                                )
+                            
+                            if st.button("🚫 Revoke Access", type="secondary"):
+                                if not revoke_contributor or not revoke_user:
+                                    st.error("Please select both contributor and user")
+                                else:
+                                    try:
+                                        revoke_contributor_id = contributor_options.get(revoke_contributor)
+                                        result = client.supabase.rpc(
+                                            'revoke_contributor_access',
+                                            {
+                                                'contributor_email': next((c['email'] for c in contributors_list if c['id'] == revoke_contributor_id), ''),
+                                                'user_email': revoke_user
+                                            }
+                                        ).execute()
+                                        
+                                        if result.data:
+                                            result_data = result.data[0] if isinstance(result.data, list) else result.data
+                                            if result_data.get('success'):
+                                                st.success(f"✅ {result_data.get('message')}")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ {result_data.get('message')}")
+                                    except Exception as e:
+                                        st.error(f"Error revoking access: {e}")
+                        else:
+                            st.info("No access records found. Grant access to link users to contributors.")
+                    except Exception as e:
+                        st.warning(f"Could not load access records: {e}")
+                        st.info("Make sure the contributor_access table exists (run migration DF_009)")
+                else:
+                    st.info("No contributors found. Add contributors in the Contributions tab.")
+        except Exception as e:
+            st.error(f"Error loading contributor access: {e}")
+
+# Tab 4: Fund Management
+with tab4:
     st.header("🏦 Fund Management")
     st.caption("Manage funds in the system")
     
@@ -485,8 +654,8 @@ with tab3:
         except Exception as e:
             st.error(f"Error loading funds: {e}")
 
-# Tab 4: System Status
-with tab4:
+# Tab 5: System Status
+with tab5:
     st.header("📊 System Status")
     st.caption("Monitor system health and status")
     
@@ -546,8 +715,8 @@ with tab4:
         except Exception as e:
             st.warning(f"Could not load job logs: {e}")
 
-# Tab 5: Trade Entry
-with tab5:
+# Tab 6: Trade Entry
+with tab6:
     st.header("📈 Trade Entry")
     st.caption("Add buy or sell trades to a fund")
     
@@ -657,8 +826,8 @@ with tab5:
         except Exception as e:
             st.error(f"Error loading trade entry: {e}")
 
-# Tab 6: Contributions
-with tab6:
+# Tab 7: Contributions
+with tab7:
     st.header("💰 Contribution Management")
     st.caption("Add and manage investor contributions")
     
@@ -786,8 +955,8 @@ with tab6:
         except Exception as e:
             st.error(f"Error loading contributions: {e}")
 
-# Tab 7: Logs
-with tab7:
+# Tab 8: Logs
+with tab8:
     st.header("📋 Application Logs")
     st.caption("View recent application logs with filtering")
     

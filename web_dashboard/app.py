@@ -693,7 +693,18 @@ def api_admin_assign_fund():
         )
         
         if response.status_code == 200:
-            return jsonify({"message": f"Fund '{fund_name}' assigned to {user_email}"})
+            result_data = response.json()
+            if isinstance(result_data, dict):
+                # New JSON response format
+                if result_data.get('success'):
+                    return jsonify(result_data), 200
+                elif result_data.get('already_assigned'):
+                    return jsonify(result_data), 200  # Return 200 but with warning info
+                else:
+                    return jsonify(result_data), 400
+            else:
+                # Legacy boolean response
+                return jsonify({"message": f"Fund '{fund_name}' assigned to {user_email}"}), 200
         else:
             error_msg = response.json().get('message', 'Failed to assign fund') if response.text else 'Failed to assign fund'
             return jsonify({"error": error_msg}), 400

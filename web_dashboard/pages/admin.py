@@ -170,11 +170,21 @@ with tab2:
                                 {'user_email': user_email, 'fund_name': fund_name}
                             ).execute()
                             
-                            if assign_result.data:
-                                st.success(f"✅ Successfully assigned {fund_name} to {user_email}")
-                                st.rerun()
+                            # Handle JSON response - Supabase RPC returns JSON directly or wrapped in array
+                            result_data = assign_result.data
+                            if isinstance(result_data, list) and len(result_data) > 0:
+                                result_data = result_data[0]
+                            
+                            if result_data and isinstance(result_data, dict):
+                                if result_data.get('success'):
+                                    st.success(f"✅ {result_data.get('message', f'Successfully assigned {fund_name} to {user_email}')}")
+                                    st.rerun()
+                                elif result_data.get('already_assigned'):
+                                    st.warning(f"⚠️ {result_data.get('message', f'Fund {fund_name} is already assigned to {user_email}')}")
+                                else:
+                                    st.error(f"❌ {result_data.get('message', 'Failed to assign fund')}")
                             else:
-                                st.error("Failed to assign fund")
+                                st.error("Failed to assign fund - invalid response")
                         except Exception as e:
                             st.error(f"Error assigning fund: {e}")
                     else:

@@ -151,14 +151,16 @@ with tab2:
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    user_email = st.text_input("User Email", placeholder="user@example.com")
+                    # Get user emails from the users dataframe
+                    user_emails = users_df['email'].tolist() if not users_df.empty else []
+                    user_email = st.selectbox("User Email", options=[""] + user_emails, key="assign_user_email")
                 
-                # Get available funds from distinct fund names in portfolio_positions
-                funds_result = client.supabase.table("portfolio_positions").select("fund").execute()
-                available_funds = sorted(list(set([row['fund'] for row in funds_result.data if row.get('fund')]))) if funds_result.data else []
+                # Get available funds from funds table
+                funds_result = client.supabase.table("funds").select("name").order("name").execute()
+                available_funds = [row['name'] for row in funds_result.data] if funds_result.data else []
                 
                 with col2:
-                    fund_name = st.selectbox("Fund Name", options=[""] + available_funds)
+                    fund_name = st.selectbox("Fund Name", options=[""] + available_funds, key="assign_fund_name")
                 
                 if st.button("Assign Fund", type="primary"):
                     if user_email and fund_name:
@@ -183,13 +185,13 @@ with tab2:
                 col3, col4 = st.columns(2)
                 
                 with col3:
-                    remove_email = st.text_input("User Email", key="remove_email", placeholder="user@example.com")
+                    # Get user emails from the users dataframe
+                    remove_user_emails = users_df['email'].tolist() if not users_df.empty else []
+                    remove_email = st.selectbox("User Email", options=[""] + remove_user_emails, key="remove_email")
                 
                 with col4:
-                    # Get funds again for remove dropdown
-                    remove_funds_result = client.supabase.table("portfolio_positions").select("fund").execute()
-                    remove_available_funds = sorted(list(set([row['fund'] for row in remove_funds_result.data if row.get('fund')]))) if remove_funds_result.data else []
-                    remove_fund = st.selectbox("Fund Name", options=[""] + remove_available_funds, key="remove_fund")
+                    # Use the same funds list from funds table
+                    remove_fund = st.selectbox("Fund Name", options=[""] + available_funds, key="remove_fund")
                 
                 if st.button("Remove Assignment", type="secondary"):
                     if remove_email and remove_fund:

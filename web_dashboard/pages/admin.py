@@ -728,12 +728,12 @@ with tab6:
                                 st.error("Name cannot be empty")
                             else:
                                 try:
-                                    # Update all records for this contributor
+                                    # Update all records for this contributor across all funds
                                     update_data = {"contributor": new_name}
                                     if new_email:
                                         update_data["email"] = new_email
                                     
-                                    client.supabase.table("fund_contributions").update(update_data).eq("contributor", edit_contributor).eq("fund", contrib_fund).execute()
+                                    client.supabase.table("fund_contributions").update(update_data).eq("contributor", edit_contributor).execute()
                                     
                                     st.success(f"✅ Updated contributor '{edit_contributor}' to '{new_name}'")
                                     st.rerun()

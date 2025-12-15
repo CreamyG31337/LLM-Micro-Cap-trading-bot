@@ -70,29 +70,17 @@ from auth_utils import (
     is_admin
 )
 
-# Configure custom page names in sidebar using st-pages
-try:
-    from st_pages import Page, show_pages
-    
-    show_pages(
-        [
-            Page("streamlit_app.py", "📈 Dashboard", "📈"),
-            Page("pages/admin.py", "⚙️ Admin", "⚙️"),
-        ]
-    )
-except ImportError:
-    # st-pages not installed, fall back to default behavior
-    pass
-except Exception:
-    # If there's any error with st-pages, fall back to default
-    pass
-
 # Page configuration
 st.set_page_config(
     page_title="Portfolio Performance Dashboard",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
 
 # Custom CSS (dark mode compatible)
@@ -700,12 +688,18 @@ def main():
     # Sidebar - Navigation and Filters
     st.sidebar.title("Navigation")
     
+    # Custom page navigation links (replaces default Streamlit page names)
+    st.sidebar.markdown("### Pages")
+    st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard", icon="📈")
+    
     # Show admin status
     admin_status = is_admin()
     user_email = get_user_email()
     if user_email:
         if admin_status:
             st.sidebar.success("✅ Admin Access")
+            # Admin page link (only visible to admins)
+            st.sidebar.page_link("pages/admin.py", label="⚙️ Admin", icon="⚙️")
         else:
             # Check if user profile exists and show role
             try:
@@ -723,15 +717,7 @@ def main():
             except Exception:
                 pass  # Silently fail if we can't check
     
-    # Admin link (only visible to admins)
-    # Note: Streamlit automatically shows pages in sidebar, but we conditionally show a custom link
-    if admin_status:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### Admin")
-        # Use a button to navigate to admin page (more reliable than page_link)
-        if st.sidebar.button("⚙️ Admin Dashboard", use_container_width=True, type="secondary"):
-            st.switch_page("pages/admin.py")
-        st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
     
     # Debug section (visible to all authenticated users, requires ?debug=admin query param)
     query_params = st.query_params

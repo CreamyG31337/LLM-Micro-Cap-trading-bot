@@ -39,6 +39,14 @@ if not is_admin():
 st.markdown("# ⚙️ Admin Dashboard")
 st.caption(f"Logged in as: {get_user_email()}")
 
+# Custom page navigation in sidebar
+with st.sidebar:
+    st.title("Navigation")
+    st.markdown("### Pages")
+    st.page_link("streamlit_app.py", label="📈 Dashboard", icon="📈")
+    st.page_link("pages/admin.py", label="⚙️ Admin", icon="⚙️")
+    st.markdown("---")
+
 # Create tabs for different admin sections
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⏰ Scheduled Tasks",

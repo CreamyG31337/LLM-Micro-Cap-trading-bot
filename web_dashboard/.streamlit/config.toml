@@ -12,6 +12,8 @@ serverAddress = "localhost"
 [client]
 # Show full error details for debugging (safe on LAN)
 showErrorDetails = true
+# Hide default Streamlit page navigation (we use custom st.page_link instead)
+showSidebarNavigation = false
 
 [theme]
 # Force dark mode theme (more reliable than OS detection on Windows)

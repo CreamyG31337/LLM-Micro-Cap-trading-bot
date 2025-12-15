@@ -1129,8 +1129,34 @@ def main():
                 investors_df = get_investor_allocations(fund_filter, user_email, admin_status)
                 
                 if not investors_df.empty:
-                    fig = create_investor_allocation_chart(investors_df, fund_filter)
-                    st.plotly_chart(fig, use_container_width=True, key="investor_allocation_chart")
+                    # Create two columns: chart on left, table on right
+                    col1, col2 = st.columns([1.2, 0.8])
+                    
+                    with col1:
+                        fig = create_investor_allocation_chart(investors_df, fund_filter)
+                        st.plotly_chart(fig, use_container_width=True, key="investor_allocation_chart")
+                    
+                    with col2:
+                        st.markdown("**Investment Amounts**")
+                        # Format the table with dollar amounts and percentages
+                        display_df = investors_df.copy()
+                        display_df = display_df.sort_values('net_contribution', ascending=False)
+                        display_df['Investment'] = display_df['net_contribution'].apply(lambda x: f"${x:,.2f}")
+                        display_df['Percentage'] = display_df['ownership_pct'].apply(lambda x: f"{x:.2f}%")
+                        table_df = display_df[['contributor_display', 'Investment', 'Percentage']].copy()
+                        table_df.columns = ['Investor', 'Investment', 'Ownership %']
+                        
+                        # Display as a styled table
+                        st.dataframe(
+                            table_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows
+                        )
+                        
+                        # Show total at bottom
+                        total = investors_df['net_contribution'].sum()
+                        st.markdown(f"**Total:** ${total:,.2f}")
                 else:
                     st.info("No investor data available for this fund")
             

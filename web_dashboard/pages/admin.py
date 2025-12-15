@@ -881,15 +881,48 @@ with tab7:
                         st.error("Amount must be greater than 0")
                     else:
                         try:
+                            # Get or create contributor (if email provided)
+                            contributor_id = None
+                            if contrib_email:
+                                try:
+                                    contrib_result = client.supabase.table("contributors").select("id").eq("email", contrib_email).maybe_single().execute()
+                                    if contrib_result.data:
+                                        contributor_id = contrib_result.data['id']
+                                    else:
+                                        # Create new contributor
+                                        new_contrib = client.supabase.table("contributors").insert({
+                                            "name": contrib_name,
+                                            "email": contrib_email
+                                        }).execute()
+                                        if new_contrib.data:
+                                            contributor_id = new_contrib.data['id']
+                                except:
+                                    pass  # Contributors table might not exist yet
+                            
+                            # Get fund_id
+                            fund_id = None
+                            try:
+                                fund_result = client.supabase.table("funds").select("id").eq("name", contrib_fund).maybe_single().execute()
+                                if fund_result.data:
+                                    fund_id = fund_result.data['id']
+                            except:
+                                pass  # Funds table might not exist yet
+                            
                             contrib_data = {
-                                "fund": contrib_fund,
-                                "contributor": contrib_name,
+                                "fund": contrib_fund,  # Keep for backward compatibility
+                                "contributor": contrib_name,  # Keep for backward compatibility
                                 "email": contrib_email if contrib_email else None,
                                 "amount": float(contrib_amount),
                                 "contribution_type": contrib_type,
                                 "timestamp": datetime.combine(contrib_date, datetime.min.time()).isoformat(),
                                 "notes": contrib_notes if contrib_notes else None
                             }
+                            
+                            # Add new FK columns if available
+                            if fund_id:
+                                contrib_data["fund_id"] = fund_id
+                            if contributor_id:
+                                contrib_data["contributor_id"] = contributor_id
                             
                             client.supabase.table("fund_contributions").insert(contrib_data).execute()
                             

@@ -278,6 +278,11 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         return pd.DataFrame()
     
     try:
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+        start_time = time.time()
+        
         # Query portfolio_positions to get daily snapshots with actual market values
         # Include currency for proper USD→CAD conversion
         
@@ -285,6 +290,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         all_rows = []
         batch_size = 1000
         offset = 0
+        query_start = time.time()
         
         while True:
             # Build query for this batch
@@ -318,12 +324,13 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
                 print("Warning: Reached 50,000 row safety limit in pagination")
                 break
         
+        query_time = time.time() - query_start
+        logger.info(f"⏱️ calculate_portfolio_value_over_time - DB queries: {query_time:.2f}s ({len(all_rows)} rows)")
+        
         if not all_rows:
             return pd.DataFrame()
         
         df = pd.DataFrame(all_rows)
-        import logging
-        logger = logging.getLogger(__name__)
         logger.debug(f"Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
         
         # Normalize to date-only (midnight) for consistent charting with benchmarks
@@ -346,6 +353,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         if has_usd:
             # Get unique dates for exchange rate lookup
             unique_dates = df['date'].dt.date.unique()
+            rate_start = time.time()
             
             # Build exchange rate cache for all dates
             rate_cache = {}
@@ -361,8 +369,12 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
                 else:
                     rate_cache[date_val] = float(rate)
             
+            rate_lookup_time = time.time() - rate_start
+            logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate lookup: {rate_lookup_time:.2f}s ({len(unique_dates)} dates)")
+            
             # If we have missing rates, try to fetch them
             if missing_dates:
+                fetch_start = time.time()
                 print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
                 for date_val in missing_dates:
                     from datetime import datetime, timezone
@@ -377,8 +389,11 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
                             f"Missing exchange rate for {date_val} and could not fetch from API. "
                             f"Please add exchange rate data for this date."
                         )
+                fetch_time = time.time() - fetch_start
+                logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")
             
             # Apply currency conversion to USD positions
+            convert_start = time.time()
             def convert_to_cad(row, column):
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
                 value = float(row.get(column, 0) or 0)
@@ -394,6 +409,8 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             df['total_value_cad'] = df.apply(lambda r: convert_to_cad(r, 'total_value'), axis=1)
             df['cost_basis_cad'] = df.apply(lambda r: convert_to_cad(r, 'cost_basis'), axis=1)
             df['pnl_cad'] = df.apply(lambda r: convert_to_cad(r, 'pnl'), axis=1)
+            convert_time = time.time() - convert_start
+            logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s")
             
             value_col = 'total_value_cad'
             cost_col = 'cost_basis_cad'
@@ -405,6 +422,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             pnl_col = 'pnl'
         
         # Aggregate by date to get daily portfolio totals
+        agg_start = time.time()
         # Sum all positions' values for each day
         daily_totals = df.groupby(df['date'].dt.date).agg({
             value_col: 'sum',
@@ -438,7 +456,13 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         
         # Filter to trading days only (remove weekends for performance)
         # Weekend shading is still shown in charts via _add_weekend_shading()
+        filter_start = time.time()
         daily_totals = _filter_trading_days(daily_totals, 'date')
+        filter_time = time.time() - filter_start
+        logger.info(f"⏱️ calculate_portfolio_value_over_time - Weekend filtering: {filter_time:.2f}s")
+        
+        total_time = time.time() - start_time
+        logger.info(f"⏱️ calculate_portfolio_value_over_time - TOTAL: {total_time:.2f}s")
         
         return daily_totals
         

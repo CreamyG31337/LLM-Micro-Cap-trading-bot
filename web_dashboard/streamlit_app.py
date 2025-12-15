@@ -37,6 +37,23 @@ def _init_scheduler():
 # Start scheduler at module load
 _init_scheduler()
 
+# Initialize logging with in-memory handler
+@st.cache_resource
+def _init_logging():
+    """Initialize logging with in-memory handler once per Streamlit worker."""
+    try:
+        from log_handler import setup_logging
+        import logging
+        setup_logging(level=logging.INFO)
+        logging.getLogger(__name__).info("✅ Logging initialized with in-memory handler")
+        return True
+    except Exception as e:
+        print(f"⚠️ Logging initialization failed: {e}")
+        return False
+
+# Setup logging at module load
+_init_logging()
+
 
 from streamlit_utils import (
     get_available_funds,
@@ -797,18 +814,40 @@ def main():
     
     # Main content
     try:
-        # Load data
+        # Load data with performance timing
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+        
         with st.spinner("Loading portfolio data..."):
+            start_time = time.time()
+            
+            # Time each data loading operation
+            t0 = time.time()
             positions_df = get_current_positions(fund_filter)
+            logger.info(f"⏱️ get_current_positions: {time.time() - t0:.2f}s")
+            
+            t0 = time.time()
             trades_df = get_trade_log(limit=1000, fund=fund_filter)
+            logger.info(f"⏱️ get_trade_log (1000 rows): {time.time() - t0:.2f}s")
+            
+            t0 = time.time()
             cash_balances = get_cash_balances(fund_filter)
+            logger.info(f"⏱️ get_cash_balances: {time.time() - t0:.2f}s")
+            
+            t0 = time.time()
             portfolio_value_df = calculate_portfolio_value_over_time(fund_filter)
+            logger.info(f"⏱️ calculate_portfolio_value_over_time: {time.time() - t0:.2f}s")
+            
+            logger.info(f"⏱️ Total data loading: {time.time() - start_time:.2f}s")
         
         # Metrics row
         st.markdown("### Performance Metrics")
         
         # Check investor count to determine layout (hide if only 1 investor)
+        t0 = time.time()
         num_investors = get_investor_count(fund_filter)
+        logger.info(f"⏱️ get_investor_count: {time.time() - t0:.2f}s")
         show_investors = num_investors > 1
         
         # Calculate total portfolio value from current positions (with currency conversion)
@@ -819,12 +858,14 @@ def main():
         
         # Get latest USD/CAD exchange rate from database
         if not positions_df.empty:
+            t0 = time.time()
             client = get_supabase_client()
             if client:
                 try:
                     rate_result = client.get_latest_exchange_rate('USD', 'CAD')
                     if rate_result:
                         usd_to_cad_rate = float(rate_result)
+                    logger.info(f"⏱️ get_latest_exchange_rate: {time.time() - t0:.2f}s")
                 except Exception as e:
                     print(f"Error getting exchange rate: {e}")
                     usd_to_cad_rate = 1.42  # Approximate fallback
@@ -856,7 +897,9 @@ def main():
         total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
         
         # Get user's investment metrics (if they have contributions)
+        t0 = time.time()
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
+        logger.info(f"⏱️ get_user_investment_metrics: {time.time() - t0:.2f}s")
         
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0
@@ -1007,33 +1050,41 @@ def main():
         if not portfolio_value_df.empty:
             st.markdown("#### Portfolio Performance (Baseline 100)")
             
-            # Add solid lines toggle for mobile users
-            use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
+            # Chart controls
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Benchmark selection
+                available_benchmarks = {
+                    'sp500': 'S&P 500',
+                    'qqq': 'Nasdaq-100 (QQQ)',
+                    'russell2000': 'Russell 2000',
+                    'vti': 'Total Market (VTI)'
+                }
+                selected_benchmarks = st.multiselect(
+                    "📈 Benchmarks to Compare",
+                    options=list(available_benchmarks.keys()),
+                    default=['sp500'],  # Default to S&P 500 only for performance
+                    format_func=lambda x: available_benchmarks[x],
+                    help="Select benchmarks to compare against your portfolio performance"
+                )
+            
+            with col2:
+                # Add solid lines toggle for mobile users
+                use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
             
             # Use normalized performance index (baseline 100) like the console app
+            t0 = time.time()
             fig = create_portfolio_value_chart(
                 portfolio_value_df, 
                 fund_filter,
                 show_normalized=True,  # Show percentage change from baseline
-                show_benchmarks=['sp500'],  # Default to S&P 500 only for performance
+                show_benchmarks=selected_benchmarks if selected_benchmarks else None,  # Use user selection
                 show_weekend_shading=True,
                 use_solid_lines=use_solid
             )
+            logger.info(f"⏱️ create_portfolio_value_chart: {time.time() - t0:.2f}s")
             st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
-            
-            # Debug info for diagnosing data issues (admin only)
-            if is_admin():
-                with st.expander("🔍 Debug: Portfolio Data Info"):
-                    st.write("**System Status:** v1.1 (Limit Fix Applied) ✅")
-                    st.write(f"**Days processed:** {len(portfolio_value_df)}")
-                    
-                    if 'date' in portfolio_value_df.columns:
-                        min_date = portfolio_value_df['date'].min()
-                        max_date = portfolio_value_df['date'].max()
-                        st.write(f"**Date range:** {min_date.date()} to {max_date.date()}")
-                    
-                    st.write("**Last 5 days data:**")
-                    st.dataframe(portfolio_value_df.tail(5))
             
             # Individual holdings performance chart (lazy loading)
             st.markdown("---")
@@ -1064,10 +1115,12 @@ def main():
                 
                 if not holdings_df.empty:
                     from chart_utils import create_individual_holdings_chart
+                    # Use same benchmark selection as main chart (or default to S&P 500)
+                    holdings_benchmarks = selected_benchmarks if selected_benchmarks else ['sp500']
                     holdings_fig = create_individual_holdings_chart(
                         holdings_df,
                         fund_name=fund_filter,
-                        show_benchmarks=['sp500'],  # Default to S&P 500 only for performance
+                        show_benchmarks=holdings_benchmarks,
                         show_weekend_shading=True,
                         use_solid_lines=use_solid  # Use same setting as main chart
                     )  

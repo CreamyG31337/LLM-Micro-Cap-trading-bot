@@ -48,13 +48,14 @@ with st.sidebar:
     st.markdown("---")
 
 # Create tabs for different admin sections
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "⏰ Scheduled Tasks",
     "👥 User Management", 
     "🏦 Fund Management",
     "📊 System Status",
     "📈 Trade Entry",
-    "💰 Contributions"
+    "💰 Contributions",
+    "📋 Logs"
 ])
 
 # Tab 1: Scheduled Tasks
@@ -785,3 +786,100 @@ with tab6:
         except Exception as e:
             st.error(f"Error loading contributions: {e}")
 
+# Tab 7: Logs
+with tab7:
+    st.header("📋 Application Logs")
+    st.caption("View recent application logs with filtering")
+    
+    try:
+        from log_handler import get_log_handler
+        
+        log_handler = get_log_handler()
+        
+        # Controls row
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 2, 1])
+        
+        with col1:
+            auto_refresh = st.checkbox("🔄 Auto-refresh", value=False, help="Refresh logs every 5 seconds")
+        
+        with col2:
+            level_filter = st.selectbox(
+                "Level",
+                options=["All", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                index=2  # Default to "INFO"
+            )
+        
+        with col3:
+            num_logs = st.selectbox(
+                "Show",
+                options=[50, 100, 200, 500],
+                index=1  # Default to 100
+            )
+        
+        with col4:
+            search_text = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed")
+        
+        with col5:
+            if st.button("🗑️ Clear Logs"):
+                log_handler.clear()
+                st.success("Logs cleared")
+                st.rerun()
+        
+        # Get logs with filters
+        level = None if level_filter == "All" else level_filter
+        logs = log_handler.get_logs(
+            n=num_logs,
+            level=level,
+            search=search_text if search_text else None
+        )
+        
+        # Display logs in a code block for better formatting
+        if logs:
+            st.caption(f"Showing last {len(logs)} of {len(log_handler.log_records)} total log entries")
+            
+            # Create formatted log output
+            log_lines = []
+            for log in logs:
+                timestamp = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                level_str = log['level'].ljust(8)
+                module = log['module'][:30].ljust(30)  # Limit module name width
+                message = log['message']
+                
+                # Add emoji indicators for levels
+                emoji = {
+                    'DEBUG': '🔍',
+                    'INFO': 'ℹ️',
+                    'WARNING': '⚠️',
+                    'ERROR': '❌',
+                    'CRITICAL': '🔥'
+                }.get(log['level'], '•')
+                
+                log_lines.append(f"{emoji} {timestamp} | {level_str} | {module} | {message}")
+            
+            # Display in code block
+            log_text = "\n".join(log_lines)
+            st.code(log_text, language=None)
+            
+            # Download button
+            if st.download_button(
+                label="⬇️ Download Logs",
+                data=log_text,
+                file_name=f"app_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain"
+            ):
+                st.success("Logs downloaded!")
+        else:
+            st.info("No logs found matching the filters")
+        
+        # Auto-refresh
+        if auto_refresh:
+            import time
+            time.sleep(5)
+            st.rerun()
+            
+    except ImportError:
+        st.error("❌ Log handler not available")
+        st.info("The logging module may not be initialized. Check streamlit_app.py configuration.")
+    except Exception as e:
+        st.error(f"Error loading logs: {e}")
+```

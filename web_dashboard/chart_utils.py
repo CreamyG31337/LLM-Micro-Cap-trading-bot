@@ -340,6 +340,11 @@ def create_portfolio_value_chart(
     
     # Add benchmarks if requested (only for normalized view)
     if show_normalized and show_benchmarks and 'performance_index' in df.columns:
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+        benchmark_start = time.time()
+        
         start_date = df['date'].min()
         end_date = df['date'].max()
         
@@ -352,9 +357,12 @@ def create_portfolio_value_chart(
         for bench_key in show_benchmarks:
             if bench_key not in BENCHMARK_CONFIG:
                 continue
-                
+            
+            bench_t0 = time.time()
             config = BENCHMARK_CONFIG[bench_key]
             bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
+            bench_fetch_time = time.time() - bench_t0
+            logger.info(f"⏱️ create_portfolio_value_chart - Fetch benchmark {bench_key}: {bench_fetch_time:.2f}s")
             
             if bench_data is not None and not bench_data.empty:
                 # Normalize bench_data dates to midnight for comparison
@@ -393,6 +401,9 @@ def create_portfolio_value_chart(
                         opacity=0.8,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
+        
+        benchmark_total_time = time.time() - benchmark_start
+        logger.info(f"⏱️ create_portfolio_value_chart - All benchmarks: {benchmark_total_time:.2f}s")
     
     # Add weekend shading
     if show_weekend_shading and len(df) > 1:

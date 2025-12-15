@@ -31,8 +31,7 @@ def _init_scheduler():
         from scheduler import start_scheduler
         started = start_scheduler()
         if started:
-            import logging
-            logging.getLogger(__name__).info("✅ Background scheduler started in Streamlit process")
+            pass  # Scheduler started successfully
         _scheduler_initialized = True
         return True
     except Exception as e:
@@ -41,30 +40,6 @@ def _init_scheduler():
         _scheduler_initialized = True  # Mark as initialized to prevent retry loops
         return False
 
-# Initialize logging with in-memory handler (lazy initialization)
-_logging_initialized = False
-
-def _init_logging():
-    """Initialize logging with in-memory handler once per Streamlit worker."""
-    global _logging_initialized
-    if _logging_initialized:
-        return True
-    
-    try:
-        from log_handler import setup_logging
-        import logging
-        setup_logging(level=logging.INFO)
-        logging.getLogger(__name__).info("✅ Logging initialized with in-memory handler")
-        _logging_initialized = True
-        return True
-    except Exception as e:
-        # Fail gracefully - logging is optional
-        print(f"⚠️ Logging initialization failed (non-critical): {e}")
-        _logging_initialized = True  # Mark as initialized to prevent retry loops
-        return False
-
-# Don't initialize logging at module load - it can block
-# Will be initialized lazily when needed (after authentication)
 
 
 from streamlit_utils import (
@@ -583,9 +558,6 @@ def main():
     
     # Try to restore session from cookie if not already authenticated
     if not is_authenticated():
-        import logging
-        logger = logging.getLogger(__name__)
-        
         try:
             # st.context.cookies is available in Streamlit 1.37+
             # It's a read-only dict of cookies sent in the initial HTTP request
@@ -606,31 +578,19 @@ def main():
                     
                     if exp > int(time.time()):
                         # Token valid, restore session (skip redirect since we're restoring from cookie)
-                        logger.info(f"Restoring session from cookie for user_id: {user_id_from_token}, email: {user_email_from_token}")
                         set_user_session(auth_token, skip_cookie_redirect=True)
                         
                         # Verify user_id was set correctly
                         restored_user_id = get_user_id()
-                        if restored_user_id == user_id_from_token:
-                            logger.debug(f"Session restored successfully, user_id verified: {restored_user_id}")
-                        else:
-                            logger.warning(f"Session restoration mismatch: expected {user_id_from_token}, got {restored_user_id}")
+                        if restored_user_id != user_id_from_token:
+                            # Session restoration mismatch - silently continue
+                            pass
                         # No rerun needed - we're already in the right state
-                    else:
-                        logger.debug(f"Cookie token expired (exp: {exp}, now: {int(time.time())})")
                     # If expired, we could clear the cookie but since st.context.cookies is read-only,
                     # we'd need JavaScript for that. For now, just don't restore expired tokens.
-                else:
-                    logger.debug("Cookie token has invalid format (not enough parts)")
-            else:
-                logger.debug("No auth_token cookie found")
-        except AttributeError:
-            # st.context.cookies not available (older Streamlit version)
-            logger.warning("Session persistence requires Streamlit 1.37+. Please update.")
-            st.warning("⚠️ Session persistence requires Streamlit 1.37+. Please update.")
-        except Exception as e:
-            # Other errors - log but don't block
-            logger.warning(f"Cookie restoration error: {e}", exc_info=True)
+        except (AttributeError, Exception):
+            # Cookie restoration failed - silently continue
+            pass
     
     # Check for authentication errors in query params
     query_params = st.query_params
@@ -708,11 +668,6 @@ def main():
         _init_scheduler()
     except Exception:
         pass  # Scheduler is optional
-    
-    try:
-        _init_logging()
-    except Exception:
-        pass  # Logging is optional
     
     # Header with user info and logout
     col1, col2 = st.columns([3, 1])
@@ -838,40 +793,18 @@ def main():
     
     # Main content
     try:
-        # Load data with performance timing
-        import time
-        import logging
-        logger = logging.getLogger(__name__)
-        
+        # Load data
         with st.spinner("Loading portfolio data..."):
-            start_time = time.time()
-            
-            # Time each data loading operation
-            t0 = time.time()
             positions_df = get_current_positions(fund_filter)
-            logger.info(f"⏱️ get_current_positions: {time.time() - t0:.2f}s")
-            
-            t0 = time.time()
             trades_df = get_trade_log(limit=1000, fund=fund_filter)
-            logger.info(f"⏱️ get_trade_log (1000 rows): {time.time() - t0:.2f}s")
-            
-            t0 = time.time()
             cash_balances = get_cash_balances(fund_filter)
-            logger.info(f"⏱️ get_cash_balances: {time.time() - t0:.2f}s")
-            
-            t0 = time.time()
             portfolio_value_df = calculate_portfolio_value_over_time(fund_filter)
-            logger.info(f"⏱️ calculate_portfolio_value_over_time: {time.time() - t0:.2f}s")
-            
-            logger.info(f"⏱️ Total data loading: {time.time() - start_time:.2f}s")
         
         # Metrics row
         st.markdown("### Performance Metrics")
         
         # Check investor count to determine layout (hide if only 1 investor)
-        t0 = time.time()
         num_investors = get_investor_count(fund_filter)
-        logger.info(f"⏱️ get_investor_count: {time.time() - t0:.2f}s")
         show_investors = num_investors > 1
         
         # Calculate total portfolio value from current positions (with currency conversion)
@@ -882,14 +815,12 @@ def main():
         
         # Get latest USD/CAD exchange rate from database
         if not positions_df.empty:
-            t0 = time.time()
             client = get_supabase_client()
             if client:
                 try:
                     rate_result = client.get_latest_exchange_rate('USD', 'CAD')
                     if rate_result:
                         usd_to_cad_rate = float(rate_result)
-                    logger.info(f"⏱️ get_latest_exchange_rate: {time.time() - t0:.2f}s")
                 except Exception as e:
                     print(f"Error getting exchange rate: {e}")
                     usd_to_cad_rate = 1.42  # Approximate fallback
@@ -921,9 +852,7 @@ def main():
         total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
         
         # Get user's investment metrics (if they have contributions)
-        t0 = time.time()
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
-        logger.info(f"⏱️ get_user_investment_metrics: {time.time() - t0:.2f}s")
         
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0
@@ -1098,7 +1027,6 @@ def main():
                 use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
             
             # Use normalized performance index (baseline 100) like the console app
-            t0 = time.time()
             fig = create_portfolio_value_chart(
                 portfolio_value_df, 
                 fund_filter,
@@ -1107,7 +1035,6 @@ def main():
                 show_weekend_shading=True,
                 use_solid_lines=use_solid
             )
-            logger.info(f"⏱️ create_portfolio_value_chart: {time.time() - t0:.2f}s")
             st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
             
             # Individual holdings performance chart (lazy loading)

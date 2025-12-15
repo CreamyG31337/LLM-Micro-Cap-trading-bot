@@ -436,8 +436,9 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         # Create Performance Index (baseline 100 + performance %)
         daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
         
-        # Create continuous timeline with forward-fill for weekends
-        daily_totals = _create_continuous_timeline(daily_totals)
+        # Filter to trading days only (remove weekends for performance)
+        # Weekend shading is still shown in charts via _add_weekend_shading()
+        daily_totals = _filter_trading_days(daily_totals, 'date')
         
         return daily_totals
         
@@ -446,47 +447,9 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _create_continuous_timeline(df: pd.DataFrame) -> pd.DataFrame:
-    """Create a continuous timeline with forward-fill for weekends/holidays.
-    
-    This ensures the chart shows a continuous line without gaps, with
-    weekend values carried forward from the last trading day.
-    """
-    if df.empty or 'date' not in df.columns:
-        return df
-    
-    # Get date range
-    start_date = df['date'].min()
-    end_date = df['date'].max()
-    
-    # Create complete date range (every day)
-    all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-    
-    # Create DataFrame with all dates
-    continuous_df = pd.DataFrame({'date': all_dates})
-    continuous_df['date_only'] = continuous_df['date'].dt.date
-    
-    # Prepare original data for merge
-    df_for_merge = df.copy()
-    df_for_merge['date_only'] = df_for_merge['date'].dt.date
-    
-    # Merge with all dates
-    merged = continuous_df.merge(
-        df_for_merge.drop('date', axis=1),
-        on='date_only',
-        how='left'
-    )
-    
-    # Forward-fill numeric columns (weekend values = last trading day)
-    numeric_cols = ['value', 'cost_basis', 'pnl', 'performance_pct', 'performance_index']
-    for col in numeric_cols:
-        if col in merged.columns:
-            merged[col] = merged[col].ffill()
-    
-    # Drop helper column
-    merged = merged.drop('date_only', axis=1)
-    
-    return merged
+# Import _filter_trading_days from chart_utils to avoid duplication
+from chart_utils import _filter_trading_days
+
 
 
 def calculate_performance_metrics(fund: Optional[str] = None) -> Dict[str, Any]:

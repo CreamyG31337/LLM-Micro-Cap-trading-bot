@@ -620,3 +620,131 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"❌ Error upserting exchange rates: {e}")
             return False
+    
+    # =====================================================
+    # BENCHMARK DATA CACHING METHODS
+    # =====================================================
+    
+    def get_benchmark_data(self, ticker: str, start_date: datetime, end_date: datetime) -> Optional[List[Dict]]:
+        """Get benchmark data from cache.
+        
+        Args:
+            ticker: Benchmark ticker symbol (e.g., '^GSPC', 'QQQ')
+            start_date: Start date for data range
+            end_date: End date for data range
+            
+        Returns:
+            List of dictionaries with keys: date, open, high, low, close, volume
+            Returns None if no data found in cache
+        """
+        try:
+            # Ensure dates are timezone-aware
+            if start_date.tzinfo is None:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            
+            query = self.supabase.table("benchmark_data").select(
+                "date, open, high, low, close, volume"
+            ).eq("ticker", ticker).gte(
+                "date", start_date.date().isoformat()
+            ).lte(
+                "date", end_date.date().isoformat()
+            ).order("date")
+            
+            result = query.execute()
+            
+            if result.data and len(result.data) > 0:
+                logger.debug(f"Cache hit: {len(result.data)} rows for {ticker}")
+                return result.data
+            else:
+                logger.debug(f"Cache miss: No data for {ticker} in date range")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error getting benchmark data from cache: {e}")
+            return None
+    
+    def cache_benchmark_data(self, ticker: str, data: List[Dict]) -> bool:
+        """Insert benchmark data into cache (upsert on conflict).
+        
+        Args:
+            ticker: Benchmark ticker symbol (e.g., '^GSPC', 'QQQ')
+            data: List of dictionaries with keys: Date, Open, High, Low, Close, Volume
+                 (follows yfinance naming conventions)
+                 
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not data:
+                return True
+            
+            # Convert yfinance format to our database format
+            formatted_data = []
+            for row in data:
+                # Skip rows with missing Close price (required field)
+                close_val = row.get('Close')
+                if close_val is None or pd.isna(close_val) or close_val == 0:
+                    logger.warning(f"Skipping row with invalid Close price for {ticker}: {close_val}")
+                    continue
+                
+                # Handle both datetime and date objects
+                date_val = row.get('Date')
+                if date_val is None:
+                    logger.warning(f"Skipping row with missing Date for {ticker}")
+                    continue
+                    
+                if isinstance(date_val, datetime):
+                    date_str = date_val.date().isoformat()
+                elif hasattr(date_val, 'isoformat'):
+                    date_str = date_val.isoformat()
+                else:
+                    date_str = str(date_val)
+                
+                try:
+                    formatted_row = {
+                        'ticker': ticker,
+                        'date': date_str,
+                        'close': float(close_val),
+                    }
+                    
+                    # Add optional fields if available (with error handling)
+                    if 'Open' in row and row['Open'] is not None:
+                        try:
+                            formatted_row['open'] = float(row['Open'])
+                        except (ValueError, TypeError):
+                            pass  # Skip invalid values
+                    if 'High' in row and row['High'] is not None:
+                        try:
+                            formatted_row['high'] = float(row['High'])
+                        except (ValueError, TypeError):
+                            pass
+                    if 'Low' in row and row['Low'] is not None:
+                        try:
+                            formatted_row['low'] = float(row['Low'])
+                        except (ValueError, TypeError):
+                            pass
+                    if 'Volume' in row and row['Volume'] is not None:
+                        try:
+                            formatted_row['volume'] = int(row['Volume'])
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    formatted_data.append(formatted_row)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error formatting row for {ticker}: {e}")
+                    continue
+            
+            # Upsert into database
+            result = self.supabase.table("benchmark_data").upsert(
+                formatted_data,
+                on_conflict="ticker,date"
+            ).execute()
+            
+            logger.info(f"✅ Cached {len(formatted_data)} rows of benchmark data for {ticker}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error caching benchmark data: {e}")
+            return False

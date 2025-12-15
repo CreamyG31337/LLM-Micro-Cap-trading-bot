@@ -54,6 +54,35 @@ def _adjust_to_market_close(df: pd.DataFrame, date_column: str = 'date') -> pd.D
     return df
 
 
+def _filter_trading_days(df: pd.DataFrame, date_column: str = 'date') -> pd.DataFrame:
+    """Remove weekend days from dataset to reduce chart data points.
+    
+    Markets are closed on weekends, so these data points are just forward-fills
+    from Friday with no new information. Filtering them:
+    - Reduces data points by ~28-30%
+    - Improves chart rendering performance
+    - No loss of information (weekend values are Friday duplicates)
+    
+    Note: Weekend shading is still shown via _add_weekend_shading()
+    
+    Args:
+        df: DataFrame with date column
+        date_column: Name of the date column to filter
+        
+    Returns:
+        DataFrame with only trading days (Monday-Friday)
+    """
+    if df.empty or date_column not in df.columns:
+        return df
+    
+    df = df.copy()
+    df[date_column] = pd.to_datetime(df[date_column])
+    
+    # Keep only Monday-Friday (weekday() returns 0-6 where 5=Saturday, 6=Sunday)
+    trading_days_mask = df[date_column].dt.weekday < 5
+    return df[trading_days_mask]
+
+
 def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime) -> None:
     """Add light gray shading for weekends (Saturday 00:00 to Monday 00:00).
     
@@ -110,8 +139,66 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
 
 
 def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
-    """Fetch benchmark data from Yahoo Finance and normalize to 100 baseline."""
+    """Fetch benchmark data with database caching.
+    
+    Cache-first approach:
+    1. Check database cache
+    2. If cache hit and recent, use cached data
+    3. If cache miss or stale, fetch from Yahoo Finance and cache
+    """
+    client = None  # Initialize to avoid NameError
     try:
+        # Try to get from cache first
+        try:
+            from streamlit_utils import get_supabase_client
+            client = get_supabase_client()
+            
+            if client:
+                cached_data = client.get_benchmark_data(ticker, start_date, end_date)
+                
+                if cached_data and len(cached_data) > 0:
+                    # Convert to DataFrame
+                    data = pd.DataFrame(cached_data)
+                    data['Date'] = pd.to_datetime(data['date'])
+                    data = data.rename(columns={'close': 'Close'})
+                    
+                    # Check if data is recent enough (has data within 1 day of end_date)
+                    max_cached_date = data['Date'].max()
+                    # Normalize timezones for comparison
+                    if max_cached_date.tzinfo is None and end_date.tzinfo is not None:
+                        max_cached_date = max_cached_date.replace(tzinfo=end_date.tzinfo)
+                    elif max_cached_date.tzinfo is not None and end_date.tzinfo is None:
+                        end_date = end_date.replace(tzinfo=max_cached_date.tzinfo)
+                    
+                    days_diff = (end_date - max_cached_date).days
+                    
+                    if days_diff <= 1:
+                        # Cache hit with recent data - use it
+                        print(f"📦 Using cached benchmark data for {ticker}")
+                        
+                        # Normalize to 100 baseline
+                        baseline_data = data[data['Date'].dt.date <= start_date.date()]
+                        if not baseline_data.empty:
+                            baseline_close = baseline_data['Close'].iloc[-1]
+                        else:
+                            baseline_close = data['Close'].iloc[0]
+                        
+                        # Validate baseline_close to avoid division by zero
+                        if pd.isna(baseline_close) or baseline_close == 0:
+                            print(f"⚠️ Invalid baseline close ({baseline_close}) for {ticker}, fetching fresh data")
+                        else:
+                            data['normalized'] = (data['Close'] / baseline_close) * 100
+                            # Filter to trading days only for consistency and performance
+                            data = _filter_trading_days(data, 'Date')
+                            return data[['Date', 'Close', 'normalized']]
+                    else:
+                        print(f"⚠️ Cached data for {ticker} is stale ({days_diff} days old), fetching fresh data")
+        except Exception as cache_error:
+            print(f"Cache lookup failed (will fetch from API): {cache_error}")
+        
+        # Cache miss or stale - fetch from Yahoo Finance
+        print(f"🌐 Fetching benchmark data from Yahoo Finance: {ticker}")
+        
         # Add buffer days to ensure we get data
         buffer_start = start_date - timedelta(days=5)
         buffer_end = end_date + timedelta(days=2)
@@ -130,6 +217,22 @@ def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime)
         # Find the baseline close price at or near portfolio start date
         data['Date'] = pd.to_datetime(data['Date'])
         
+        # Store in cache for future use
+        try:
+            if client:
+                # Validate required columns exist before accessing
+                required_cols = ['Date', 'Close']
+                optional_cols = ['Open', 'High', 'Low', 'Volume']
+                available_cols = [col for col in required_cols + optional_cols if col in data.columns]
+                
+                if 'Date' in available_cols and 'Close' in available_cols:
+                    cache_rows = data[available_cols].to_dict('records')
+                    client.cache_benchmark_data(ticker, cache_rows)
+                else:
+                    print(f"⚠️ Missing required columns for caching {ticker}")
+        except Exception as cache_store_error:
+            print(f"Failed to cache benchmark data: {cache_store_error}")
+        
         # Get close on start date (or nearest previous trading day)
         baseline_data = data[data['Date'].dt.date <= start_date.date()]
         if not baseline_data.empty:
@@ -137,14 +240,23 @@ def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime)
         else:
             baseline_close = data['Close'].iloc[0]
         
+        # Validate baseline_close to avoid division by zero
+        if pd.isna(baseline_close) or baseline_close == 0:
+            print(f"❌ Error: Invalid baseline close ({baseline_close}) for {ticker}")
+            return None
+        
         # Normalize to 100 baseline
         data['normalized'] = (data['Close'] / baseline_close) * 100
+        
+        # Filter to trading days only for consistency and performance
+        data = _filter_trading_days(data, 'Date')
         
         return data[['Date', 'Close', 'normalized']]
         
     except Exception as e:
         print(f"Error fetching benchmark {ticker}: {e}")
         return None
+
 
 
 def create_portfolio_value_chart(

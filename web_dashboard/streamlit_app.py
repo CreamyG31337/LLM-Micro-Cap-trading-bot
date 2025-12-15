@@ -1015,7 +1015,7 @@ def main():
                 portfolio_value_df, 
                 fund_filter,
                 show_normalized=True,  # Show percentage change from baseline
-                show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],  # All benchmarks
+                show_benchmarks=['sp500'],  # Default to S&P 500 only for performance
                 show_weekend_shading=True,
                 use_solid_lines=use_solid
             )
@@ -1067,7 +1067,7 @@ def main():
                     holdings_fig = create_individual_holdings_chart(
                         holdings_df,
                         fund_name=fund_filter,
-                        show_benchmarks=['sp500', 'qqq', 'russell2000', 'vti'],
+                        show_benchmarks=['sp500'],  # Default to S&P 500 only for performance
                         show_weekend_shading=True,
                         use_solid_lines=use_solid  # Use same setting as main chart
                     )  

@@ -432,22 +432,20 @@ class PositionCalculator:
                 contribution_type = contribution.get('Type', contribution.get('type', 'contribution'))
                 timestamp_raw = contribution.get('Timestamp', contribution.get('timestamp', ''))
                 
-                # Parse timestamp
+                # Parse timestamp - use proper ISO format parser for database timestamps
                 timestamp = None
                 if timestamp_raw:
                     try:
                         if isinstance(timestamp_raw, datetime):
                             timestamp = timestamp_raw
                         elif isinstance(timestamp_raw, str):
-                            # Try common formats
-                            for fmt in ['%Y-%m-%d %H:%M:%S %Z', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%S']:
-                                try:
-                                    timestamp = datetime.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
-                                    break
-                                except ValueError:
-                                    continue
+                            # Use the same ISO parser that the repository uses for database timestamps
+                            from data.repositories.field_mapper import TypeTransformers
+                            timestamp = TypeTransformers.iso_to_datetime(timestamp_raw)
+                        else:
+                            logger.debug(f"Unexpected timestamp type '{type(timestamp_raw)}' for contributor {contributor}")
                     except Exception as e:
-                        logger.debug(f"Could not parse timestamp '{timestamp_raw}': {e}")
+                        logger.warning(f"Could not parse timestamp '{timestamp_raw}' for contributor {contributor}: {e}")
                 
                 parsed_contributions.append({
                     'contributor': contributor,

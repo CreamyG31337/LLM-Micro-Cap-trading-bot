@@ -1732,13 +1732,18 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 if result.data:
                     # Convert Supabase format to CSV format for compatibility
                     for record in result.data:
+                        # Ensure timestamp is included (should always exist per schema, but handle gracefully)
+                        timestamp = record.get('timestamp')
+                        if not timestamp:
+                            logger.warning(f"Missing timestamp for contribution from {record.get('contributor', 'Unknown')} - record ID: {record.get('id', 'unknown')}")
+                        
                         fund_contributions.append({
                             'Contributor': record['contributor'],
                             'Amount': record['amount'],
                             'Type': record['contribution_type'],
                             'Email': record.get('email', ''),
                             'Notes': record.get('notes', ''),
-                            'Timestamp': record['timestamp']
+                            'Timestamp': timestamp
                         })
                     logger.debug(f"Loaded {len(fund_contributions)} contributions from Supabase")
             else:

@@ -919,8 +919,8 @@ def main():
                 with col3:
                     st.metric(
                         "Your Return",
-                        f"{user_investment['gain_loss_pct']:+.2f}%",
                         f"${user_investment['gain_loss']:,.2f}",
+                        f"{user_investment['gain_loss_pct']:+.2f}%",
                         help="Total return on your investment (Current Value - Net Contribution)."
                     )
                 with col4:

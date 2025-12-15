@@ -17,25 +17,29 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Initialize scheduler once per Streamlit worker process
-# This ensures the scheduler runs in the same process as Streamlit
-@st.cache_resource
+# Initialize scheduler once per Streamlit worker process (lazy initialization)
+# Don't initialize at module load - only when needed after authentication
+_scheduler_initialized = False
+
 def _init_scheduler():
     """Initialize background scheduler once per Streamlit worker."""
+    global _scheduler_initialized
+    if _scheduler_initialized:
+        return True
+    
     try:
         from scheduler import start_scheduler
         started = start_scheduler()
         if started:
             import logging
             logging.getLogger(__name__).info("✅ Background scheduler started in Streamlit process")
+        _scheduler_initialized = True
         return True
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"⚠️ Scheduler initialization failed: {e}")
+        # Fail gracefully - scheduler is optional
+        print(f"⚠️ Scheduler initialization failed (non-critical): {e}")
+        _scheduler_initialized = True  # Mark as initialized to prevent retry loops
         return False
-
-# Start scheduler at module load
-_init_scheduler()
 
 # Initialize logging with in-memory handler (lazy initialization)
 _logging_initialized = False
@@ -59,11 +63,8 @@ def _init_logging():
         _logging_initialized = True  # Mark as initialized to prevent retry loops
         return False
 
-# Try to initialize logging, but don't block if it fails
-try:
-    _init_logging()
-except Exception as e:
-    print(f"⚠️ Logging setup skipped: {e}")
+# Don't initialize logging at module load - it can block
+# Will be initialized lazily when needed (after authentication)
 
 
 from streamlit_utils import (
@@ -700,6 +701,18 @@ def main():
     if not is_authenticated():
         show_login_page()
         return
+    
+    # Initialize scheduler only after authentication (lazy initialization)
+    # This prevents blocking the login page
+    try:
+        _init_scheduler()
+    except Exception:
+        pass  # Scheduler is optional
+    
+    try:
+        _init_logging()
+    except Exception:
+        pass  # Logging is optional
     
     # Header with user info and logout
     col1, col2 = st.columns([3, 1])

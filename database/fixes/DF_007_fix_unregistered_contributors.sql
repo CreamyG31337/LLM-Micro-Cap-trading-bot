@@ -38,7 +38,7 @@ BEGIN
               WHERE normalize_email(au.email) = normalize_email(fc.email)
           )
       )
-    GROUP BY fc.contributor, fc.email
+    GROUP BY fc.contributor, COALESCE(fc.email, '')
     HAVING SUM(CASE 
         WHEN fc.contribution_type = 'CONTRIBUTION' THEN fc.amount 
         WHEN fc.contribution_type = 'WITHDRAWAL' THEN -fc.amount 

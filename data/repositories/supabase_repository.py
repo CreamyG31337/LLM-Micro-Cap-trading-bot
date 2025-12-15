@@ -84,16 +84,21 @@ class SupabaseRepository(BaseRepository):
         if not self.supabase_url or not self.supabase_key:
             raise RepositoryError("Supabase URL and key must be provided")
         
-        # Initialize Supabase client
+            # Initialize Supabase client
         try:
             from supabase import create_client, Client
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
-            # Determine key type for logging
+            # Determine key type for logging - check actual key in use, not just the flag
             service_role_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-            if use_service_role or (not key and service_role_key and self.supabase_key == service_role_key):
+            publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+            # Check if the actual key being used matches the service role key
+            if service_role_key and self.supabase_key == service_role_key:
                 key_type = "service_role"
-            else:
+            elif publishable_key and self.supabase_key == publishable_key:
                 key_type = "publishable"
+            else:
+                # Fallback: if explicit key was provided, we can't determine type
+                key_type = "custom"
             logger.info(f"Supabase client initialized successfully (using {key_type} key)")
         except ImportError:
             raise RepositoryError("Supabase client not available. Install with: pip install supabase")

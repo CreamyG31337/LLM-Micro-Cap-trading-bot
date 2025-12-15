@@ -37,22 +37,33 @@ def _init_scheduler():
 # Start scheduler at module load
 _init_scheduler()
 
-# Initialize logging with in-memory handler
-@st.cache_resource
+# Initialize logging with in-memory handler (lazy initialization)
+_logging_initialized = False
+
 def _init_logging():
     """Initialize logging with in-memory handler once per Streamlit worker."""
+    global _logging_initialized
+    if _logging_initialized:
+        return True
+    
     try:
         from log_handler import setup_logging
         import logging
         setup_logging(level=logging.INFO)
         logging.getLogger(__name__).info("✅ Logging initialized with in-memory handler")
+        _logging_initialized = True
         return True
     except Exception as e:
-        print(f"⚠️ Logging initialization failed: {e}")
+        # Fail gracefully - logging is optional
+        print(f"⚠️ Logging initialization failed (non-critical): {e}")
+        _logging_initialized = True  # Mark as initialized to prevent retry loops
         return False
 
-# Setup logging at module load
-_init_logging()
+# Try to initialize logging, but don't block if it fails
+try:
+    _init_logging()
+except Exception as e:
+    print(f"⚠️ Logging setup skipped: {e}")
 
 
 from streamlit_utils import (

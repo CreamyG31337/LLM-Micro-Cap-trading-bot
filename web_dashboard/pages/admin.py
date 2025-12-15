@@ -40,11 +40,13 @@ st.markdown("# ⚙️ Admin Dashboard")
 st.caption(f"Logged in as: {get_user_email()}")
 
 # Create tabs for different admin sections
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⏰ Scheduled Tasks",
     "👥 User Management", 
     "🏦 Fund Management",
-    "📊 System Status"
+    "📊 System Status",
+    "📈 Trade Entry",
+    "💰 Contributions"
 ])
 
 # Tab 1: Scheduled Tasks
@@ -266,35 +268,10 @@ with tab3:
     if not client:
         st.error("Failed to connect to database")
     else:
-        # List all funds (from distinct fund names in portfolio_positions)
+        # Load all funds from the funds table
         try:
-            # Use raw SQL to get distinct funds efficiently (avoids 1000-row limit issue)
-            # First try to get from funds table, fallback to portfolio_positions
-            funds_result = client.supabase.table("funds").select("name").execute()
-            
-            if funds_result.data:
-                fund_names = sorted([row['name'] for row in funds_result.data if row.get('name')])
-            else:
-                # Fallback: get distinct funds from portfolio_positions using RPC or pagination
-                # Query with explicit high limit to ensure we get all funds
-                all_funds = set()
-                offset = 0
-                batch_size = 1000
-                
-                while True:
-                    batch = client.supabase.table("portfolio_positions").select("fund").range(offset, offset + batch_size - 1).execute()
-                    if not batch.data:
-                        break
-                    for row in batch.data:
-                        if row.get('fund'):
-                            all_funds.add(row['fund'])
-                    if len(batch.data) < batch_size:
-                        break
-                    offset += batch_size
-                    if offset > 50000:  # Safety limit
-                        break
-                
-                fund_names = sorted(list(all_funds))
+            funds_result = client.supabase.table("funds").select("*").order("name").execute()
+            fund_names = [row['name'] for row in funds_result.data] if funds_result.data else []
             
             # Get statistics for each fund
             if fund_names:
@@ -304,25 +281,179 @@ with tab3:
                     pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
                     position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
                     
-                    # Get latest date
-                    latest_date_result = client.supabase.table("portfolio_positions").select("date").eq("fund", fund_name).order("date", desc=True).limit(1).execute()
-                    latest_date = latest_date_result.data[0]['date'] if latest_date_result.data else "N/A"
+                    # Get trade count
+                    trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
+                    trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
+                    
+                    # Get fund details
+                    fund_info = next((f for f in funds_result.data if f['name'] == fund_name), {})
                     
                     fund_stats.append({
                         "Fund Name": fund_name,
+                        "Type": fund_info.get('fund_type', 'N/A'),
+                        "Currency": fund_info.get('currency', 'N/A'),
                         "Positions": position_count,
-                        "Latest Data": latest_date
+                        "Trades": trade_count_val
                     })
                 
                 funds_df = pd.DataFrame(fund_stats)
                 st.subheader("All Funds")
                 st.dataframe(funds_df, use_container_width=True)
             else:
-                st.info("No funds found")
+                st.info("No funds found in database")
             
-            # Note: Funds are created automatically when portfolio data is added
-            # There's no separate funds table - funds are identified by name in portfolio_positions
-            st.info("💡 Funds are created automatically when portfolio data is added. No manual creation needed.")
+            st.divider()
+            
+            # ===== ADD NEW FUND =====
+            st.subheader("➕ Add New Fund")
+            with st.expander("Create a new fund", expanded=False):
+                col_add1, col_add2 = st.columns(2)
+                with col_add1:
+                    new_fund_name = st.text_input("Fund Name", placeholder="e.g., TFSA, RRSP", key="new_fund_name")
+                    new_fund_type = st.selectbox("Fund Type", options=["investment", "retirement", "tfsa", "test"], key="new_fund_type")
+                with col_add2:
+                    new_fund_description = st.text_input("Description", placeholder="Description of the fund", key="new_fund_desc")
+                    new_fund_currency = st.selectbox("Currency", options=["CAD", "USD"], key="new_fund_currency")
+                
+                if st.button("➕ Create Fund", type="primary"):
+                    if not new_fund_name:
+                        st.error("Please enter a fund name")
+                    elif new_fund_name in fund_names:
+                        st.error(f"Fund '{new_fund_name}' already exists")
+                    else:
+                        try:
+                            # Insert into funds table
+                            client.supabase.table("funds").insert({
+                                "name": new_fund_name,
+                                "description": new_fund_description,
+                                "currency": new_fund_currency,
+                                "fund_type": new_fund_type
+                            }).execute()
+                            
+                            # Initialize cash balances for the new fund
+                            client.supabase.table("cash_balances").upsert([
+                                {"fund": new_fund_name, "currency": "CAD", "amount": 0},
+                                {"fund": new_fund_name, "currency": "USD", "amount": 0}
+                            ]).execute()
+                            
+                            st.success(f"✅ Fund '{new_fund_name}' created successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error creating fund: {e}")
+            
+            st.divider()
+            
+            # ===== RENAME FUND =====
+            st.subheader("✏️ Rename Fund")
+            with st.expander("Rename an existing fund", expanded=False):
+                col_ren1, col_ren2 = st.columns(2)
+                with col_ren1:
+                    rename_fund = st.selectbox("Select Fund to Rename", options=[""] + fund_names, key="rename_fund_select")
+                with col_ren2:
+                    new_name = st.text_input("New Fund Name", key="rename_new_name")
+                
+                if st.button("✏️ Rename Fund", type="primary"):
+                    if not rename_fund:
+                        st.error("Please select a fund to rename")
+                    elif not new_name:
+                        st.error("Please enter a new name")
+                    elif new_name in fund_names:
+                        st.error(f"Fund '{new_name}' already exists")
+                    else:
+                        try:
+                            # Update funds table - ON UPDATE CASCADE will update all related tables
+                            client.supabase.table("funds").update({"name": new_name}).eq("name", rename_fund).execute()
+                            st.success(f"✅ Fund renamed from '{rename_fund}' to '{new_name}'")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error renaming fund: {e}")
+            
+            st.divider()
+            
+            # ===== WIPE FUND DATA =====
+            st.subheader("🧹 Wipe Fund Data")
+            st.warning("⚠️ This clears all positions, trades, and metrics but keeps the fund and contribution records.")
+            with st.expander("Wipe data for a fund", expanded=False):
+                col_wipe1, col_wipe2 = st.columns(2)
+                with col_wipe1:
+                    wipe_fund = st.selectbox("Select Fund to Wipe", options=[""] + fund_names, key="wipe_fund_select")
+                with col_wipe2:
+                    confirm_wipe_name = st.text_input("Type fund name to confirm", key="confirm_wipe_name", 
+                                                       placeholder="Type the fund name exactly")
+                
+                if st.button("🧹 Wipe Fund Data", type="secondary"):
+                    if not wipe_fund:
+                        st.error("Please select a fund")
+                    elif confirm_wipe_name != wipe_fund:
+                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
+                    else:
+                        try:
+                            # Clear portfolio_positions
+                            client.supabase.table("portfolio_positions").delete().eq("fund", wipe_fund).execute()
+                            # Clear trade_log
+                            client.supabase.table("trade_log").delete().eq("fund", wipe_fund).execute()
+                            # Clear performance_metrics
+                            client.supabase.table("performance_metrics").delete().eq("fund", wipe_fund).execute()
+                            # Reset cash_balances to 0
+                            client.supabase.table("cash_balances").update({"amount": 0}).eq("fund", wipe_fund).execute()
+                            
+                            st.success(f"✅ All data for '{wipe_fund}' has been wiped. Fund and contributions preserved.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error wiping fund data: {e}")
+            
+            st.divider()
+            
+            # ===== DELETE FUND =====
+            st.subheader("🗑️ Delete Fund")
+            st.error("⚠️ DANGER: This permanently deletes the fund and ALL its data including contributions!")
+            with st.expander("Permanently delete a fund", expanded=False):
+                col_del1, col_del2 = st.columns(2)
+                with col_del1:
+                    delete_fund = st.selectbox("Select Fund to Delete", options=[""] + fund_names, key="delete_fund_select")
+                with col_del2:
+                    confirm_delete_name = st.text_input("Type fund name to confirm", key="confirm_delete_name",
+                                                         placeholder="Type the fund name exactly")
+                
+                # Show what will be deleted
+                if delete_fund:
+                    pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", delete_fund).execute()
+                    trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", delete_fund).execute()
+                    contrib_count = client.supabase.table("fund_contributions").select("id", count="exact").eq("fund", delete_fund).execute()
+                    
+                    pos_val = pos_count.count if hasattr(pos_count, 'count') else 0
+                    trade_val = trade_count.count if hasattr(trade_count, 'count') else 0
+                    contrib_val = contrib_count.count if hasattr(contrib_count, 'count') else 0
+                    
+                    st.info(f"📊 Records to delete: {pos_val} positions, {trade_val} trades, {contrib_val} contributions")
+                
+                if st.button("🗑️ Delete Fund Permanently", type="secondary"):
+                    if not delete_fund:
+                        st.error("Please select a fund")
+                    elif confirm_delete_name != delete_fund:
+                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
+                    else:
+                        try:
+                            # First clear all dependent data (FK constraints use ON DELETE RESTRICT)
+                            client.supabase.table("portfolio_positions").delete().eq("fund", delete_fund).execute()
+                            client.supabase.table("trade_log").delete().eq("fund", delete_fund).execute()
+                            client.supabase.table("performance_metrics").delete().eq("fund", delete_fund).execute()
+                            client.supabase.table("cash_balances").delete().eq("fund", delete_fund).execute()
+                            client.supabase.table("fund_contributions").delete().eq("fund", delete_fund).execute()
+                            # Try to delete fund_thesis if it exists
+                            try:
+                                client.supabase.table("fund_thesis").delete().eq("fund", delete_fund).execute()
+                            except:
+                                pass  # Table may not exist
+                            
+                            # Now delete the fund itself
+                            client.supabase.table("funds").delete().eq("name", delete_fund).execute()
+                            
+                            st.success(f"✅ Fund '{delete_fund}' and all its data has been permanently deleted.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting fund: {e}")
+                            
         except Exception as e:
             st.error(f"Error loading funds: {e}")
 
@@ -386,4 +517,244 @@ with tab4:
             st.info("Scheduler module not available")
         except Exception as e:
             st.warning(f"Could not load job logs: {e}")
+
+# Tab 5: Trade Entry
+with tab5:
+    st.header("📈 Trade Entry")
+    st.caption("Add buy or sell trades to a fund")
+    
+    client = get_supabase_client()
+    if not client:
+        st.error("Failed to connect to database")
+    else:
+        try:
+            # Get available funds
+            funds_result = client.supabase.table("funds").select("name").order("name").execute()
+            fund_names = [row['name'] for row in funds_result.data] if funds_result.data else []
+            
+            if not fund_names:
+                st.warning("No funds available. Create a fund first in Fund Management.")
+            else:
+                # Trade form
+                st.subheader("Enter Trade")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    trade_fund = st.selectbox("Fund", options=fund_names, key="trade_fund")
+                    trade_action = st.selectbox("Action", options=["BUY", "SELL"], key="trade_action")
+                    trade_ticker = st.text_input("Ticker Symbol", placeholder="e.g., AAPL, MSFT", key="trade_ticker").upper()
+                
+                with col2:
+                    trade_shares = st.number_input("Shares", min_value=0.000001, value=1.0, step=1.0, format="%.6f", key="trade_shares")
+                    trade_price = st.number_input("Price ($)", min_value=0.01, value=100.0, step=0.01, format="%.2f", key="trade_price")
+                    trade_currency = st.selectbox("Currency", options=["USD", "CAD"], key="trade_currency")
+                
+                # Optional fields
+                with st.expander("Additional Options", expanded=False):
+                    trade_reason = st.text_input("Reason/Notes", placeholder="e.g., Limit order filled", key="trade_reason")
+                    trade_date = st.date_input("Trade Date", value=datetime.now(), key="trade_date")
+                    trade_time = st.time_input("Trade Time", value=datetime.now().time(), key="trade_time")
+                
+                # Ticker validation
+                if trade_ticker:
+                    ticker_check = client.supabase.table("securities").select("ticker, company_name, currency").eq("ticker", trade_ticker).execute()
+                    if ticker_check.data:
+                        st.success(f"✅ {ticker_check.data[0].get('company_name', trade_ticker)} ({ticker_check.data[0].get('currency', 'USD')})")
+                    else:
+                        st.warning(f"⚠️ Ticker '{trade_ticker}' not in securities table. Will be added.")
+                
+                # Calculate totals
+                total_value = trade_shares * trade_price
+                st.info(f"💵 Total Value: ${total_value:,.2f} {trade_currency}")
+                
+                if st.button("📈 Submit Trade", type="primary"):
+                    if not trade_ticker:
+                        st.error("Please enter a ticker symbol")
+                    elif trade_shares <= 0:
+                        st.error("Shares must be greater than 0")
+                    elif trade_price <= 0:
+                        st.error("Price must be greater than 0")
+                    else:
+                        try:
+                            # Combine date and time
+                            trade_datetime = datetime.combine(trade_date, trade_time)
+                            
+                            # Ensure ticker exists in securities table
+                            if not ticker_check.data:
+                                client.supabase.table("securities").insert({
+                                    "ticker": trade_ticker,
+                                    "company_name": trade_ticker,
+                                    "currency": trade_currency
+                                }).execute()
+                            
+                            # Calculate cost basis and P&L
+                            cost_basis = trade_shares * trade_price
+                            pnl = 0  # P&L is calculated differently for sells
+                            
+                            # Insert trade
+                            trade_data = {
+                                "fund": trade_fund,
+                                "ticker": trade_ticker,
+                                "action": trade_action,
+                                "shares": float(trade_shares),
+                                "price": float(trade_price),
+                                "cost_basis": float(cost_basis),
+                                "pnl": float(pnl),
+                                "reason": trade_reason or f"{trade_action} order",
+                                "currency": trade_currency,
+                                "date": trade_datetime.isoformat()
+                            }
+                            
+                            client.supabase.table("trade_log").insert(trade_data).execute()
+                            
+                            st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                            st.info("💡 Note: Run portfolio rebuild to update positions based on trade log.")
+                            
+                        except Exception as e:
+                            st.error(f"Error recording trade: {e}")
+                
+                # Recent trades
+                st.divider()
+                st.subheader("Recent Trades")
+                recent_trades = client.supabase.table("trade_log").select("*").order("date", desc=True).limit(10).execute()
+                if recent_trades.data:
+                    trades_df = pd.DataFrame(recent_trades.data)
+                    display_cols = ["date", "fund", "ticker", "action", "shares", "price", "currency"]
+                    available_cols = [c for c in display_cols if c in trades_df.columns]
+                    st.dataframe(trades_df[available_cols], use_container_width=True)
+                else:
+                    st.info("No recent trades")
+                    
+        except Exception as e:
+            st.error(f"Error loading trade entry: {e}")
+
+# Tab 6: Contributions
+with tab6:
+    st.header("💰 Contribution Management")
+    st.caption("Add and manage investor contributions")
+    
+    client = get_supabase_client()
+    if not client:
+        st.error("Failed to connect to database")
+    else:
+        try:
+            # Get available funds
+            funds_result = client.supabase.table("funds").select("name").order("name").execute()
+            fund_names = [row['name'] for row in funds_result.data] if funds_result.data else []
+            
+            if not fund_names:
+                st.warning("No funds available. Create a fund first in Fund Management.")
+            else:
+                # Add Contribution Section
+                st.subheader("➕ Add Contribution/Withdrawal")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    contrib_fund = st.selectbox("Fund", options=fund_names, key="contrib_fund")
+                    contrib_type = st.selectbox("Type", options=["CONTRIBUTION", "WITHDRAWAL"], key="contrib_type")
+                    contrib_amount = st.number_input("Amount ($)", min_value=0.01, value=1000.0, step=100.0, format="%.2f", key="contrib_amount")
+                
+                with col2:
+                    # Get existing contributors for autocomplete
+                    existing_contributors = client.supabase.table("fund_contributions").select("contributor, email").eq("fund", contrib_fund).execute()
+                    contributor_names = sorted(list(set([r['contributor'] for r in existing_contributors.data if r.get('contributor')]))) if existing_contributors.data else []
+                    
+                    contrib_new_or_existing = st.radio("Contributor", ["Existing", "New"], horizontal=True, key="contrib_new_existing")
+                    
+                    if contrib_new_or_existing == "Existing" and contributor_names:
+                        contrib_name = st.selectbox("Select Contributor", options=contributor_names, key="contrib_name_existing")
+                        # Get email for selected contributor
+                        existing_email = next((r['email'] for r in existing_contributors.data if r['contributor'] == contrib_name and r.get('email')), "")
+                        contrib_email = st.text_input("Email", value=existing_email, key="contrib_email_existing")
+                    else:
+                        contrib_name = st.text_input("Contributor Name", placeholder="e.g., John Smith", key="contrib_name_new")
+                        contrib_email = st.text_input("Email", placeholder="email@example.com", key="contrib_email_new")
+                
+                # Optional fields
+                with st.expander("Additional Options", expanded=False):
+                    contrib_notes = st.text_area("Notes", placeholder="Optional notes", key="contrib_notes")
+                    contrib_date = st.date_input("Date", value=datetime.now(), key="contrib_date")
+                
+                if st.button("💰 Record Contribution", type="primary"):
+                    if not contrib_name:
+                        st.error("Please enter a contributor name")
+                    elif contrib_amount <= 0:
+                        st.error("Amount must be greater than 0")
+                    else:
+                        try:
+                            contrib_data = {
+                                "fund": contrib_fund,
+                                "contributor": contrib_name,
+                                "email": contrib_email if contrib_email else None,
+                                "amount": float(contrib_amount),
+                                "contribution_type": contrib_type,
+                                "timestamp": datetime.combine(contrib_date, datetime.min.time()).isoformat(),
+                                "notes": contrib_notes if contrib_notes else None
+                            }
+                            
+                            client.supabase.table("fund_contributions").insert(contrib_data).execute()
+                            
+                            action_word = "Contribution" if contrib_type == "CONTRIBUTION" else "Withdrawal"
+                            st.success(f"✅ {action_word} recorded: ${contrib_amount:,.2f} for {contrib_name}")
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Error recording contribution: {e}")
+                
+                st.divider()
+                
+                # Edit Contributor Section
+                st.subheader("✏️ Edit Contributor Info")
+                st.caption("Update name or email for an existing contributor across all their records")
+                
+                if contributor_names:
+                    col3, col4 = st.columns(2)
+                    
+                    with col3:
+                        edit_contributor = st.selectbox("Select Contributor to Edit", options=[""] + contributor_names, key="edit_contributor")
+                    
+                    if edit_contributor:
+                        # Get current email
+                        current_email = next((r['email'] for r in existing_contributors.data if r['contributor'] == edit_contributor and r.get('email')), "")
+                        
+                        with col4:
+                            new_name = st.text_input("New Name", value=edit_contributor, key="edit_new_name")
+                            new_email = st.text_input("New Email", value=current_email or "", key="edit_new_email")
+                        
+                        if st.button("✏️ Update Contributor", type="secondary"):
+                            if not new_name:
+                                st.error("Name cannot be empty")
+                            else:
+                                try:
+                                    # Update all records for this contributor
+                                    update_data = {"contributor": new_name}
+                                    if new_email:
+                                        update_data["email"] = new_email
+                                    
+                                    client.supabase.table("fund_contributions").update(update_data).eq("contributor", edit_contributor).eq("fund", contrib_fund).execute()
+                                    
+                                    st.success(f"✅ Updated contributor '{edit_contributor}' to '{new_name}'")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error updating contributor: {e}")
+                else:
+                    st.info("No contributors found for this fund")
+                
+                st.divider()
+                
+                # View Contributors
+                st.subheader("👥 Fund Contributors")
+                view_fund = st.selectbox("View Fund", options=fund_names, key="view_contrib_fund")
+                
+                contributors_result = client.supabase.table("contributor_ownership").select("*").eq("fund", view_fund).execute()
+                if contributors_result.data:
+                    contrib_df = pd.DataFrame(contributors_result.data)
+                    st.dataframe(contrib_df, use_container_width=True)
+                else:
+                    st.info(f"No contributors found for {view_fund}")
+                    
+        except Exception as e:
+            st.error(f"Error loading contributions: {e}")
 

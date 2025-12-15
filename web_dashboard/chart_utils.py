@@ -257,9 +257,12 @@ def create_portfolio_value_chart(
                 bench_data = bench_data[bench_data['Date'].notna()].copy()
                 
                 # Filter to portfolio date range - compare dates, not timestamps
+                # Convert Timestamp to datetime64 for type compatibility with Series
+                start_dt64 = start_date_normalized.to_datetime64()
+                end_dt64 = end_date_normalized.to_datetime64()
                 bench_data = bench_data[
-                    (bench_data['Date'] >= start_date_normalized) & 
-                    (bench_data['Date'] < end_date_normalized)
+                    (bench_data['Date'] >= start_dt64) & 
+                    (bench_data['Date'] < end_dt64)
                 ]
                 
                 if not bench_data.empty:
@@ -719,9 +722,12 @@ def create_individual_holdings_chart(
                 bench_data = bench_data[bench_data['Date'].notna()].copy()
                 
                 # Filter to portfolio date range - compare dates, not timestamps
+                # Convert Timestamp to datetime64 for type compatibility with Series
+                start_dt64 = start_date_normalized.to_datetime64()
+                end_dt64 = end_date_normalized.to_datetime64()
                 bench_data = bench_data[
-                    (bench_data['Date'] >= start_date_normalized) & 
-                    (bench_data['Date'] < end_date_normalized)
+                    (bench_data['Date'] >= start_dt64) & 
+                    (bench_data['Date'] < end_dt64)
                 ]
                 
                 if not bench_data.empty:

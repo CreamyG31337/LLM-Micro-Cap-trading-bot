@@ -34,16 +34,40 @@ class SupabaseRepository(BaseRepository):
     uses Supabase as the backend storage.
     """
     
-    def __init__(self, fund_name: str, url: str = None, key: str = None, **kwargs):
+    def __init__(self, fund_name: str, url: str = None, key: str = None, use_service_role: bool = False, **kwargs):
         """Initialize Supabase repository.
         
         Args:
             fund_name: Fund name (REQUIRED - no default)
             url: Supabase project URL
-            key: Supabase anon key
+            key: Supabase key (anon key or service role key)
+            use_service_role: If True, use service role key to bypass RLS (for console apps)
         """
         self.supabase_url = url or os.getenv("SUPABASE_URL")
-        self.supabase_key = key or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        
+        # Determine which key to use
+        if key:
+            # Explicit key provided
+            self.supabase_key = key
+        elif use_service_role:
+            # Use service role key to bypass RLS (for console apps)
+            self.supabase_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if not self.supabase_key:
+                logger.warning(
+                    "use_service_role=True but SUPABASE_SECRET_KEY/SERVICE_ROLE_KEY not found. "
+                    "Falling back to publishable key. RLS may block queries."
+                )
+                self.supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        else:
+            # Auto-detect: prefer service role key if available (for console apps to bypass RLS)
+            # Fall back to publishable key if service role key not available (for web dashboard)
+            service_role_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if service_role_key:
+                self.supabase_key = service_role_key
+                logger.debug("Using service role key (bypasses RLS)")
+            else:
+                self.supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                logger.debug("Using publishable key (respects RLS)")
         
         if not fund_name:
             raise RepositoryError(
@@ -64,7 +88,13 @@ class SupabaseRepository(BaseRepository):
         try:
             from supabase import create_client, Client
             self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
-            logger.info("Supabase client initialized successfully")
+            # Determine key type for logging
+            service_role_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if use_service_role or (not key and service_role_key and self.supabase_key == service_role_key):
+                key_type = "service_role"
+            else:
+                key_type = "publishable"
+            logger.info(f"Supabase client initialized successfully (using {key_type} key)")
         except ImportError:
             raise RepositoryError("Supabase client not available. Install with: pip install supabase")
         except Exception as e:

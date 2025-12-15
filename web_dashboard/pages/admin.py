@@ -236,23 +236,30 @@ with tab2:
                     with st.container():
                         col_info, col_action = st.columns([3, 1])
                         
+                        # Handle missing email
+                        email_display = row['email'] if row.get('email') else "No Email"
+                        has_email = bool(row.get('email'))
+                        
                         with col_info:
                             funds_str = ", ".join(row['funds']) if row['funds'] else "None"
-                            st.markdown(f"**{row['contributor']}** ({row['email']})")
+                            st.markdown(f"**{row['contributor']}** ({email_display})")
                             st.caption(f"Funds: {funds_str} | Contribution: ${row['total_contribution']:,.2f}")
                         
                         with col_action:
-                            if st.button("📧 Send Invite", key=f"invite_{idx}"):
-                                try:
-                                    from auth_utils import send_magic_link
-                                    result = send_magic_link(row['email'])
-                                    if result and result.get('success'):
-                                        st.success(f"Invite sent to {row['email']}")
-                                    else:
-                                        error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
-                                        st.error(f"Failed: {error_msg}")
-                                except Exception as e:
-                                    st.error(f"Error: {e}")
+                            if has_email:
+                                if st.button("📧 Send Invite", key=f"invite_{idx}"):
+                                    try:
+                                        from auth_utils import send_magic_link
+                                        result = send_magic_link(row['email'])
+                                        if result and result.get('success'):
+                                            st.success(f"Invite sent to {row['email']}")
+                                        else:
+                                            error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
+                                            st.error(f"Failed: {error_msg}")
+                                    except Exception as e:
+                                        st.error(f"Error: {e}")
+                            else:
+                                st.warning("⚠️ Add email to invite")
                         
                         st.divider()
             else:

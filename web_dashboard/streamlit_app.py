@@ -1138,25 +1138,53 @@ def main():
                     
                     with col2:
                         st.markdown("**Investment Amounts**")
-                        # Format the table with dollar amounts and percentages
-                        display_df = investors_df.copy()
-                        display_df = display_df.sort_values('net_contribution', ascending=False)
-                        display_df['Investment'] = display_df['net_contribution'].apply(lambda x: f"${x:,.2f}")
-                        display_df['Percentage'] = display_df['ownership_pct'].apply(lambda x: f"{x:.2f}%")
-                        table_df = display_df[['contributor_display', 'Investment', 'Percentage']].copy()
-                        table_df.columns = ['Investor', 'Investment', 'Ownership %']
-                        
-                        # Display as a styled table
-                        st.dataframe(
-                            table_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows
-                        )
-                        
-                        # Show total at bottom
-                        total = investors_df['net_contribution'].sum()
-                        st.markdown(f"**Total:** ${total:,.2f}")
+                        # Validate required columns exist
+                        required_cols = ['contributor_display', 'net_contribution', 'ownership_pct']
+                        if not all(col in investors_df.columns for col in required_cols):
+                            st.error("Missing required columns in investor data")
+                        else:
+                            # Format the table with dollar amounts and percentages
+                            # Note: get_investor_allocations already sorts by net_contribution, but we ensure it here
+                            display_df = investors_df[required_cols].copy()
+                            display_df = display_df.sort_values('net_contribution', ascending=False)
+                            
+                            # Handle NaN/None values in formatting
+                            def format_currency(val):
+                                """Format currency with NaN handling"""
+                                if pd.isna(val) or val is None:
+                                    return "$0.00"
+                                try:
+                                    return f"${float(val):,.2f}"
+                                except (ValueError, TypeError):
+                                    return "$0.00"
+                            
+                            def format_percentage(val):
+                                """Format percentage with NaN handling"""
+                                if pd.isna(val) or val is None:
+                                    return "0.00%"
+                                try:
+                                    return f"{float(val):.2f}%"
+                                except (ValueError, TypeError):
+                                    return "0.00%"
+                            
+                            display_df['Investment'] = display_df['net_contribution'].apply(format_currency)
+                            display_df['Percentage'] = display_df['ownership_pct'].apply(format_percentage)
+                            table_df = display_df[['contributor_display', 'Investment', 'Percentage']].copy()
+                            table_df.columns = ['Investor', 'Investment', 'Ownership %']
+                            
+                            # Display as a styled table
+                            st.dataframe(
+                                table_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows
+                            )
+                            
+                            # Show total at bottom (handle NaN case)
+                            total = investors_df['net_contribution'].sum()
+                            if pd.isna(total):
+                                total = 0.0
+                            st.markdown(f"**Total:** ${total:,.2f}")
                 else:
                     st.info("No investor data available for this fund")
             

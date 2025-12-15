@@ -1937,7 +1937,6 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     historical_fund_values = {}
                     try:
                         # Get all contribution timestamps
-                        from datetime import datetime
                         contribution_dates = []
                         for contrib in fund_contributions:
                             ts = contrib.get('Timestamp', '')

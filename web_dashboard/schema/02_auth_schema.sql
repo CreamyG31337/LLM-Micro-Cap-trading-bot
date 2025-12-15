@@ -293,9 +293,10 @@ BEGIN
     END IF;
     
     -- Check if user email exists in fund_contributions (is a contributor)
+    -- Use normalize_email for consistent matching (Gmail dots, case-insensitive)
     SELECT COUNT(*) INTO contributor_count
     FROM fund_contributions
-    WHERE fund_contributions.email = user_email;
+    WHERE normalize_email(fund_contributions.email) = normalize_email(user_email);
     
     IF contributor_count > 0 THEN
         RETURN json_build_object(

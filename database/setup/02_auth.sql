@@ -116,6 +116,70 @@ CREATE POLICY "Users can view performance metrics for their funds" ON performanc
 -- ACCESS CONTROL FUNCTIONS
 -- =====================================================
 
+-- Helper function for email normalization (case-insensitive, Gmail dot handling)
+CREATE OR REPLACE FUNCTION normalize_email(email TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    normalized TEXT;
+    local_part TEXT;
+    domain_part TEXT;
+BEGIN
+    -- Basic normalization: lowercase and trim
+    normalized := LOWER(TRIM(COALESCE(email, '')));
+    
+    IF normalized = '' OR POSITION('@' IN normalized) = 0 THEN
+        RETURN normalized;
+    END IF;
+    
+    -- Split into local and domain parts
+    local_part := SPLIT_PART(normalized, '@', 1);
+    domain_part := SPLIT_PART(normalized, '@', 2);
+    
+    -- For Gmail/Googlemail, strip dots from local part
+    IF domain_part IN ('gmail.com', 'googlemail.com') THEN
+        local_part := REPLACE(local_part, '.', '');
+    END IF;
+    
+    RETURN local_part || '@' || domain_part;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Function to list contributors who haven't registered
+CREATE OR REPLACE FUNCTION list_unregistered_contributors()
+RETURNS TABLE(
+    contributor TEXT,
+    email TEXT,
+    funds TEXT[],
+    total_contribution DECIMAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        fc.contributor::TEXT,
+        fc.email::TEXT,
+        ARRAY_AGG(DISTINCT fc.fund)::TEXT[] as funds,
+        SUM(CASE 
+            WHEN fc.contribution_type = 'CONTRIBUTION' THEN fc.amount 
+            WHEN fc.contribution_type = 'WITHDRAWAL' THEN -fc.amount 
+            ELSE 0 
+        END) as total_contribution
+    FROM fund_contributions fc
+    WHERE fc.email IS NOT NULL
+      AND fc.email != ''
+      AND NOT EXISTS (
+          SELECT 1 FROM auth.users au 
+          WHERE normalize_email(au.email) = normalize_email(fc.email)
+      )
+    GROUP BY fc.contributor, fc.email
+    HAVING SUM(CASE 
+        WHEN fc.contribution_type = 'CONTRIBUTION' THEN fc.amount 
+        WHEN fc.contribution_type = 'WITHDRAWAL' THEN -fc.amount 
+        ELSE 0 
+    END) > 0
+    ORDER BY fc.contributor;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function to get user's assigned funds
 CREATE OR REPLACE FUNCTION get_user_funds(user_uuid UUID)
 RETURNS TABLE(fund_name VARCHAR(50)) AS $$
@@ -185,6 +249,15 @@ BEGIN
         COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
         user_role
     );
+    
+    -- Auto-assign funds for contributors
+    -- If this user's email matches a contributor in fund_contributions, assign those funds
+    INSERT INTO user_funds (user_id, fund_name)
+    SELECT DISTINCT NEW.id, fc.fund
+    FROM fund_contributions fc
+    WHERE normalize_email(fc.email) = normalize_email(NEW.email)
+    ON CONFLICT (user_id, fund_name) DO NOTHING;
+    
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

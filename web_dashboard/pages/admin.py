@@ -198,10 +198,13 @@ with tab2:
                                 'remove_fund_from_user',
                                 {'user_email': remove_email, 'fund_name': remove_fund}
                             ).execute()
-                            
-                            if remove_result.data:
-                                st.success(f"✅ Successfully removed {remove_fund} from {remove_email}")
-                                st.rerun()
+                            # Handle boolean result properly (False is valid, None is error)
+                            if remove_result.data is not None:
+                                if remove_result.data:
+                                    st.success(f"✅ Successfully removed {remove_fund} from {remove_email}")
+                                    st.rerun()
+                                else:
+                                    st.warning(f"No assignment found for {remove_email} → {remove_fund}")
                             else:
                                 st.error("Failed to remove fund assignment")
                         except Exception as e:
@@ -212,6 +215,47 @@ with tab2:
                 st.info("No users found")
         except Exception as e:
             st.error(f"Error loading users: {e}")
+        
+        # Unregistered contributors section
+        st.divider()
+        st.subheader("📨 Unregistered Contributors")
+        st.caption("Contributors with fund contributions who haven't created an account yet")
+        
+        try:
+            contrib_result = client.supabase.rpc('list_unregistered_contributors').execute()
+            
+            if contrib_result.data and len(contrib_result.data) > 0:
+                contrib_df = pd.DataFrame(contrib_result.data)
+                
+                # Display contributors with invite buttons
+                for idx, row in contrib_df.iterrows():
+                    with st.container():
+                        col_info, col_action = st.columns([3, 1])
+                        
+                        with col_info:
+                            funds_str = ", ".join(row['funds']) if row['funds'] else "None"
+                            st.markdown(f"**{row['contributor']}** ({row['email']})")
+                            st.caption(f"Funds: {funds_str} | Contribution: ${row['total_contribution']:,.2f}")
+                        
+                        with col_action:
+                            if st.button("📧 Send Invite", key=f"invite_{idx}"):
+                                try:
+                                    from auth_utils import send_magic_link
+                                    result = send_magic_link(row['email'])
+                                    if result and result.get('success'):
+                                        st.success(f"Invite sent to {row['email']}")
+                                    else:
+                                        error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
+                                        st.error(f"Failed: {error_msg}")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                        
+                        st.divider()
+            else:
+                st.success("✅ All contributors have registered accounts!")
+        except Exception as e:
+            st.warning(f"Could not load unregistered contributors: {e}")
+            st.info("You may need to run the `list_unregistered_contributors` SQL function in Supabase.")
 
 # Tab 3: Fund Management
 with tab3:

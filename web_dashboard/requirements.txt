@@ -7,3 +7,4 @@ requests>=2.31.0
 extra-streamlit-components>=0.1.60
 APScheduler>=3.10.0
 yfinance>=0.2.40
+st-pages>=0.5.1

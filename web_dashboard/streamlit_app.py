@@ -70,6 +70,23 @@ from auth_utils import (
     is_admin
 )
 
+# Configure custom page names in sidebar using st-pages
+try:
+    from st_pages import Page, show_pages
+    
+    show_pages(
+        [
+            Page("streamlit_app.py", "📈 Dashboard", "📈"),
+            Page("pages/admin.py", "⚙️ Admin", "⚙️"),
+        ]
+    )
+except ImportError:
+    # st-pages not installed, fall back to default behavior
+    pass
+except Exception:
+    # If there's any error with st-pages, fall back to default
+    pass
+
 # Page configuration
 st.set_page_config(
     page_title="Portfolio Performance Dashboard",

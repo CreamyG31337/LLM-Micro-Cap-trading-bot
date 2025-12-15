@@ -259,20 +259,42 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data retrieval fails
         """
         try:
-            # Filter by fund name
-            query = self.supabase.table("trade_log").select("*").eq("fund", self.fund)
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
             
-            if ticker:
-                query = query.eq("ticker", ticker)
-            
-            if date_range:
-                start_date, end_date = date_range
-                query = query.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
-            
-            result = query.execute()
+            while True:
+                # Filter by fund name
+                query = self.supabase.table("trade_log").select("*").eq("fund", self.fund)
+                
+                if ticker:
+                    query = query.eq("ticker", ticker)
+                
+                if date_range:
+                    start_date, end_date = date_range
+                    query = query.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_trade_history pagination")
+                    break
             
             # Use TradeMapper to convert database rows to Trade objects
-            trades = [TradeMapper.db_to_model(row) for row in result.data]
+            trades = [TradeMapper.db_to_model(row) for row in all_rows]
             
             return trades
             
@@ -447,10 +469,34 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data retrieval fails
         """
         try:
-            result = self.supabase.table("cash_balances").select("*").execute()
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
+            
+            while True:
+                query = self.supabase.table("cash_balances").select("*").eq("fund", self.fund)
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_cash_balances pagination")
+                    break
             
             # Use CashBalanceMapper to convert database rows to dictionary
-            balances = CashBalanceMapper.db_to_dict(result.data)
+            balances = CashBalanceMapper.db_to_dict(all_rows)
             
             return balances
             
@@ -489,12 +535,35 @@ class SupabaseRepository(BaseRepository):
             Portfolio snapshot with positions including historical P&L metrics
         """
         try:
-            result = self.supabase.table("latest_positions") \
-                .select("*") \
-                .eq("fund", self.fund) \
-                .execute()
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
             
-            if not result.data:
+            while True:
+                query = self.supabase.table("latest_positions") \
+                    .select("*") \
+                    .eq("fund", self.fund)
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_latest_portfolio_snapshot_with_pnl pagination")
+                    break
+            
+            if not all_rows:
                 logger.debug(f"No portfolio data found for fund: {self.fund}")
                 return None
             
@@ -502,7 +571,7 @@ class SupabaseRepository(BaseRepository):
             from .field_mapper import TypeTransformers
             positions = []
             
-            for row in result.data:
+            for row in all_rows:
                 # The view returns enriched data with P&L calculations
                 position = PositionMapper.db_to_model(row)
                 
@@ -515,7 +584,7 @@ class SupabaseRepository(BaseRepository):
                 positions.append(position)
             
             # Get timestamp from first position
-            timestamp = TypeTransformers.iso_to_datetime(result.data[0]['date'])
+            timestamp = TypeTransformers.iso_to_datetime(all_rows[0]['date'])
             
             # Calculate total value
             total_value = sum(pos.market_value for pos in positions if pos.market_value)
@@ -558,24 +627,47 @@ class SupabaseRepository(BaseRepository):
             
             # Step 2: Get ALL positions from that exact DATE (not timestamp)
             # Get positions from the same DATE (not exact timestamp)
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
             date_str = latest_timestamp.date().isoformat()
-            positions_query = self.supabase.table("portfolio_positions") \
-                .select("*") \
-                .eq("fund", self.fund) \
-                .gte("date", f"{date_str}T00:00:00Z") \
-                .lte("date", f"{date_str}T23:59:59Z") \
-                .execute()
+            all_position_rows = []
+            batch_size = 1000
+            offset = 0
             
-            if not positions_query.data:
+            while True:
+                query = self.supabase.table("portfolio_positions") \
+                    .select("*") \
+                    .eq("fund", self.fund) \
+                    .gte("date", f"{date_str}T00:00:00Z") \
+                    .lte("date", f"{date_str}T23:59:59Z")
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_position_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_latest_portfolio_snapshot pagination")
+                    break
+            
+            if not all_position_rows:
                 logger.debug(f"No positions found for latest date: {latest_timestamp}")
                 return None
             
-            logger.debug(f"Found {len(positions_query.data)} positions for latest snapshot: {latest_timestamp}")
+            logger.debug(f"Found {len(all_position_rows)} positions for latest snapshot: {latest_timestamp}")
             
             # Group by ticker and take the latest timestamp for each ticker
             # This handles cases where there are multiple updates on the same day
             ticker_positions = {}
-            for row in positions_query.data:
+            for row in all_position_rows:
                 ticker = row['ticker']
                 row_timestamp = TypeTransformers.iso_to_datetime(row['date'])
                 
@@ -612,10 +704,34 @@ class SupabaseRepository(BaseRepository):
     def get_positions_by_ticker(self, ticker: str) -> List[Position]:
         """Get all positions for a specific ticker across time."""
         try:
-            result = self.supabase.table("portfolio_positions").select("*").eq("ticker", ticker).execute()
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
+            
+            while True:
+                query = self.supabase.table("portfolio_positions").select("*").eq("ticker", ticker).eq("fund", self.fund)
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_positions_by_ticker pagination")
+                    break
             
             # Use PositionMapper to convert database rows to Position objects
-            positions = [PositionMapper.db_to_model(row) for row in result.data]
+            positions = [PositionMapper.db_to_model(row) for row in all_rows]
             
             return positions
             
@@ -658,14 +774,39 @@ class SupabaseRepository(BaseRepository):
         which includes pre-calculated daily P&L data.
         """
         try:
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
+            
             # Use provided fund if explicitly given (including None for all funds)
             # Empty string means "all funds" so treat it as None
             target_fund = fund if fund else None
-            query = self.supabase.table("latest_positions").select("*")
-            if target_fund:
-                query = query.eq("fund", target_fund)
-            result = query.execute()
-            return result.data
+            
+            while True:
+                query = self.supabase.table("latest_positions").select("*")
+                if target_fund:
+                    query = query.eq("fund", target_fund)
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_current_positions pagination")
+                    break
+            
+            return all_rows
         except Exception as e:
             logger.error(f"Failed to get current positions: {e}")
             raise RepositoryError(f"Failed to get current positions: {e}")
@@ -676,11 +817,46 @@ class SupabaseRepository(BaseRepository):
             # Use provided fund if explicitly given (including None for all funds)
             # Empty string means "all funds" so treat it as None  
             target_fund = fund if fund else None
-            query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
-            if target_fund:
-                query = query.eq("fund", target_fund)
-            result = query.execute()
-            return result.data
+            
+            # If limit > 1000, we need pagination
+            # If limit <= 1000, we can use a single query with limit
+            if limit <= 1000:
+                query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
+                if target_fund:
+                    query = query.eq("fund", target_fund)
+                result = query.execute()
+                return result.data if result.data else []
+            
+            # For limit > 1000, use pagination
+            all_rows = []
+            batch_size = 1000
+            offset = 0
+            
+            while len(all_rows) < limit:
+                query = self.supabase.table("trade_log").select("*").order("date", desc=True)
+                if target_fund:
+                    query = query.eq("fund", target_fund)
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_trade_log pagination")
+                    break
+            
+            # Return only the requested limit
+            return all_rows[:limit]
         except Exception as e:
             logger.error(f"Failed to get trade log: {e}")
             raise RepositoryError(f"Failed to get trade log: {e}")
@@ -689,8 +865,33 @@ class SupabaseRepository(BaseRepository):
         """Get list of available funds in the database."""
         try:
             # Get unique fund names from portfolio_positions table
-            result = self.supabase.table("portfolio_positions").select("fund").execute()
-            funds = list(set(row['fund'] for row in result.data if row.get('fund')))
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_rows = []
+            batch_size = 1000
+            offset = 0
+            
+            while True:
+                query = self.supabase.table("portfolio_positions").select("fund")
+                
+                result = query.range(offset, offset + batch_size - 1).execute()
+                
+                if not result.data:
+                    break
+                
+                all_rows.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_available_funds pagination")
+                    break
+            
+            funds = list(set(row['fund'] for row in all_rows if row.get('fund')))
             return sorted(funds)
         except Exception as e:
             logger.error(f"Failed to get available funds: {e}")

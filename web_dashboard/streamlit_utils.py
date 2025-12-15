@@ -97,13 +97,37 @@ def get_available_funds() -> List[str]:
         return []
     
     try:
-        result = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id).execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        if not result or not result.data:
+        while True:
+            query = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id)
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result or not result.data:
+                break
+            
+            all_rows.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_available_funds pagination")
+                break
+        
+        if not all_rows:
             logger.debug(f"get_available_funds(): Query returned no data for user_id: {user_id}")
             return []
         
-        funds = [row.get('fund_name') for row in result.data if row.get('fund_name')]
+        funds = [row.get('fund_name') for row in all_rows if row.get('fund_name')]
         sorted_funds = sorted(funds)
         logger.debug(f"get_available_funds(): Found {len(sorted_funds)} funds for user_id: {user_id}")
         return sorted_funds
@@ -119,13 +143,36 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
         return pd.DataFrame()
     
     try:
-        query = client.supabase.table("latest_positions").select("*")
-        if fund:
-            query = query.eq("fund", fund)
-        result = query.execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        if result.data:
-            return pd.DataFrame(result.data)
+        while True:
+            query = client.supabase.table("latest_positions").select("*")
+            if fund:
+                query = query.eq("fund", fund)
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_rows.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_current_positions pagination")
+                break
+        
+        if all_rows:
+            return pd.DataFrame(all_rows)
         return pd.DataFrame()
     except Exception as e:
         print(f"Error getting positions: {e}")
@@ -161,14 +208,37 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
         return {"CAD": 0.0, "USD": 0.0}
     
     try:
-        query = client.supabase.table("cash_balances").select("*")
-        if fund:
-            query = query.eq("fund", fund)
-        result = query.execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            query = client.supabase.table("cash_balances").select("*")
+            if fund:
+                query = query.eq("fund", fund)
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_rows.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_cash_balances pagination")
+                break
         
         balances = {"CAD": 0.0, "USD": 0.0}
-        if result.data:
-            for row in result.data:
+        if all_rows:
+            for row in all_rows:
                 currency = row.get('currency', 'CAD')
                 amount = float(row.get('balance', 0))
                 balances[currency] = balances.get(currency, 0) + amount
@@ -650,14 +720,38 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
     
     try:
         # Query contributor_ownership view to get net contributions
-        result = client.supabase.table("contributor_ownership").select(
-            "contributor, email, net_contribution"
-        ).eq("fund", fund).execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        if not result.data:
+        while True:
+            query = client.supabase.table("contributor_ownership").select(
+                "contributor, email, net_contribution"
+            ).eq("fund", fund)
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_rows.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_investor_allocations pagination")
+                break
+        
+        if not all_rows:
             return pd.DataFrame()
         
-        df = pd.DataFrame(result.data)
+        df = pd.DataFrame(all_rows)
         
         # Convert net_contribution to float
         df['net_contribution'] = df['net_contribution'].astype(float)
@@ -727,16 +821,40 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         min_date = min(date_strs)
         
         # Query portfolio_positions for this fund, from earliest contribution date onwards
-        result = client.supabase.table("portfolio_positions").select(
-            "date, shares, price, currency"
-        ).eq("fund", fund).gte("date", min_date).order("date").execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        if not result.data:
+        while True:
+            query = client.supabase.table("portfolio_positions").select(
+                "date, shares, price, currency"
+            ).eq("fund", fund).gte("date", min_date).order("date")
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_rows.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_historical_fund_values pagination")
+                break
+        
+        if not all_rows:
             return {}
         
         # Get exchange rates for each date we need (use historical rates for accuracy)
         # First, get unique dates from portfolio positions
-        position_dates = sorted(set(row['date'][:10] for row in result.data))
+        position_dates = sorted(set(row['date'][:10] for row in all_rows))
         
         # Fetch historical exchange rates for these dates
         exchange_rates_by_date = {}
@@ -766,7 +884,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         
         # Calculate total value for each date using date-specific exchange rates
         values_by_date = {}
-        for row in result.data:
+        for row in all_rows:
             date_str = row['date'][:10]  # Get just YYYY-MM-DD
             shares = float(row.get('shares', 0))
             price = float(row.get('price', 0))
@@ -847,11 +965,35 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
     
     try:
         # Get ALL contributions with timestamps (not just the summary view)
-        result = client.supabase.table("fund_contributions").select(
-            "contributor, email, amount, contribution_type, timestamp"
-        ).eq("fund", fund).execute()
+        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+        all_contributions = []
+        batch_size = 1000
+        offset = 0
         
-        if not result.data:
+        while True:
+            query = client.supabase.table("fund_contributions").select(
+                "contributor, email, amount, contribution_type, timestamp"
+            ).eq("fund", fund)
+            
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_contributions.extend(result.data)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+            if offset > 50000:
+                print("Warning: Reached 50,000 row safety limit in get_user_investment_metrics pagination")
+                break
+        
+        if not all_contributions:
             return None
         
         # Get cash balances for total fund value
@@ -872,7 +1014,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         
         # Parse and sort contributions chronologically
         contributions = []
-        for record in result.data:
+        for record in all_contributions:
             timestamp_raw = record.get('timestamp', '')
             timestamp = None
             if timestamp_raw:

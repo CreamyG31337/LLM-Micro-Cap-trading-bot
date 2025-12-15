@@ -50,6 +50,82 @@ CREATE POLICY "Service role can manage funds" ON funds
     FOR ALL USING (auth.role() = 'service_role');
 
 -- =====================================================
+-- PART 2B: ADD ADMIN POLICIES FOR PORTFOLIO TABLES
+-- =====================================================
+
+-- Portfolio positions: user-fund access + admin access + service role
+DROP POLICY IF EXISTS "Users can view portfolio positions for their funds" ON portfolio_positions;
+DROP POLICY IF EXISTS "Admins can view all portfolio positions" ON portfolio_positions;
+DROP POLICY IF EXISTS "Service role full access to portfolio_positions" ON portfolio_positions;
+
+CREATE POLICY "Users can view portfolio positions for their funds" ON portfolio_positions
+    FOR SELECT USING (
+        fund IN (SELECT fund_name FROM user_funds WHERE user_id = auth.uid())
+    );
+
+CREATE POLICY "Admins can view all portfolio positions" ON portfolio_positions
+    FOR SELECT USING (
+        EXISTS (SELECT 1 FROM user_profiles WHERE user_id = auth.uid() AND role = 'admin')
+    );
+
+CREATE POLICY "Service role full access to portfolio_positions" ON portfolio_positions
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Trade log: user-fund access + admin access + service role
+DROP POLICY IF EXISTS "Users can view trades for their funds" ON trade_log;
+DROP POLICY IF EXISTS "Admins can view all trades" ON trade_log;
+DROP POLICY IF EXISTS "Service role full access to trade_log" ON trade_log;
+
+CREATE POLICY "Users can view trades for their funds" ON trade_log
+    FOR SELECT USING (
+        fund IN (SELECT fund_name FROM user_funds WHERE user_id = auth.uid())
+    );
+
+CREATE POLICY "Admins can view all trades" ON trade_log
+    FOR SELECT USING (
+        EXISTS (SELECT 1 FROM user_profiles WHERE user_id = auth.uid() AND role = 'admin')
+    );
+
+CREATE POLICY "Service role full access to trade_log" ON trade_log
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Cash balances: user-fund access + admin access + service role
+DROP POLICY IF EXISTS "Users can view cash balances for their funds" ON cash_balances;
+DROP POLICY IF EXISTS "Admins can view all cash balances" ON cash_balances;
+DROP POLICY IF EXISTS "Service role full access to cash_balances" ON cash_balances;
+
+CREATE POLICY "Users can view cash balances for their funds" ON cash_balances
+    FOR SELECT USING (
+        fund IN (SELECT fund_name FROM user_funds WHERE user_id = auth.uid())
+    );
+
+CREATE POLICY "Admins can view all cash balances" ON cash_balances
+    FOR SELECT USING (
+        EXISTS (SELECT 1 FROM user_profiles WHERE user_id = auth.uid() AND role = 'admin')
+    );
+
+CREATE POLICY "Service role full access to cash_balances" ON cash_balances
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Performance metrics: user-fund access + admin access + service role
+DROP POLICY IF EXISTS "Users can view performance metrics for their funds" ON performance_metrics;
+DROP POLICY IF EXISTS "Admins can view all performance metrics" ON performance_metrics;
+DROP POLICY IF EXISTS "Service role full access to performance_metrics" ON performance_metrics;
+
+CREATE POLICY "Users can view performance metrics for their funds" ON performance_metrics
+    FOR SELECT USING (
+        fund IN (SELECT fund_name FROM user_funds WHERE user_id = auth.uid())
+    );
+
+CREATE POLICY "Admins can view all performance metrics" ON performance_metrics
+    FOR SELECT USING (
+        EXISTS (SELECT 1 FROM user_profiles WHERE user_id = auth.uid() AND role = 'admin')
+    );
+
+CREATE POLICY "Service role full access to performance_metrics" ON performance_metrics
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- =====================================================
 -- PART 3: FIX SECURITY DEFINER VIEWS
 -- =====================================================
 -- Recreate views without SECURITY DEFINER (they use SECURITY INVOKER by default)
@@ -481,9 +557,9 @@ BEGIN
     RETURN QUERY
     SELECT 
         up.user_id,
-        up.email,
-        up.full_name,
-        ARRAY_AGG(uf.fund_name) as funds
+        up.email::TEXT,
+        up.full_name::TEXT,
+        ARRAY_AGG(uf.fund_name)::TEXT[] as funds
     FROM user_profiles up
     LEFT JOIN user_funds uf ON up.user_id = uf.user_id
     GROUP BY up.user_id, up.email, up.full_name

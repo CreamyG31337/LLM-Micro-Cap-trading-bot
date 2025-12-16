@@ -331,10 +331,13 @@ with tab3:
                 try:
                     users_result = client.supabase.rpc('list_users_with_funds').execute()
                     users_list = users_result.data if users_result.data else []
+                    using_fallback = False
                 except Exception as rpc_error:
                     # Fallback: Query user_profiles directly and get funds separately
-                    st.warning(f"⚠️ Could not use list_users_with_funds RPC: {rpc_error}")
-                    st.info("💡 Falling back to direct user_profiles query...")
+                    using_fallback = True
+                    rpc_error_msg = str(rpc_error)
+                    # st.warning(f"⚠️ Could not use list_users_with_funds RPC: {rpc_error}") # Debug only
+                    
                     try:
                         # Get user profiles
                         profiles_result = client.supabase.table("user_profiles").select("user_id, email, full_name").execute()
@@ -352,8 +355,13 @@ with tab3:
                                 'funds': funds
                             })
                     except Exception as direct_error:
-                        st.error(f"❌ Could not load users: {direct_error}")
+                        st.error(f"❌ Could not load users via fallback: {direct_error}")
+                        st.error(f"Original RPC error: {rpc_error_msg}")
                         users_list = []
+                
+                # Show fallback warning after loading if we used fallback
+                if using_fallback and users_list:
+                    st.warning(f"⚠️ Using fallback query (RPC error: {rpc_error_msg[:100]}...). This is expected if the RPC function has permission issues.")
                 
                 if contributors_list:
                     st.subheader("Grant Access")

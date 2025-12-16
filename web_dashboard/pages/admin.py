@@ -327,9 +327,33 @@ with tab3:
                 all_contributors = client.supabase.table("contributors").select("id, name, email").order("name").execute()
                 contributors_list = all_contributors.data if all_contributors.data else []
                 
-                # Get all users
-                users_result = client.supabase.rpc('list_users_with_funds').execute()
-                users_list = users_result.data if users_result.data else []
+                # Get all users - query user_profiles directly instead of RPC to avoid permission issues
+                try:
+                    users_result = client.supabase.rpc('list_users_with_funds').execute()
+                    users_list = users_result.data if users_result.data else []
+                except Exception as rpc_error:
+                    # Fallback: Query user_profiles directly and get funds separately
+                    st.warning(f"⚠️ Could not use list_users_with_funds RPC: {rpc_error}")
+                    st.info("💡 Falling back to direct user_profiles query...")
+                    try:
+                        # Get user profiles
+                        profiles_result = client.supabase.table("user_profiles").select("user_id, email, full_name").execute()
+                        profiles = profiles_result.data if profiles_result.data else []
+                        
+                        # Get user funds for each user
+                        users_list = []
+                        for profile in profiles:
+                            funds_result = client.supabase.table("user_funds").select("fund_name").eq("user_id", profile['user_id']).execute()
+                            funds = [f['fund_name'] for f in funds_result.data] if funds_result.data else []
+                            users_list.append({
+                                'user_id': profile['user_id'],
+                                'email': profile['email'],
+                                'full_name': profile['full_name'],
+                                'funds': funds
+                            })
+                    except Exception as direct_error:
+                        st.error(f"❌ Could not load users: {direct_error}")
+                        users_list = []
                 
                 if contributors_list:
                     st.subheader("Grant Access")

@@ -112,7 +112,11 @@ def get_log_handler() -> InMemoryLogHandler:
 
 
 def setup_logging(level=logging.INFO):
-    """Setup logging with in-memory handler.
+    """Setup logging with in-memory handler for app modules only.
+    
+    IMPORTANT: We do NOT attach to the root logger to avoid interfering
+    with Streamlit's internal logging, which can cause deadlocks.
+    Instead, we only capture logs from our own application modules.
     
     Args:
         level: Log level (default: INFO)
@@ -120,14 +124,61 @@ def setup_logging(level=logging.INFO):
     handler = get_log_handler()
     handler.setLevel(level)
     
-    # Get root logger
-    root_logger = logging.getLogger()
+    # List of our application module names to capture logs from
+    # These are the logger names used by logging.getLogger(__name__) in our code
+    app_modules = [
+        'streamlit_utils',
+        'chart_utils', 
+        'auth_utils',
+        'supabase_client',
+        'exchange_rates_utils',
+        'scheduler',
+        'scheduler.scheduler_core',
+        'log_handler',
+        '__main__',
+        'web_dashboard',
+    ]
     
-    # Remove existing handlers to avoid duplicates
-    for existing_handler in root_logger.handlers[:]:
-        if isinstance(existing_handler, InMemoryLogHandler):
-            root_logger.removeHandler(existing_handler)
+    # Attach handler to each app module logger (NOT the root logger)
+    for module_name in app_modules:
+        logger = logging.getLogger(module_name)
+        
+        # Remove existing InMemoryLogHandler to avoid duplicates
+        for existing_handler in logger.handlers[:]:
+            if isinstance(existing_handler, InMemoryLogHandler):
+                logger.removeHandler(existing_handler)
+        
+        # Add our handler
+        logger.addHandler(handler)
+        logger.setLevel(level)
+        
+        # Disable propagation to root logger to prevent Streamlit interference
+        logger.propagate = False
+
+
+def log_message(message: str, level: str = 'INFO', module: str = 'app'):
+    """Convenience function to log a message directly to the in-memory handler.
     
-    # Add our handler
-    root_logger.addHandler(handler)
-    root_logger.setLevel(level)
+    Use this when you want to ensure a message appears in the admin logs
+    without relying on the logging module hierarchy.
+    
+    Args:
+        message: The message to log
+        level: Log level ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
+        module: Module name to associate with log
+    """
+    handler = get_log_handler()
+    
+    # Create a log record manually
+    record = logging.LogRecord(
+        name=module,
+        level=getattr(logging, level.upper(), logging.INFO),
+        pathname='',
+        lineno=0,
+        msg=message,
+        args=(),
+        exc_info=None
+    )
+    
+    handler.emit(record)
+

@@ -420,7 +420,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             # Since sorted_rates is sorted ascending, we iterate backwards for efficiency
             for date_val in unique_dates:
                 # Convert date to datetime at start of day for comparison
-                target_dt = datetime.combine(date_val, time.min, tzinfo=timezone.utc)
+                target_dt = datetime.combine(date_val, dt_time.min, tzinfo=timezone.utc)
                 
                 # Find the most recent rate where timestamp <= target_dt
                 # Iterate backwards through sorted rates for efficiency

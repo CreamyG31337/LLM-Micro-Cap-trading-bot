@@ -299,12 +299,28 @@ with tab3:
     else:
         try:
             # Check if contributors table exists
+            # Try a simple query - if it fails, it could be missing table or RLS blocking
+            has_contributors_table = False
+            table_error = None
             try:
-                contributors_result = client.supabase.table("contributors").select("*").limit(1).execute()
+                # Try to query the table (even if empty, this should work if table exists)
+                contributors_result = client.supabase.table("contributors").select("id").limit(1).execute()
                 has_contributors_table = True
-            except:
-                has_contributors_table = False
-                st.warning("⚠️ Contributors table not found. Run migration DF_009 first.")
+            except Exception as e:
+                table_error = str(e)
+                # Check if it's a "relation does not exist" error (table actually missing)
+                if "does not exist" in table_error.lower() or "relation" in table_error.lower() or "42P01" in table_error:
+                    st.warning("⚠️ Contributors table not found. Run migration DF_009 first.")
+                else:
+                    # Other error - could be RLS, permissions, or table exists but empty
+                    # For admins, try to proceed anyway (they should have access)
+                    if is_admin():
+                        st.info("ℹ️ Note: Contributors table may exist but query returned no results or was blocked by RLS.")
+                        st.info("💡 Proceeding anyway - you're admin so you should have access.")
+                        has_contributors_table = True  # Assume it exists for admins
+                    else:
+                        st.warning(f"⚠️ Could not access contributors table: {table_error}")
+                        st.info("💡 The table might exist but RLS is blocking access. Contact an admin.")
             
             if has_contributors_table:
                 # Get all contributors

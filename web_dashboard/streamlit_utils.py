@@ -532,6 +532,14 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         
     except Exception as e:
         logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
+        
+        # Show error in UI for debugging
+        try:
+            import streamlit as st
+            st.error(f"⚠️ Error loading chart: {str(e)}")
+        except:
+            pass
+        
         return pd.DataFrame()
 
 

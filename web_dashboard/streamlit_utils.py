@@ -175,7 +175,7 @@ def get_available_funds() -> List[str]:
 
 
 @log_execution_time()
-@st.cache_data(ttl=get_cache_ttl)
+@st.cache_data(ttl=get_cache_ttl())
 def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame"""
     client = get_supabase_client()

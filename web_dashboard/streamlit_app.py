@@ -547,15 +547,6 @@ def show_password_reset_page(access_token: str):
 def main():
     """Main dashboard function"""
     
-    # ===== INITIALIZE LOGGING =====
-    # Setup logging lazily here to avoid circular import issues at module load time
-    # (streamlit_utils <-> chart_utils creates a circular import)
-    try:
-        from log_handler import setup_logging
-        setup_logging()
-    except Exception as e:
-        print(f"Warning: Could not initialize logging: {e}")
-    
     # Handle magic link token from query params (set by JavaScript hash processor above)
     import base64
     import json

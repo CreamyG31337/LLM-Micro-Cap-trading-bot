@@ -15,6 +15,10 @@ import plotly.graph_objs as go
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime, timedelta
 import yfinance as yf
+try:
+    from log_handler import log_execution_time
+except ImportError:
+    log_execution_time = lambda x=None: lambda f: f
 
 
 # Benchmark configuration
@@ -138,6 +142,7 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
             current_date += timedelta(days=1)
 
 
+@log_execution_time()
 def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
     """Fetch benchmark data with database caching.
     
@@ -259,6 +264,7 @@ def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime)
 
 
 
+@log_execution_time()
 def create_portfolio_value_chart(
     portfolio_df: pd.DataFrame, 
     fund_name: Optional[str] = None, 
@@ -473,6 +479,7 @@ def create_performance_by_fund_chart(funds_data: Dict[str, float]) -> go.Figure:
     return fig
 
 
+@log_execution_time()
 def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
     """Create a bar chart showing P&L by position"""
     # Check for either pnl or unrealized_pnl column

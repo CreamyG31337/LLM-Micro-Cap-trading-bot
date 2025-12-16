@@ -242,3 +242,33 @@ def log_message(message: str, level: str = 'INFO', module: str = 'app'):
         log_level = logging.INFO
     logger.log(log_level, message)
 
+
+def log_execution_time(module_name=None):
+    """Decorator to log execution time of functions.
+    
+    Args:
+        module_name: Optional module name for log record. 
+                    If None, uses function's module.
+    """
+    import time
+    import functools
+    
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                return result
+            finally:
+                duration = time.time() - start_time
+                # Determine module name
+                mod = module_name or func.__module__
+                
+                # Use INFO for slow ops (>1s), DEBUG for fast ones
+                level = 'INFO' if duration > 1.0 else 'DEBUG'
+                msg = f"PERF: {func.__name__} took {duration:.3f}s"
+                
+                log_message(msg, level=level, module=mod)
+        return wrapper
+    return decorator

@@ -15,10 +15,12 @@ load_dotenv()
 try:
     from supabase_client import SupabaseClient
     from auth_utils import get_user_token
+    from log_handler import log_execution_time
 except ImportError:
     # Fallback if supabase_client not available
     SupabaseClient = None
     get_user_token = None
+    log_execution_time = lambda x=None: lambda f: f # No-op decorator fallback
 
 
 def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseClient]:
@@ -71,6 +73,7 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
         return None
 
 
+@log_execution_time()
 def get_available_funds() -> List[str]:
     """Get list of available funds from Supabase
     
@@ -136,6 +139,7 @@ def get_available_funds() -> List[str]:
         return []
 
 
+@log_execution_time()
 def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame"""
     client = get_supabase_client()
@@ -179,6 +183,7 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@log_execution_time()
 def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame:
     """Get trade log entries as DataFrame with company names from securities table"""
     client = get_supabase_client()
@@ -201,6 +206,7 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame
 
 
 
+@log_execution_time()
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
     client = get_supabase_client()
@@ -249,6 +255,7 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
         return {"CAD": 0.0, "USD": 0.0}
 
 
+@log_execution_time()
 def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     

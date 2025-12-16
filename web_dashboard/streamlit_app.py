@@ -549,8 +549,11 @@ def main():
     
     # Initialize file-based logging
     try:
-        from log_handler import setup_logging
+        from log_handler import setup_logging, log_message
         setup_logging()
+        import time
+        start_time = time.time()
+        log_message(f"PERF: Streamlit script run started", level='DEBUG')
     except Exception as e:
         print(f"Warning: Could not initialize logging: {e}")
     
@@ -1427,6 +1430,14 @@ def main():
         st.error(f"Error loading data: {e}")
         st.exception(e)
 
+
+
+    # Log total execution time
+    try:
+        duration = time.time() - start_time
+        log_message(f"PERF: Streamlit script run finished in {duration:.3f}s", level='INFO' if duration > 1.0 else 'DEBUG')
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     main()

@@ -362,19 +362,71 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             unique_dates = df['date'].dt.date.unique()
             rate_start = time.time()
             
-            # Build exchange rate cache for all dates
+            # Build exchange rate cache for all dates using batch query
             rate_cache = {}
             missing_dates = []
             
-            for date_val in unique_dates:
-                from datetime import datetime
-                dt = datetime.combine(date_val, datetime.min.time())
-                rate = get_exchange_rate_for_date_from_db(dt, 'USD', 'CAD')
+            # Calculate date range for batch query
+            from datetime import datetime, timezone, time
+            min_date = min(unique_dates)
+            max_date = max(unique_dates)
+            
+            # Convert to datetime with timezone for database query
+            start_dt = datetime.combine(min_date, time.min, tzinfo=timezone.utc)
+            # Use end of day for max_date to ensure we get rates up to and including max_date
+            end_dt = datetime.combine(max_date, time(23, 59, 59, 999999), tzinfo=timezone.utc)
+            
+            # Fetch all exchange rates for the date range in a single query
+            rates_data = client.get_exchange_rates(start_dt, end_dt, 'USD', 'CAD')
+            
+            # Build sorted list of rates with timestamps for efficient lookup
+            # Each rate entry has 'timestamp' and 'rate' keys
+            sorted_rates = []
+            for rate_entry in rates_data:
+                timestamp_str = rate_entry.get('timestamp')
+                rate_value = rate_entry.get('rate')
                 
-                if rate is None:
+                if timestamp_str and rate_value is not None:
+                    try:
+                        # Parse timestamp
+                        if isinstance(timestamp_str, str):
+                            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        else:
+                            dt = timestamp_str
+                        
+                        # Ensure timezone-aware
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        
+                        sorted_rates.append({
+                            'timestamp': dt,
+                            'rate': float(rate_value)
+                        })
+                    except Exception as e:
+                        logger.warning(f"Could not parse rate entry: {e}")
+                        continue
+            
+            # Sort by timestamp (ascending)
+            sorted_rates.sort(key=lambda x: x['timestamp'])
+            
+            # For each unique date, find the most recent rate on or before that date
+            # Since sorted_rates is sorted ascending, we iterate backwards for efficiency
+            for date_val in unique_dates:
+                # Convert date to datetime at start of day for comparison
+                target_dt = datetime.combine(date_val, time.min, tzinfo=timezone.utc)
+                
+                # Find the most recent rate where timestamp <= target_dt
+                # Iterate backwards through sorted rates for efficiency
+                rate_found = None
+                for rate_entry in reversed(sorted_rates):
+                    if rate_entry['timestamp'] <= target_dt:
+                        rate_found = rate_entry['rate']
+                        break
+                
+                if rate_found is None:
                     missing_dates.append(date_val)
                 else:
-                    rate_cache[date_val] = float(rate)
+                    rate_cache[date_val] = rate_found
             
             rate_lookup_time = time.time() - rate_start
             logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate lookup: {rate_lookup_time:.2f}s ({len(unique_dates)} dates)")

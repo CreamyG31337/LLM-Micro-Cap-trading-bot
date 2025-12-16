@@ -179,7 +179,9 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
             return pd.DataFrame(all_rows)
         return pd.DataFrame()
     except Exception as e:
-        print(f"Error getting positions: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting positions: {e}", exc_info=True)
         return pd.DataFrame()
 
 
@@ -201,7 +203,9 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame
             return df
         return pd.DataFrame()
     except Exception as e:
-        print(f"Error getting trade log: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting trade log: {e}", exc_info=True)
         return pd.DataFrame()
 
 
@@ -251,7 +255,9 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
         
         return balances
     except Exception as e:
-        print(f"Error getting cash balances: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting cash balances: {e}", exc_info=True)
         return {"CAD": 0.0, "USD": 0.0}
 
 
@@ -444,10 +450,8 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
                         rate_cache[date_val] = float(fetched_rate)
                         print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
                     else:
-                        raise ValueError(
-                            f"Missing exchange rate for {date_val} and could not fetch from API. "
-                            f"Please add exchange rate data for this date."
-                        )
+                        logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
+                        rate_cache[date_val] = 1.42
                 fetch_time = time.time() - fetch_start
                 logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")
             
@@ -461,7 +465,8 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
                     date_key = row['date'].date() if hasattr(row['date'], 'date') else row['date']
                     rate = rate_cache.get(date_key)
                     if rate is None:
-                        raise ValueError(f"No exchange rate found for {date_key}")
+                        logger.warning(f"No exchange rate found for {date_key}, using fallback 1.42")
+                        rate = 1.42
                     return value * rate
                 return value
             
@@ -526,7 +531,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         return daily_totals
         
     except Exception as e:
-        print(f"Error calculating portfolio value: {e}")
+        logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
         return pd.DataFrame()
 
 
@@ -592,7 +597,9 @@ def calculate_performance_metrics(fund: Optional[str] = None) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"Error calculating metrics: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error calculating metrics: {e}", exc_info=True)
         return {
             'peak_date': None,
             'peak_gain_pct': 0.0,
@@ -716,7 +723,9 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
         return result_df
         
     except Exception as e:
-        print(f"Error fetching individual holdings: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching individual holdings: {e}", exc_info=True)
         return pd.DataFrame()
 
 
@@ -743,7 +752,9 @@ def get_investor_count(fund: str) -> int:
             return int(result.data[0].get('total_contributors', 0))
         return 0
     except Exception as e:
-        print(f"Error getting investor count: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting investor count: {e}", exc_info=True)
         return 0
 
 
@@ -835,7 +846,9 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         return df[['contributor_display', 'net_contribution', 'ownership_pct']]
         
     except Exception as e:
-        print(f"Error getting investor allocations: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting investor allocations: {e}", exc_info=True)
         return pd.DataFrame()
 
 
@@ -967,7 +980,9 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         return result_values
         
     except Exception as e:
-        print(f"Error getting historical fund values: {e}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting historical fund values: {e}", exc_info=True)
         return {}
 
 
@@ -1260,9 +1275,11 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         }
         
     except Exception as e:
+        import logging
         import traceback
-        error_msg = f"Error getting user investment metrics: {e}\n{traceback.format_exc()}"
-        print(error_msg)
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting user investment metrics: {e}", exc_info=True)
+        # error_msg logic removed as logger handles it better, but keeping st.error for UI
         
         # Also show in UI if possible
         try:

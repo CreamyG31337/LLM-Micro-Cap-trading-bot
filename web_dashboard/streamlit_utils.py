@@ -924,7 +924,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         # First, get unique dates from portfolio positions
         position_dates = sorted(set(row['date'][:10] for row in all_rows))
         
-        # Fetch historical exchange rates for these dates
+        # Fetch historical exchange rates for these dates using batched query
         exchange_rates_by_date = {}
         fallback_rate = 1.42  # Default fallback
         try:
@@ -933,20 +933,42 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
             if rate_result:
                 fallback_rate = float(rate_result)
             
-            # Try to get historical rates for each date
-            for date_str in position_dates:
-                try:
-                    from datetime import datetime as dt
-                    date_obj = dt.strptime(date_str, '%Y-%m-%d')
-                    hist_rate = client.get_exchange_rate(date_obj, 'USD', 'CAD')
-                    if hist_rate:
-                        exchange_rates_by_date[date_str] = float(hist_rate)
+            # Batch fetch all historical rates in a single query
+            if position_dates:
+                from datetime import datetime as dt
+                min_date = dt.strptime(min(position_dates), '%Y-%m-%d')
+                max_date = dt.strptime(max(position_dates), '%Y-%m-%d')
+                
+                # Get all rates in the date range with one query
+                rates_list = client.get_exchange_rates(min_date, max_date, 'USD', 'CAD')
+                
+                # Build a lookup dictionary from the results
+                rates_by_date = {}
+                for rate_entry in rates_list:
+                    timestamp = rate_entry.get('timestamp', '')
+                    rate_value = rate_entry.get('rate')
+                    if timestamp and rate_value:
+                        # Extract date portion (YYYY-MM-DD)
+                        date_str = timestamp[:10] if isinstance(timestamp, str) else str(timestamp)[:10]
+                        rates_by_date[date_str] = float(rate_value)
+                
+                # Match each position date to the closest available exchange rate
+                for date_str in position_dates:
+                    if date_str in rates_by_date:
+                        exchange_rates_by_date[date_str] = rates_by_date[date_str]
                     else:
-                        exchange_rates_by_date[date_str] = fallback_rate
-                except Exception:
-                    exchange_rates_by_date[date_str] = fallback_rate
-        except Exception:
+                        # Find closest date on or before this date
+                        available_dates = sorted([d for d in rates_by_date.keys() if d <= date_str])
+                        if available_dates:
+                            closest_date = available_dates[-1]
+                            exchange_rates_by_date[date_str] = rates_by_date[closest_date]
+                        else:
+                            exchange_rates_by_date[date_str] = fallback_rate
+        except Exception as e:
             # If we can't get any rates, use fallback for all dates
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to fetch batched exchange rates: {e}, using fallback")
             for date_str in position_dates:
                 exchange_rates_by_date[date_str] = fallback_rate
         

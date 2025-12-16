@@ -808,7 +808,6 @@ def main():
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown('<div class="main-header">📈 Portfolio Performance Dashboard</div>', unsafe_allow_html=True)
-        # Timestamp will be added here by JavaScript after data is loaded
     with col2:
         user_email = get_user_email()
         if user_email:
@@ -978,7 +977,6 @@ def main():
                 
                 # Ensure timezone-aware (assume UTC if naive)
                 if latest_timestamp.tzinfo is None:
-                    from datetime import timezone
                     latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
                 
                 # Check if market is open

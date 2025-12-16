@@ -224,7 +224,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     import streamlit.components.v1 as components
     
     js_code = f"""
-    <div id="timestamp-container" style="font-size: 0.9rem; margin-top: -0.8rem; margin-bottom: 0.5rem;"></div>
+    <div id="timestamp-container" style="font-size: 0.9rem; margin-top: -0.8rem; margin-bottom: 0.5rem; color: inherit;"></div>
     <script>
     (function() {{
         function formatTimestamp() {{
@@ -304,6 +304,17 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
             const container = document.getElementById('timestamp-container');
             if (container) {{
                 container.textContent = 'Market data last updated: ' + formatted;
+                // Detect if we're in dark mode by checking the iframe's background
+                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                // Or check if body/container has dark background
+                const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+                const isDarkBg = bodyBg && (bodyBg.includes('rgb(14, 17, 23)') || bodyBg.includes('rgb(38, 39, 48)') || bodyBg === 'rgb(0, 0, 0)');
+                
+                if (isDark || isDarkBg) {{
+                    container.style.color = 'rgba(255, 255, 255, 0.8)';
+                }} else {{
+                    container.style.color = 'rgba(0, 0, 0, 0.8)';
+                }}
             }}
         }}
         
@@ -318,7 +329,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     </script>
     """
     
-    components.html(js_code, height=25)
+    components.html(js_code, height=30)
 
 
 def show_password_reset_page(access_token: str):

@@ -547,13 +547,20 @@ def show_password_reset_page(access_token: str):
 def main():
     """Main dashboard function"""
     
+    # Generate or retrieve session ID for log tracking
+    if 'session_id' not in st.session_state:
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())[:8]  # Short 8-char ID
+    
+    session_id = st.session_state.session_id
+    
     # Initialize file-based logging
     try:
         from log_handler import setup_logging, log_message
         setup_logging()
         import time
         start_time = time.time()
-        log_message(f"PERF: Streamlit script run started", level='DEBUG')
+        log_message(f"[{session_id}] PERF: Streamlit script run started", level='DEBUG')
     except Exception as e:
         print(f"Warning: Could not initialize logging: {e}")
     
@@ -804,17 +811,41 @@ def main():
     # Main content
     try:
         # Load data
+        from log_handler import log_message
+        import time
+        
+        log_message(f"[{session_id}] PERF: Starting dashboard data load", level='INFO')
+        data_load_start = time.time()
+        
         with st.spinner("Loading portfolio data..."):
+            t0 = time.time()
             positions_df = get_current_positions(fund_filter)
+            log_message(f"[{session_id}] PERF: get_current_positions took {time.time() - t0:.2f}s", level='INFO')
+            
+            t0 = time.time()
             trades_df = get_trade_log(limit=1000, fund=fund_filter)
+            log_message(f"[{session_id}] PERF: get_trade_log took {time.time() - t0:.2f}s", level='INFO')
+            
+            t0 = time.time()
             cash_balances = get_cash_balances(fund_filter)
+            log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='INFO')
+            
+            t0 = time.time()
             portfolio_value_df = calculate_portfolio_value_over_time(fund_filter)
+            log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
+        
+        log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')
         
         # Metrics row
         st.markdown("### Performance Metrics")
         
+        metrics_start = time.time()
+        log_message(f"[{session_id}] PERF: Starting metrics calculations", level='INFO')
+        
         # Check investor count to determine layout (hide if only 1 investor)
+        t0 = time.time()
         num_investors = get_investor_count(fund_filter)
+        log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='INFO')
         show_investors = num_investors > 1
         
         # Calculate total portfolio value from current positions (with currency conversion)
@@ -828,7 +859,9 @@ def main():
             client = get_supabase_client()
             if client:
                 try:
+                    t0 = time.time()
                     rate_result = client.get_latest_exchange_rate('USD', 'CAD')
+                    log_message(f"[{session_id}] PERF: get_latest_exchange_rate took {time.time() - t0:.2f}s", level='INFO')
                     if rate_result:
                         usd_to_cad_rate = float(rate_result)
                 except Exception as e:
@@ -862,7 +895,9 @@ def main():
         total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
         
         # Get user's investment metrics (if they have contributions)
-        user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
+        t0 = time.time()
+        user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True, session_id=session_id)
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics took {time.time() - t0:.2f}s", level='INFO')
         
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0
@@ -1009,6 +1044,10 @@ def main():
         st.markdown("---")
         st.markdown("### Performance Charts")
         
+        log_message(f"[{session_id}] PERF: Metrics calculations complete, took {time.time() - metrics_start:.2f}s total", level='INFO')
+        log_message(f"[{session_id}] PERF: Starting chart section", level='INFO')
+        charts_start = time.time()
+        
         # Portfolio value over time
         if not portfolio_value_df.empty:
             st.markdown("#### Portfolio Performance (Baseline 100)")
@@ -1037,6 +1076,8 @@ def main():
                 use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
             
             # Use normalized performance index (baseline 100) like the console app
+            log_message(f"[{session_id}] PERF: Creating portfolio value chart", level='INFO')
+            t0 = time.time()
             fig = create_portfolio_value_chart(
                 portfolio_value_df, 
                 fund_filter,
@@ -1045,7 +1086,11 @@ def main():
                 show_weekend_shading=True,
                 use_solid_lines=use_solid
             )
+            log_message(f"[{session_id}] PERF: create_portfolio_value_chart took {time.time() - t0:.2f}s", level='INFO')
+            
+            t0 = time.time()
             st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
+            log_message(f"[{session_id}] PERF: st.plotly_chart (render) took {time.time() - t0:.2f}s", level='INFO')
             
             # Individual holdings performance chart (lazy loading)
             st.markdown("---")

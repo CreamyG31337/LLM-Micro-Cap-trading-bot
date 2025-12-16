@@ -39,6 +39,20 @@ if not is_admin():
 st.markdown("# ⚙️ Admin Dashboard")
 st.caption(f"Logged in as: {get_user_email()}")
 
+# Display build stamp
+try:
+    import json
+    from pathlib import Path
+    build_stamp_path = Path(__file__).parent.parent.parent / "build_stamp.json"
+    if build_stamp_path.exists():
+        with open(build_stamp_path, 'r') as f:
+            build_info = json.load(f)
+        st.caption(f"🏷️ Build: {build_info['commit']} ({build_info['branch']}) - {build_info['build_date']}")
+    else:
+        st.caption("🏷️ Build: Development (no build stamp)")
+except Exception:
+    pass  # Silently fail if build stamp can't be loaded
+
 # Custom page navigation in sidebar
 with st.sidebar:
     st.title("Navigation")

@@ -175,7 +175,7 @@ def get_available_funds() -> List[str]:
 
 
 @log_execution_time()
-@st.cache_data(ttl=get_cache_ttl())
+@st.cache_data(ttl=300)
 def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame"""
     client = get_supabase_client()
@@ -248,7 +248,7 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame
 
 
 @log_execution_time()
-@st.cache_data(ttl=get_cache_ttl)
+@st.cache_data(ttl=300)
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
     client = get_supabase_client()
@@ -300,7 +300,7 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
 
 
 @log_execution_time()
-@st.cache_data(ttl=get_cache_ttl)
+@st.cache_data(ttl=300)
 def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     
@@ -1063,7 +1063,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         return {}
 
 
-@st.cache_data(ttl=get_cache_ttl)
+@st.cache_data(ttl=300)
 def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown") -> Optional[Dict[str, Any]]:
     """Get investment metrics for the currently logged-in user using NAV-based calculation.
     

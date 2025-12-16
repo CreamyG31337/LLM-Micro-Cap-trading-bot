@@ -1084,4 +1084,3 @@ with tab8:
         st.info("The logging module may not be initialized. Check streamlit_app.py configuration.")
     except Exception as e:
         st.error(f"Error loading logs: {e}")
-```

@@ -224,7 +224,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     import streamlit.components.v1 as components
     
     js_code = f"""
-    <div id="timestamp-container" style="font-size: 0.9rem; margin-top: -0.8rem; margin-bottom: 0.5rem; color: inherit;"></div>
+    <div id="timestamp-container" style="font-size: 0.9rem; margin-top: -0.8rem; margin-bottom: 0.5rem; padding-top: 2px; line-height: 1.4; overflow: visible;"></div>
     <script>
     (function() {{
         function formatTimestamp() {{
@@ -329,7 +329,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     </script>
     """
     
-    components.html(js_code, height=30)
+    components.html(js_code, height=35)
 
 
 def show_password_reset_page(access_token: str):

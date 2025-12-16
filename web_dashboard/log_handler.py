@@ -160,6 +160,7 @@ def setup_logging(level=logging.INFO):
     
     # List of our application module names to capture logs from
     app_modules = [
+        'app',  # For log_message() calls from streamlit_app.py
         'streamlit_utils',
         'chart_utils', 
         'auth_utils',
@@ -167,6 +168,7 @@ def setup_logging(level=logging.INFO):
         'exchange_rates_utils',
         'scheduler',
         'scheduler.scheduler_core',
+        'scheduler.jobs',
         'log_handler',
         '__main__',
         'web_dashboard',

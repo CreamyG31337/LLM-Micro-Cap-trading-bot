@@ -547,15 +547,6 @@ def show_password_reset_page(access_token: str):
 def main():
     """Main dashboard function"""
     
-    # ===== INITIALIZE LOGGING =====
-    # This MUST use the fixed setup_logging() that only attaches to app-specific
-    # loggers, NOT the root logger (which causes deadlocks with Streamlit)
-    try:
-        from log_handler import setup_logging
-        setup_logging()
-    except Exception as e:
-        print(f"Warning: Could not initialize logging: {e}")
-    
     # Handle magic link token from query params (set by JavaScript hash processor above)
     import base64
     import json

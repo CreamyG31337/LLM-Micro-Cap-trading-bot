@@ -1041,7 +1041,17 @@ with tab8:
     st.caption("View recent application logs with filtering")
     
     try:
-        from log_handler import get_log_handler
+        from log_handler import get_log_handler, setup_logging
+        
+        # Initialize logging ONCE per session (lazy initialization)
+        # This avoids the Streamlit freeze issue when called at app startup
+        if 'logging_initialized' not in st.session_state:
+            try:
+                setup_logging()
+                st.session_state.logging_initialized = True
+            except Exception as setup_error:
+                st.warning(f"Could not initialize logging: {setup_error}")
+                st.session_state.logging_initialized = False
         
         log_handler = get_log_handler()
         

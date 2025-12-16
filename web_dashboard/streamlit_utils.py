@@ -998,17 +998,15 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         - User has no contributions in the fund
     """
     from auth_utils import get_user_email
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     # Get user email
     user_email = get_user_email()
     if not user_email:
-        print(f"DEBUG get_user_investment_metrics: No user email in session")
         return None
     
     client = get_supabase_client()
     if not client:
-        print(f"DEBUG get_user_investment_metrics: No supabase client")
         return None
     
     try:
@@ -1042,7 +1040,6 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 break
         
         if not all_contributions:
-            print(f"DEBUG get_user_investment_metrics: No contributions found for fund '{fund}'")
             return None
         
         # Get cash balances for total fund value
@@ -1059,7 +1056,6 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         fund_total_value = total_portfolio_value + total_cash_cad if include_cash else total_portfolio_value
         
         if fund_total_value <= 0:
-            print(f"DEBUG get_user_investment_metrics: fund_total_value is {fund_total_value} (portfolio={total_portfolio_value}, cash_cad={total_cash_cad})")
             return None
         
         # Parse and sort contributions chronologically
@@ -1129,7 +1125,8 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         timestamps = [c['timestamp'] for c in contributions if c['timestamp']]
         if timestamps:
             first_timestamp = min(timestamps)
-            now = datetime.now()
+            # Ensure now is timezone aware (UTC) to match database timestamps
+            now = datetime.now(timezone.utc)
             total_days = max((now - first_timestamp).days, 1)
         else:
             first_timestamp = None
@@ -1220,7 +1217,6 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 running_total_contributions += amount
         
         if total_units <= 0:
-            print(f"DEBUG get_user_investment_metrics: total_units is {total_units}")
             return None
         
         # Find the current user's data
@@ -1236,16 +1232,12 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 break
         
         if user_contributor is None or user_units <= 0:
-            print(f"DEBUG get_user_investment_metrics: user_contributor={user_contributor}, user_units={user_units}, user_email={user_email_lower}")
-            print(f"DEBUG: Available contributors: {list(contributor_data.keys())}")
-            print(f"DEBUG: Contributor emails: {[(c, d.get('email', '')) for c, d in contributor_data.items()]}")
             return None
         
         user_data = contributor_data[user_contributor]
         user_net_contribution = user_data['net_contribution']
         
         if user_net_contribution <= 0:
-            print(f"DEBUG get_user_investment_metrics: user_net_contribution is {user_net_contribution}")
             return None
         
         # Calculate current NAV and user's value

@@ -862,9 +862,7 @@ def main():
         total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
         
         # Get user's investment metrics (if they have contributions)
-        print(f"DEBUG streamlit_app: Calling get_user_investment_metrics(fund={fund_filter}, portfolio_value={portfolio_value_no_cash})")
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True)
-        print(f"DEBUG streamlit_app: get_user_investment_metrics returned: {user_investment}")
         
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0

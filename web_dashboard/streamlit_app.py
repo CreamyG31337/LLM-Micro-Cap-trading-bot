@@ -103,11 +103,10 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     .timestamp-display {
-        color: var(--text-color);
         font-size: 0.9rem;
-        margin-top: -0.5rem;
-        margin-bottom: 1rem;
-        opacity: 0.8;
+        margin-top: -0.8rem;
+        margin-bottom: 0.5rem;
+        opacity: 0.7;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -226,7 +225,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     import streamlit.components.v1 as components
     
     js_code = f"""
-    <div id="timestamp-container" style="color: var(--text-color, #262730); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1rem; opacity: 0.8;"></div>
+    <div id="timestamp-container" style="font-size: 0.9rem; margin-top: -0.8rem; margin-bottom: 0.5rem; line-height: 1.2; opacity: 0.7;"></div>
     <script>
     (function() {{
         function formatTimestamp() {{
@@ -306,6 +305,9 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
             const container = document.getElementById('timestamp-container');
             if (container) {{
                 container.textContent = 'Market data last updated: ' + formatted;
+                container.style.marginTop = '-0.8rem';
+                container.style.marginBottom = '0.5rem';
+                container.style.opacity = '0.7';
             }}
         }}
         
@@ -320,7 +322,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     </script>
     """
     
-    components.html(js_code, height=30)
+    components.html(js_code, height=20)
 
 
 def show_password_reset_page(access_token: str):

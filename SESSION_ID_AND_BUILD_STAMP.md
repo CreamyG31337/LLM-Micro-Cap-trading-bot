@@ -35,49 +35,41 @@ Added two key features to improve debugging and deployment tracking:
 
 **Problem:** No easy way to know which version of code is deployed or when it was built.
 
-**Solution:** Build stamp system that tracks git commit, branch, and build date.
+**Solution:** Display build timestamp from Woodpecker CI on the admin page (same as main page footer).
 
 **Implementation:**
 
-1. **Build Script** (`generate_build_stamp.py`):
-   - Extracts git commit hash (short form)
-   - Gets current branch name
-   - Records build timestamp
-   - Writes to `build_stamp.json`
+The build timestamp is set by Woodpecker CI during deployment:
+
+1. **Woodpecker CI** (`.woodpecker.yml`):
+   - Generates `BUILD_TIMESTAMP` from `CI_PIPELINE_STARTED`
+   - Formats in Pacific Time: `2025-12-16 07:26 PST`
+   - Passes as environment variable to Docker container
 
 2. **Admin Page Display**:
-   - Shows build info in header: `🏷️ Build: 512fbfe (main) - 2025-12-16 07:26:50 UTC`
-   - Falls back to "Development" if no build stamp exists
-   - Silently fails if file can't be read
+   - Reads `os.getenv("BUILD_TIMESTAMP")`
+   - Shows in header: `🏷️ Build: 2025-12-16 07:26 PST`
+   - Falls back to "Development" with current time if not set
 
-**Build Stamp File Format:**
-```json
-{
-  "commit": "512fbfe",
-  "branch": "main",
-  "timestamp": "2025-12-16T07:26:50.123456+00:00",
-  "build_date": "2025-12-16 07:26:50 UTC"
-}
-```
+**Woodpecker CI Configuration:**
+```yaml
+# .woodpecker.yml (lines 38-46)
+- |
+  if [ -n "$CI_PIPELINE_STARTED" ]; then
+    export BUILD_TIMESTAMP=$(TZ=America/Vancouver date -d "@$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M %Z")
+  else
+    export BUILD_TIMESTAMP=$(TZ=America/Vancouver date "+%Y-%m-%d %H:%M %Z")
+  fi
 
-**Usage:**
-```bash
-# Generate build stamp (run during deployment)
-python generate_build_stamp.py
-
-# Output:
-# Build stamp generated:
-#    Commit: 512fbfe
-#    Branch: main
-#    Date: 2025-12-16 07:26:50 UTC
+# Docker run command (line 65)
+docker run -d ... -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" ... trading-dashboard:latest
 ```
 
 **Benefits:**
-- Know exactly which code version is running
+- Know exactly when the current deployment was built
 - Verify deployments completed successfully
-- Track when builds were created
-- Debug version-specific issues
-- Correlate issues with specific commits
+- Same timestamp shown on both main page footer and admin page
+- Automatically set by CI/CD - no manual steps needed
 
 ## Files Modified
 
@@ -86,29 +78,21 @@ python generate_build_stamp.py
 - `web_dashboard/streamlit_utils.py` - Updated `get_user_investment_metrics()` to accept and use session_id
 - `PERFORMANCE_LOGGING.md` - Updated documentation with session ID examples
 
-### Build Stamp:
-- `generate_build_stamp.py` - New script to generate build stamp
-- `build_stamp.json` - Generated build info file (gitignored)
-- `web_dashboard/pages/admin.py` - Display build stamp in header
+### Build Timestamp Display:
+- `web_dashboard/pages/admin.py` - Display `BUILD_TIMESTAMP` env var in header
+- `.woodpecker.yml` - Already configured to set `BUILD_TIMESTAMP` (no changes needed)
+- `SESSION_ID_AND_BUILD_STAMP.md` - Documentation
 
 ## Integration with CI/CD
 
-Add to your deployment pipeline (e.g., Woodpecker CI):
+**No changes needed!** The build timestamp is already integrated with Woodpecker CI.
 
-```yaml
-steps:
-  - name: generate-build-stamp
-    image: python:3.11
-    commands:
-      - python generate_build_stamp.py
-  
-  - name: build-docker
-    image: docker:latest
-    commands:
-      - docker build -t myapp:latest .
-```
+The `.woodpecker.yml` file already:
+1. Generates `BUILD_TIMESTAMP` from pipeline start time
+2. Formats it in Pacific Time
+3. Passes it to the Docker container as an environment variable
 
-The build stamp will be baked into the Docker image and displayed on the admin page.
+The admin page now reads this same environment variable that the main page uses.
 
 ## Testing
 
@@ -117,15 +101,14 @@ The build stamp will be baked into the Docker image and displayed on the admin p
    - Check logs - you should see two different session IDs
    - Refresh page - session ID should persist
 
-2. **Build Stamp:**
-   - Run `python generate_build_stamp.py`
-   - Open admin page
-   - Verify build info appears in header
-   - Delete `build_stamp.json` and refresh - should show "Development"
+2. **Build Timestamp:**
+   - **In Production (Woodpecker CI):** Build timestamp will show deployment time
+   - **In Development:** Shows "Development" with current time
+   - Both main page footer and admin page should show the same timestamp
 
 ## Notes
 
 - Session IDs are **not** tied to user accounts - they're per-browser-session
-- Build stamp is **optional** - app works fine without it
+- Build timestamp is automatically set by Woodpecker CI - no manual steps needed
 - Session ID adds minimal overhead (~1 string concatenation per log)
-- Build stamp file should be in `.gitignore` (each deployment generates its own)
+- The `generate_build_stamp.py` script is no longer needed (kept for reference)

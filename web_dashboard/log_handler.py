@@ -11,6 +11,29 @@ from datetime import datetime
 from typing import List, Dict
 
 
+class PacificTimeFormatter(logging.Formatter):
+    """Custom formatter that displays timestamps in Pacific Time."""
+    
+    def formatTime(self, record, datefmt=None):
+        """Override formatTime to use Pacific Time."""
+        try:
+            from zoneinfo import ZoneInfo
+            pacific = ZoneInfo("America/Vancouver")
+            dt = datetime.fromtimestamp(record.created, tz=pacific)
+        except (ImportError, Exception):
+            # Fallback if zoneinfo not available
+            from datetime import timezone, timedelta
+            # Pacific is UTC-8 (PST) or UTC-7 (PDT)
+            # This is a simple approximation - doesn't handle DST perfectly
+            pacific_offset = timedelta(hours=-8)
+            dt = datetime.fromtimestamp(record.created, tz=timezone(pacific_offset))
+        
+        if datefmt:
+            return dt.strftime(datefmt)
+        else:
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+
 class InMemoryLogHandler(logging.Handler):
     """Custom logging handler that stores recent log messages in memory.
     
@@ -23,9 +46,9 @@ class InMemoryLogHandler(logging.Handler):
         self.log_records = deque(maxlen=maxlen)
         self.lock = threading.Lock()
         
-        # Set a formatter
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+        # Set a formatter with Pacific Time
+        formatter = PacificTimeFormatter(
+            '%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         self.setFormatter(formatter)
@@ -129,8 +152,8 @@ def setup_logging(level=logging.INFO):
     
     # Create file handler
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    file_handler.setFormatter(PacificTimeFormatter(
+        '%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
     file_handler.setLevel(level)

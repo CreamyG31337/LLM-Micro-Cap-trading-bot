@@ -336,7 +336,6 @@ with tab3:
                     # Fallback: Query user_profiles directly and get funds separately
                     using_fallback = True
                     rpc_error_msg = str(rpc_error)
-                    # st.warning(f"⚠️ Could not use list_users_with_funds RPC: {rpc_error}") # Debug only
                     
                     try:
                         # Get user profiles

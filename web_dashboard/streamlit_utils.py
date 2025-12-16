@@ -1268,5 +1268,19 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         }
         
     except Exception as e:
-        print(f"Error getting user investment metrics: {e}")
+        import traceback
+        error_msg = f"Error getting user investment metrics: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+        
+        # Also show in UI if possible
+        try:
+            import streamlit as st
+            st.error(f"⚠️ Error calculating your investment: {str(e)}")
+        except:
+            pass
+        
+        # Re-raise in development to surface the actual issue
+        if os.environ.get('STREAMLIT_ENV') != 'production':
+            raise
+            
         return None

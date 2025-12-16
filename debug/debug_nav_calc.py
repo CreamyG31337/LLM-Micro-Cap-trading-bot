@@ -17,7 +17,11 @@ sys.modules['streamlit'] = unittest.mock.MagicMock()
 
 def get_client_direct():
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+    key = (os.environ.get("SUPABASE_SERVICE_KEY") or 
+           os.environ.get("SUPABASE_KEY") or 
+           os.environ.get("SUPABASE_ANON_KEY") or 
+           os.environ.get("SUPABASE_SECRET_KEY") or 
+           os.environ.get("SUPABASE_PUBLISHABLE_KEY"))
     
     if not url or not key:
         print("Missing SUPABASE env vars")
@@ -89,6 +93,25 @@ def debug_metrics():
     except Exception as e:
         print(f"Error checking contributions: {e}")
         return
+
+    # 1.5 Check Portfolio Positions (Critical for NAV)
+    print("\n1.5 Checking portfolio_positions visibility...")
+    try:
+        res = client.table("portfolio_positions").select("count").eq("fund", fund).execute()
+        # count is usually a list of dicts if we select count
+        # or we can select IDs
+        res_rows = client.table("portfolio_positions").select("id").eq("fund", fund).execute()
+        count = len(res_rows.data)
+        print(f"Found {count} rows in portfolio_positions for '{fund}'.")
+        
+        if count == 0:
+            print("!! NO POSITIONS FOUND - NAV CALCULATION WILL FAIL !!")
+            print("This confirms DF_016 is required.")
+        else:
+            print(f"Positions found ({count}). DF_016 might be applied.")
+
+    except Exception as e:
+        print(f"Error checking positions: {e}")
 
     # 3. Simulate NAV Logic (Simplified)
     print("\n3. Simulating NAV logic...")

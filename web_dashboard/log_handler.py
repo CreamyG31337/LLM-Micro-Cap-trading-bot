@@ -112,20 +112,30 @@ def get_log_handler() -> InMemoryLogHandler:
 
 
 def setup_logging(level=logging.INFO):
-    """Setup logging with in-memory handler for app modules only.
+    """Setup logging with file handler for app modules.
     
-    IMPORTANT: We do NOT attach to the root logger to avoid interfering
-    with Streamlit's internal logging, which can cause deadlocks.
-    Instead, we only capture logs from our own application modules.
+    Uses FileHandler to write to logs/app.log to avoid deadlocks.
+    Attached only to app-specific loggers, not root logger.
     
     Args:
         level: Log level (default: INFO)
     """
-    handler = get_log_handler()
-    handler.setLevel(level)
+    import os
+    
+    # Ensure logs directory exists
+    log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, 'app.log')
+    
+    # Create file handler
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    file_handler.setLevel(level)
     
     # List of our application module names to capture logs from
-    # These are the logger names used by logging.getLogger(__name__) in our code
     app_modules = [
         'streamlit_utils',
         'chart_utils', 
@@ -139,46 +149,96 @@ def setup_logging(level=logging.INFO):
         'web_dashboard',
     ]
     
-    # Attach handler to each app module logger (NOT the root logger)
+    # Attach handler to each app module logger
     for module_name in app_modules:
         logger = logging.getLogger(module_name)
         
-        # Remove existing InMemoryLogHandler to avoid duplicates
-        for existing_handler in logger.handlers[:]:
-            if isinstance(existing_handler, InMemoryLogHandler):
-                logger.removeHandler(existing_handler)
+        # Remove existing handlers to avoid duplicates
+        # We also remove StreamHandlers if any, to avoid console noise/lag
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
         
-        # Add our handler
-        logger.addHandler(handler)
+        # Add our file handler
+        logger.addHandler(file_handler)
         logger.setLevel(level)
         
-        # Disable propagation to root logger to prevent Streamlit interference
+        # Disable propagation to prevent Streamlit interference
         logger.propagate = False
+        
+    # Also initialize the global InMemoryLogHandler for backward compatibility
+    # (some code might still use log_handler.log_records directly)
+    # But it won't receive new logs unless we also attach it.
+    # For now, let's just stick to FileHandler as the source of truth.
 
 
-def log_message(message: str, level: str = 'INFO', module: str = 'app'):
-    """Convenience function to log a message directly to the in-memory handler.
-    
-    Use this when you want to ensure a message appears in the admin logs
-    without relying on the logging module hierarchy.
+def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
+    """Read recent logs from the log file.
     
     Args:
-        message: The message to log
-        level: Log level ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
-        module: Module name to associate with log
+        n: Number of recent logs to return
+        level: Filter by log level
+        search: Filter by message text
+        
+    Returns:
+        List of dicts with timestamp, level, module, message keys
     """
-    handler = get_log_handler()
+    import os
     
-    # Create a log record manually
-    record = logging.LogRecord(
-        name=module,
-        level=getattr(logging, level.upper(), logging.INFO),
-        pathname='',
-        lineno=0,
-        msg=message,
-        args=(),
-        exc_info=None
-    )
+    log_file = os.path.join(os.path.dirname(__file__), 'logs', 'app.log')
+    if not os.path.exists(log_file):
+        return []
+        
+    logs = []
     
-    handler.emit(record)
+    try:
+        with open(log_file, 'r', encoding='utf-8') as f:
+            # Read all lines (for simple implementation)
+            # For massive logs, we'd use seek() from end, but rotation checks are better
+            lines = f.readlines()
+            
+        # Parse lines
+        for line in lines:
+            try:
+                # Expected format: YYYY-MM-DD HH:MM:SS | LEVEL    | module | message
+                parts = line.split(' | ', 3)
+                if len(parts) == 4:
+                    timestamp_str, level_str, module, message = parts
+                    
+                    # Store
+                    logs.append({
+                        'timestamp': datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S'),
+                        'level': level_str.strip(),
+                        'module': module.strip(),
+                        'message': message.strip(),
+                        'formatted': line.strip()
+                    })
+            except Exception:
+                continue # Skip malformed lines
+                
+        # Apply filters
+        if level:
+            logs = [log for log in logs if log['level'] == level]
+        
+        if search:
+            search_lower = search.lower()
+            logs = [log for log in logs if search_lower in log['message'].lower()]
+            
+        # Return last n
+        if n:
+            logs = logs[-n:]
+            
+        return logs
+        
+    except Exception as e:
+        print(f"Error reading log file: {e}")
+        return []
+
+def log_message(message: str, level: str = 'INFO', module: str = 'app'):
+    """Convenience function to log a message."""
+    logger = logging.getLogger(module)
+    if hasattr(logging, level.upper()):
+        log_level = getattr(logging, level.upper())
+    else:
+        log_level = logging.INFO
+    logger.log(log_level, message)
 

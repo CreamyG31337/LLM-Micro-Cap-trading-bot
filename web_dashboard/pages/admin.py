@@ -1041,19 +1041,8 @@ with tab8:
     st.caption("View recent application logs with filtering")
     
     try:
-        from log_handler import get_log_handler, setup_logging
-        
-        # Initialize logging ONCE per session (lazy initialization)
-        # This avoids the Streamlit freeze issue when called at app startup
-        if 'logging_initialized' not in st.session_state:
-            try:
-                setup_logging()
-                st.session_state.logging_initialized = True
-            except Exception as setup_error:
-                st.warning(f"Could not initialize logging: {setup_error}")
-                st.session_state.logging_initialized = False
-        
-        log_handler = get_log_handler()
+        from log_handler import read_logs_from_file, log_message
+        import os
         
         # Controls row
         col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 2, 1])
@@ -1080,13 +1069,22 @@ with tab8:
         
         with col5:
             if st.button("🗑️ Clear Logs"):
-                log_handler.clear()
-                st.success("Logs cleared")
-                st.rerun()
+                # Clear log file content
+                try:
+                    log_file = os.path.join(os.path.dirname(__file__), '..', 'logs', 'app.log')
+                    if os.path.exists(log_file):
+                        with open(log_file, 'w', encoding='utf-8') as f:
+                            f.write("")
+                    st.success("Logs cleared")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to clear logs: {e}")
         
         # Get logs with filters
         level = None if level_filter == "All" else level_filter
-        logs = log_handler.get_logs(
+        
+        # Use file-based reader
+        logs = read_logs_from_file(
             n=num_logs,
             level=level,
             search=search_text if search_text else None
@@ -1094,7 +1092,7 @@ with tab8:
         
         # Display logs in a code block for better formatting
         if logs:
-            st.caption(f"Showing last {len(logs)} of {len(log_handler.log_records)} total log entries")
+            st.caption(f"Showing last {len(logs)} log entries")
             
             # Create formatted log output
             log_lines = []

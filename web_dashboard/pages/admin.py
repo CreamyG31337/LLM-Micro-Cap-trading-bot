@@ -63,8 +63,8 @@ else:
 with st.sidebar:
     st.title("Navigation")
     st.markdown("### Pages")
-    st.page_link("streamlit_app.py", label="📈 Dashboard", icon="📈")
-    st.page_link("pages/admin.py", label="⚙️ Admin", icon="⚙️")
+    st.page_link("streamlit_app.py", label="📈 Dashboard")
+    st.page_link("pages/admin.py", label="⚙️ Admin")
     st.markdown("---")
 
 # Create tabs for different admin sections

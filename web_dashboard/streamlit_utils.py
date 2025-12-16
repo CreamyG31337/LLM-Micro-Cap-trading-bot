@@ -301,18 +301,18 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
+def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
     actual market values (shares * price), with proper normalization,
     currency conversion (USD→CAD), and continuous timeline handling.
     
-    CACHED: Results are cached with market-aware TTL (5min during market hours, 
-    1hr outside market hours) to improve performance.
+    CACHED: Results are cached for 5 minutes to improve performance.
     
     Args:
         fund: Fund name (REQUIRED - we always filter by fund for performance)
+        days: Optional number of days to look back. None = all time (default)
     
     Returns DataFrame with columns:
     - date: datetime
@@ -323,6 +323,7 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     - performance_index: Normalized to start at 100 (for charting)
     """
     from decimal import Decimal
+    from datetime import datetime, timedelta, timezone
     
     # Fund is required - fail fast if not provided
     if not fund:
@@ -337,6 +338,11 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
         import logging
         logger = logging.getLogger(__name__)
         start_time = time.time()
+        
+        # Calculate date cutoff if days parameter provided
+        cutoff_date = None
+        if days is not None and days > 0:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Query portfolio_positions to get daily snapshots with actual market values
         # Include currency for proper USD→CAD conversion
@@ -355,6 +361,10 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             
             if fund:
                 query = query.eq("fund", fund)
+            
+            # Apply date filter if specified (for performance with large datasets)
+            if cutoff_date:
+                query = query.gte("date", cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ'))
             
             # Order by date to ensure consistent pagination
             # Use range() for pagination

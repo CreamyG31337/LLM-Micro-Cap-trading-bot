@@ -828,7 +828,7 @@ def main():
     
     # Custom page navigation links (replaces default Streamlit page names)
     st.sidebar.markdown("### Pages")
-    st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard", icon="📈")
+    st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard")
     
     # Show admin status
     admin_status = is_admin()
@@ -927,6 +927,17 @@ def main():
         index=0  # Default to first available fund
     )
     
+    # Simple time range selector (for performance when data grows)
+    time_range = st.sidebar.radio(
+        "Time Range",
+        options=["All Time", "Last 3 Months"],
+        index=0,  # Default to All Time
+        help="Filter performance charts by time period. Use 'Last 3 Months' for faster loading with large datasets."
+    )
+    
+    # Convert time range to days parameter
+    days_filter = None if time_range == "All Time" else 90  # ~3 months
+    
     # Use selected fund directly (no "All Funds" conversion needed)
     fund_filter = selected_fund
     
@@ -1010,7 +1021,7 @@ def main():
             log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='INFO')
             
             t0 = time.time()
-            portfolio_value_df = calculate_portfolio_value_over_time(fund_filter)
+            portfolio_value_df = calculate_portfolio_value_over_time(fund_filter, days=days_filter)
             log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')

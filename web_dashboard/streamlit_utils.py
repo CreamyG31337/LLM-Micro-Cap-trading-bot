@@ -373,14 +373,15 @@ def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
             missing_dates = []
             
             # Calculate date range for batch query
-            from datetime import datetime, timezone, time
+            # Calculate date range for batch query
+            from datetime import datetime, timezone, time as dt_time
             min_date = min(unique_dates)
             max_date = max(unique_dates)
             
             # Convert to datetime with timezone for database query
-            start_dt = datetime.combine(min_date, time.min, tzinfo=timezone.utc)
+            start_dt = datetime.combine(min_date, dt_time.min, tzinfo=timezone.utc)
             # Use end of day for max_date to ensure we get rates up to and including max_date
-            end_dt = datetime.combine(max_date, time(23, 59, 59, 999999), tzinfo=timezone.utc)
+            end_dt = datetime.combine(max_date, dt_time(23, 59, 59, 999999), tzinfo=timezone.utc)
             
             # Fetch all exchange rates for the date range in a single query
             rates_data = client.get_exchange_rates(start_dt, end_dt, 'USD', 'CAD')

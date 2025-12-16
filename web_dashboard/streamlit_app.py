@@ -42,6 +42,10 @@ def _init_scheduler():
 
 
 
+from log_handler import setup_logging
+# Initialize logging
+setup_logging()
+
 from streamlit_utils import (
     get_available_funds,
     get_current_positions,

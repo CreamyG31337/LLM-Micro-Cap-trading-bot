@@ -226,103 +226,101 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
     import streamlit.components.v1 as components
     
     js_code = f"""
+    <div id="timestamp-container" style="color: var(--text-color, #262730); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1rem; opacity: 0.8;"></div>
     <script>
     (function() {{
-        // Parse the timestamp
-        const timestamp = new Date('{timestamp_iso}');
-        const isMarketOpen = {str(is_market_open).lower()};
-        const isToday = {str(is_today).lower()};
-        
-        // Get user's timezone
-        const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        
-        // Calculate market close hour in user's timezone
-        // Market closes at 4:00 PM EST (16:00 EST)
-        // Create a date at 4pm EST on the timestamp date, then convert to user's timezone
-        const timestampDate = new Date(timestamp);
-        const year = timestampDate.getUTCFullYear();
-        const month = timestampDate.getUTCMonth();
-        const day = timestampDate.getUTCDate();
-        
-        // Determine if DST is in effect for EST/EDT
-        // DST: 2nd Sunday of March to 1st Sunday of November
-        function isDST(date) {{
-            const m = date.getUTCMonth();
-            if (m >= 3 && m <= 9) return true; // Apr-Oct = EDT
-            if (m < 2 || m > 10) return false; // Jan-Feb, Nov-Dec = EST
-            // March: check if after 2nd Sunday
-            if (m === 2) {{
-                const d = date.getUTCDate();
-                const dow = date.getUTCDay();
-                // Find 2nd Sunday: first find 1st Sunday, then add 7 days
-                const firstSunday = 1 + (7 - dow) % 7;
-                const secondSunday = firstSunday + 7;
-                return d >= secondSunday;
+        function formatTimestamp() {{
+            // Parse the timestamp
+            const timestamp = new Date('{timestamp_iso}');
+            const isMarketOpen = {str(is_market_open).lower()};
+            const isToday = {str(is_today).lower()};
+            
+            // Get user's timezone
+            const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            
+            // Calculate market close hour in user's timezone
+            // Market closes at 4:00 PM EST (16:00 EST)
+            // Create a date at 4pm EST on the timestamp date, then convert to user's timezone
+            const timestampDate = new Date(timestamp);
+            const year = timestampDate.getUTCFullYear();
+            const month = timestampDate.getUTCMonth();
+            const day = timestampDate.getUTCDate();
+            
+            // Determine if DST is in effect for EST/EDT
+            // DST: 2nd Sunday of March to 1st Sunday of November
+            function isDST(date) {{
+                const m = date.getUTCMonth();
+                if (m >= 3 && m <= 9) return true; // Apr-Oct = EDT
+                if (m < 2 || m > 10) return false; // Jan-Feb, Nov-Dec = EST
+                // March: check if after 2nd Sunday
+                if (m === 2) {{
+                    const d = date.getUTCDate();
+                    const dow = date.getUTCDay();
+                    // Find 2nd Sunday: first find 1st Sunday, then add 7 days
+                    const firstSunday = 1 + (7 - dow) % 7;
+                    const secondSunday = firstSunday + 7;
+                    return d >= secondSunday;
+                }}
+                // November: check if before 1st Sunday
+                if (m === 10) {{
+                    const d = date.getUTCDate();
+                    const dow = date.getUTCDay();
+                    const firstSunday = 1 + (7 - dow) % 7;
+                    return d < firstSunday;
+                }}
+                return false;
             }}
-            // November: check if before 1st Sunday
-            if (m === 10) {{
-                const d = date.getUTCDate();
-                const dow = date.getUTCDay();
-                const firstSunday = 1 + (7 - dow) % 7;
-                return d < firstSunday;
+            
+            // Market closes at 4pm EST = 20:00 UTC (EDT) or 21:00 UTC (EST)
+            const marketCloseHourUTC = isDST(timestampDate) ? 20 : 21;
+            
+            // Create market close time in UTC
+            const marketCloseUTC = new Date(Date.UTC(year, month, day, marketCloseHourUTC, 0, 0));
+            
+            // Determine if we should show minutes
+            const showMinutes = isMarketOpen && isToday;
+            
+            // If market is closed or not today, use market close time instead of actual timestamp
+            let displayTime = timestamp;
+            if (!isMarketOpen || !isToday) {{
+                // Use the market close time (already calculated in UTC)
+                displayTime = marketCloseUTC;
             }}
-            return false;
+            
+            // Format the timestamp in user's timezone
+            const options = {{
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                hour12: true,
+                timeZone: userTZ
+            }};
+            
+            if (showMinutes) {{
+                options.minute = '2-digit';
+            }}
+            
+            const formatted = new Intl.DateTimeFormat('en-US', options).format(displayTime);
+            
+            // Display the timestamp
+            const container = document.getElementById('timestamp-container');
+            if (container) {{
+                container.textContent = 'Market data last updated: ' + formatted;
+            }}
         }}
         
-        // Market closes at 4pm EST = 20:00 UTC (EDT) or 21:00 UTC (EST)
-        const marketCloseHourUTC = isDST(timestampDate) ? 20 : 21;
+        // Try to format immediately
+        formatTimestamp();
         
-        // Create market close time in UTC
-        const marketCloseUTC = new Date(Date.UTC(year, month, day, marketCloseHourUTC, 0, 0));
-        
-        // Determine if we should show minutes
-        const showMinutes = isMarketOpen && isToday;
-        
-        // If market is closed or not today, use market close time instead of actual timestamp
-        let displayTime = timestamp;
-        if (!isMarketOpen || !isToday) {{
-            // Use the market close time (already calculated in UTC)
-            displayTime = marketCloseUTC;
-        }}
-        
-        // Format the timestamp in user's timezone
-        const options = {{
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            hour12: true,
-            timeZone: userTZ
-        }};
-        
-        if (showMinutes) {{
-            options.minute = '2-digit';
-        }}
-        
-        const formatted = new Intl.DateTimeFormat('en-US', options).format(displayTime);
-        
-        // Display the timestamp
-        const container = document.createElement('div');
-        container.className = 'timestamp-display';
-        container.textContent = 'Market data last updated: ' + formatted;
-        container.style.color = 'var(--text-color, #262730)';
-        container.style.fontSize = '0.9rem';
-        container.style.marginTop = '-0.5rem';
-        container.style.marginBottom = '1rem';
-        container.style.opacity = '0.8';
-        
-        // Find the header and insert after it
-        const header = document.querySelector('.main-header');
-        if (header && header.parentElement) {{
-            header.parentElement.insertBefore(container, header.nextSibling);
-        }} else {{
-            // Fallback: append to body
-            document.body.appendChild(container);
+        // Also try when DOM is ready (in case script runs before DOM)
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', formatTimestamp);
         }}
     }})();
     </script>
     """
     
-    components.html(js_code, height=0)
+    components.html(js_code, height=30)
 
 
 def show_password_reset_page(access_token: str):
@@ -926,6 +924,60 @@ def main():
     # Display fund name
     st.sidebar.info(f"Viewing: **{fund_filter}**")
     
+    # Get timestamp first (quick query) to display immediately
+    latest_timestamp = None
+    is_market_open = False
+    is_today = False
+    
+    try:
+        # Quick query to get latest timestamp
+        from log_handler import log_message
+        positions_df_quick = get_current_positions(fund_filter)
+        if not positions_df_quick.empty and 'date' in positions_df_quick.columns:
+            try:
+                max_date = positions_df_quick['date'].max()
+                if isinstance(max_date, str):
+                    from dateutil import parser
+                    latest_timestamp = parser.parse(max_date)
+                elif hasattr(max_date, 'to_pydatetime'):
+                    latest_timestamp = max_date.to_pydatetime()
+                elif isinstance(max_date, pd.Timestamp):
+                    latest_timestamp = max_date.to_pydatetime()
+                else:
+                    latest_timestamp = max_date
+                
+                if latest_timestamp.tzinfo is None:
+                    latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+                
+                # Check market status
+                try:
+                    from market_data.market_hours import MarketHours
+                    market_hours = MarketHours()
+                    is_market_open = market_hours.is_market_open()
+                except Exception:
+                    pass
+                
+                # Check if today
+                today_utc = datetime.now(timezone.utc).date()
+                if latest_timestamp.tzinfo is not None:
+                    timestamp_utc = latest_timestamp.astimezone(timezone.utc)
+                else:
+                    timestamp_utc = latest_timestamp.replace(tzinfo=timezone.utc)
+                timestamp_date = timestamp_utc.date()
+                is_today = timestamp_date == today_utc
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Display timestamp right after header
+    if latest_timestamp:
+        try:
+            timestamp_iso = latest_timestamp.isoformat()
+            create_timestamp_display_component(timestamp_iso, is_market_open, is_today)
+        except Exception:
+            pass
+    
     # Main content
     try:
         # Load data
@@ -953,63 +1005,6 @@ def main():
             log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')
-        
-        # Extract latest timestamp and check market status for timestamp display
-        latest_timestamp = None
-        is_market_open = False
-        is_today = False
-        
-        if not positions_df.empty and 'date' in positions_df.columns:
-            try:
-                # Get the maximum date from positions
-                max_date = positions_df['date'].max()
-                
-                # Convert to datetime if it's a string
-                if isinstance(max_date, str):
-                    from dateutil import parser
-                    latest_timestamp = parser.parse(max_date)
-                elif hasattr(max_date, 'to_pydatetime'):
-                    latest_timestamp = max_date.to_pydatetime()
-                elif isinstance(max_date, pd.Timestamp):
-                    latest_timestamp = max_date.to_pydatetime()
-                else:
-                    latest_timestamp = max_date
-                
-                # Ensure timezone-aware (assume UTC if naive)
-                if latest_timestamp.tzinfo is None:
-                    latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
-                
-                # Check if market is open
-                try:
-                    from market_data.market_hours import MarketHours
-                    market_hours = MarketHours()
-                    is_market_open = market_hours.is_market_open()
-                except Exception as e:
-                    log_message(f"[{session_id}] Could not check market status: {e}", level='DEBUG')
-                    is_market_open = False
-                
-                # Check if timestamp is from today (compare dates in UTC)
-                today_utc = datetime.now(timezone.utc).date()
-                # Convert timestamp to UTC if needed
-                if latest_timestamp.tzinfo is not None:
-                    timestamp_utc = latest_timestamp.astimezone(timezone.utc)
-                else:
-                    timestamp_utc = latest_timestamp.replace(tzinfo=timezone.utc)
-                timestamp_date = timestamp_utc.date()
-                is_today = timestamp_date == today_utc
-                
-            except Exception as e:
-                log_message(f"[{session_id}] Error extracting timestamp: {e}", level='DEBUG')
-                latest_timestamp = None
-        
-        # Display timestamp component
-        if latest_timestamp:
-            try:
-                # Convert to ISO string for JavaScript
-                timestamp_iso = latest_timestamp.isoformat()
-                create_timestamp_display_component(timestamp_iso, is_market_open, is_today)
-            except Exception as e:
-                log_message(f"[{session_id}] Error creating timestamp display: {e}", level='DEBUG')
         
         # Metrics row
         st.markdown("### Performance Metrics")

@@ -16,11 +16,46 @@ try:
     from supabase_client import SupabaseClient
     from auth_utils import get_user_token
     from log_handler import log_execution_time
+    import streamlit as st
 except ImportError:
     # Fallback if supabase_client not available
     SupabaseClient = None
     get_user_token = None
     log_execution_time = lambda x=None: lambda f: f # No-op decorator fallback
+    st = None
+
+
+def get_cache_ttl() -> int:
+    """Get cache TTL based on market hours.
+    
+    Returns:
+        Cache TTL in seconds:
+        - 300s (5 min) during market hours (9:30 AM - 4:00 PM EST, Mon-Fri)
+        - 3600s (1 hour) after market close
+    """
+    from datetime import datetime
+    try:
+        import pytz
+        est = pytz.timezone('America/New_York')
+        now = datetime.now(est)
+    except ImportError:
+        # Fallback if pytz not available - use zoneinfo (Python 3.9+)
+        from zoneinfo import ZoneInfo
+        est = ZoneInfo('America/New_York')
+        now = datetime.now(est)
+    
+    # Weekend: cache for 1 hour
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return 3600
+    
+    # Market hours: 9:30 AM - 4:00 PM EST
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    
+    if market_open <= now <= market_close:
+        return 300  # 5 minutes during market hours
+    else:
+        return 3600  # 1 hour outside market hours
 
 
 def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseClient]:
@@ -140,6 +175,7 @@ def get_available_funds() -> List[str]:
 
 
 @log_execution_time()
+@st.cache_data(ttl=get_cache_ttl)
 def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame"""
     client = get_supabase_client()
@@ -186,6 +222,7 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
 
 
 @log_execution_time()
+@st.cache_data(ttl=None)  # Cache forever - historical trades don't change
 def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame:
     """Get trade log entries as DataFrame with company names from securities table"""
     client = get_supabase_client()
@@ -211,6 +248,7 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame
 
 
 @log_execution_time()
+@st.cache_data(ttl=get_cache_ttl)
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
     client = get_supabase_client()
@@ -262,12 +300,16 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
 
 
 @log_execution_time()
+@st.cache_data(ttl=get_cache_ttl)
 def calculate_portfolio_value_over_time(fund: str) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
     actual market values (shares * price), with proper normalization,
     currency conversion (USD→CAD), and continuous timeline handling.
+    
+    CACHED: Results are cached with market-aware TTL (5min during market hours, 
+    1hr outside market hours) to improve performance.
     
     Args:
         fund: Fund name (REQUIRED - we always filter by fund for performance)
@@ -767,6 +809,7 @@ def get_investor_count(fund: str) -> int:
         return 0
 
 
+@st.cache_data(ttl=3600)  # 1 hour - contributor list changes infrequently
 def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_admin: bool = False) -> pd.DataFrame:
     """Get investor allocation data with privacy masking
     
@@ -861,11 +904,14 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=None)  # Cache forever - historical data doesn't change
 def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, float]:
     """Get historical fund values for specific dates.
     
     Queries portfolio_positions to calculate total fund value at each date.
     Returns the closest available date if exact date not found.
+    
+    CACHED: Permanently cached as historical data never changes (unless manually cleared for bug fixes).
     
     Args:
         fund: Fund name
@@ -1017,12 +1063,16 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
         return {}
 
 
+@st.cache_data(ttl=get_cache_ttl)
 def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown") -> Optional[Dict[str, Any]]:
     """Get investment metrics for the currently logged-in user using NAV-based calculation.
     
     This calculates the user's investment performance using a unit-based system 
     (similar to mutual fund NAV). Investors who join when the fund is worth more 
     get fewer units per dollar, resulting in accurate per-investor returns.
+    
+    CACHED: Results are cached with market-aware TTL (5min during market hours, 
+    1hr outside market hours) to improve performance.
     
     Args:
         fund: Fund name

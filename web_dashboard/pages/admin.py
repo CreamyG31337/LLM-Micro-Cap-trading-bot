@@ -17,12 +17,7 @@ from auth_utils import is_authenticated, is_admin, get_user_email
 from streamlit_utils import get_supabase_client
 
 # Page configuration
-st.set_page_config(
-    page_title="Admin Dashboard",
-    page_icon="⚙️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
 
 # Check authentication
 if not is_authenticated():
@@ -35,8 +30,17 @@ if not is_admin():
     st.info("Only administrators can access this page.")
     st.stop()
 
-# Header
-st.markdown("# ⚙️ Admin Dashboard")
+# Header with cache clearing button
+col_header1, col_header2, col_header3 = st.columns([2, 2, 1])
+with col_header1:
+    st.markdown("# ⚙️ Admin Dashboard")
+with col_header3:
+    st.write("")  # Spacer for alignment
+    if st.button("🔄 Clear Cache", help="Force refresh all cached data from database", use_container_width=True):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared! Data will be reloaded from database.")
+        st.rerun()
+
 st.caption(f"Logged in as: {get_user_email()}")
 
 # Display build timestamp (from Woodpecker CI environment variable)

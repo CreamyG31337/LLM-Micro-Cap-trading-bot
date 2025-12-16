@@ -5,6 +5,8 @@ This document compares the console application features with the web dashboard t
 
 **Last Updated:** 2025-01-27
 
+**Status Update:** Automatic Stock Price Updates job has been implemented (see `web_dashboard/scheduler/jobs.py`)
+
 ---
 
 ## Console App Features vs Web Dashboard
@@ -12,7 +14,8 @@ This document compares the console application features with the web dashboard t
 ### ✅ **Currently Available in Web Dashboard**
 
 1. **Portfolio Dashboard** - Basic portfolio view with charts
-2. **Admin Features:**
+2. **Automatic Stock Price Updates** - Scheduled job updates portfolio prices every 15 minutes
+3. **Admin Features:**
    - Scheduled Tasks Management
    - User Management (assign funds, delete users)
    - Contributor Access Management
@@ -25,6 +28,26 @@ This document compares the console application features with the web dashboard t
 ---
 
 ## ❌ **Missing Features from Web Dashboard**
+
+### **0. Market Data Updates** ✅ **IMPLEMENTED**
+
+#### **Automatic Stock Price Updates** (Console: Automatic on every run)
+- **Console**: Automatically fetches current stock prices when you run `trading_script.py`
+- **Status**: ✅ **IMPLEMENTED** - `update_portfolio_prices_job()` scheduled job
+- **Implementation**: 
+  - Scheduled job runs every 15 minutes during market hours
+  - Also runs at 4:05 PM EST to get official closing prices
+  - Rebuilds positions from trade log (source of truth)
+  - Fetches current market prices for all active positions
+  - Updates only today's snapshot (or yesterday's if market closed)
+  - Does NOT delete historical data
+  - Prevents duplicates by deleting all positions for target date before inserting
+  - Handles partial failures gracefully
+  - Only skips if BOTH US and Canadian markets are closed
+- **Location**: `web_dashboard/scheduler/jobs.py` - `update_portfolio_prices_job()`
+- **Documentation**: `web_dashboard/scheduler/JOB_SAFETY_ANALYSIS.md`
+
+---
 
 ### **1. Trade Management & History**
 
@@ -315,10 +338,11 @@ This document compares the console application features with the web dashboard t
 ## 🎯 **Recommended Implementation Order**
 
 ### **Phase 1: Core Missing Features**
-1. Trade Log Viewer (detailed, sortable, filterable)
-2. Cash Balance Update Interface
-3. Portfolio Rebuild Tool
-4. Cache Management Interface
+1. ✅ **Automatic Stock Price Updates** - IMPLEMENTED (scheduled job)
+2. Trade Log Viewer (detailed, sortable, filterable)
+3. Cash Balance Update Interface
+4. Portfolio Rebuild Tool
+5. Cache Management Interface
 
 ### **Phase 2: Enhanced Functionality**
 1. Sort Portfolio Options

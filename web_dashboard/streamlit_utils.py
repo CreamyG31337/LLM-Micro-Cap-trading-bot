@@ -355,8 +355,10 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
         
         while True:
             # Build query for this batch
+            # Include base currency columns for pre-converted values (performance optimization)
             query = client.supabase.table("portfolio_positions").select(
-                "date, total_value, cost_basis, pnl, fund, currency"
+                "date, total_value, cost_basis, pnl, fund, currency, "
+                "total_value_base, cost_basis_base, pnl_base, base_currency"
             )
             
             if fund:
@@ -407,136 +409,149 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
             max_date = df['date'].max()
             logger.debug(f"Date range: {min_date.date()} to {max_date.date()}")
         
-        # Load exchange rates for currency conversion - NO FALLBACKS, errors are preferred
-        from exchange_rates_utils import get_exchange_rate_for_date_from_db, reload_exchange_rate_for_date
+        # Check if we should use pre-converted values or runtime conversion
+        has_preconverted = False
+        if 'total_value_base' in df.columns and 'base_currency' in df.columns:
+            # Check if pre-converted columns are populated (not all NULL)
+            has_preconverted = df['total_value_base'].notna().any()
         
-        # Check if we have any USD positions that need conversion
-        has_usd = False
-        if 'currency' in df.columns:
-            has_usd = df['currency'].str.upper().eq('USD').any()
-        
-        if has_usd:
-            # Get unique dates for exchange rate lookup
-            unique_dates = df['date'].dt.date.unique()
-            rate_start = time.time()
-            
-            # Build exchange rate cache for all dates using batch query
-            rate_cache = {}
-            missing_dates = []
-            
-            # Calculate date range for batch query
-            # Calculate date range for batch query
-            from datetime import datetime, timezone, time as dt_time
-            min_date = min(unique_dates)
-            max_date = max(unique_dates)
-            
-            # Convert to datetime with timezone for database query
-            start_dt = datetime.combine(min_date, dt_time.min, tzinfo=timezone.utc)
-            # Use end of day for max_date to ensure we get rates up to and including max_date
-            end_dt = datetime.combine(max_date, dt_time(23, 59, 59, 999999), tzinfo=timezone.utc)
-            
-            # Fetch all exchange rates for the date range in a single query
-            rates_data = client.get_exchange_rates(start_dt, end_dt, 'USD', 'CAD')
-            
-            # Build sorted list of rates with timestamps for efficient lookup
-            # Each rate entry has 'timestamp' and 'rate' keys
-            sorted_rates = []
-            for rate_entry in rates_data:
-                timestamp_str = rate_entry.get('timestamp')
-                rate_value = rate_entry.get('rate')
-                
-                if timestamp_str and rate_value is not None:
-                    try:
-                        # Parse timestamp
-                        if isinstance(timestamp_str, str):
-                            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                        else:
-                            dt = timestamp_str
-                        
-                        # Ensure timezone-aware
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        
-                        sorted_rates.append({
-                            'timestamp': dt,
-                            'rate': float(rate_value)
-                        })
-                    except Exception as e:
-                        logger.warning(f"Could not parse rate entry: {e}")
-                        continue
-            
-            # Sort by timestamp (ascending)
-            sorted_rates.sort(key=lambda x: x['timestamp'])
-            
-            # For each unique date, find the most recent rate on or before that date
-            # Since sorted_rates is sorted ascending, we iterate backwards for efficiency
-            for date_val in unique_dates:
-                # Convert date to datetime at start of day for comparison
-                target_dt = datetime.combine(date_val, dt_time.min, tzinfo=timezone.utc)
-                
-                # Find the most recent rate where timestamp <= target_dt
-                # Iterate backwards through sorted rates for efficiency
-                rate_found = None
-                for rate_entry in reversed(sorted_rates):
-                    if rate_entry['timestamp'] <= target_dt:
-                        rate_found = rate_entry['rate']
-                        break
-                
-                if rate_found is None:
-                    missing_dates.append(date_val)
-                else:
-                    rate_cache[date_val] = rate_found
-            
-            rate_lookup_time = time.time() - rate_start
-            logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate lookup: {rate_lookup_time:.2f}s ({len(unique_dates)} dates)")
-            
-            # If we have missing rates, try to fetch them
-            if missing_dates:
-                fetch_start = time.time()
-                print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
-                for date_val in missing_dates:
-                    from datetime import datetime, timezone
-                    dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
-                    fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
-                    
-                    if fetched_rate is not None:
-                        rate_cache[date_val] = float(fetched_rate)
-                        print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
-                    else:
-                        logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
-                        rate_cache[date_val] = 1.42
-                fetch_time = time.time() - fetch_start
-                logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")
-            
-            # Apply currency conversion to USD positions
-            convert_start = time.time()
-            def convert_to_cad(row, column):
-                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                value = float(row.get(column, 0) or 0)
-                
-                if currency == 'USD':
-                    date_key = row['date'].date() if hasattr(row['date'], 'date') else row['date']
-                    rate = rate_cache.get(date_key)
-                    if rate is None:
-                        logger.warning(f"No exchange rate found for {date_key}, using fallback 1.42")
-                        rate = 1.42
-                    return value * rate
-                return value
-            
-            df['total_value_cad'] = df.apply(lambda r: convert_to_cad(r, 'total_value'), axis=1)
-            df['cost_basis_cad'] = df.apply(lambda r: convert_to_cad(r, 'cost_basis'), axis=1)
-            df['pnl_cad'] = df.apply(lambda r: convert_to_cad(r, 'pnl'), axis=1)
-            convert_time = time.time() - convert_start
-            logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s")
-            
-            value_col = 'total_value_cad'
-            cost_col = 'cost_basis_cad'
-            pnl_col = 'pnl_cad'
+        if has_preconverted:
+            # USE PRE-CONVERTED VALUES (FAST PATH) - no exchange rate fetching needed!
+            logger.info("⚡ Using pre-converted base currency values (FAST PATH)")
+            value_col = 'total_value_base'
+            cost_col = 'cost_basis_base'
+            pnl_col = 'pnl_base'
         else:
-            # No USD positions, use values as-is (already in CAD)
-            value_col = 'total_value'
-            cost_col = 'cost_basis'
-            pnl_col = 'pnl'
+            # FALLBACK: Runtime currency conversion for old data without base columns
+            logger.warning("⚠️ Using runtime currency conversion (SLOW PATH - data not pre-converted)")
+            
+            # Check if we have any USD positions that need conversion
+            has_usd = False
+            if 'currency' in df.columns:
+                has_usd = df['currency'].str.upper().eq('USD').any()
+            
+            if has_usd:
+                # Get unique dates for exchange rate lookup
+                unique_dates = df['date'].dt.date.unique()
+                rate_start = time.time()
+                
+                # Build exchange rate cache for all dates using batch query
+                rate_cache = {}
+                missing_dates = []
+                
+                # Calculate date range for batch query
+                # Calculate date range for batch query
+                from datetime import datetime, timezone, time as dt_time
+                min_date = min(unique_dates)
+                max_date = max(unique_dates)
+                
+                # Convert to datetime with timezone for database query
+                start_dt = datetime.combine(min_date, dt_time.min, tzinfo=timezone.utc)
+                # Use end of day for max_date to ensure we get rates up to and including max_date
+                end_dt = datetime.combine(max_date, dt_time(23, 59, 59, 999999), tzinfo=timezone.utc)
+                
+                # Fetch all exchange rates for the date range in a single query
+                rates_data = client.get_exchange_rates(start_dt, end_dt, 'USD', 'CAD')
+                
+                # Build sorted list of rates with timestamps for efficient lookup
+                # Each rate entry has 'timestamp' and 'rate' keys
+                sorted_rates = []
+                for rate_entry in rates_data:
+                    timestamp_str = rate_entry.get('timestamp')
+                    rate_value = rate_entry.get('rate')
+                    
+                    if timestamp_str and rate_value is not None:
+                        try:
+                            # Parse timestamp
+                            if isinstance(timestamp_str, str):
+                                dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                            else:
+                                dt = timestamp_str
+                            
+                            # Ensure timezone-aware
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            
+                            sorted_rates.append({
+                                'timestamp': dt,
+                                'rate': float(rate_value)
+                            })
+                        except Exception as e:
+                            logger.warning(f"Could not parse rate entry: {e}")
+                            continue
+                
+                # Sort by timestamp (ascending)
+                sorted_rates.sort(key=lambda x: x['timestamp'])
+                
+                # For each unique date, find the most recent rate on or before that date
+                # Since sorted_rates is sorted ascending, we iterate backwards for efficiency
+                for date_val in unique_dates:
+                    # Convert date to datetime at start of day for comparison
+                    target_dt = datetime.combine(date_val, dt_time.min, tzinfo=timezone.utc)
+                    
+                    # Find the most recent rate where timestamp <= target_dt
+                    # Iterate backwards through sorted rates for efficiency
+                    rate_found = None
+                    for rate_entry in reversed(sorted_rates):
+                        if rate_entry['timestamp'] <= target_dt:
+                            rate_found = rate_entry['rate']
+                            break
+                    
+                    if rate_found is None:
+                        missing_dates.append(date_val)
+                    else:
+                        rate_cache[date_val] = rate_found
+                
+                rate_lookup_time = time.time() - rate_start
+                logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate lookup: {rate_lookup_time:.2f}s ({len(unique_dates)} dates)")
+                
+                # If we have missing rates, try to fetch them
+                if missing_dates:
+                    fetch_start = time.time()
+                    print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
+                    for date_val in missing_dates:
+                        from datetime import datetime, timezone
+                        dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
+                        fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
+                        
+                        if fetched_rate is not None:
+                            rate_cache[date_val] = float(fetched_rate)
+                            print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
+                        else:
+                            logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
+                            rate_cache[date_val] = 1.42
+                    fetch_time = time.time() - fetch_start
+                    logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")
+                
+                # Apply currency conversion to USD positions
+                convert_start = time.time()
+                def convert_to_cad(row, column):
+                    currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
+                    value = float(row.get(column, 0) or 0)
+                    
+                    if currency == 'USD':
+                        date_key = row['date'].date() if hasattr(row['date'], 'date') else row['date']
+                        rate = rate_cache.get(date_key)
+                        if rate is None:
+                            logger.warning(f"No exchange rate found for {date_key}, using fallback 1.42")
+                            rate = 1.42
+                        return value * rate
+                    return value
+                
+                df['total_value_cad'] = df.apply(lambda r: convert_to_cad(r, 'total_value'), axis=1)
+                df['cost_basis_cad'] = df.apply(lambda r: convert_to_cad(r, 'cost_basis'), axis=1)
+                df['pnl_cad'] = df.apply(lambda r: convert_to_cad(r, 'pnl'), axis=1)
+                convert_time = time.time() - convert_start
+                logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s")
+                
+                value_col = 'total_value_cad'
+                cost_col = 'cost_basis_cad'
+                pnl_col = 'pnl_cad'
+            else:
+                # No USD positions, use values as-is (already in CAD)
+                value_col = 'total_value'
+                cost_col = 'cost_basis'
+                pnl_col = 'pnl'
         
         # Aggregate by date to get daily portfolio totals
         agg_start = time.time()

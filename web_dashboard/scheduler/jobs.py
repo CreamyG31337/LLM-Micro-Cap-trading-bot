@@ -10,7 +10,7 @@ Define all background jobs here. Each job should:
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Dict, Any, Optional
 from decimal import Decimal
 from collections import defaultdict
@@ -192,17 +192,20 @@ def populate_performance_metrics_job() -> None:
 # Global lock to prevent concurrent execution (backup to APScheduler's max_instances=1)
 _update_prices_job_running = False
 
-def update_portfolio_prices_job() -> None:
-    """Update portfolio positions with current market prices for today.
+def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
+    """Update portfolio positions with current market prices for a specific date.
+    
+    Args:
+        target_date: Date to update. If None, auto-determines (today or last trading day).
     
     This job:
     1. Gets current positions from the latest snapshot (or rebuilds from trade log)
     2. Fetches current market prices for all positions
-    3. Updates only today's snapshot (or yesterday's if market is closed)
+    3. Updates only the target date's snapshot
     4. Does NOT delete any historical data
     
     Based on logic from debug/rebuild_portfolio_complete.py but modified to:
-    - Only update current/last day
+    - Only update current/last day (or specified date)
     - Not wipe historical data
     - Work with Supabase directly
     
@@ -249,31 +252,34 @@ def update_portfolio_prices_job() -> None:
         market_holidays = MarketHolidays()
         client = SupabaseClient()
         
-        # Determine target date: today if at least one market is open, otherwise last trading day
-        # Only skip if BOTH US and Canadian markets are closed
-        today = datetime.now().date()
-        
-        # Check if at least one market is open (use "any" - don't skip if only one market is closed)
-        if market_holidays.is_trading_day(today, market="any"):
-            target_date = today
-        else:
-            # Both markets are closed - use last trading day (when at least one was open)
-            # Go back up to 7 days to find a day when at least one market was open
-            target_date = None
-            for i in range(1, 8):  # Start from 1 (yesterday), go back up to 7 days
-                check_date = today - timedelta(days=i)
-                if market_holidays.is_trading_day(check_date, market="any"):
-                    target_date = check_date
-                    break
+        # Determine target date if not specified
+        if target_date is None:
+            # Auto-detect: today if at least one market is open, otherwise last trading day
+            # Only skip if BOTH US and Canadian markets are closed
+            today = datetime.now().date()
             
-            # If we couldn't find a trading day in the last 7 days, skip this run
-            if target_date is None:
-                duration_ms = int((time.time() - start_time) * 1000)
-                message = f"No trading day found in last 7 days (both markets closed) - skipping update"
-                log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-                logger.info(f"ℹ️ {message}")
-                return
+            # Check if at least one market is open (use "any" - don't skip if only one market is closed)
+            if market_holidays.is_trading_day(today, market="any"):
+                target_date = today
+            else:
+                # Both markets are closed - use last trading day (when at least one was open)
+                # Go back up to 7 days to find a day when at least one market was open
+                target_date = None
+                for i in range(1, 8):  # Start from 1 (yesterday), go back up to 7 days
+                    check_date = today - timedelta(days=i)
+                    if market_holidays.is_trading_day(check_date, market="any"):
+                        target_date = check_date
+                        break
+                
+                # If we couldn't find a trading day in the last 7 days, skip this run
+                if target_date is None:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    message = f"No trading day found in last 7 days (both markets closed) - skipping update"
+                    log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+                    logger.info(f"ℹ️ {message}")
+                    return
         
+        today = datetime.now().date()
         logger.info(f"Target date for price update: {target_date} (today is {today})")
         
         # Get all funds from database with base_currency

@@ -71,6 +71,17 @@ def start_scheduler() -> bool:
     scheduler.start()
     logger.info("✅ Background scheduler started")
     
+    # Run backfill check once on startup (catches downtime/reboots)
+    # This runs asynchronously to not block scheduler startup
+    from scheduler.backfill import startup_backfill_check
+    scheduler.add_job(
+        startup_backfill_check,
+        trigger='date',  # Run once immediately
+        id='startup_backfill',
+        name='Startup Backfill Check'
+    )
+    logger.info("📋 Scheduled startup backfill check")
+    
     return True
 
 

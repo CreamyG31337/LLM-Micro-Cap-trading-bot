@@ -16,12 +16,14 @@ try:
     from supabase_client import SupabaseClient
     from auth_utils import get_user_token
     from log_handler import log_execution_time
+    from exchange_rates_utils import reload_exchange_rate_for_date
     import streamlit as st
 except ImportError:
     # Fallback if supabase_client not available
     SupabaseClient = None
     get_user_token = None
     log_execution_time = lambda x=None: lambda f: f # No-op decorator fallback
+    reload_exchange_rate_for_date = None
     st = None
 
 
@@ -509,16 +511,21 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
                 if missing_dates:
                     fetch_start = time.time()
                     print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
-                    for date_val in missing_dates:
-                        from datetime import datetime, timezone
-                        dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
-                        fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
-                        
-                        if fetched_rate is not None:
-                            rate_cache[date_val] = float(fetched_rate)
-                            print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
-                        else:
-                            logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
+                    if reload_exchange_rate_for_date:
+                        for date_val in missing_dates:
+                            from datetime import datetime, timezone
+                            dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
+                            fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
+                            
+                            if fetched_rate is not None:
+                                rate_cache[date_val] = float(fetched_rate)
+                                print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
+                            else:
+                                logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
+                                rate_cache[date_val] = 1.42
+                    else:
+                        logger.warning("reload_exchange_rate_for_date function not available, using fallback rates")
+                        for date_val in missing_dates:
                             rate_cache[date_val] = 1.42
                     fetch_time = time.time() - fetch_start
                     logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")

@@ -91,26 +91,65 @@ def startup_backfill_check() -> None:
         
         logger.info(f"   Earliest trade across all funds: {earliest_trade_date}")
         
-        # 3. Check both job completion AND data existence for each trading day
-        #    This ensures we re-run if EITHER:
-        #    - Job didn't complete successfully (crashed/failed/missing)
-        #    - Data is missing even though job says "completed"
+        # 3. Find the most recent "checkpoint" date where both job completed AND data exists
+        #    Only backfill dates AFTER this checkpoint (smart approach)
         today = datetime.now().date()
-        missing_days = []
+        checkpoint_date = None
         
-        current = earliest_trade_date
+        # Start from today and work backwards to find last known good date
+        check_date = today
+        while check_date >= earliest_trade_date:
+            if market_holidays.is_trading_day(check_date, market="any"):
+                job_completed = is_job_completed('update_portfolio_prices', check_date)
+                
+                # Quick data existence check
+                try:
+                    start_of_day = datetime.combine(check_date, datetime.min.time()).isoformat()
+                    end_of_day = datetime.combine(check_date, datetime.max.time()).isoformat()
+                    
+                    result = client.supabase.table("portfolio_positions")\
+                        .select("id", count='exact')\
+                        .gte("date", start_of_day)\
+                        .lt("date", end_of_day)\
+                        .in_("fund", fund_names)\
+                        .limit(1)\
+                        .execute()
+                    
+                    data_exists = (result.count and result.count > 0)
+                except:
+                    data_exists = False
+                
+                # Found a good checkpoint!
+                if job_completed and data_exists:
+                    checkpoint_date = check_date
+                    logger.info(f"   Found checkpoint: {checkpoint_date} (job completed + data exists)")
+                    break
+            
+            check_date -= timedelta(days=1)
+            
+            # Don't search more than 30 days back for checkpoint (performance)
+            if (today - check_date).days > 30:
+                logger.info("   No checkpoint found in last 30 days - will process all dates")
+                checkpoint_date = earliest_trade_date - timedelta(days=1)  # Process everything
+                break
+        
+        if checkpoint_date is None:
+            # No checkpoint found at all - process from earliest trade
+            checkpoint_date = earliest_trade_date - timedelta(days=1)
+            logger.info("   No checkpoint found - will process all dates from earliest trade")
+        
+        # 4. Now collect all dates AFTER checkpoint that need processing
+        missing_days = []
+        current = checkpoint_date + timedelta(days=1)  # Start day after checkpoint
+        
         while current <= today:
-            # Only check trading days (market="any" = either US or Canada open)
             if market_holidays.is_trading_day(current, market="any"):
-                # Check 1: Did the job complete successfully?
+                # Check if this date needs processing
                 job_completed = is_job_completed('update_portfolio_prices', current)
                 
-                # Check 2: Does portfolio data actually exist for this date?
-                # Query for ANY portfolio_positions record on this date for ANY production fund
+                # Check data existence
                 data_exists = False
                 try:
-                    # Check if we have portfolio data for this date
-                    # Use a simple count query (fast)
                     start_of_day = datetime.combine(current, datetime.min.time()).isoformat()
                     end_of_day = datetime.combine(current, datetime.max.time()).isoformat()
                     
@@ -122,20 +161,12 @@ def startup_backfill_check() -> None:
                         .limit(1)\
                         .execute()
                     
-                    # If count > 0, data exists
                     data_exists = (result.count and result.count > 0)
-                    logger.debug(f"Date {current}: job_completed={job_completed}, data_exists={data_exists} (count={result.count})")
                 except Exception as e:
                     logger.warning(f"Could not check data existence for {current}: {e}")
-                    # If check fails, treat as missing data (safe default)
                     data_exists = False
                 
                 # Re-run if job incomplete OR data missing
-                # This handles:
-                # - Crashed jobs (job incomplete)
-                # - Failed jobs (job incomplete)
-                # - Missing jobs (job incomplete)
-                # - Data wiped (data missing even if job says complete)
                 if not job_completed or not data_exists:
                     missing_days.append(current)
                     if job_completed and not data_exists:
@@ -144,6 +175,7 @@ def startup_backfill_check() -> None:
                         logger.info(f"   {current}: Data exists but job incomplete - will re-run")
                     elif not job_completed and not data_exists:
                         logger.info(f"   {current}: Both job and data missing - will re-run")
+            
             current += timedelta(days=1)
         
         if not missing_days:

@@ -257,7 +257,6 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         from market_data.price_cache import PriceCache
         from market_data.market_hours import MarketHours
         from utils.market_holidays import MarketHolidays
-        from utils.ticker_utils import get_company_name
         from supabase_client import SupabaseClient
         from data.repositories.repository_factory import RepositoryFactory
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
@@ -495,13 +494,9 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         pnl_base = unrealized_pnl
                         conversion_rate = Decimal('1.0')
                     
-                    # Get company name if not already set
-                    company = holding.get('company') or get_company_name(ticker)
-                    
                     updated_positions.append({
                         'fund': fund_name,
                         'ticker': ticker,
-                        'company': company,
                         'shares': float(shares),
                         'price': float(current_price),
                         'cost_basis': float(cost_basis),

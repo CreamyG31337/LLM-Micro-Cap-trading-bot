@@ -231,11 +231,24 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         
         # CRITICAL: Add project root to path FIRST, before any imports
         import sys
+        import os
         from pathlib import Path
-        project_root = Path(__file__).parent.parent.parent
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-            logger.debug(f"Added project root to path: {project_root}")
+        
+        # Get absolute path to project root
+        # __file__ is scheduler/jobs.py
+        # parent is scheduler/, parent.parent is web_dashboard/, parent.parent.parent is project root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        project_root_str = str(project_root)
+        
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+            logger.debug(f"Added project root to sys.path: {project_root_str}")
+        
+        # Also ensure web_dashboard is in path for supabase_client imports
+        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+        if web_dashboard_path not in sys.path:
+            sys.path.insert(0, web_dashboard_path)
+            logger.debug(f"Added web_dashboard to sys.path: {web_dashboard_path}")
         
         logger.info("Starting portfolio price update job...")
         

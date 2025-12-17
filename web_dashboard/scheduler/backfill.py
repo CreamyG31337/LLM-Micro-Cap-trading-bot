@@ -32,9 +32,18 @@ def startup_backfill_check() -> None:
         # Add project root to path for imports (same pattern as jobs.py)
         import sys
         from pathlib import Path
-        project_root = Path(__file__).parent.parent.parent
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
+        
+        # Get absolute paths
+        project_root = Path(__file__).resolve().parent.parent.parent
+        project_root_str = str(project_root)
+        
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+        
+        # Also add web_dashboard to path
+        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+        if web_dashboard_path not in sys.path:
+            sys.path.insert(0, web_dashboard_path)
         
         from supabase_client import SupabaseClient
         from utils.market_holidays import MarketHolidays
@@ -82,8 +91,10 @@ def startup_backfill_check() -> None:
         
         logger.info(f"   Earliest trade across all funds: {earliest_trade_date}")
         
-        # 3. Check job completion status for each trading day
-        #    This is MUCH faster than querying portfolio_positions per-fund!
+        # 3. Check both job completion AND data existence for each trading day
+        #    This ensures we re-run if EITHER:
+        #    - Job didn't complete successfully (crashed/failed/missing)
+        #    - Data is missing even though job says "completed"
         today = datetime.now().date()
         missing_days = []
         
@@ -91,17 +102,45 @@ def startup_backfill_check() -> None:
         while current <= today:
             # Only check trading days (market="any" = either US or Canada open)
             if market_holidays.is_trading_day(current, market="any"):
-                # Check if job completed successfully for this date
-                # This detects:
-                # - Crashed jobs (status='running' for old dates)
-                # - Failed jobs (status='failed')
-                # - Missing jobs (no record at all)
-                if not is_job_completed('update_portfolio_prices', current):
+                # Check 1: Did the job complete successfully?
+                job_completed = is_job_completed('update_portfolio_prices', current)
+                
+                # Check 2: Does portfolio data actually exist for this date?
+                # Query for ANY portfolio_positions record on this date for ANY production fund
+                data_exists = False
+                try:
+                    # Check if we have portfolio data for this date
+                    # Use a simple count query (fast)
+                    start_of_day = datetime.combine(current, datetime.min.time()).isoformat()
+                    end_of_day = datetime.combine(current, datetime.max.time()).isoformat()
+                    
+                    result = client.supabase.table("portfolio_positions")\
+                        .select("id", count='exact')\
+                        .gte("date", start_of_day)\
+                        .lt("date", end_of_day)\
+                        .in_("fund", fund_names)\
+                        .limit(1)\
+                        .execute()
+                    
+                    # If count > 0, data exists
+                    data_exists = (result.count and result.count > 0)
+                except Exception as e:
+                    logger.warning(f"Could not check data existence for {current}: {e}")
+                    # If check fails, treat as missing data (safe default)
+                    data_exists = False
+                
+                # Re-run if job incomplete OR data missing
+                # This handles:
+                # - Crashed jobs (job incomplete)
+                # - Failed jobs (job incomplete)
+                # - Missing jobs (job incomplete)
+                # - Data wiped (data missing even if job says complete)
+                if not job_completed or not data_exists:
                     missing_days.append(current)
             current += timedelta(days=1)
         
         if not missing_days:
-            logger.info("✅ All trading days have completed jobs - no backfill needed")
+            logger.info("✅ All trading days have completed jobs AND data - no backfill needed")
             return
         
         logger.warning(f"⚠️  Found {len(missing_days)} days with incomplete/missing jobs")

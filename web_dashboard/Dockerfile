@@ -29,6 +29,7 @@ COPY web_dashboard/ ./web_dashboard/
 # Copy data module for repository access (if needed)
 COPY data/ ./data/
 COPY config/ ./config/
+COPY utils/ ./utils/
 
 # Set PYTHONPATH to include parent directory and web_dashboard
 ENV PYTHONPATH=/app:/app/web_dashboard

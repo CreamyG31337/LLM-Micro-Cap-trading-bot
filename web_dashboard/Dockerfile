@@ -33,6 +33,7 @@ COPY utils/ ./utils/
 COPY market_data/ ./market_data/
 COPY portfolio/ ./portfolio/
 COPY financial/ ./financial/
+COPY display/ ./display/
 
 # Set PYTHONPATH to include parent directory and web_dashboard
 ENV PYTHONPATH=/app:/app/web_dashboard

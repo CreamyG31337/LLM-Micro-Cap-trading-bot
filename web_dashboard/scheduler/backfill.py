@@ -124,6 +124,7 @@ def startup_backfill_check() -> None:
                     
                     # If count > 0, data exists
                     data_exists = (result.count and result.count > 0)
+                    logger.debug(f"Date {current}: job_completed={job_completed}, data_exists={data_exists} (count={result.count})")
                 except Exception as e:
                     logger.warning(f"Could not check data existence for {current}: {e}")
                     # If check fails, treat as missing data (safe default)
@@ -137,6 +138,12 @@ def startup_backfill_check() -> None:
                 # - Data wiped (data missing even if job says complete)
                 if not job_completed or not data_exists:
                     missing_days.append(current)
+                    if job_completed and not data_exists:
+                        logger.info(f"   {current}: Job completed but data missing - will re-run")
+                    elif not job_completed and data_exists:
+                        logger.info(f"   {current}: Data exists but job incomplete - will re-run")
+                    elif not job_completed and not data_exists:
+                        logger.info(f"   {current}: Both job and data missing - will re-run")
             current += timedelta(days=1)
         
         if not missing_days:

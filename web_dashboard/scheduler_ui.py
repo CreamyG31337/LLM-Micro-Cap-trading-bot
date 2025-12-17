@@ -17,9 +17,6 @@ from typing import Optional
 def render_scheduler_admin():
     """Render the scheduler admin interface."""
     
-    st.header("⏰ Scheduled Tasks")
-    st.caption("Manage background jobs running in this container")
-    
     try:
         from scheduler import (
             get_scheduler, 

@@ -43,8 +43,10 @@ def login_user(email: str, password: str) -> Optional[Dict]:
             auth_data = response.json()
             return {
                 "access_token": auth_data.get("access_token"),
+                "refresh_token": auth_data.get("refresh_token"),  # Store refresh token
                 "user": auth_data.get("user"),
-                "expires_at": auth_data.get("expires_at")
+                "expires_at": auth_data.get("expires_at"),
+                "expires_in": auth_data.get("expires_in")  # Also store expires_in for easier calculation
             }
         else:
             error_data = response.json() if response.text else {}
@@ -76,8 +78,10 @@ def register_user(email: str, password: str) -> Optional[Dict]:
             # Supabase may return user without access_token if email confirmation is required
             return {
                 "access_token": auth_data.get("access_token"),
+                "refresh_token": auth_data.get("refresh_token"),  # Store refresh token
                 "user": auth_data.get("user"),
                 "expires_at": auth_data.get("expires_at"),
+                "expires_in": auth_data.get("expires_in"),
                 "requires_confirmation": auth_data.get("access_token") is None
             }
         else:
@@ -141,6 +145,10 @@ def logout_user():
         del st.session_state.user_id
     if "user_email" in st.session_state:
         del st.session_state.user_email
+    if "refresh_token" in st.session_state:
+        del st.session_state.refresh_token
+    if "token_expires_at" in st.session_state:
+        del st.session_state.token_expires_at
     # Clear cookie flag so next login will set a fresh cookie
     if "session_restored_from_cookie" in st.session_state:
         del st.session_state.session_restored_from_cookie
@@ -155,15 +163,38 @@ def logout_user():
     st.stop()
 
 
-def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False):
+def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False, 
+                     refresh_token: Optional[str] = None, expires_at: Optional[int] = None):
     """Store user session data. If user is None, decode from JWT token.
     
     Args:
         access_token: The JWT access token
         user: Optional user dict with id and email
         skip_cookie_redirect: If True, don't redirect to set cookie (used when restoring from cookie)
+        refresh_token: Optional refresh token for automatic token renewal
+        expires_at: Optional expiration timestamp (Unix epoch seconds)
     """
     st.session_state.user_token = access_token
+    
+    # Store refresh token and expiration if provided
+    if refresh_token:
+        st.session_state.refresh_token = refresh_token
+    if expires_at:
+        st.session_state.token_expires_at = expires_at
+    elif access_token:
+        # Try to extract expiration from JWT token if not provided
+        try:
+            token_parts = access_token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                exp = user_data.get("exp")
+                if exp:
+                    st.session_state.token_expires_at = exp
+        except Exception:
+            pass  # If we can't decode, that's okay - we'll refresh based on time
     
     if user:
         st.session_state.user_id = user.get("id")
@@ -260,6 +291,101 @@ def send_magic_link(email: str) -> Optional[Dict]:
             return {"error": "Failed to send magic link"}
     except Exception as e:
         return {"error": str(e)}
+
+
+def refresh_token_if_needed() -> bool:
+    """Check if token is expired or about to expire, and refresh it if needed.
+    
+    This function automatically refreshes the access token when it's about to expire
+    (within 5 minutes), keeping users logged in during active sessions.
+    
+    Note: Refresh tokens are stored in session state only (not in cookies) for security.
+    This means:
+    - Active users (using the app) will have tokens refreshed automatically
+    - Users returning after closing the browser won't have refresh_token available,
+      so they'll need to log in again if the token expired (acceptable security trade-off)
+    
+    Returns:
+        True if token was refreshed or is still valid, False if refresh failed
+    """
+    if not is_authenticated():
+        return False
+    
+    # Get current token and expiration
+    access_token = get_user_token()
+    refresh_token = st.session_state.get("refresh_token")
+    expires_at = st.session_state.get("token_expires_at")
+    
+    if not access_token or not refresh_token:
+        # Can't refresh without both tokens
+        return False
+    
+    # Check if we have expiration time
+    if expires_at:
+        current_time = int(time.time())
+        # Refresh if token expires within 5 minutes (300 seconds)
+        time_until_expiry = expires_at - current_time
+        if time_until_expiry > 300:
+            # Token is still valid for more than 5 minutes, no refresh needed
+            return True
+    else:
+        # Try to decode expiration from JWT token
+        try:
+            token_parts = access_token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                expires_at = user_data.get("exp")
+                if expires_at:
+                    current_time = int(time.time())
+                    time_until_expiry = expires_at - current_time
+                    if time_until_expiry > 300:
+                        # Token is still valid, update stored expiration
+                        st.session_state.token_expires_at = expires_at
+                        return True
+        except Exception:
+            pass  # If we can't decode, try to refresh anyway
+    
+    # Token is expired or about to expire, refresh it
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
+            headers={
+                "apikey": SUPABASE_PUBLISHABLE_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "refresh_token": refresh_token
+            }
+        )
+        
+        if response.status_code == 200:
+            auth_data = response.json()
+            new_access_token = auth_data.get("access_token")
+            new_refresh_token = auth_data.get("refresh_token")
+            new_expires_at = auth_data.get("expires_at")
+            
+            if new_access_token:
+                # Update session with new tokens
+                st.session_state.user_token = new_access_token
+                if new_refresh_token:
+                    st.session_state.refresh_token = new_refresh_token
+                if new_expires_at:
+                    st.session_state.token_expires_at = new_expires_at
+                
+                # Update cookie with new token (will be done on next page interaction)
+                # For now, we'll update it in the background
+                return True
+            else:
+                return False
+        else:
+            # Refresh failed - token may be invalid, user needs to log in again
+            return False
+    except Exception as e:
+        # Refresh failed due to error
+        return False
 
 
 def is_admin() -> bool:

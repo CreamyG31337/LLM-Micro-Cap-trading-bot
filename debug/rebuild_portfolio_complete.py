@@ -583,6 +583,27 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             print_info(f"   {_safe_emoji('✅')} Trades saved to Supabase")
         print_info(f"   {_safe_emoji('✅')} Positions recalculated from trade log")
         
+        # Mark all historical dates as completed in job tracking
+        # This prevents web backfill from re-processing dates the rebuild already handled
+        if fund_name:
+            try:
+                from utils.job_tracking import mark_job_completed
+                print_info(f"{_safe_emoji('📝')} Marking {len(historical_snapshots)} dates as completed in job tracking...")
+                
+                for snapshot in historical_snapshots:
+                    snapshot_date = snapshot['date'].date() if hasattr(snapshot['date'], 'date') else snapshot['date']
+                    # Mark as completed by 'rebuild' job
+                    mark_job_completed('rebuild_portfolio', snapshot_date, fund_name, [fund_name])
+                
+                # Also mark today if we created final snapshot
+                if market_holidays.is_trading_day(today, market="any"):
+                    mark_job_completed('rebuild_portfolio', today, fund_name, [fund_name])
+                
+                print_info(f"   {_safe_emoji('✅')} Job tracking updated - web backfill will skip these dates")
+            except Exception as tracking_error:
+                # Don't fail rebuild if tracking fails
+                print_warning(f"   ⚠️  Could not update job tracking: {tracking_error}")
+        
         return True
         
     except Exception as e:

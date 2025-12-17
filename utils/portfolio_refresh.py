@@ -509,11 +509,26 @@ def refresh_portfolio_prices_if_needed(
                 timestamp=snapshot_time
             )
             
-            repository.update_daily_portfolio_snapshot(updated_snapshot)
-            if verbose:
-                print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully ({success_count}/{len(updated_positions)} prices updated)")
+            # Track job for current day refresh
+            fund_name = getattr(portfolio_manager, 'fund', None)
+            fund_name_str = fund_name.name if hasattr(fund_name, 'name') else 'console_refresh'
+            snapshot_date = snapshot_time.date()
             
-            return True, f"Updated {success_count} positions"
+            from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+            mark_job_started('portfolio_refresh', snapshot_date, fund_name_str)
+            
+            try:
+                repository.update_daily_portfolio_snapshot(updated_snapshot)
+                if verbose:
+                    print(f"{_safe_emoji('✅')} Portfolio data refreshed successfully ({success_count}/{len(updated_positions)} prices updated)")
+                
+                # Mark as completed
+                mark_job_completed('portfolio_refresh', snapshot_date, fund_name_str, [fund_name_str])
+                return True, f"Updated {success_count} positions"
+            except Exception as save_error:
+                # Mark as failed
+                mark_job_failed('portfolio_refresh', snapshot_date, fund_name_str, str(save_error))
+                raise
         else:
             return False, "No positions to update"
             

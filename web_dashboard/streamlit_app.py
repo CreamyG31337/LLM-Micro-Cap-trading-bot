@@ -151,7 +151,12 @@ def show_login_page():
                         if password:
                             result = login_user(email, password)
                             if result and "access_token" in result:
-                                set_user_session(result["access_token"], result["user"])
+                                set_user_session(
+                                    result["access_token"], 
+                                    result["user"],
+                                    refresh_token=result.get("refresh_token"),
+                                    expires_at=result.get("expires_at")
+                                )
                                 st.success("Login successful!")
                                 st.rerun()
                             else:
@@ -180,7 +185,12 @@ def show_login_page():
                             # Registration succeeded
                             if result.get("access_token"):
                                 # User is logged in immediately (email confirmation not required)
-                                set_user_session(result["access_token"], result.get("user"))
+                                set_user_session(
+                                    result["access_token"], 
+                                    result.get("user"),
+                                    refresh_token=result.get("refresh_token"),
+                                    expires_at=result.get("expires_at")
+                                )
                                 st.success("✅ Registration successful! You are now logged in.")
                                 st.rerun()
                             else:
@@ -695,6 +705,26 @@ def main():
     import json
     import time
     
+    # ===== TOKEN REFRESH =====
+    # Check if token needs to be refreshed (before authentication checks)
+    # This ensures users stay logged in when active
+    if is_authenticated():
+        from auth_utils import refresh_token_if_needed
+        try:
+            refreshed = refresh_token_if_needed()
+            if not refreshed:
+                # Refresh failed - token is invalid, clear session
+                # User will need to log in again
+                if "user_token" in st.session_state:
+                    del st.session_state.user_token
+                if "refresh_token" in st.session_state:
+                    del st.session_state.refresh_token
+                if "token_expires_at" in st.session_state:
+                    del st.session_state.token_expires_at
+        except Exception as e:
+            # If refresh check fails, continue anyway (token might still be valid)
+            pass
+    
     # ===== SESSION PERSISTENCE VIA COOKIES =====
     # Cookie is set in auth_callback.html (regular HTML page, not iframe)
     # Cookie is read here using st.context.cookies (server-side, Streamlit 1.37+)
@@ -721,7 +751,9 @@ def main():
                     
                     if exp > int(time.time()):
                         # Token valid, restore session (skip redirect since we're restoring from cookie)
-                        set_user_session(auth_token, skip_cookie_redirect=True)
+                        # Note: refresh_token is not stored in cookie for security, so refresh won't work
+                        # after page reload, but token refresh will work during active sessions
+                        set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp)
                         
                         # Verify user_id was set correctly
                         restored_user_id = get_user_id()

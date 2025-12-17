@@ -40,8 +40,10 @@ def startup_backfill_check() -> None:
         from scheduler.jobs import update_portfolio_prices_job
         from utils.job_tracking import is_job_completed
         
-        client = SupabaseClient()
+        # Use service role key to bypass RLS (background job needs full access)
+        client = SupabaseClient(use_service_role=True)
         market_holidays = MarketHolidays()
+
         
         logger.info("🔍 Starting smart backfill check (job completion validation)...")
         

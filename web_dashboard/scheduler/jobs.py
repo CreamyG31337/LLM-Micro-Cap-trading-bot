@@ -96,7 +96,8 @@ def populate_performance_metrics_job() -> None:
         from datetime import date
         from decimal import Decimal
         
-        client = SupabaseClient()
+        # Use service role key to bypass RLS (background job needs full access)
+        client = SupabaseClient(use_service_role=True)
         
         # Process yesterday's data (today's data may still be updating)
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
@@ -251,7 +252,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         price_cache = PriceCache()
         market_hours = MarketHours()
         market_holidays = MarketHolidays()
-        client = SupabaseClient()
+        # Use service role key to bypass RLS (background job needs full access)
+        client = SupabaseClient(use_service_role=True)
         
         # Determine target date if not specified
         if target_date is None:

@@ -72,10 +72,44 @@ CREATE POLICY "Allow all operations on fund_thesis_pillars" ON fund_thesis_pilla
     FOR ALL USING (true);
 
 -- =====================================================
+-- VIEWS
+-- =====================================================
+
+-- View that joins fund_thesis with fund_thesis_pillars
+-- Returns one row per pillar, making it easy to query thesis data
+DROP VIEW IF EXISTS fund_thesis_with_pillars CASCADE;
+
+CREATE VIEW fund_thesis_with_pillars AS
+SELECT 
+    ft.id as thesis_id,
+    ft.fund,
+    ft.title,
+    ft.overview,
+    ft.created_at as thesis_created_at,
+    ft.updated_at as thesis_updated_at,
+    ftp.id as pillar_id,
+    ftp.name as pillar_name,
+    ftp.allocation,
+    ftp.thesis as pillar_thesis,
+    ftp.pillar_order,
+    ftp.created_at as pillar_created_at,
+    ftp.updated_at as pillar_updated_at
+FROM fund_thesis ft
+LEFT JOIN fund_thesis_pillars ftp ON ft.id = ftp.thesis_id
+ORDER BY ft.fund, ftp.pillar_order NULLS LAST;
+
+-- Grant permissions on the view
+GRANT SELECT ON fund_thesis_with_pillars TO authenticated;
+GRANT SELECT ON fund_thesis_with_pillars TO service_role;
+
+-- Add comment
+COMMENT ON VIEW fund_thesis_with_pillars IS 'Joined view of fund_thesis and fund_thesis_pillars. Returns one row per pillar (or one row with NULL pillars if no pillars exist). Ordered by fund and pillar_order.';
+
+-- =====================================================
 -- UTILITY FUNCTIONS
 -- =====================================================
 
--- Function to get complete thesis data for a fund
+-- Function to get complete thesis data for a fund (returns JSON)
 CREATE OR REPLACE FUNCTION get_fund_thesis(fund_name VARCHAR(50))
 RETURNS JSON AS $$
 DECLARE
@@ -115,5 +149,5 @@ DO $$
 BEGIN
     RAISE NOTICE '✅ Thesis schema created successfully!';
     RAISE NOTICE '📋 Next step: Run migration script to populate thesis data';
-    RAISE NOTICE '🔧 Use get_fund_thesis(fund_name) function to retrieve thesis data';
+    RAISE NOTICE '🔧 Use get_fund_thesis(fund_name) function or fund_thesis_with_pillars view to retrieve thesis data';
 END $$;

@@ -51,7 +51,8 @@ from streamlit_utils import (
     get_supabase_client,
     get_investor_count,
     get_investor_allocations,
-    get_user_investment_metrics
+    get_user_investment_metrics,
+    get_fund_thesis_data
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -1230,6 +1231,16 @@ def main():
                     help="Unrealized Profit/Loss from currently held positions."
                 )
 
+        # Investment Thesis section (near top, after metrics)
+        if fund_filter:
+            thesis_data = get_fund_thesis_data(fund_filter)
+            if thesis_data:
+                st.markdown("---")
+                with st.expander("📋 Investment Thesis", expanded=True):
+                    st.markdown(f"### {thesis_data.get('title', 'Investment Thesis')}")
+                    st.markdown(thesis_data.get('overview', ''))
+                    # Note: Pillars will be shown near sectors chart below
+
         # Charts section
         st.markdown("---")
         st.markdown("### Performance Charts")
@@ -1348,6 +1359,30 @@ def main():
                 st.markdown("#### Currency Exposure")
                 fig = create_currency_exposure_chart(positions_df, fund_filter)
                 st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+            
+            # Investment Thesis Pillars (near sectors chart)
+            if fund_filter:
+                thesis_data = get_fund_thesis_data(fund_filter)
+                if thesis_data and thesis_data.get('pillars'):
+                    st.markdown("#### Investment Thesis Pillars")
+                    pillars = thesis_data['pillars']
+                    
+                    # Display pillars in columns (2-3 columns depending on number of pillars)
+                    num_pillars = len(pillars)
+                    if num_pillars <= 2:
+                        cols = st.columns(num_pillars)
+                    elif num_pillars == 3:
+                        cols = st.columns(3)
+                    else:
+                        cols = st.columns(3)  # Max 3 columns, will wrap
+                    
+                    for i, pillar in enumerate(pillars):
+                        col_idx = i % len(cols)
+                        with cols[col_idx]:
+                            with st.container():
+                                st.markdown(f"**{pillar.get('name', 'Pillar')}** ({pillar.get('allocation', 'N/A')})")
+                                st.markdown(pillar.get('thesis', ''))
+                                st.markdown("---")
             
             # Sector allocation chart
             if 'ticker' in positions_df.columns and 'market_value' in positions_df.columns:

@@ -556,6 +556,7 @@ with tab4:
                         "Fund Name": fund_name,
                         "Type": fund_info.get('fund_type', 'N/A'),
                         "Currency": fund_info.get('currency', 'N/A'),
+                        "Production": "✅" if fund_info.get('is_production') else "❌",
                         "Positions": position_count,
                         "Trades": trade_count_val
                     })
@@ -565,6 +566,42 @@ with tab4:
                 st.dataframe(funds_df, use_container_width=True)
             else:
                 st.info("No funds found in database")
+            
+            st.divider()
+            
+            # ===== TOGGLE PRODUCTION FLAG =====
+            st.subheader("🏭 Toggle Production Status")
+            st.caption("Mark funds as production (included in automated backfill) or test/dev (excluded)")
+            with st.expander("Manage production flags", expanded=True):
+                if fund_names:
+                    for fund_name in fund_names:
+                        fund_info = next((f for f in funds_result.data if f['name'] == fund_name), {})
+                        is_prod = fund_info.get('is_production', False)
+                        
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.write(f"**{fund_name}**")
+                        with col2:
+                            new_status = st.checkbox(
+                                "Production",
+                                value=is_prod,
+                                key=f"prod_{fund_name}",
+                                label_visibility="collapsed"
+                            )
+                            
+                            # Update if changed
+                            if new_status != is_prod:
+                                try:
+                                    client.supabase.table("funds")\
+                                        .update({"is_production": new_status})\
+                                        .eq("name", fund_name)\
+                                        .execute()
+                                    st.success(f"✅ {fund_name} marked as {'production' if new_status else 'test/dev'}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error updating {fund_name}: {e}")
+                else:
+                    st.info("No funds found")
             
             st.divider()
             

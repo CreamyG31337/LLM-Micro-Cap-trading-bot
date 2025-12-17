@@ -4,6 +4,9 @@ Smart Backfill System for Portfolio Positions
 
 Automatically fills gaps in portfolio_positions data between first trade and today.
 Runs on scheduler startup to catch downtime/reboots.
+
+USES JOB COMPLETION TRACKING: Checks job_executions table instead of portfolio data
+to detect incomplete runs where Docker was stopped mid-job.
 """
 
 import logging
@@ -16,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 def startup_backfill_check() -> None:
     """
-    Smart backfill: Only fills gaps between first trade and today.
-    Skips weekends/holidays automatically (uses market="any" logic).
+    Smart backfill: Checks job completion status for each trading day.
+    Much faster than per-fund checks and detects crashed/failed jobs.
     
     Edge cases handled:
     - New installation (no trades) → Returns immediately
-    - First trade → Starts from earliest trade date
-    - Existing data → Starts from day after last snapshot
-    - Weekends/holidays → Automatically skipped
+    - Crashed jobs → Detected by status='running' for old dates  
+    - Failed jobs → Detected by status='failed'
+    - Missing jobs → No record in job_executions
     """
     try:
         # Add project root to path for imports (same pattern as jobs.py)
@@ -35,64 +38,73 @@ def startup_backfill_check() -> None:
         from supabase_client import SupabaseClient
         from utils.market_holidays import MarketHolidays
         from scheduler.jobs import update_portfolio_prices_job
+        from utils.job_tracking import is_job_completed
         
         client = SupabaseClient()
         market_holidays = MarketHolidays()
         
-        logger.info("🔍 Starting smart backfill check...")
+        logger.info("🔍 Starting smart backfill check (job completion validation)...")
         
-        # 1. Find earliest trade date across all funds
-        trades_result = client.supabase.table("trade_log")\
-            .select("date")\
-            .order("date")\
-            .limit(1)\
+        # 1. Get all production funds to find earliest trade
+        funds_result = client.supabase.table("funds")\
+            .select("name")\
+            .eq("is_production", True)\
             .execute()
+            
+        if not funds_result.data:
+            logger.info("✅ No production funds found - skipping backfill")
+            return
         
-        if not trades_result.data:
+        fund_names = [f['name'] for f in funds_result.data]
+        logger.info(f"   Checking {len(fund_names)} production funds: {fund_names}")
+        
+        # 2. Find earliest trade across ALL production funds
+        earliest_trade_date = None
+        for fund_name in fund_names:
+            trades_result = client.supabase.table("trade_log")\
+                .select("date")\
+                .eq("fund", fund_name)\
+                .order("date")\
+                .limit(1)\
+                .execute()
+            
+            if trades_result.data:
+                fund_earliest = pd.to_datetime(trades_result.data[0]['date']).date()
+                if earliest_trade_date is None or fund_earliest < earliest_trade_date:
+                    earliest_trade_date = fund_earliest
+        
+        if earliest_trade_date is None:
             logger.info("✅ No trades found - skipping backfill (new installation)")
             return
         
-        earliest_trade = trades_result.data[0]['date']
-        earliest_date = pd.to_datetime(earliest_trade).date()
-        logger.info(f"   Earliest trade: {earliest_date}")
+        logger.info(f"   Earliest trade across all funds: {earliest_trade_date}")
         
-        # 2. Find latest portfolio snapshot
-        positions_result = client.supabase.table("portfolio_positions")\
-            .select("date")\
-            .order("date", desc=True)\
-            .limit(1)\
-            .execute()
-        
-        if positions_result.data:
-            latest_snapshot = pd.to_datetime(positions_result.data[0]['date']).date()
-            start_backfill = latest_snapshot + timedelta(days=1)
-            logger.info(f"   Latest snapshot: {latest_snapshot}")
-            logger.info(f"   Start backfill from: {start_backfill}")
-        else:
-            # No snapshots exist - start from first trade
-            start_backfill = earliest_date
-            logger.info(f"   No snapshots found - starting from first trade: {start_backfill}")
-        
-        # 3. Generate list of trading days to backfill
+        # 3. Check job completion status for each trading day
+        #    This is MUCH faster than querying portfolio_positions per-fund!
         today = datetime.now().date()
         missing_days = []
         
-        current = start_backfill
+        current = earliest_trade_date
         while current <= today:
-            # Use "any" market logic: run if EITHER US or Canadian market is open
-            # This matches the job's logic exactly
+            # Only check trading days (market="any" = either US or Canada open)
             if market_holidays.is_trading_day(current, market="any"):
-                missing_days.append(current)
+                # Check if job completed successfully for this date
+                # This detects:
+                # - Crashed jobs (status='running' for old dates)
+                # - Failed jobs (status='failed')
+                # - Missing jobs (no record at all)
+                if not is_job_completed('update_portfolio_prices', current):
+                    missing_days.append(current)
             current += timedelta(days=1)
         
         if not missing_days:
-            logger.info("✅ Portfolio data is up to date - no backfill needed")
+            logger.info("✅ All trading days have completed jobs - no backfill needed")
             return
         
-        logger.warning(f"⚠️  Found {len(missing_days)} missing trading days")
+        logger.warning(f"⚠️  Found {len(missing_days)} days with incomplete/missing jobs")
         logger.info(f"   Date range: {missing_days[0]} to {missing_days[-1]}")
         
-        # 4. Run job for each missing day (job handles all complex logic)
+        # 4. Run job for each missing date
         success_count = 0
         fail_count = 0
         

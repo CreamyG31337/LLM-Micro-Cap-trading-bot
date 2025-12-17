@@ -244,6 +244,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         from utils.ticker_utils import get_company_name
         from supabase_client import SupabaseClient
         from data.repositories.repository_factory import RepositoryFactory
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
         # Initialize components
         market_fetcher = MarketDataFetcher()
@@ -282,19 +283,29 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         today = datetime.now().date()
         logger.info(f"Target date for price update: {target_date} (today is {today})")
         
-        # Get all funds from database with base_currency
-        funds_result = client.supabase.table("funds").select("name, base_currency").execute()
+        # Get all production funds from database (skip test/dev funds)
+        funds_result = client.supabase.table("funds")\
+            .select("name, base_currency")\
+            .eq("is_production", True)\
+            .execute()
+            
         if not funds_result.data:
             duration_ms = int((time.time() - start_time) * 1000)
-            message = "No funds found in database"
+            message = "No production funds found in database"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
             logger.info(f"ℹ️ {message}")
             return
         
-        # Build list of funds with their base currency settings
+        # Build list of production funds with their base currency settings
         funds = [(f['name'], f.get('base_currency', 'CAD')) for f in funds_result.data]
+        logger.info(f"Processing {len(funds)} production funds")
+        
+        # Mark job as started (for completion tracking)
+        mark_job_started('update_portfolio_prices', target_date)
+        
         total_positions_updated = 0
         total_funds_processed = 0
+        funds_completed = []  # Track which funds completed successfully
         
         for fund_name, base_currency in funds:
             try:
@@ -547,6 +558,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         inserted_count = len(insert_result.data) if insert_result.data else len(updated_positions)
                         total_positions_updated += inserted_count
                         total_funds_processed += 1
+                        funds_completed.append(fund_name)  # Track successful completion
                         
                         logger.info(f"  ✅ Updated {inserted_count} positions for {fund_name}")
                     except Exception as insert_error:
@@ -571,11 +583,18 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
+        # Mark job as completed successfully
+        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed)
+        
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.error(f"❌ Portfolio price update job failed: {e}", exc_info=True)
+        
+        # Mark job as failed
+        if 'target_date' in locals():
+            mark_job_failed('update_portfolio_prices', target_date, None, str(e))
     finally:
         # Always release the lock, even if job fails
         _update_prices_job_running = False

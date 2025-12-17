@@ -158,6 +158,11 @@ def _create_historical_snapshots_for_missing_days(
         if verbose:
             logger.info(f"Backfilling {len(truly_missing_days)} missing TRADING days with historical prices...")
             print(f"{_safe_emoji('🔄')} Backfilling {len(truly_missing_days)} missing TRADING days with historical prices...")
+            
+            # Import job tracking for completion detection
+            from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+            
+            # Process historical prices for each missing day
         
         # Get the latest portfolio positions to work with
         latest_snapshot = portfolio_manager.get_latest_portfolio()
@@ -249,11 +254,24 @@ def _create_historical_snapshots_for_missing_days(
                     timestamp=historical_timestamp
                 )
                 
-                # Save historical snapshot
-                repository.save_portfolio_snapshot(historical_snapshot)
-                if verbose:
-                    logger.info(f"Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
-                    print(f"     Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
+                # Track job start
+                fund_name = getattr(portfolio_manager, 'fund', None)
+                fund_name_str = fund_name.name if hasattr(fund_name, 'name') else 'console_refresh'
+                mark_job_started('portfolio_refresh', snapshot_date, fund_name_str)
+                
+                try:
+                    # Save historical snapshot
+                    repository.save_portfolio_snapshot(historical_snapshot)
+                    if verbose:
+                        logger.info(f"Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
+                        print(f"     Created snapshot for {missing_day.strftime('%Y-%m-%d')} with {len(historical_positions)} positions")
+                    
+                    # Mark job as completed
+                    mark_job_completed('portfolio_refresh', snapshot_date, fund_name_str, [fund_name_str])
+                except Exception as save_error:
+                    # Mark job as failed
+                    mark_job_failed('portfolio_refresh', snapshot_date, fund_name_str, str(save_error))
+                    raise
                 
             except Exception as e:
                 if verbose:

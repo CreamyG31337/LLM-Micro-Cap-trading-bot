@@ -1424,3 +1424,74 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             raise
             
         return None
+
+
+@log_execution_time()
+@st.cache_data(ttl=3600)  # Cache for 1 hour - thesis doesn't change frequently
+def get_fund_thesis_data(fund_name: str) -> Optional[Dict[str, Any]]:
+    """Get thesis data for a fund from the database view.
+    
+    Args:
+        fund_name: Name of the fund
+        
+    Returns:
+        Dictionary with thesis data structure:
+        {
+            'fund': str,
+            'title': str,
+            'overview': str,
+            'pillars': [
+                {
+                    'name': str,
+                    'allocation': str,
+                    'thesis': str,
+                    'pillar_order': int
+                },
+                ...
+            ]
+        }
+        Returns None if no thesis exists or on error.
+    """
+    client = get_supabase_client()
+    if not client:
+        return None
+    
+    try:
+        # Query the view - get all rows for this fund
+        result = client.supabase.table("fund_thesis_with_pillars")\
+            .select("*")\
+            .eq("fund", fund_name)\
+            .execute()
+        
+        if not result.data:
+            return None
+        
+        # First row has the thesis info (all rows have same thesis fields)
+        first_row = result.data[0]
+        
+        # Build pillars list from all rows (filter out NULL pillars)
+        pillars = []
+        for row in result.data:
+            if row.get('pillar_id') is not None:
+                pillars.append({
+                    'name': row.get('pillar_name', ''),
+                    'allocation': row.get('allocation', ''),
+                    'thesis': row.get('pillar_thesis', ''),
+                    'pillar_order': row.get('pillar_order', 0)
+                })
+        
+        # Sort pillars by order
+        pillars.sort(key=lambda x: x.get('pillar_order', 0))
+        
+        return {
+            'fund': first_row.get('fund', fund_name),
+            'title': first_row.get('title', ''),
+            'overview': first_row.get('overview', ''),
+            'pillars': pillars
+        }
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting thesis data for {fund_name}: {e}", exc_info=True)
+        return None

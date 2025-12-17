@@ -26,6 +26,12 @@ def startup_backfill_check() -> None:
     - Weekends/holidays → Automatically skipped
     """
     try:
+        # Add project root to path for imports (same pattern as jobs.py)
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        sys.path.insert(0, str(project_root))
+        
         from supabase_client import SupabaseClient
         from utils.market_holidays import MarketHolidays
         from scheduler.jobs import update_portfolio_prices_job

@@ -600,35 +600,42 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
         )
         return fig
     
-    # Fetch sector info for each ticker using yfinance
+    # Use sector data from database if available, otherwise fetch from yfinance
+    has_sector_column = 'sector' in positions_df.columns
+    
     sector_data = []
     for idx, row in positions_df.iterrows():
         ticker = row['ticker']
         market_value = row['market_value']
         
-        try:
-            # Fetch stock info from yfinance
-            import yfinance as yf
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            # Get sector (will be None for ETFs or if data unavailable)
-            sector = info.get('sector', 'Unknown')
-            if not sector or sector == '':
-                sector = 'Other/ETF'
-            
-            sector_data.append({
-                'ticker': ticker,
-                'sector': sector,
-                'market_value': market_value
-            })
-        except Exception as e:
-            # If we can't fetch data, categorize as Unknown
-            sector_data.append({
-                'ticker': ticker,
-                'sector': 'Unknown',
-                'market_value': market_value
-            })
+        # First, try to use sector from database (faster and more reliable)
+        sector = None
+        if has_sector_column:
+            sector = row.get('sector')
+            # Check if sector is valid (not None, not empty string, not NaN)
+            if pd.isna(sector) or sector == '' or sector is None:
+                sector = None
+        
+        # If sector not in database or is null, try fetching from yfinance
+        if not sector:
+            try:
+                import yfinance as yf
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                # Get sector (will be None for ETFs or if data unavailable)
+                sector = info.get('sector', 'Unknown')
+                if not sector or sector == '':
+                    sector = 'Other/ETF'
+            except Exception as e:
+                # If we can't fetch data, categorize as Unknown
+                sector = 'Unknown'
+        
+        sector_data.append({
+            'ticker': ticker,
+            'sector': sector,
+            'market_value': market_value
+        })
     
     if not sector_data:
         fig = go.Figure()

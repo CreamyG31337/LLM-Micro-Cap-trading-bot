@@ -228,16 +228,18 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
     
     try:
         _update_prices_job_running = True
+        
+        # CRITICAL: Add project root to path FIRST, before any imports
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+            logger.debug(f"Added project root to path: {project_root}")
+        
         logger.info("Starting portfolio price update job...")
         
         # Import here to avoid circular imports
-        import sys
-        from pathlib import Path
-        
-        # Add project root to path
-        project_root = Path(__file__).parent.parent.parent
-        sys.path.insert(0, str(project_root))
-        
         from market_data.data_fetcher import MarketDataFetcher
         from market_data.price_cache import PriceCache
         from market_data.market_hours import MarketHours

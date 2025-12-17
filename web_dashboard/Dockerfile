@@ -23,19 +23,10 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY web_dashboard/requirements.txt ./requirements.txt
 RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 
-# Copy web_dashboard files
-COPY web_dashboard/ ./web_dashboard/
+# Copy entire project (cleaner than selective copying)
+COPY . /app
 
-# Copy required modules from project root for background jobs
-COPY data/ ./data/
-COPY config/ ./config/
-COPY utils/ ./utils/
-COPY market_data/ ./market_data/
-COPY portfolio/ ./portfolio/
-COPY financial/ ./financial/
-COPY display/ ./display/
-
-# Set PYTHONPATH to include parent directory and web_dashboard
+# Set PYTHONPATH to include project root and web_dashboard
 ENV PYTHONPATH=/app:/app/web_dashboard
 
 # Expose Streamlit port

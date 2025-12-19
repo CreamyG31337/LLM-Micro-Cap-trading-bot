@@ -1102,7 +1102,7 @@ with tab8:
         import os
         
         # Controls row
-        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 2, 1])
+        col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 1])
         
         with col1:
             auto_refresh = st.checkbox("🔄 Auto-refresh", value=False, help="Refresh logs every 5 seconds")
@@ -1117,14 +1117,21 @@ with tab8:
         with col3:
             num_logs = st.selectbox(
                 "Show",
-                options=[50, 100, 200, 500],
+                options=[50, 100, 200, 500, 1000, 2000],
                 index=1  # Default to 100
             )
         
         with col4:
-            search_text = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed")
+            sort_order = st.selectbox(
+                "Sort",
+                options=["Newest First", "Oldest First"],
+                index=0  # Default to newest first
+            )
         
         with col5:
+            search_text = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed")
+        
+        with col6:
             if st.button("🗑️ Clear Logs"):
                 # Clear log file content
                 try:
@@ -1147,9 +1154,13 @@ with tab8:
             search=search_text if search_text else None
         )
         
+        # Apply sort order (default from file is newest first)
+        if sort_order == "Oldest First" and logs:
+            logs = list(reversed(logs))
+        
         # Display logs in a code block for better formatting
         if logs:
-            st.caption(f"Showing last {len(logs)} log entries")
+            st.caption(f"Showing {len(logs)} log entries ({sort_order.lower()})")
             
             # Create formatted log output
             log_lines = []

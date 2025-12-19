@@ -91,18 +91,17 @@ def startup_backfill_check() -> None:
         
         logger.info(f"   Earliest trade across all funds: {earliest_trade_date}")
         
-        # 3. Find the most recent "checkpoint" date where both job completed AND data exists
-        #    Only backfill dates AFTER this checkpoint (smart approach)
+        # 3. Find the most recent date where DATA EXISTS (our checkpoint)
+        #    We only need to process dates AFTER this checkpoint
+        #    Note: We check data existence only, not job completion, because job tracking is newer
         today = datetime.now().date()
         checkpoint_date = None
         
-        # Start from today and work backwards to find last known good date
+        # Start from today and work backwards to find last date with data
         check_date = today
         while check_date >= earliest_trade_date:
             if market_holidays.is_trading_day(check_date, market="any"):
-                job_completed = is_job_completed('update_portfolio_prices', check_date)
-                
-                # Quick data existence check
+                # Check if portfolio data exists for this date
                 try:
                     start_of_day = datetime.combine(check_date, datetime.min.time()).isoformat()
                     end_of_day = datetime.combine(check_date, datetime.max.time()).isoformat()
@@ -119,22 +118,22 @@ def startup_backfill_check() -> None:
                 except:
                     data_exists = False
                 
-                # Found a good checkpoint!
-                if job_completed and data_exists:
+                # Found our checkpoint - last date with data!
+                if data_exists:
                     checkpoint_date = check_date
-                    logger.info(f"   Found checkpoint: {checkpoint_date} (job completed + data exists)")
+                    logger.info(f"   Found checkpoint: {checkpoint_date} (data exists)")
                     break
             
             check_date -= timedelta(days=1)
             
-            # Don't search more than 30 days back for checkpoint (performance)
+            # Don't search more than 30 days back (performance)
             if (today - check_date).days > 30:
-                logger.info("   No checkpoint found in last 30 days - will process all dates")
-                checkpoint_date = earliest_trade_date - timedelta(days=1)  # Process everything
+                logger.info("   No data found in last 30 days - will process from earliest trade")
+                checkpoint_date = earliest_trade_date - timedelta(days=1)
                 break
         
         if checkpoint_date is None:
-            # No checkpoint found at all - process from earliest trade
+            # No checkpoint found at all
             checkpoint_date = earliest_trade_date - timedelta(days=1)
             logger.info("   No checkpoint found - will process all dates from earliest trade")
         

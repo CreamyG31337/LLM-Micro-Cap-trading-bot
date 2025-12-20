@@ -150,6 +150,9 @@ class EmailTradeParser:
                 currency=currency
             )
             
+            # Validate currency matches ticker pattern and warn if mismatch
+            self._validate_currency_ticker_match(symbol, currency)
+            
             logger.info(f"Successfully parsed trade: {symbol} {action} {shares} @ {price}")
             return trade
             
@@ -325,6 +328,28 @@ class EmailTradeParser:
             return 'SELL'
         else:
             return action
+    
+    def _validate_currency_ticker_match(self, ticker: str, currency: str) -> None:
+        """Validate that currency matches ticker suffix pattern and warn if mismatch.
+        
+        - Canadian tickers (.TO, .V, .CN, .NE) should always be CAD
+        - US tickers (no suffix) on a US brokerage are typically USD
+        
+        This doesn't change the currency, just logs a warning for review.
+        """
+        canadian_suffixes = ['.TO', '.V', '.CN', '.NE']
+        is_canadian_ticker = any(ticker.upper().endswith(suffix) for suffix in canadian_suffixes)
+        
+        if is_canadian_ticker and currency.upper() != 'CAD':
+            warning_msg = f"⚠️ Currency mismatch: {ticker} appears to be a Canadian stock (has suffix) but currency is '{currency}'. Expected CAD."
+            print(warning_msg)
+            logger.warning(warning_msg)
+        elif not is_canadian_ticker and currency.upper() == 'CAD':
+            # This could be intentional (trading CAD on TSX without suffix from Wealthsimple)
+            # Log as info rather than warning, but still alert user
+            info_msg = f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+            print(info_msg)
+            logger.info(info_msg)
 
 
 def parse_trade_from_email(email_text: str) -> Optional[Trade]:

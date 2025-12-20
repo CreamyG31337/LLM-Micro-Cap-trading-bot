@@ -19,9 +19,9 @@ from streamlit_utils import get_supabase_client
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
 
-# Check authentication
+# Check authentication - redirect to main page if not logged in
 if not is_authenticated():
-    st.error("Please log in to access the admin page.")
+    st.switch_page("streamlit_app.py")
     st.stop()
 
 # Check admin status
@@ -926,6 +926,150 @@ with tab6:
                     st.dataframe(trades_df[available_cols], use_container_width=True)
                 else:
                     st.info("No recent trades")
+                
+                # ===== EMAIL TRADE ENTRY =====
+                st.divider()
+                st.subheader("📧 Email Trade Entry")
+                st.caption("Paste a trade confirmation email to auto-parse and add the trade")
+                
+                # Initialize session state for parsed trade
+                if 'parsed_trade' not in st.session_state:
+                    st.session_state.parsed_trade = None
+                if 'email_text_input' not in st.session_state:
+                    st.session_state.email_text_input = ""
+                
+                email_fund = st.selectbox("Fund for Email Trade", options=fund_names, key="email_trade_fund")
+                
+                email_text = st.text_area(
+                    "Paste email content here",
+                    height=150,
+                    placeholder="""Your order has been filled
+Symbol: AAPL
+Type: Buy
+Shares: 10
+Average price: US$150.00
+Total cost: $1,500.00
+Time: December 19, 2025 09:30 EST""",
+                    key="email_trade_text"
+                )
+                
+                col_parse, col_clear = st.columns([1, 1])
+                
+                with col_parse:
+                    if st.button("🔍 Parse Email", type="secondary"):
+                        if not email_text.strip():
+                            st.error("Please paste email content first")
+                        else:
+                            try:
+                                # Import the email parser
+                                import sys
+                                from pathlib import Path
+                                project_root = Path(__file__).parent.parent.parent
+                                if str(project_root) not in sys.path:
+                                    sys.path.insert(0, str(project_root))
+                                
+                                from utils.email_trade_parser import EmailTradeParser
+                                
+                                parser = EmailTradeParser()
+                                trade = parser.parse_email_trade(email_text)
+                                
+                                if trade:
+                                    st.session_state.parsed_trade = trade
+                                    st.success("✅ Trade parsed successfully!")
+                                else:
+                                    st.error("❌ Could not parse trade from email. Check the format and try again.")
+                                    st.session_state.parsed_trade = None
+                                    
+                            except Exception as e:
+                                st.error(f"Error parsing email: {e}")
+                                st.session_state.parsed_trade = None
+                
+                with col_clear:
+                    if st.button("🗑️ Clear", type="secondary"):
+                        st.session_state.parsed_trade = None
+                        st.rerun()
+                
+                # Show parsed trade preview
+                if st.session_state.parsed_trade:
+                    trade = st.session_state.parsed_trade
+                    
+                    st.markdown("### 📋 Parsed Trade Preview")
+                    
+                    # Currency validation check
+                    canadian_suffixes = ['.TO', '.V', '.CN', '.NE']
+                    is_canadian_ticker = any(trade.ticker.upper().endswith(suffix) for suffix in canadian_suffixes)
+                    currency_warning = None
+                    
+                    if is_canadian_ticker and trade.currency.upper() != 'CAD':
+                        currency_warning = f"⚠️ **Currency mismatch**: {trade.ticker} appears to be a Canadian stock but currency is {trade.currency}"
+                    elif not is_canadian_ticker and trade.currency.upper() == 'CAD':
+                        currency_warning = f"ℹ️ **Note**: {trade.ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+                    
+                    if currency_warning:
+                        st.warning(currency_warning)
+                    
+                    # Display trade details in a nice format
+                    col_left, col_right = st.columns(2)
+                    
+                    with col_left:
+                        st.write(f"**Ticker:** {trade.ticker}")
+                        st.write(f"**Action:** {trade.action}")
+                        st.write(f"**Shares:** {trade.shares}")
+                    
+                    with col_right:
+                        st.write(f"**Price:** ${trade.price}")
+                        st.write(f"**Currency:** {trade.currency}")
+                        st.write(f"**Total:** ${trade.cost_basis:.2f}")
+                    
+                    st.write(f"**Timestamp:** {trade.timestamp}")
+                    
+                    # Editable currency override
+                    override_currency = st.selectbox(
+                        "Override Currency (if needed)",
+                        options=[trade.currency, "USD" if trade.currency == "CAD" else "CAD"],
+                        index=0,
+                        key="override_currency"
+                    )
+                    
+                    # Confirm and save button
+                    if st.button("✅ Confirm & Save Trade", type="primary"):
+                        try:
+                            # Use override currency if changed
+                            final_currency = override_currency
+                            
+                            # Ensure ticker exists in securities table
+                            ticker_check = client.supabase.table("securities").select("ticker").eq("ticker", trade.ticker).execute()
+                            if not ticker_check.data:
+                                client.supabase.table("securities").insert({
+                                    "ticker": trade.ticker,
+                                    "company_name": trade.ticker,
+                                    "currency": final_currency
+                                }).execute()
+                            
+                            # Insert the trade
+                            trade_data = {
+                                "fund": email_fund,
+                                "ticker": trade.ticker,
+                                "shares": float(trade.shares),
+                                "price": float(trade.price),
+                                "cost_basis": float(trade.cost_basis),
+                                "pnl": float(trade.pnl) if trade.pnl else 0,
+                                "reason": trade.reason or f"EMAIL TRADE - {trade.action}",
+                                "currency": final_currency,
+                                "date": trade.timestamp.isoformat()
+                            }
+                            
+                            client.supabase.table("trade_log").insert(trade_data).execute()
+                            
+                            st.success(f"✅ Trade saved: {trade.action} {trade.shares} shares of {trade.ticker} @ ${trade.price}")
+                            st.info("💡 Note: Run portfolio rebuild to update positions based on trade log.")
+                            
+                            # Clear the parsed trade
+                            st.session_state.parsed_trade = None
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Error saving trade: {e}")
                     
         except Exception as e:
             st.error(f"Error loading trade entry: {e}")

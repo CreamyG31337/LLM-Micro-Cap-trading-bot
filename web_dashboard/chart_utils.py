@@ -547,8 +547,30 @@ def create_currency_exposure_chart(positions_df: pd.DataFrame, fund_name: Option
         )
         return fig
     
+    # Clean currency column: filter NaN, None, empty strings, and string 'nan'
+    # Make a copy to avoid modifying the original dataframe
+    df = positions_df.copy()
+    
+    # Convert currency column to string and clean invalid values
+    df['currency'] = df['currency'].fillna('USD')  # Replace NaN/None with USD
+    df['currency'] = df['currency'].astype(str).str.strip().str.upper()
+    
+    # Replace empty strings and 'NAN' with USD (default)
+    invalid_currencies = ['', 'NAN', 'NONE', 'NULL']
+    invalid_mask = df['currency'].isin(invalid_currencies)
+    
+    # Log warning if invalid currencies were found
+    if invalid_mask.any():
+        import logging
+        logger = logging.getLogger(__name__)
+        invalid_count = invalid_mask.sum()
+        invalid_tickers = df.loc[invalid_mask, 'ticker'].tolist() if 'ticker' in df.columns else ['unknown']
+        logger.warning(f"⚠️ Found {invalid_count} positions with invalid/NaN currency (tickers: {invalid_tickers[:5]}...). Defaulting to USD.")
+    
+    df.loc[invalid_mask, 'currency'] = 'USD'
+    
     # Group by currency and sum market values
-    currency_totals = positions_df.groupby('currency')['market_value'].sum().reset_index()
+    currency_totals = df.groupby('currency')['market_value'].sum().reset_index()
     currency_totals = currency_totals.sort_values('market_value', ascending=False)
     
     # Calculate percentages

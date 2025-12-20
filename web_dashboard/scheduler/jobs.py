@@ -130,7 +130,17 @@ def populate_performance_metrics_job() -> None:
         
         for pos in positions_result.data:
             fund = pos['fund']
-            currency = pos.get('currency', 'CAD').upper()
+            original_currency = pos.get('currency', 'CAD')
+            currency = original_currency
+            # Validate currency: treat 'nan', None, or empty strings as 'CAD'
+            if not currency or not isinstance(currency, str):
+                currency = 'CAD'
+                logger.warning(f"⚠️ Position in fund '{fund}' has invalid currency (None/non-string). Defaulting to CAD.")
+            else:
+                currency = currency.strip().upper()
+                if currency in ('NAN', 'NONE', 'NULL', ''):
+                    logger.warning(f"⚠️ Position in fund '{fund}' ticker '{pos.get('ticker', 'unknown')}' has invalid currency '{original_currency}'. Defaulting to CAD.")
+                    currency = 'CAD'
             
             # Convert to Decimal for precision
             total_value = Decimal(str(pos.get('total_value', 0) or 0))
@@ -383,8 +393,17 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         running_positions[ticker]['shares'] += shares
                         running_positions[ticker]['cost'] += cost
                         currency = trade.get('currency', 'USD')
-                        if currency:
-                            running_positions[ticker]['currency'] = currency
+                        # Validate currency: must be a non-empty string and not 'nan'
+                        if currency and isinstance(currency, str):
+                            currency_upper = currency.strip().upper()
+                            if currency_upper and currency_upper not in ('NAN', 'NONE', 'NULL', ''):
+                                running_positions[ticker]['currency'] = currency_upper
+                            else:
+                                # Invalid currency string - keep default 'USD'
+                                logger.warning(f"⚠️ Trade for '{ticker}' in fund '{fund_name}' has invalid currency '{currency}'. Defaulting to USD.")
+                        else:
+                            # If currency is None or not a string, keep default 'USD'
+                            logger.warning(f"⚠️ Trade for '{ticker}' in fund '{fund_name}' has missing currency. Defaulting to USD.")
                 
                 # Filter to only positions with shares > 0
                 current_holdings = {

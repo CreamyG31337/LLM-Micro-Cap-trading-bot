@@ -61,6 +61,19 @@ def load_and_transform_trades(trade_log_path: Path, fund_name: str) -> list:
     trades = []
     for _, row in df.iterrows():
         try:
+            # Handle NaN/empty/invalid currency values BEFORE building the dict
+            raw_currency = row.get('Currency')
+            if pd.isna(raw_currency) or raw_currency is None or str(raw_currency).strip().lower() in ('', 'nan', 'none'):
+                # Fallback: detect currency from ticker suffix
+                ticker = row['Ticker']
+                if any(ticker.upper().endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+                    currency = 'CAD'
+                else:
+                    currency = 'USD'
+                print(f"  [WARN] Trade {ticker} has missing currency, defaulting to {currency}")
+            else:
+                currency = str(raw_currency).strip().upper()
+            
             trade = {
                 'ticker': row['Ticker'],
                 'shares': float(row['Shares']),
@@ -68,7 +81,7 @@ def load_and_transform_trades(trade_log_path: Path, fund_name: str) -> list:
                 'cost_basis': float(row['Cost Basis']),
                 'pnl': float(row.get('PnL', 0)) if pd.notna(row.get('PnL')) else 0,
                 'reason': str(row.get('Reason', '')),
-                'currency': str(row.get('Currency', 'CAD')),
+                'currency': currency,
                 'fund': fund_name,  # Use the proper fund name
                 'date': str(row['Date'])
             }

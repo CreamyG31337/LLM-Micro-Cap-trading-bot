@@ -1444,8 +1444,7 @@ with tab7:
                                             client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
                                     
                                     # Clear caches
-                                    get_user_investment_metrics.clear()
-                                    get_historical_fund_values.clear()
+                                    st.cache_data.clear()
                                     
                                     st.toast("✅ Changes saved successfully!", icon="✅")
                                     st.rerun()

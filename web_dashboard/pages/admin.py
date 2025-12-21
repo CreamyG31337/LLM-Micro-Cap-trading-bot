@@ -1212,17 +1212,35 @@ with tab7:
                                             client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
                                     
                                     # Process adds (quick add via table)
+                                    # Try to get reference IDs from first existing record
+                                    ref_fund_id = records_df.iloc[0]['fund_id'] if not records_df.empty and 'fund_id' in records_df.columns else None
+                                    ref_contributor_id = records_df.iloc[0]['contributor_id'] if not records_df.empty and 'contributor_id' in records_df.columns else None
+                                    ref_email = records_df.iloc[0]['email'] if not records_df.empty else None
+                                    
+                                    # Fallback if no records exist (shouldn't happen here but for safety)
+                                    if not ref_fund_id:
+                                        f_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
+                                        if f_lookup.data: ref_fund_id = f_lookup.data['id']
+                                    
+                                    if not ref_contributor_id:
+                                        c_lookup = client.supabase.table("contributors").select("id").eq("name", selected_contributor).execute()
+                                        if c_lookup.data: ref_contributor_id = c_lookup.data[0]['id']
+
                                     for row in adds:
-                                        if 'amount' in row and row['amount'] > 0:
+                                        if 'amount' in row:
                                             new_record = {
                                                 "fund": selected_fund,
                                                 "contributor": selected_contributor,
-                                                "email": records_df.iloc[0]['email'] if not records_df.empty else None,
+                                                "email": ref_email,
                                                 "amount": float(row.get('amount', 0)),
-                                                "contribution_type": row.get('contribution_type', 'CONTRIBUTION'),
+                                                "contribution_type": row.get('contribution_type') or 'CONTRIBUTION',
                                                 "timestamp": row.get('timestamp', datetime.now().isoformat()),
-                                                "notes": row.get('notes', "Manual Entry")
+                                                "notes": row.get('notes') or f"Added via management table"
                                             }
+                                            # Include IDs if we have them
+                                            if ref_fund_id: new_record["fund_id"] = ref_fund_id
+                                            if ref_contributor_id: new_record["contributor_id"] = ref_contributor_id
+                                            
                                             client.supabase.table("fund_contributions").insert(new_record).execute()
                                     
                                     st.success(f"✅ Records successfully updated for {selected_contributor}!")
@@ -1277,7 +1295,37 @@ with tab7:
                                 st.error("Name is required")
                             else:
                                 try:
-                                    client.supabase.table("fund_contributions").insert({
+                                    # 1. Get Fund ID
+                                    fund_id = None
+                                    fund_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
+                                    if fund_lookup.data:
+                                        fund_id = fund_lookup.data['id']
+                                    
+                                    # 2. Get or Create Contributor ID
+                                    contributor_id = None
+                                    if new_email:
+                                        # Try by email first
+                                        c_lookup = client.supabase.table("contributors").select("id").eq("email", new_email).maybe_single().execute()
+                                        if c_lookup.data:
+                                            contributor_id = c_lookup.data['id']
+                                    
+                                    if not contributor_id:
+                                        # Try by name if no email match
+                                        c_lookup = client.supabase.table("contributors").select("id").eq("name", new_name).execute()
+                                        if c_lookup.data:
+                                            contributor_id = c_lookup.data[0]['id']
+                                    
+                                    if not contributor_id:
+                                        # Create new contributor record
+                                        new_c = client.supabase.table("contributors").insert({
+                                            "name": new_name,
+                                            "email": new_email if new_email else None
+                                        }).execute()
+                                        if new_c.data:
+                                            contributor_id = new_c.data[0]['id']
+
+                                    # 3. Final Insert
+                                    insert_payload = {
                                         "fund": selected_fund,
                                         "contributor": new_name,
                                         "email": new_email if new_email else None,
@@ -1285,7 +1333,11 @@ with tab7:
                                         "contribution_type": new_type,
                                         "timestamp": datetime.combine(new_date, datetime.min.time()).isoformat(),
                                         "notes": new_notes if new_notes else None
-                                    }).execute()
+                                    }
+                                    if fund_id: insert_payload["fund_id"] = fund_id
+                                    if contributor_id: insert_payload["contributor_id"] = contributor_id
+
+                                    client.supabase.table("fund_contributions").insert(insert_payload).execute()
                                     st.success(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.")
                                     st.rerun()
                                 except Exception as e:

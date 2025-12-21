@@ -1213,18 +1213,23 @@ with tab7:
                                     
                                     # Process adds (quick add via table)
                                     # Try to get reference IDs from first existing record
+                                    # Use .item() to convert from numpy.int64 to native Python int
                                     ref_fund_id = records_df.iloc[0]['fund_id'] if not records_df.empty and 'fund_id' in records_df.columns else None
+                                    if hasattr(ref_fund_id, 'item'): ref_fund_id = ref_fund_id.item()
+                                    
                                     ref_contributor_id = records_df.iloc[0]['contributor_id'] if not records_df.empty and 'contributor_id' in records_df.columns else None
+                                    if hasattr(ref_contributor_id, 'item'): ref_contributor_id = ref_contributor_id.item()
+                                    
                                     ref_email = records_df.iloc[0]['email'] if not records_df.empty else None
                                     
                                     # Fallback if no records exist (shouldn't happen here but for safety)
                                     if not ref_fund_id:
                                         f_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
-                                        if f_lookup.data: ref_fund_id = f_lookup.data['id']
+                                        if f_lookup.data: ref_fund_id = int(f_lookup.data['id'])
                                     
                                     if not ref_contributor_id:
                                         c_lookup = client.supabase.table("contributors").select("id").eq("name", selected_contributor).execute()
-                                        if c_lookup.data: ref_contributor_id = c_lookup.data[0]['id']
+                                        if c_lookup.data: ref_contributor_id = int(c_lookup.data[0]['id'])
 
                                     for row in adds:
                                         if 'amount' in row:
@@ -1299,7 +1304,7 @@ with tab7:
                                     fund_id = None
                                     fund_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
                                     if fund_lookup.data:
-                                        fund_id = fund_lookup.data['id']
+                                        fund_id = int(fund_lookup.data['id'])
                                     
                                     # 2. Get or Create Contributor ID
                                     contributor_id = None
@@ -1307,7 +1312,7 @@ with tab7:
                                         # Try by email first
                                         c_lookup = client.supabase.table("contributors").select("id").eq("email", new_email).maybe_single().execute()
                                         if c_lookup.data:
-                                            contributor_id = c_lookup.data['id']
+                                            contributor_id = int(c_lookup.data['id'])
                                     
                                     if not contributor_id:
                                         # Try by name if no email match
@@ -1322,7 +1327,7 @@ with tab7:
                                             "email": new_email if new_email else None
                                         }).execute()
                                         if new_c.data:
-                                            contributor_id = new_c.data[0]['id']
+                                            contributor_id = int(new_c.data[0]['id'])
 
                                     # 3. Final Insert
                                     insert_payload = {

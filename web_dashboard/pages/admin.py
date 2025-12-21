@@ -37,11 +37,40 @@ with col_header1:
 with col_header3:
     st.write("")  # Spacer for alignment
     if st.button("🔄 Clear Cache", help="Force refresh all cached data from database", use_container_width=True):
-        # Clear ALL Streamlit data caches
-        st.cache_data.clear()
+        from datetime import datetime
+        import logging
         
-        st.success("✅ All caches cleared! Please refresh the main dashboard page to see updated values.")
-        st.rerun()
+        logger = logging.getLogger(__name__)
+        clear_time = datetime.now().isoformat()
+        
+        try:
+            # Get cache stats before clearing (if available)
+            logger.info(f"Cache clear initiated by {get_user_email()} at {clear_time}")
+            
+            # Clear ALL Streamlit data caches
+            st.cache_data.clear()
+            
+            logger.info(f"Cache cleared successfully at {clear_time}")
+            
+            # Show toast notification that persists across rerun
+            st.toast(
+                f"✅ Cache cleared by {get_user_email()} at {datetime.now().strftime('%H:%M:%S')}",
+                icon="✅"
+            )
+            
+            # Log to file for audit trail
+            try:
+                from log_handler import log_message
+                log_message("INFO", f"Cache cleared by {get_user_email()}")
+            except:
+                pass  # Logging is optional
+            
+            st.rerun()
+            
+        except Exception as e:
+            error_msg = f"Failed to clear cache: {e}"
+            logger.error(error_msg)
+            st.error(f"❌ {error_msg}")
 
 st.caption(f"Logged in as: {get_user_email()}")
 
@@ -164,7 +193,7 @@ with tab2:
                             if delete_result.data:
                                 result_data = delete_result.data
                                 if result_data.get('success'):
-                                    st.success(f"✅ {result_data.get('message')}")
+                                    st.toast(f"✅ {result_data.get('message')}", icon="✅")
                                     st.rerun()
                                 else:
                                     if result_data.get('is_contributor'):
@@ -209,7 +238,7 @@ with tab2:
                             
                             if result_data and isinstance(result_data, dict):
                                 if result_data.get('success'):
-                                    st.success(f"✅ {result_data.get('message', f'Successfully assigned {fund_name} to {user_email}')}")
+                                    st.toast(f"✅ {result_data.get('message', f'Assigned {fund_name} to {user_email}')}", icon="✅")
                                     st.rerun()
                                 elif result_data.get('already_assigned'):
                                     st.warning(f"⚠️ {result_data.get('message', f'Fund {fund_name} is already assigned to {user_email}')}")
@@ -247,7 +276,7 @@ with tab2:
                             # Handle boolean result properly (False is valid, None is error)
                             if remove_result.data is not None:
                                 if remove_result.data:
-                                    st.success(f"✅ Successfully removed {remove_fund} from {remove_email}")
+                                    st.toast(f"✅ Removed {remove_fund} from {remove_email}", icon="✅")
                                     st.rerun()
                                 else:
                                     st.warning(f"No assignment found for {remove_email} → {remove_fund}")
@@ -435,7 +464,7 @@ with tab3:
                                 if result.data:
                                     result_data = result.data[0] if isinstance(result.data, list) else result.data
                                     if result_data.get('success'):
-                                        st.success(f"✅ {result_data.get('message')}")
+                                        st.toast(f"✅ {result_data.get('message')}", icon="✅")
                                         st.rerun()
                                     else:
                                         st.error(f"❌ {result_data.get('message')}")
@@ -509,7 +538,7 @@ with tab3:
                                         if result.data:
                                             result_data = result.data[0] if isinstance(result.data, list) else result.data
                                             if result_data.get('success'):
-                                                st.success(f"✅ {result_data.get('message')}")
+                                                st.toast(f"✅ {result_data.get('message')}", icon="✅")
                                                 st.rerun()
                                             else:
                                                 st.error(f"❌ {result_data.get('message')}")
@@ -598,7 +627,7 @@ with tab4:
                                         .update({"is_production": new_status})\
                                         .eq("name", fund_name)\
                                         .execute()
-                                    st.success(f"✅ {fund_name} marked as {'production' if new_status else 'test/dev'}")
+                                    st.toast(f"✅ {fund_name} marked as {'production' if new_status else 'test/dev'}", icon="✅")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error updating {fund_name}: {e}")
@@ -639,7 +668,7 @@ with tab4:
                                 {"fund": new_fund_name, "currency": "USD", "amount": 0}
                             ]).execute()
                             
-                            st.success(f"✅ Fund '{new_fund_name}' created successfully!")
+                            st.toast(f"✅ Fund '{new_fund_name}' created!", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error creating fund: {e}")
@@ -666,7 +695,7 @@ with tab4:
                         try:
                             # Update funds table - ON UPDATE CASCADE will update all related tables
                             client.supabase.table("funds").update({"name": new_name}).eq("name", rename_fund).execute()
-                            st.success(f"✅ Fund renamed from '{rename_fund}' to '{new_name}'")
+                            st.toast(f"✅ Fund renamed to '{new_name}'", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error renaming fund: {e}")
@@ -700,7 +729,7 @@ with tab4:
                             # Reset cash_balances to 0
                             client.supabase.table("cash_balances").update({"amount": 0}).eq("fund", wipe_fund).execute()
                             
-                            st.success(f"✅ All data for '{wipe_fund}' has been wiped. Fund and contributions preserved.")
+                            st.toast(f"✅ All data for '{wipe_fund}' wiped", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error wiping fund data: {e}")
@@ -752,7 +781,7 @@ with tab4:
                             # Now delete the fund itself
                             client.supabase.table("funds").delete().eq("name", delete_fund).execute()
                             
-                            st.success(f"✅ Fund '{delete_fund}' and all its data has been permanently deleted.")
+                            st.toast(f"✅ Fund '{delete_fund}' permanently deleted", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting fund: {e}")
@@ -1063,8 +1092,7 @@ Time: December 19, 2025 09:30 EST""",
                             
                             client.supabase.table("trade_log").insert(trade_data).execute()
                             
-                            st.success(f"✅ Trade saved: {trade.action} {trade.shares} shares of {trade.ticker} @ ${trade.price}")
-                            st.info("💡 Note: Run portfolio rebuild to update positions based on trade log.")
+                            st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                             
                             # Clear the parsed trade
                             st.session_state.parsed_trade = None
@@ -1245,6 +1273,8 @@ with tab7:
                                                 client.supabase.table("fund_contributions").insert(new_record).execute()
                                         
                                         # Clear relevant caches so metrics update immediately
+                                        import logging
+                                        logging.getLogger(__name__).info(f"Cache cleared after contribution record updates for {selected_contributor}")
                                         st.cache_data.clear()
                                         
                                         st.toast(f"✅ Records successfully updated for {selected_contributor}!", icon="✅")
@@ -1268,8 +1298,10 @@ with tab7:
                                 if new_name and new_name != selected_contributor:
                                     client.supabase.table("fund_contributions").update({"contributor": new_name}).eq("contributor", selected_contributor).execute()
                                     # Clear caches
+                                    import logging
+                                    logging.getLogger(__name__).info(f"Cache cleared after renaming contributor {selected_contributor} to {new_name}")
                                     st.cache_data.clear()
-                                    st.success(f"Renamed to {new_name}")
+                                    st.toast(f"✅ Renamed to {new_name}", icon="✅")
                                     st.rerun()
                         
                         with col_p2:
@@ -1279,8 +1311,10 @@ with tab7:
                             if st.button("Update Email", use_container_width=True):
                                 client.supabase.table("fund_contributions").update({"email": new_email}).eq("contributor", selected_contributor).execute()
                                 # Clear caches
+                                import logging
+                                logging.getLogger(__name__).info(f"Cache cleared after email update for {selected_contributor}")
                                 st.cache_data.clear()
-                                st.success(f"Email updated to {new_email}")
+                                st.toast(f"✅ Email updated to {new_email}", icon="✅")
                                 st.rerun()
                 
                 else:
@@ -1351,9 +1385,11 @@ with tab7:
                                     client.supabase.table("fund_contributions").insert(insert_payload).execute()
                                     
                                     # Clear relevant caches so metrics update immediately
+                                    import logging
+                                    logging.getLogger(__name__).info(f"Cache cleared after adding new contributor {new_name}")
                                     st.cache_data.clear()
                                     
-                                    st.success(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.")
+                                    st.toast(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.", icon="✅")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error adding contributor: {e}")
@@ -1426,6 +1462,8 @@ with tab7:
                                             client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
                                     
                                     # Clear caches
+                                    import logging
+                                    logging.getLogger(__name__).info(f"Cache cleared after notes/timestamp updates in All Contributions view for {view_all_fund}")
                                     st.cache_data.clear()
                                     
                                     st.toast("✅ Changes saved successfully!", icon="✅")
@@ -1498,7 +1536,7 @@ with tab8:
                     if os.path.exists(log_file):
                         with open(log_file, 'w', encoding='utf-8') as f:
                             f.write("")
-                    st.success("Logs cleared")
+                    st.toast("✅ Logs cleared", icon="✅")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to clear logs: {e}")

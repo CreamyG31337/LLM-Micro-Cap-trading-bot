@@ -1157,7 +1157,7 @@ with tab7:
                         records_df = pd.DataFrame(records_query.data)
                         # Keep ID for updates but hide it
                         # Convert timestamp to datetime for editor
-                        records_df['timestamp'] = pd.to_datetime(records_df['timestamp'])
+                        records_df['timestamp'] = pd.to_datetime(records_df['timestamp'], format='ISO8601')
                         
                         edited_data = st.data_editor(
                             records_df,

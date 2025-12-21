@@ -552,7 +552,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         .select("id")\
                         .eq("fund", fund_name)\
                         .gte("date", start_of_day)\
-                        .lt("date", end_of_day)\
+                        .lte("date", end_of_day)\
                         .limit(1000)\
                         .execute()
                     

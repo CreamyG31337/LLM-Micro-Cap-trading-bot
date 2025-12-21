@@ -1403,20 +1403,50 @@ with tab7:
                     col_s3.metric("Total Withdrawals", f"${total_withdrawals:,.2f}")
                     col_s4.metric("Net", f"${total_contribs - total_withdrawals:,.2f}")
                     
-                    # Display table
-                    st.dataframe(
-                        all_df[['timestamp', 'contributor', 'contribution_type', 'amount', 'notes', 'email']],
+                    # Display editable table
+                    edited_all_df = st.data_editor(
+                        all_df[['id', 'timestamp', 'contributor', 'contribution_type', 'amount', 'notes', 'email']],
                         column_config={
-                            "timestamp": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
-                            "contributor": "Contributor",
-                            "contribution_type": "Type",
-                            "amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
-                            "notes": "Notes",
-                            "email": "Email"
+                            "id": None,  # Hide ID
+                            "timestamp": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm", disabled=True),
+                            "contributor": st.column_config.TextColumn("Contributor", disabled=True),
+                            "contribution_type": st.column_config.TextColumn("Type", disabled=True),
+                            "amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f", disabled=True),
+                            "notes": st.column_config.TextColumn("Notes", width="large"),
+                            "email": st.column_config.TextColumn("Email", disabled=True)
                         },
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        key=f"all_contribs_editor_{view_all_fund}"
                     )
+                    
+                    # Save button for notes updates
+                    if st.button("💾 Save Notes Changes", key=f"save_all_notes_{view_all_fund}"):
+                        editor_state = st.session_state.get(f"all_contribs_editor_{view_all_fund}")
+                        if editor_state and isinstance(editor_state, dict):
+                            edits = editor_state.get("edited_rows", {})
+                            if edits:
+                                try:
+                                    for idx, changes in edits.items():
+                                        if 'notes' in changes:
+                                            row_id = all_df.iloc[int(idx)]['id']
+                                            # Convert numpy types to native Python
+                                            if hasattr(row_id, 'item'):
+                                                row_id = row_id.item()
+                                            client.supabase.table("fund_contributions").update({
+                                                "notes": changes['notes']
+                                            }).eq("id", row_id).execute()
+                                    
+                                    # Clear caches
+                                    get_user_investment_metrics.clear()
+                                    get_historical_fund_values.clear()
+                                    
+                                    st.toast("✅ Notes updated successfully!", icon="✅")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error saving notes: {e}")
+                            else:
+                                st.warning("No changes detected in notes.")
                     
                     # Download button
                     csv_data = all_df[['timestamp', 'contributor', 'contribution_type', 'amount', 'notes', 'email']].to_csv(index=False)

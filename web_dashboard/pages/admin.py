@@ -44,14 +44,8 @@ with col_header3:
         try:
             from streamlit_utils import get_historical_fund_values, get_current_positions, get_user_investment_metrics
             # These are @st.cache_data decorated - clearing their internal cache
-            if hasattr(get_historical_fund_values, 'clear'):
-                get_historical_fund_values.clear()
-            if hasattr(get_current_positions, 'clear'):
-                get_current_positions.clear()
-            if hasattr(get_user_investment_metrics, 'clear'):
-                get_user_investment_metrics.clear()
-        except Exception as e:
-            print(f"Note: Could not clear specific function caches: {e}")
+            # Clear all caches
+        st.cache_data.clear()
         
         st.success("✅ All caches cleared! Please refresh the main dashboard page to see updated values.")
         st.rerun()
@@ -1258,9 +1252,7 @@ with tab7:
                                                 client.supabase.table("fund_contributions").insert(new_record).execute()
                                         
                                         # Clear relevant caches so metrics update immediately
-                                        get_user_investment_metrics.clear()
-                                        get_historical_fund_values.clear()
-                                        get_current_positions.clear()
+                                        st.cache_data.clear()
                                         
                                         st.toast(f"✅ Records successfully updated for {selected_contributor}!", icon="✅")
                                         st.rerun()
@@ -1283,8 +1275,7 @@ with tab7:
                                 if new_name and new_name != selected_contributor:
                                     client.supabase.table("fund_contributions").update({"contributor": new_name}).eq("contributor", selected_contributor).execute()
                                     # Clear caches
-                                    get_user_investment_metrics.clear()
-                                    get_historical_fund_values.clear()
+                                    st.cache_data.clear()
                                     st.success(f"Renamed to {new_name}")
                                     st.rerun()
                         
@@ -1295,7 +1286,7 @@ with tab7:
                             if st.button("Update Email", use_container_width=True):
                                 client.supabase.table("fund_contributions").update({"email": new_email}).eq("contributor", selected_contributor).execute()
                                 # Clear caches
-                                get_user_investment_metrics.clear()
+                                st.cache_data.clear()
                                 st.success(f"Email updated to {new_email}")
                                 st.rerun()
                 
@@ -1367,9 +1358,7 @@ with tab7:
                                     client.supabase.table("fund_contributions").insert(insert_payload).execute()
                                     
                                     # Clear relevant caches so metrics update immediately
-                                    get_user_investment_metrics.clear()
-                                    get_historical_fund_values.clear()
-                                    get_current_positions.clear()
+                                    st.cache_data.clear()
                                     
                                     st.success(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.")
                                     st.rerun()

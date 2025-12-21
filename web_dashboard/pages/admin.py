@@ -1257,7 +1257,7 @@ with tab7:
                                                 
                                                 client.supabase.table("fund_contributions").insert(new_record).execute()
                                         
-                                        st.success(f"✅ Records successfully updated for {selected_contributor}!")
+                                        st.toast(f"✅ Records successfully updated for {selected_contributor}!", icon="✅")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Error saving changes: {e}")

@@ -1092,7 +1092,7 @@ Time: December 19, 2025 09:30 EST""",
 # Tab 7: Contributions
 with tab7:
     st.header("💰 Contribution Management")
-    st.caption("Add and manage investor contributions")
+    st.caption("Manage investor records and transaction history")
     
     client = get_supabase_client()
     if not client:
@@ -1106,150 +1106,195 @@ with tab7:
             if not fund_names:
                 st.warning("No funds available. Create a fund first in Fund Management.")
             else:
-                # Add Contribution Section
-                st.subheader("➕ Add Contribution/Withdrawal")
+                # 1. Global Selectors
+                col_ctrl1, col_ctrl2 = st.columns([1, 2])
+                with col_ctrl1:
+                    selected_fund = st.selectbox("Select Fund", options=fund_names, key="main_contrib_fund")
                 
-                col1, col2 = st.columns(2)
+                # Get existing contributors for this fund
+                contributors_query = client.supabase.table("fund_contributions").select("contributor").eq("fund", selected_fund).execute()
+                all_contributors = sorted(list(set([r['contributor'] for r in contributors_query.data if r.get('contributor')]))) if contributors_query.data else []
                 
-                with col1:
-                    contrib_fund = st.selectbox("Fund", options=fund_names, key="contrib_fund")
-                    contrib_type = st.selectbox("Type", options=["CONTRIBUTION", "WITHDRAWAL"], key="contrib_type")
-                    contrib_amount = st.number_input("Amount ($)", min_value=0.01, value=1000.0, step=100.0, format="%.2f", key="contrib_amount")
-                
-                with col2:
-                    # Get existing contributors for autocomplete
-                    existing_contributors = client.supabase.table("fund_contributions").select("contributor, email").eq("fund", contrib_fund).execute()
-                    contributor_names = sorted(list(set([r['contributor'] for r in existing_contributors.data if r.get('contributor')]))) if existing_contributors.data else []
+                with col_ctrl2:
+                    selected_contributor = st.selectbox(
+                        "Select Contributor", 
+                        options=[""] + all_contributors, 
+                        format_func=lambda x: "Choose a contributor..." if x == "" else x,
+                        key="main_selected_contributor"
+                    )
+
+                if selected_contributor:
+                    st.divider()
                     
-                    contrib_new_or_existing = st.radio("Contributor", ["Existing", "New"], horizontal=True, key="contrib_new_existing")
+                    # 2. Contributor Overview & Summary
+                    summary_result = client.supabase.table("contributor_ownership").select("*").eq("fund", selected_fund).eq("contributor", selected_contributor).maybe_single().execute()
                     
-                    if contrib_new_or_existing == "Existing" and contributor_names:
-                        contrib_name = st.selectbox("Select Contributor", options=contributor_names, key="contrib_name_existing")
-                        # Get email for selected contributor
-                        existing_email = next((r['email'] for r in existing_contributors.data if r['contributor'] == contrib_name and r.get('email')), "")
-                        contrib_email = st.text_input("Email", value=existing_email, key="contrib_email_existing")
-                    else:
-                        contrib_name = st.text_input("Contributor Name", placeholder="e.g., John Smith", key="contrib_name_new")
-                        contrib_email = st.text_input("Email", placeholder="email@example.com", key="contrib_email_new")
-                
-                # Optional fields
-                with st.expander("Additional Options", expanded=False):
-                    contrib_notes = st.text_area("Notes", placeholder="Optional notes", key="contrib_notes")
-                    contrib_date = st.date_input("Date", value=datetime.now(), key="contrib_date")
-                
-                if st.button("💰 Record Contribution", type="primary"):
-                    if not contrib_name:
-                        st.error("Please enter a contributor name")
-                    elif contrib_amount <= 0:
-                        st.error("Amount must be greater than 0")
-                    else:
-                        try:
-                            # Get or create contributor (if email provided)
-                            contributor_id = None
-                            if contrib_email:
-                                try:
-                                    contrib_result = client.supabase.table("contributors").select("id").eq("email", contrib_email).maybe_single().execute()
-                                    if contrib_result.data:
-                                        contributor_id = contrib_result.data['id']
-                                    else:
-                                        # Create new contributor
-                                        new_contrib = client.supabase.table("contributors").insert({
-                                            "name": contrib_name,
-                                            "email": contrib_email
-                                        }).execute()
-                                        if new_contrib.data:
-                                            contributor_id = new_contrib.data['id']
-                                except:
-                                    pass  # Contributors table might not exist yet
-                            
-                            # Get fund_id
-                            fund_id = None
-                            try:
-                                fund_result = client.supabase.table("funds").select("id").eq("name", contrib_fund).maybe_single().execute()
-                                if fund_result.data:
-                                    fund_id = fund_result.data['id']
-                            except:
-                                pass  # Funds table might not exist yet
-                            
-                            contrib_data = {
-                                "fund": contrib_fund,  # Keep for backward compatibility
-                                "contributor": contrib_name,  # Keep for backward compatibility
-                                "email": contrib_email if contrib_email else None,
-                                "amount": float(contrib_amount),
-                                "contribution_type": contrib_type,
-                                "timestamp": datetime.combine(contrib_date, datetime.min.time()).isoformat(),
-                                "notes": contrib_notes if contrib_notes else None
-                            }
-                            
-                            # Add new FK columns if available
-                            if fund_id:
-                                contrib_data["fund_id"] = fund_id
-                            if contributor_id:
-                                contrib_data["contributor_id"] = contributor_id
-                            
-                            client.supabase.table("fund_contributions").insert(contrib_data).execute()
-                            
-                            action_word = "Contribution" if contrib_type == "CONTRIBUTION" else "Withdrawal"
-                            st.success(f"✅ {action_word} recorded: ${contrib_amount:,.2f} for {contrib_name}")
-                            st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"Error recording contribution: {e}")
-                
-                st.divider()
-                
-                # Edit Contributor Section
-                st.subheader("✏️ Edit Contributor Info")
-                st.caption("Update name or email for an existing contributor across all their records")
-                
-                if contributor_names:
-                    col3, col4 = st.columns(2)
-                    
-                    with col3:
-                        edit_contributor = st.selectbox("Select Contributor to Edit", options=[""] + contributor_names, key="edit_contributor")
-                    
-                    if edit_contributor:
-                        # Get current email
-                        current_email = next((r['email'] for r in existing_contributors.data if r['contributor'] == edit_contributor and r.get('email')), "")
+                    if summary_result.data:
+                        s = summary_result.data
+                        st.subheader(f"👤 {selected_contributor}")
                         
-                        with col4:
-                            new_name = st.text_input("New Name", value=edit_contributor, key="edit_new_name")
-                            new_email = st.text_input("New Email", value=current_email or "", key="edit_new_email")
+                        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                        col_m1.metric("Net Capital", f"${s['net_contribution']:,.2f}")
+                        col_m2.metric("Contributed", f"${s['total_contributions']:,.2f}")
+                        col_m3.metric("Withdrawn", f"${s['total_withdrawals']:,.2f}")
+                        col_m4.metric("Transactions", s['transaction_count'])
                         
-                        if st.button("✏️ Update Contributor", type="secondary"):
-                            if not new_name:
-                                st.error("Name cannot be empty")
-                            else:
+                        st.caption(f"📧 Email: {s.get('email', 'No email linked')}")
+                    
+                    # 3. Editable Transaction History
+                    st.markdown("### 📓 Transaction History")
+                    st.caption("Edit values directly in the table or delete rows. Changes are saved when you click 'Save Changes'.")
+                    
+                    # Fetch records
+                    records_query = client.supabase.table("fund_contributions")\
+                        .select("*")\
+                        .eq("fund", selected_fund)\
+                        .eq("contributor", selected_contributor)\
+                        .order("timestamp", desc=True)\
+                        .execute()
+                    
+                    if records_query.data:
+                        records_df = pd.DataFrame(records_query.data)
+                        # Keep ID for updates but hide it
+                        # Convert timestamp to datetime for editor
+                        records_df['timestamp'] = pd.to_datetime(records_df['timestamp'])
+                        
+                        edited_data = st.data_editor(
+                            records_df,
+                            column_config={
+                                "id": None, # Hide ID
+                                "fund": None, # Hide fund (redundant)
+                                "contributor": None, # Hide contributor (redundant)
+                                "email": None, # Hide email (managed separately)
+                                "timestamp": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
+                                "contribution_type": st.column_config.SelectboxColumn("Type", options=["CONTRIBUTION", "WITHDRAWAL"]),
+                                "amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f", min_value=0),
+                                "notes": st.column_config.TextColumn("Notes", width="large"),
+                                "created_at": None,
+                                "updated_at": None,
+                                "contributor_id": None,
+                                "fund_id": None
+                            },
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            key=f"editor_{selected_fund}_{selected_contributor}"
+                        )
+                        
+                        # Save Changes Button
+                        if st.button("💾 Save Changes", type="primary", key=f"save_{selected_fund}_{selected_contributor}"):
+                            # Handle state changes
+                            state = st.session_state.get(f"editor_{selected_fund}_{selected_contributor}")
+                            if state:
+                                edits = state.get("edited_rows", {})
+                                deletes = state.get("deleted_rows", [])
+                                adds = state.get("added_rows", [])
+                                
                                 try:
-                                    # Update all records for this contributor across all funds
-                                    update_data = {"contributor": new_name}
-                                    if new_email:
-                                        update_data["email"] = new_email
+                                    # Process deletes
+                                    for idx in deletes:
+                                        row_id = records_df.iloc[idx]['id']
+                                        client.supabase.table("fund_contributions").delete().eq("id", row_id).execute()
                                     
-                                    client.supabase.table("fund_contributions").update(update_data).eq("contributor", edit_contributor).execute()
+                                    # Process edits
+                                    for idx, changes in edits.items():
+                                        row_id = records_df.iloc[int(idx)]['id']
+                                        # Only include changed fields
+                                        update_payload = {}
+                                        if 'amount' in changes: update_payload['amount'] = float(changes['amount'])
+                                        if 'contribution_type' in changes: update_payload['contribution_type'] = changes['contribution_type']
+                                        if 'notes' in changes: update_payload['notes'] = changes['notes']
+                                        if 'timestamp' in changes: 
+                                            # Handle datetime object or string
+                                            ts = changes['timestamp']
+                                            update_payload['timestamp'] = ts.isoformat() if hasattr(ts, 'isoformat') else ts
+                                        
+                                        if update_payload:
+                                            client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
                                     
-                                    st.success(f"✅ Updated contributor '{edit_contributor}' to '{new_name}'")
+                                    # Process adds (quick add via table)
+                                    for row in adds:
+                                        if 'amount' in row and row['amount'] > 0:
+                                            new_record = {
+                                                "fund": selected_fund,
+                                                "contributor": selected_contributor,
+                                                "email": records_df.iloc[0]['email'] if not records_df.empty else None,
+                                                "amount": float(row.get('amount', 0)),
+                                                "contribution_type": row.get('contribution_type', 'CONTRIBUTION'),
+                                                "timestamp": row.get('timestamp', datetime.now().isoformat()),
+                                                "notes": row.get('notes', "Manual Entry")
+                                            }
+                                            client.supabase.table("fund_contributions").insert(new_record).execute()
+                                    
+                                    st.success(f"✅ Records successfully updated for {selected_contributor}!")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Error updating contributor: {e}")
-                else:
-                    st.info("No contributors found for this fund")
-                
-                st.divider()
-                
-                # View Contributors
-                st.subheader("👥 Fund Contributors")
-                view_fund = st.selectbox("View Fund", options=fund_names, key="view_contrib_fund")
-                
-                contributors_result = client.supabase.table("contributor_ownership").select("*").eq("fund", view_fund).execute()
-                if contributors_result.data:
-                    contrib_df = pd.DataFrame(contributors_result.data)
-                    st.dataframe(contrib_df, use_container_width=True)
-                else:
-                    st.info(f"No contributors found for {view_fund}")
+                                    st.error(f"Error saving changes: {e}")
                     
+                    st.divider()
+                    
+                    # 4. Profile Management & Actions
+                    with st.expander("🛠️ Manage Contributor Profile"):
+                        col_p1, col_p2 = st.columns(2)
+                        
+                        with col_p1:
+                            st.markdown("#### Rename Contributor")
+                            new_name = st.text_input("New Name", value=selected_contributor)
+                            if st.button("Update Name", use_container_width=True):
+                                if new_name and new_name != selected_contributor:
+                                    client.supabase.table("fund_contributions").update({"contributor": new_name}).eq("contributor", selected_contributor).execute()
+                                    st.success(f"Renamed to {new_name}")
+                                    st.rerun()
+                        
+                        with col_p2:
+                            st.markdown("#### Update Email")
+                            current_email = s.get('email', '') if summary_result.data else ""
+                            new_email = st.text_input("New Email", value=current_email)
+                            if st.button("Update Email", use_container_width=True):
+                                client.supabase.table("fund_contributions").update({"email": new_email}).eq("contributor", selected_contributor).execute()
+                                st.success(f"Email updated to {new_email}")
+                                st.rerun()
+                
+                else:
+                    # 5. Add New Contributor Section (when none selected)
+                    st.info("Choose an existing contributor above or add a new one below.")
+                    st.divider()
+                    st.subheader("➕ Add New Contributor")
+                    
+                    with st.form("new_contributor_form"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            new_name = st.text_input("Contributor Name*", placeholder="e.g., John Smith")
+                            new_email = st.text_input("Email", placeholder="email@example.com")
+                        with col2:
+                            new_amount = st.number_input("Initial Amount ($)*", min_value=0.01, step=100.0)
+                            new_type = st.selectbox("Transaction Type", options=["CONTRIBUTION", "WITHDRAWAL"])
+                        
+                        new_date = st.date_input("Date", value=datetime.now())
+                        new_notes = st.text_area("Notes", placeholder="Optional details...")
+                        
+                        if st.form_submit_button("Record Initial Contribution", type="primary"):
+                            if not new_name:
+                                st.error("Name is required")
+                            else:
+                                try:
+                                    client.supabase.table("fund_contributions").insert({
+                                        "fund": selected_fund,
+                                        "contributor": new_name,
+                                        "email": new_email if new_email else None,
+                                        "amount": float(new_amount),
+                                        "contribution_type": new_type,
+                                        "timestamp": datetime.combine(new_date, datetime.min.time()).isoformat(),
+                                        "notes": new_notes if new_notes else None
+                                    }).execute()
+                                    st.success(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error adding contributor: {e}")
+
         except Exception as e:
-            st.error(f"Error loading contributions: {e}")
+            st.error(f"Error loading contributions management: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 
 # Tab 8: Logs
 with tab8:

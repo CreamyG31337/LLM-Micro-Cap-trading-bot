@@ -26,6 +26,14 @@ except ImportError:
     reload_exchange_rate_for_date = None
     st = None
 
+# ============================================================
+# CACHE VERSION - Auto-derived from BUILD_TIMESTAMP (set by Woodpecker CI)
+# Every deployment gets a new cache version, automatically invalidating stale data
+# Falls back to app startup time if BUILD_TIMESTAMP not set
+# ============================================================
+_startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+CACHE_VERSION = os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
+
 
 def get_cache_ttl() -> int:
     """Get cache TTL based on market hours.
@@ -178,8 +186,11 @@ def get_available_funds() -> List[str]:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
-    """Get current portfolio positions as DataFrame"""
+def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> pd.DataFrame:
+    """Get current portfolio positions as DataFrame.
+    
+    CACHED: 5 min TTL. Bump CACHE_VERSION to force immediate invalidation.
+    """
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
@@ -225,8 +236,11 @@ def get_current_positions(fund: Optional[str] = None) -> pd.DataFrame:
 
 @log_execution_time()
 @st.cache_data(ttl=None)  # Cache forever - historical trades don't change
-def get_trade_log(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame:
-    """Get trade log entries as DataFrame with company names from securities table"""
+def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> pd.DataFrame:
+    """Get trade log entries as DataFrame with company names from securities table.
+    
+    CACHED: Permanently. Bump CACHE_VERSION to invalidate after bug fixes.
+    """
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
@@ -937,17 +951,18 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
 
 
 @st.cache_data(ttl=None)  # Cache forever - historical data doesn't change
-def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, float]:
+def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version: str = CACHE_VERSION) -> Dict[str, float]:
     """Get historical fund values for specific dates.
     
     Queries portfolio_positions to calculate total fund value at each date.
     Returns the closest available date if exact date not found.
     
-    CACHED: Permanently cached as historical data never changes (unless manually cleared for bug fixes).
+    CACHED: Permanently cached. Bump CACHE_VERSION in streamlit_utils.py to invalidate after bug fixes.
     
     Args:
         fund: Fund name
         dates: List of dates to get fund values for
+        _cache_version: Cache key version (auto-set from CACHE_VERSION constant)
         
     Returns:
         Dict mapping date string (YYYY-MM-DD) to fund value
@@ -1096,7 +1111,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime]) -> Dict[str, fl
 
 
 @st.cache_data(ttl=300)
-def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown") -> Optional[Dict[str, Any]]:
+def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown", _cache_version: str = CACHE_VERSION) -> Optional[Dict[str, Any]]:
     """Get investment metrics for the currently logged-in user using NAV-based calculation.
     
     This calculates the user's investment performance using a unit-based system 

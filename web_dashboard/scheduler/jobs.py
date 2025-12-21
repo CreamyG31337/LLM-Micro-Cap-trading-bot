@@ -200,8 +200,10 @@ def populate_performance_metrics_job() -> None:
         logger.error(f"❌ Performance metrics job failed: {e}")
 
 
-# Global lock to prevent concurrent execution (backup to APScheduler's max_instances=1)
-_update_prices_job_running = False
+# Thread-safe lock to prevent concurrent execution
+# A simple boolean was causing race conditions when backfill and scheduled jobs ran simultaneously
+import threading
+_update_prices_lock = threading.Lock()
 
 def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
     """Update portfolio positions with current market prices for a specific date.
@@ -221,23 +223,21 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
     - Work with Supabase directly
     
     Safety Features:
-    - Prevents concurrent execution (APScheduler max_instances=1 + global lock)
+    - Prevents concurrent execution (thread-safe lock + APScheduler max_instances=1)
     - Atomic delete+insert per fund (all or nothing)
     - Skips failed tickers but continues with successful ones
     - Handles partial failures gracefully
     """
-    global _update_prices_job_running
-    
-    # Check if job is already running (backup to APScheduler's max_instances=1)
-    if _update_prices_job_running:
-        logger.warning("Portfolio price update job already running - skipping")
+    # Acquire lock with non-blocking check - if another thread is already running, skip
+    acquired = _update_prices_lock.acquire(blocking=False)
+    if not acquired:
+        logger.warning("Portfolio price update job already running - skipping (lock not acquired)")
         return
     
     job_id = 'update_portfolio_prices'
     start_time = time.time()
     
     try:
-        _update_prices_job_running = True
         
         # CRITICAL: Add project root to path FIRST, before any imports
         import sys
@@ -628,7 +628,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
             mark_job_failed('update_portfolio_prices', target_date, None, str(e))
     finally:
         # Always release the lock, even if job fails
-        _update_prices_job_running = False
+        _update_prices_lock.release()
 
 
 

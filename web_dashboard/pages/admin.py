@@ -37,8 +37,23 @@ with col_header1:
 with col_header3:
     st.write("")  # Spacer for alignment
     if st.button("🔄 Clear Cache", help="Force refresh all cached data from database", use_container_width=True):
+        # Clear ALL Streamlit data caches
         st.cache_data.clear()
-        st.success("✅ Cache cleared! Data will be reloaded from database.")
+        
+        # Explicitly clear specific function caches that might hold stale data
+        try:
+            from streamlit_utils import get_historical_fund_values, get_current_positions, get_user_investment_metrics
+            # These are @st.cache_data decorated - clearing their internal cache
+            if hasattr(get_historical_fund_values, 'clear'):
+                get_historical_fund_values.clear()
+            if hasattr(get_current_positions, 'clear'):
+                get_current_positions.clear()
+            if hasattr(get_user_investment_metrics, 'clear'):
+                get_user_investment_metrics.clear()
+        except Exception as e:
+            print(f"Note: Could not clear specific function caches: {e}")
+        
+        st.success("✅ All caches cleared! Please refresh the main dashboard page to see updated values.")
         st.rerun()
 
 st.caption(f"Logged in as: {get_user_email()}")

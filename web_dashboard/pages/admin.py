@@ -1182,76 +1182,88 @@ with tab7:
                         
                         # Save Changes Button
                         if st.button("💾 Save Changes", type="primary", key=f"save_{selected_fund}_{selected_contributor}"):
-                            # Handle state changes
-                            state = st.session_state.get(f"editor_{selected_fund}_{selected_contributor}")
-                            if state:
+                            # Handle state changes from data_editor
+                            editor_key = f"editor_{selected_fund}_{selected_contributor}"
+                            state = st.session_state.get(editor_key)
+                            
+                            # Debugging: check what the state looks like
+                            # st.write(f"DEBUG state type: {type(state)}, state: {state}") # Uncomment to debug
+                            
+                            # data_editor stores changes as a dict with 'edited_rows', 'added_rows', 'deleted_rows'
+                            if state is not None and isinstance(state, dict):
                                 edits = state.get("edited_rows", {})
                                 deletes = state.get("deleted_rows", [])
                                 adds = state.get("added_rows", [])
                                 
-                                try:
-                                    # Process deletes
-                                    for idx in deletes:
-                                        row_id = records_df.iloc[idx]['id']
-                                        client.supabase.table("fund_contributions").delete().eq("id", row_id).execute()
-                                    
-                                    # Process edits
-                                    for idx, changes in edits.items():
-                                        row_id = records_df.iloc[int(idx)]['id']
-                                        # Only include changed fields
-                                        update_payload = {}
-                                        if 'amount' in changes: update_payload['amount'] = float(changes['amount'])
-                                        if 'contribution_type' in changes: update_payload['contribution_type'] = changes['contribution_type']
-                                        if 'notes' in changes: update_payload['notes'] = changes['notes']
-                                        if 'timestamp' in changes: 
-                                            # Handle datetime object or string
-                                            ts = changes['timestamp']
-                                            update_payload['timestamp'] = ts.isoformat() if hasattr(ts, 'isoformat') else ts
+                                if not edits and not deletes and not adds:
+                                    st.warning("No changes detected. Make edits in the table first, then click Save.")
+                                else:
+                                    try:
+                                        # Process deletes
+                                        for idx in deletes:
+                                            row_id = records_df.iloc[idx]['id']
+                                            client.supabase.table("fund_contributions").delete().eq("id", row_id).execute()
                                         
-                                        if update_payload:
-                                            client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
-                                    
-                                    # Process adds (quick add via table)
-                                    # Try to get reference IDs from first existing record
-                                    # Use .item() to convert from numpy.int64 to native Python int
-                                    ref_fund_id = records_df.iloc[0]['fund_id'] if not records_df.empty and 'fund_id' in records_df.columns else None
-                                    if hasattr(ref_fund_id, 'item'): ref_fund_id = ref_fund_id.item()
-                                    
-                                    ref_contributor_id = records_df.iloc[0]['contributor_id'] if not records_df.empty and 'contributor_id' in records_df.columns else None
-                                    if hasattr(ref_contributor_id, 'item'): ref_contributor_id = ref_contributor_id.item()
-                                    
-                                    ref_email = records_df.iloc[0]['email'] if not records_df.empty else None
-                                    
-                                    # Fallback if no records exist (shouldn't happen here but for safety)
-                                    if not ref_fund_id:
-                                        f_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
-                                        if f_lookup.data: ref_fund_id = int(f_lookup.data['id'])
-                                    
-                                    if not ref_contributor_id:
-                                        c_lookup = client.supabase.table("contributors").select("id").eq("name", selected_contributor).execute()
-                                        if c_lookup.data: ref_contributor_id = int(c_lookup.data[0]['id'])
-
-                                    for row in adds:
-                                        if 'amount' in row:
-                                            new_record = {
-                                                "fund": selected_fund,
-                                                "contributor": selected_contributor,
-                                                "email": ref_email,
-                                                "amount": float(row.get('amount', 0)),
-                                                "contribution_type": row.get('contribution_type') or 'CONTRIBUTION',
-                                                "timestamp": row.get('timestamp', datetime.now().isoformat()),
-                                                "notes": row.get('notes') or f"Added via management table"
-                                            }
-                                            # Include IDs if we have them
-                                            if ref_fund_id: new_record["fund_id"] = ref_fund_id
-                                            if ref_contributor_id: new_record["contributor_id"] = ref_contributor_id
+                                        # Process edits
+                                        for idx, changes in edits.items():
+                                            row_id = records_df.iloc[int(idx)]['id']
+                                            # Only include changed fields
+                                            update_payload = {}
+                                            if 'amount' in changes: update_payload['amount'] = float(changes['amount'])
+                                            if 'contribution_type' in changes: update_payload['contribution_type'] = changes['contribution_type']
+                                            if 'notes' in changes: update_payload['notes'] = changes['notes']
+                                            if 'timestamp' in changes: 
+                                                # Handle datetime object or string
+                                                ts = changes['timestamp']
+                                                update_payload['timestamp'] = ts.isoformat() if hasattr(ts, 'isoformat') else ts
                                             
-                                            client.supabase.table("fund_contributions").insert(new_record).execute()
-                                    
-                                    st.success(f"✅ Records successfully updated for {selected_contributor}!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error saving changes: {e}")
+                                            if update_payload:
+                                                client.supabase.table("fund_contributions").update(update_payload).eq("id", row_id).execute()
+                                        
+                                        # Process adds (quick add via table)
+                                        # Try to get reference IDs from first existing record
+                                        # Use .item() to convert from numpy.int64 to native Python int
+                                        ref_fund_id = records_df.iloc[0]['fund_id'] if not records_df.empty and 'fund_id' in records_df.columns else None
+                                        if hasattr(ref_fund_id, 'item'): ref_fund_id = ref_fund_id.item()
+                                        
+                                        ref_contributor_id = records_df.iloc[0]['contributor_id'] if not records_df.empty and 'contributor_id' in records_df.columns else None
+                                        if hasattr(ref_contributor_id, 'item'): ref_contributor_id = ref_contributor_id.item()
+                                        
+                                        ref_email = records_df.iloc[0]['email'] if not records_df.empty else None
+                                        
+                                        # Fallback if no records exist (shouldn't happen here but for safety)
+                                        if not ref_fund_id:
+                                            f_lookup = client.supabase.table("funds").select("id").eq("name", selected_fund).maybe_single().execute()
+                                            if f_lookup.data: ref_fund_id = int(f_lookup.data['id'])
+                                        
+                                        if not ref_contributor_id:
+                                            c_lookup = client.supabase.table("contributors").select("id").eq("name", selected_contributor).execute()
+                                            if c_lookup.data: ref_contributor_id = int(c_lookup.data[0]['id'])
+
+                                        for row in adds:
+                                            if 'amount' in row:
+                                                new_record = {
+                                                    "fund": selected_fund,
+                                                    "contributor": selected_contributor,
+                                                    "email": ref_email,
+                                                    "amount": float(row.get('amount', 0)),
+                                                    "contribution_type": row.get('contribution_type') or 'CONTRIBUTION',
+                                                    "timestamp": row.get('timestamp', datetime.now().isoformat()),
+                                                    "notes": row.get('notes') or f"Added via management table"
+                                                }
+                                                # Include IDs if we have them
+                                                if ref_fund_id: new_record["fund_id"] = ref_fund_id
+                                                if ref_contributor_id: new_record["contributor_id"] = ref_contributor_id
+                                                
+                                                client.supabase.table("fund_contributions").insert(new_record).execute()
+                                        
+                                        st.success(f"✅ Records successfully updated for {selected_contributor}!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error saving changes: {e}")
+                            else:
+                                st.warning("Could not retrieve editor state. Please try making your edits again.")
+
                     
                     st.divider()
                     

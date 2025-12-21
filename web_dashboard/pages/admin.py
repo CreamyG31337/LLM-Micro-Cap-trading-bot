@@ -14,7 +14,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth_utils import is_authenticated, is_admin, get_user_email
-from streamlit_utils import get_supabase_client
+from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions
 
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
@@ -1257,6 +1257,11 @@ with tab7:
                                                 
                                                 client.supabase.table("fund_contributions").insert(new_record).execute()
                                         
+                                        # Clear relevant caches so metrics update immediately
+                                        get_user_investment_metrics.clear()
+                                        get_historical_fund_values.clear()
+                                        get_current_positions.clear()
+                                        
                                         st.toast(f"✅ Records successfully updated for {selected_contributor}!", icon="✅")
                                         st.rerun()
                                     except Exception as e:
@@ -1277,6 +1282,9 @@ with tab7:
                             if st.button("Update Name", use_container_width=True):
                                 if new_name and new_name != selected_contributor:
                                     client.supabase.table("fund_contributions").update({"contributor": new_name}).eq("contributor", selected_contributor).execute()
+                                    # Clear caches
+                                    get_user_investment_metrics.clear()
+                                    get_historical_fund_values.clear()
                                     st.success(f"Renamed to {new_name}")
                                     st.rerun()
                         
@@ -1286,6 +1294,8 @@ with tab7:
                             new_email = st.text_input("New Email", value=current_email)
                             if st.button("Update Email", use_container_width=True):
                                 client.supabase.table("fund_contributions").update({"email": new_email}).eq("contributor", selected_contributor).execute()
+                                # Clear caches
+                                get_user_investment_metrics.clear()
                                 st.success(f"Email updated to {new_email}")
                                 st.rerun()
                 
@@ -1355,6 +1365,12 @@ with tab7:
                                     if contributor_id: insert_payload["contributor_id"] = contributor_id
 
                                     client.supabase.table("fund_contributions").insert(insert_payload).execute()
+                                    
+                                    # Clear relevant caches so metrics update immediately
+                                    get_user_investment_metrics.clear()
+                                    get_historical_fund_values.clear()
+                                    get_current_positions.clear()
+                                    
                                     st.success(f"✅ Welcome {new_name}! First {new_type.lower()} recorded.")
                                     st.rerun()
                                 except Exception as e:

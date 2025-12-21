@@ -868,21 +868,21 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         DataFrame with columns: contributor_display, net_contribution, ownership_pct
         - If admin: Shows all real contributor names
         - If regular user: Shows only their name, others masked as "Investor 1", "Investor 2", etc.
+        - ownership_pct is now NAV-based (units owned), not dollar-based
     """
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
     
     try:
-        # Query contributor_ownership view to get net contributions
-        # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
-        all_rows = []
+        # Get all contributions with timestamps for NAV calculation
+        all_contributions = []
         batch_size = 1000
         offset = 0
         
         while True:
-            query = client.supabase.table("contributor_ownership").select(
-                "contributor, email, net_contribution"
+            query = client.supabase.table("fund_contributions").select(
+                "contributor, email, amount, contribution_type, timestamp"
             ).eq("fund", fund)
             
             result = query.range(offset, offset + batch_size - 1).execute()
@@ -890,52 +890,151 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
             if not result.data:
                 break
             
-            all_rows.extend(result.data)
+            all_contributions.extend(result.data)
             
-            # If we got fewer rows than batch_size, we're done
             if len(result.data) < batch_size:
                 break
             
             offset += batch_size
             
-            # Safety break to prevent infinite loops
             if offset > 50000:
                 print("Warning: Reached 50,000 row safety limit in get_investor_allocations pagination")
                 break
         
-        if not all_rows:
+        if not all_contributions:
             return pd.DataFrame()
         
-        df = pd.DataFrame(all_rows)
+        # Parse and sort contributions chronologically
+        from datetime import datetime
+        contributions = []
+        for record in all_contributions:
+            timestamp_raw = record.get('timestamp', '')
+            timestamp = None
+            if timestamp_raw:
+                try:
+                    if isinstance(timestamp_raw, datetime):
+                        timestamp = timestamp_raw
+                    elif isinstance(timestamp_raw, str):
+                        try:
+                            from data.repositories.field_mapper import TypeTransformers
+                            timestamp = TypeTransformers.iso_to_datetime(timestamp_raw)
+                        except ImportError:
+                            from datetime import datetime as dt
+                            try:
+                                timestamp = dt.fromisoformat(timestamp_raw.replace('Z', '+00:00'))
+                            except (ValueError, AttributeError):
+                                for fmt in ['%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                                    try:
+                                        timestamp = dt.strptime(timestamp_raw.split('+')[0].split('.')[0], fmt)
+                                        break
+                                    except ValueError:
+                                        continue
+                except Exception:
+                    pass
+            
+            contributions.append({
+                'contributor': record.get('contributor', 'Unknown'),
+                'email': record.get('email', ''),
+                'amount': float(record.get('amount', 0)),
+                'type': record.get('contribution_type', 'CONTRIBUTION').lower(),
+                'timestamp': timestamp
+            })
         
-        # Convert net_contribution to float
-        df['net_contribution'] = df['net_contribution'].astype(float)
+        contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
         
-        # Sort by contribution amount (descending) for consistent masking
-        df = df.sort_values('net_contribution', ascending=False).reset_index(drop=True)
+        # Get contribution dates for historical fund value lookup
+        contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
         
-        # Calculate ownership percentages
-        total_contributions = df['net_contribution'].sum()
-        if total_contributions > 0:
-            df['ownership_pct'] = (df['net_contribution'] / total_contributions) * 100
+        # Fetch historical fund values (uses same logic as get_user_investment_metrics)
+        historical_values = get_historical_fund_values(fund, contrib_dates)
+        
+        # Calculate NAV-based ownership using same logic as get_user_investment_metrics
+        contributor_units = {}
+        contributor_data = {}
+        total_units = 0.0
+        
+        for contrib in contributions:
+            contributor = contrib['contributor']
+            amount = contrib['amount']
+            contrib_type = contrib['type']
+            timestamp = contrib['timestamp']
+            
+            if contributor not in contributor_units:
+                contributor_units[contributor] = 0.0
+                contributor_data[contributor] = {
+                    'email': contrib['email'],
+                    'net_contribution': 0.0
+                }
+            
+            if contrib_type == 'withdrawal':
+                contributor_data[contributor]['net_contribution'] -= amount
+                
+                # Redeem units
+                if total_units > 0 and contributor_units[contributor] > 0:
+                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                    if date_str and date_str in historical_values:
+                        fund_value_at_date = historical_values[date_str]
+                        nav_at_withdrawal = fund_value_at_date / total_units if total_units > 0 else 1.0
+                    else:
+                        nav_at_withdrawal = 1.0
+                    
+                    units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
+                    actual_units_redeemed = min(units_to_redeem, contributor_units[contributor])
+                    contributor_units[contributor] -= actual_units_redeemed
+                    total_units -= actual_units_redeemed
+            else:
+                contributor_data[contributor]['net_contribution'] += amount
+                
+                # Calculate NAV
+                date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                
+                if total_units == 0:
+                    nav_at_contribution = 1.0
+                elif date_str and date_str in historical_values:
+                    fund_value_at_date = historical_values[date_str]
+                    nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
+                else:
+                    nav_at_contribution = 1.0
+                
+                if nav_at_contribution <= 0:
+                    nav_at_contribution = 1.0
+                
+                units_purchased = amount / nav_at_contribution
+                contributor_units[contributor] += units_purchased
+                total_units += units_purchased
+        
+        # Build result DataFrame
+        result_data = []
+        for contributor, data in contributor_data.items():
+            result_data.append({
+                'contributor': contributor,
+                'email': data['email'],
+                'net_contribution': data['net_contribution'],
+                'units': contributor_units.get(contributor, 0.0)
+            })
+        
+        df = pd.DataFrame(result_data)
+        
+        # Calculate ownership percentages based on UNITS (NAV-based), not dollars
+        if total_units > 0:
+            df['ownership_pct'] = (df['units'] / total_units) * 100
         else:
             df['ownership_pct'] = 0.0
+        
+        # Sort by ownership percentage (descending) for consistent masking
+        df = df.sort_values('ownership_pct', ascending=False).reset_index(drop=True)
         
         # Apply privacy masking
         def mask_name(row, idx):
             if is_admin:
-                # Admins see all real names
                 return row['contributor']
             else:
-                # Regular users see only their own name
                 contributor_email = row.get('email', '').lower() if pd.notna(row.get('email')) else ''
                 user_email_lower = user_email.lower() if user_email else ''
                 
                 if contributor_email and user_email_lower and contributor_email == user_email_lower:
-                    # Show user's own name
                     return row['contributor']
                 else:
-                    # Mask as "Investor N" (sorted by contribution amount)
                     return f"Investor {idx + 1}"
         
         df['contributor_display'] = df.apply(lambda row: mask_name(row, row.name), axis=1)

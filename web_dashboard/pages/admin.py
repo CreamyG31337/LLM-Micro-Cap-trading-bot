@@ -1375,6 +1375,59 @@ with tab7:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error adding contributor: {e}")
+                
+                # 6. All Contributions View
+                st.divider()
+                st.subheader("📊 All Contributions Overview")
+                st.caption("View all contribution records across all contributors for this fund")
+                
+                view_all_fund = st.selectbox("View Fund", options=fund_names, key="view_all_fund", index=fund_names.index(selected_fund) if selected_fund in fund_names else 0)
+                
+                # Fetch all contributions for the selected fund
+                all_contribs_query = client.supabase.table("fund_contributions")\
+                    .select("*")\
+                    .eq("fund", view_all_fund)\
+                    .order("timestamp", desc=True)\
+                    .execute()
+                
+                if all_contribs_query.data:
+                    all_df = pd.DataFrame(all_contribs_query.data)
+                    all_df['timestamp'] = pd.to_datetime(all_df['timestamp'], format='ISO8601')
+                    
+                    # Display summary metrics
+                    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                    total_contribs = all_df[all_df['contribution_type'] == 'CONTRIBUTION']['amount'].sum()
+                    total_withdrawals = all_df[all_df['contribution_type'] == 'WITHDRAWAL']['amount'].sum()
+                    col_s1.metric("Total Records", len(all_df))
+                    col_s2.metric("Total Contributions", f"${total_contribs:,.2f}")
+                    col_s3.metric("Total Withdrawals", f"${total_withdrawals:,.2f}")
+                    col_s4.metric("Net", f"${total_contribs - total_withdrawals:,.2f}")
+                    
+                    # Display table
+                    st.dataframe(
+                        all_df[['timestamp', 'contributor', 'contribution_type', 'amount', 'notes', 'email']],
+                        column_config={
+                            "timestamp": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
+                            "contributor": "Contributor",
+                            "contribution_type": "Type",
+                            "amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
+                            "notes": "Notes",
+                            "email": "Email"
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Download button
+                    csv_data = all_df[['timestamp', 'contributor', 'contribution_type', 'amount', 'notes', 'email']].to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download as CSV",
+                        data=csv_data,
+                        file_name=f"{view_all_fund}_contributions_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info(f"No contributions found for {view_all_fund}")
 
         except Exception as e:
             st.error(f"Error loading contributions management: {e}")

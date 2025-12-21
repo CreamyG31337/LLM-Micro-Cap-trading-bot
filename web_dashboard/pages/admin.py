@@ -40,13 +40,6 @@ with col_header3:
         # Clear ALL Streamlit data caches
         st.cache_data.clear()
         
-        # Explicitly clear specific function caches that might hold stale data
-        try:
-            from streamlit_utils import get_historical_fund_values, get_current_positions, get_user_investment_metrics
-            # These are @st.cache_data decorated - clearing their internal cache
-            # Clear all caches
-        st.cache_data.clear()
-        
         st.success("✅ All caches cleared! Please refresh the main dashboard page to see updated values.")
         st.rerun()
 

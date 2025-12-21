@@ -1,26 +1,27 @@
 [server]
+# Disable file watcher in production to prevent "File change" messages
+fileWatcherType = "none"
+
+# Headless mode for server deployment
 headless = true
-port = 8501
-address = "0.0.0.0"
+
+# Enable CORS for API access
 enableCORS = false
-enableXsrfProtection = false
+
+# Enable XSRF protection
+enableXsrfProtection = true
 
 [browser]
+# Disable auto-opening browser on server
 gatherUsageStats = false
-serverAddress = "localhost"
+
+[logger]
+# Log level (can be "error", "warning", "info", or "debug")
+level = "info"
 
 [client]
-# Show full error details for debugging (safe on LAN)
+# Disable toolbar in production
+toolbarMode = "minimal"
+
+# Show running indicator
 showErrorDetails = true
-# Hide default Streamlit page navigation (we use custom st.page_link instead)
-showSidebarNavigation = false
-
-[theme]
-# Force dark mode theme (more reliable than OS detection on Windows)
-base = "dark"
-primaryColor = "#1f77b4"
-backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#FAFAFA"
-font = "sans serif"
-

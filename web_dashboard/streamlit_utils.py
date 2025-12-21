@@ -989,7 +989,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
         
         while True:
             query = client.supabase.table("portfolio_positions").select(
-                "date, shares, price, currency"
+                "date, ticker, shares, price, currency"
             ).eq("fund", fund).gte("date", min_date).order("date")
             
             result = query.range(offset, offset + batch_size - 1).execute()
@@ -1012,6 +1012,33 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
         
         if not all_rows:
             return {}
+        
+        # CHECK FOR DUPLICATES - this could inflate NAV calculations!
+        import logging
+        logger = logging.getLogger(__name__)
+        from log_handler import log_message
+        
+        # Convert to DataFrame for duplicate checking
+        import pandas as pd
+        df_check = pd.DataFrame(all_rows)
+        df_check['date_key'] = df_check['date'].str[:10]  # Just YYYY-MM-DD
+        
+        # Check if we need ticker column (older data might not have it)
+        if 'ticker' in df_check.columns:
+            # Group by date and ticker to find duplicates
+            duplicate_check = df_check.groupby(['date_key', 'ticker']).size().reset_index(name='count')
+            duplicates = duplicate_check[duplicate_check['count'] > 1]
+            
+            if len(duplicates) > 0:
+                logger.error(f"DUPLICATE DATA DETECTED in portfolio_positions for {fund}! {len(duplicates)} duplicate date+ticker pairs found. This will inflate NAV calculations!")
+                log_message(f"CRITICAL: {len(duplicates)} duplicate portfolio positions found for {fund}. NAV calculations will be incorrect!", level='ERROR')
+                print(f"🚨 CRITICAL: {len(duplicates)} duplicate portfolio positions detected for {fund}!")
+                print(f"   This will cause incorrect NAV and return calculations.")
+                print(f"   Run debug/clean_duplicate_positions_v2.py to fix.")
+                
+                # Show first few duplicates
+                for _, dup in duplicates.head(5).iterrows():
+                    print(f"   - {dup['date_key']} | {dup['ticker']}: {dup['count']} records")
         
         # Get exchange rates for each date we need (use historical rates for accuracy)
         # First, get unique dates from portfolio positions
@@ -1270,8 +1297,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         # Check if we have sufficient historical data
         use_historical = bool(historical_values)
         if not historical_values:
+            log_message(f"[{session_id}] NAV WARNING: No historical fund values found for {fund}. Using time-weighted estimation.", level='WARNING')
             print(f"⚠️  NAV WARNING: No historical fund values found for {fund}. Using time-weighted estimation.")
         elif len(historical_values) < len(set(d.strftime('%Y-%m-%d') for d in contrib_dates if d)):
+            log_message(f"[{session_id}] NAV WARNING: Only {len(historical_values)} historical dates found for {len(set(d.strftime('%Y-%m-%d') for d in contrib_dates if d))} contribution dates. Some will use fallback.", level='WARNING')
             print(f"⚠️  NAV WARNING: Only {len(historical_values)} historical dates found, some contributions will use fallback estimation.")
         
         # Calculate time-weighted estimation parameters for fallback
@@ -1339,6 +1368,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     contributor_units[contributor] -= actual_units_redeemed
                     total_units -= actual_units_redeemed
                 elif contributor_units[contributor] <= 0 and amount > 0:
+                    log_message(f"[{session_id}] NAV WARNING: Withdrawal of ${amount} from {contributor} skipped - no units to redeem", level='WARNING')
                     print(f"⚠️  Withdrawal of ${amount} from {contributor} skipped - no units to redeem")
                 
                 running_total_contributions -= amount
@@ -1363,19 +1393,25 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     elapsed_days = (timestamp - first_timestamp).days
                     time_fraction = elapsed_days / total_days
                     nav_at_contribution = 1.0 + (growth_rate - 1.0) * time_fraction
-                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Using time-weighted estimation.")
+                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Using time-weighted estimation (NAV={nav_at_contribution:.4f}).")
+                    log_message(f"[{session_id}] NAV FALLBACK: {contributor} ${amount} on {date_str} - no historical data, using time-weighted NAV={nav_at_contribution:.4f}", level='WARNING')
                 else:
+                    log_message(f"[{session_id}] NAV FALLBACK: No timestamp for {contributor} ${amount}. Using simple estimation (NAV={nav_at_contribution:.4f}).", level='WARNING')
                     print(f"⚠️  NAV FALLBACK: No timestamp for {contributor}. Using simple estimation.")
                     nav_at_contribution = running_total_contributions / total_units if total_units > 0 else 1.0
                 
                 # Ensure NAV is at least the base value (1.0 for first contributions)
                 if nav_at_contribution <= 0:
+                    log_message(f"[{session_id}] NAV ERROR: NAV={nav_at_contribution} for {contributor} on {date_str}. Resetting to 1.0.", level='ERROR')
                     nav_at_contribution = 1.0
                 
                 units_purchased = amount / nav_at_contribution
                 contributor_units[contributor] += units_purchased
                 total_units += units_purchased
                 running_total_contributions += amount
+                
+                # Log each contribution for debugging
+                log_message(f"[{session_id}] NAV: {contributor} contributed ${amount:.2f} on {date_str}, NAV={nav_at_contribution:.4f}, units={units_purchased:.4f}, total_units={total_units:.4f}", level='DEBUG')
         
         log_message(f"[{session_id}] PERF: get_user_investment_metrics - NAV calculations: {time.time() - t0:.2f}s ({len(contributions)} contributions)", level='INFO')
         

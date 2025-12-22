@@ -1148,6 +1148,26 @@ def main():
 
         # Num holdings for display
         num_holdings = len(positions_df) if not positions_df.empty else 0
+        
+        # Calculate total fund return (for Fund Overview section)
+        # Get all contributions for this fund to calculate total deposited
+        contributions_result = client.supabase.table("fund_contributions").select(
+            "amount, contribution_type"
+        ).eq("fund", fund_filter).execute()
+        
+        total_contributions = 0.0
+        if contributions_result.data:
+            for contrib in contributions_result.data:
+                amount = float(contrib.get('amount', 0))
+                contrib_type = contrib.get('contribution_type', 'CONTRIBUTION').lower()
+                if contrib_type == 'withdrawal':
+                    total_contributions -= amount
+                else:
+                    total_contributions += amount
+        
+        # Fund return = (current value - total contributions) / total contributions
+        fund_return_dollars = total_value - total_contributions if total_contributions > 0 else 0.0
+        fund_return_pct = (fund_return_dollars / total_contributions * 100) if total_contributions > 0 else 0.0
 
 
         # --- DYNAMIC LAYOUT LOGIC ---
@@ -1207,10 +1227,10 @@ def main():
                 )
             with f_col2:
                 st.metric(
-                    "Fund Day Change",
-                    f"${last_day_pnl:,.2f}", 
-                    f"{last_day_pnl_pct:+.2f}%",
-                    help="Change in fund value since the last market close."
+                    "Fund Return",
+                    f"{fund_return_pct:+.2f}%", 
+                    f"${fund_return_dollars:,.2f}",
+                    help="Total return on all investments in the fund since inception."
                 )
             with f_col3:
                 st.metric("Investors", f"{num_investors}", help="Total number of distinct investors in this fund.")

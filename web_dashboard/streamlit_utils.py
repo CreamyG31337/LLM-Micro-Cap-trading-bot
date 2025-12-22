@@ -590,121 +590,23 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
         if daily_totals.empty:
             return pd.DataFrame()
         
-        # Calculate NAV-based performance (replaces cost-basis performance)
-        # NAV = Net Asset Value per unit, shows true fund performance regardless of when contributions were made
-        # This is the CORRECT way to show mutual fund / investment fund performance
+        # Calculate performance percentage (P&L / cost_basis * 100)
+        # This shows how much the current value exceeds the original purchase price
+        daily_totals['performance_pct'] = daily_totals.apply(
+            lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
+            axis=1
+        )
         
-        # Get all contributions to calculate total_units at each date
-        # Use same logic as get_user_investment_metrics
-        all_contributions_result = client.supabase.table("fund_contributions").select(
-            "timestamp, amount, contribution_type"
-        ).eq("fund", fund).order("timestamp").execute()
+        # Normalize performance to start at 100 on first trading day
+        # This matches the console app's approach for fair benchmark comparison
+        first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
+        if not first_day_with_investment.empty:
+            first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
+            # Adjust all performance so first day starts at 0%
+            daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
         
-        if not all_contributions_result.data:
-            # No contributions = can't calculate NAV, fall back to cost basis method
-            daily_totals['performance_pct'] = daily_totals.apply(
-                lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
-                axis=1
-            )
-            first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
-            if not first_day_with_investment.empty:
-                first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
-                daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
-            daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
-        else:
-            # Parse contributions and calculate units using same NAV logic
-            contributions = []
-            for record in all_contributions_result.data:
-                timestamp_raw = record.get('timestamp', '')
-                timestamp = pd.to_datetime(timestamp_raw) if timestamp_raw else None
-                contributions.append({
-                    'timestamp': timestamp,
-                    'amount': float(record.get('amount', 0)),
-                    'type': record.get('contribution_type', 'CONTRIBUTION').lower()
-                })
-            
-            contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
-            contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
-            historical_values = get_historical_fund_values(fund, contrib_dates)
-            
-            # Calculate total_units at each date
-            total_units = 0.0
-            units_at_start_of_day = 0.0
-            last_contribution_date = None
-            date_to_units = {}
-            
-            for contrib in contributions:
-                amount = contrib['amount']
-                timestamp = contrib['timestamp']
-                contrib_type = contrib['type']
-                
-                if not timestamp:
-                    continue
-                
-                date_str = timestamp.strftime('%Y-%m-%d')
-                
-                # Same-day NAV fix
-                if date_str != last_contribution_date:
-                    units_at_start_of_day = total_units
-                    last_contribution_date = date_str
-                
-                if contrib_type == 'withdrawal':
-                    if date_str in historical_values and units_at_start_of_day > 0:
-                        nav = historical_values[date_str] / units_at_start_of_day
-                        units_to_redeem = amount / nav if nav > 0 else 0
-                        total_units = max(0, total_units - units_to_redeem)
-                else:
-                    # Calculate NAV
-                    if total_units == 0:
-                        nav = 1.0
-                    elif date_str in historical_values:
-                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
-                        nav = historical_values[date_str] / units_for_nav if units_for_nav > 0 else 1.0
-                    else:
-                        # Weekend fallback
-                        nav = 1.0
-                        contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
-                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
-                        
-                        for days_back in range(1, 8):
-                            prior_date = contribution_date - timedelta(days=days_back)
-                            prior_date_str = prior_date.strftime('%Y-%m-%d')
-                            
-                            if prior_date_str in historical_values and units_for_nav > 0:
-                                nav = historical_values[prior_date_str] / units_for_nav
-                                break
-                    
-                    units = amount / nav if nav > 0 else 0
-                    total_units += units
-                
-                date_obj = timestamp.date()
-                date_to_units[date_obj] = total_units
-            
-            # Calculate NAV for each date
-            # For dates without contributions, use the total_units from the most recent prior contribution
-            def get_units_at_date(date_obj):
-                # Find the most recent contribution date on or before this date
-                for contrib_date in sorted([d for d in date_to_units.keys() if d <= date_obj], reverse=True):
-                    return date_to_units[contrib_date]
-                # No contributions yet on this date - use inception NAV of 1.0 (units = value)
-                return 0.0
-            
-            daily_totals['total_units'] = daily_totals['date'].apply(lambda d: get_units_at_date(d.date() if hasattr(d, 'date') else d))
-            
-            daily_totals['nav'] = daily_totals.apply(
-                lambda row: row['value'] / row['total_units'] if row['total_units'] > 0 else 1.0,
-                axis=1
-            )
-            
-            # Normalize NAV to start at 100
-            if not daily_totals.empty and daily_totals.iloc[0]['nav'] > 0:
-                first_nav = daily_totals.iloc[0]['nav']
-                daily_totals['performance_index'] = (daily_totals['nav'] / first_nav) * 100
-                daily_totals['performance_pct'] = ((daily_totals['nav'] / first_nav) - 1) * 100
-            else:
-                daily_totals['performance_index'] = 100
-                daily_totals['performance_pct'] = 0.0
-
+        # Create Performance Index (baseline 100 + performance %)
+        daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
         
         
         # Filter to trading days only (remove weekends for performance)
@@ -1586,6 +1488,12 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             contrib_type = contrib['type']
             timestamp = contrib['timestamp']
             
+            # Same-day NAV fix
+            date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+            if date_str != last_contribution_date:
+                units_at_start_of_day = total_units
+                last_contribution_date = date_str
+            
             if contributor not in contributor_units:
                 contributor_units[contributor] = 0.0
                 contributor_data[contributor] = {
@@ -1629,28 +1537,50 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 contributor_data[contributor]['net_contribution'] += amount
                 
                 # Calculate NAV at time of contribution using ACTUAL fund value
-                date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                # date_str is defined at top of loop
                 
                 if total_units == 0:
                     # First contribution(s) - NAV = 1.0
                     nav_at_contribution = 1.0
                 elif date_str and date_str in historical_values:
                     # We have actual fund value for this date!
-                    # But we need the fund value BEFORE this contribution was added
-                    # fund_value_at_date includes positions, not cash contributions
                     fund_value_at_date = historical_values[date_str]
-                    nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
-                elif first_timestamp and timestamp:
-                    # Time-weighted fallback (matches position_calculator.py)
-                    elapsed_days = (timestamp - first_timestamp).days
-                    time_fraction = elapsed_days / total_days
-                    nav_at_contribution = 1.0 + (growth_rate - 1.0) * time_fraction
-                    print(f"⚠️  NAV FALLBACK: No historical data for {date_str} ({contributor}). Using time-weighted estimation (NAV={nav_at_contribution:.4f}).")
-                    log_message(f"[{session_id}] NAV FALLBACK: {contributor} ${amount} on {date_str} - no historical data, using time-weighted NAV={nav_at_contribution:.4f}", level='WARNING')
+                    
+                    # Use units_at_start_of_day for same-day contributions
+                    units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                    nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else 1.0
                 else:
-                    log_message(f"[{session_id}] NAV FALLBACK: No timestamp for {contributor} ${amount}. Using simple estimation (NAV={nav_at_contribution:.4f}).", level='WARNING')
-                    print(f"⚠️  NAV FALLBACK: No timestamp for {contributor}. Using simple estimation.")
-                    nav_at_contribution = running_total_contributions / total_units if total_units > 0 else 1.0
+                    # Weekend/Holiday fallback - Look backwards up to 7 days
+                    nav_at_contribution = 1.0
+                    units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                    
+                    found_fallback = False
+                    if date_str and units_for_nav > 0:
+                        from datetime import datetime, timedelta
+                        try:
+                            contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
+                            for days_back in range(1, 8):
+                                prior_date = contribution_date - timedelta(days=days_back)
+                                prior_date_str = prior_date.strftime('%Y-%m-%d')
+                                if prior_date_str in historical_values:
+                                    fund_value_at_prior = historical_values[prior_date_str]
+                                    nav_at_contribution = fund_value_at_prior / units_for_nav
+                                    found_fallback = True
+                                    print(f"ℹ️  NAV FALLBACK: {date_str} -> using {prior_date_str} (NAV={nav_at_contribution:.4f})")
+                                    break
+                        except Exception:
+                            pass
+                    
+                    if not found_fallback and first_timestamp and timestamp:
+                         # Ultimate fallback: Time-weighted estimation
+                         elapsed_days = (timestamp - first_timestamp).days
+                         time_fraction = elapsed_days / total_days
+                         nav_at_contribution = 1.0 + (growth_rate - 1.0) * time_fraction
+                         msg = f"NAV FALLBACK: {contributor} ${amount} on {date_str} - using time-weighted NAV={nav_at_contribution:.4f}"
+                         log_message(f"[{session_id}] {msg}", level='WARNING')
+                         print(f"⚠️  {msg}")
+                    elif not found_fallback:
+                         nav_at_contribution = running_total_contributions / total_units if total_units > 0 else 1.0
                 
                 # Ensure NAV is at least the base value (1.0 for first contributions)
                 if nav_at_contribution <= 0:

@@ -988,6 +988,15 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 # Calculate NAV
                 date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
                 
+                # Track total_units at start of each day to ensure same-day contributions use same NAV
+                # CRITICAL FIX: Multiple contributions on the same day should all use the SAME NAV
+                # (the NAV before any contributions that day), otherwise later contributions get
+                # exponentially more units, causing massive ownership inflation
+                if date_str != last_contribution_date:
+                    # New day - snapshot the current total_units
+                    units_at_start_of_day = total_units
+                    last_contribution_date = date_str
+                
                 if total_units == 0:
                     # First contribution to the fund - NAV starts at 1.0
                     nav_at_contribution = 1.0
@@ -996,12 +1005,13 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                     logger.info(f"NAV calculation: First contribution to fund, using inception NAV = 1.0")
                 elif date_str and date_str in historical_values:
                     fund_value_at_date = historical_values[date_str]
-                    nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
+                    # Use units_at_start_of_day, not current total_units, to ensure same NAV for all same-day contributions
+                    nav_at_contribution = fund_value_at_date / units_at_start_of_day if units_at_start_of_day > 0 else 1.0
                 else:
                     # Date not found (e.g., weekend/holiday contribution)
                     # Look backwards up to 7 days for the closest prior trading day
                     nav_at_contribution = 1.0  # Default fallback
-                    if date_str and total_units > 0:
+                    if date_str and units_at_start_of_day > 0:
                         from datetime import datetime, timedelta
                         contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
                         
@@ -1011,7 +1021,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                             
                             if prior_date_str in historical_values:
                                 fund_value_at_prior_date = historical_values[prior_date_str]
-                                nav_at_contribution = fund_value_at_prior_date / total_units
+                                nav_at_contribution = fund_value_at_prior_date / units_at_start_of_day
                                 
                                 # Log the fallback for transparency
                                 import logging
@@ -1458,6 +1468,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         contributor_data = {}
         total_units = 0.0
         running_total_contributions = 0.0  # Total contributions up to this point
+        
+        # Track total_units at start of each day for same-day contribution NAV calculation
+        units_at_start_of_day = 0.0
+        last_contribution_date = None
         
         for contrib in contributions:
             contributor = contrib['contributor']

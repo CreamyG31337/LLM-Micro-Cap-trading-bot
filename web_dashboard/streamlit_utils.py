@@ -994,7 +994,32 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                     fund_value_at_date = historical_values[date_str]
                     nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
                 else:
-                    nav_at_contribution = 1.0
+                    # Date not found (e.g., weekend/holiday contribution)
+                    # Look backwards up to 7 days for the closest prior trading day
+                    nav_at_contribution = 1.0  # Default fallback
+                    if date_str and total_units > 0:
+                        from datetime import datetime, timedelta
+                        contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
+                        
+                        for days_back in range(1, 8):  # Check up to 7 days prior
+                            prior_date = contribution_date - timedelta(days=days_back)
+                            prior_date_str = prior_date.strftime('%Y-%m-%d')
+                            
+                            if prior_date_str in historical_values:
+                                fund_value_at_prior_date = historical_values[prior_date_str]
+                                nav_at_contribution = fund_value_at_prior_date / total_units
+                                
+                                # Log the fallback for transparency
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(f"NAV fallback: {date_str} (weekend/holiday) -> using {prior_date_str} NAV = {nav_at_contribution:.4f}")
+                                break
+                        
+                        # If still 1.0 after search, log as potential issue
+                        if nav_at_contribution == 1.0:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.error(f"NAV calculation: No historical data found within 7 days of {date_str}, falling back to NAV=1.0")
                 
                 if nav_at_contribution <= 0:
                     nav_at_contribution = 1.0

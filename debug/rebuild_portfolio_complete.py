@@ -280,6 +280,10 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         if failed_fetches > 0:
             print_error(f"   WARNING: {failed_fetches} tickers failed to fetch - rebuild may be incomplete")
         
+        # Track issues for summary
+        skipped_positions = []  # List of (date, ticker, reason)
+        fallback_positions = []  # List of (date, ticker, fallback_type)
+        
         today = datetime.now().date()
         for trading_day in all_trading_days_list:
             # Skip today - it will be handled by the final snapshot
@@ -347,36 +351,35 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     else:
                         avg_price = Decimal('0')
                     
-                    # Use pre-fetched historical price - NO FALLBACKS ALLOWED (except for very recent dates)
+                    # Use pre-fetched historical price with fallback to previous day's price
                     price_key = (ticker, trading_day)
                     if price_key in price_cache_dict:
                         current_price = price_cache_dict[price_key]
                     else:
-                        # Check if this is a very recent date (within 2 trading days of today)
-                        # For recent dates, allow fallback to previous day's price since data may not be available yet
-                        days_ago = (today - trading_day).days
-                        if days_ago <= 2:
-                            # Try to find the most recent available price for this ticker
-                            prev_price = None
-                            for prev_day in sorted([d for d in all_trading_days_list if d < trading_day], reverse=True):
-                                prev_key = (ticker, prev_day)
-                                if prev_key in price_cache_dict:
-                                    prev_price = price_cache_dict[prev_key]
-                                    break
-                            
-                            if prev_price is not None:
-                                current_price = prev_price
-                                print_warning(f"   Using previous day's price for {ticker} on {trading_day} (data not available yet)")
-                            elif position['cost'] > 0 and position['shares'] > 0:
-                                # Last resort: use cost basis
-                                current_price = position['cost'] / position['shares']
-                                print_warning(f"   Using cost basis for {ticker} on {trading_day} (no price data available)")
-                            else:
-                                raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
+                        # Price not in cache - try fallback strategies
+                        # 1. Try to find the most recent available price for this ticker
+                        prev_price = None
+                        for prev_day in sorted([d for d in all_trading_days_list if d < trading_day], reverse=True):
+                            prev_key = (ticker, prev_day)
+                            if prev_key in price_cache_dict:
+                                prev_price = price_cache_dict[prev_key]
+                                break
+                        
+                        if prev_price is not None:
+                            current_price = prev_price
+                            print_warning(f"   [{trading_day}] Using previous day's price for {ticker} (no data for this date)")
+                            fallback_positions.append((trading_day, ticker, 'previous_day_price'))
+                        elif position['cost'] > 0 and position['shares'] > 0:
+                            # 2. Last resort: use cost basis (average purchase price)
+                            current_price = position['cost'] / position['shares']
+                            print_warning(f"   [{trading_day}] Using cost basis for {ticker}: ${float(current_price):.2f} (no historical price data)")
+                            fallback_positions.append((trading_day, ticker, 'cost_basis'))
                         else:
-                            # NO FALLBACKS for older historical data - fail if price not available
-                            # This ensures we don't create corrupted data with wrong prices
-                            raise ValueError(f"Historical price not available for {ticker} on {trading_day}. Market data fetch failed.")
+                            # 3. Skip this position entirely - log error and continue
+                            print_error(f"   [{trading_day}] SKIPPING {ticker}: No price data and no cost basis available")
+                            print_error(f"      Position: shares={position['shares']}, cost={position['cost']}")
+                            skipped_positions.append((trading_day, ticker, f"No price data, shares={position['shares']}"))
+                            continue  # Skip this ticker, continue with others
                     market_value = position['shares'] * current_price
                     unrealized_pnl = market_value - position['cost']
                     
@@ -463,6 +466,28 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     print_info(f"   Created {snapshots_created} historical snapshots...")
         
         print_info(f"   Created {snapshots_created} historical portfolio snapshots")
+        
+        # Print summary of issues
+        if skipped_positions or fallback_positions:
+            print_info(f"\n{_safe_emoji('📋')} REBUILD SUMMARY:")
+            print_info(f"   Snapshots created: {snapshots_created}")
+            
+            if fallback_positions:
+                print_warning(f"   Fallbacks used: {len(fallback_positions)}")
+                # Group by fallback type
+                prev_day_count = len([f for f in fallback_positions if f[2] == 'previous_day_price'])
+                cost_basis_count = len([f for f in fallback_positions if f[2] == 'cost_basis'])
+                if prev_day_count:
+                    print_warning(f"     - Previous day's price: {prev_day_count} times")
+                if cost_basis_count:
+                    print_warning(f"     - Cost basis: {cost_basis_count} times")
+            
+            if skipped_positions:
+                print_error(f"   Positions SKIPPED: {len(skipped_positions)}")
+                for skip_date, skip_ticker, skip_reason in skipped_positions[:10]:  # Show first 10
+                    print_error(f"     - {skip_date} | {skip_ticker} | {skip_reason}")
+                if len(skipped_positions) > 10:
+                    print_error(f"     ... and {len(skipped_positions) - 10} more")
         
         # Create final portfolio snapshot from current positions
         # Create snapshot if today is a trading day (regardless of current market status)

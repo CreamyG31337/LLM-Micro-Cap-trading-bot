@@ -953,6 +953,10 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         contributor_data = {}
         total_units = 0.0
         
+        # Track total_units at start of each day for same-day contribution NAV calculation
+        units_at_start_of_day = 0.0
+        last_contribution_date = None
+        
         for contrib in contributions:
             contributor = contrib['contributor']
             amount = contrib['amount']

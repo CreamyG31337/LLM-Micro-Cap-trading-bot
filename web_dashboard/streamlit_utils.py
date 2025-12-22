@@ -681,8 +681,18 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
                 date_to_units[date_obj] = total_units
             
             # Calculate NAV for each date
+            # For dates without contributions, use the total_units from the most recent prior contribution
+            def get_units_at_date(date_obj):
+                # Find the most recent contribution date on or before this date
+                for contrib_date in sorted([d for d in date_to_units.keys() if d <= date_obj], reverse=True):
+                    return date_to_units[contrib_date]
+                # No contributions yet on this date - use inception NAV of 1.0 (units = value)
+                return 0.0
+            
+            daily_totals['total_units'] = daily_totals['date'].apply(lambda d: get_units_at_date(d.date() if hasattr(d, 'date') else d))
+            
             daily_totals['nav'] = daily_totals.apply(
-                lambda row: row['value'] / date_to_units.get(row['date'].date(), total_units) if date_to_units.get(row['date'].date(), total_units) > 0 else 1.0,
+                lambda row: row['value'] / row['total_units'] if row['total_units'] > 0 else 1.0,
                 axis=1
             )
             
@@ -694,6 +704,7 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
             else:
                 daily_totals['performance_index'] = 100
                 daily_totals['performance_pct'] = 0.0
+
         
         
         # Filter to trading days only (remove weekends for performance)

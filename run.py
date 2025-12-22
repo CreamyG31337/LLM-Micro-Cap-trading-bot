@@ -677,7 +677,9 @@ def handle_data_source_config() -> None:
             
             from web_dashboard.supabase_client import SupabaseClient
             
-            if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+            # Check for either ANON_KEY or PUBLISHABLE_KEY (both work)
+            has_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+            if os.getenv("SUPABASE_URL") and has_key:
                 client = SupabaseClient()
                 if client.test_connection():
                     available_funds = client.get_available_funds()
@@ -827,7 +829,9 @@ def get_data_source_info() -> str:
             try:
                 from web_dashboard.supabase_client import SupabaseClient
                 import os
-                if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                # Check for either ANON_KEY or PUBLISHABLE_KEY (both work)
+                has_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+                if os.getenv("SUPABASE_URL") and has_key:
                     client = SupabaseClient()
                     supabase_available = client.test_connection()
             except Exception:

@@ -1149,25 +1149,16 @@ def main():
         # Num holdings for display
         num_holdings = len(positions_df) if not positions_df.empty else 0
         
-        # Calculate total fund return (for Fund Overview section)
-        # Get all contributions for this fund to calculate total deposited
-        contributions_result = client.supabase.table("fund_contributions").select(
-            "amount, contribution_type"
-        ).eq("fund", fund_filter).execute()
-        
-        total_contributions = 0.0
-        if contributions_result.data:
-            for contrib in contributions_result.data:
-                amount = float(contrib.get('amount', 0))
-                contrib_type = contrib.get('contribution_type', 'CONTRIBUTION').lower()
-                if contrib_type == 'withdrawal':
-                    total_contributions -= amount
-                else:
-                    total_contributions += amount
-        
-        # Fund return = (current value - total contributions) / total contributions
-        fund_return_dollars = total_value - total_contributions if total_contributions > 0 else 0.0
-        fund_return_pct = (fund_return_dollars / total_contributions * 100) if total_contributions > 0 else 0.0
+        # Calculate total fund return (matching graph - stock performance only, not including cash drag)
+        # This shows the same metric as the graph for consistency
+        # Fund return = unrealized P&L / cost basis (same as graph calculation)
+        if portfolio_value_no_cash > 0:
+            cost_basis = portfolio_value_no_cash - unrealized_pnl
+            fund_return_pct = (unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
+            fund_return_dollars = unrealized_pnl
+        else:
+            fund_return_pct = 0.0
+            fund_return_dollars = 0.0
 
 
         # --- DYNAMIC LAYOUT LOGIC ---

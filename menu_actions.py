@@ -104,7 +104,9 @@ class MenuActionSystem:
                     from data.repositories.supabase_repository import SupabaseRepository
                     # Test if Supabase credentials are available
                     import os
-                    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                    # Check for either ANON_KEY or PUBLISHABLE_KEY (both work)
+                    has_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+                    if os.getenv("SUPABASE_URL") and has_key:
                         # Get fund name for testing
                         fund_name = repo_config.get('fund')
                         if not fund_name:
@@ -126,7 +128,9 @@ class MenuActionSystem:
                     from data.repositories.supabase_repository import SupabaseRepository
                     # Test if Supabase credentials are available
                     import os
-                    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_ANON_KEY"):
+                    # Check for either ANON_KEY or PUBLISHABLE_KEY (both work)
+                    has_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+                    if os.getenv("SUPABASE_URL") and has_key:
                         # Get fund name for testing
                         fund_name = repo_config.get('fund')
                         if not fund_name:

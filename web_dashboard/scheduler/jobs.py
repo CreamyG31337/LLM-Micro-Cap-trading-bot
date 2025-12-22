@@ -287,14 +287,15 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
             # - Before 9:30 AM ET: Use yesterday (market hasn't opened yet)
             # - After 4:00 PM ET: Use today (market has closed)
             # - Between 9:30 AM - 4:00 PM: Use today if trading day (for live prices)
-            today = datetime.now().date()
             
-            # Get current time in ET
+            # CRITICAL: Get current time in ET FIRST, then derive 'today' from ET time
+            # Using server time (UTC) for 'today' causes wrong date selection
             from datetime import datetime as dt
             import pytz
             
             et = pytz.timezone('America/New_York')
             now_et = dt.now(et)
+            today = now_et.date()  # Use ET date, not server/UTC date
             
             # Market hours: 9:30 AM - 4:00 PM ET
             market_open_hour = 9
@@ -336,8 +337,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                     logger.info(f"ℹ️ {message}")
                     return
         
-        today = datetime.now().date()
-        logger.info(f"Target date for price update: {target_date} (today is {today})")
+        # Log the target date (use local time for logging, market logic uses ET)
+        logger.info(f"Target date for price update: {target_date} (local time: {datetime.now()})")
         
         # Get all production funds from database (skip test/dev funds)
         funds_result = client.supabase.table("funds")\

@@ -977,7 +977,7 @@ def create_investor_allocation_chart(investors_df: pd.DataFrame, fund_name: Opti
     
     fig.add_trace(go.Pie(
         labels=investors_df['contributor_display'],
-        values=investors_df['net_contribution'],
+        values=investors_df['ownership_pct'],  # Use ownership % (NAV-based), not dollar amounts
         marker=dict(colors=colors),
         textinfo='label+percent',
         hovertemplate='<b>%{label}</b><br>Investment: $%{value:,.2f}<br>%{percent}<extra></extra>'

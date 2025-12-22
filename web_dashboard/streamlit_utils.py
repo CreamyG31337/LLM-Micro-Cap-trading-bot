@@ -858,7 +858,7 @@ def get_investor_count(fund: str) -> int:
 
 
 @st.cache_data(ttl=3600)  # 1 hour - contributor list changes infrequently
-def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_admin: bool = False) -> pd.DataFrame:
+def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_admin: bool = False, _cache_version: str = CACHE_VERSION) -> pd.DataFrame:
     """Get investor allocation data with privacy masking
     
     Args:
@@ -965,6 +965,12 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
             contrib_type = contrib['type']
             timestamp = contrib['timestamp']
             
+            # Same-day NAV fix - calculate date_str BEFORE withdrawal/contribution logic
+            date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+            if date_str != last_contribution_date:
+                units_at_start_of_day = total_units
+                last_contribution_date = date_str
+            
             if contributor not in contributor_units:
                 contributor_units[contributor] = 0.0
                 contributor_data[contributor] = {
@@ -977,7 +983,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 
                 # Redeem units
                 if total_units > 0 and contributor_units[contributor] > 0:
-                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                    # date_str already calculated above
                     if date_str and date_str in historical_values:
                         fund_value_at_date = historical_values[date_str]
                         nav_at_withdrawal = fund_value_at_date / total_units if total_units > 0 else 1.0
@@ -992,16 +998,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 contributor_data[contributor]['net_contribution'] += amount
                 
                 # Calculate NAV
-                date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
-                
-                # Track total_units at start of each day to ensure same-day contributions use same NAV
-                # CRITICAL FIX: Multiple contributions on the same day should all use the SAME NAV
-                # (the NAV before any contributions that day), otherwise later contributions get
-                # exponentially more units, causing massive ownership inflation
-                if date_str != last_contribution_date:
-                    # New day - snapshot the current total_units
-                    units_at_start_of_day = total_units
-                    last_contribution_date = date_str
+                # date_str already calculated above
                 
                 if total_units == 0:
                     # First contribution to the fund - NAV starts at 1.0

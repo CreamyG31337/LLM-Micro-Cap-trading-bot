@@ -1005,13 +1005,16 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                     logger.info(f"NAV calculation: First contribution to fund, using inception NAV = 1.0")
                 elif date_str and date_str in historical_values:
                     fund_value_at_date = historical_values[date_str]
-                    # Use units_at_start_of_day, not current total_units, to ensure same NAV for all same-day contributions
-                    nav_at_contribution = fund_value_at_date / units_at_start_of_day if units_at_start_of_day > 0 else 1.0
+                    # Use units_at_start_of_day for same-day contributions, but handle edge cases
+                    # If units_at_start_of_day is 0 (first contribution of the day when fund is new), use total_units
+                    units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                    nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else 1.0
                 else:
                     # Date not found (e.g., weekend/holiday contribution)
                     # Look backwards up to 7 days for the closest prior trading day
                     nav_at_contribution = 1.0  # Default fallback
-                    if date_str and units_at_start_of_day > 0:
+                    units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                    if date_str and units_for_nav > 0:
                         from datetime import datetime, timedelta
                         contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
                         
@@ -1021,7 +1024,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                             
                             if prior_date_str in historical_values:
                                 fund_value_at_prior_date = historical_values[prior_date_str]
-                                nav_at_contribution = fund_value_at_prior_date / units_at_start_of_day
+                                nav_at_contribution = fund_value_at_prior_date / units_for_nav
                                 
                                 # Log the fallback for transparency
                                 import logging

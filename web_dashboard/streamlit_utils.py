@@ -989,7 +989,11 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
                 
                 if total_units == 0:
+                    # First contribution to the fund - NAV starts at 1.0
                     nav_at_contribution = 1.0
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"NAV calculation: First contribution to fund, using inception NAV = 1.0")
                 elif date_str and date_str in historical_values:
                     fund_value_at_date = historical_values[date_str]
                     nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else 1.0
@@ -1022,6 +1026,9 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                             logger.error(f"NAV calculation: No historical data found within 7 days of {date_str}, falling back to NAV=1.0")
                 
                 if nav_at_contribution <= 0:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"NAV calculation: Calculated NAV <= 0 ({nav_at_contribution}) for {date_str}, falling back to NAV=1.0 - THIS MAY CORRUPT DATA!")
                     nav_at_contribution = 1.0
                 
                 units_purchased = amount / nav_at_contribution

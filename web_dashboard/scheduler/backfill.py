@@ -94,7 +94,13 @@ def startup_backfill_check() -> None:
         # 3. Find the most recent date where DATA EXISTS (our checkpoint)
         #    We only need to process dates AFTER this checkpoint
         #    Note: We check data existence only, not job completion, because job tracking is newer
-        today = datetime.now().date()
+        
+        # CRITICAL: Use ET timezone for 'today' to match market hours
+        # Using server time (UTC) causes wrong date selection on cloud servers
+        import pytz
+        et = pytz.timezone('America/New_York')
+        today = datetime.now(et).date()
+        
         checkpoint_date = None
         
         # Start from today and work backwards to find last date with data

@@ -590,22 +590,111 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
         if daily_totals.empty:
             return pd.DataFrame()
         
-        # Calculate performance percentage (P&L / cost_basis * 100)
-        daily_totals['performance_pct'] = daily_totals.apply(
-            lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
-            axis=1
-        )
+        # Calculate NAV-based performance (replaces cost-basis performance)
+        # NAV = Net Asset Value per unit, shows true fund performance regardless of when contributions were made
+        # This is the CORRECT way to show mutual fund / investment fund performance
         
-        # Normalize performance to start at 100 on first trading day
-        # This matches the console app's approach for fair benchmark comparison
-        first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
-        if not first_day_with_investment.empty:
-            first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
-            # Adjust all performance so first day starts at 0%
-            daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
+        # Get all contributions to calculate total_units at each date
+        # Use same logic as get_user_investment_metrics
+        all_contributions_result = client.supabase.table("fund_contributions").select(
+            "timestamp, amount, contribution_type"
+        ).eq("fund", fund).order("timestamp").execute()
         
-        # Create Performance Index (baseline 100 + performance %)
-        daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
+        if not all_contributions_result.data:
+            # No contributions = can't calculate NAV, fall back to cost basis method
+            daily_totals['performance_pct'] = daily_totals.apply(
+                lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
+                axis=1
+            )
+            first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
+            if not first_day_with_investment.empty:
+                first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
+                daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
+            daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
+        else:
+            # Parse contributions and calculate units using same NAV logic
+            contributions = []
+            for record in all_contributions_result.data:
+                timestamp_raw = record.get('timestamp', '')
+                timestamp = pd.to_datetime(timestamp_raw) if timestamp_raw else None
+                contributions.append({
+                    'timestamp': timestamp,
+                    'amount': float(record.get('amount', 0)),
+                    'type': record.get('contribution_type', 'CONTRIBUTION').lower()
+                })
+            
+            contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
+            contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
+            historical_values = get_historical_fund_values(fund, contrib_dates)
+            
+            # Calculate total_units at each date
+            total_units = 0.0
+            units_at_start_of_day = 0.0
+            last_contribution_date = None
+            date_to_units = {}
+            
+            for contrib in contributions:
+                amount = contrib['amount']
+                timestamp = contrib['timestamp']
+                contrib_type = contrib['type']
+                
+                if not timestamp:
+                    continue
+                
+                date_str = timestamp.strftime('%Y-%m-%d')
+                
+                # Same-day NAV fix
+                if date_str != last_contribution_date:
+                    units_at_start_of_day = total_units
+                    last_contribution_date = date_str
+                
+                if contrib_type == 'withdrawal':
+                    if date_str in historical_values and units_at_start_of_day > 0:
+                        nav = historical_values[date_str] / units_at_start_of_day
+                        units_to_redeem = amount / nav if nav > 0 else 0
+                        total_units = max(0, total_units - units_to_redeem)
+                else:
+                    # Calculate NAV
+                    if total_units == 0:
+                        nav = 1.0
+                    elif date_str in historical_values:
+                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                        nav = historical_values[date_str] / units_for_nav if units_for_nav > 0 else 1.0
+                    else:
+                        # Weekend fallback
+                        nav = 1.0
+                        contribution_date = datetime.strptime(date_str, '%Y-%m-%d')
+                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                        
+                        for days_back in range(1, 8):
+                            prior_date = contribution_date - timedelta(days=days_back)
+                            prior_date_str = prior_date.strftime('%Y-%m-%d')
+                            
+                            if prior_date_str in historical_values and units_for_nav > 0:
+                                nav = historical_values[prior_date_str] / units_for_nav
+                                break
+                    
+                    units = amount / nav if nav > 0 else 0
+                    total_units += units
+                
+                date_obj = timestamp.date()
+                date_to_units[date_obj] = total_units
+            
+            # Calculate NAV for each date
+            daily_totals['nav'] = daily_totals.apply(
+                lambda row: row['value'] / date_to_units.get(row['date'].date(), total_units) if date_to_units.get(row['date'].date(), total_units) > 0 else 1.0,
+                axis=1
+            )
+            
+            # Normalize NAV to start at 100
+            if not daily_totals.empty and daily_totals.iloc[0]['nav'] > 0:
+                first_nav = daily_totals.iloc[0]['nav']
+                daily_totals['performance_index'] = (daily_totals['nav'] / first_nav) * 100
+                daily_totals['performance_pct'] = ((daily_totals['nav'] / first_nav) - 1) * 100
+            else:
+                daily_totals['performance_index'] = 100
+                daily_totals['performance_pct'] = 0.0
+        
         
         # Filter to trading days only (remove weekends for performance)
         # Weekend shading is still shown in charts via _add_weekend_shading()

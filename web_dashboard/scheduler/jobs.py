@@ -281,27 +281,57 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         
         # Determine target date if not specified
         if target_date is None:
-            # Auto-detect: today if at least one market is open, otherwise last trading day
-            # Only skip if BOTH US and Canadian markets are closed
+            # Auto-detect based on time of day and market hours
+            # This matches the logic in utils/portfolio_update_logic.py from console app
+            # Key principle: 
+            # - Before 9:30 AM ET: Use yesterday (market hasn't opened yet)
+            # - After 4:00 PM ET: Use today (market has closed)
+            # - Between 9:30 AM - 4:00 PM: Use today if trading day (for live prices)
             today = datetime.now().date()
             
-            # Check if at least one market is open (use "any" - don't skip if only one market is closed)
+            # Get current time in ET
+            from datetime import datetime as dt
+            import pytz
+            
+            et = pytz.timezone('America/New_York')
+            now_et = dt.now(et)
+            
+            # Market hours: 9:30 AM - 4:00 PM ET
+            market_open_hour = 9
+            market_open_minute = 30
+            market_close_hour = 16
+            
+            # Determine time of day status
+            current_time = now_et.time()
+            is_before_open = current_time < time(market_open_hour, market_open_minute)
+            is_after_close = current_time >= time(market_close_hour, 0)
+            
+            use_today = False
             if market_holidays.is_trading_day(today, market="any"):
+                if is_before_open:
+                    # Before 9:30 AM - market hasn't opened yet, use yesterday
+                    logger.info(f"Current time is {now_et.strftime('%I:%M %p ET')} - before market open (9:30 AM ET) - will use last trading day")
+                elif is_after_close:
+                    # After 4:00 PM - market has closed, use today
+                    use_today = True
+                else:
+                    # During market hours (9:30 AM - 4:00 PM) - use today for live prices
+                    use_today = True
+            
+            if use_today:
                 target_date = today
             else:
-                # Both markets are closed - use last trading day (when at least one was open)
-                # Go back up to 7 days to find a day when at least one market was open
+                # Use last trading day
                 target_date = None
-                for i in range(1, 8):  # Start from 1 (yesterday), go back up to 7 days
+                for i in range(1, 8):
                     check_date = today - timedelta(days=i)
                     if market_holidays.is_trading_day(check_date, market="any"):
                         target_date = check_date
                         break
                 
-                # If we couldn't find a trading day in the last 7 days, skip this run
                 if target_date is None:
                     duration_ms = int((time.time() - start_time) * 1000)
-                    message = f"No trading day found in last 7 days (both markets closed) - skipping update"
+                    message = f"No trading day found in last 7 days - skipping update"
                     log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
                     logger.info(f"ℹ️ {message}")
                     return

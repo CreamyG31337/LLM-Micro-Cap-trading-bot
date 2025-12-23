@@ -720,19 +720,139 @@ with tab4:
                         st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
                     else:
                         try:
+                            # Check if this is a production fund
+                            fund_info = client.supabase.table("funds").select("is_production").eq("name", wipe_fund).execute()
+                            is_production = fund_info.data[0].get("is_production", False) if fund_info.data else False
+                            
                             # Clear portfolio_positions
                             client.supabase.table("portfolio_positions").delete().eq("fund", wipe_fund).execute()
-                            # Clear trade_log
-                            client.supabase.table("trade_log").delete().eq("fund", wipe_fund).execute()
+                            
+                            # SAFETY: Only clear trades for NON-production funds
+                            if not is_production:
+                                client.supabase.table("trade_log").delete().eq("fund", wipe_fund).execute()
+                            else:
+                                st.warning("⚠️ Trade log NOT wiped (production fund - use 'Wipe Portfolio Positions Only' instead)")
+                            
                             # Clear performance_metrics
                             client.supabase.table("performance_metrics").delete().eq("fund", wipe_fund).execute()
                             # Reset cash_balances to 0
                             client.supabase.table("cash_balances").update({"amount": 0}).eq("fund", wipe_fund).execute()
                             
-                            st.toast(f"✅ All data for '{wipe_fund}' wiped", icon="✅")
+                            st.toast(f"✅ Data wiped for '{wipe_fund}'", icon="✅")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error wiping fund data: {e}")
+            
+            st.divider()
+            
+            # ===== WIPE PORTFOLIO POSITIONS ONLY (SAFE) =====
+            st.subheader("🔄 Wipe Portfolio Positions Only")
+            st.info("✅ SAFE: Clears only portfolio_positions. Keeps trades, so you can rebuild.")
+            with st.expander("Wipe portfolio positions only", expanded=False):
+                col_wp1, col_wp2 = st.columns(2)
+                with col_wp1:
+                    wipe_pos_fund = st.selectbox("Select Fund", options=[""] + fund_names, key="wipe_pos_fund_select")
+                with col_wp2:
+                    confirm_wipe_pos = st.text_input("Type fund name to confirm", key="confirm_wipe_pos",
+                                                     placeholder="Type the fund name exactly")
+                
+                if st.button("🔄 Wipe Portfolio Positions Only", type="primary"):
+                    if not wipe_pos_fund:
+                        st.error("Please select a fund")
+                    elif confirm_wipe_pos != wipe_pos_fund:
+                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
+                    else:
+                        try:
+                            # Use service role to bypass RLS
+                            service_client = SupabaseClient(use_service_role=True)
+                            
+                            # Delete in batches (safe for large datasets)
+                            deleted_total = 0
+                            while True:
+                                batch = service_client.supabase.table("portfolio_positions") \\
+                                    .select("id") \\
+                                    .eq("fund", wipe_pos_fund) \\
+                                    .limit(500) \\
+                                    .execute()
+                                
+                                if not batch.data:
+                                    break
+                                
+                                ids = [r['id'] for r in batch.data]
+                                service_client.supabase.table("portfolio_positions") \\
+                                    .delete() \\
+                                    .in_("id", ids) \\
+                                    .execute()
+                                
+                                deleted_total += len(ids)
+                                
+                                if len(batch.data) < 500:
+                                    break
+                            
+                            st.toast(f"✅ Wiped {deleted_total} portfolio positions for '{wipe_pos_fund}'", icon="✅")
+                            st.success(f"Trades and contributions preserved. Use 'Rebuild Portfolio' to regenerate.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error wiping portfolio positions: {e}")
+            
+            st.divider()
+            
+            # ===== REBUILD PORTFOLIO FROM TRADES =====
+            st.subheader("🔧 Rebuild Portfolio from Trades")
+            st.info("Regenerates all portfolio_positions from trade log with proper columns.")
+            with st.expander("Rebuild portfolio data", expanded=False):
+                col_rb1, col_rb2 = st.columns(2)
+                with col_rb1:
+                    rebuild_fund = st.selectbox("Select Fund to Rebuild", options=[""] + fund_names, key="rebuild_fund_select")
+                with col_rb2:
+                    confirm_rebuild = st.text_input("Type fund name to confirm", key="confirm_rebuild",
+                                                    placeholder="Type the fund name exactly")
+                
+                if rebuild_fund:
+                    data_dir = f"trading_data/funds/{rebuild_fund}"
+                    trade_log_path = Path(data_dir) / "llm_trade_log.csv"
+                    if trade_log_path.exists():
+                        st.success(f"✅ Trade log found: {trade_log_path}")
+                    else:
+                        st.error(f"❌ Trade log not found: {trade_log_path}")
+                
+                if st.button("🔧 Rebuild Portfolio", type="primary"):
+                    if not rebuild_fund:
+                        st.error("Please select a fund")
+                    elif confirm_rebuild != rebuild_fund:
+                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
+                    else:
+                        import subprocess
+                        from pathlib import Path
+                        
+                        data_dir = f"trading_data/funds/{rebuild_fund}"
+                        trade_log_path = Path(data_dir) / "llm_trade_log.csv"
+                        
+                        if not trade_log_path.exists():
+                            st.error(f"Trade log not found: {trade_log_path}")
+                        else:
+                            try:
+                                with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take several minutes."):
+                                    # Run rebuild script
+                                    result = subprocess.run(
+                                        ["python", "debug/rebuild_portfolio_complete.py", data_dir, rebuild_fund],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=600  # 10 minute timeout
+                                    )
+                                    
+                                    if result.returncode == 0:
+                                        st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
+                                        st.success("All portfolio positions regenerated with proper columns.")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Rebuild failed with exit code {result.returncode}")
+                                        with st.expander("Error details"):
+                                            st.code(result.stderr)
+                            except subprocess.TimeoutExpired:
+                                st.error("Rebuild timed out after 10 minutes. Check logs for details.")
+                            except Exception as e:
+                                st.error(f"Error rebuilding portfolio: {e}")
             
             st.divider()
             

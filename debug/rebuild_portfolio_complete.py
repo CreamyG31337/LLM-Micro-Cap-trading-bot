@@ -42,6 +42,22 @@ from display.console_output import print_success, print_error, print_info, print
 # Load environment variables
 load_dotenv(project_root / 'web_dashboard' / '.env')
 
+def _log_rebuild_progress(fund_name: str, message: str, success: bool = True):
+    """
+    Optional logging to job execution logs (visible in admin page).
+    Falls back gracefully if not available (when run directly from CLI).
+    """
+    try:
+        # Try to import and use the job logging function
+        sys.path.insert(0, str(project_root / 'web_dashboard'))
+        from scheduler.scheduler_core import log_job_execution
+        
+        job_id = f'rebuild_portfolio_{fund_name.replace(" ", "_")}'
+        log_job_execution(job_id, success, message, 0)
+    except Exception:
+        # Silently ignore if logging not available (running directly)
+        pass
+
 def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     """
     Rebuild portfolio from trade log and update both CSV and Supabase.
@@ -101,6 +117,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         trade_df = trade_df.sort_values('Date')
         
         print_success(f"{_safe_emoji('✅')} Loaded {len(trade_df)} trades")
+        _log_rebuild_progress(fund_name, f"Starting rebuild: {len(trade_df)} trades to process")
         
         if len(trade_df) == 0:
             print_warning("⚠️  Trade log is empty - no portfolio entries to generate")
@@ -223,14 +240,20 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                         currency = 'USD'
                     running_positions[ticker]['currency'] = currency
             
-            # Store current running positions for this date
+                # Store current running positions for this date
             date_positions[trading_day] = dict(running_positions)
+            
+            # Log progress every 10 days
+            processed_days = len(date_positions)
+            if processed_days % 10 == 0:
+                _log_rebuild_progress(fund_name, f"Processed {processed_days}/{len(all_trading_days_list)} trading days")
         
         # Generate portfolio snapshots for each trading day
         snapshots_created = 0
         
         # Pre-fetch prices for all unique tickers across all dates for better performance
         print_info("   Pre-fetching historical prices...")
+        _log_rebuild_progress(fund_name, f"Fetching historical prices for portfolio positions...")
         all_tickers = set()
         for positions in date_positions.values():
             all_tickers.update(positions.keys())
@@ -629,10 +652,12 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 # Don't fail rebuild if tracking fails
                 print_warning(f"   ⚠️  Could not update job tracking: {tracking_error}")
         
+        _log_rebuild_progress(fund_name, f"✅ Rebuild complete: {snapshots_created} snapshots created")
         return True
         
     except Exception as e:
         print_error(f"{_safe_emoji('❌')} Error rebuilding portfolio: {e}")
+        _log_rebuild_progress(fund_name, f"❌ Rebuild failed: {str(e)}", success=False)
         import traceback
         traceback.print_exc()
         return False

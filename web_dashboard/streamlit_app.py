@@ -1055,6 +1055,9 @@ def main():
         log_message(f"[{session_id}] PERF: Starting dashboard data load", level='INFO')
         data_load_start = time.time()
         
+        # Get user's display currency preference (needed for all calculations)
+        display_currency = get_user_display_currency()
+        
         with st.spinner("Loading portfolio data..."):
             t0 = time.time()
             positions_df = get_current_positions(fund_filter)
@@ -1068,15 +1071,9 @@ def main():
             cash_balances = get_cash_balances(fund_filter)
             log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='INFO')
             
-            # Get user's display currency preference (needed for calculations)
-            display_currency = get_user_display_currency()
-            
             t0 = time.time()
             portfolio_value_df = calculate_portfolio_value_over_time(fund_filter, days=days_filter, display_currency=display_currency)
             log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
-        else:
-            # Get user's display currency preference even if no fund selected
-            display_currency = get_user_display_currency()
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')
         

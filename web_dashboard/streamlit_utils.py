@@ -422,10 +422,16 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
         }
     
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Get all trades, filter for SELL trades
         trades_df = get_trade_log(limit=10000, fund=fund, _cache_version=_cache_version)
         
+        logger.debug(f"get_realized_pnl: Retrieved {len(trades_df)} total trades")
+        
         if trades_df.empty:
+            logger.debug("get_realized_pnl: No trades found in trade_log")
             return {
                 'total_realized_pnl': 0.0,
                 'total_shares_sold': 0.0,
@@ -436,30 +442,37 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
                 'losing_trades': 0,
                 'trades_by_ticker': {}
             }
+        
+        # Debug: Log available columns
+        logger.debug(f"get_realized_pnl: Available columns: {list(trades_df.columns)}")
         
         # Filter for SELL trades
-        # Check action column or infer from reason
+        # Check action column first (preferred method)
+        sell_trades = pd.DataFrame()
         if 'action' in trades_df.columns:
-            sell_trades = trades_df[trades_df['action'].str.upper() == 'SELL'].copy()
-        elif 'reason' in trades_df.columns:
-            # Infer from reason field
-            sell_trades = trades_df[
-                trades_df['reason'].str.upper().str.contains('SELL', na=False)
-            ].copy()
-        else:
-            # No way to identify sells, return empty
-            return {
-                'total_realized_pnl': 0.0,
-                'total_shares_sold': 0.0,
-                'total_proceeds': 0.0,
-                'average_sell_price': 0.0,
-                'num_closed_trades': 0,
-                'winning_trades': 0,
-                'losing_trades': 0,
-                'trades_by_ticker': {}
-            }
+            # Check for SELL in action column (case-insensitive)
+            # Handle NaN values properly
+            action_upper = trades_df['action'].astype(str).str.upper()
+            sell_mask = action_upper == 'SELL'
+            sell_trades = trades_df[sell_mask].copy()
+            logger.debug(f"get_realized_pnl: Found {len(sell_trades)} SELL trades using 'action' column")
+            
+            # Debug: Show unique action values if no sells found
+            if sell_trades.empty:
+                unique_actions = trades_df['action'].astype(str).unique()
+                logger.debug(f"get_realized_pnl: No SELL trades found. Unique action values: {unique_actions}")
         
+        # Fallback: Check reason column if action column didn't work
+        if sell_trades.empty and 'reason' in trades_df.columns:
+            # Infer from reason field (case-insensitive)
+            reason_upper = trades_df['reason'].astype(str).str.upper()
+            sell_mask = reason_upper.str.contains('SELL', na=False)
+            sell_trades = trades_df[sell_mask].copy()
+            logger.debug(f"get_realized_pnl: Found {len(sell_trades)} SELL trades using 'reason' column")
+        
+        # If still empty, return empty result
         if sell_trades.empty:
+            logger.debug("get_realized_pnl: No SELL trades found after checking both 'action' and 'reason' columns")
             return {
                 'total_realized_pnl': 0.0,
                 'total_shares_sold': 0.0,
@@ -480,6 +493,8 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
         winning_trades = 0
         losing_trades = 0
         
+        # Only process trades that have P&L (realized P&L should be non-zero for closed positions)
+        # Filter out trades with None or zero P&L if they shouldn't be counted
         for _, trade in sell_trades.iterrows():
             pnl_val = trade.get('pnl', 0)
             pnl = 0.0 if pd.isna(pnl_val) else float(pnl_val)
@@ -487,6 +502,11 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
             shares = float(trade.get('shares', 0) or 0)
             price = float(trade.get('price', 0) or 0)
             proceeds = shares * price
+            
+            # Skip trades with zero shares (invalid data)
+            if shares == 0:
+                logger.debug(f"get_realized_pnl: Skipping trade with zero shares: {trade.get('ticker', 'UNKNOWN')}")
+                continue
             
             # Get currency and convert to display currency
             currency = str(trade.get('currency', 'CAD')).upper() if pd.notna(trade.get('currency')) else 'CAD'
@@ -519,11 +539,13 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
             trades_by_ticker[ticker]['shares_sold'] += shares
             trades_by_ticker[ticker]['proceeds'] += proceeds_display
             
-            # Count winning/losing trades
+            # Count winning/losing trades (only count if P&L is non-zero)
             if pnl_display > 0:
                 winning_trades += 1
             elif pnl_display < 0:
                 losing_trades += 1
+        
+        logger.debug(f"get_realized_pnl: Processed {len(sell_trades)} SELL trades, total_realized_pnl={total_realized_pnl:.2f}, total_shares_sold={total_shares_sold:.2f}")
         
         # Calculate average sell price (matching console app)
         average_sell_price = total_proceeds / total_shares_sold if total_shares_sold > 0 else 0.0
@@ -1548,7 +1570,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
     if display_currency is None:
         display_currency = get_user_display_currency()
     from auth_utils import get_user_email
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     
     # Get user email
     user_email = get_user_email()
@@ -1664,8 +1686,15 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
         log_message(f"[{session_id}] PERF: get_user_investment_metrics - Parse contributions: {time.time() - t0:.2f}s", level='INFO')
         
-        # Get all contribution dates for historical fund value lookup
-        contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
+        # Get all contribution dates AND previous dates (for NAV lookup)
+        # We need previous day's value to calculate NAV *before* the new capital affects value
+        contrib_dates = []
+        for c in contributions:
+            if c['timestamp']:
+                ts = c['timestamp']
+                contrib_dates.append(ts)
+                # Add previous day
+                contrib_dates.append(ts - timedelta(days=1))
         
         # Fetch ACTUAL historical fund values AND cost basis from portfolio_positions
         t0 = time.time()
@@ -1732,10 +1761,6 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             
             # Same-day NAV fix - capture state at START of each new day
             date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
-            if date_str != last_contribution_date:
-                units_at_start_of_day = total_units
-                contributions_at_start_of_day = running_total_contributions
-                last_contribution_date = date_str
             
             if contributor not in contributor_units:
                 contributor_units[contributor] = 0.0
@@ -1746,30 +1771,65 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     'net_contribution': 0.0
                 }
             
+            # Determine NAV for this transaction
+            # CRITICAL: Use PREVIOUS DAY'S Closing NAV to avoid self-referential inflation
+            # If we use same-day, and that same day had a huge asset jump (from the cash we just put in buying assets),
+            # NAV skyrockets and we get fewer units.
+            nav_at_transaction = 10.0 # Default
+            nav_source = "default"
+            
+            if total_units > 0:
+                prev_date_str = (timestamp - timedelta(days=1)).strftime('%Y-%m-%d') if timestamp else None
+                
+                # 1. Try Previous Day (Standard Practice)
+                if prev_date_str and prev_date_str in historical_values and historical_values[prev_date_str] > 0:
+                    nav_at_transaction = historical_values[prev_date_str] / total_units
+                    nav_source = f"previous_day ({prev_date_str})"
+                
+                # 2. Fallback to Same Day (Only if prev day missing, e.g. Day 1)
+                elif date_str and date_str in historical_values and historical_values[date_str] > 0:
+                     nav_at_transaction = historical_values[date_str] / total_units
+                     nav_source = f"same_day ({date_str})"
+                
+                # 3. Fallback to Time-Weighted Estimation
+                elif first_timestamp and timestamp:
+                    elapsed_days = (timestamp - first_timestamp).days
+                    time_fraction = elapsed_days / total_days
+                    nav_at_transaction = 1.0 + (growth_rate - 1.0) * time_fraction
+                    nav_source = "time_weighted"
+                
+                # 4. Last Resort
+                else:
+                    nav_at_transaction = (running_total_contributions / total_units)
+                    nav_source = "average_cost"
+            
             if contrib_type == 'withdrawal':
                 contributor_data[contributor]['withdrawals'] += amount
                 contributor_data[contributor]['net_contribution'] -= amount
                 
-                # Redeem units at NAV on withdrawal date
-                # IMPORTANT: Only redeem if contributor actually has units to prevent total_units corruption
                 if total_units > 0 and contributor_units[contributor] > 0:
-                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
-                    if date_str and date_str in historical_values:
-                        fund_value_at_date = historical_values[date_str]
-                        nav_at_withdrawal = fund_value_at_date / total_units if total_units > 0 else 1.0
-                    elif first_timestamp and timestamp:
-                        # Time-weighted fallback (matches position_calculator.py)
-                        elapsed_days = (timestamp - first_timestamp).days
-                        time_fraction = elapsed_days / total_days
-                        nav_at_withdrawal = 1.0 + (growth_rate - 1.0) * time_fraction
-                    else:
-                        nav_at_withdrawal = (running_total_contributions / total_units) if total_units > 0 else 1.0
-                    
-                    units_to_redeem = amount / nav_at_withdrawal if nav_at_withdrawal > 0 else amount
-                    # Cap redemption at contributor's actual units to prevent going negative
+                    units_to_redeem = amount / nav_at_transaction if nav_at_transaction > 0 else amount
+                    # Cap redemption
                     actual_units_redeemed = min(units_to_redeem, contributor_units[contributor])
                     contributor_units[contributor] -= actual_units_redeemed
                     total_units -= actual_units_redeemed
+                elif contributor_units[contributor] <= 0 and amount > 0:
+                    log_message(f"[{session_id}] NAV WARNING: Withdrawal of ${amount} from {contributor} skipped - no units to redeem", level='WARNING')
+                    print(f"⚠️  Withdrawal of ${amount} from {contributor} skipped - no units to redeem")
+                
+                running_total_contributions -= amount
+            else:
+                contributor_data[contributor]['contributions'] += amount
+                contributor_data[contributor]['net_contribution'] += amount
+                
+                units_issued = amount / nav_at_transaction
+                contributor_units[contributor] += units_issued
+                total_units += units_issued
+                running_total_contributions += amount
+                
+                # Log unit issuance for debugging
+                if nav_at_transaction != 10.0:
+                    log_message(f"[{session_id}] NAV DEBUG: {contributor} added ${amount} at NAV ${nav_at_transaction:.4f} ({nav_source}) -> {units_issued:.2f} units", level='INFO')
                 elif contributor_units[contributor] <= 0 and amount > 0:
                     log_message(f"[{session_id}] NAV WARNING: Withdrawal of ${amount} from {contributor} skipped - no units to redeem", level='WARNING')
                     print(f"⚠️  Withdrawal of ${amount} from {contributor} skipped - no units to redeem")

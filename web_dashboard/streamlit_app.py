@@ -1291,6 +1291,20 @@ def main():
         losing_trades = realized_pnl_data.get('losing_trades', 0)
         trades_by_ticker = realized_pnl_data.get('trades_by_ticker', {})
         
+        # Debug: Show what we found (only in debug mode)
+        if st.checkbox("🔍 Debug: Show trade log info", key="debug_realized_pnl"):
+            trades_df = get_trade_log(limit=100, fund=fund_filter)
+            if not trades_df.empty:
+                st.write(f"**Total trades found:** {len(trades_df)}")
+                st.write(f"**Columns:** {list(trades_df.columns)}")
+                if 'action' in trades_df.columns:
+                    st.write(f"**Unique action values:** {trades_df['action'].astype(str).unique().tolist()}")
+                    st.write(f"**SELL trades count:** {len(trades_df[trades_df['action'].astype(str).str.upper() == 'SELL'])}")
+                if 'reason' in trades_df.columns:
+                    sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
+                    st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
+                st.dataframe(trades_df.head(20))
+        
         if num_closed > 0:
             # Display primary metrics (matching console app structure)
             pnl_col1, pnl_col2, pnl_col3, pnl_col4 = st.columns(4)

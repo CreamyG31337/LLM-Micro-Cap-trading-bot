@@ -769,19 +769,19 @@ with tab4:
                             # Delete in batches (safe for large datasets)
                             deleted_total = 0
                             while True:
-                                batch = service_client.supabase.table("portfolio_positions") \\
-                                    .select("id") \\
-                                    .eq("fund", wipe_pos_fund) \\
-                                    .limit(500) \\
+                                batch = service_client.supabase.table("portfolio_positions") \
+                                    .select("id") \
+                                    .eq("fund", wipe_pos_fund) \
+                                    .limit(500) \
                                     .execute()
                                 
                                 if not batch.data:
                                     break
                                 
                                 ids = [r['id'] for r in batch.data]
-                                service_client.supabase.table("portfolio_positions") \\
-                                    .delete() \\
-                                    .in_("id", ids) \\
+                                service_client.supabase.table("portfolio_positions") \
+                                    .delete() \
+                                    .in_("id", ids) \
                                     .execute()
                                 
                                 deleted_total += len(ids)

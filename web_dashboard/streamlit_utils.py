@@ -428,8 +428,12 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
         # Check if we should use pre-converted values or runtime conversion
         has_preconverted = False
         if 'total_value_base' in df.columns and 'base_currency' in df.columns:
-            # Check if pre-converted columns are populated (not all NULL)
-            has_preconverted = df['total_value_base'].notna().any()
+            # FIX: Require that MOST records (>80%) have pre-converted values, not just "any"
+            # Otherwise adding new data with values to a dataset with NULL values corrupts the graph
+            preconverted_pct = df['total_value_base'].notna().mean()
+            has_preconverted = preconverted_pct > 0.8
+            if df['total_value_base'].notna().any() and not has_preconverted:
+                logger.warning(f"Only {preconverted_pct*100:.1f}% of records have pre-converted values - using fallback")
         
         if has_preconverted:
             # USE PRE-CONVERTED VALUES (FAST PATH) - no exchange rate fetching needed!

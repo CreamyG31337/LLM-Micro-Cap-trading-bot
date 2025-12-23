@@ -750,18 +750,11 @@ with tab4:
             st.subheader("🔄 Wipe Portfolio Positions Only")
             st.info("✅ SAFE: Clears only portfolio_positions. Keeps trades, so you can rebuild.")
             with st.expander("Wipe portfolio positions only", expanded=False):
-                col_wp1, col_wp2 = st.columns(2)
-                with col_wp1:
-                    wipe_pos_fund = st.selectbox("Select Fund", options=[""] + fund_names, key="wipe_pos_fund_select")
-                with col_wp2:
-                    confirm_wipe_pos = st.text_input("Type fund name to confirm", key="confirm_wipe_pos",
-                                                     placeholder="Type the fund name exactly")
+                wipe_pos_fund = st.selectbox("Select Fund", options=[""] + fund_names, key="wipe_pos_fund_select")
                 
                 if st.button("🔄 Wipe Portfolio Positions Only", type="primary"):
                     if not wipe_pos_fund:
                         st.error("Please select a fund")
-                    elif confirm_wipe_pos != wipe_pos_fund:
-                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
                     else:
                         try:
                             # Use service role to bypass RLS
@@ -802,36 +795,39 @@ with tab4:
             st.subheader("🔧 Rebuild Portfolio from Trades")
             st.info("Regenerates all portfolio_positions from trade log with proper columns.")
             with st.expander("Rebuild portfolio data", expanded=False):
-                col_rb1, col_rb2 = st.columns(2)
-                with col_rb1:
-                    rebuild_fund = st.selectbox("Select Fund to Rebuild", options=[""] + fund_names, key="rebuild_fund_select")
-                with col_rb2:
-                    confirm_rebuild = st.text_input("Type fund name to confirm", key="confirm_rebuild",
-                                                    placeholder="Type the fund name exactly")
+                rebuild_fund = st.selectbox("Select Fund to Rebuild", options=[""] + fund_names, key="rebuild_fund_select")
                 
                 if rebuild_fund:
-                    data_dir = f"trading_data/funds/{rebuild_fund}"
-                    trade_log_path = Path(data_dir) / "llm_trade_log.csv"
-                    if trade_log_path.exists():
-                        st.success(f"✅ Trade log found: {trade_log_path}")
+                    # Check if trades exist in database
+                    trade_count = client.supabase.table("trade_log") \
+                        .select("count", count="exact") \
+                        .eq("fund", rebuild_fund) \
+                        .execute()
+                    
+                    if trade_count.count and trade_count.count > 0:
+                        st.success(f"✅ Found {trade_count.count} trades in database")
                     else:
-                        st.error(f"❌ Trade log not found: {trade_log_path}")
+                        st.error(f"❌ No trades found in database for {rebuild_fund}")
                 
                 if st.button("🔧 Rebuild Portfolio", type="primary"):
                     if not rebuild_fund:
                         st.error("Please select a fund")
-                    elif confirm_rebuild != rebuild_fund:
-                        st.error("Fund name doesn't match. Please type the fund name exactly to confirm.")
                     else:
-                        import subprocess
-                        from pathlib import Path
+                        # Check if trades exist
+                        trade_count = client.supabase.table("trade_log") \
+                            .select("count", count="exact") \
+                            .eq("fund", rebuild_fund) \
+                            .execute()
                         
-                        data_dir = f"trading_data/funds/{rebuild_fund}"
-                        trade_log_path = Path(data_dir) / "llm_trade_log.csv"
-                        
-                        if not trade_log_path.exists():
-                            st.error(f"Trade log not found: {trade_log_path}")
+                        if not trade_count.count or trade_count.count == 0:
+                            st.error(f"No trades found in database for {rebuild_fund}")
                         else:
+                            import subprocess
+                            
+                            # The rebuild script still needs a data directory for CSV operations
+                            # But it will use database trades as the source
+                            data_dir = f"trading_data/funds/{rebuild_fund}"
+                            
                             try:
                                 with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take several minutes."):
                                     # Run rebuild script

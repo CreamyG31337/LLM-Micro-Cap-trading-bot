@@ -1219,8 +1219,8 @@ def main():
             with f_col2:
                 st.metric(
                     "Fund Return",
-                    f"{fund_return_pct:+.2f}%", 
-                    f"${fund_return_dollars:,.2f}",
+                    f"${fund_return_dollars:,.2f}", 
+                    f"{fund_return_pct:+.2f}%",
                     help="Total return on all investments in the fund since inception."
                 )
             with f_col3:

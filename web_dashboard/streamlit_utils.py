@@ -1136,13 +1136,13 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
     
     client = get_supabase_client()
     if not client or not dates:
-        return {}
+        return {}, {}
     
     try:
         # Get all unique dates we need
         date_strs = sorted(set(d.strftime('%Y-%m-%d') for d in dates if d))
         if not date_strs:
-            return {}
+            return {}, {}
         
         min_date = min(date_strs)
         
@@ -1176,7 +1176,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
                 break
         
         if not all_rows:
-            return {}
+            return {}, {}
         
         # CHECK FOR DUPLICATES - this could inflate NAV calculations!
         import logging

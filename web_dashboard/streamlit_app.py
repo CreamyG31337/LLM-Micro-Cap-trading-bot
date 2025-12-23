@@ -53,7 +53,9 @@ from streamlit_utils import (
     get_investor_allocations,
     get_user_investment_metrics,
     get_fund_thesis_data,
-    get_realized_pnl
+    get_realized_pnl,
+    get_user_display_currency,
+    convert_to_display_currency
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -681,6 +683,18 @@ def show_password_reset_page(access_token: str):
                 st.error("Please fill in both password fields")
 
 
+def format_currency_label(currency_code: str) -> str:
+    """Format currency code for display in labels.
+    
+    Args:
+        currency_code: Currency code (e.g., 'CAD', 'USD')
+        
+    Returns:
+        Formatted label like "(CAD)" or "(USD)"
+    """
+    return f"({currency_code})"
+
+
 def main():
     """Main dashboard function"""
     
@@ -1054,9 +1068,15 @@ def main():
             cash_balances = get_cash_balances(fund_filter)
             log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='INFO')
             
+            # Get user's display currency preference (needed for calculations)
+            display_currency = get_user_display_currency()
+            
             t0 = time.time()
-            portfolio_value_df = calculate_portfolio_value_over_time(fund_filter, days=days_filter)
+            portfolio_value_df = calculate_portfolio_value_over_time(fund_filter, days=days_filter, display_currency=display_currency)
             log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
+        else:
+            # Get user's display currency preference even if no fund selected
+            display_currency = get_user_display_currency()
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')
         
@@ -1072,70 +1092,54 @@ def main():
         log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='INFO')
         show_investors = num_investors > 1
         
-        # Calculate total portfolio value from current positions (with currency conversion)
+        # Calculate total portfolio value from current positions (with currency conversion to display currency)
         portfolio_value_no_cash = 0.0  # Portfolio value without cash (for investment metrics)
         total_value = 0.0
         total_pnl = 0.0
-        usd_to_cad_rate = 1.0  # Default fallback
-        
-        # Get latest USD/CAD exchange rate from database
-        if not positions_df.empty:
-            client = get_supabase_client()
-            if client:
-                try:
-                    t0 = time.time()
-                    rate_result = client.get_latest_exchange_rate('USD', 'CAD')
-                    log_message(f"[{session_id}] PERF: get_latest_exchange_rate took {time.time() - t0:.2f}s", level='INFO')
-                    if rate_result:
-                        usd_to_cad_rate = float(rate_result)
-                except Exception as e:
-                    print(f"Error getting exchange rate: {e}")
-                    usd_to_cad_rate = 1.42  # Approximate fallback
         
         if not positions_df.empty and 'market_value' in positions_df.columns:
-            # Convert USD positions to CAD before summing
+            # Convert positions to display currency before summing
             for _, row in positions_df.iterrows():
                 market_value = float(row.get('market_value', 0) or 0)
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                if currency == 'USD':
-                    portfolio_value_no_cash += market_value * usd_to_cad_rate
-                else:
-                    portfolio_value_no_cash += market_value
+                market_value_display = convert_to_display_currency(market_value, currency, None, display_currency)
+                portfolio_value_no_cash += market_value_display
         
         # Get Total P&L from positions_df (unrealized_pnl from latest_positions view)
         if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
-            # Sum unrealized_pnl with currency conversion
+            # Sum unrealized_pnl with currency conversion to display currency
             # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
             for _, row in positions_df.iterrows():
                 pnl_val = row.get('unrealized_pnl', 0)
                 pnl = 0.0 if pd.isna(pnl_val) else float(pnl_val)
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                if currency == 'USD':
-                    total_pnl += pnl * usd_to_cad_rate
-                else:
-                    total_pnl += pnl
+                pnl_display = convert_to_display_currency(pnl, currency, None, display_currency)
+                total_pnl += pnl_display
         
-        # Add cash to total value (USD cash converted to CAD)
-        total_value = portfolio_value_no_cash + cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
+        # Add cash to total value (convert all cash to display currency)
+        total_cash_display = 0.0
+        for currency, amount in cash_balances.items():
+            if amount > 0:
+                cash_display = convert_to_display_currency(amount, currency, None, display_currency)
+                total_cash_display += cash_display
+        total_value = portfolio_value_no_cash + total_cash_display
         
         # Get user's investment metrics (if they have contributions)
         t0 = time.time()
-        user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True, session_id=session_id)
+        user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True, session_id=session_id, display_currency=display_currency)
         log_message(f"[{session_id}] PERF: get_user_investment_metrics took {time.time() - t0:.2f}s", level='INFO')
         
         # Calculate Last Trading Day P&L (used in multiple places)
         last_day_pnl = 0.0
         last_day_pnl_pct = 0.0
         if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-            # Convert USD daily P&L to CAD before summing
+            # Convert daily P&L to display currency before summing
             for _, row in positions_df.iterrows():
                 daily_pnl_val = row.get('daily_pnl', 0)
                 daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
                 currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                if currency == 'USD':
-                    last_day_pnl += daily_pnl * usd_to_cad_rate
-                else:
-                    last_day_pnl += daily_pnl
+                daily_pnl_display = convert_to_display_currency(daily_pnl, currency, None, display_currency)
+                last_day_pnl += daily_pnl_display
             
             # Calculate percentage based on yesterday's value (total_value - today's change)
             yesterday_value = total_value - last_day_pnl
@@ -1181,7 +1185,7 @@ def main():
                 
                 with col1:
                     st.metric(
-                        "Your Value (CAD)",
+                        f"Your Value {format_currency_label(display_currency)}",
                         f"${user_investment['current_value']:,.2f}",
                         help="Current market value of your specific share in the fund."
                     )
@@ -1213,7 +1217,7 @@ def main():
             
             with f_col1:
                 st.metric(
-                    "Fund Total Value (CAD)", 
+                    f"Fund Total Value {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total value of all assets in the fund (Cash + Positions) for ALL investors."
                 )
@@ -1238,7 +1242,7 @@ def main():
             
             with m_col1:
                 st.metric(
-                    "Portfolio Value (CAD)", 
+                    f"Portfolio Value {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total current value of your portfolio (Cash + Positions)."
                 )
@@ -1262,7 +1266,7 @@ def main():
 
             with m_col3:
                 st.metric(
-                    "Day Change (CAD)", 
+                    f"Day Change {format_currency_label(display_currency)}", 
                     f"${last_day_pnl:,.2f}", 
                     f"{last_day_pnl_pct:+.2f}%",
                     help="Change in portfolio value since the last market close."
@@ -1270,7 +1274,7 @@ def main():
                 
             with m_col4:
                  st.metric(
-                    "Open P&L (CAD)", 
+                    f"Open P&L {format_currency_label(display_currency)}", 
                     f"${unrealized_pnl:,.2f}",
                     help="Unrealized Profit/Loss from currently held positions."
                 )
@@ -1280,7 +1284,7 @@ def main():
         st.markdown("### Closed Positions P&L")
         
         # Calculate realized P&L
-        realized_pnl_data = get_realized_pnl(fund=fund_filter)
+        realized_pnl_data = get_realized_pnl(fund=fund_filter, display_currency=display_currency)
         total_realized = realized_pnl_data.get('total_realized_pnl', 0.0)
         num_closed = realized_pnl_data.get('num_closed_trades', 0)
         winning_trades = realized_pnl_data.get('winning_trades', 0)
@@ -1293,7 +1297,7 @@ def main():
             
             with pnl_col1:
                 st.metric(
-                    "Total Realized P&L (CAD)",
+                    f"Total Realized P&L {format_currency_label(display_currency)}",
                     f"${total_realized:,.2f}",
                     help="Total realized profit/loss from all closed positions (matches console app)."
                 )
@@ -1309,17 +1313,17 @@ def main():
             with pnl_col3:
                 total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
                 st.metric(
-                    "Total Proceeds (CAD)",
+                    f"Total Proceeds {format_currency_label(display_currency)}",
                     f"${total_proceeds:,.2f}",
-                    help="Total proceeds from all sales in CAD."
+                    help=f"Total proceeds from all sales in {display_currency}."
                 )
             
             with pnl_col4:
                 avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
                 st.metric(
-                    "Avg Sell Price (CAD)",
+                    f"Avg Sell Price {format_currency_label(display_currency)}",
                     f"${avg_sell_price:,.2f}",
-                    help="Average sell price per share across all closed positions."
+                    help=f"Average sell price per share across all closed positions in {display_currency}."
                 )
             
             # Secondary metrics row
@@ -1359,27 +1363,29 @@ def main():
                 st.markdown("#### Realized P&L by Ticker")
                 
                 # Create DataFrame for display (handle new structure)
+                currency_label = format_currency_label(display_currency)
                 ticker_data = []
                 for ticker, data in trades_by_ticker.items():
                     if isinstance(data, dict):
                         # New structure with detailed breakdown
                         ticker_data.append({
                             'Ticker': ticker,
-                            'Realized P&L (CAD)': data.get('realized_pnl', 0.0),
+                            f'Realized P&L {currency_label}': data.get('realized_pnl', 0.0),
                             'Shares Sold': data.get('shares_sold', 0.0),
-                            'Proceeds (CAD)': data.get('proceeds', 0.0)
+                            f'Proceeds {currency_label}': data.get('proceeds', 0.0)
                         })
                     else:
                         # Legacy structure (just a number)
                         ticker_data.append({
                             'Ticker': ticker,
-                            'Realized P&L (CAD)': float(data),
+                            f'Realized P&L {currency_label}': float(data),
                             'Shares Sold': 0.0,
-                            'Proceeds (CAD)': 0.0
+                            f'Proceeds {currency_label}': 0.0
                         })
                 
                 ticker_pnl_df = pd.DataFrame(ticker_data)
-                ticker_pnl_df = ticker_pnl_df.sort_values('Realized P&L (CAD)', ascending=False)
+                pnl_col_name = f'Realized P&L {currency_label}'
+                ticker_pnl_df = ticker_pnl_df.sort_values(pnl_col_name, ascending=False)
                 
                 # Format and color-code
                 def color_pnl(val):
@@ -1394,11 +1400,12 @@ def main():
                         pass
                     return ''
                 
-                styled_pnl_df = ticker_pnl_df.style.format({
-                    'Realized P&L (CAD)': '${:,.2f}',
+                format_dict = {
+                    pnl_col_name: '${:,.2f}',
                     'Shares Sold': '{:,.2f}',
-                    'Proceeds (CAD)': '${:,.2f}'
-                }).map(color_pnl, subset=['Realized P&L (CAD)'])
+                    f'Proceeds {currency_label}': '${:,.2f}'
+                }
+                styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
                 
                 st.dataframe(styled_pnl_df, use_container_width=True, height=300)
         else:
@@ -1458,7 +1465,8 @@ def main():
                 show_normalized=True,  # Show percentage change from baseline
                 show_benchmarks=selected_benchmarks if selected_benchmarks else None,  # Use user selection
                 show_weekend_shading=True,
-                use_solid_lines=use_solid
+                use_solid_lines=use_solid,
+                display_currency=display_currency
             )
             log_message(f"[{session_id}] PERF: create_portfolio_value_chart took {time.time() - t0:.2f}s", level='INFO')
             
@@ -1524,7 +1532,7 @@ def main():
             # P&L chart
             if 'pnl' in positions_df.columns or 'unrealized_pnl' in positions_df.columns:
                 st.markdown("#### P&L by Position")
-                fig = create_pnl_chart(positions_df, fund_filter)
+                fig = create_pnl_chart(positions_df, fund_filter, display_currency=display_currency)
                 st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             
             # Currency exposure chart

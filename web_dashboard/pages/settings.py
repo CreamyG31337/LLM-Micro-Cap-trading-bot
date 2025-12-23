@@ -22,6 +22,8 @@ try:
     from user_preferences import (
         get_user_timezone, 
         set_user_timezone,
+        get_user_currency,
+        set_user_currency,
         get_all_user_preferences
     )
 except ImportError as e:
@@ -116,6 +118,50 @@ if st.button("💾 Save Timezone", type="primary"):
         st.rerun()
     else:
         st.error("❌ Failed to save timezone. Please try again.")
+
+st.divider()
+
+# Currency Settings
+st.subheader("💰 Currency")
+
+# Get current currency
+current_currency = get_user_currency()
+if not current_currency:
+    current_currency = 'CAD'  # Default
+
+# Build currency options from registry
+try:
+    from streamlit_utils import SUPPORTED_CURRENCIES
+    currency_options = list(SUPPORTED_CURRENCIES.keys())
+    currency_labels = [f"{code} - {SUPPORTED_CURRENCIES[code]}" for code in currency_options]
+except ImportError:
+    # Fallback if import fails
+    currency_options = ['CAD', 'USD']
+    currency_labels = ['CAD - Canadian Dollar', 'USD - US Dollar']
+
+# Find current index
+try:
+    current_index = currency_options.index(current_currency) if current_currency in currency_options else 0
+except ValueError:
+    current_index = 0
+
+# Currency selector (same pattern as timezone)
+selected_currency_label = st.selectbox(
+    "Select your display currency:",
+    options=currency_labels,
+    index=current_index,
+    help="All values will be converted and displayed in this currency."
+)
+
+selected_currency = currency_options[currency_labels.index(selected_currency_label)]
+
+# Save button (same pattern as timezone)
+if st.button("💾 Save Currency", type="primary", key="save_currency"):
+    if set_user_currency(selected_currency):
+        st.success(f"✅ Currency saved as {selected_currency}")
+        st.rerun()
+    else:
+        st.error("❌ Failed to save currency. Please try again.")
 
 st.divider()
 

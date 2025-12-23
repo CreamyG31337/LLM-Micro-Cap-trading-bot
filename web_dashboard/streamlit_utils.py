@@ -34,6 +34,127 @@ except ImportError:
 _startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 CACHE_VERSION = os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
 
+# ============================================================
+# CURRENCY REGISTRY - Extensible currency support
+# ============================================================
+SUPPORTED_CURRENCIES = {
+    'CAD': 'Canadian Dollar',
+    'USD': 'US Dollar',
+    # Future currencies can be added here:
+    # 'EUR': 'Euro',
+    # 'GBP': 'British Pound',
+    # 'JPY': 'Japanese Yen',
+}
+
+
+def get_supported_currencies() -> Dict[str, str]:
+    """Get dictionary of supported currencies.
+    
+    Returns:
+        Dictionary mapping currency codes to display names
+    """
+    return SUPPORTED_CURRENCIES.copy()
+
+
+def get_user_display_currency() -> str:
+    """Get user's preferred display currency.
+    
+    Returns:
+        Currency code (default: 'CAD')
+    """
+    try:
+        from user_preferences import get_user_currency
+        currency = get_user_currency()
+        return currency if currency else 'CAD'
+    except ImportError:
+        return 'CAD'
+
+
+def get_exchange_rate_for_display(from_currency: str, to_currency: str, date: Optional[datetime] = None) -> Optional[float]:
+    """Get exchange rate for converting from one currency to display currency.
+    
+    Handles both directions and attempts inverse rate if direct rate not available.
+    
+    Args:
+        from_currency: Source currency code
+        to_currency: Target currency code (display currency)
+        date: Optional date for historical rates (uses latest if None)
+        
+    Returns:
+        Exchange rate as float, or None if not available
+    """
+    if from_currency == to_currency:
+        return 1.0
+    
+    client = get_supabase_client()
+    if not client:
+        return None
+    
+    try:
+        # Try to get direct rate
+        if date is None:
+            rate = client.get_latest_exchange_rate(from_currency, to_currency)
+        else:
+            rate = client.get_exchange_rate(date, from_currency, to_currency)
+        
+        if rate is not None:
+            return float(rate)
+        
+        # Try inverse rate (1 / reverse rate)
+        if date is None:
+            inverse_rate = client.get_latest_exchange_rate(to_currency, from_currency)
+        else:
+            inverse_rate = client.get_exchange_rate(date, to_currency, from_currency)
+        
+        if inverse_rate is not None and inverse_rate != 0:
+            return 1.0 / float(inverse_rate)
+        
+        return None
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error getting exchange rate {from_currency}→{to_currency}: {e}")
+        return None
+
+
+def convert_to_display_currency(value: float, from_currency: str, date: Optional[datetime] = None, display_currency: Optional[str] = None) -> float:
+    """Convert a value from one currency to the user's display currency.
+    
+    Args:
+        value: Value to convert
+        from_currency: Source currency code
+        date: Optional date for historical rates (uses latest if None)
+        display_currency: Optional display currency (uses user preference if None)
+        
+    Returns:
+        Converted value in display currency
+    """
+    if display_currency is None:
+        display_currency = get_user_display_currency()
+    
+    # Same currency, no conversion needed
+    if from_currency.upper() == display_currency.upper():
+        return value
+    
+    # Get exchange rate
+    rate = get_exchange_rate_for_display(from_currency, display_currency, date)
+    
+    if rate is None:
+        # Fallback: use default rates for common pairs
+        if from_currency.upper() == 'USD' and display_currency.upper() == 'CAD':
+            rate = 1.35
+        elif from_currency.upper() == 'CAD' and display_currency.upper() == 'USD':
+            rate = 1.0 / 1.35
+        else:
+            # Unknown pair, return value as-is with warning
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"No exchange rate found for {from_currency}→{display_currency}, returning original value")
+            return value
+    
+    return value * float(rate)
+
 
 def get_cache_ttl() -> int:
     """Get cache TTL based on market hours.
@@ -265,25 +386,27 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_realized_pnl(fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Dict[str, Any]:
+def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Dict[str, Any]:
     """Calculate realized P&L from closed positions (SELL trades).
     
     Args:
         fund: Optional fund name to filter by
+        display_currency: Optional display currency (defaults to user preference)
         _cache_version: Cache version for invalidation
         
     Returns:
         Dictionary with (matching console app's get_realized_pnl_summary() structure):
-        - total_realized_pnl: Total realized P&L in CAD
+        - total_realized_pnl: Total realized P&L in display currency
         - total_shares_sold: Total shares sold across all closed positions
-        - total_proceeds: Total proceeds from all sales in CAD
-        - average_sell_price: Average sell price per share in CAD
+        - total_proceeds: Total proceeds from all sales in display currency
+        - average_sell_price: Average sell price per share in display currency
         - num_closed_trades: Number of closed trades (sell transactions)
         - winning_trades: Number of winning trades (positive P&L)
         - losing_trades: Number of losing trades (negative P&L)
         - trades_by_ticker: Dictionary with ticker breakdown (realized_pnl, shares_sold, proceeds)
     """
-    from exchange_rates_utils import get_exchange_rate_for_date_from_db
+    if display_currency is None:
+        display_currency = get_user_display_currency()
     
     client = get_supabase_client()
     if not client:
@@ -365,35 +488,24 @@ def get_realized_pnl(fund: Optional[str] = None, _cache_version: str = CACHE_VER
             price = float(trade.get('price', 0) or 0)
             proceeds = shares * price
             
-            # Get currency and convert to CAD if needed
+            # Get currency and convert to display currency
             currency = str(trade.get('currency', 'CAD')).upper() if pd.notna(trade.get('currency')) else 'CAD'
             
-            if currency == 'USD':
-                # Get exchange rate for trade date
-                trade_date = pd.to_datetime(trade.get('date'))
-                if pd.notna(trade_date):
-                    rate = get_exchange_rate_for_date_from_db(
-                        trade_date,
-                        'USD',
-                        'CAD'
-                    )
-                    if rate:
-                        pnl_cad = pnl * rate
-                        proceeds_cad = proceeds * rate
-                    else:
-                        # Fallback to 1.42 if no rate found
-                        pnl_cad = pnl * 1.42
-                        proceeds_cad = proceeds * 1.42
-                else:
-                    pnl_cad = pnl * 1.42
-                    proceeds_cad = proceeds * 1.42
-            else:
-                pnl_cad = pnl
-                proceeds_cad = proceeds
+            # Get trade date for historical rate lookup
+            trade_date = None
+            if 'date' in trade and pd.notna(trade.get('date')):
+                try:
+                    trade_date = pd.to_datetime(trade.get('date'))
+                except:
+                    trade_date = None
             
-            total_realized_pnl += pnl_cad
+            # Convert to display currency
+            pnl_display = convert_to_display_currency(pnl, currency, trade_date, display_currency)
+            proceeds_display = convert_to_display_currency(proceeds, currency, trade_date, display_currency)
+            
+            total_realized_pnl += pnl_display
             total_shares_sold += shares
-            total_proceeds += proceeds_cad
+            total_proceeds += proceeds_display
             
             # Track by ticker
             ticker = str(trade.get('ticker', 'UNKNOWN'))
@@ -403,14 +515,14 @@ def get_realized_pnl(fund: Optional[str] = None, _cache_version: str = CACHE_VER
                     'shares_sold': 0.0,
                     'proceeds': 0.0
                 }
-            trades_by_ticker[ticker]['realized_pnl'] += pnl_cad
+            trades_by_ticker[ticker]['realized_pnl'] += pnl_display
             trades_by_ticker[ticker]['shares_sold'] += shares
-            trades_by_ticker[ticker]['proceeds'] += proceeds_cad
+            trades_by_ticker[ticker]['proceeds'] += proceeds_display
             
             # Count winning/losing trades
-            if pnl_cad > 0:
+            if pnl_display > 0:
                 winning_trades += 1
-            elif pnl_cad < 0:
+            elif pnl_display < 0:
                 losing_trades += 1
         
         # Calculate average sell price (matching console app)
@@ -497,27 +609,30 @@ def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -> pd.DataFrame:
+def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, display_currency: Optional[str] = None) -> pd.DataFrame:
     """Calculate portfolio value over time from portfolio_positions table.
     
     This queries the portfolio_positions table to get daily snapshots of
     actual market values (shares * price), with proper normalization,
-    currency conversion (USD→CAD), and continuous timeline handling.
+    currency conversion to display currency, and continuous timeline handling.
     
     CACHED: Results are cached for 5 minutes to improve performance.
     
     Args:
         fund: Fund name (REQUIRED - we always filter by fund for performance)
         days: Optional number of days to look back. None = all time (default)
+        display_currency: Optional display currency (defaults to user preference)
     
     Returns DataFrame with columns:
     - date: datetime
-    - value: total market value (in CAD)
-    - cost_basis: total cost basis (in CAD)
-    - pnl: unrealized P&L (in CAD)
+    - value: total market value (in display currency)
+    - cost_basis: total cost basis (in display currency)
+    - pnl: unrealized P&L (in display currency)
     - performance_pct: P&L as percentage of cost basis
     - performance_index: Normalized to start at 100 (for charting)
     """
+    if display_currency is None:
+        display_currency = get_user_display_currency()
     from decimal import Decimal
     from datetime import datetime, timedelta, timezone
     
@@ -625,135 +740,41 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None) -
             # FALLBACK: Runtime currency conversion for old data without base columns
             logger.warning("⚠️ Using runtime currency conversion (SLOW PATH - data not pre-converted)")
             
-            # Check if we have any USD positions that need conversion
-            has_usd = False
+            # Check if we have positions in currencies other than display currency
+            needs_conversion = False
             if 'currency' in df.columns:
-                has_usd = df['currency'].str.upper().eq('USD').any()
+                currencies = df['currency'].str.upper().fillna('CAD').unique()
+                needs_conversion = any(c != display_currency.upper() for c in currencies)
             
-            if has_usd:
-                # Get unique dates for exchange rate lookup
-                unique_dates = df['date'].dt.date.unique()
-                rate_start = time.time()
-                
-                # Build exchange rate cache for all dates using batch query
-                rate_cache = {}
-                missing_dates = []
-                
-                # Calculate date range for batch query
-                # Calculate date range for batch query
-                from datetime import datetime, timezone, time as dt_time
-                min_date = min(unique_dates)
-                max_date = max(unique_dates)
-                
-                # Convert to datetime with timezone for database query
-                start_dt = datetime.combine(min_date, dt_time.min, tzinfo=timezone.utc)
-                # Use end of day for max_date to ensure we get rates up to and including max_date
-                end_dt = datetime.combine(max_date, dt_time(23, 59, 59, 999999), tzinfo=timezone.utc)
-                
-                # Fetch all exchange rates for the date range in a single query
-                rates_data = client.get_exchange_rates(start_dt, end_dt, 'USD', 'CAD')
-                
-                # Build sorted list of rates with timestamps for efficient lookup
-                # Each rate entry has 'timestamp' and 'rate' keys
-                sorted_rates = []
-                for rate_entry in rates_data:
-                    timestamp_str = rate_entry.get('timestamp')
-                    rate_value = rate_entry.get('rate')
-                    
-                    if timestamp_str and rate_value is not None:
-                        try:
-                            # Parse timestamp
-                            if isinstance(timestamp_str, str):
-                                dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                            else:
-                                dt = timestamp_str
-                            
-                            # Ensure timezone-aware
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc)
-                            
-                            sorted_rates.append({
-                                'timestamp': dt,
-                                'rate': float(rate_value)
-                            })
-                        except Exception as e:
-                            logger.warning(f"Could not parse rate entry: {e}")
-                            continue
-                
-                # Sort by timestamp (ascending)
-                sorted_rates.sort(key=lambda x: x['timestamp'])
-                
-                # For each unique date, find the most recent rate on or before that date
-                # Since sorted_rates is sorted ascending, we iterate backwards for efficiency
-                for date_val in unique_dates:
-                    # Convert date to datetime at start of day for comparison
-                    target_dt = datetime.combine(date_val, dt_time.min, tzinfo=timezone.utc)
-                    
-                    # Find the most recent rate where timestamp <= target_dt
-                    # Iterate backwards through sorted rates for efficiency
-                    rate_found = None
-                    for rate_entry in reversed(sorted_rates):
-                        if rate_entry['timestamp'] <= target_dt:
-                            rate_found = rate_entry['rate']
-                            break
-                    
-                    if rate_found is None:
-                        missing_dates.append(date_val)
-                    else:
-                        rate_cache[date_val] = rate_found
-                
-                rate_lookup_time = time.time() - rate_start
-                logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate lookup: {rate_lookup_time:.2f}s ({len(unique_dates)} dates)")
-                
-                # If we have missing rates, try to fetch them
-                if missing_dates:
-                    fetch_start = time.time()
-                    print(f"Missing exchange rates for {len(missing_dates)} dates, attempting to fetch...")
-                    if reload_exchange_rate_for_date:
-                        for date_val in missing_dates:
-                            from datetime import datetime, timezone
-                            dt = datetime.combine(date_val, datetime.min.time(), tzinfo=timezone.utc)
-                            fetched_rate = reload_exchange_rate_for_date(dt, 'USD', 'CAD')
-                            
-                            if fetched_rate is not None:
-                                rate_cache[date_val] = float(fetched_rate)
-                                print(f"  ✅ Fetched rate for {date_val}: {fetched_rate}")
-                            else:
-                                logger.warning(f"⚠️ Missing exchange rate for {date_val}. Using fallback 1.42.")
-                                rate_cache[date_val] = 1.42
-                    else:
-                        logger.warning("reload_exchange_rate_for_date function not available, using fallback rates")
-                        for date_val in missing_dates:
-                            rate_cache[date_val] = 1.42
-                    fetch_time = time.time() - fetch_start
-                    logger.info(f"⏱️ calculate_portfolio_value_over_time - Exchange rate fetching: {fetch_time:.2f}s")
-                
-                # Apply currency conversion to USD positions
+            if needs_conversion:
+                # Apply currency conversion to positions
                 convert_start = time.time()
-                def convert_to_cad(row, column):
+                def convert_to_display(row, column):
                     currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
                     value = float(row.get(column, 0) or 0)
                     
-                    if currency == 'USD':
-                        date_key = row['date'].date() if hasattr(row['date'], 'date') else row['date']
-                        rate = rate_cache.get(date_key)
-                        if rate is None:
-                            logger.warning(f"No exchange rate found for {date_key}, using fallback 1.42")
-                            rate = 1.42
-                        return value * rate
-                    return value
+                    # Get date for historical rate lookup
+                    trade_date = None
+                    if 'date' in row and pd.notna(row.get('date')):
+                        try:
+                            trade_date = pd.to_datetime(row['date'])
+                        except:
+                            trade_date = None
+                    
+                    # Convert to display currency
+                    return convert_to_display_currency(value, currency, trade_date, display_currency)
                 
-                df['total_value_cad'] = df.apply(lambda r: convert_to_cad(r, 'total_value'), axis=1)
-                df['cost_basis_cad'] = df.apply(lambda r: convert_to_cad(r, 'cost_basis'), axis=1)
-                df['pnl_cad'] = df.apply(lambda r: convert_to_cad(r, 'pnl'), axis=1)
+                df['total_value_display'] = df.apply(lambda r: convert_to_display(r, 'total_value'), axis=1)
+                df['cost_basis_display'] = df.apply(lambda r: convert_to_display(r, 'cost_basis'), axis=1)
+                df['pnl_display'] = df.apply(lambda r: convert_to_display(r, 'pnl'), axis=1)
                 convert_time = time.time() - convert_start
                 logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s")
                 
-                value_col = 'total_value_cad'
-                cost_col = 'cost_basis_cad'
-                pnl_col = 'pnl_cad'
+                value_col = 'total_value_display'
+                cost_col = 'cost_basis_display'
+                pnl_col = 'pnl_display'
             else:
-                # No USD positions, use values as-is (already in CAD)
+                # All positions already in display currency, use values as-is
                 value_col = 'total_value'
                 cost_col = 'cost_basis'
                 pnl_col = 'pnl'
@@ -1493,7 +1514,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
 
 
 @st.cache_data(ttl=300)
-def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown", _cache_version: str = CACHE_VERSION) -> Optional[Dict[str, Any]]:
+def get_user_investment_metrics(fund: str, total_portfolio_value: float, include_cash: bool = True, session_id: str = "unknown", display_currency: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Optional[Dict[str, Any]]:
     """Get investment metrics for the currently logged-in user using NAV-based calculation.
     
     This calculates the user's investment performance using a unit-based system 
@@ -1505,15 +1526,16 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
     
     Args:
         fund: Fund name
-        total_portfolio_value: Total portfolio value (positions only, before cash)
+        total_portfolio_value: Total portfolio value (positions only, before cash) in display currency
         include_cash: Whether to include cash in total fund value (default True)
         session_id: Session ID for log tracking (default "unknown")
+        display_currency: Optional display currency (defaults to user preference)
     
     Returns:
         Dict with keys:
-        - net_contribution: User's net contribution amount
-        - current_value: Current value of their investment (NAV-based)
-        - gain_loss: Absolute gain/loss amount
+        - net_contribution: User's net contribution amount (in display currency)
+        - current_value: Current value of their investment (NAV-based, in display currency)
+        - gain_loss: Absolute gain/loss amount (in display currency)
         - gain_loss_pct: Gain/loss percentage (accurate per-user return)
         - ownership_pct: Ownership percentage (based on units)
         - contributor_name: Their name (for display)
@@ -1523,6 +1545,8 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         - No contributor record found matching user's email
         - User has no contributions in the fund
     """
+    if display_currency is None:
+        display_currency = get_user_display_currency()
     from auth_utils import get_user_email
     from datetime import datetime, timezone
     
@@ -1580,16 +1604,15 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         # Get cash balances for total fund value
         t0 = time.time()
         cash_balances = get_cash_balances(fund)
-        usd_to_cad_rate = 1.0
-        try:
-            rate_result = client.get_latest_exchange_rate('USD', 'CAD')
-            if rate_result:
-                usd_to_cad_rate = float(rate_result)
-        except Exception:
-            usd_to_cad_rate = 1.42
         
-        total_cash_cad = cash_balances.get('CAD', 0.0) + (cash_balances.get('USD', 0.0) * usd_to_cad_rate)
-        fund_total_value = total_portfolio_value + total_cash_cad if include_cash else total_portfolio_value
+        # Convert cash balances to display currency
+        total_cash_display = 0.0
+        for currency, amount in cash_balances.items():
+            if amount > 0:
+                cash_display = convert_to_display_currency(amount, currency, None, display_currency)
+                total_cash_display += cash_display
+        
+        fund_total_value = total_portfolio_value + total_cash_display if include_cash else total_portfolio_value
         log_message(f"[{session_id}] PERF: get_user_investment_metrics - Cash/exchange rate: {time.time() - t0:.2f}s", level='INFO')
         
         if fund_total_value <= 0:

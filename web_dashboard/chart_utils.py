@@ -271,7 +271,8 @@ def create_portfolio_value_chart(
     show_normalized: bool = False,
     show_benchmarks: Optional[List[str]] = None,
     show_weekend_shading: bool = True,
-    use_solid_lines: bool = False
+    use_solid_lines: bool = False,
+    display_currency: Optional[str] = None
 ) -> go.Figure:
     """Create a line chart showing portfolio value/performance over time.
     
@@ -281,7 +282,15 @@ def create_portfolio_value_chart(
         show_normalized: If True, shows performance index (baseline 100) instead of raw value
         show_benchmarks: List of benchmark keys to display (e.g., ['sp500', 'qqq'])
         show_weekend_shading: If True, adds gray shading for weekends
+        display_currency: Optional display currency (defaults to user preference)
     """
+    # Get display currency
+    if display_currency is None:
+        try:
+            from streamlit_utils import get_user_display_currency
+            display_currency = get_user_display_currency()
+        except ImportError:
+            display_currency = 'CAD'
     if portfolio_df.empty or 'date' not in portfolio_df.columns:
         fig = go.Figure()
         fig.add_annotation(
@@ -311,11 +320,11 @@ def create_portfolio_value_chart(
                       annotation_text="Baseline", annotation_position="right")
     elif 'value' in df.columns:
         y_col = 'value'
-        y_label = "Portfolio Value ($)"
+        y_label = f"Portfolio Value ({display_currency})"
         chart_name = "Portfolio Value"
     elif 'total_value' in df.columns:
         y_col = 'total_value'
-        y_label = "Portfolio Value ($)"
+        y_label = f"Portfolio Value ({display_currency})"
         chart_name = "Portfolio Value"
     else:
         fig = go.Figure()
@@ -441,8 +450,16 @@ def create_portfolio_value_chart(
     return fig
 
 
-def create_performance_by_fund_chart(funds_data: Dict[str, float]) -> go.Figure:
+def create_performance_by_fund_chart(funds_data: Dict[str, float], display_currency: Optional[str] = None) -> go.Figure:
     """Create a bar chart showing performance by fund"""
+    # Get display currency
+    if display_currency is None:
+        try:
+            from streamlit_utils import get_user_display_currency
+            display_currency = get_user_display_currency()
+        except ImportError:
+            display_currency = 'CAD'
+    
     if not funds_data:
         fig = go.Figure()
         fig.add_annotation(
@@ -471,7 +488,7 @@ def create_performance_by_fund_chart(funds_data: Dict[str, float]) -> go.Figure:
     fig.update_layout(
         title="Performance by Fund",
         xaxis_title="Fund",
-        yaxis_title="Value ($)",
+        yaxis_title=f"Value ({display_currency})",
         template='plotly_white',
         height=400
     )
@@ -480,8 +497,16 @@ def create_performance_by_fund_chart(funds_data: Dict[str, float]) -> go.Figure:
 
 
 @log_execution_time()
-def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
+def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None, display_currency: Optional[str] = None) -> go.Figure:
     """Create a bar chart showing P&L by position"""
+    # Get display currency
+    if display_currency is None:
+        try:
+            from streamlit_utils import get_user_display_currency
+            display_currency = get_user_display_currency()
+        except ImportError:
+            display_currency = 'CAD'
+    
     # Check for either pnl or unrealized_pnl column
     pnl_col = None
     if 'unrealized_pnl' in positions_df.columns:
@@ -527,7 +552,7 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     fig.update_layout(
         title=title,
         xaxis_title="Ticker",
-        yaxis_title="Unrealized P&L ($)",
+        yaxis_title=f"Unrealized P&L ({display_currency})",
         template='plotly_white',
         height=500,
         xaxis={'tickangle': -45}
@@ -717,8 +742,15 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
 
 
 def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[str] = None,
-                                  show_weekend_shading: bool = True) -> go.Figure:
+                                  show_weekend_shading: bool = True, display_currency: Optional[str] = None) -> go.Figure:
     """Create a timeline chart showing trades over time"""
+    # Get display currency
+    if display_currency is None:
+        try:
+            from streamlit_utils import get_user_display_currency
+            display_currency = get_user_display_currency()
+        except ImportError:
+            display_currency = 'CAD'
     required_cols = ['date', 'action', 'shares', 'price']
     if trades_df.empty or not all(col in trades_df.columns for col in required_cols):
         fig = go.Figure()
@@ -773,7 +805,7 @@ def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[st
     fig.update_layout(
         title=title,
         xaxis_title="Date",
-        yaxis_title="Trade Value ($)",
+        yaxis_title=f"Trade Value ({display_currency})",
         hovermode='x unified',
         template='plotly_white',
         height=400

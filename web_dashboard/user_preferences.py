@@ -193,6 +193,49 @@ def get_all_user_preferences() -> Dict[str, Any]:
         return {}
 
 
+def get_user_currency() -> Optional[str]:
+    """Get user's preferred currency.
+    
+    Returns:
+        Currency code (e.g., 'CAD', 'USD') or None
+    """
+    # Import here to avoid circular dependency
+    try:
+        from streamlit_utils import SUPPORTED_CURRENCIES
+    except ImportError:
+        # Fallback if import fails
+        SUPPORTED_CURRENCIES = {'CAD': 'Canadian Dollar', 'USD': 'US Dollar'}
+    
+    currency = get_user_preference('currency', default=None)
+    # Validate against supported currencies
+    if currency and currency in SUPPORTED_CURRENCIES:
+        return currency
+    return 'CAD'  # Default to CAD
+
+
+def set_user_currency(currency: str) -> bool:
+    """Set user's preferred currency.
+    
+    Args:
+        currency: Currency code (e.g., 'CAD', 'USD')
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    # Import here to avoid circular dependency
+    try:
+        from streamlit_utils import SUPPORTED_CURRENCIES
+    except ImportError:
+        # Fallback if import fails
+        SUPPORTED_CURRENCIES = {'CAD': 'Canadian Dollar', 'USD': 'US Dollar'}
+    
+    # Validate currency
+    if currency not in SUPPORTED_CURRENCIES:
+        logger.warning(f"Invalid currency: {currency}")
+        return False
+    return set_user_preference('currency', currency)
+
+
 def clear_preference_cache():
     """Clear all preference caches from session state."""
     keys_to_remove = [key for key in st.session_state.keys() if key.startswith("_pref_")]

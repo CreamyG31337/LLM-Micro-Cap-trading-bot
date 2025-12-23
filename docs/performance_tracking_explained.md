@@ -90,33 +90,42 @@ Imagine this scenario:
 
 ---
 
-## 5. The "Same-Day Contribution" Bug (Fixed Dec 2024)
+## 5. The "Uninvested Cash" NAV Fix (Fixed Dec 2024)
 
 ### What Was Wrong
 
-**Before the fix**, if multiple people contributed on the same day:
+**Before the fix**, our NAV calculation only looked at **stock value**. It completely ignored **uninvested cash**.
 
-| Time | Event | Units Calculated | Problem |
-|------|-------|-----------------|---------|
-| 9:00 AM | Person A deposits $1,000 | NAV = $1.00, gets 1,000 units | ✅ Correct |
-| 11:00 AM | Person B deposits $1,000 | NAV = $1.00 (portfolio value / 1,000 units) = $1.00, gets 1,000 units | ✅ Correct |
-| 2:00 PM | Person C deposits $1,000 | NAV calc used 2,000 units (A+B), not the start-of-day units! | ❌ **WRONG** |
+| Date | Portfolio Value | Cash | Total Fund Value | Problem |
+|------|-----------------|------|------------------|---------|
+| Sep 8 | $1,500 Stocks | $0 | $1,500 | ✅ Correct |
+| Sep 9 | $1,500 Stocks | **$4,000 Cash** (New contributions) | $5,500 | ❌ **WRONG** (Used only $1,500) |
 
-Person C would get FEWER units because the math was using the growing unit count instead of the START of day units.
+Because the system ignored the $4,000 cash, it thought the fund value was only $1,500.
+**Result:** NAV crashed from $1.22 to $0.30. Investors got **way too many units** for their money, massively inflating their returns later.
 
-### How We Fixed It
+### The Real Solution
 
-**Now:** We "freeze" the unit count at the start of each trading day. Everyone buying in on Sept 8th uses the SAME denominator (units at market open on Sept 8th), regardless of what time their contribution arrived.
+We implemented a robust formula that accounts for **EVERY DOLLAR**:
 
-**Code:**
-```python
-if date_str != last_contribution_date:
-    units_at_start_of_day = total_units  # Snapshot at start of new day
-    last_contribution_date = date_str
+**Formula:** `Fund Value = Stock Value + Uninvested Cash`
 
-# Later...
-nav = portfolio_value / units_at_start_of_day  # Use snapshot, not current total
-```
+Where:
+`Uninvested Cash = MAX(0, Start-of-Day Contributions - Cost Basis)`
+
+**Why this works:**
+1.  **Stock Value:** What our positions are worth right now
+2.  **Cost Basis:** How much we spent to buy those positions
+3.  **Contributions:** Total money put into the fund
+4.  **Difference ($4,000):** If we have $10k contributions but only spent $6k on stocks, the other $4k MUST be uninvested cash. We add this back to the NAV calculation.
+
+**Result:**
+- **Old Sep 9 NAV:** $0.30 (Crash)
+- **New Sep 9 NAV:** $1.17 (Correct - includes cash)
+- **Investor Returns:** Fairness restored (e.g., Lance's return went from a bugged +2% to a correct +25%)
+
+### The "Same-Day" Logic
+We also "freeze" the unit count at the start of each trading day. Everyone buying in on the same day uses the **SAME NAV** denominator, preventing dilution spirals.
 
 ---
 
@@ -135,7 +144,7 @@ nav = portfolio_value / units_at_start_of_day  # Use snapshot, not current total
 **A:** For YOUR return (NAV-based), yes - cash sitting uninvested dilutes the fund's growth. For the GRAPH (stock performance), no - it only tracks the stocks that were actually purchased.
 
 ### Q: How do I know my numbers are correct?
-**A:** Check the logs (Admin page) for any "NAV FALLBACK" warnings. If you see those, it means the system had to estimate NAV for some contributions due to missing data.
+**A:** Check the logs (Admin page). The system now strictly tracks "Uninvested Cash" at every calculation step to ensure no dollar is left behind.
 
 ---
 

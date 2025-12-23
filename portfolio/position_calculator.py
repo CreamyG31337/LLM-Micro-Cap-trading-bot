@@ -386,7 +386,8 @@ class PositionCalculator:
     
     def calculate_ownership_percentages(self, fund_contributions_data: List[Dict[str, Any]],
                                        current_fund_value: Decimal,
-                                       historical_fund_values: Optional[Dict[str, Decimal]] = None) -> Dict[str, Dict[str, Any]]:
+                                       historical_fund_values: Optional[Dict[str, Decimal]] = None,
+                                       historical_cost_basis: Optional[Dict[str, Decimal]] = None) -> Dict[str, Dict[str, Any]]:
         """Calculate ownership percentages based on fund contributions using NAV-based tracking.
         
         This method properly accounts for WHEN each contributor joined by using a 
@@ -395,6 +396,9 @@ class PositionCalculator:
         
         For perfect accuracy, pass historical_fund_values with actual fund values at each
         contribution date. Otherwise, the method estimates NAV using time-weighted growth.
+        
+        The NAV calculation now includes uninvested cash:
+        Fund Value = Stock Value + max(0, contributions_at_start_of_day - cost_basis)
         
         Example:
             - Day 1: Fund starts with $1,000 from Investor A. NAV = $1.00, A owns 1,000 units.
@@ -409,6 +413,8 @@ class PositionCalculator:
             current_fund_value: Current total fund value
             historical_fund_values: Optional dict mapping date strings (YYYY-MM-DD) to 
                                    fund values at those dates for perfect accuracy
+            historical_cost_basis: Optional dict mapping date strings to cost basis for
+                                  calculating uninvested cash (contributions - cost_basis)
             
         Returns:
             Dictionary mapping contributor names to ownership details
@@ -493,11 +499,26 @@ class PositionCalculator:
             total_units = Decimal('0')
             running_contributions = Decimal('0')
             
+            # Track state at start of each day for same-day contribution NAV calculation
+            # CRITICAL FIX: Multiple contributions on the same day should all use the SAME NAV
+            # (the NAV before any contributions that day), otherwise later contributions get
+            # exponentially more units, causing massive ownership inflation
+            units_at_start_of_day = Decimal('0')
+            contributions_at_start_of_day = Decimal('0')  # For uninvested cash calculation
+            last_contribution_date = None
+            
             for contrib in parsed_contributions:
                 contributor = contrib['contributor']
                 amount = contrib['amount']
                 contrib_type = contrib['type']
                 timestamp = contrib['timestamp']
+                
+                # Same-day NAV fix - capture state at START of each new day
+                date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                if date_str != last_contribution_date:
+                    units_at_start_of_day = total_units
+                    contributions_at_start_of_day = running_contributions
+                    last_contribution_date = date_str
                 
                 # Initialize contributor tracking if needed
                 if contributor not in contributor_units:
@@ -516,7 +537,7 @@ class PositionCalculator:
                     # Redeem units at NAV on withdrawal date
                     # IMPORTANT: Only redeem if contributor actually has units to prevent total_units corruption
                     if total_units > 0 and contributor_units[contributor] > 0:
-                        date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                        # date_str already calculated above
                         
                         if use_historical and date_str and date_str in historical_fund_values:
                             fund_value_at_date = Decimal(str(historical_fund_values[date_str]))
@@ -542,19 +563,52 @@ class PositionCalculator:
                     contributor_data[contributor]['net_contribution'] += amount
                     
                     # Calculate NAV at time of contribution
-                    date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+                    # date_str already calculated above
                     
                     if total_units == 0:
                         # First contribution - NAV = 1.0
                         nav_at_contribution = Decimal('1.0')
                     elif use_historical and date_str and date_str in historical_fund_values:
-                        # Perfect accuracy using actual fund value
-                        fund_value_at_date = Decimal(str(historical_fund_values[date_str]))
-                        nav_at_contribution = fund_value_at_date / total_units if total_units > 0 else Decimal('1')
+                        # PROPER NAV FIX: Fund Value = Stock Value + Uninvested Cash
+                        stock_value_at_date = Decimal(str(historical_fund_values[date_str]))
+                        
+                        # Get cost basis for this date (if available)
+                        cost_basis_at_date = Decimal('0')
+                        if historical_cost_basis and date_str in historical_cost_basis:
+                            cost_basis_at_date = Decimal(str(historical_cost_basis[date_str]))
+                        
+                        # Uninvested Cash = contributions before today that aren't yet in stocks
+                        uninvested_cash = max(Decimal('0'), contributions_at_start_of_day - cost_basis_at_date)
+                        fund_value_at_date = stock_value_at_date + uninvested_cash
+                        
+                        # Use units_at_start_of_day for same-day contributions
+                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                        nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else Decimal('1')
                     elif use_historical and date_str:
-                        # Historical data provided but missing for this date
-                        logger.warning(f"⚠️  NAV FALLBACK: Missing historical data for {date_str} (contributor: {contributor}). Using estimation.")
-                        nav_at_contribution = running_contributions / total_units if total_units > 0 else Decimal('1')
+                        # Historical data provided but missing for this date - 7-day lookback
+                        nav_at_contribution = Decimal('1')
+                        units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+                        
+                        found_fallback = False
+                        if units_for_nav > 0:
+                            try:
+                                from datetime import datetime as dt, timedelta
+                                contribution_date = dt.strptime(date_str, '%Y-%m-%d')
+                                for days_back in range(1, 8):
+                                    prior_date = contribution_date - timedelta(days=days_back)
+                                    prior_date_str = prior_date.strftime('%Y-%m-%d')
+                                    if prior_date_str in historical_fund_values:
+                                        fund_value_at_prior = Decimal(str(historical_fund_values[prior_date_str]))
+                                        nav_at_contribution = fund_value_at_prior / units_for_nav
+                                        found_fallback = True
+                                        logger.info(f"ℹ️  NAV FALLBACK: {date_str} -> using {prior_date_str} (NAV=${nav_at_contribution:.4f})")
+                                        break
+                            except Exception:
+                                pass
+                        
+                        if not found_fallback:
+                            logger.warning(f"⚠️  NAV FALLBACK: Missing historical data for {date_str} (contributor: {contributor}). Using estimation.")
+                            nav_at_contribution = running_contributions / units_for_nav if units_for_nav > 0 else Decimal('1')
                     elif not use_historical and first_timestamp and timestamp:
                         # Fallback: time-weighted growth estimation (already warned at start)
                         elapsed_days = (timestamp - first_timestamp).days

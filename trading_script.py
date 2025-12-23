@@ -1940,6 +1940,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
                     # Fetch historical fund values for accurate NAV calculation
                     historical_fund_values = {}
+                    historical_cost_basis = {}  # For uninvested cash calculation
                     try:
                         # Get all contribution timestamps
                         contribution_dates = []
@@ -1969,14 +1970,19 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                             if snapshots:
                                 for snapshot in snapshots:
                                     date_str = snapshot.timestamp.strftime('%Y-%m-%d')
-                                    # Calculate total value for this snapshot
+                                    # Calculate total value AND cost basis for this snapshot
                                     total_value = sum(
                                         pos.shares * pos.current_price 
                                         for pos in snapshot.positions 
                                         if pos.current_price is not None
                                     )
+                                    total_cost_basis = sum(
+                                        pos.cost_basis if pos.cost_basis else Decimal('0')
+                                        for pos in snapshot.positions
+                                    )
                                     if total_value > 0:
                                         historical_fund_values[date_str] = Decimal(str(total_value))
+                                        historical_cost_basis[date_str] = Decimal(str(total_cost_basis))
                                 
                                 logger.debug(f"Retrieved {len(historical_fund_values)} historical fund values for NAV calculation")
                                 
@@ -1991,7 +1997,7 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                         # Will fall back to time-weighted estimation in calculate_ownership_percentages
 
                     ownership_raw = position_calculator.calculate_ownership_percentages(
-                        fund_contributions, fund_total_value_dec, historical_fund_values
+                        fund_contributions, fund_total_value_dec, historical_fund_values, historical_cost_basis
                     )
 
                     # Calculate total shares in portfolio for proportional ownership

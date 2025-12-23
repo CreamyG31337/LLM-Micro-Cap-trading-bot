@@ -947,16 +947,19 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
         # Get contribution dates for historical fund value lookup
         contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
         
-        # Fetch historical fund values (uses same logic as get_user_investment_metrics)
-        historical_values = get_historical_fund_values(fund, contrib_dates)
+        # Fetch historical fund values AND cost basis (for uninvested cash calculation)
+        # Returns: (stock_values_dict, cost_basis_dict)
+        historical_values, historical_cost_basis = get_historical_fund_values(fund, contrib_dates)
         
         # Calculate NAV-based ownership using same logic as get_user_investment_metrics
         contributor_units = {}
         contributor_data = {}
         total_units = 0.0
+        running_contributions = 0.0  # Track total contributions for uninvested cash
         
-        # Track total_units at start of each day for same-day contribution NAV calculation
+        # Track state at start of each day for same-day contribution NAV calculation
         units_at_start_of_day = 0.0
+        contributions_at_start_of_day = 0.0
         last_contribution_date = None
         
         for contrib in contributions:
@@ -969,6 +972,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
             date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
             if date_str != last_contribution_date:
                 units_at_start_of_day = total_units
+                contributions_at_start_of_day = running_contributions
                 last_contribution_date = date_str
             
             if contributor not in contributor_units:
@@ -980,6 +984,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
             
             if contrib_type == 'withdrawal':
                 contributor_data[contributor]['net_contribution'] -= amount
+                running_contributions -= amount  # Track for uninvested cash calculation
                 
                 # Redeem units
                 if total_units > 0 and contributor_units[contributor] > 0:
@@ -1003,13 +1008,21 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 if total_units == 0:
                     # First contribution to the fund - NAV starts at 1.0
                     nav_at_contribution = 1.0
+                    last_valid_nav = 1.0  # Initialize for future sanity checks
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.info(f"NAV calculation: First contribution to fund, using inception NAV = 1.0")
                 elif date_str and date_str in historical_values:
-                    fund_value_at_date = historical_values[date_str]
-                    # Use units_at_start_of_day for same-day contributions, but handle edge cases
-                    # If units_at_start_of_day is 0 (first contribution of the day when fund is new), use total_units
+                    stock_value_at_date = historical_values[date_str]
+                    cost_basis_at_date = historical_cost_basis.get(date_str, 0.0)
+                    
+                    # PROPER NAV FIX: Fund Value = Stock Value + Uninvested Cash
+                    # Uninvested Cash = contributions before today that aren't yet in stocks
+                    # Using contributions_at_start_of_day ensures same-day contributors get same NAV
+                    uninvested_cash = max(0, contributions_at_start_of_day - cost_basis_at_date)
+                    fund_value_at_date = stock_value_at_date + uninvested_cash
+                    
+                    # Use units_at_start_of_day for same-day contributions
                     units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
                     nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else 1.0
                 else:
@@ -1050,6 +1063,7 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                 units_purchased = amount / nav_at_contribution
                 contributor_units[contributor] += units_purchased
                 total_units += units_purchased
+                running_contributions += amount  # Track for uninvested cash calculation
         
         # Build result DataFrame
         result_data = []
@@ -1136,7 +1150,7 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
         
         while True:
             query = client.supabase.table("portfolio_positions").select(
-                "date, ticker, shares, price, currency"
+                "date, ticker, shares, price, currency, cost_basis"
             ).eq("fund", fund).gte("date", min_date).order("date")
             
             result = query.range(offset, offset + batch_size - 1).execute()
@@ -1239,31 +1253,38 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
             for date_str in position_dates:
                 exchange_rates_by_date[date_str] = fallback_rate
         
-        # Calculate total value for each date using date-specific exchange rates
+        # Calculate total value AND cost basis for each date using date-specific exchange rates
         values_by_date = {}
+        cost_basis_by_date = {}  # Track cost basis for uninvested cash calculation
         for row in all_rows:
             date_str = row['date'][:10]  # Get just YYYY-MM-DD
             shares = float(row.get('shares', 0))
             price = float(row.get('price', 0))
             currency = row.get('currency', 'USD')
+            cost_basis = float(row.get('cost_basis', 0))
             
             # Convert to CAD using date-specific exchange rate
             value = shares * price
             if currency == 'USD':
                 usd_to_cad = exchange_rates_by_date.get(date_str, fallback_rate)
                 value *= usd_to_cad
+                cost_basis *= usd_to_cad  # Cost basis also needs conversion
             
             if date_str not in values_by_date:
                 values_by_date[date_str] = 0.0
+                cost_basis_by_date[date_str] = 0.0
             values_by_date[date_str] += value
+            cost_basis_by_date[date_str] += cost_basis
         
         # For each requested date, find closest available date
         result_values = {}
+        result_cost_basis = {}
         available_dates = sorted(values_by_date.keys())
         
         for date_str in date_strs:
             if date_str in values_by_date:
                 result_values[date_str] = values_by_date[date_str]
+                result_cost_basis[date_str] = cost_basis_by_date.get(date_str, 0.0)
             else:
                 # Find closest date before or on this date
                 closest = None
@@ -1274,14 +1295,17 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
                         break
                 if closest:
                     result_values[date_str] = values_by_date[closest]
+                    result_cost_basis[date_str] = cost_basis_by_date.get(closest, 0.0)
         
-        return result_values
+        # Return both stock values and cost basis for proper NAV calculation
+        # Fund Value = Stock Value + max(0, Contributions - Cost Basis)
+        return result_values, result_cost_basis
         
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Error getting historical fund values: {e}", exc_info=True)
-        return {}
+        return {}, {}
 
 
 @st.cache_data(ttl=300)
@@ -1436,9 +1460,9 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         # Get all contribution dates for historical fund value lookup
         contrib_dates = [c['timestamp'] for c in contributions if c['timestamp']]
         
-        # Fetch ACTUAL historical fund values from portfolio_positions
+        # Fetch ACTUAL historical fund values AND cost basis from portfolio_positions
         t0 = time.time()
-        historical_values = get_historical_fund_values(fund, contrib_dates)
+        historical_values, historical_cost_basis = get_historical_fund_values(fund, contrib_dates)
         log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='INFO')
         
         # Check if we have sufficient historical data
@@ -1475,8 +1499,9 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         total_units = 0.0
         running_total_contributions = 0.0  # Total contributions up to this point
         
-        # Track total_units at start of each day for same-day contribution NAV calculation
+        # Track state at start of each day for same-day NAV calculation
         units_at_start_of_day = 0.0
+        contributions_at_start_of_day = 0.0
         last_contribution_date = None
         
         for contrib in contributions:
@@ -1485,10 +1510,11 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             contrib_type = contrib['type']
             timestamp = contrib['timestamp']
             
-            # Same-day NAV fix
+            # Same-day NAV fix - capture state at START of each new day
             date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
             if date_str != last_contribution_date:
                 units_at_start_of_day = total_units
+                contributions_at_start_of_day = running_total_contributions
                 last_contribution_date = date_str
             
             if contributor not in contributor_units:
@@ -1540,8 +1566,13 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     # First contribution(s) - NAV = 1.0
                     nav_at_contribution = 1.0
                 elif date_str and date_str in historical_values:
-                    # We have actual fund value for this date!
-                    fund_value_at_date = historical_values[date_str]
+                    # PROPER NAV FIX: Fund Value = Stock Value + Uninvested Cash
+                    stock_value_at_date = historical_values[date_str]
+                    cost_basis_at_date = historical_cost_basis.get(date_str, 0.0)
+                    
+                    # Uninvested Cash = contributions before today that aren't yet in stocks
+                    uninvested_cash = max(0, contributions_at_start_of_day - cost_basis_at_date)
+                    fund_value_at_date = stock_value_at_date + uninvested_cash
                     
                     # Use units_at_start_of_day for same-day contributions
                     units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units

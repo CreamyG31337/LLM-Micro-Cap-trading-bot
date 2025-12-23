@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth_utils import is_authenticated, is_admin, get_user_email
 from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions
+from supabase_client import SupabaseClient
 
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")

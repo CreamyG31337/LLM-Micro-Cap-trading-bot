@@ -1466,7 +1466,20 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         
         # Fetch ACTUAL historical fund values AND cost basis from portfolio_positions
         t0 = time.time()
-        historical_values, historical_cost_basis = get_historical_fund_values(fund, contrib_dates)
+        try:
+            result = get_historical_fund_values(fund, contrib_dates)
+            # Handle case where function returns empty result (e.g., during rebuild when no data exists)
+            if not result or len(result) != 2:
+                historical_values = {}
+                historical_cost_basis = {}
+            else:
+                historical_values, historical_cost_basis = result
+        except (ValueError, TypeError) as e:
+            # Gracefully handle unpacking errors when no data exists
+            log_message(f"[{session_id}] No portfolio data available (rebuild in progress?): {e}", level='WARNING')
+            historical_values = {}
+            historical_cost_basis = {}
+        
         log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='INFO')
         
         # Check if we have sufficient historical data

@@ -1625,7 +1625,7 @@ with tab8:
             level_filter = st.selectbox(
                 "Level",
                 options=["All", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-                index=2  # Default to "INFO"
+                index=0  # Default to "All"
             )
         
         with col3:
@@ -1668,8 +1668,8 @@ with tab8:
             search=search_text if search_text else None
         )
         
-        # Apply sort order (default from file is newest first)
-        if sort_order == "Oldest First" and logs:
+        # Apply sort order (default from file is oldest first)
+        if sort_order == "Newest First" and logs:
             logs = list(reversed(logs))
         
         # Display logs in a code block for better formatting

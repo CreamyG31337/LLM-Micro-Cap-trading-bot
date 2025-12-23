@@ -1761,6 +1761,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             
             # Same-day NAV fix - capture state at START of each new day
             date_str = timestamp.strftime('%Y-%m-%d') if timestamp else None
+            if date_str != last_contribution_date:
+                units_at_start_of_day = total_units
+                contributions_at_start_of_day = running_total_contributions
+                last_contribution_date = date_str
             
             if contributor not in contributor_units:
                 contributor_units[contributor] = 0.0
@@ -1773,35 +1777,40 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             
             # Determine NAV for this transaction
             # CRITICAL: Use PREVIOUS DAY'S Closing NAV to avoid self-referential inflation
-            # If we use same-day, and that same day had a huge asset jump (from the cash we just put in buying assets),
-            # NAV skyrockets and we get fewer units.
-            nav_at_transaction = 10.0 # Default
-            nav_source = "default"
+            # For same-day contributions, use start-of-day units to ensure fairness
+            nav_at_transaction = 1.0  # Default to inception NAV
+            nav_source = "inception"
             
-            if total_units > 0:
-                prev_date_str = (timestamp - timedelta(days=1)).strftime('%Y-%m-%d') if timestamp else None
+            # Use start-of-day units for same-day fairness
+            # All contributors on the same day should get the same NAV
+            units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units
+            
+            if units_for_nav > 0:
+                # Try to find historical fund value, looking back up to 7 days
+                # This handles weekends, holidays, gaps in trading, and infrequent position updates
+                found_nav = False
                 
-                # 1. Try Previous Day (Standard Practice)
-                if prev_date_str and prev_date_str in historical_values and historical_values[prev_date_str] > 0:
-                    nav_at_transaction = historical_values[prev_date_str] / total_units
-                    nav_source = f"previous_day ({prev_date_str})"
+                for days_back in range(1, 8):
+                    check_date = (timestamp - timedelta(days=days_back)).strftime('%Y-%m-%d') if timestamp else None
+                    
+                    if check_date and check_date in historical_values and historical_values[check_date] > 0:
+                        nav_at_transaction = historical_values[check_date] / units_for_nav
+                        nav_source = f"lookback_{days_back}d ({check_date})"
+                        found_nav = True
+                        break
                 
-                # 2. Fallback to Same Day (Only if prev day missing, e.g. Day 1)
-                elif date_str and date_str in historical_values and historical_values[date_str] > 0:
-                     nav_at_transaction = historical_values[date_str] / total_units
-                     nav_source = f"same_day ({date_str})"
-                
-                # 3. Fallback to Time-Weighted Estimation
-                elif first_timestamp and timestamp:
-                    elapsed_days = (timestamp - first_timestamp).days
-                    time_fraction = elapsed_days / total_days
-                    nav_at_transaction = 1.0 + (growth_rate - 1.0) * time_fraction
-                    nav_source = "time_weighted"
-                
-                # 4. Last Resort
-                else:
-                    nav_at_transaction = (running_total_contributions / total_units)
-                    nav_source = "average_cost"
+                # If no historical data found in past 7 days, use fallback strategies
+                if not found_nav:
+                    # Try time-weighted estimation if we have timestamp info
+                    if first_timestamp and timestamp:
+                        elapsed_days = (timestamp - first_timestamp).days
+                        time_fraction = elapsed_days / total_days
+                        nav_at_transaction = 1.0 + (growth_rate - 1.0) * time_fraction
+                        nav_source = "time_weighted"
+                    # Last resort: average cost NAV
+                    elif units_for_nav > 0:
+                        nav_at_transaction = (running_total_contributions / units_for_nav)
+                        nav_source = "average_cost"
             
             if contrib_type == 'withdrawal':
                 contributor_data[contributor]['withdrawals'] += amount

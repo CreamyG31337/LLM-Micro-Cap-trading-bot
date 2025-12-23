@@ -52,7 +52,8 @@ from streamlit_utils import (
     get_investor_count,
     get_investor_allocations,
     get_user_investment_metrics,
-    get_fund_thesis_data
+    get_fund_thesis_data,
+    get_realized_pnl
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -1273,6 +1274,135 @@ def main():
                     f"${unrealized_pnl:,.2f}",
                     help="Unrealized Profit/Loss from currently held positions."
                 )
+        
+        # Close P&L section (realized gains/losses from closed positions)
+        st.markdown("---")
+        st.markdown("### Closed Positions P&L")
+        
+        # Calculate realized P&L
+        realized_pnl_data = get_realized_pnl(fund=fund_filter)
+        total_realized = realized_pnl_data.get('total_realized_pnl', 0.0)
+        num_closed = realized_pnl_data.get('num_closed_trades', 0)
+        winning_trades = realized_pnl_data.get('winning_trades', 0)
+        losing_trades = realized_pnl_data.get('losing_trades', 0)
+        trades_by_ticker = realized_pnl_data.get('trades_by_ticker', {})
+        
+        if num_closed > 0:
+            # Display primary metrics (matching console app structure)
+            pnl_col1, pnl_col2, pnl_col3, pnl_col4 = st.columns(4)
+            
+            with pnl_col1:
+                st.metric(
+                    "Total Realized P&L (CAD)",
+                    f"${total_realized:,.2f}",
+                    help="Total realized profit/loss from all closed positions (matches console app)."
+                )
+            
+            with pnl_col2:
+                total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
+                st.metric(
+                    "Total Shares Sold",
+                    f"{total_shares_sold:,.2f}",
+                    help="Total number of shares sold across all closed positions."
+                )
+            
+            with pnl_col3:
+                total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
+                st.metric(
+                    "Total Proceeds (CAD)",
+                    f"${total_proceeds:,.2f}",
+                    help="Total proceeds from all sales in CAD."
+                )
+            
+            with pnl_col4:
+                avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
+                st.metric(
+                    "Avg Sell Price (CAD)",
+                    f"${avg_sell_price:,.2f}",
+                    help="Average sell price per share across all closed positions."
+                )
+            
+            # Secondary metrics row
+            pnl_col5, pnl_col6, pnl_col7, pnl_col8 = st.columns(4)
+            
+            with pnl_col5:
+                st.metric(
+                    "Closed Trades",
+                    f"{num_closed}",
+                    help="Total number of closed positions (sell transactions)."
+                )
+            
+            with pnl_col6:
+                st.metric(
+                    "Winning Trades",
+                    f"{winning_trades}",
+                    help="Number of closed positions with positive realized P&L."
+                )
+            
+            with pnl_col7:
+                st.metric(
+                    "Losing Trades",
+                    f"{losing_trades}",
+                    help="Number of closed positions with negative realized P&L."
+                )
+            
+            with pnl_col8:
+                win_rate = (winning_trades / num_closed * 100) if num_closed > 0 else 0.0
+                st.metric(
+                    "Win Rate",
+                    f"{win_rate:.1f}%",
+                    help="Percentage of closed trades with positive P&L."
+                )
+            
+            # Show breakdown by ticker if there are multiple tickers
+            if len(trades_by_ticker) > 1:
+                st.markdown("#### Realized P&L by Ticker")
+                
+                # Create DataFrame for display (handle new structure)
+                ticker_data = []
+                for ticker, data in trades_by_ticker.items():
+                    if isinstance(data, dict):
+                        # New structure with detailed breakdown
+                        ticker_data.append({
+                            'Ticker': ticker,
+                            'Realized P&L (CAD)': data.get('realized_pnl', 0.0),
+                            'Shares Sold': data.get('shares_sold', 0.0),
+                            'Proceeds (CAD)': data.get('proceeds', 0.0)
+                        })
+                    else:
+                        # Legacy structure (just a number)
+                        ticker_data.append({
+                            'Ticker': ticker,
+                            'Realized P&L (CAD)': float(data),
+                            'Shares Sold': 0.0,
+                            'Proceeds (CAD)': 0.0
+                        })
+                
+                ticker_pnl_df = pd.DataFrame(ticker_data)
+                ticker_pnl_df = ticker_pnl_df.sort_values('Realized P&L (CAD)', ascending=False)
+                
+                # Format and color-code
+                def color_pnl(val):
+                    try:
+                        if isinstance(val, str):
+                            val = float(val.replace('$', '').replace(',', ''))
+                        if val > 0:
+                            return 'color: #10b981'
+                        elif val < 0:
+                            return 'color: #ef4444'
+                    except:
+                        pass
+                    return ''
+                
+                styled_pnl_df = ticker_pnl_df.style.format({
+                    'Realized P&L (CAD)': '${:,.2f}',
+                    'Shares Sold': '{:,.2f}',
+                    'Proceeds (CAD)': '${:,.2f}'
+                }).map(color_pnl, subset=['Realized P&L (CAD)'])
+                
+                st.dataframe(styled_pnl_df, use_container_width=True, height=300)
+        else:
+            st.info("No closed positions found. Realized P&L will appear here once you close positions.")
 
         # Investment Thesis section (near top, after metrics)
         if fund_filter:

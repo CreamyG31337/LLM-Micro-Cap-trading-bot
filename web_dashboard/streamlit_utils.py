@@ -265,6 +265,186 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
+def get_realized_pnl(fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Dict[str, Any]:
+    """Calculate realized P&L from closed positions (SELL trades).
+    
+    Args:
+        fund: Optional fund name to filter by
+        _cache_version: Cache version for invalidation
+        
+    Returns:
+        Dictionary with (matching console app's get_realized_pnl_summary() structure):
+        - total_realized_pnl: Total realized P&L in CAD
+        - total_shares_sold: Total shares sold across all closed positions
+        - total_proceeds: Total proceeds from all sales in CAD
+        - average_sell_price: Average sell price per share in CAD
+        - num_closed_trades: Number of closed trades (sell transactions)
+        - winning_trades: Number of winning trades (positive P&L)
+        - losing_trades: Number of losing trades (negative P&L)
+        - trades_by_ticker: Dictionary with ticker breakdown (realized_pnl, shares_sold, proceeds)
+    """
+    from exchange_rates_utils import get_exchange_rate_for_date_from_db
+    
+    client = get_supabase_client()
+    if not client:
+        return {
+            'total_realized_pnl': 0.0,
+            'total_shares_sold': 0.0,
+            'total_proceeds': 0.0,
+            'average_sell_price': 0.0,
+            'num_closed_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'trades_by_ticker': {}
+        }
+    
+    try:
+        # Get all trades, filter for SELL trades
+        trades_df = get_trade_log(limit=10000, fund=fund, _cache_version=_cache_version)
+        
+        if trades_df.empty:
+            return {
+                'total_realized_pnl': 0.0,
+                'total_shares_sold': 0.0,
+                'total_proceeds': 0.0,
+                'average_sell_price': 0.0,
+                'num_closed_trades': 0,
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'trades_by_ticker': {}
+            }
+        
+        # Filter for SELL trades
+        # Check action column or infer from reason
+        if 'action' in trades_df.columns:
+            sell_trades = trades_df[trades_df['action'].str.upper() == 'SELL'].copy()
+        elif 'reason' in trades_df.columns:
+            # Infer from reason field
+            sell_trades = trades_df[
+                trades_df['reason'].str.upper().str.contains('SELL', na=False)
+            ].copy()
+        else:
+            # No way to identify sells, return empty
+            return {
+                'total_realized_pnl': 0.0,
+                'total_shares_sold': 0.0,
+                'total_proceeds': 0.0,
+                'average_sell_price': 0.0,
+                'num_closed_trades': 0,
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'trades_by_ticker': {}
+            }
+        
+        if sell_trades.empty:
+            return {
+                'total_realized_pnl': 0.0,
+                'total_shares_sold': 0.0,
+                'total_proceeds': 0.0,
+                'average_sell_price': 0.0,
+                'num_closed_trades': 0,
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'trades_by_ticker': {}
+            }
+        
+        # Calculate realized P&L with currency conversion
+        # Match console app's get_realized_pnl_summary() structure
+        total_realized_pnl = 0.0
+        total_shares_sold = 0.0
+        total_proceeds = 0.0
+        trades_by_ticker = {}
+        winning_trades = 0
+        losing_trades = 0
+        
+        for _, trade in sell_trades.iterrows():
+            pnl_val = trade.get('pnl', 0)
+            pnl = 0.0 if pd.isna(pnl_val) else float(pnl_val)
+            
+            shares = float(trade.get('shares', 0) or 0)
+            price = float(trade.get('price', 0) or 0)
+            proceeds = shares * price
+            
+            # Get currency and convert to CAD if needed
+            currency = str(trade.get('currency', 'CAD')).upper() if pd.notna(trade.get('currency')) else 'CAD'
+            
+            if currency == 'USD':
+                # Get exchange rate for trade date
+                trade_date = pd.to_datetime(trade.get('date'))
+                if pd.notna(trade_date):
+                    rate = get_exchange_rate_for_date_from_db(
+                        trade_date,
+                        'USD',
+                        'CAD'
+                    )
+                    if rate:
+                        pnl_cad = pnl * rate
+                        proceeds_cad = proceeds * rate
+                    else:
+                        # Fallback to 1.42 if no rate found
+                        pnl_cad = pnl * 1.42
+                        proceeds_cad = proceeds * 1.42
+                else:
+                    pnl_cad = pnl * 1.42
+                    proceeds_cad = proceeds * 1.42
+            else:
+                pnl_cad = pnl
+                proceeds_cad = proceeds
+            
+            total_realized_pnl += pnl_cad
+            total_shares_sold += shares
+            total_proceeds += proceeds_cad
+            
+            # Track by ticker
+            ticker = str(trade.get('ticker', 'UNKNOWN'))
+            if ticker not in trades_by_ticker:
+                trades_by_ticker[ticker] = {
+                    'realized_pnl': 0.0,
+                    'shares_sold': 0.0,
+                    'proceeds': 0.0
+                }
+            trades_by_ticker[ticker]['realized_pnl'] += pnl_cad
+            trades_by_ticker[ticker]['shares_sold'] += shares
+            trades_by_ticker[ticker]['proceeds'] += proceeds_cad
+            
+            # Count winning/losing trades
+            if pnl_cad > 0:
+                winning_trades += 1
+            elif pnl_cad < 0:
+                losing_trades += 1
+        
+        # Calculate average sell price (matching console app)
+        average_sell_price = total_proceeds / total_shares_sold if total_shares_sold > 0 else 0.0
+        
+        return {
+            'total_realized_pnl': total_realized_pnl,
+            'total_shares_sold': total_shares_sold,
+            'total_proceeds': total_proceeds,
+            'average_sell_price': average_sell_price,
+            'num_closed_trades': len(sell_trades),
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'trades_by_ticker': trades_by_ticker
+        }
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error calculating realized P&L: {e}", exc_info=True)
+        return {
+            'total_realized_pnl': 0.0,
+            'total_shares_sold': 0.0,
+            'total_proceeds': 0.0,
+            'average_sell_price': 0.0,
+            'num_closed_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'trades_by_ticker': {}
+        }
+
+
+@log_execution_time()
+@st.cache_data(ttl=300)
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
     client = get_supabase_client()

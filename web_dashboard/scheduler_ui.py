@@ -14,6 +14,59 @@ from datetime import datetime
 from typing import Optional
 
 
+def get_display_timezone():
+    """Get the timezone to use for display.
+    
+    First checks user preference, then falls back to system timezone.
+    """
+    try:
+        from user_preferences import get_user_timezone
+        user_tz = get_user_timezone()
+        if user_tz:
+            # Try to use user's preferred timezone
+            try:
+                import pytz
+                return pytz.timezone(user_tz)
+            except Exception:
+                # Fallback if pytz can't parse it
+                pass
+    except ImportError:
+        # user_preferences module not available
+        pass
+    except Exception:
+        # Error getting preference, fallback to system timezone
+        pass
+    
+    # Fallback to system timezone
+    return datetime.now().astimezone().tzinfo
+
+
+def format_datetime_local(dt: Optional[datetime]) -> str:
+    """Format a datetime in user's preferred timezone (or local) for display.
+    
+    Args:
+        dt: Datetime to format (can be in any timezone)
+        
+    Returns:
+        Formatted string in user's preferred timezone
+    """
+    if dt is None:
+        return "N/A"
+    
+    # Ensure datetime is timezone-aware
+    if dt.tzinfo is None:
+        # If no timezone info, assume UTC
+        from datetime import timezone
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    # Convert to display timezone (user preference or system default)
+    display_tz = get_display_timezone()
+    local_dt = dt.astimezone(display_tz)
+    
+    # Format with timezone abbreviation
+    return local_dt.strftime('%Y-%m-%d %H:%M:%S %Z')
+
+
 def render_scheduler_admin():
     """Render the scheduler admin interface."""
     
@@ -52,7 +105,8 @@ def render_scheduler_admin():
                 
                 with col1:
                     if job['next_run']:
-                        st.write(f"📅 **Next run:** {job['next_run'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                        next_run_str = format_datetime_local(job['next_run'])
+                        st.write(f"📅 **Next run:** {next_run_str}")
                     else:
                         st.write("📅 **Next run:** Paused")
                     st.write(f"🔄 **Schedule:** {job['trigger']}")
@@ -83,7 +137,7 @@ def render_scheduler_admin():
                     st.write("**Recent executions:**")
                     for log in logs:
                         status_icon = "✅" if log['success'] else "❌"
-                        time_str = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                        time_str = format_datetime_local(log['timestamp'])
                         duration = f"({log['duration_ms']}ms)" if log['duration_ms'] else ""
                         st.text(f"{status_icon} {time_str} {duration} - {log['message'][:50]}")
                 else:

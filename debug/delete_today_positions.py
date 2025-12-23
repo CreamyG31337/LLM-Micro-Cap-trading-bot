@@ -15,20 +15,19 @@ def delete_positions_for_date(date_str):
         # Check count first
         response = client.supabase.table("portfolio_positions") \
             .select("count", count="exact") \
-            .limit(1) \
-            .ilike("date", f"{date_str}%") \
+            .gte("date", f"{date_str}T00:00:00") \
+            .lt("date", f"{date_str}T23:59:59") \
             .execute()
             
         count = response.count
         print(f"Found {count} records for date {date_str}")
         
         if count > 0:
-            # Delete records
-            # Note: supabase-py delete requires a matching condition
-            # We use ilike to match the date string prefix (YYYY-MM-DD)
+            # Delete records using date range
             del_response = client.supabase.table("portfolio_positions") \
                 .delete() \
-                .ilike("date", f"{date_str}%") \
+                .gte("date", f"{date_str}T00:00:00") \
+                .lt("date", f"{date_str}T23:59:59") \
                 .execute()
                 
             print(f"Successfully deleted records for {date_str}")

@@ -2030,13 +2030,20 @@ with tab9:
         # AI Settings Configuration
         st.subheader("Configuration")
         
-        # Get current settings from environment or use defaults
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-        default_model = os.getenv("OLLAMA_MODEL", "llama3")
+        # Get current settings from environment or database
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
         temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
         timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
         enabled = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
+        
+        # Get default model from database, fallback to env var
+        try:
+            from settings import get_system_setting, set_system_setting
+            default_model = get_system_setting("ai_default_model", os.getenv("OLLAMA_MODEL", "llama3"))
+        except Exception as e:
+            st.warning(f"Could not load default model from database: {e}")
+            default_model = os.getenv("OLLAMA_MODEL", "llama3")
         
         col1, col2 = st.columns(2)
         
@@ -2045,19 +2052,48 @@ with tab9:
             new_base_url = st.text_input(
                 "Ollama Base URL",
                 value=ollama_base_url,
-                help="URL where Ollama API is accessible (e.g., http://ollama:11434 for Docker network)"
+                help="URL where Ollama API is accessible (e.g., http://localhost:11434)",
+                disabled=True  # Read-only, set via environment
             )
             
-            new_default_model = st.text_input(
-                "Default Model",
-                value=default_model,
-                help="Default model name for new users (e.g., llama3, mistral)"
-            )
+            # Model selection dropdown (populated from available models)
+            if check_ollama_health() and models:
+                # Ensure current default is in the list
+                model_options = models if default_model in models else [default_model] + models
+                current_index = model_options.index(default_model) if default_model in model_options else 0
+                
+                new_default_model = st.selectbox(
+                    "Default AI Model",
+                    options=model_options,
+                    index=current_index,
+                    help="Default model for new users and system prompts"
+                )
+                
+                # Save button for model selection
+                if new_default_model != default_model:
+                    if st.button("💾 Save Default Model", type="primary"):
+                        try:
+                            from settings import set_system_setting
+                            if set_system_setting("ai_default_model", new_default_model, "Default AI model for new users"):
+                                st.toast(f"✅ Default model set to {new_default_model}", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error("Failed to save model setting")
+                        except Exception as e:
+                            st.error(f"Error saving model: {e}")
+            else:
+                st.text_input(
+                    "Default Model",
+                    value=default_model,
+                    help="Default model name (Ollama not connected - cannot list models)",
+                    disabled=True
+                )
             
             new_enabled = st.checkbox(
                 "AI Assistant Enabled",
                 value=enabled,
-                help="Enable or disable AI assistant globally"
+                help="Enable or disable AI assistant globally",
+                disabled=True  # Read-only, set via environment
             )
         
         with col2:

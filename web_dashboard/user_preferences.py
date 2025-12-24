@@ -247,12 +247,36 @@ def clear_preference_cache():
 def get_user_ai_model() -> Optional[str]:
     """Get user's preferred AI model.
     
+    Fallback order:
+    1. User's personal preference (from user_profiles.preferences)
+    2. System default (from system_settings table)
+    3. Environment variable OLLAMA_MODEL
+    4. Hardcoded default 'llama3'
+    
     Returns:
         Model name (e.g., 'llama3', 'mistral') or None
     """
-    # Check environment variable first as default
-    default_model = os.getenv("OLLAMA_MODEL", "llama3")
-    return get_user_preference('ai_model', default=default_model)
+    # Check user preference first
+    user_model = get_user_preference('ai_model', default=None)
+    if user_model:
+        return user_model
+    
+    # Fall back to system setting
+    try:
+        from settings import get_system_setting
+        system_model = get_system_setting("ai_default_model", default=None)
+        if system_model:
+            return system_model
+    except Exception as e:
+        logger.warning(f"Could not load system default model: {e}")
+    
+    # Fall back to environment variable
+    env_model = os.getenv("OLLAMA_MODEL")
+    if env_model:
+        return env_model
+    
+    # Final fallback
+    return "llama3"
 
 
 def set_user_ai_model(model: str) -> bool:

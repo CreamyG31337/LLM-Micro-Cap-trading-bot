@@ -15,7 +15,7 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}
       - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_ENABLED=${OLLAMA_ENABLED:-true}
     networks:
       - trading-network

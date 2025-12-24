@@ -780,24 +780,94 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
                 # Get unique combinations
                 unique_combos = df[['date_normalized', 'currency_normalized']].drop_duplicates()
                 
-                # Build rate lookup dataframe
+                # BULK FETCH all needed rates in one query instead of 170+ individual queries
                 rate_list = []
-                for _, row in unique_combos.iterrows():
-                    date_val = row['date_normalized']
-                    curr_val = row['currency_normalized']
-                    if curr_val != display_currency.upper():
-                        rate = get_exchange_rate_for_display(curr_val, display_currency, date_val)
-                        if rate is None:
-                            # Fallback rates
-                            if curr_val == 'USD' and display_currency.upper() == 'CAD':
+                unique_dates = unique_combos['date_normalized'].unique()
+                unique_currencies = unique_combos['currency_normalized'].unique()
+                
+                # Build SQL to fetch all rates at once
+                try:
+                    client = get_supabase_client()
+                    if client and len(unique_dates) > 0:
+                        # Query for all rates matching our date range and currencies
+                        min_date = pd.to_datetime(unique_dates.min()).strftime('%Y-%m-%d')
+                        max_date = pd.to_datetime(unique_dates.max()).strftime('%Y-%m-%d')
+                        
+                        # Fetch rates for both USD<->CAD directions
+                        rates_response = client.supabase.table('exchange_rates').select('*') \
+                            .gte('date', min_date) \
+                            .lte('date', max_date) \
+                            .execute()
+                        
+                        # Build lookup dictionary from bulk results
+                        rates_dict = {}
+                        if rates_response.data:
+                            for row in rates_response.data:
+                                date_key = pd.to_datetime(row['date']).normalize()
+                                from_curr = row.get('from_currency', '').upper()
+                                to_curr = row.get('to_currency', '').upper()
+                                rate_val = float(row.get('rate', 1.0))
+                                rates_dict[(date_key, from_curr, to_curr)] = rate_val
+                        
+                        # Now build rate_list using the bulk-fetched data
+                        for _, row in unique_combos.iterrows():
+                            date_val = row['date_normalized']
+                            curr_val = row['currency_normalized']
+                            
+                            if curr_val == display_currency.upper():
+                                rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': 1.0})
+                            else:
+                                # Try direct rate from bulk data
+                                rate = rates_dict.get((date_val, curr_val, display_currency.upper()))
+                                
+                                # Try inverse rate
+                                if rate is None:
+                                    inverse_rate = rates_dict.get((date_val, display_currency.upper(), curr_val))
+                                    if inverse_rate and inverse_rate != 0:
+                                        rate = 1.0 / inverse_rate
+                                
+                                # Fallback to default rates if not found
+                                if rate is None:
+                                    if curr_val == 'USD' and display_currency.upper() == 'CAD':
+                                        rate = 1.35
+                                    elif curr_val == 'CAD' and display_currency.upper() == 'USD':
+                                        rate = 1.0 / 1.35
+                                    else:
+                                        rate = 1.0
+                                
+                                rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': rate})
+                    else:
+                        # Fallback if client not available
+                        for _, row in unique_combos.iterrows():
+                            date_val = row['date_normalized']
+                            curr_val = row['currency_normalized']
+                            if curr_val == display_currency.upper():
+                                rate = 1.0
+                            elif curr_val == 'USD' and display_currency.upper() == 'CAD':
                                 rate = 1.35
                             elif curr_val == 'CAD' and display_currency.upper() == 'USD':
                                 rate = 1.0 / 1.35
                             else:
                                 rate = 1.0
-                        rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': float(rate)})
-                    else:
-                        rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': 1.0})
+                            rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': rate})
+                
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error bulk fetching exchange rates: {e}")
+                    # Fallback to defaults
+                    for _, row in unique_combos.iterrows():
+                        date_val = row['date_normalized']
+                        curr_val = row['currency_normalized']
+                        if curr_val == display_currency.upper():
+                            rate = 1.0
+                        elif curr_val == 'USD' and display_currency.upper() == 'CAD':
+                            rate = 1.35
+                        elif curr_val == 'CAD' and display_currency.upper() == 'USD':
+                            rate = 1.0 / 1.35
+                        else:
+                            rate = 1.0
+                        rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': rate})
                 
                 # Create rate lookup df and merge (FULLY VECTORIZED - no apply!)
                 rate_df = pd.DataFrame(rate_list)

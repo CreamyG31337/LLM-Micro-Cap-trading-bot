@@ -994,6 +994,17 @@ with tab4:
                                         # Note: Lock file is NOT removed here when process starts successfully
                                         # The lock file will be cleaned up by the process when it completes
                                         # or can be manually removed if the process crashes
+                                    except Exception as e:
+                                        st.error(f"Error during rebuild setup: {e}")
+                                        import traceback
+                                        with st.expander("Exception details"):
+                                            st.code(traceback.format_exc())
+                                        # Remove lock file if setup failed
+                                        try:
+                                            if lock_file_path.exists():
+                                                lock_file_path.unlink()
+                                        except Exception:
+                                            pass
             
             st.divider()
             

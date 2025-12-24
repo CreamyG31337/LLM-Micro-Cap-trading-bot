@@ -939,42 +939,61 @@ with tab4:
                                         except Exception as lock_error:
                                             st.warning(f"Could not create lock file: {lock_error}. Proceeding anyway...")
                                         
-                                        with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take up to 30 minutes."):
-                                            # Run rebuild script from project root
-                                            # Use absolute path to script and run from project root
-                                            result = subprocess.run(
-                                                ["python", str(rebuild_script), data_dir, rebuild_fund],
-                                                cwd=str(project_root),  # Run from project root so relative paths work
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=1800  # 30 minute timeout
-                                            )
+                                        # Run rebuild script in background so it continues even if user navigates away
+                                        # Use Popen with start_new_session to detach from Streamlit process
+                                        import subprocess as sp
                                         
-                                            if result.returncode == 0:
-                                                st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
-                                                st.success("All portfolio positions regenerated with proper columns.")
-                                                st.rerun()
-                                            else:
-                                                st.error(f"Rebuild failed with exit code {result.returncode}")
-                                                with st.expander("Error details"):
-                                                    if result.stderr:
-                                                        st.code("STDERR:\n" + result.stderr)
-                                                    if result.stdout:
-                                                        st.code("STDOUT:\n" + result.stdout)
-                                    except subprocess.TimeoutExpired:
-                                        st.error("Rebuild timed out after 30 minutes. Check logs for details.")
-                                    except Exception as e:
-                                        st.error(f"Error rebuilding portfolio: {e}")
-                                        import traceback
-                                        with st.expander("Exception details"):
-                                            st.code(traceback.format_exc())
-                                    finally:
-                                        # Remove lock file when done
+                                        st.info(f"🚀 Starting rebuild for {rebuild_fund}... This will run in the background.")
+                                        st.info("💡 You can navigate away or log out - the rebuild will continue running.")
+                                        st.info("📋 Check Application Logs tab to monitor progress.")
+                                        
                                         try:
-                                            if lock_file_path.exists():
-                                                lock_file_path.unlink()
-                                        except Exception:
-                                            pass
+                                            # Start process in background with new session (detached from Streamlit)
+                                            # This ensures it continues even if user logs out or navigates away
+                                            if os.name == 'nt':  # Windows
+                                                # Windows: Use CREATE_NEW_PROCESS_GROUP to detach
+                                                process = sp.Popen(
+                                                    ["python", str(rebuild_script), data_dir, rebuild_fund],
+                                                    cwd=str(project_root),
+                                                    stdout=sp.PIPE,
+                                                    stderr=sp.PIPE,
+                                                    text=True,
+                                                    creationflags=sp.CREATE_NEW_PROCESS_GROUP
+                                                )
+                                            else:  # Unix/Linux/Docker
+                                                # Unix: Use start_new_session to detach from parent
+                                                process = sp.Popen(
+                                                    ["python", str(rebuild_script), data_dir, rebuild_fund],
+                                                    cwd=str(project_root),
+                                                    stdout=sp.PIPE,
+                                                    stderr=sp.PIPE,
+                                                    text=True,
+                                                    start_new_session=True
+                                                )
+                                            
+                                            st.success(f"✅ Rebuild started in background (PID: {process.pid})")
+                                            st.info("📋 The rebuild will continue running even if you navigate away.")
+                                            st.info("💡 Check the Application Logs tab to see progress updates.")
+                                            st.info("⏱️  This may take up to 30 minutes for large funds.")
+                                            
+                                            # Don't wait for completion - let it run in background
+                                            # User can check logs to see when it completes
+                                            # Lock file will be removed when process completes (handled by script cleanup)
+                                            
+                                        except Exception as e:
+                                            st.error(f"Error starting rebuild: {e}")
+                                            import traceback
+                                            with st.expander("Exception details"):
+                                                st.code(traceback.format_exc())
+                                            # Only remove lock file if we failed to start the process
+                                            try:
+                                                if lock_file_path.exists():
+                                                    lock_file_path.unlink()
+                                            except Exception:
+                                                pass
+                                        # Note: Lock file is NOT removed here when process starts successfully
+                                        # The lock file will be cleaned up by the process when it completes
+                                        # or can be manually removed if the process crashes
             
             st.divider()
             

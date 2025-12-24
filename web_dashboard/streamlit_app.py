@@ -1315,7 +1315,8 @@ def main():
                 else:
                     # Fallback to unrealized if no contribution data
                     st.metric(
-                        "Unrealized Return",
+                        f"Unrealized Return {format_currency_label(display_currency)}",
+                        f"${unrealized_pnl:,.2f}",
                         f"{unrealized_pnl_pct:+.2f}%",
                         help="Return based on currently held positions only (excludes realized gains/losses)."
                     )

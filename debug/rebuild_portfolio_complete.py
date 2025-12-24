@@ -459,6 +459,11 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         date_positions = {}  # date -> {ticker: position_data}
         running_positions = defaultdict(lambda: {'shares': Decimal('0'), 'cost': Decimal('0'), 'currency': 'USD'})
         
+        # FIFO lot tracking for P&L calculation
+        from collections import deque
+        lots_by_ticker = defaultdict(deque)  # ticker -> deque([(shares, price), ...])
+        trades_to_update_pnl = []  # List of trades that need P&L backfilled
+        
         for trading_day in all_trading_days_list:
             # Process trades for this specific day only
             day_trades = trade_df[trade_df['Date'].dt.date == trading_day]
@@ -478,7 +483,37 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     reason_str = str(reason).upper()
                 
                 if 'SELL' in reason_str:
-                    # Simple FIFO: reduce shares and cost proportionally
+                    # Calculate realized P&L using FIFO
+                    remaining_to_sell = shares
+                    total_cost_basis = Decimal('0')
+                    
+                    while remaining_to_sell > 0 and lots_by_ticker[ticker]:
+                        lot_shares, lot_price = lots_by_ticker[ticker][0]
+                        
+                        if lot_shares <= remaining_to_sell:
+                            # Consume entire lot
+                            total_cost_basis += lot_shares * lot_price
+                            remaining_to_sell -= lot_shares
+                            lots_by_ticker[ticker].popleft()
+                        else:
+                            # Partially consume lot
+                            total_cost_basis += remaining_to_sell * lot_price
+                            lots_by_ticker[ticker][0] = (lot_shares - remaining_to_sell, lot_price)
+                            remaining_to_sell = Decimal('0')
+                    
+                    # Calculate realized P&L
+                    proceeds = shares * price
+                    realized_pnl = proceeds - total_cost_basis
+                    
+                    # Store for database update (only if pnl is currently 0)
+                    trades_to_update_pnl.append({
+                        'ticker': ticker,
+                        'date': trade['Date'].isoformat(),
+                        'shares': float(shares),
+                        'pnl': float(realized_pnl)
+                    })
+                    
+                    # Simple FIFO: reduce shares and cost proportionally (existing logic)
                     if running_positions[ticker]['shares'] > 0:
                         cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
                         running_positions[ticker]['shares'] -= shares
@@ -490,6 +525,9 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                             running_positions[ticker]['cost'] = Decimal('0')
                 else:
                     # Default to BUY for all other trades (including imported ones)
+                    # Add to FIFO lots
+                    lots_by_ticker[ticker].append((shares, price))
+                    
                     running_positions[ticker]['shares'] += shares
                     running_positions[ticker]['cost'] += cost
                     # Handle NaN currency values
@@ -508,6 +546,48 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         
         position_calc_time = time.time() - position_calc_start
         print_info(f"   Position calculation complete ({position_calc_time:.2f}s)")
+        
+        # Batch update trade_log with calculated P&L (only for trades with pnl=0)
+        if trades_to_update_pnl and fund_name:
+            print_info(f"{_safe_emoji('💰')} Backfilling P&L for {len(trades_to_update_pnl)} SELL trades...")
+            print_info(f"   (Only updating trades with P&L = 0, preserving existing values)")
+            
+            # Get repository's Supabase client
+            supabase_client = None
+            if hasattr(repository, 'supabase'):
+                supabase_client = repository.supabase
+            elif hasattr(repository, 'supabase_repo') and hasattr(repository.supabase_repo, 'supabase'):
+                supabase_client = repository.supabase_repo.supabase
+            
+            if supabase_client:
+                updated_count = 0
+                skipped_count = 0
+                
+                for trade_info in trades_to_update_pnl:
+                    try:
+                        # ONLY update if current pnl is 0 (preserve existing values)
+                        result = supabase_client.table("trade_log").update({
+                            'pnl': trade_info['pnl']
+                        }).eq('fund', fund_name) \
+                          .eq('ticker', trade_info['ticker']) \
+                          .eq('date', trade_info['date']) \
+                          .eq('shares', trade_info['shares']) \
+                          .eq('pnl', 0) \
+                          .execute()
+                        
+                        if result.data and len(result.data) > 0:
+                            updated_count += 1
+                        else:
+                            skipped_count += 1
+                    except Exception as e:
+                        print_warning(f"   Could not update P&L for {trade_info['ticker']}: {e}")
+                
+                print_success(f"   ✅ Backfilled P&L for {updated_count} trades")
+                if skipped_count > 0:
+                    print_info(f"   Skipped {skipped_count} trades (P&L already calculated)")
+            else:
+                print_warning("   Supabase client not available - P&L not updated in trade_log")
+
         
         # Generate portfolio snapshots for each trading day
         snapshots_created = 0

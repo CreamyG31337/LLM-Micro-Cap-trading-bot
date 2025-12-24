@@ -1196,7 +1196,67 @@ with tab6:
                             
                             # Calculate cost basis and P&L
                             cost_basis = trade_shares * trade_price
-                            pnl = 0  # P&L is calculated differently for sells
+                            pnl = 0
+                            
+                            # Calculate P&L for SELL trades using FIFO
+                            if trade_action == "SELL":
+                                try:
+                                    from collections import deque
+                                    from decimal import Decimal
+                                    
+                                    # Get existing trades for this ticker (FIFO order)
+                                    existing_trades = client.supabase.table("trade_log") \
+                                        .select("shares, price, action, reason") \
+                                        .eq("fund", trade_fund) \
+                                        .eq("ticker", trade_ticker) \
+                                        .order("date") \
+                                        .execute()
+                                    
+                                    # Build FIFO lot queue
+                                    lots = deque()
+                                    for t in (existing_trades.data or []):
+                                        is_buy = (t.get('action') == 'BUY' or 'BUY' in str(t.get('reason', '')).upper())
+                                        is_sell = (t.get('action') == 'SELL' or 'SELL' in str(t.get('reason', '')).upper())
+                                        
+                                        if is_buy:
+                                            lots.append((Decimal(str(t['shares'])), Decimal(str(t['price']))))
+                                        elif is_sell:
+                                            # Remove from lots (FIFO)
+                                            remaining = Decimal(str(t['shares']))
+                                            while remaining > 0 and lots:
+                                                lot_shares, lot_price = lots[0]
+                                                if lot_shares <= remaining:
+                                                    remaining -= lot_shares
+                                                    lots.popleft()
+                                                else:
+                                                    lots[0] = (lot_shares - remaining, lot_price)
+                                                    remaining = Decimal('0')
+                                    
+                                    # Calculate P&L for this SELL
+                                    sell_shares = Decimal(str(trade_shares))
+                                    total_cost = Decimal('0')
+                                    remaining = sell_shares
+                                    
+                                    while remaining > 0 and lots:
+                                        lot_shares, lot_price = lots[0]
+                                        if lot_shares <= remaining:
+                                            total_cost += lot_shares * lot_price
+                                            remaining -= lot_shares
+                                            lots.popleft()
+                                        else:
+                                            total_cost += remaining * lot_price
+                                            lots[0] = (lot_shares - remaining, lot_price)
+                                            remaining = Decimal('0')
+                                    
+                                    proceeds = Decimal(str(trade_shares * trade_price))
+                                    pnl = float(proceeds - total_cost)
+                                    
+                                except Exception as calc_error:
+                                    # If P&L calculation fails, log but continue with pnl=0
+                                    import logging
+                                    logging.getLogger(__name__).warning(f"Could not calculate P&L for SELL: {calc_error}")
+                                    pnl = 0
+
                             
                             # Insert trade
                             trade_data = {
@@ -1351,6 +1411,67 @@ Time: December 19, 2025 09:30 EST""",
                                     "currency": final_currency
                                 }).execute()
                             
+                            # Calculate P&L for SELL trades using FIFO
+                            final_pnl = float(trade.pnl) if trade.pnl else 0
+                            
+                            if trade.action == "SELL":
+                                try:
+                                    from collections import deque
+                                    from decimal import Decimal
+                                    
+                                    # Get existing trades for this ticker (FIFO order)
+                                    existing_trades = client.supabase.table("trade_log") \
+                                        .select("shares, price, action, reason") \
+                                        .eq("fund", email_fund) \
+                                        .eq("ticker", trade.ticker) \
+                                        .order("date") \
+                                        .execute()
+                                    
+                                    # Build FIFO lot queue
+                                    lots = deque()
+                                    for t in (existing_trades.data or []):
+                                        is_buy = (t.get('action') == 'BUY' or 'BUY' in str(t.get('reason', '')).upper())
+                                        is_sell = (t.get('action') == 'SELL' or 'SELL' in str(t.get('reason', '')).upper())
+                                        
+                                        if is_buy:
+                                            lots.append((Decimal(str(t['shares'])), Decimal(str(t['price']))))
+                                        elif is_sell:
+                                            # Remove from lots (FIFO)
+                                            remaining = Decimal(str(t['shares']))
+                                            while remaining > 0 and lots:
+                                                lot_shares, lot_price = lots[0]
+                                                if lot_shares <= remaining:
+                                                    remaining -= lot_shares
+                                                    lots.popleft()
+                                                else:
+                                                    lots[0] = (lot_shares - remaining, lot_price)
+                                                    remaining = Decimal('0')
+                                    
+                                    # Calculate P&L for this SELL
+                                    sell_shares = Decimal(str(trade.shares))
+                                    total_cost = Decimal('0')
+                                    remaining = sell_shares
+                                    
+                                    while remaining > 0 and lots:
+                                        lot_shares, lot_price = lots[0]
+                                        if lot_shares <= remaining:
+                                            total_cost += lot_shares * lot_price
+                                            remaining -= lot_shares
+                                            lots.popleft()
+                                        else:
+                                            total_cost += remaining * lot_price
+                                            lots[0] = (lot_shares - remaining, lot_price)
+                                            remaining = Decimal('0')
+                                    
+                                    proceeds = Decimal(str(float(trade.shares) * float(trade.price)))
+                                    final_pnl = float(proceeds - total_cost)
+                                    
+                                except Exception as calc_error:
+                                    # If P&L calculation fails, log but continue with pnl=0
+                                    import logging
+                                    logging.getLogger(__name__).warning(f"Could not calculate P&L for email SELL: {calc_error}")
+                                    final_pnl = 0
+                            
                             # Insert the trade
                             trade_data = {
                                 "fund": email_fund,
@@ -1358,11 +1479,12 @@ Time: December 19, 2025 09:30 EST""",
                                 "shares": float(trade.shares),
                                 "price": float(trade.price),
                                 "cost_basis": float(trade.cost_basis),
-                                "pnl": float(trade.pnl) if trade.pnl else 0,
+                                "pnl": final_pnl,
                                 "reason": trade.reason or f"EMAIL TRADE - {trade.action}",
                                 "currency": final_currency,
                                 "date": trade.timestamp.isoformat()
                             }
+
                             
                             client.supabase.table("trade_log").insert(trade_data).execute()
                             

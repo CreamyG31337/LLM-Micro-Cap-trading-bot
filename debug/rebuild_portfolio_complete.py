@@ -230,6 +230,16 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     """
     start_time = time.time()
     try:
+        # Initialize logging first so all log messages are captured
+        # This is critical for web UI visibility - without this, logs won't appear
+        try:
+            sys.path.insert(0, str(project_root / 'web_dashboard'))
+            from log_handler import setup_logging
+            setup_logging()
+        except Exception as e:
+            # If logging setup fails, print to console as fallback
+            print(f"Warning: Could not initialize logging: {e}")
+        
         # Detect Docker environment
         is_docker = os.path.exists('/.dockerenv') or os.getcwd().startswith('/app')
         

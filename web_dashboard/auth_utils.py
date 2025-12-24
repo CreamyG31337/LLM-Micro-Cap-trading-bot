@@ -375,8 +375,10 @@ def refresh_token_if_needed() -> bool:
                 if new_expires_at:
                     st.session_state.token_expires_at = new_expires_at
                 
-                # Update cookie with new token (will be done on next page interaction)
-                # For now, we'll update it in the background
+                # Mark that cookie needs to be updated with new token
+                # This will be handled in the main app to avoid redirect loops
+                st.session_state._cookie_needs_update = new_access_token
+                
                 return True
             else:
                 return False

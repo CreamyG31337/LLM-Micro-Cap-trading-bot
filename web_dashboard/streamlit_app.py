@@ -741,6 +741,22 @@ def main():
             # If refresh check fails, continue anyway (token might still be valid)
             pass
     
+    # ===== COOKIE UPDATE STRATEGY =====
+    # We don't update the cookie automatically during active use to avoid disruptive redirects.
+    # Instead:
+    # 1. During active use: Session state is maintained, so cookie staleness doesn't matter
+    # 2. On page reload: Cookie is checked and restored (see below)
+    # 3. When restoring from cookie: We update it with the current valid token (no redirect needed)
+    # 
+    # This means the cookie might be slightly stale during active use, but that's fine since
+    # we rely on session state. The cookie is only needed for restoration after page reload.
+    
+    # Clear the update flag - we'll handle cookie updates when restoring from cookie instead
+    if "_cookie_needs_update" in st.session_state:
+        # Token was refreshed, but we'll update cookie on next page load/restore
+        # This avoids disruptive redirects during active use
+        del st.session_state._cookie_needs_update
+    
     # ===== SESSION PERSISTENCE VIA COOKIES =====
     # Cookie is set in auth_callback.html (regular HTML page, not iframe)
     # Cookie is read here using st.context.cookies (server-side, Streamlit 1.37+)
@@ -765,11 +781,41 @@ def main():
                     user_id_from_token = user_data.get("sub")
                     user_email_from_token = user_data.get("email")
                     
-                    if exp > int(time.time()):
+                    current_time = int(time.time())
+                    time_until_expiry = exp - current_time
+                    
+                    if exp > current_time:
                         # Token valid, restore session (skip redirect since we're restoring from cookie)
                         # Note: refresh_token is not stored in cookie for security, so refresh won't work
                         # after page reload, but token refresh will work during active sessions
                         set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp)
+                        
+                        # Update cookie proactively on page load to keep it fresh
+                        # Refresh if cookie has <= 30 minutes left (keeps it fresh)
+                        # This ensures cookie stays valid and prevents logout on next page load
+                        # Redirects only happen on page load, not during active use
+                        if time_until_expiry <= 1800:  # 30 minutes
+                            # Cookie token is getting stale, refresh it proactively
+                            from auth_utils import refresh_token_if_needed
+                            try:
+                                if refresh_token_if_needed():
+                                    # Token was refreshed, update cookie with new token
+                                    # This happens on page load, so redirect is acceptable
+                                    new_token = st.session_state.get("user_token")
+                                    if new_token and new_token != auth_token:
+                                        # New token is different, update cookie
+                                        import urllib.parse
+                                        encoded_token = urllib.parse.quote(new_token, safe='')
+                                        redirect_url = f'/set_cookie.html?token={encoded_token}'
+                                        st.markdown(
+                                            f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
+                                            unsafe_allow_html=True
+                                        )
+                                        st.write("Refreshing session...")
+                                        st.stop()
+                            except Exception:
+                                # If refresh fails, continue with restored session
+                                pass
                         
                         # Verify user_id was set correctly
                         restored_user_id = get_user_id()
@@ -1053,7 +1099,7 @@ def main():
         from log_handler import log_message
         import time
         
-        log_message(f"[{session_id}] PERF: Starting dashboard data load", level='INFO')
+        log_message(f"[{session_id}] PERF: Starting dashboard data load for fund: {fund_filter}", level='INFO')
         data_load_start = time.time()
         
         # Get user's display currency preference (needed for all calculations)

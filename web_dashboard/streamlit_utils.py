@@ -401,6 +401,11 @@ def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACH
     
     CACHED: 5 min TTL. Bump CACHE_VERSION to force immediate invalidation.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    if fund:
+        logger.info(f"Loading current positions for fund: {fund}")
+    
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
@@ -451,6 +456,11 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version:
     
     CACHED: Permanently. Bump CACHE_VERSION to invalidate after bug fixes.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    if fund:
+        logger.info(f"Loading trade log for fund: {fund}")
+    
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
@@ -670,6 +680,11 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
 @st.cache_data(ttl=300)
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
+    import logging
+    logger = logging.getLogger(__name__)
+    if fund:
+        logger.info(f"Loading cash balances for fund: {fund}")
+    
     client = get_supabase_client()
     if not client:
         return {"CAD": 0.0, "USD": 0.0}
@@ -751,14 +766,16 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
     if not fund:
         raise ValueError("Fund name is required - cannot load all funds' data")
     
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Loading portfolio value over time for fund: {fund}")
+    
     client = get_supabase_client()
     if not client:
         return pd.DataFrame()
     
     try:
         import time
-        import logging
-        logger = logging.getLogger(__name__)
         start_time = time.time()
         
         # Calculate date cutoff if days parameter provided
@@ -1423,11 +1440,17 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                     stock_value_at_date = historical_values[date_str]
                     cost_basis_at_date = historical_cost_basis.get(date_str, 0.0)
                     
-                    # PROPER NAV FIX: Fund Value = Stock Value + Uninvested Cash
-                    # Uninvested Cash = contributions before today that aren't yet in stocks
-                    # Using contributions_at_start_of_day ensures same-day contributors get same NAV
-                    uninvested_cash = max(0, contributions_at_start_of_day - cost_basis_at_date)
-                    fund_value_at_date = stock_value_at_date + uninvested_cash
+                    unit_price_source = "stock_value_only"
+                    
+                    # NOTE: We previously calculated 'uninvested_cash' here as (contributions - cost_basis).
+                    # However, due to data inconsistencies (e.g. mixed currencies, missing cost basis), this 
+                    # often produced "phantom cash" (e.g. $1970 vs actual $300), inflating the NAV artificially.
+                    # This caused under-dilution (78% ownership vs 50%).
+                    # We now use Stock Value Only (like get_user_investment_metrics) which is closer to reality 
+                    # when historical cash data is missing.
+                    
+                    fund_value_at_date = stock_value_at_date
+                    nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else 1.0
                     
                     # Use units_at_start_of_day for same-day contributions
                     units_for_nav = units_at_start_of_day if units_at_start_of_day > 0 else total_units

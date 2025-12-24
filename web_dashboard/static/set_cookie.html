@@ -64,7 +64,7 @@
                 clearCookie('auth_token');
                 window.location.replace(window.location.origin + '/');
             } else if (token) {
-                // Set the cookie (login)
+                // Set the cookie (login or refresh)
                 setCookie('auth_token', token, 7); // 7 days expiration
                 window.location.replace(window.location.origin + '/');
             } else {

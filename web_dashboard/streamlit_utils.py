@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 
 # Load environment variables

@@ -417,7 +417,10 @@ def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACH
         offset = 0
         
         while True:
-            query = client.supabase.table("latest_positions").select("*")
+            # Join with securities table to get sector, industry, market_cap, country for filtering
+            query = client.supabase.table("latest_positions").select(
+                "*, securities(sector, industry, market_cap, country)"
+            )
             if fund:
                 query = query.eq("fund", fund)
             

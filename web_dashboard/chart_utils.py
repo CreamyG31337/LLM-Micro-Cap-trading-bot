@@ -407,6 +407,9 @@ def create_portfolio_value_chart(
                     # Use solid or dashed lines based on preference
                     line_style = {} if use_solid_lines else {'dash': 'dash'}
                     
+                    # S&P 500 visible by default, others hidden in legend
+                    visibility = True if bench_key == 'sp500' else 'legendonly'
+                    
                     fig.add_trace(go.Scatter(
                         x=bench_data['Date'],
                         y=bench_data['normalized'],
@@ -414,6 +417,7 @@ def create_portfolio_value_chart(
                         name=f"{config['name']} ({bench_return:+.2f}%)",
                         line=dict(color=config['color'], width=3, **line_style),
                         opacity=0.8,
+                        visible=visibility,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
         
@@ -927,6 +931,9 @@ def create_individual_holdings_chart(
                     # Use solid or dashed lines based on preference
                     line_style = {} if use_solid_lines else {'dash': 'dash'}
                     
+                    # S&P 500 visible by default, others hidden in legend
+                    visibility = True if bench_key == 'sp500' else 'legendonly'
+                    
                     fig.add_trace(go.Scatter(
                         x=bench_data['Date'],
                         y=bench_data['normalized'],
@@ -934,6 +941,7 @@ def create_individual_holdings_chart(
                         name=f"{config['name']} ({bench_return:+.2f}%)",
                         line=dict(color=config['color'], width=3, **line_style),
                         opacity=0.8,
+                        visible=visibility,
                         hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
                     ))
     

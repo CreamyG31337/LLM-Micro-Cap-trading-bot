@@ -1502,28 +1502,11 @@ def main():
         if not portfolio_value_df.empty:
             st.markdown("#### Portfolio Performance (Baseline 100)")
             
-            # Chart controls
-            col1, col2 = st.columns([2, 1])
+            # Chart controls (benchmark selector removed - all benchmarks now available in legend)
+            use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
             
-            with col1:
-                # Benchmark selection
-                available_benchmarks = {
-                    'sp500': 'S&P 500',
-                    'qqq': 'Nasdaq-100 (QQQ)',
-                    'russell2000': 'Russell 2000',
-                    'vti': 'Total Market (VTI)'
-                }
-                selected_benchmarks = st.multiselect(
-                    "📈 Benchmarks to Compare",
-                    options=list(available_benchmarks.keys()),
-                    default=['sp500'],  # Default to S&P 500 only for performance
-                    format_func=lambda x: available_benchmarks[x],
-                    help="Select benchmarks to compare against your portfolio performance"
-                )
-            
-            with col2:
-                # Add solid lines toggle for mobile users
-                use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, help="Use solid lines instead of dashed for better mobile readability")
+            # All benchmarks are now passed to the chart (S&P 500 visible, others in legend)
+            all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
             
             # Use normalized performance index (baseline 100) like the console app
             log_message(f"[{session_id}] PERF: Creating portfolio value chart", level='INFO')
@@ -1532,7 +1515,7 @@ def main():
                 portfolio_value_df, 
                 fund_filter,
                 show_normalized=True,  # Show percentage change from baseline
-                show_benchmarks=selected_benchmarks if selected_benchmarks else None,  # Use user selection
+                show_benchmarks=all_benchmarks,  # All benchmarks (S&P 500 visible, others in legend)
                 show_weekend_shading=True,
                 use_solid_lines=use_solid,
                 display_currency=display_currency
@@ -1571,15 +1554,82 @@ def main():
                     holdings_df = get_individual_holdings_performance(fund_filter, days=days)
                 
                 if not holdings_df.empty:
+                    # Stock filter dropdown
+                    # Dynamically build sector/industry options from data (gracefully handle nulls)
+                    sectors = sorted([s for s in holdings_df.get('sector', pd.Series()).dropna().unique() if s])
+                    industries = sorted([i for i in holdings_df.get('industry', pd.Series()).dropna().unique() if i])
+                    
+                    filter_options = [
+                        "All stocks",
+                        "Winners (↑ total %)",
+                        "Losers (↓ total %)",
+                        "Daily winners (↑ 1-day %)",
+                        "Daily losers (↓ 1-day %)",
+                        "Top 5 performers",
+                        "Bottom 5 performers",
+                        "Canadian (CAD)",
+                        "American (USD)",
+                        "Stocks only",
+                        "ETFs only"
+                    ]
+                    
+                    # Add sector options if data exists
+                    if sectors:
+                        filter_options.append("--- By Sector ---")
+                        filter_options.extend([f"Sector: {s}" for s in sectors])
+                    
+                    # Add industry options if data exists
+                    if industries:
+                        filter_options.append("--- By Industry ---")
+                        filter_options.extend([f"Industry: {i}" for i in industries])
+                    
+                    stock_filter = st.selectbox(
+                        "📈 Stock filter",
+                        options=filter_options,
+                        index=0,
+                        help="Filter the stocks shown in the chart below"
+                    )
+                    
+                    # Apply filter
+                    filtered_df = holdings_df.copy()
+                    
+                    if stock_filter == "Winners (↑ total %)":
+                        filtered_df = filtered_df[filtered_df.get('return_pct', 0) > 0]
+                    elif stock_filter == "Losers (↓ total %)":
+                        filtered_df = filtered_df[filtered_df.get('return_pct', 0) < 0]
+                    elif stock_filter == "Daily winners (↑ 1-day %)":
+                        filtered_df = filtered_df[filtered_df.get('daily_pnl_pct', 0) > 0]
+                    elif stock_filter == "Daily losers (↓ 1-day %)":
+                        filtered_df = filtered_df[filtered_df.get('daily_pnl_pct', 0) < 0]
+                    elif stock_filter == "Top 5 performers":
+                        filtered_df = filtered_df.nlargest(5, 'return_pct') if 'return_pct' in filtered_df.columns else filtered_df
+                    elif stock_filter == "Bottom 5 performers":
+                        filtered_df = filtered_df.nsmallest(5, 'return_pct') if 'return_pct' in filtered_df.columns else filtered_df
+                    elif stock_filter == "Canadian (CAD)":
+                        filtered_df = filtered_df[filtered_df.get('currency', '') == 'CAD']
+                    elif stock_filter == "American (USD)":
+                        filtered_df = filtered_df[filtered_df.get('currency', '') == 'USD']
+                    elif stock_filter == "Stocks only":
+                        filtered_df = filtered_df[~filtered_df.get('ticker', '').str.contains('ETF', case=False, na=False)]
+                    elif stock_filter == "ETFs only":
+                        filtered_df = filtered_df[filtered_df.get('ticker', '').str.contains('ETF', case=False, na=False)]
+                    elif stock_filter.startswith("Sector: "):
+                        sector_name = stock_filter.replace("Sector: ", "")
+                        filtered_df = filtered_df[filtered_df.get('sector', '') == sector_name]
+                    elif stock_filter.startswith("Industry: "):
+                        industry_name = stock_filter.replace("Industry: ", "")
+                        filtered_df = filtered_df[filtered_df.get('industry', '') == industry_name]
+                    # Skip separator lines
+                    elif stock_filter.startswith("---"):
+                        pass  # No filter applied
+                    
                     from chart_utils import create_individual_holdings_chart
-                    # Use same benchmark selection as main chart (or default to S&P 500)
-                    holdings_benchmarks = selected_benchmarks if selected_benchmarks else ['sp500']
                     holdings_fig = create_individual_holdings_chart(
-                        holdings_df,
+                        filtered_df,
                         fund_name=fund_filter,
-                        show_benchmarks=holdings_benchmarks,
+                        show_benchmarks=all_benchmarks,  # Use same benchmarks as main chart
                         show_weekend_shading=True,
-                        use_solid_lines=use_solid  # Use same setting as main chart
+                        use_solid_lines=use_solid
                     )  
                     st.plotly_chart(holdings_fig, use_container_width=True, key="individual_holdings_chart")
                     

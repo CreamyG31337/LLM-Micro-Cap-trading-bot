@@ -10,10 +10,11 @@ Define all background jobs here. Each job should:
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone, timedelta, date, time as dt_time
 from typing import Dict, Any, Optional
 from decimal import Decimal
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scheduler.scheduler_core import log_job_execution
 
@@ -337,8 +338,23 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                     logger.info(f"ℹ️ {message}")
                     return
         
-        # Log the target date (use local time for logging, market logic uses ET)
-        logger.info(f"Target date for price update: {target_date} (local time: {datetime.now()})")
+        # Log the target date with timezone info for debugging
+        from datetime import datetime as dt
+        import pytz
+        et_tz = pytz.timezone('America/New_York')
+        now_et = dt.now(et_tz)
+        logger.info(f"Target date for price update: {target_date}")
+        logger.info(f"Current time: {now_et.strftime('%Y-%m-%d %I:%M %p %Z')} (ET)")
+        logger.info(f"Server time: {datetime.now()} (local)")
+        
+        # CRITICAL: Double-check that target_date is actually a trading day
+        # This prevents the job from running on holidays/weekends even if cron triggers it
+        if not market_holidays.is_trading_day(target_date, market="any"):
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Target date {target_date} is not a trading day - skipping update"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
         
         # Get all production funds from database (skip test/dev funds)
         funds_result = client.supabase.table("funds")\
@@ -466,11 +482,14 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         exchange_rate = Decimal('1.35')
                         logger.warning(f"  Missing exchange rate for {target_date}, using fallback {exchange_rate}")
                 
-                # Fetch current prices for all tickers
+                # OPTIMIZATION: Fetch current prices for all tickers in parallel
                 current_prices = {}
                 failed_tickers = []
+                rate_limit_errors = 0
                 
-                for ticker in current_holdings.keys():
+                # Helper function to fetch price for a single ticker
+                def fetch_ticker_price(ticker: str) -> tuple[str, Optional[Decimal], Optional[str]]:
+                    """Fetch price for a single ticker. Returns (ticker, price, error_type)."""
                     try:
                         # Fetch price data for target date
                         start_dt = datetime.combine(target_date, datetime.min.time())
@@ -480,21 +499,68 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         if result and result.df is not None and not result.df.empty:
                             # Get the most recent close price
                             latest_price = Decimal(str(result.df['Close'].iloc[-1]))
-                            current_prices[ticker] = latest_price
-                            logger.debug(f"    {ticker}: ${latest_price}")
+                            return (ticker, latest_price, None)
                         else:
                             # Try to get from cache or previous day
                             cached_data = price_cache.get_cached_price(ticker)
                             if cached_data is not None and not cached_data.empty:
                                 latest_price = Decimal(str(cached_data['Close'].iloc[-1]))
-                                current_prices[ticker] = latest_price
-                                logger.warning(f"    {ticker}: Using cached price ${latest_price}")
+                                return (ticker, latest_price, 'cached')
                             else:
-                                failed_tickers.append(ticker)
-                                logger.warning(f"    {ticker}: Could not fetch price")
+                                return (ticker, None, 'no_data')
                     except Exception as e:
-                        failed_tickers.append(ticker)
-                        logger.warning(f"    {ticker}: Error fetching price - {e}")
+                        error_str = str(e).lower()
+                        # Check for rate limiting errors (429, too many requests, etc.)
+                        if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
+                            return (ticker, None, 'rate_limit')
+                        else:
+                            return (ticker, None, 'error')
+                
+                # Fetch prices in parallel using ThreadPoolExecutor
+                # Use conservative max_workers=5 for free-tier APIs (Yahoo Finance) to avoid rate limiting
+                tickers_list = list(current_holdings.keys())
+                max_workers = min(5, len(tickers_list))
+                
+                if len(tickers_list) > 0:
+                    logger.info(f"  Fetching prices for {len(tickers_list)} tickers in parallel (max_workers={max_workers})...")
+                    price_fetch_start = time.time()
+                    
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        # Submit all tasks
+                        future_to_ticker = {executor.submit(fetch_ticker_price, ticker): ticker for ticker in tickers_list}
+                        
+                        # Process completed tasks
+                        completed = 0
+                        for future in as_completed(future_to_ticker):
+                            completed += 1
+                            ticker, price, error_type = future.result()
+                            
+                            if price is not None:
+                                current_prices[ticker] = price
+                                if error_type == 'cached':
+                                    logger.debug(f"    {ticker}: ${price} (cached)")
+                                else:
+                                    logger.debug(f"    {ticker}: ${price}")
+                            else:
+                                if error_type == 'rate_limit':
+                                    rate_limit_errors += 1
+                                    if rate_limit_errors == 1:
+                                        logger.warning(f"  ⚠️  Rate limiting detected for {ticker}")
+                                    failed_tickers.append(ticker)
+                                elif error_type == 'no_data':
+                                    logger.warning(f"    {ticker}: Could not fetch price (no data)")
+                                    failed_tickers.append(ticker)
+                                else:
+                                    logger.warning(f"    {ticker}: Error fetching price")
+                                    failed_tickers.append(ticker)
+                    
+                    price_fetch_time = time.time() - price_fetch_start
+                    avg_time_per_ticker = price_fetch_time / len(tickers_list) if tickers_list else 0
+                    logger.info(f"  Parallel fetch complete: {len(current_prices)} succeeded, {len(failed_tickers)} failed ({price_fetch_time:.2f}s, ~{avg_time_per_ticker:.2f}s per ticker)")
+                    
+                    if rate_limit_errors > 0:
+                        logger.warning(f"  ⚠️  Rate limiting detected: {rate_limit_errors} tickers hit 429 errors")
+                        logger.warning(f"     Consider: reducing max_workers, adding delays, or using API keys")
                 
                 if failed_tickers:
                     logger.warning(f"  Failed to fetch prices for {len(failed_tickers)} tickers: {failed_tickers}")
@@ -544,6 +610,16 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         pnl_base = unrealized_pnl
                         conversion_rate = Decimal('1.0')
                     
+                    # CRITICAL: Create datetime with ET timezone, then convert to UTC for storage
+                    # This ensures the timestamp is correctly interpreted regardless of server timezone
+                    from datetime import datetime as dt
+                    import pytz
+                    et_tz = pytz.timezone('America/New_York')
+                    # Create datetime at 4 PM ET (market close) for the target date
+                    et_datetime = et_tz.localize(dt.combine(target_date, dt_time(16, 0)))
+                    # Convert to UTC for storage (Supabase stores timestamps in UTC)
+                    utc_datetime = et_datetime.astimezone(pytz.UTC)
+                    
                     updated_positions.append({
                         'fund': fund_name,
                         'ticker': ticker,
@@ -552,7 +628,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         'cost_basis': float(cost_basis),
                         'pnl': float(unrealized_pnl),
                         'currency': holding['currency'],
-                        'date': datetime.combine(target_date, datetime.min.time().replace(hour=16, minute=0)).isoformat(),
+                        'date': utc_datetime.isoformat(),
                         # New: Pre-converted values in base currency
                         'base_currency': base_currency,
                         'total_value_base': float(market_value_base),

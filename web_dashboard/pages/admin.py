@@ -6,9 +6,18 @@ Centralized admin functionality for managing users, funds, scheduled tasks, and 
 
 import streamlit as st
 import sys
+import os
+import time
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
+
+# Try to import psutil for process checking (optional)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -823,33 +832,103 @@ with tab4:
                             st.error(f"No trades found in database for {rebuild_fund}")
                         else:
                             import subprocess
+                            import tempfile
                             
-                            # The rebuild script still needs a data directory for CSV operations
-                            # But it will use database trades as the source
-                            data_dir = f"trading_data/funds/{rebuild_fund}"
+                            # Lock file to prevent concurrent execution
+                            # Use a global lock file (not per-fund) to prevent any concurrent rebuilds
+                            lock_file_path = Path(tempfile.gettempdir()) / "portfolio_rebuild.lock"
                             
-                            try:
-                                with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take several minutes."):
-                                    # Run rebuild script
-                                    result = subprocess.run(
-                                        ["python", "debug/rebuild_portfolio_complete.py", data_dir, rebuild_fund],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=600  # 10 minute timeout
-                                    )
+                            # Check if rebuild is already running
+                            rebuild_running = False
+                            if lock_file_path.exists():
+                                # Check if the process in the lock file is still running
+                                try:
+                                    with open(lock_file_path, 'r') as f:
+                                        pid = int(f.read().strip())
                                     
-                                    if result.returncode == 0:
-                                        st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
-                                        st.success("All portfolio positions regenerated with proper columns.")
-                                        st.rerun()
+                                    if PSUTIL_AVAILABLE:
+                                        if psutil.pid_exists(pid):
+                                            # Check if it's actually the rebuild script
+                                            try:
+                                                proc = psutil.Process(pid)
+                                                cmdline = ' '.join(proc.cmdline())
+                                                if 'rebuild_portfolio_complete.py' in cmdline:
+                                                    rebuild_running = True
+                                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                                # Process doesn't exist or we can't access it - remove stale lock
+                                                try:
+                                                    lock_file_path.unlink()
+                                                except:
+                                                    pass
+                                        else:
+                                            # Process doesn't exist - remove stale lock
+                                            try:
+                                                lock_file_path.unlink()
+                                            except:
+                                                pass
                                     else:
-                                        st.error(f"Rebuild failed with exit code {result.returncode}")
-                                        with st.expander("Error details"):
-                                            st.code(result.stderr)
-                            except subprocess.TimeoutExpired:
-                                st.error("Rebuild timed out after 10 minutes. Check logs for details.")
-                            except Exception as e:
-                                st.error(f"Error rebuilding portfolio: {e}")
+                                        # psutil not available - just check if lock file exists and is recent (< 30 min)
+                                        # This is a fallback for systems without psutil
+                                        try:
+                                            lock_age = time.time() - lock_file_path.stat().st_mtime
+                                            if lock_age < 1800:  # Lock file is less than 30 minutes old
+                                                rebuild_running = True
+                                            else:
+                                                # Stale lock file - remove it
+                                                lock_file_path.unlink()
+                                        except:
+                                            pass
+                                except (ValueError, FileNotFoundError, OSError):
+                                    # Lock file is invalid or missing - remove it
+                                    try:
+                                        lock_file_path.unlink()
+                                    except:
+                                        pass
+                            
+                            if rebuild_running:
+                                st.warning("⚠️ A portfolio rebuild is already running. Please wait for it to complete before starting another.")
+                            else:
+                                # The rebuild script still needs a data directory for CSV operations
+                                # But it will use database trades as the source
+                                data_dir = f"trading_data/funds/{rebuild_fund}"
+                                
+                                try:
+                                    # Create lock file with current process PID
+                                    # Note: On Windows, we'll use a simpler approach since fcntl isn't available
+                                    try:
+                                        with open(lock_file_path, 'w') as f:
+                                            f.write(str(os.getpid()))
+                                    except Exception as lock_error:
+                                        st.warning(f"Could not create lock file: {lock_error}. Proceeding anyway...")
+                                    
+                                    with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take up to 30 minutes."):
+                                        # Run rebuild script
+                                        result = subprocess.run(
+                                            ["python", "debug/rebuild_portfolio_complete.py", data_dir, rebuild_fund],
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=1800  # 30 minute timeout
+                                        )
+                                        
+                                        if result.returncode == 0:
+                                            st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
+                                            st.success("All portfolio positions regenerated with proper columns.")
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Rebuild failed with exit code {result.returncode}")
+                                            with st.expander("Error details"):
+                                                st.code(result.stderr)
+                                except subprocess.TimeoutExpired:
+                                    st.error("Rebuild timed out after 30 minutes. Check logs for details.")
+                                except Exception as e:
+                                    st.error(f"Error rebuilding portfolio: {e}")
+                                finally:
+                                    # Remove lock file when done
+                                    try:
+                                        if lock_file_path.exists():
+                                            lock_file_path.unlink()
+                                    except Exception:
+                                        pass
             
             st.divider()
             

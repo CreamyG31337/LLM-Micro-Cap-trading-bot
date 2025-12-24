@@ -795,15 +795,15 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
                         
                         # Fetch rates for both USD<->CAD directions
                         rates_response = client.supabase.table('exchange_rates').select('*') \
-                            .gte('date', min_date) \
-                            .lte('date', max_date) \
+                            .gte('timestamp', min_date) \
+                            .lte('timestamp', max_date) \
                             .execute()
                         
                         # Build lookup dictionary from bulk results
                         rates_dict = {}
                         if rates_response.data:
                             for row in rates_response.data:
-                                date_key = pd.to_datetime(row['date']).normalize()
+                                date_key = pd.to_datetime(row['timestamp']).normalize()
                                 from_curr = row.get('from_currency', '').upper()
                                 to_curr = row.get('to_currency', '').upper()
                                 rate_val = float(row.get('rate', 1.0))

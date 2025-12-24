@@ -700,6 +700,11 @@ def format_currency_label(currency_code: str) -> str:
 def main():
     """Main dashboard function"""
     
+    # Initialize chat context manager
+    if 'chat_context' not in st.session_state:
+        from chat_context import ChatContextManager
+        st.session_state.chat_context = ChatContextManager()
+    
     # Generate or retrieve session ID for log tracking
     if 'session_id' not in st.session_state:
         import uuid
@@ -950,6 +955,27 @@ def main():
                                 st.write(f"Then enter your email: `{user_email}`")
             except Exception:
                 pass  # Silently fail if we can't check
+    
+    st.sidebar.markdown("---")
+    
+    # Chat Assistant Context UI
+    try:
+        from chat_context import ChatContextManager
+        from ollama_client import check_ollama_health
+        
+        if check_ollama_health():
+            chat_context = st.session_state.chat_context
+            chat_context.render_context_ui(sidebar=True)
+            
+            # Add link to AI Assistant page
+            st.sidebar.page_link("pages/ai_assistant.py", label="🤖 AI Assistant", icon="💬")
+        else:
+            with st.sidebar.expander("💬 Chat Assistant", expanded=False):
+                st.warning("AI Assistant unavailable")
+                st.caption("Ollama is not running or not accessible.")
+    except Exception as e:
+        # Silently fail if chat context not available
+        pass
     
     st.sidebar.markdown("---")
     
@@ -1488,6 +1514,18 @@ def main():
             if thesis_data:
                 st.markdown("---")
                 with st.expander("📋 Investment Thesis", expanded=True):
+                    # Add Thesis to Chat button
+                    col_btn1, col_btn2 = st.columns([1, 10])
+                    with col_btn1:
+                        from chat_context import ContextItemType
+                        chat_context = st.session_state.chat_context
+                        if st.button("💬 Add to Chat", key="add_thesis_to_chat", help="Add investment thesis to AI chat context"):
+                            chat_context.add_item(ContextItemType.THESIS, fund=fund_filter)
+                            st.success("Thesis added to chat!")
+                            st.rerun()
+                    with col_btn2:
+                        st.write("")  # Spacer
+                    
                     st.markdown(f"### {thesis_data.get('title', 'Investment Thesis')}")
                     st.markdown(thesis_data.get('overview', ''))
                     # Note: Pillars will be shown near sectors chart below
@@ -1880,6 +1918,16 @@ def main():
             else:
                 display_dataframe_with_copy(positions_df, label="Current Positions", key_suffix="positions_raw", use_container_width=True, height=400)
             
+            # Add Holdings to Chat button
+            col_btn1, col_btn2 = st.columns([1, 10])
+            with col_btn1:
+                from chat_context import ContextItemType
+                chat_context = st.session_state.chat_context
+                if st.button("💬 Add to Chat", key="add_holdings_to_chat", help="Add current holdings to AI chat context"):
+                    chat_context.add_item(ContextItemType.HOLDINGS, fund=fund_filter)
+                    st.success("Holdings added to chat!")
+                    st.rerun()
+            
             # Holdings Info table - Company, Sector, Industry
             # Data is already available from latest_positions view (joins with securities table)
             st.markdown("#### Holdings Info")
@@ -2028,6 +2076,16 @@ def main():
                 display_dataframe_with_copy(styled_df, label="Recent Trades", key_suffix="recent_trades_styled", use_container_width=True, height=400)
             else:
                 display_dataframe_with_copy(recent_trades, label="Recent Trades", key_suffix="recent_trades_raw", use_container_width=True, height=400)
+            
+            # Add Trades to Chat button
+            col_btn1, col_btn2 = st.columns([1, 10])
+            with col_btn1:
+                from chat_context import ContextItemType
+                chat_context = st.session_state.chat_context
+                if st.button("💬 Add to Chat", key="add_trades_to_chat", help="Add recent trades to AI chat context"):
+                    chat_context.add_item(ContextItemType.TRADES, fund=fund_filter, metadata={'limit': 100})
+                    st.success("Trades added to chat!")
+                    st.rerun()
         else:
             st.info("No recent trades found")
         

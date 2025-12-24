@@ -109,7 +109,7 @@ with st.sidebar:
     st.markdown("---")
 
 # Create tabs for different admin sections
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "⏰ Scheduled Tasks",
     "👥 User Management", 
     "🔐 Contributor Access",
@@ -117,7 +117,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 System Status",
     "📈 Trade Entry",
     "💰 Contributions",
-    "📋 Logs"
+    "📋 Logs",
+    "🤖 AI Settings"
 ])
 
 # Tab 1: Scheduled Tasks
@@ -2000,3 +2001,119 @@ with tab8:
         st.info("The logging module may not be initialized. Check streamlit_app.py configuration.")
     except Exception as e:
         st.error(f"Error loading logs: {e}")
+
+# Tab 9: AI Settings
+with tab9:
+    st.header("🤖 AI Assistant Settings")
+    st.caption("Configure Ollama AI integration and performance parameters")
+    
+    try:
+        from ollama_client import check_ollama_health, list_available_models, get_ollama_client
+        
+        # Check Ollama connection
+        st.subheader("Connection Status")
+        if check_ollama_health():
+            st.success("✅ Ollama API is reachable")
+            
+            # List available models
+            models = list_available_models()
+            if models:
+                st.info(f"Available models: {', '.join(models)}")
+            else:
+                st.warning("No models found. Pull a model first (e.g., `ollama pull llama3`)")
+        else:
+            st.error("❌ Cannot connect to Ollama API")
+            st.info("Make sure Ollama is running and accessible at the configured URL.")
+        
+        st.markdown("---")
+        
+        # AI Settings Configuration
+        st.subheader("Configuration")
+        
+        # Get current settings from environment or use defaults
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        default_model = os.getenv("OLLAMA_MODEL", "llama3")
+        max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
+        temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+        timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+        enabled = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("##### Base Settings")
+            new_base_url = st.text_input(
+                "Ollama Base URL",
+                value=ollama_base_url,
+                help="URL where Ollama API is accessible (e.g., http://ollama:11434 for Docker network)"
+            )
+            
+            new_default_model = st.text_input(
+                "Default Model",
+                value=default_model,
+                help="Default model name for new users (e.g., llama3, mistral)"
+            )
+            
+            new_enabled = st.checkbox(
+                "AI Assistant Enabled",
+                value=enabled,
+                help="Enable or disable AI assistant globally"
+            )
+        
+        with col2:
+            st.markdown("##### Performance Settings")
+            new_max_tokens = st.number_input(
+                "Max Tokens",
+                min_value=256,
+                max_value=8192,
+                value=max_tokens,
+                step=256,
+                help="Maximum tokens per AI response"
+            )
+            
+            new_temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=temperature,
+                step=0.1,
+                help="Model temperature (0.0 = deterministic, 2.0 = creative)"
+            )
+            
+            new_timeout = st.number_input(
+                "Request Timeout (seconds)",
+                min_value=30,
+                max_value=300,
+                value=timeout,
+                step=10,
+                help="Timeout for AI requests"
+            )
+        
+        st.markdown("---")
+        st.info("ℹ️ These settings are currently read from environment variables. "
+                "To change them, update your Docker environment variables or .env file and restart the container.")
+        
+        # Show current environment variables
+        with st.expander("📋 Current Environment Variables"):
+            st.code(f"""OLLAMA_BASE_URL={ollama_base_url}
+OLLAMA_MODEL={default_model}
+OLLAMA_MAX_TOKENS={max_tokens}
+OLLAMA_TEMPERATURE={temperature}
+OLLAMA_TIMEOUT={timeout}
+OLLAMA_ENABLED={enabled}""")
+        
+        # Test connection button
+        st.markdown("---")
+        if st.button("🔄 Test Connection", use_container_width=True):
+            if check_ollama_health():
+                st.success("✅ Connection successful!")
+            else:
+                st.error("❌ Connection failed. Check the base URL and ensure Ollama is running.")
+        
+    except ImportError as e:
+        st.error(f"Error importing Ollama client: {e}")
+        st.info("Make sure ollama_client.py is available.")
+    except Exception as e:
+        st.error(f"Error loading AI settings: {e}")
+        import traceback
+        st.code(traceback.format_exc())

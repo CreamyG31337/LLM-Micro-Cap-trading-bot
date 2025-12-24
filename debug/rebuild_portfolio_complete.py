@@ -1032,11 +1032,13 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         # Market closes at 4 PM ET, so we check if current time is after 4:30 PM ET
         # (allowing 30 min for data to settle)
         from datetime import datetime as dt
-        import pytz
         et_tz = pytz.timezone('America/New_York')
         current_time_et = dt.now(et_tz)
         market_close_time = current_time_et.replace(hour=16, minute=30, second=0, microsecond=0)
         market_has_closed = current_time_et >= market_close_time
+        
+        # Initialize final snapshot time (will be set if snapshot is created)
+        final_snapshot_time = 0.0
         
         if market_hours.is_trading_day(today) and market_has_closed:
             print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot (market closed at 4 PM ET)...")
@@ -1243,7 +1245,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         if snapshots_created > 0:
             print_info(f"         * Position object creation: {position_creation_time:.2f}s")
             print_info(f"         * Repository I/O (CSV+Supabase): {snapshot_save_time:.2f}s ({snapshot_save_time/snapshots_created*1000:.1f}ms per snapshot)")
-        if market_hours.is_trading_day(today):
+        if final_snapshot_time > 0:
             print_info(f"      - Final snapshot: {final_snapshot_time:.2f}s")
         print_info(f"   Snapshots created: {snapshots_created}")
         

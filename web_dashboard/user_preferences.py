@@ -11,6 +11,7 @@ import streamlit as st
 from typing import Optional, Any, Dict
 import logging
 import json
+import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -242,3 +243,28 @@ def clear_preference_cache():
     for key in keys_to_remove:
         del st.session_state[key]
 
+
+def get_user_ai_model() -> Optional[str]:
+    """Get user's preferred AI model.
+    
+    Returns:
+        Model name (e.g., 'llama3', 'mistral') or None
+    """
+    # Check environment variable first as default
+    default_model = os.getenv("OLLAMA_MODEL", "llama3")
+    return get_user_preference('ai_model', default=default_model)
+
+
+def set_user_ai_model(model: str) -> bool:
+    """Set user's preferred AI model.
+    
+    Args:
+        model: Model name (e.g., 'llama3', 'mistral')
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not model or not isinstance(model, str):
+        logger.warning(f"Invalid AI model: {model}")
+        return False
+    return set_user_preference('ai_model', model)

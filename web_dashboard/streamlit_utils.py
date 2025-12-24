@@ -1440,16 +1440,19 @@ def get_investor_allocations(fund: str, user_email: Optional[str] = None, is_adm
                     stock_value_at_date = historical_values[date_str]
                     cost_basis_at_date = historical_cost_basis.get(date_str, 0.0)
                     
-                    unit_price_source = "stock_value_only"
+                    unit_price_source = "stock_plus_net_cash"
                     
-                    # NOTE: We previously calculated 'uninvested_cash' here as (contributions - cost_basis).
-                    # However, due to data inconsistencies (e.g. mixed currencies, missing cost basis), this 
-                    # often produced "phantom cash" (e.g. $1970 vs actual $300), inflating the NAV artificially.
-                    # This caused under-dilution (78% ownership vs 50%).
-                    # We now use Stock Value Only (like get_user_investment_metrics) which is closer to reality 
-                    # when historical cash data is missing.
+                    # PROPER NAV FIX: Fund Value = Stock Value + Net Cash
+                    # Net Cash = Contributions - Cost Basis.
+                    # Crucially, we allow this to be NEGATIVE.
+                    # Why? If we bought stock ($8k) but contributions are delayed/missing in DB ($5k),
+                    # we have a temporary "liability" of -$3k. 
+                    # Fund Equity = $8k (Asset) - $3k (Liability) = $5k.
+                    # This prevents NAV inflation (and dilution) when records lag trades.
                     
-                    fund_value_at_date = stock_value_at_date
+                    net_cash = contributions_at_start_of_day - cost_basis_at_date
+                    fund_value_at_date = stock_value_at_date + net_cash
+                    
                     nav_at_contribution = fund_value_at_date / units_for_nav if units_for_nav > 0 else 1.0
                     
                     # Use units_at_start_of_day for same-day contributions
@@ -1997,7 +2000,16 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                     check_date = (timestamp - timedelta(days=days_back)).strftime('%Y-%m-%d') if timestamp else None
                     
                     if check_date and check_date in historical_values and historical_values[check_date] > 0:
-                        nav_at_transaction = historical_values[check_date] / units_for_nav
+                        stock_value_at_date = historical_values[check_date]
+                        cost_basis_at_date = historical_cost_basis.get(check_date, 0.0)
+                        
+                        # Apply same Logic as get_investor_allocations
+                        # Fund Value = Stock + (Contribs - Cost)
+                        # Allow negative cash flow to handle unrecorded capital injection
+                        net_cash = contributions_at_start_of_day - cost_basis_at_date
+                        fund_value_at_date = stock_value_at_date + net_cash
+                        
+                        nav_at_transaction = fund_value_at_date / units_for_nav
                         nav_source = f"lookback_{days_back}d ({check_date})"
                         found_nav = True
                         break

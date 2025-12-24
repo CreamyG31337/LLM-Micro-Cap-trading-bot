@@ -18,6 +18,8 @@ from decimal import Decimal
 from collections import defaultdict
 import pandas as pd
 import pytz
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add the parent directory to the path so we can import our modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -74,6 +76,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    start_time = time.time()
     try:
         print(f"{_safe_emoji('🔄')} Complete Portfolio Rebuild (CSV + Supabase)")
         print("=" * 60)
@@ -265,9 +268,11 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
 
         print_info(f"   Date range: {all_trading_days_list[0]} to {all_trading_days_list[-1]}")
         print_info(f"   Total trading days: {len(all_trading_days_list)}")
-        print_info(f"   Fetching prices for {len(all_tickers)} tickers...")
+        print_info(f"   Fetching prices for {len(all_tickers)} tickers in parallel...")
 
-        for ticker in all_tickers:
+        # Helper function to fetch price data for a single ticker
+        def fetch_ticker_prices(ticker: str) -> tuple[str, dict, bool]:
+            """Fetch price data for a single ticker. Returns (ticker, price_dict, success)."""
             try:
                 # Convert date objects to datetime for API compatibility
                 start_dt = datetime.combine(all_trading_days_list[0], datetime.min.time())
@@ -281,24 +286,47 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     price_cache.cache_price_data(ticker, result.df)
                     
                     # Extract prices for each trading day
-                    dates_cached = 0
+                    ticker_prices = {}
                     for trading_day in all_trading_days_list:
                         day_data = result.df[result.df.index.date == trading_day]
                         if not day_data.empty:
-                            price_cache_dict[(ticker, trading_day)] = Decimal(str(day_data['Close'].iloc[0]))
-                            dates_cached += 1
+                            ticker_prices[trading_day] = Decimal(str(day_data['Close'].iloc[0]))
                     
-                    # Only show progress for failed fetches, not every success
-                    successful_fetches += 1
+                    return (ticker, ticker_prices, True)
                 else:
-                    print_error(f"     {_safe_emoji('✗')} {ticker}: No data returned")
-                    failed_fetches += 1
+                    return (ticker, {}, False)
                     
             except Exception as e:
                 print_error(f"     {_safe_emoji('✗')} {ticker}: Fetch failed - {e}")
-                failed_fetches += 1
+                return (ticker, {}, False)
 
-        print_info(f"   Batch fetch complete: {successful_fetches} succeeded, {failed_fetches} failed")
+        # Fetch prices in parallel using ThreadPoolExecutor
+        # Use max_workers=15 to balance speed with API rate limits
+        max_workers = min(15, len(all_tickers))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all fetch tasks
+            future_to_ticker = {executor.submit(fetch_ticker_prices, ticker): ticker for ticker in all_tickers}
+            
+            # Process completed tasks as they finish
+            completed = 0
+            for future in as_completed(future_to_ticker):
+                completed += 1
+                ticker, ticker_prices, success = future.result()
+                
+                if success:
+                    # Add prices to cache dict
+                    for trading_day, price in ticker_prices.items():
+                        price_cache_dict[(ticker, trading_day)] = price
+                    successful_fetches += 1
+                    
+                    # Show progress every 5 tickers
+                    if completed % 5 == 0:
+                        print_info(f"   Progress: {completed}/{len(all_tickers)} tickers fetched...")
+                else:
+                    failed_fetches += 1
+                    print_error(f"     {_safe_emoji('✗')} {ticker}: No data returned")
+
+        print_info(f"   Parallel fetch complete: {successful_fetches} succeeded, {failed_fetches} failed")
 
         if failed_fetches > 0:
             print_error(f"   WARNING: {failed_fetches} tickers failed to fetch - rebuild may be incomplete")
@@ -323,6 +351,10 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 if pos['shares'] > 0:
                     all_held_positions[ticker] = pos
             
+            # TODO: OPTIMIZATION - Optimize position tracking algorithm
+            # Current: O(n²) - loops through all previous days for each trading day
+            # Better: O(n) - maintain running positions that persist across days
+            # Expected speedup: 10-50x for position lookups
             # Add positions from previous days that weren't sold
             for prev_day in all_trading_days_list:
                 if prev_day >= trading_day:
@@ -444,6 +476,10 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                         print(f"ERROR: unrealized_pnl conversion failed for {ticker}: {unrealized_pnl} - {e}")
                         unrealized_pnl = Decimal('0')
                     
+                    # TODO: OPTIMIZATION - Cache company names
+                    # Current: Calls get_company_name() for each position (may involve API calls)
+                    # Better: Build ticker -> company_name cache before the loop
+                    # Expected speedup: 2-5x for company name lookups
                     position_obj = Position(
                         ticker=ticker,
                         shares=position['shares'],
@@ -482,6 +518,11 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     total_value=total_value
                 )
                 
+                # TODO: OPTIMIZATION - Batch repository writes
+                # Current: Each snapshot triggers separate CSV read/write and Supabase delete+insert
+                # Better: Collect all snapshots, write CSV once at end, batch Supabase operations
+                # Expected speedup: 5-20x for I/O operations
+                # Implementation: Add save_portfolio_snapshots_batch() method to repositories
                 repository.save_portfolio_snapshot(snapshot)
                 snapshots_created += 1
                 
@@ -529,6 +570,10 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             from data.models.portfolio import Position, PortfolioSnapshot
             final_positions = []
             
+            # TODO: OPTIMIZATION - Parallel fetch for final snapshot prices
+            # Current: Fetches prices sequentially one ticker at a time
+            # Better: Use ThreadPoolExecutor like historical price fetching
+            # Expected speedup: 5-10x for final snapshot
             # Fetch current market prices for all positions
             print_info(f"   Fetching current market prices for {len(running_positions)} positions...")
             print_info(f"   Note: Positions with 0 shares will be filtered out (sold positions)")
@@ -636,15 +681,16 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         if fund_name:
             try:
                 from utils.job_tracking import mark_job_completed
-                print_info(f"{_safe_emoji('📝')} Marking {len(historical_snapshots)} dates as completed in job tracking...")
+                # Use the trading days we processed (excluding today which is handled separately)
+                historical_dates = [d for d in all_trading_days_list if d < today]
+                print_info(f"{_safe_emoji('📝')} Marking {len(historical_dates)} dates as completed in job tracking...")
                 
-                for snapshot in historical_snapshots:
-                    snapshot_date = snapshot['date'].date() if hasattr(snapshot['date'], 'date') else snapshot['date']
+                for trading_day in historical_dates:
                     # Mark as completed by 'rebuild' job
-                    mark_job_completed('rebuild_portfolio', snapshot_date, fund_name, [fund_name])
+                    mark_job_completed('rebuild_portfolio', trading_day, fund_name, [fund_name])
                 
                 # Also mark today if we created final snapshot
-                if market_holidays.is_trading_day(today, market="any"):
+                if market_hours.is_trading_day(today):
                     mark_job_completed('rebuild_portfolio', today, fund_name, [fund_name])
                 
                 print_info(f"   {_safe_emoji('✅')} Job tracking updated - web backfill will skip these dates")
@@ -652,7 +698,12 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 # Don't fail rebuild if tracking fails
                 print_warning(f"   {_safe_emoji('⚠️')}  Could not update job tracking: {tracking_error}")
         
-        _log_rebuild_progress(fund_name, f"✅ Rebuild complete: {snapshots_created} snapshots created")
+        elapsed_time = time.time() - start_time
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+        print_info(f"{_safe_emoji('⏱️')} Total rebuild time: {minutes}m {seconds}s")
+        
+        _log_rebuild_progress(fund_name, f"✅ Rebuild complete: {snapshots_created} snapshots created in {minutes}m {seconds}s")
         return True
         
     except Exception as e:

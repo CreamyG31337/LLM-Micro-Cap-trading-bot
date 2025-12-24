@@ -1782,6 +1782,12 @@ def main():
             # Data is already available from latest_positions view (joins with securities table)
             st.markdown("#### Holdings Info")
             if not positions_df.empty:
+                # Debug: Log available columns (only in development)
+                import logging
+                logger = logging.getLogger(__name__)
+                if os.environ.get('STREAMLIT_ENV') != 'production':
+                    logger.debug(f"Available columns in positions_df: {list(positions_df.columns)}")
+                
                 # Extract company, sector, industry from positions_df (already loaded from database)
                 holdings_info_cols = ['ticker']
                 col_rename = {'ticker': 'Ticker'}
@@ -1808,7 +1814,7 @@ def main():
                     holdings_info_df = holdings_info_df.fillna('N/A')
                     st.dataframe(holdings_info_df, use_container_width=True, height=300)
                 else:
-                    st.info("Company, sector, and industry data not available")
+                    st.warning("⚠️ Company, sector, and industry data not available. The database view may need to be updated. See database/fixes/DF_017_restore_securities_to_latest_positions.sql")
         else:
             st.info("No current positions found")
         

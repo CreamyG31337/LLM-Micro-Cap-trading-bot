@@ -1820,6 +1820,19 @@ def main():
                             # Match by index to ensure we get the right currency for each position
                             rates = positions_df.loc[display_df.index, 'currency'].fillna('CAD').astype(str).str.upper().map(get_display_rate)
                             display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0) * rates
+                    
+                    # Debug: Log positions with zero P&L after currency conversion
+                    if 'unrealized_pnl' in display_df.columns:
+                        zero_pnl_mask = display_df['unrealized_pnl'].abs() < 0.01
+                        zero_pnl_positions = display_df[zero_pnl_mask]
+                        if len(zero_pnl_positions) > 0:
+                            log_message(f"[{session_id}] WARNING: Found {len(zero_pnl_positions)} positions with zero P&L after currency conversion: {list(zero_pnl_positions.get('Ticker', zero_pnl_positions.index))}", level='WARNING')
+                            # Check if cost_basis equals market_value (which would cause zero P&L)
+                            if 'Cost Basis' in display_df.columns and 'Value' in display_df.columns:
+                                cost_value_match = (display_df['Cost Basis'] - display_df['Value']).abs() < 0.01
+                                matching = display_df[cost_value_match & zero_pnl_mask]
+                                if len(matching) > 0:
+                                    log_message(f"[{session_id}] WARNING: {len(matching)} positions have cost_basis = market_value: {list(matching.get('Ticker', matching.index))}", level='WARNING')
                 
                 # Rename columns for display
                 display_df = display_df.rename(columns={c: col_names.get(c, c) for c in display_cols})

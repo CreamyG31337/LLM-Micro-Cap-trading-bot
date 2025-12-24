@@ -892,36 +892,82 @@ with tab4:
                                 # But it will use database trades as the source
                                 data_dir = f"trading_data/funds/{rebuild_fund}"
                                 
-                                try:
-                                    # Create lock file with current process PID
-                                    # Note: On Windows, we'll use a simpler approach since fcntl isn't available
+                                # Determine project root and script path
+                                # In Docker: /app is project root, script is at /app/debug/rebuild_portfolio_complete.py
+                                # In local dev: script is at project_root/debug/rebuild_portfolio_complete.py
+                                # admin.py is at web_dashboard/pages/admin.py, so go up 2 levels to get project root
+                                admin_file = Path(__file__).resolve()
+                                # admin.py is in web_dashboard/pages/, so:
+                                #   parent = web_dashboard/pages/
+                                #   parent.parent = web_dashboard/
+                                #   parent.parent.parent = project root
+                                project_root = admin_file.parent.parent.parent
+                                rebuild_script = project_root / "debug" / "rebuild_portfolio_complete.py"
+                                
+                                # Also try alternative paths in case the structure is different
+                                if not rebuild_script.exists():
+                                    # Try going up one less level (in case we're already at project root)
+                                    alt_project_root = admin_file.parent.parent
+                                    alt_script = alt_project_root / "debug" / "rebuild_portfolio_complete.py"
+                                    if alt_script.exists():
+                                        project_root = alt_project_root
+                                        rebuild_script = alt_script
+                                    else:
+                                        # Try absolute path from /app (Docker)
+                                        docker_script = Path("/app/debug/rebuild_portfolio_complete.py")
+                                        if docker_script.exists():
+                                            project_root = Path("/app")
+                                            rebuild_script = docker_script
+                                
+                                if not rebuild_script.exists():
+                                    st.error(f"❌ Rebuild script not found!")
+                                    st.error(f"Tried paths:")
+                                    st.error(f"  - {project_root / 'debug' / 'rebuild_portfolio_complete.py'}")
+                                    st.error(f"  - {admin_file.parent.parent / 'debug' / 'rebuild_portfolio_complete.py'}")
+                                    st.error(f"  - /app/debug/rebuild_portfolio_complete.py")
+                                    st.error(f"Admin file location: {admin_file}")
+                                    st.error(f"Project root: {project_root}")
+                                    st.error(f"Current working directory: {os.getcwd()}")
+                                    st.error(f"Python path: {sys.path[:3]}")
+                                else:
                                     try:
-                                        with open(lock_file_path, 'w') as f:
-                                            f.write(str(os.getpid()))
-                                    except Exception as lock_error:
-                                        st.warning(f"Could not create lock file: {lock_error}. Proceeding anyway...")
-                                    
-                                    with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take up to 30 minutes."):
-                                        # Run rebuild script
-                                        result = subprocess.run(
-                                            ["python", "debug/rebuild_portfolio_complete.py", data_dir, rebuild_fund],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=1800  # 30 minute timeout
-                                        )
+                                        # Create lock file with current process PID
+                                        # Note: On Windows, we'll use a simpler approach since fcntl isn't available
+                                        try:
+                                            with open(lock_file_path, 'w') as f:
+                                                f.write(str(os.getpid()))
+                                        except Exception as lock_error:
+                                            st.warning(f"Could not create lock file: {lock_error}. Proceeding anyway...")
                                         
-                                        if result.returncode == 0:
-                                            st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
-                                            st.success("All portfolio positions regenerated with proper columns.")
-                                            st.rerun()
-                                        else:
-                                            st.error(f"Rebuild failed with exit code {result.returncode}")
-                                            with st.expander("Error details"):
-                                                st.code(result.stderr)
-                                except subprocess.TimeoutExpired:
-                                    st.error("Rebuild timed out after 30 minutes. Check logs for details.")
-                                except Exception as e:
-                                    st.error(f"Error rebuilding portfolio: {e}")
+                                        with st.spinner(f"Rebuilding portfolio for {rebuild_fund}... This may take up to 30 minutes."):
+                                            # Run rebuild script from project root
+                                            # Use absolute path to script and run from project root
+                                            result = subprocess.run(
+                                                ["python", str(rebuild_script), data_dir, rebuild_fund],
+                                                cwd=str(project_root),  # Run from project root so relative paths work
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=1800  # 30 minute timeout
+                                            )
+                                        
+                                            if result.returncode == 0:
+                                                st.toast(f"✅ Portfolio rebuilt for '{rebuild_fund}'!", icon="✅")
+                                                st.success("All portfolio positions regenerated with proper columns.")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"Rebuild failed with exit code {result.returncode}")
+                                                with st.expander("Error details"):
+                                                    if result.stderr:
+                                                        st.code("STDERR:\n" + result.stderr)
+                                                    if result.stdout:
+                                                        st.code("STDOUT:\n" + result.stdout)
+                                    except subprocess.TimeoutExpired:
+                                        st.error("Rebuild timed out after 30 minutes. Check logs for details.")
+                                    except Exception as e:
+                                        st.error(f"Error rebuilding portfolio: {e}")
+                                        import traceback
+                                        with st.expander("Exception details"):
+                                            st.code(traceback.format_exc())
                                 finally:
                                     # Remove lock file when done
                                     try:

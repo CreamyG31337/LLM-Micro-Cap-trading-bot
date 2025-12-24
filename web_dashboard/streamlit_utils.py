@@ -157,6 +157,94 @@ def convert_to_display_currency(value: float, from_currency: str, date: Optional
     return value * float(rate)
 
 
+def fetch_latest_rates_bulk(currencies: List[str], target_currency: str) -> Dict[str, float]:
+    """
+    Fetch latest exchange rates for a list of currencies to the target currency in one go.
+    Returns a dictionary: {currency_code: rate}
+    """
+    if not currencies:
+        return {}
+        
+    # unique currencies, upper case, remove target currency if present
+    unique_currencies = list(set([str(c).upper() for c in currencies if c and str(c).upper() != target_currency.upper()]))
+    
+    if not unique_currencies:
+        return {}
+
+    client = get_supabase_client()
+    if not client:
+        # Fallback constants
+        return {c: 1.0 for c in unique_currencies}
+        
+    try:
+        # Simplest robust valid approach: Fetch all rates involving these currencies from the last 30 days
+        # and pick the latest one in Python.
+        import datetime
+        thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        response = client.supabase.table('exchange_rates').select('*') \
+            .gte('timestamp', thirty_days_ago) \
+            .execute()
+            
+        if not response.data:
+            return {}
+            
+        # Process in python to find latest rate for each
+        latest_rates = {} # (from, to) -> (timestamp, rate)
+        
+        for row in response.data:
+            fc = row['from_currency'].upper()
+            tc = row['to_currency'].upper()
+            ts = row['timestamp']
+            r = float(row['rate'])
+            
+            key = (fc, tc)
+            if key not in latest_rates or ts > latest_rates[key][0]:
+                latest_rates[key] = (ts, r)
+                
+        # Build result dict
+        result = {}
+        target = target_currency.upper()
+        
+        for curr in unique_currencies:
+            curr = curr.upper()
+            rate = None
+            
+            # Try direct: curr -> target
+            if (curr, target) in latest_rates:
+                rate = latest_rates[(curr, target)][1]
+            
+            # Try inverse: target -> curr
+            elif (target, curr) in latest_rates:
+                inv_rate = latest_rates[(target, curr)][1]
+                if inv_rate != 0:
+                    rate = 1.0 / inv_rate
+            
+            # Defaults
+            if rate is None:
+                if curr == 'USD' and target == 'CAD':
+                    result[curr] = 1.35
+                elif curr == 'CAD' and target == 'USD':
+                    result[curr] = 1.0 / 1.35
+                else:
+                    result[curr] = 1.0
+            else:
+                result[curr] = rate
+                
+        return result
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error in fetch_latest_rates_bulk: {e}")
+        # Return defaults
+        res = {}
+        for c in unique_currencies:
+            if c == 'USD' and target_currency == 'CAD': res[c] = 1.35
+            elif c == 'CAD' and target_currency == 'USD': res[c] = 1.0 / 1.35
+            else: res[c] = 1.0
+        return res
+
+
 def get_cache_ttl() -> int:
     """Get cache TTL based on market hours.
     

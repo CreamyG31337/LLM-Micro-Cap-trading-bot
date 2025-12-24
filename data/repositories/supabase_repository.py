@@ -221,11 +221,85 @@ class SupabaseRepository(BaseRepository):
                     logger.warning(f"   Skipping save to preserve market close snapshot at 16:00:00")
                     return  # Don't save, preserve market close snapshot
             
-            # Use PositionMapper to convert positions to Supabase format
-            positions_data = [
-                PositionMapper.model_to_db(position, self.fund, snapshot.timestamp)
-                for position in snapshot.positions
-            ]
+            # Get fund's base currency for pre-conversion
+            base_currency = 'CAD'  # Default
+            try:
+                fund_result = self.supabase.table("funds")\
+                    .select("base_currency")\
+                    .eq("name", self.fund)\
+                    .limit(1)\
+                    .execute()
+                if fund_result.data and fund_result.data[0].get('base_currency'):
+                    base_currency = fund_result.data[0]['base_currency'].upper()
+            except Exception as e:
+                logger.warning(f"Could not get base_currency for fund {self.fund}, using default CAD: {e}")
+            
+            # Get exchange rates for this date (for currency conversion)
+            # Import exchange rate utility
+            try:
+                import sys
+                from pathlib import Path
+                project_root = Path(__file__).resolve().parent.parent.parent
+                web_dashboard_path = project_root / 'web_dashboard'
+                if str(web_dashboard_path) not in sys.path:
+                    sys.path.insert(0, str(web_dashboard_path))
+                from exchange_rates_utils import get_exchange_rate_for_date_from_db
+            except ImportError:
+                logger.warning("Could not import exchange_rates_utils - pre-converted values will be None")
+                get_exchange_rate_for_date_from_db = None
+            
+            # Use PositionMapper to convert positions to Supabase format with pre-converted values
+            positions_data = []
+            snapshot_date = snapshot.timestamp.date()
+            
+            for position in snapshot.positions:
+                position_currency = (position.currency or 'CAD').upper()
+                exchange_rate = None
+                
+                # Calculate exchange rate if needed
+                if base_currency and position_currency != base_currency:
+                    if get_exchange_rate_for_date_from_db:
+                        try:
+                            # Get exchange rate for this date
+                            if position_currency == 'USD' and base_currency != 'USD':
+                                # Converting USD to base currency
+                                rate = get_exchange_rate_for_date_from_db(
+                                    snapshot.timestamp,
+                                    'USD',
+                                    base_currency
+                                )
+                                if rate is not None:
+                                    exchange_rate = float(rate)
+                            elif base_currency == 'USD' and position_currency != 'USD':
+                                # Converting from position currency to USD
+                                rate = get_exchange_rate_for_date_from_db(
+                                    snapshot.timestamp,
+                                    position_currency,
+                                    'USD'
+                                )
+                                if rate is not None:
+                                    exchange_rate = float(rate)
+                                else:
+                                    # Try inverse rate
+                                    inverse_rate = get_exchange_rate_for_date_from_db(
+                                        snapshot.timestamp,
+                                        'USD',
+                                        position_currency
+                                    )
+                                    if inverse_rate is not None and inverse_rate != 0:
+                                        exchange_rate = 1.0 / float(inverse_rate)
+                        except Exception as e:
+                            logger.warning(f"Could not get exchange rate for {position_currency}→{base_currency} on {snapshot_date}: {e}")
+                
+                # Convert position with pre-converted values
+                position_data = PositionMapper.model_to_db(
+                    position, 
+                    self.fund, 
+                    snapshot.timestamp,
+                    base_currency=base_currency,
+                    exchange_rate=exchange_rate
+                )
+                positions_data.append(position_data)
             
             # Clear existing positions for this fund and date first
             # Delete all positions for this fund and DATE (not exact timestamp)

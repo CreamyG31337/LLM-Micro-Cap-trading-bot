@@ -55,7 +55,8 @@ from streamlit_utils import (
     get_fund_thesis_data,
     get_realized_pnl,
     get_user_display_currency,
-    convert_to_display_currency
+    convert_to_display_currency,
+    fetch_latest_rates_bulk
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -1083,65 +1084,76 @@ def main():
         metrics_start = time.time()
         log_message(f"[{session_id}] PERF: Starting metrics calculations", level='INFO')
         
-        # Check investor count to determine layout (hide if only 1 investor)
+        with st.spinner("Calculating metrics..."):
+            # Check investor count to determine layout (hide if only 1 investor)
+            t0 = time.time()
+            num_investors = get_investor_count(fund_filter)
+            log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='INFO')
+            show_investors = num_investors > 1
+            
+            # Calculate total portfolio value from current positions (with currency conversion to display currency)
+            portfolio_value_no_cash = 0.0  # Portfolio value without cash (for investment metrics)
+            total_value = 0.0
+            total_pnl = 0.0
+        
         t0 = time.time()
-        num_investors = get_investor_count(fund_filter)
-        log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='INFO')
-        show_investors = num_investors > 1
         
-        # Calculate total portfolio value from current positions (with currency conversion to display currency)
-        portfolio_value_no_cash = 0.0  # Portfolio value without cash (for investment metrics)
-        total_value = 0.0
-        total_pnl = 0.0
+        # BULK FETCH OPTIMIZATION: Get all required exchange rates in one go
+        # Collect currencies from positions and cash
+        all_currencies = set()
+        if not positions_df.empty:
+            all_currencies.update(positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist())
+        all_currencies.update([str(c).upper() for c in cash_balances.keys()])
         
+        # Fetch dictionary of rates: {'USD': 1.35, 'CAD': 1.0}
+        rate_map = fetch_latest_rates_bulk(list(all_currencies), display_currency)
+        
+        # Helper to get rate safely (default 1.0)
+        def get_rate_safe(curr):
+            return rate_map.get(str(curr).upper(), 1.0)
+            
+        # 1. Calculate Portfolio Value (Vectorized)
         if not positions_df.empty and 'market_value' in positions_df.columns:
-            # Convert positions to display currency before summing
-            for _, row in positions_df.iterrows():
-                market_value = float(row.get('market_value', 0) or 0)
-                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                market_value_display = convert_to_display_currency(market_value, currency, None, display_currency)
-                portfolio_value_no_cash += market_value_display
-        
-        # Get Total P&L from positions_df (unrealized_pnl from latest_positions view)
+            # Create temporary rate column for vector operation
+            # Use map for fast lookup
+            rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+            portfolio_value_no_cash = (positions_df['market_value'].fillna(0) * rates).sum()
+        log_message(f"[{session_id}] PERF: market_value calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
+
+        # 2. Calculate Total P&L (Vectorized)
+        t0 = time.time()
         if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
-            # Sum unrealized_pnl with currency conversion to display currency
-            # Use pd.isna() to properly handle NaN values (NaN or 0 doesn't work because NaN is truthy)
-            for _, row in positions_df.iterrows():
-                pnl_val = row.get('unrealized_pnl', 0)
-                pnl = 0.0 if pd.isna(pnl_val) else float(pnl_val)
-                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                pnl_display = convert_to_display_currency(pnl, currency, None, display_currency)
-                total_pnl += pnl_display
+            rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+            total_pnl = (positions_df['unrealized_pnl'].fillna(0) * rates).sum()
+        log_message(f"[{session_id}] PERF: unrealized_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
         
-        # Add cash to total value (convert all cash to display currency)
+        # 3. Calculate Cash (Fast Loop with Lookup)
+        t0 = time.time()
         total_cash_display = 0.0
         for currency, amount in cash_balances.items():
             if amount > 0:
-                cash_display = convert_to_display_currency(amount, currency, None, display_currency)
-                total_cash_display += cash_display
+                total_cash_display += amount * get_rate_safe(currency)
         total_value = portfolio_value_no_cash + total_cash_display
+        log_message(f"[{session_id}] PERF: cash calculation (lookup) took {time.time() - t0:.2f}s", level='INFO')
         
         # Get user's investment metrics (if they have contributions)
         t0 = time.time()
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True, session_id=session_id, display_currency=display_currency)
         log_message(f"[{session_id}] PERF: get_user_investment_metrics took {time.time() - t0:.2f}s", level='INFO')
         
-        # Calculate Last Trading Day P&L (used in multiple places)
+        # 4. Calculate Last Trading Day P&L (Vectorized)
+        t0 = time.time()
         last_day_pnl = 0.0
         last_day_pnl_pct = 0.0
         if not positions_df.empty and 'daily_pnl' in positions_df.columns:
-            # Convert daily P&L to display currency before summing
-            for _, row in positions_df.iterrows():
-                daily_pnl_val = row.get('daily_pnl', 0)
-                daily_pnl = 0.0 if pd.isna(daily_pnl_val) else float(daily_pnl_val)
-                currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                daily_pnl_display = convert_to_display_currency(daily_pnl, currency, None, display_currency)
-                last_day_pnl += daily_pnl_display
+            rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+            last_day_pnl = (positions_df['daily_pnl'].fillna(0) * rates).sum()
             
             # Calculate percentage based on yesterday's value (total_value - today's change)
             yesterday_value = total_value - last_day_pnl
             if yesterday_value > 0:
                 last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
+        log_message(f"[{session_id}] PERF: daily_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
 
         # Calculate "Unrealized P&L" (sum of open positions pnl)
         # We already calculated total_pnl above which is exactly this

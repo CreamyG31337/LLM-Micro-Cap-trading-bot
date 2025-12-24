@@ -53,23 +53,87 @@ class PositionMapper:
     """Maps between Position domain model and database format."""
 
     @staticmethod
-    def model_to_db(position: Any, fund: str, timestamp: datetime) -> Dict[str, Any]:
-        """Convert Position model to database format."""
+    def model_to_db(position: Any, fund: str, timestamp: datetime, 
+                    base_currency: Optional[str] = None, 
+                    exchange_rate: Optional[float] = None) -> Dict[str, Any]:
+        """Convert Position model to database format.
+        
+        Args:
+            position: Position model to convert
+            fund: Fund name
+            timestamp: Snapshot timestamp
+            base_currency: Optional base currency for pre-conversion (e.g., 'CAD')
+            exchange_rate: Optional exchange rate for pre-conversion (position_currency -> base_currency)
+        
+        Returns:
+            Dictionary with all database fields including pre-converted values if provided
+        """
         # Safely convert all numeric fields, defaulting to 0.0 for invalid values
         price = safe_float(position.current_price) if position.current_price is not None else safe_float(position.avg_price)
         
-        return {
+        # Calculate market value and P&L
+        shares = safe_float(position.shares)
+        cost_basis = safe_float(position.cost_basis)
+        pnl = safe_float(position.unrealized_pnl or position.calculated_unrealized_pnl)
+        # Use position.market_value if available, otherwise calculate from shares * price
+        if position.market_value is not None:
+            market_value = safe_float(position.market_value)
+        else:
+            market_value = shares * price if price > 0 else 0.0
+        
+        # Build base dictionary
+        db_data = {
             'ticker': position.ticker,
             # 'company': position.company,  # Deprecated - now normalized in securities table
-            'shares': safe_float(position.shares),
+            'shares': shares,
             'price': price,  # Current market price (or avg_price if current not available)
-            'cost_basis': safe_float(position.cost_basis),
-            'pnl': safe_float(position.unrealized_pnl or position.calculated_unrealized_pnl),
+            'cost_basis': cost_basis,
+            'pnl': pnl,
             'currency': position.currency,
             'fund': fund,
             'date': timestamp.isoformat(),
             'created_at': datetime.now().isoformat()
         }
+        
+        # Calculate pre-converted values if base_currency is provided
+        if base_currency:
+            position_currency = (position.currency or 'CAD').upper()
+            base_currency_upper = base_currency.upper()
+            
+            # Determine exchange rate (keep as float for multiplication with float values)
+            if exchange_rate is not None:
+                rate = float(exchange_rate)
+            elif position_currency == base_currency_upper:
+                rate = 1.0
+            else:
+                # No exchange rate provided and currencies differ - will be NULL
+                # The scheduled job or backfill script will populate these later
+                rate = None
+            
+            # Calculate pre-converted values
+            if rate is not None:
+                db_data['base_currency'] = base_currency_upper
+                db_data['total_value_base'] = safe_float(market_value * rate)
+                db_data['cost_basis_base'] = safe_float(cost_basis * rate)
+                db_data['pnl_base'] = safe_float(pnl * rate)
+                db_data['exchange_rate'] = safe_float(rate)
+            else:
+                # Set to None so they can be backfilled later
+                db_data['base_currency'] = base_currency_upper
+                db_data['total_value_base'] = None
+                db_data['cost_basis_base'] = None
+                db_data['pnl_base'] = None
+                db_data['exchange_rate'] = None
+        else:
+            # No base_currency provided - leave pre-converted fields as None
+            # They will be populated by the scheduled job or backfill script
+            db_data['base_currency'] = None
+            db_data['total_value_base'] = None
+            db_data['cost_basis_base'] = None
+            db_data['pnl_base'] = None
+            db_data['exchange_rate'] = None
+        
+        return db_data
 
     @staticmethod
     def db_to_model(row: Dict[str, Any]) -> Any:

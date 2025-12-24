@@ -937,18 +937,29 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                     print_error(f"     ... and {len(skipped_positions) - 10} more")
         
         # Create final portfolio snapshot from current positions
-        # Create snapshot if today is a trading day (regardless of current market status)
+        # Only create snapshot for today if:
+        # 1. Today is a trading day (not weekend/holiday)
+        # 2. Market has already closed (or we're past 4:30 PM ET to allow for data settling)
         # 
-        # NOTE: This should use the same logic as the centralized portfolio update system
-        # See utils/portfolio_update_logic.py for the correct decision logic
-        # Core principle: "Get data whenever we can" - only skip if not a trading day
+        # This prevents creating snapshots with future timestamps when rebuild runs
+        # before market close (e.g., overnight jobs at 3 AM)
         from config.settings import Settings
         
         settings = Settings()
         today = datetime.now().date()
         
-        if market_hours.is_trading_day(today):
-            print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot...")
+        # Check if market has closed
+        # Market closes at 4 PM ET, so we check if current time is after 4:30 PM ET
+        # (allowing 30 min for data to settle)
+        from datetime import datetime as dt
+        import pytz
+        et_tz = pytz.timezone('America/New_York')
+        current_time_et = dt.now(et_tz)
+        market_close_time = current_time_et.replace(hour=16, minute=30, second=0, microsecond=0)
+        market_has_closed = current_time_et >= market_close_time
+        
+        if market_hours.is_trading_day(today) and market_has_closed:
+            print_info(f"{_safe_emoji('📊')} Creating final portfolio snapshot (market closed at 4 PM ET)...")
             final_snapshot_start = time.time()
             
             from data.models.portfolio import Position, PortfolioSnapshot

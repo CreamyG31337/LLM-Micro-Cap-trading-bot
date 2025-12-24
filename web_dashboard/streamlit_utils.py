@@ -2198,3 +2198,44 @@ def get_fund_thesis_data(fund_name: str) -> Optional[Dict[str, Any]]:
         logger = logging.getLogger(__name__)
         logger.error(f"Error getting thesis data for {fund_name}: {e}", exc_info=True)
         return None
+
+
+def display_dataframe_with_copy(
+    df: pd.DataFrame,
+    label: str = "table",
+    key_suffix: str = "",
+    **dataframe_kwargs
+):
+    """Display a dataframe with a copy-to-clipboard download button.
+    
+    Exports the complete dataframe as TSV (tab-separated values) for easy copying
+    to spreadsheets or sharing for debugging purposes. Includes all column headers.
+    
+    Args:
+        df: DataFrame to display
+        label: Label for the download button (e.g., "Trades", "Positions")
+        key_suffix: Unique suffix for the button key to avoid conflicts
+        **dataframe_kwargs: Additional arguments to pass to st.dataframe()
+    
+    Example:
+        display_dataframe_with_copy(trades_df, label="Trades", key_suffix="recent_trades")
+    """
+    import streamlit as st
+    
+    # Display the dataframe
+    st.dataframe(df, **dataframe_kwargs)
+    
+    # Add download button for TSV export (includes headers by default)
+    if not df.empty:
+        # Convert to TSV format with headers
+        tsv_data = df.to_csv(index=False, sep='\t')
+        
+        # Create download button
+        st.download_button(
+            label=f"📋 Copy {label}",
+            data=tsv_data,
+            file_name=f"{label.lower().replace(' ', '_')}.tsv",
+            mime="text/tab-separated-values",
+            key=f"copy_{label.lower().replace(' ', '_')}_{key_suffix}",
+            help=f"Download {label} as TSV for copying to spreadsheet or sharing for debugging"
+        )

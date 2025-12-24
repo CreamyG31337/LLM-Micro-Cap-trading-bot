@@ -23,7 +23,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth_utils import is_authenticated, is_admin, get_user_email
-from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions
+from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy
 from supabase_client import SupabaseClient
 
 # Page configuration
@@ -159,8 +159,10 @@ with tab2:
                 
                 # Display users table
                 st.subheader("All Users")
-                st.dataframe(
+                display_dataframe_with_copy(
                     users_df,
+                    label="All Users",
+                    key_suffix="all_users",
                     use_container_width=True,
                     column_config={
                         "email": "Email",
@@ -511,7 +513,7 @@ with tab3:
                                 })
                             
                             access_df = pd.DataFrame(access_list)
-                            st.dataframe(access_df, use_container_width=True)
+                            display_dataframe_with_copy(access_df, label="Contributor Access", key_suffix="access", use_container_width=True)
                             
                             # Revoke access section
                             st.subheader("Revoke Access")
@@ -604,7 +606,7 @@ with tab4:
                 
                 funds_df = pd.DataFrame(fund_stats)
                 st.subheader("All Funds")
-                st.dataframe(funds_df, use_container_width=True)
+                display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
             else:
                 st.info("No funds found in database")
             
@@ -1226,7 +1228,7 @@ with tab6:
                     trades_df = pd.DataFrame(recent_trades.data)
                     display_cols = ["date", "fund", "ticker", "action", "shares", "price", "currency"]
                     available_cols = [c for c in display_cols if c in trades_df.columns]
-                    st.dataframe(trades_df[available_cols], use_container_width=True)
+                    display_dataframe_with_copy(trades_df[available_cols], label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
                 else:
                     st.info("No recent trades")
                 

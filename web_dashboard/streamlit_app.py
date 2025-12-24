@@ -56,7 +56,8 @@ from streamlit_utils import (
     get_realized_pnl,
     get_user_display_currency,
     convert_to_display_currency,
-    fetch_latest_rates_bulk
+    fetch_latest_rates_bulk,
+    display_dataframe_with_copy
 )
 from chart_utils import (
     create_portfolio_value_chart,
@@ -1358,7 +1359,7 @@ def main():
                 if 'reason' in trades_df.columns:
                     sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
                     st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
-                st.dataframe(trades_df.head(20))
+                display_dataframe_with_copy(trades_df.head(20), label="Debug Trades", key_suffix="debug")
         
         if num_closed > 0:
             # Display primary metrics (matching console app structure)
@@ -1476,7 +1477,7 @@ def main():
                 }
                 styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
                 
-                st.dataframe(styled_pnl_df, use_container_width=True, height=300)
+                display_dataframe_with_copy(styled_pnl_df, label="Realized P&L", key_suffix="ticker_pnl", use_container_width=True, height=300)
         else:
             st.info("No closed positions found. Realized P&L will appear here once you close positions.")
 
@@ -1755,8 +1756,10 @@ def main():
                             table_df.columns = ['Investor', 'Investment', 'Ownership %']
                             
                             # Display as a styled table
-                            st.dataframe(
+                            display_dataframe_with_copy(
                                 table_df,
+                                label="Investor Allocation",
+                                key_suffix="investor_allocation",
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows
@@ -1832,13 +1835,15 @@ def main():
                     if col in display_df.columns:
                         styled_df = styled_df.map(color_pnl, subset=[col])
                 
-                st.dataframe(
+                display_dataframe_with_copy(
                     styled_df,
+                    label="Current Positions",
+                    key_suffix="positions_styled",
                     use_container_width=True,
                     height=400
                 )
             else:
-                st.dataframe(positions_df, use_container_width=True, height=400)
+                display_dataframe_with_copy(positions_df, label="Current Positions", key_suffix="positions_raw", use_container_width=True, height=400)
             
             # Holdings Info table - Company, Sector, Industry
             # Data is already available from latest_positions view (joins with securities table)
@@ -1874,7 +1879,7 @@ def main():
                     holdings_info_df = holdings_info_df.drop_duplicates(subset=['Ticker'])
                     # Fill NaN values with 'N/A' for display
                     holdings_info_df = holdings_info_df.fillna('N/A')
-                    st.dataframe(holdings_info_df, use_container_width=True, height=300)
+                    display_dataframe_with_copy(holdings_info_df, label="Holdings Info", key_suffix="holdings_info", use_container_width=True, height=300)
                 else:
                     st.warning("⚠️ Company, sector, and industry data not available. The database view may need to be updated. See database/fixes/DF_017_restore_securities_to_latest_positions.sql")
         else:
@@ -1985,9 +1990,9 @@ def main():
                         return ''
                     styled_df = styled_df.map(color_trade_pnl, subset=['Realized P&L'])
                 
-                st.dataframe(styled_df, use_container_width=True, height=400)
+                display_dataframe_with_copy(styled_df, label="Recent Trades", key_suffix="recent_trades_styled", use_container_width=True, height=400)
             else:
-                st.dataframe(recent_trades, use_container_width=True, height=400)
+                display_dataframe_with_copy(recent_trades, label="Recent Trades", key_suffix="recent_trades_raw", use_container_width=True, height=400)
         else:
             st.info("No recent trades found")
         

@@ -968,13 +968,13 @@ with tab4:
                                         import traceback
                                         with st.expander("Exception details"):
                                             st.code(traceback.format_exc())
-                                finally:
-                                    # Remove lock file when done
-                                    try:
-                                        if lock_file_path.exists():
-                                            lock_file_path.unlink()
-                                    except Exception:
-                                        pass
+                                    finally:
+                                        # Remove lock file when done
+                                        try:
+                                            if lock_file_path.exists():
+                                                lock_file_path.unlink()
+                                        except Exception:
+                                            pass
             
             st.divider()
             

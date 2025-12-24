@@ -61,12 +61,18 @@ def _log_rebuild_progress(fund_name: str, message: str, success: bool = True):
         # Silently ignore if logging not available (running directly)
         pass
 
-def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str) -> None:
+def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str, is_docker: bool = False) -> None:
     """
     Save a batch of snapshots efficiently.
     
-    For CSV: Build DataFrame with all snapshots and append once.
-    For Supabase: Batch delete dates, then batch insert positions.
+    Supabase is ALWAYS primary (required).
+    CSV is optional backup (skipped in Docker, optional locally).
+    
+    Args:
+        repository: Repository instance
+        snapshot_batch: List of (snapshot, trading_day) tuples
+        fund_name: Fund name for logging
+        is_docker: If True, skip CSV operations entirely
     """
     if not snapshot_batch:
         return
@@ -78,16 +84,17 @@ def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str) -> No
     # Get dates in batch
     batch_dates = [snapshot[1] for snapshot in snapshot_batch]
     
-    # CSV: Build DataFrame with all snapshots
-    if hasattr(repository, 'csv_repo'):
-        csv_repo = repository.csv_repo
-    elif isinstance(repository, CSVRepository):
-        csv_repo = repository
-    else:
-        csv_repo = None
-    
-    if csv_repo:
-        trading_tz = get_trading_timezone()
+    # CSV: Optional backup (skip in Docker, optional locally)
+    if not is_docker:
+        if hasattr(repository, 'csv_repo'):
+            csv_repo = repository.csv_repo
+        elif isinstance(repository, CSVRepository):
+            csv_repo = repository
+        else:
+            csv_repo = None
+        
+        if csv_repo:
+            trading_tz = get_trading_timezone()
         all_rows = []
         
         for snapshot, trading_day in snapshot_batch:
@@ -118,10 +125,15 @@ def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str) -> No
             batch_df = batch_df[expected_columns]
             
             # Append to CSV (no duplicate checking for batch mode - we cleared the file at start)
-            if csv_repo.portfolio_file.exists():
-                batch_df.to_csv(csv_repo.portfolio_file, mode='a', header=False, index=False)
-            else:
-                batch_df.to_csv(csv_repo.portfolio_file, index=False)
+            # CSV is backup only - don't fail if write fails
+            try:
+                if csv_repo.portfolio_file.exists():
+                    batch_df.to_csv(csv_repo.portfolio_file, mode='a', header=False, index=False)
+                else:
+                    batch_df.to_csv(csv_repo.portfolio_file, index=False)
+            except Exception as csv_error:
+                # CSV write failed - log warning but continue (Supabase is primary)
+                print_warning(f"⚠️  CSV backup write failed (non-fatal): {csv_error}")
     
     # Supabase: Batch delete and insert
     if hasattr(repository, 'supabase_repo') and hasattr(repository.supabase_repo, 'supabase'):
@@ -206,50 +218,125 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     """
     start_time = time.time()
     try:
-        print(f"{_safe_emoji('🔄')} Complete Portfolio Rebuild (CSV + Supabase)")
+        # Detect Docker environment
+        is_docker = os.path.exists('/.dockerenv') or os.getcwd().startswith('/app')
+        
+        print(f"{_safe_emoji('🔄')} Complete Portfolio Rebuild (Supabase Primary, CSV Backup)")
         print("=" * 60)
         print(f"{_safe_emoji('📁')} Data directory: {data_dir}")
         if fund_name:
             print(f"{_safe_emoji('🏦')} Fund name: {fund_name}")
+        if is_docker:
+            print(f"{_safe_emoji('🐳')} Running in Docker - CSV operations will be skipped")
         
         # Extract fund name from data directory if not provided
         if not fund_name:
             fund_name = Path(data_dir).name
             print(f"{_safe_emoji('📁')} Extracted fund name: {fund_name}")
         
-        # Initialize repository with Supabase dual-write capability (same as trading script)
+        # Initialize repository: Supabase is ALWAYS primary
+        # Docker: Use supabase-only (faster, no CSV overhead)
+        # Local: Use supabase-dual-write (Supabase primary, CSV backup if available)
         if fund_name:
             try:
-                repository = RepositoryFactory.create_repository(repository_type='supabase-dual-write', data_directory=data_dir, fund_name=fund_name)
-                print(f"{_safe_emoji('✅')} Using Supabase dual-write repository (Supabase read, CSV+Supabase write)")
+                if is_docker:
+                    # Docker: Supabase-only (no CSV)
+                    repository = RepositoryFactory.create_repository(repository_type='supabase', data_directory=data_dir, fund_name=fund_name)
+                    print(f"{_safe_emoji('✅')} Using Supabase-only repository (Docker mode - CSV skipped)")
+                else:
+                    # Local: Supabase primary, CSV backup
+                    repository = RepositoryFactory.create_repository(repository_type='supabase-dual-write', data_directory=data_dir, fund_name=fund_name)
+                    print(f"{_safe_emoji('✅')} Using Supabase dual-write repository (Supabase primary, CSV backup)")
             except Exception as e:
-                print(f"{_safe_emoji('⚠️')} Supabase dual-write repository failed: {e}")
-                print("   Falling back to CSV-only repository")
-                repository = RepositoryFactory.create_repository(repository_type='csv', data_directory=data_dir, fund_name=fund_name)
+                print(f"{_safe_emoji('⚠️')} Supabase repository failed: {e}")
+                if is_docker:
+                    # In Docker, Supabase is required - fail hard
+                    print_error("❌ Supabase is required in Docker environment - cannot proceed")
+                    return False
+                else:
+                    # Local: Fallback to CSV-only if Supabase fails
+                    print("   Falling back to CSV-only repository")
+                    repository = RepositoryFactory.create_repository(repository_type='csv', data_directory=data_dir, fund_name=fund_name)
         else:
+            # No fund name - use CSV-only (legacy mode)
             repository = RepositoryFactory.create_repository(repository_type='csv', data_directory=data_dir, fund_name=fund_name)
-            print(f"{_safe_emoji('✅')} Using CSV-only repository")
+            print(f"{_safe_emoji('✅')} Using CSV-only repository (no fund name provided)")
         
         # Initialize portfolio manager with Fund object
         from portfolio.fund_manager import Fund
         fund = Fund(id=fund_name, name=fund_name, description=f"Fund: {fund_name}")
         portfolio_manager = PortfolioManager(repository, fund)
         
-        # Load trade log
-        trade_log_file = Path(data_dir) / "llm_trade_log.csv"
-        if not trade_log_file.exists():
-            print_error(f"{_safe_emoji('❌')} Trade log not found: {trade_log_file}")
-            return False
-        
-        print_info(f"{_safe_emoji('📊')} Loading trade log...")
+        # Load trade log - CRITICAL: If writing to Supabase, MUST read from Supabase only
+        # Reading from CSV and writing to Supabase could corrupt Supabase with stale data
         load_start = time.time()
-        trade_df = pd.read_csv(trade_log_file)
-        from utils.timezone_utils import safe_parse_datetime_column
-        trade_df['Date'] = safe_parse_datetime_column(trade_df['Date'], 'Date')
-        trade_df = trade_df.sort_values('Date')
-        load_time = time.time() - load_start
+        trade_df = None
         
-        print_success(f"{_safe_emoji('✅')} Loaded {len(trade_df)} trades ({load_time:.2f}s)")
+        # Check if we're using Supabase (either supabase-only or supabase-dual-write)
+        using_supabase = (hasattr(repository, 'supabase_repo') or hasattr(repository, 'supabase') or 
+                         repository.__class__.__name__ == 'SupabaseRepository' or
+                         'supabase' in repository.__class__.__name__.lower())
+        
+        if using_supabase:
+            # CRITICAL: If writing to Supabase, we MUST read from Supabase only
+            # Never read from CSV when writing to Supabase - could corrupt Supabase with stale data
+            print_info(f"{_safe_emoji('📊')} Loading trade log from Supabase (required when writing to Supabase)...")
+            try:
+                # Try to get trades from Supabase (primary source)
+                trades = None
+                if hasattr(repository, 'get_trade_history'):
+                    trades = repository.get_trade_history()
+                elif hasattr(repository, 'supabase_repo') and hasattr(repository.supabase_repo, 'get_trade_history'):
+                    trades = repository.supabase_repo.get_trade_history()
+                elif hasattr(repository, 'supabase'):
+                    # Direct Supabase repository - need to query directly
+                    from data.repositories.supabase_repository import SupabaseRepository
+                    temp_repo = SupabaseRepository(fund_name=fund_name)
+                    trades = temp_repo.get_trade_history()
+                
+                if trades and len(trades) > 0:
+                    # Convert Trade objects to DataFrame format
+                    trade_data = []
+                    for trade in trades:
+                        trade_data.append({
+                            'Date': trade.date,
+                            'Ticker': trade.ticker,
+                            'Shares': float(trade.shares),
+                            'Price': float(trade.price),
+                            'Action': trade.action if hasattr(trade, 'action') else 'BUY',
+                            'Reason': trade.reason if hasattr(trade, 'reason') else '',
+                            'Currency': trade.currency if hasattr(trade, 'currency') else 'USD'
+                        })
+                    trade_df = pd.DataFrame(trade_data)
+                    from utils.timezone_utils import safe_parse_datetime_column
+                    trade_df['Date'] = safe_parse_datetime_column(trade_df['Date'], 'Date')
+                    trade_df = trade_df.sort_values('Date')
+                    print_success(f"{_safe_emoji('✅')} Loaded {len(trade_df)} trades from Supabase ({time.time() - load_start:.2f}s)")
+                else:
+                    print_error("❌ No trades found in Supabase")
+                    return False
+            except Exception as e:
+                print_error(f"❌ Failed to load trades from Supabase: {e}")
+                print_error("❌ Cannot proceed - reading from CSV and writing to Supabase would corrupt Supabase with potentially stale data")
+                return False
+        else:
+            # CSV-only mode (no Supabase) - safe to read from CSV
+            print_info(f"{_safe_emoji('📊')} Loading trade log from CSV (CSV-only mode)...")
+            trade_log_file = Path(data_dir) / "llm_trade_log.csv"
+            if not trade_log_file.exists():
+                print_error(f"❌ Trade log not found: {trade_log_file}")
+                return False
+            try:
+                trade_df = pd.read_csv(trade_log_file)
+                from utils.timezone_utils import safe_parse_datetime_column
+                trade_df['Date'] = safe_parse_datetime_column(trade_df['Date'], 'Date')
+                trade_df = trade_df.sort_values('Date')
+                print_success(f"{_safe_emoji('✅')} Loaded {len(trade_df)} trades from CSV ({time.time() - load_start:.2f}s)")
+            except Exception as e:
+                print_error(f"❌ Failed to load CSV trade log: {e}")
+                return False
+        
+        load_time = time.time() - load_start
         _log_rebuild_progress(fund_name, f"Starting rebuild: {len(trade_df)} trades to process")
         
         if len(trade_df) == 0:
@@ -259,17 +346,18 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         # Clear existing portfolio data
         print_info(f"{_safe_emoji('🧹')} Clearing existing portfolio data...")
         try:
-            # Clear CSV portfolio file
-            portfolio_file = Path(data_dir) / "llm_portfolio_update.csv"
-            if portfolio_file.exists():
-                # Create backup in backups directory
-                backup_dir = Path(data_dir) / "backups"
-                backup_dir.mkdir(exist_ok=True)
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                backup_file = backup_dir / f"{portfolio_file.stem}.backup_{timestamp}.csv"
-                shutil.copy2(portfolio_file, backup_file)
-                portfolio_file.unlink()  # Remove original file
-                print_info(f"   Backed up existing portfolio to: {backup_file}")
+            # Clear CSV portfolio file (local only, skip in Docker)
+            if not is_docker:
+                portfolio_file = Path(data_dir) / "llm_portfolio_update.csv"
+                if portfolio_file.exists():
+                    # Create backup in backups directory
+                    backup_dir = Path(data_dir) / "backups"
+                    backup_dir.mkdir(exist_ok=True)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    backup_file = backup_dir / f"{portfolio_file.stem}.backup_{timestamp}.csv"
+                    shutil.copy2(portfolio_file, backup_file)
+                    portfolio_file.unlink()  # Remove original file
+                    print_info(f"   Backed up existing portfolio to: {backup_file}")
             
             # Clear Supabase data (if using dual-write)
             if hasattr(repository, 'supabase_repo') and hasattr(repository.supabase_repo, 'supabase'):
@@ -750,7 +838,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 # Save batch when it reaches BATCH_SIZE
                 if len(snapshot_batch) >= BATCH_SIZE:
                     save_start = time.time()
-                    _save_snapshot_batch(repository, snapshot_batch, fund_name)
+                    _save_snapshot_batch(repository, snapshot_batch, fund_name, is_docker)
                     batch_save_time = time.time() - save_start
                     snapshot_save_time += batch_save_time
                     print_info(f"   Saved batch of {len(snapshot_batch)} snapshots ({batch_save_time:.2f}s, {batch_save_time/len(snapshot_batch)*1000:.0f}ms per snapshot)")
@@ -772,7 +860,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         # Save any remaining snapshots in the batch
         if snapshot_batch:
             save_start = time.time()
-            _save_snapshot_batch(repository, snapshot_batch, fund_name)
+            _save_snapshot_batch(repository, snapshot_batch, fund_name, is_docker)
             batch_save_time = time.time() - save_start
             snapshot_save_time += batch_save_time
             print_info(f"   Saved final batch of {len(snapshot_batch)} snapshots ({batch_save_time:.2f}s)")

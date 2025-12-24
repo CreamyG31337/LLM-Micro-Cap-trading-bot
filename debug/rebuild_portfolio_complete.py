@@ -32,7 +32,7 @@ sys.path.insert(0, str(project_root))
 
 from data.repositories.repository_factory import RepositoryFactory
 from portfolio.portfolio_manager import PortfolioManager
-from market_data.data_fetcher import MarketDataFetcher
+from market_data.data_fetcher import MarketDataFetcher as MarketDataFetcherClass
 from market_data.price_cache import PriceCache
 from market_data.market_hours import MarketHours
 from utils.market_holidays import MarketHolidays
@@ -190,7 +190,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
         from market_data.price_cache import PriceCache
         
         # Initialize market data fetcher and price cache
-        market_fetcher = MarketDataFetcher()
+        market_fetcher = MarketDataFetcherClass()
         price_cache = PriceCache()
         
         # Convert all_trading_days to sorted list
@@ -650,7 +650,7 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 print_info(f"   {_safe_emoji('✅')} Job tracking updated - web backfill will skip these dates")
             except Exception as tracking_error:
                 # Don't fail rebuild if tracking fails
-                print_warning(f"   ⚠️  Could not update job tracking: {tracking_error}")
+                print_warning(f"   {_safe_emoji('⚠️')}  Could not update job tracking: {tracking_error}")
         
         _log_rebuild_progress(fund_name, f"✅ Rebuild complete: {snapshots_created} snapshots created")
         return True

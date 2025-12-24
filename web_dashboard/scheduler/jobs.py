@@ -25,7 +25,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
     'exchange_rates': {
         'name': 'Refresh Exchange Rates',
         'description': 'Fetch latest USD/CAD exchange rate and store in database',
-        'default_interval_minutes': 30,
+        'default_interval_minutes': 120,  # Every 2 hours
         'enabled_by_default': True
     },
     'performance_metrics': {
@@ -671,7 +671,7 @@ def register_default_jobs(scheduler) -> None:
     from apscheduler.triggers.interval import IntervalTrigger
     from apscheduler.triggers.cron import CronTrigger
     
-    # Exchange rates job - every 30 minutes
+    # Exchange rates job - every 2 hours
     if AVAILABLE_JOBS['exchange_rates']['enabled_by_default']:
         scheduler.add_job(
             refresh_exchange_rates_job,
@@ -680,7 +680,7 @@ def register_default_jobs(scheduler) -> None:
             name='Refresh Exchange Rates',
             replace_existing=True
         )
-        logger.info("Registered job: exchange_rates (every 30 min)")
+        logger.info("Registered job: exchange_rates (every 2 hours)")
     
     # Performance metrics job - daily at 5 PM EST (after market close)
     if AVAILABLE_JOBS['performance_metrics']['enabled_by_default']:

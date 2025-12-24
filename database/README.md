@@ -16,6 +16,8 @@ Run these scripts **in order** in Supabase SQL Editor:
 
 ## 🔧 Data Fixes (DF_)
 
+**Important**: These fixes are required when installing the app from scratch. After running the schema files in `setup/`, run all `DF_*.sql` files in the `fixes/` folder in numerical order.
+
 One-time fixes applied to resolve issues. Prefixed with `DF_` and numbered:
 
 | File | Description | Applied |
@@ -25,6 +27,33 @@ One-time fixes applied to resolve issues. Prefixed with `DF_` and numbered:
 | `DF_003_fix_contributors_rls.sql` | Fix RLS for contributions table | ❓ |
 | `DF_004_fix_user_setup.sql` | Fix user authentication setup | ❓ |
 | `DF_005_clean_trade_log_add_fk.sql` | Add FK constraints to trade_log | ✅ |
+| `DF_006_enable_rls_fix.sql` | Enable RLS on tables | ✅ |
+| `DF_007_add_securities_to_latest_positions.sql` | Add securities to latest positions view | ✅ |
+| `DF_007_fix_unregistered_contributors.sql` | Fix unregistered contributors | ✅ |
+| `DF_008_add_thesis_view.sql` | Add thesis view | ✅ |
+| `DF_008_fix_daily_pnl_lookback.sql` | Fix daily P&L lookback | ✅ |
+| `DF_008_link_fund_contributions_to_funds.sql` | Link fund contributions to funds table | ✅ |
+| `DF_009_create_contributors_and_access.sql` | Create contributors and access tables | ✅ |
+| `DF_010_update_rls_for_contributors.sql` | Update RLS for contributors | ✅ |
+| `DF_011_update_contributor_ownership_view.sql` | Update contributor ownership view | ✅ |
+| `DF_012_verify_contributors_table.sql` | Verify contributors table | ✅ |
+| `DF_013_fix_rpc_permissions.sql` | Fix RPC permissions | ✅ |
+| `DF_014_fix_rls_auth_users.sql` | Fix RLS for auth users | ✅ |
+| `DF_015_fix_fund_contribution_rls.sql` | Fix fund contribution RLS | ✅ |
+| `DF_016_fix_fund_data_rls.sql` | Fix fund data RLS | ✅ |
+
+## 🐛 Debug Scripts
+
+Diagnostic and debugging SQL scripts located in `debug/` folder. These are **not** required for fresh installs:
+
+- `check_emails.sql` - Check email-related data
+- `check_fund_dates.sql` - Verify fund date ranges
+- `check_view_output.sql` - Test view outputs
+- `debug_user_metrics.sql` - Debug user metrics calculations
+- `delete_dec23_positions.sql` - Cleanup script for December 2023 positions
+- `diagnose_daily_pnl.sql` - Diagnose daily P&L issues
+- `fix_benchmark_data_rls.sql` - Fix benchmark data RLS (debug only)
+- `verify_fix.sql` - Verify fix application
 
 ## ⚙️ Utilities
 

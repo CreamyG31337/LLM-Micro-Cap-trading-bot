@@ -771,26 +771,45 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
             if needs_conversion:
                 # Apply currency conversion to positions
                 convert_start = time.time()
-                def convert_to_display(row, column):
-                    currency = str(row.get('currency', 'CAD')).upper() if pd.notna(row.get('currency')) else 'CAD'
-                    value = float(row.get(column, 0) or 0)
-                    
-                    # Get date for historical rate lookup
-                    trade_date = None
-                    if 'date' in row and pd.notna(row.get('date')):
-                        try:
-                            trade_date = pd.to_datetime(row['date'])
-                        except:
-                            trade_date = None
-                    
-                    # Convert to display currency
-                    return convert_to_display_currency(value, currency, trade_date, display_currency)
                 
-                df['total_value_display'] = df.apply(lambda r: convert_to_display(r, 'total_value'), axis=1)
-                df['cost_basis_display'] = df.apply(lambda r: convert_to_display(r, 'cost_basis'), axis=1)
-                df['pnl_display'] = df.apply(lambda r: convert_to_display(r, 'pnl'), axis=1)
+                # OPTIMIZATION: Get unique date-currency pairs to minimize rate lookups
+                df['date_normalized'] = pd.to_datetime(df['date']).dt.normalize()
+                df['currency_normalized'] = df['currency'].str.upper().fillna('CAD')
+                
+                # Get unique combinations
+                unique_combos = df[['date_normalized', 'currency_normalized']].drop_duplicates()
+                
+                # Build rate lookup dataframe
+                rate_list = []
+                for _, row in unique_combos.iterrows():
+                    date_val = row['date_normalized']
+                    curr_val = row['currency_normalized']
+                    if curr_val != display_currency.upper():
+                        rate = get_exchange_rate_for_display(curr_val, display_currency, date_val)
+                        if rate is None:
+                            # Fallback rates
+                            if curr_val == 'USD' and display_currency.upper() == 'CAD':
+                                rate = 1.35
+                            elif curr_val == 'CAD' and display_currency.upper() == 'USD':
+                                rate = 1.0 / 1.35
+                            else:
+                                rate = 1.0
+                        rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': float(rate)})
+                    else:
+                        rate_list.append({'date_normalized': date_val, 'currency_normalized': curr_val, 'conversion_rate': 1.0})
+                
+                # Create rate lookup df and merge (FULLY VECTORIZED - no apply!)
+                rate_df = pd.DataFrame(rate_list)
+                df = df.merge(rate_df, on=['date_normalized', 'currency_normalized'], how='left')
+                df['conversion_rate'] = df['conversion_rate'].fillna(1.0)
+                
+                # Vectorized conversion (no loops!)
+                df['total_value_display'] = df['total_value'].astype(float) * df['conversion_rate']
+                df['cost_basis_display'] = df['cost_basis'].astype(float) * df['conversion_rate']
+                df['pnl_display'] = df['pnl'].astype(float) * df['conversion_rate']
+                
                 convert_time = time.time() - convert_start
-                logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s")
+                logger.info(f"⏱️ calculate_portfolio_value_over_time - Currency conversion: {convert_time:.2f}s ({len(unique_combos)} unique date-currency pairs)")
                 
                 value_col = 'total_value_display'
                 cost_col = 'cost_basis_display'
@@ -819,9 +838,11 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
         
         # Calculate performance percentage (P&L / cost_basis * 100)
         # This shows how much the current value exceeds the original purchase price
-        daily_totals['performance_pct'] = daily_totals.apply(
-            lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0.0,
-            axis=1
+        # Vectorized calculation (avoid apply!)
+        daily_totals['performance_pct'] = np.where(
+            daily_totals['cost_basis'] > 0,
+            (daily_totals['pnl'] / daily_totals['cost_basis'] * 100),
+            0.0
         )
         
         # Normalize performance to start at 100 on first trading day

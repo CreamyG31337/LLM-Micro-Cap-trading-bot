@@ -296,10 +296,20 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
                 
                 if trades and len(trades) > 0:
                     # Convert Trade objects to DataFrame format
+                    # Trade model uses 'timestamp' not 'date'
                     trade_data = []
                     for trade in trades:
+                        # Use timestamp and convert to date for DataFrame compatibility
+                        trade_timestamp = trade.timestamp
+                        # Extract date from timestamp for sorting
+                        if hasattr(trade_timestamp, 'date'):
+                            trade_date = trade_timestamp.date()
+                        else:
+                            # If it's already a date, use it directly
+                            trade_date = trade_timestamp
+                        
                         trade_data.append({
-                            'Date': trade.date,
+                            'Date': trade_timestamp,  # Keep full timestamp for processing
                             'Ticker': trade.ticker,
                             'Shares': float(trade.shares),
                             'Price': float(trade.price),

@@ -147,8 +147,25 @@ def startup_backfill_check() -> None:
         missing_days = []
         current = checkpoint_date + timedelta(days=1)  # Start day after checkpoint
         
+        # Import market hours for market open check
+        from market_data.market_hours import MarketHours
+        market_hours = MarketHours()
+        
         while current <= today:
             if market_holidays.is_trading_day(current, market="any"):
+                # CRITICAL: Skip TODAY if market hasn't opened yet
+                # We should NOT create data for a date until the market has opened for that day
+                if current == today:
+                    now_et = datetime.now(et)
+                    market_open_time = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+                    
+                    # If it's before 9:30 AM ET, market hasn't opened yet - skip today
+                    if now_et < market_open_time:
+                        logger.info(f"   {current}: Market hasn't opened yet (current: {now_et.strftime('%I:%M %p ET')}, opens: 9:30 AM ET) - skipping")
+                        # Don't add today to missing_days - we'll process it after market opens
+                        current += timedelta(days=1)
+                        continue
+                
                 # Check if this date needs processing
                 job_completed = is_job_completed('update_portfolio_prices', current)
                 

@@ -2212,7 +2212,7 @@ def display_dataframe_with_copy(
     to spreadsheets or sharing for debugging purposes. Includes all column headers.
     
     Args:
-        df: DataFrame to display
+        df: DataFrame or Styler object to display
         label: Label for the download button (e.g., "Trades", "Positions")
         key_suffix: Unique suffix for the button key to avoid conflicts
         **dataframe_kwargs: Additional arguments to pass to st.dataframe()
@@ -2222,13 +2222,18 @@ def display_dataframe_with_copy(
     """
     import streamlit as st
     
-    # Display the dataframe
+    # Check if this is a Styler object (from df.style.format())
+    is_styler = hasattr(df, 'data')
+    underlying_df = df.data if is_styler else df
+    
+    # Display the dataframe (styled or not)
     st.dataframe(df, **dataframe_kwargs)
     
     # Add download button for TSV export (includes headers by default)
-    if not df.empty:
+    # Use underlying DataFrame for export (without styling)
+    if not underlying_df.empty:
         # Convert to TSV format with headers
-        tsv_data = df.to_csv(index=False, sep='\t')
+        tsv_data = underlying_df.to_csv(index=False, sep='\t')
         
         # Create download button
         st.download_button(

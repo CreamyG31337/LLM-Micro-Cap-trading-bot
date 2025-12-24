@@ -1800,6 +1800,27 @@ def main():
             if display_cols:
                 display_df = positions_df[display_cols].copy()
                 
+                # Convert currency-denominated columns to display currency
+                # The rate_map was already calculated earlier in the function (around line 1156)
+                # We need to apply currency conversion to values that are in position's native currency
+                if not positions_df.empty and 'currency' in positions_df.columns:
+                    # Recalculate rate_map if needed (or reuse from earlier - it's in scope)
+                    # Get unique currencies from positions
+                    unique_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
+                    display_rate_map = fetch_latest_rates_bulk(unique_currencies, display_currency)
+                    
+                    def get_display_rate(curr):
+                        return display_rate_map.get(str(curr).upper(), 1.0)
+                    
+                    # Apply currency conversion to currency-denominated columns
+                    currency_cols = ['cost_basis', 'market_value', 'unrealized_pnl', 'daily_pnl', 'current_price']
+                    for col in currency_cols:
+                        if col in display_df.columns:
+                            # Get currency for each row and apply conversion rate
+                            # Match by index to ensure we get the right currency for each position
+                            rates = positions_df.loc[display_df.index, 'currency'].fillna('CAD').astype(str).str.upper().map(get_display_rate)
+                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0) * rates
+                
                 # Rename columns for display
                 display_df = display_df.rename(columns={c: col_names.get(c, c) for c in display_cols})
                 

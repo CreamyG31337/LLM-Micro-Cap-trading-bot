@@ -47,11 +47,11 @@ load_dotenv(project_root / 'web_dashboard' / '.env')
 
 def _log_rebuild_progress(fund_name: str, message: str, success: bool = True):
     """
-    Optional logging to job execution logs (visible in admin page).
+    Log rebuild progress to both job execution logs and Application Logs (file-based).
     Falls back gracefully if not available (when run directly from CLI).
     """
     try:
-        # Try to import and use the job logging function
+        # Try to import and use the job logging function (in-memory job logs)
         sys.path.insert(0, str(project_root / 'web_dashboard'))
         from scheduler.scheduler_core import log_job_execution
         
@@ -59,6 +59,18 @@ def _log_rebuild_progress(fund_name: str, message: str, success: bool = True):
         log_job_execution(job_id, success, message, 0)
     except Exception:
         # Silently ignore if logging not available (running directly)
+        pass
+    
+    # Also log to file-based Application Logs (visible in admin page Application Logs tab)
+    try:
+        sys.path.insert(0, str(project_root / 'web_dashboard'))
+        from log_handler import log_message
+        
+        # Determine log level based on success
+        level = 'ERROR' if not success else 'INFO'
+        log_message(f"[Rebuild Portfolio - {fund_name}] {message}", level=level)
+    except Exception:
+        # Silently ignore if file logging not available
         pass
 
 def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str, is_docker: bool = False) -> None:
@@ -220,6 +232,9 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
     try:
         # Detect Docker environment
         is_docker = os.path.exists('/.dockerenv') or os.getcwd().startswith('/app')
+        
+        # Log start to Application Logs
+        _log_rebuild_progress(fund_name or "Unknown", f"Starting portfolio rebuild for {fund_name or data_dir}")
         
         print(f"{_safe_emoji('🔄')} Complete Portfolio Rebuild (Supabase Primary, CSV Backup)")
         print("=" * 60)

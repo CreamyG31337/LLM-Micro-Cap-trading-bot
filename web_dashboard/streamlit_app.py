@@ -1594,31 +1594,43 @@ def main():
                     filtered_df = holdings_df.copy()
                     
                     if stock_filter == "Winners (↑ total %)":
-                        filtered_df = filtered_df[filtered_df.get('return_pct', 0) > 0]
+                        if 'return_pct' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['return_pct'].fillna(0) > 0]
                     elif stock_filter == "Losers (↓ total %)":
-                        filtered_df = filtered_df[filtered_df.get('return_pct', 0) < 0]
+                        if 'return_pct' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['return_pct'].fillna(0) < 0]
                     elif stock_filter == "Daily winners (↑ 1-day %)":
-                        filtered_df = filtered_df[filtered_df.get('daily_pnl_pct', 0) > 0]
+                        if 'daily_pnl_pct' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['daily_pnl_pct'].fillna(0) > 0]
                     elif stock_filter == "Daily losers (↓ 1-day %)":
-                        filtered_df = filtered_df[filtered_df.get('daily_pnl_pct', 0) < 0]
+                        if 'daily_pnl_pct' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['daily_pnl_pct'].fillna(0) < 0]
                     elif stock_filter == "Top 5 performers":
-                        filtered_df = filtered_df.nlargest(5, 'return_pct') if 'return_pct' in filtered_df.columns else filtered_df
+                        if 'return_pct' in filtered_df.columns:
+                            filtered_df = filtered_df.nlargest(5, 'return_pct')
                     elif stock_filter == "Bottom 5 performers":
-                        filtered_df = filtered_df.nsmallest(5, 'return_pct') if 'return_pct' in filtered_df.columns else filtered_df
+                        if 'return_pct' in filtered_df.columns:
+                            filtered_df = filtered_df.nsmallest(5, 'return_pct')
                     elif stock_filter == "Canadian (CAD)":
-                        filtered_df = filtered_df[filtered_df.get('currency', '') == 'CAD']
+                        if 'currency' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['currency'] == 'CAD']
                     elif stock_filter == "American (USD)":
-                        filtered_df = filtered_df[filtered_df.get('currency', '') == 'USD']
+                        if 'currency' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['currency'] == 'USD']
                     elif stock_filter == "Stocks only":
-                        filtered_df = filtered_df[~filtered_df.get('ticker', '').str.contains('ETF', case=False, na=False)]
+                        if 'ticker' in filtered_df.columns:
+                            filtered_df = filtered_df[~filtered_df['ticker'].str.contains('ETF', case=False, na=False)]
                     elif stock_filter == "ETFs only":
-                        filtered_df = filtered_df[filtered_df.get('ticker', '').str.contains('ETF', case=False, na=False)]
+                        if 'ticker' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['ticker'].str.contains('ETF', case=False, na=False)]
                     elif stock_filter.startswith("Sector: "):
                         sector_name = stock_filter.replace("Sector: ", "")
-                        filtered_df = filtered_df[filtered_df.get('sector', '') == sector_name]
+                        if 'sector' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['sector'] == sector_name]
                     elif stock_filter.startswith("Industry: "):
                         industry_name = stock_filter.replace("Industry: ", "")
-                        filtered_df = filtered_df[filtered_df.get('industry', '') == industry_name]
+                        if 'industry' in filtered_df.columns:
+                            filtered_df = filtered_df[filtered_df['industry'] == industry_name]
                     # Skip separator lines
                     elif stock_filter.startswith("---"):
                         pass  # No filter applied

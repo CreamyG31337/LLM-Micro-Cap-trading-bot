@@ -833,8 +833,14 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             
             # Create and save portfolio snapshot for this date
             if daily_positions:
-                # Create timestamp for this trading day at market close
-                snapshot_timestamp = datetime.combine(trading_day, datetime.min.time().replace(hour=16, minute=0))
+                # CRITICAL: Create datetime with ET timezone, then convert to UTC for storage
+                # This ensures the timestamp is correctly interpreted regardless of server timezone
+                from datetime import datetime as dt
+                et_tz = pytz.timezone('America/New_York')
+                # Create datetime at 4 PM ET (market close) for the trading day
+                et_datetime = et_tz.localize(dt.combine(trading_day, dt.min.time().replace(hour=16, minute=0)))
+                # Convert to UTC for storage (Supabase stores timestamps in UTC)
+                snapshot_timestamp = et_datetime.astimezone(pytz.UTC)
                 
                 # Calculate total value with NaN checking
                 total_value = Decimal('0')
@@ -1032,18 +1038,14 @@ def rebuild_portfolio_complete(data_dir: str, fund_name: str = None) -> bool:
             # Create and save final portfolio snapshot
             if final_positions:
                 # All positions have current prices - safe to save
-                from datetime import timezone
-                # Use market close time in Eastern timezone for proper historical price fetching
-                # Market closes at 16:00 ET (Eastern Time)
-                from market_config import _is_dst
-                from datetime import timezone as dt_timezone
-                utc_now = datetime.now(dt_timezone.utc)
-                is_dst = _is_dst(utc_now)
-                # 16:00 ET = 20:00 UTC during EDT, 21:00 UTC during EST
-                market_close_hour_utc = 20 if is_dst else 21
-                
-                # Convert date to datetime for final snapshot
-                final_timestamp = datetime.combine(today, datetime.min.time().replace(hour=market_close_hour_utc, minute=0, second=0, microsecond=0))
+                # CRITICAL: Create datetime with ET timezone, then convert to UTC for storage
+                # This ensures the timestamp is correctly interpreted regardless of server timezone
+                from datetime import datetime as dt
+                et_tz = pytz.timezone('America/New_York')
+                # Create datetime at 4 PM ET (market close) for today
+                et_datetime = et_tz.localize(dt.combine(today, dt.min.time().replace(hour=16, minute=0)))
+                # Convert to UTC for storage (Supabase stores timestamps in UTC)
+                final_timestamp = et_datetime.astimezone(pytz.UTC)
                 
                 final_snapshot = PortfolioSnapshot(
                     positions=final_positions,

@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Optional
 import time
+import logging
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,7 +23,8 @@ from ollama_client import get_ollama_client, check_ollama_health, list_available
 from searxng_client import get_searxng_client, check_searxng_health
 from search_utils import (
     format_search_results, build_search_query, search_portfolio_tickers,
-    search_market_news
+    search_market_news, should_trigger_search, extract_tickers_from_query,
+    detect_research_intent
 )
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
@@ -36,6 +38,8 @@ from streamlit_utils import (
     get_fund_thesis_data, get_investor_allocations, get_available_funds
 )
 import os
+
+logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
@@ -258,6 +262,76 @@ with st.sidebar:
 # Main chat area
 st.markdown("### 💬 Chat")
 
+# Example query buttons section
+if searxng_available:
+    st.markdown("#### 🔍 Quick Research")
+    st.caption("Click a button to start a research query, or type your own question below")
+    
+    # Get portfolio tickers for ticker-specific queries
+    portfolio_tickers_list = []
+    if selected_fund:
+        try:
+            positions_df = get_current_positions(selected_fund)
+            if not positions_df.empty and 'ticker' in positions_df.columns:
+                portfolio_tickers_list = positions_df['ticker'].tolist()
+        except Exception:
+            pass
+    
+    # Create columns for example query buttons
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📰 Market News Today", use_container_width=True, key="btn_market_news"):
+            st.session_state.pending_query = "What's the latest stock market news today?"
+        
+        if portfolio_tickers_list:
+            selected_ticker = st.selectbox(
+                "Research Ticker:",
+                options=portfolio_tickers_list,
+                key="select_research_ticker",
+                help="Select a ticker from your portfolio to research"
+            )
+            if st.button(f"🔍 Research {selected_ticker}", use_container_width=True, key="btn_research_ticker"):
+                st.session_state.pending_query = f"Research {selected_ticker} - latest news and analysis"
+        else:
+            ticker_input = st.text_input(
+                "Research Ticker:",
+                placeholder="Enter ticker (e.g., AAPL)",
+                key="input_research_ticker",
+                help="Enter a stock ticker to research"
+            )
+            if ticker_input and st.button(f"🔍 Research {ticker_input.upper()}", use_container_width=True, key="btn_research_ticker_input"):
+                st.session_state.pending_query = f"Research {ticker_input.upper()} - latest news and analysis"
+    
+    with col2:
+        if st.button("📊 Stock Analysis", use_container_width=True, key="btn_stock_analysis"):
+            if portfolio_tickers_list:
+                # Use first ticker if available
+                ticker = portfolio_tickers_list[0]
+                st.session_state.pending_query = f"Analyze {ticker} stock - recent performance and outlook"
+            else:
+                st.session_state.pending_query = "Analyze a stock - provide recent performance and outlook analysis"
+        
+        if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks"):
+            if len(portfolio_tickers_list) >= 2:
+                tickers_str = " and ".join(portfolio_tickers_list[:2])
+                st.session_state.pending_query = f"Compare {tickers_str} stocks"
+            else:
+                st.session_state.pending_query = "Compare two stocks - provide a detailed comparison"
+    
+    with col3:
+        if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
+            st.session_state.pending_query = "What's happening in the stock market sectors today?"
+        
+        if st.button("💰 Earnings News", use_container_width=True, key="btn_earnings"):
+            if portfolio_tickers_list:
+                ticker = portfolio_tickers_list[0]
+                st.session_state.pending_query = f"Find recent earnings news for {ticker}"
+            else:
+                st.session_state.pending_query = "Find recent earnings news and announcements"
+    
+    st.markdown("---")
+
 # Display conversation history
 for message in st.session_state.chat_messages:
     with st.chat_message(message["role"]):
@@ -317,8 +391,13 @@ def build_context_string() -> str:
 # Start Analysis Workflow vs Standard Chat
 user_query = None
 
+# Check for pending query from example buttons
+if 'pending_query' in st.session_state:
+    user_query = st.session_state.pending_query
+    del st.session_state.pending_query
+
 # If no messages yet, show the "Start Analysis" workflow
-if updated_items and not st.session_state.chat_messages:
+if updated_items and not st.session_state.chat_messages and not user_query:
     st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
     
     with st.container():
@@ -357,39 +436,79 @@ if user_query:
     # Build context
     context_string = build_context_string()
     
-    # Perform web search if enabled
+    # Get portfolio tickers for search detection
+    portfolio_tickers = []
+    if selected_fund:
+        try:
+            positions_df = get_current_positions(selected_fund)
+            if not positions_df.empty and 'ticker' in positions_df.columns:
+                portfolio_tickers = positions_df['ticker'].tolist()
+        except Exception:
+            pass
+    
+    # Perform web search - automatic detection or manual toggle
     search_results_text = ""
     search_data = None
-    if include_search and searxng_client and searxng_available:
-        with st.spinner("🔍 Searching the web..."):
-            try:
-                # Get portfolio tickers if available for enhanced search
-                tickers = []
-                if selected_fund:
-                    try:
-                        positions_df = get_current_positions(selected_fund)
-                        if not positions_df.empty and 'ticker' in positions_df.columns:
-                            tickers = positions_df['ticker'].tolist()
-                    except Exception:
-                        pass
-                
-                # Build optimized search query
-                search_query = build_search_query(user_query, tickers if auto_search_tickers else None)
-                
-                # Perform search
-                search_data = searxng_client.search_news(
-                    query=search_query,
-                    time_range='day',
-                    max_results=10
-                )
-                
-                if search_data and 'results' in search_data and search_data['results']:
-                    search_results_text = format_search_results(search_data, max_results=10)
-                    context_string = f"{context_string}\n\n---\n\n{search_results_text}" if context_string else search_results_text
+    search_query_used = None
+    search_triggered = False
+    
+    # Determine if search should be triggered
+    if searxng_client and searxng_available:
+        # Auto-trigger based on query content, or use manual toggle
+        should_search = False
+        if include_search:
+            # Manual toggle is on
+            should_search = True
+        else:
+            # Auto-detect research intent
+            should_search = should_trigger_search(user_query, portfolio_tickers)
+        
+        if should_search:
+            search_triggered = True
+            # Detect research intent for better search strategy
+            research_intent = detect_research_intent(user_query)
+            
+            with st.spinner(f"🔍 Searching the web for: {user_query[:50]}..."):
+                try:
+                    # Build optimized search query based on intent
+                    if research_intent['tickers']:
+                        # Ticker-specific search
+                        ticker = research_intent['tickers'][0]
+                        search_query_used = f"{ticker} stock news"
+                        search_data = searxng_client.search_news(
+                            query=search_query_used,
+                            time_range='day',
+                            max_results=10
+                        )
+                    elif research_intent['research_type'] == 'market':
+                        # Market news search
+                        search_query_used = build_search_query(user_query)
+                        search_data = searxng_client.search_news(
+                            query=search_query_used,
+                            time_range='day',
+                            max_results=10
+                        )
+                    else:
+                        # General search
+                        search_query_used = build_search_query(
+                            user_query,
+                            portfolio_tickers if auto_search_tickers else None
+                        )
+                        search_data = searxng_client.search_news(
+                            query=search_query_used,
+                            time_range='day',
+                            max_results=10
+                        )
                     
-            except Exception as e:
-                st.warning(f"Web search failed: {e}")
-                logger.error(f"Search error: {e}")
+                    if search_data and 'results' in search_data and search_data['results']:
+                        search_results_text = format_search_results(search_data, max_results=10)
+                        context_string = f"{context_string}\n\n---\n\n{search_results_text}" if context_string else search_results_text
+                    elif search_data and 'error' in search_data:
+                        logger.warning(f"Search returned error: {search_data['error']}")
+                        
+                except Exception as e:
+                    st.warning(f"Web search failed: {e}")
+                    logger.error(f"Search error: {e}")
     
     # Generate prompt
     current_context_items = chat_context.get_items()
@@ -407,10 +526,17 @@ if user_query:
     with st.chat_message("user"):
         st.markdown(user_query)
         
-        # Show search results if available
-        if search_data and search_data.get('results'):
-            with st.expander("🔍 Web Search Results", expanded=False):
-                st.markdown(format_search_results(search_data, max_results=5))
+        # Show search status and results inline
+        if search_triggered:
+            if search_data and search_data.get('results'):
+                st.info(f"🔍 **Searched:** {search_query_used} | Found {len(search_data['results'])} results")
+                # Show top results inline
+                with st.expander("📰 Search Results (click to view)", expanded=True):
+                    st.markdown(format_search_results(search_data, max_results=5))
+            elif search_data and 'error' in search_data:
+                st.warning(f"⚠️ Search completed but returned an error: {search_data['error']}")
+            else:
+                st.info(f"🔍 **Searched:** {search_query_used} | No results found")
     
     # Get AI response
     with st.chat_message("assistant"):

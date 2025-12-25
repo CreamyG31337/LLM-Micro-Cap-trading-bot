@@ -9,6 +9,7 @@ for use in AI context and display.
 
 from typing import List, Dict, Any, Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 

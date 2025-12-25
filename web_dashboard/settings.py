@@ -70,9 +70,10 @@ def set_system_setting(key: str, value: Any, description: Optional[str] = None) 
         user_id = get_user_id()
         
         # Prepare the data
+        # Supabase handles JSONB conversion automatically, just pass the value
         data = {
             "key": key,
-            "value": json.dumps(value) if not isinstance(value, str) else f'"{value}"',  # Ensure proper JSON encoding
+            "value": value,  # Supabase will handle JSON conversion
             "updated_by": user_id
         }
         

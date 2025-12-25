@@ -91,8 +91,6 @@ with st.sidebar:
         if desc:
             st.caption(f"ℹ️ {desc}")
     
-    st.caption("_Model is configured by admin in Admin > AI Settings_")
-    
     st.markdown("---")
     
     # Context items display

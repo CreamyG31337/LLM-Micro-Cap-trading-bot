@@ -34,13 +34,13 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
     lines = [f"Fund: {fund}", f"Current Holdings ({len(positions_df)} positions):", ""]
     
     for idx, row in positions_df.iterrows():
-        symbol = row.get('symbol', 'N/A')
-        quantity = row.get('quantity', 0)
+        symbol = row.get('symbol', row.get('ticker', 'N/A'))
+        quantity = row.get('quantity', row.get('shares', 0))
         currency = row.get('currency', 'CAD')
         cost_basis = row.get('cost_basis', 0)
         market_value = row.get('market_value', 0)
         pnl = row.get('unrealized_pnl', 0)
-        pnl_pct = row.get('unrealized_pnl_pct', 0)
+        pnl_pct = row.get('unrealized_pnl_pct', row.get('return_pct', 0))
         
         lines.append(f"  {symbol}:")
         lines.append(f"    Quantity: {quantity}")

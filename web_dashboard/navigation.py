@@ -25,7 +25,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         # If auth utils not available, render minimal navigation
         st.sidebar.title("Navigation")
         st.sidebar.markdown("### Pages")
-        st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard")
+        st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
         return
     
     # Navigation title
@@ -33,7 +33,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # Page links
     st.sidebar.markdown("### Pages")
-    st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard")
+    st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
     
     # Show admin status and link
     admin_status = is_admin()
@@ -43,7 +43,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         if admin_status:
             st.sidebar.success("✅ Admin Access")
             # Admin page link (only visible to admins)
-            st.sidebar.page_link("pages/admin.py", label="🔧 Admin Panel", icon="🔧")
+            st.sidebar.page_link("pages/admin.py", label="Admin Panel", icon="🔧")
         else:
             # Check if user profile exists and show role
             try:
@@ -67,7 +67,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             from ollama_client import check_ollama_health
             
             if check_ollama_health():
-                st.sidebar.page_link("pages/ai_assistant.py", label="🤖 AI Assistant", icon="💬")
+                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🤖")
             else:
                 with st.sidebar.expander("💬 Chat Assistant", expanded=False):
                     st.warning("AI Assistant unavailable")
@@ -78,7 +78,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # Settings link (if requested)
     if show_settings:
-        st.sidebar.page_link("pages/settings.py", label="👤 User Preferences", icon="👤")
+        st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
     
     st.sidebar.markdown("---")
 

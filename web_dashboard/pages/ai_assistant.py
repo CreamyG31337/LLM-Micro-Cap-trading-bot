@@ -266,16 +266,38 @@ def build_context_string() -> str:
     
     return "\n\n---\n\n".join(context_parts)
 
-# Prompt preview section
-if updated_items:
-    with st.expander("📝 Prompt Preview", expanded=False):
-        preview_prompt = chat_context.generate_prompt()
-        st.caption("The AI assistant will analyze:")
-        st.info(preview_prompt)
-        st.caption(f"_{len(updated_items)} data source(s) selected from {selected_fund if selected_fund else 'N/A'}_")
+# Start Analysis Workflow vs Standard Chat
+user_query = None
 
-# Chat input
-user_query = st.chat_input("Ask about your portfolio...")
+# If no messages yet, show the "Start Analysis" workflow
+if updated_items and not st.session_state.chat_messages:
+    st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
+    
+    with st.container():
+        st.markdown("### 🚀 Start Analysis")
+        st.caption("Review and edit the prompt below, then click Run to start.")
+        
+        # Generate default prompt
+        default_prompt = chat_context.generate_prompt()
+        
+        # Editable prompt area
+        initial_query = st.text_area(
+            "Analysis Prompt",
+            value=default_prompt,
+            height=150,
+            help="You can edit this prompt before sending",
+            label_visibility="collapsed"
+        )
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("▶️ Run Analysis", type="primary", use_container_width=True):
+                user_query = initial_query
+
+# Standard chat input (always available)
+chat_input_query = st.chat_input("Ask about your portfolio...")
+if chat_input_query:
+    user_query = chat_input_query
 
 if user_query:
     # Add user message to history
@@ -348,4 +370,13 @@ if user_query:
 # Footer
 st.markdown("---")
 st.caption(f"Using model: {selected_model} | Context items: {len(context_items)}")
+
+# Debug section
+with st.expander("🔧 Debug Context (Raw AI Input)", expanded=False):
+    if context_items:
+        st.caption("This is the exact text data being sent to the AI:")
+        debug_context = build_context_string()
+        st.code(debug_context, language="text")
+    else:
+        st.info("No context items selected.")
 

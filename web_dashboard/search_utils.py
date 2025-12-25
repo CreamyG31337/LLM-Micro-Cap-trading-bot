@@ -235,3 +235,155 @@ def format_ticker_news_results(ticker_results: Dict[str, Dict[str, Any]]) -> str
     
     return "\n".join(formatted_parts)
 
+
+def extract_tickers_from_query(query: str) -> List[str]:
+    """Extract ticker symbols from a query string.
+    
+    Looks for uppercase 1-5 letter ticker symbols, typically preceded by
+    common patterns like "stock", "$", or standalone.
+    
+    Args:
+        query: User query string
+        
+    Returns:
+        List of potential ticker symbols found
+    """
+    # Common ticker patterns:
+    # - Standalone uppercase: "AAPL", "TSLA"
+    # - With $ prefix: "$AAPL"
+    # - After "stock" or similar: "AAPL stock"
+    # - In parentheses: "(AAPL)"
+    
+    # Pattern for ticker symbols: 1-5 uppercase letters, possibly with $ prefix
+    ticker_pattern = r'\$?([A-Z]{1,5})\b'
+    
+    # Find all potential matches
+    matches = re.findall(ticker_pattern, query)
+    
+    # Filter out common false positives (common words that look like tickers)
+    false_positives = {
+        'I', 'A', 'AN', 'THE', 'IS', 'IT', 'TO', 'BE', 'OR', 'OF', 'IN',
+        'ON', 'AT', 'BY', 'FOR', 'AS', 'WE', 'HE', 'MY', 'ME', 'US', 'SO',
+        'DO', 'GO', 'NO', 'UP', 'IF', 'AM', 'PM', 'OK', 'TV', 'PC', 'AI',
+        'API', 'URL', 'HTTP', 'HTTPS', 'PDF', 'CSV', 'JSON', 'XML', 'HTML'
+    }
+    
+    # Extract unique tickers, filtering false positives
+    tickers = []
+    for match in matches:
+        if match not in false_positives and match not in tickers:
+            tickers.append(match)
+    
+    return tickers
+
+
+def detect_research_intent(query: str) -> Dict[str, Any]:
+    """Detect research intent and classify the type of research needed.
+    
+    Args:
+        query: User query string
+        
+    Returns:
+        Dictionary with:
+        - 'needs_search': bool - Whether search should be triggered
+        - 'research_type': str - Type of research ('ticker', 'market', 'general', 'none')
+        - 'tickers': List[str] - Extracted ticker symbols
+        - 'keywords': List[str] - Relevant keywords found
+    """
+    query_lower = query.lower()
+    
+    # Extract tickers
+    tickers = extract_tickers_from_query(query)
+    
+    # Research keywords that indicate need for web search
+    research_keywords = [
+        'research', 'news', 'latest', 'recent', 'today', 'analysis',
+        'analyze', 'information', 'find', 'search', 'what', 'how',
+        'why', 'when', 'where', 'update', 'current', 'happening'
+    ]
+    
+    # Market-related keywords
+    market_keywords = [
+        'market', 'stocks', 'trading', 'earnings', 'ipo', 'dividend',
+        'sector', 'industry', 'company', 'corporation', 'financial',
+        'investor', 'investment', 'portfolio', 'equity', 'shares'
+    ]
+    
+    # Time-sensitive keywords
+    time_keywords = [
+        'today', 'this week', 'this month', 'recent', 'latest',
+        'current', 'now', 'yesterday', 'last week', 'last month'
+    ]
+    
+    # Find matching keywords
+    found_research_keywords = [kw for kw in research_keywords if kw in query_lower]
+    found_market_keywords = [kw for kw in market_keywords if kw in query_lower]
+    found_time_keywords = [kw for kw in time_keywords if kw in query_lower]
+    
+    # Determine if search is needed
+    needs_search = False
+    research_type = 'none'
+    
+    # Always search if explicit research keywords
+    if found_research_keywords:
+        needs_search = True
+        if tickers:
+            research_type = 'ticker'
+        elif found_market_keywords:
+            research_type = 'market'
+        else:
+            research_type = 'general'
+    
+    # Search if tickers mentioned (likely asking about specific stocks)
+    elif tickers:
+        needs_search = True
+        research_type = 'ticker'
+    
+    # Search for market/time-sensitive queries
+    elif found_market_keywords and found_time_keywords:
+        needs_search = True
+        research_type = 'market'
+    
+    # Search for general market queries
+    elif found_market_keywords:
+        needs_search = True
+        research_type = 'market'
+    
+    return {
+        'needs_search': needs_search,
+        'research_type': research_type,
+        'tickers': tickers,
+        'keywords': {
+            'research': found_research_keywords,
+            'market': found_market_keywords,
+            'time': found_time_keywords
+        }
+    }
+
+
+def should_trigger_search(query: str, portfolio_tickers: Optional[List[str]] = None) -> bool:
+    """Determine if a search should be triggered automatically based on query content.
+    
+    Args:
+        query: User query string
+        portfolio_tickers: Optional list of tickers in user's portfolio
+        
+    Returns:
+        True if search should be triggered, False otherwise
+    """
+    intent = detect_research_intent(query)
+    
+    if not intent['needs_search']:
+        return False
+    
+    # If tickers are mentioned, check if they're in portfolio
+    if intent['tickers'] and portfolio_tickers:
+        # If all mentioned tickers are in portfolio, might not need external search
+        # But still search if research keywords are present
+        all_in_portfolio = all(ticker in portfolio_tickers for ticker in intent['tickers'])
+        if all_in_portfolio and not intent['keywords']['research']:
+            # Only skip if no research keywords and all tickers in portfolio
+            return False
+    
+    return True
+

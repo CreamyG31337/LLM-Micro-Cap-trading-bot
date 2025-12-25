@@ -34,6 +34,8 @@ from auth_utils import is_authenticated, get_user_email, is_admin
 from navigation import render_navigation
 from research_repository import ResearchRepository
 from postgres_client import PostgresClient
+from ollama_client import get_ollama_client, check_ollama_health
+from settings import get_summarizing_model
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,101 @@ if 'refresh_key' not in st.session_state:
     st.session_state.refresh_key = 0
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 1
+
+# Initialize reanalysis model (default to current summarizing model)
+if 'reanalysis_model' not in st.session_state:
+    st.session_state.reanalysis_model = get_summarizing_model()
+
+# Re-analysis function
+def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
+    """Re-analyze an article with a specified AI model.
+    
+    Args:
+        article_id: UUID of the article to re-analyze
+        model_name: Name of the Ollama model to use
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    try:
+        # Check repository is available
+        if repo is None:
+            return False, "Research repository is not available"
+        
+        # Check Ollama availability
+        if not check_ollama_health():
+            return False, "Ollama is not available. Please check the connection."
+        
+        # Get article from repository
+        query = """
+            SELECT id, title, content, ticker, sector
+            FROM research_articles
+            WHERE id = %s
+        """
+        articles = repo.client.execute_query(query, (article_id,))
+        
+        if not articles:
+            return False, "Article not found"
+        
+        article = articles[0]
+        content = article.get('content', '')
+        
+        if not content:
+            return False, "Article has no content to analyze"
+        
+        # Initialize Ollama client
+        ollama_client = get_ollama_client()
+        if not ollama_client:
+            return False, "Failed to initialize Ollama client"
+        
+        # Generate summary with specified model
+        summary_data = ollama_client.generate_summary(content, model=model_name)
+        
+        if not summary_data:
+            return False, "Failed to generate summary"
+        
+        # Extract summary text
+        if isinstance(summary_data, str):
+            summary = summary_data
+            extracted_ticker = None
+            extracted_sector = None
+        elif isinstance(summary_data, dict):
+            summary = summary_data.get("summary", "")
+            tickers = summary_data.get("tickers", [])
+            sectors = summary_data.get("sectors", [])
+            
+            # Use first ticker if available
+            extracted_ticker = tickers[0] if tickers else None
+            extracted_sector = sectors[0] if sectors else None
+        else:
+            return False, "Invalid summary data format"
+        
+        if not summary:
+            return False, "Generated summary is empty"
+        
+        # Generate embedding
+        embedding = ollama_client.generate_embedding(content[:6000])
+        if not embedding:
+            logger.warning(f"Failed to generate embedding for article {article_id}, continuing without embedding")
+            embedding = None
+        
+        # Update article in database
+        success = repo.update_article_analysis(
+            article_id=article_id,
+            summary=summary,
+            ticker=extracted_ticker,
+            sector=extracted_sector,
+            embedding=embedding
+        )
+        
+        if success:
+            return True, f"Article re-analyzed successfully with {model_name}"
+        else:
+            return False, "Failed to update article in database"
+            
+    except Exception as e:
+        logger.error(f"Error re-analyzing article {article_id}: {e}", exc_info=True)
+        return False, f"Error: {str(e)}"
 
 # Helper function to convert UTC to local timezone
 def to_local_time(utc_dt: datetime) -> datetime:
@@ -196,6 +293,47 @@ with st.sidebar:
     
     # Results per page
     results_per_page = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
+    
+    # Admin-only: Model selector for re-analysis
+    if is_admin():
+        st.markdown("---")
+        st.header("🔧 Admin Tools")
+        
+        from ollama_client import list_available_models
+        
+        if check_ollama_health():
+            try:
+                models = list_available_models()
+                if models:
+                    # Get current default model
+                    default_model = get_summarizing_model()
+                    
+                    # Ensure default model is in the list
+                    if default_model not in models:
+                        model_options = [default_model] + models
+                        default_index = 0
+                    else:
+                        model_options = models
+                        default_index = model_options.index(default_model) if default_model in model_options else 0
+                    
+                    selected_model = st.selectbox(
+                        "Re-Analysis Model",
+                        options=model_options,
+                        index=default_index,
+                        help="Select AI model to use when re-analyzing articles (default: current summarizing model)",
+                        key="admin_reanalysis_model"
+                    )
+                    st.session_state.reanalysis_model = selected_model
+                else:
+                    st.warning("No models available. Pull a model first (e.g., `ollama pull llama3`)")
+                    st.session_state.reanalysis_model = get_summarizing_model()
+            except Exception as e:
+                logger.error(f"Error listing models: {e}")
+                st.error(f"Error loading models: {e}")
+                st.session_state.reanalysis_model = get_summarizing_model()
+        else:
+            st.warning("Ollama not available")
+            st.session_state.reanalysis_model = get_summarizing_model()
     
     st.markdown("---")
     
@@ -434,13 +572,31 @@ try:
                 
                 # Admin actions
                 if is_admin():
-                    if st.button("🗑️ Delete", key=f"del_{article['id']}", type="secondary", use_container_width=True):
-                        if repo.delete_article(article['id']):
-                            st.toast(f"✅ Deleted: {article.get('title', 'Article')}")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to delete article")
+                    col_admin1, col_admin2 = st.columns(2)
+                    
+                    with col_admin1:
+                        if st.button("🔄 Re-Analyze", key=f"reanalyze_{article['id']}", type="primary", use_container_width=True):
+                            # Get model from session state (default to current summarizing model if not set)
+                            model = st.session_state.get('reanalysis_model', get_summarizing_model())
+                            
+                            with st.spinner(f"Re-analyzing with {model}..."):
+                                success, message = reanalyze_article(article['id'], model)
+                                
+                                if success:
+                                    st.toast(f"✅ {message}", icon="✅")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {message}")
+                    
+                    with col_admin2:
+                        if st.button("🗑️ Delete", key=f"del_{article['id']}", type="secondary", use_container_width=True):
+                            if repo.delete_article(article['id']):
+                                st.toast(f"✅ Deleted: {article.get('title', 'Article')}")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to delete article")
                 
                 st.markdown("---")
                 

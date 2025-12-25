@@ -76,7 +76,8 @@
             "num_ctx": 16384,
             "num_predict": 4096,
             "temperature": 0.1,
-            "desc": "Optimized for code, but accurate with structured data/JSON."
+            "desc": "Optimized for code, but accurate with structured data/JSON.",
+            "hidden": true
         },
         "gpt-oss:20b": {
             "num_ctx": 4096,

@@ -164,10 +164,10 @@ class OllamaClient:
             return False
     
     def list_available_models(self) -> List[str]:
-        """List all available models in Ollama.
+        """List all available models in Ollama (unfiltered).
         
         Returns:
-            List of model names
+            List of all model names from Ollama
         """
         if not self.enabled:
             logger.debug("Model listing skipped: Ollama disabled")
@@ -188,6 +188,39 @@ class OllamaClient:
         except Exception as e:
             logger.error(f"❌ Error listing Ollama models: {e}")
             return []
+    
+    def get_filtered_models(self, include_hidden: bool = False) -> List[str]:
+        """Get list of available models, filtered by JSON config.
+        
+        Filters out models marked as "hidden": true in model_config.json.
+        Models not in the JSON config are included by default (backward compatibility).
+        
+        Args:
+            include_hidden: If True, include models marked as hidden
+            
+        Returns:
+            List of model names (filtered)
+        """
+        all_models = self.list_available_models()
+        config_models = self.model_config.get('models', {})
+        
+        filtered = []
+        for model in all_models:
+            # If model not in config, include it (backward compatibility)
+            if model not in config_models:
+                filtered.append(model)
+                continue
+            
+            # Model is in config - check if it's hidden
+            model_config = config_models.get(model, {})
+            is_hidden = model_config.get('hidden', False)
+            
+            # Include if not hidden, or if include_hidden=True
+            if not is_hidden or include_hidden:
+                filtered.append(model)
+        
+        logger.debug(f"Filtered {len(all_models)} models to {len(filtered)} visible models")
+        return filtered
     
     def query_ollama(
         self,
@@ -607,12 +640,20 @@ def check_ollama_health() -> bool:
     return client.check_health() if client else False
 
 
-def list_available_models() -> List[str]:
-    """List available Ollama models.
+def list_available_models(include_hidden: bool = False) -> List[str]:
+    """List available Ollama models, filtered by JSON config.
     
+    By default, excludes models marked as "hidden": true in model_config.json.
+    Models not in the JSON config are included (backward compatibility).
+    
+    Args:
+        include_hidden: If True, include models marked as hidden
+        
     Returns:
-        List of model names
+        List of model names (filtered)
     """
     client = get_ollama_client()
-    return client.list_available_models() if client else []
+    if client:
+        return client.get_filtered_models(include_hidden=include_hidden)
+    return []
 

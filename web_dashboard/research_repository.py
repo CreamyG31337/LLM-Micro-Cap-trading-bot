@@ -275,8 +275,29 @@ class ResearchRepository:
                 params.append(article_type)
             
             if ticker:
-                query += " AND ticker = %s"
-                params.append(ticker)
+                # Check if this is an ETF and get its sector
+                etf_sector = None
+                try:
+                    sector_query = "SELECT sector, company_name FROM securities WHERE ticker = %s"
+                    sector_result = self.client.execute_query(sector_query, (ticker,))
+                    
+                    if sector_result:
+                        sec = sector_result[0]
+                        company_name = sec.get('company_name', '') or ''
+                        is_etf = ('etf' in ticker.lower() or (company_name and 'etf' in company_name.lower()))
+                        if is_etf:
+                            etf_sector = sec.get('sector')
+                            logger.debug(f"Ticker {ticker} is an ETF with sector: {etf_sector}")
+                except Exception as e:
+                    logger.debug(f"Could not check ETF status for {ticker}: {e}")
+                
+                # Include sector articles for ETFs
+                if etf_sector:
+                    query += " AND (ticker = %s OR (ticker IS NULL AND sector = %s))"
+                    params.extend([ticker, etf_sector])
+                else:
+                    query += " AND ticker = %s"
+                    params.append(ticker)
             
             query += " ORDER BY fetched_at DESC LIMIT %s"
             params.append(limit)
@@ -346,6 +367,82 @@ class ResearchRepository:
             logger.error(f"❌ Error deleting article {article_id}: {e}")
             return False
     
+    def update_article_analysis(
+        self,
+        article_id: str,
+        summary: Optional[str] = None,
+        ticker: Optional[str] = None,
+        sector: Optional[str] = None,
+        embedding: Optional[List[float]] = None
+    ) -> bool:
+        """Update AI-generated fields of an article (summary, ticker, sector, embedding).
+        
+        Preserves original fields: title, url, content, source, published_at, fetched_at, article_type.
+        
+        Args:
+            article_id: UUID of the article to update
+            summary: New AI-generated summary
+            ticker: Extracted ticker (can be None to clear)
+            sector: Extracted sector (can be None to clear)
+            embedding: New vector embedding (list of 768 floats)
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            # Build UPDATE query dynamically based on what's provided
+            updates = []
+            params = []
+            
+            if summary is not None:
+                updates.append("summary = %s")
+                params.append(summary)
+            
+            if ticker is not None:
+                updates.append("ticker = %s")
+                params.append(ticker)
+            elif ticker is None and any(x is not None for x in [summary, sector, embedding]):
+                # Allow explicitly clearing ticker by passing None
+                # Only add if we're actually updating something
+                updates.append("ticker = %s")
+                params.append(None)
+            
+            if sector is not None:
+                updates.append("sector = %s")
+                params.append(sector)
+            elif sector is None and any(x is not None for x in [summary, ticker, embedding]):
+                # Allow explicitly clearing sector
+                updates.append("sector = %s")
+                params.append(None)
+            
+            if embedding is not None:
+                # Convert embedding list to PostgreSQL vector format
+                embedding_str = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+                updates.append("embedding = %s::vector")
+                params.append(embedding_str)
+            
+            if not updates:
+                logger.warning(f"No fields to update for article {article_id}")
+                return False
+            
+            # Add article_id to params
+            params.append(article_id)
+            
+            query = f"UPDATE research_articles SET {', '.join(updates)} WHERE id = %s"
+            
+            rows_updated = self.client.execute_update(query, tuple(params))
+            
+            if rows_updated > 0:
+                logger.info(f"✅ Updated article {article_id} analysis")
+                return True
+            else:
+                logger.warning(f"⚠️ Article {article_id} not found for update")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating article {article_id} analysis: {e}")
+            return False
+    
     def search_similar_articles(
         self,
         query_embedding: List[float],
@@ -387,8 +484,29 @@ class ResearchRepository:
             
             # Add optional filters
             if ticker:
-                query += " AND ticker = %s"
-                params.append(ticker)
+                # Check if this is an ETF and get its sector
+                etf_sector = None
+                try:
+                    sector_query = "SELECT sector, company_name FROM securities WHERE ticker = %s"
+                    sector_result = self.client.execute_query(sector_query, (ticker,))
+                    
+                    if sector_result:
+                        sec = sector_result[0]
+                        company_name = sec.get('company_name', '') or ''
+                        is_etf = ('etf' in ticker.lower() or (company_name and 'etf' in company_name.lower()))
+                        if is_etf:
+                            etf_sector = sec.get('sector')
+                            logger.debug(f"Ticker {ticker} is an ETF with sector: {etf_sector}")
+                except Exception as e:
+                    logger.debug(f"Could not check ETF status for {ticker}: {e}")
+                
+                # Include sector articles for ETFs
+                if etf_sector:
+                    query += " AND (ticker = %s OR (ticker IS NULL AND sector = %s))"
+                    params.extend([ticker, etf_sector])
+                else:
+                    query += " AND ticker = %s"
+                    params.append(ticker)
             
             if article_type:
                 query += " AND article_type = %s"

@@ -127,6 +127,9 @@ The dashboard includes APScheduler for running background tasks inside the Docke
 | Job | Interval | Description |
 |-----|----------|-------------|
 | `exchange_rates` | 30 min | Fetch latest USD/CAD rate from Bank of Canada API |
+| `market_research` | 6 hours | Collect general market news articles |
+| `ticker_research` | 6 hours | Monitor news for portfolio holdings (ETFs → sectors) |
+| `opportunity_discovery` | 12 hours | Hunt for new investment opportunities |
 
 ### Admin UI
 Add to your Streamlit app:
@@ -283,6 +286,7 @@ SELECT * FROM get_user_funds('user-uuid-here');
 - **Database Setup**: See `DATABASE_SETUP.md`
 - **Schema Details**: See `schema/README.md`
 - **API Reference**: See code comments in `app.py`
+- **AI Research System**: See [`AI_RESEARCH_SYSTEM.md`](AI_RESEARCH_SYSTEM.md) - Complete guide to automated news collection, AI summarization, and semantic search
 
 ## 🚀 Deployment
 

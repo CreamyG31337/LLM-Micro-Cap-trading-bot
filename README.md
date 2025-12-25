@@ -51,6 +51,14 @@ An advanced AI-powered trading bot for micro-cap stock analysis with dual curren
 - **Multi-User Auth** - Secure access with Supabase RLS policies
 - **Performance Charts** - Interactive Plotly charts with benchmark comparison
 
+### **AI Research System** 🆕
+- **Automated News Collection** - Continuously monitors financial markets and portfolio holdings
+- **AI-Powered Summaries** - Generates intelligent summaries with ticker/sector extraction
+- **Semantic Search** - Vector embeddings enable natural language article search
+- **ETF Intelligence** - Automatically researches sectors for ETF holdings
+- **Opportunity Discovery** - Hunts for new investment opportunities
+- **See [AI Research System Documentation](web_dashboard/AI_RESEARCH_SYSTEM.md)** for full details
+
 ## Daily Workflow
 
 ### **Simple Daily Routine**

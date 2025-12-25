@@ -154,3 +154,36 @@ def get_research_domain_blacklist() -> list[str]:
         return []
     
     return blacklist
+
+
+def get_discovery_search_queries() -> list[str]:
+    """Get the list of search queries for opportunity discovery job.
+    
+    Returns:
+        List of search query strings for finding new investment opportunities
+    """
+    from datetime import datetime
+    
+    # Get current month/year for time-relevant queries
+    current_month = datetime.now().strftime("%B %Y")
+    current_week = datetime.now().strftime("week of %B %d")
+    
+    # Default queries focused on microcap opportunities
+    default_queries = [
+        f"undervalued microcap stocks {current_month}",
+        f"stocks with insider buying {current_week}",
+        f"small cap breakout stocks this week",
+        "penny stocks with catalysts today",
+        f"biotech clinical trial results {current_month}",
+        "new spin-off stocks 2025",
+        "microcap stocks earnings beat",
+        "small cap stocks analyst upgrades today"
+    ]
+    
+    # Check for custom queries in settings
+    custom_queries = get_system_setting("discovery_search_queries", default=None)
+    
+    if custom_queries and isinstance(custom_queries, list):
+        return custom_queries
+    
+    return default_queries

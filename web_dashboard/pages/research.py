@@ -165,7 +165,7 @@ with st.sidebar:
     # Article type filter
     article_type = st.selectbox(
         "Article Type",
-        ["All", "market_news", "ticker_news", "earnings"],
+        ["All", "market_news", "ticker_news", "earnings", "opportunity_discovery"],
         index=0
     )
     article_type_filter = None if article_type == "All" else article_type

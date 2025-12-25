@@ -403,13 +403,31 @@ If no tickers, sectors, themes, or companies are found, use empty arrays []. Alw
                 
                 parsed = json.loads(json_str)
                 
+                # Helper function to safely extract string values from lists
+                def extract_strings(value, default=[]):
+                    """Extract string values from a list, handling mixed types."""
+                    if not isinstance(value, list):
+                        return default
+                    result = []
+                    for item in value:
+                        if isinstance(item, str) and item.strip():
+                            result.append(item.strip())
+                        elif isinstance(item, (int, float)):
+                            # Convert numbers to strings
+                            result.append(str(item).strip())
+                    return result
+                
                 # Validate and normalize structure
+                summary_text = parsed.get("summary", "")
+                if not isinstance(summary_text, str):
+                    summary_text = str(summary_text) if summary_text else ""
+                
                 result = {
-                    "summary": parsed.get("summary", "").strip(),
-                    "tickers": [t.upper().strip() for t in parsed.get("tickers", []) if t and t.strip()],
-                    "sectors": [s.strip() for s in parsed.get("sectors", []) if s and s.strip()],
-                    "key_themes": [t.strip() for t in parsed.get("key_themes", []) if t and t.strip()],
-                    "companies": [c.strip() for c in parsed.get("companies", []) if c and c.strip()]
+                    "summary": summary_text.strip(),
+                    "tickers": [t.upper() for t in extract_strings(parsed.get("tickers", []))],
+                    "sectors": extract_strings(parsed.get("sectors", [])),
+                    "key_themes": extract_strings(parsed.get("key_themes", [])),
+                    "companies": extract_strings(parsed.get("companies", []))
                 }
                 
                 logger.debug(f"Generated summary: {len(result['summary'])} chars, {len(result['tickers'])} tickers, {len(result['sectors'])} sectors")

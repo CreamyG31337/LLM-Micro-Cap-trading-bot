@@ -52,6 +52,12 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'Fetch news for specific companies in the portfolio',
         'default_interval_minutes': 360,  # Every 6 hours
         'enabled_by_default': True
+    },
+    'opportunity_discovery': {
+        'name': 'Opportunity Discovery',
+        'description': 'Hunt for new investment opportunities using targeted search queries',
+        'default_interval_minutes': 720,  # Every 12 hours
+        'enabled_by_default': True
     }
 }
 
@@ -505,6 +511,406 @@ def ticker_research_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.error(f"❌ Ticker research job failed: {e}", exc_info=True)
+
+
+def opportunity_discovery_job() -> None:
+    """Hunt for new investment opportunities using targeted search queries.
+    
+    This job:
+    1. Rotates through a list of "hunting" queries (e.g., "undervalued microcaps")
+    2. Searches for relevant news using SearXNG
+    3. Saves articles with article_type="opportunity_discovery"
+    """
+    job_id = 'opportunity_discovery'
+    start_time = time.time()
+    
+    try:
+        logger.info("Starting opportunity discovery job...")
+        
+        # Import dependencies
+        try:
+            from searxng_client import get_searxng_client, check_searxng_health
+            from research_utils import extract_article_content
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+            from settings import get_discovery_search_queries
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Check SearXNG health
+        if not check_searxng_health():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG is not available - skipping opportunity discovery"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        # Get clients
+        searxng_client = get_searxng_client()
+        ollama_client = get_ollama_client()
+        
+        if not searxng_client:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG client not initialized"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize research repository
+        research_repo = ResearchRepository()
+        
+        # Load domain blacklist
+        from settings import get_research_domain_blacklist
+        blacklist = get_research_domain_blacklist()
+        
+        # Get discovery queries
+        queries = get_discovery_search_queries()
+        logger.info(f"Using {len(queries)} discovery queries")
+        
+        # Rotate through queries (pick one per run to avoid overwhelming the system)
+        # Use the current hour to deterministically select which query to use
+        from datetime import datetime
+        query_index = datetime.now().hour % len(queries)
+        selected_query = queries[query_index]
+        
+        logger.info(f"🔭 Discovery Query: '{selected_query}'")
+        
+        # Search
+        search_results = searxng_client.search_news(
+            query=selected_query,
+            max_results=8  # Get more results for discovery
+        )
+        
+        if not search_results or not search_results.get('results'):
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"No results for query: {selected_query}"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        articles_processed = 0
+        articles_saved = 0
+        articles_skipped = 0
+        articles_blacklisted = 0
+        
+        for result in search_results['results']:
+            try:
+                url = result.get('url', '')
+                title = result.get('title', '')
+                
+                if not url or not title:
+                    continue
+                
+                # Check blacklist
+                from research_utils import is_domain_blacklisted
+                is_blocked, domain = is_domain_blacklisted(url, blacklist)
+                if is_blocked:
+                    logger.debug(f"Skipping blacklisted: {domain}")
+                    articles_blacklisted += 1
+                    continue
+                
+                # Check if already exists
+                if research_repo.article_exists(url):
+                    logger.debug(f"Article already exists: {title[:50]}...")
+                    articles_skipped += 1
+                    continue
+                
+                # Extract content
+                logger.info(f"  💎 Extracting: {title[:40]}...")
+                extracted = extract_article_content(url)
+                
+                # Health tracking
+                from research_domain_health import DomainHealthTracker
+                tracker = DomainHealthTracker()
+                from settings import get_system_setting
+                threshold = get_system_setting("auto_blacklist_threshold", default=4)
+                
+                content = extracted.get('content', '')
+                if not content or not extracted.get('success'):
+                    error_reason = extracted.get('error', 'unknown')
+                    failure_count = tracker.record_failure(url, error_reason)
+                    
+                    if tracker.should_auto_blacklist(url):
+                        if tracker.auto_blacklist_domain(url):
+                            logger.warning(f"🚫 AUTO-BLACKLISTED: {domain}")
+                            articles_blacklisted += 1
+                    continue
+                
+                tracker.record_success(url)
+                
+                # Generate summary and embedding
+                summary = None
+                summary_data = {}
+                extracted_ticker = None
+                extracted_sector = None
+                embedding = None
+                
+                if ollama_client:
+                    summary_data = ollama_client.generate_summary(content)
+                    
+                    if isinstance(summary_data, str):
+                        summary = summary_data
+                    elif isinstance(summary_data, dict) and summary_data:
+                        summary = summary_data.get("summary", "")
+                        
+                        # Extract ticker and sector
+                        tickers = summary_data.get("tickers", [])
+                        sectors = summary_data.get("sectors", [])
+                        
+                        if tickers:
+                            extracted_ticker = tickers[0]
+                            logger.info(f"  🎯 Discovered ticker: {extracted_ticker}")
+                        
+                        if sectors:
+                            extracted_sector = sectors[0]
+                    
+                    # Generate embedding
+                    embedding = ollama_client.generate_embedding(content[:6000])
+                
+                # Save article with opportunity_discovery type
+                article_id = research_repo.save_article(
+                    ticker=extracted_ticker,
+                    sector=extracted_sector,
+                    article_type="opportunity_discovery",  # Special tag
+                    title=extracted.get('title') or title,
+                    url=url,
+                    summary=summary,
+                    content=content,
+                    source=extracted.get('source'),
+                    published_at=extracted.get('published_at'),
+                    relevance_score=0.7,  # Moderate-high relevance
+                    embedding=embedding
+                )
+                
+                if article_id:
+                    articles_saved += 1
+                    logger.info(f"  ✅ Saved opportunity: {title[:30]}")
+                
+                articles_processed += 1
+                
+                # Delay between articles
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error processing discovery article: {e}")
+                continue
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
+
+
+
+
+def opportunity_discovery_job() -> None:
+    """Hunt for new investment opportunities using targeted search queries.
+    
+    This job:
+    1. Rotates through a list of "hunting" queries (e.g., "undervalued microcaps")
+    2. Searches for relevant news using SearXNG
+    3. Saves articles with article_type="opportunity_discovery"
+    """
+    job_id = 'opportunity_discovery'
+    start_time = time.time()
+    
+    try:
+        logger.info("Starting opportunity discovery job...")
+        
+        # Import dependencies
+        try:
+            from searxng_client import get_searxng_client, check_searxng_health
+            from research_utils import extract_article_content
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+            from settings import get_discovery_search_queries
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Check SearXNG health
+        if not check_searxng_health():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG is not available - skipping opportunity discovery"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        # Get clients
+        searxng_client = get_searxng_client()
+        ollama_client = get_ollama_client()
+        
+        if not searxng_client:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG client not initialized"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize research repository
+        research_repo = ResearchRepository()
+        
+        # Load domain blacklist
+        from settings import get_research_domain_blacklist
+        blacklist = get_research_domain_blacklist()
+        
+        # Get discovery queries
+        queries = get_discovery_search_queries()
+        logger.info(f"Using {len(queries)} discovery queries")
+        
+        # Rotate through queries (pick one per run to avoid overwhelming the system)
+        # Use the current hour to deterministically select which query to use
+        from datetime import datetime
+        query_index = datetime.now().hour % len(queries)
+        selected_query = queries[query_index]
+        
+        logger.info(f"🔭 Discovery Query: '{selected_query}'")
+        
+        # Search
+        search_results = searxng_client.search_news(
+            query=selected_query,
+            max_results=8  # Get more results for discovery
+        )
+        
+        if not search_results or not search_results.get('results'):
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"No results for query: {selected_query}"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        articles_processed = 0
+        articles_saved = 0
+        articles_skipped = 0
+        articles_blacklisted = 0
+        
+        for result in search_results['results']:
+            try:
+                url = result.get('url', '')
+                title = result.get('title', '')
+                
+                if not url or not title:
+                    continue
+                
+                # Check blacklist
+                from research_utils import is_domain_blacklisted
+                is_blocked, domain = is_domain_blacklisted(url, blacklist)
+                if is_blocked:
+                    logger.debug(f"Skipping blacklisted: {domain}")
+                    articles_blacklisted += 1
+                    continue
+                
+                # Check if already exists
+                if research_repo.article_exists(url):
+                    logger.debug(f"Article already exists: {title[:50]}...")
+                    articles_skipped += 1
+                    continue
+                
+                # Extract content
+                logger.info(f"  💎 Extracting: {title[:40]}...")
+                extracted = extract_article_content(url)
+                
+                # Health tracking
+                from research_domain_health import DomainHealthTracker
+                tracker = DomainHealthTracker()
+                from settings import get_system_setting
+                threshold = get_system_setting("auto_blacklist_threshold", default=4)
+                
+                content = extracted.get('content', '')
+                if not content or not extracted.get('success'):
+                    error_reason = extracted.get('error', 'unknown')
+                    failure_count = tracker.record_failure(url, error_reason)
+                    
+                    if tracker.should_auto_blacklist(url):
+                        if tracker.auto_blacklist_domain(url):
+                            logger.warning(f"🚫 AUTO-BLACKLISTED: {domain}")
+                            articles_blacklisted += 1
+                    continue
+                
+                tracker.record_success(url)
+                
+                # Generate summary and embedding
+                summary = None
+                summary_data = {}
+                extracted_ticker = None
+                extracted_sector = None
+                embedding = None
+                
+                if ollama_client:
+                    summary_data = ollama_client.generate_summary(content)
+                    
+                    if isinstance(summary_data, str):
+                        summary = summary_data
+                    elif isinstance(summary_data, dict) and summary_data:
+                        summary = summary_data.get("summary", "")
+                        
+                        # Extract ticker and sector
+                        tickers = summary_data.get("tickers", [])
+                        sectors = summary_data.get("sectors", [])
+                        
+                        if tickers:
+                            extracted_ticker = tickers[0]
+                            logger.info(f"  🎯 Discovered ticker: {extracted_ticker}")
+                        
+                        if sectors:
+                            extracted_sector = sectors[0]
+                    
+                    # Generate embedding
+                    embedding = ollama_client.generate_embedding(content[:6000])
+                
+                # Save article with opportunity_discovery type
+                article_id = research_repo.save_article(
+                    ticker=extracted_ticker,
+                    sector=extracted_sector,
+                    article_type="opportunity_discovery",  # Special tag
+                    title=extracted.get('title') or title,
+                    url=url,
+                    summary=summary,
+                    content=content,
+                    source=extracted.get('source'),
+                    published_at=extracted.get('published_at'),
+                    relevance_score=0.7,  # Moderate-high relevance
+                    embedding=embedding
+                )
+                
+                if article_id:
+                    articles_saved += 1
+                    logger.info(f"  ✅ Saved opportunity: {title[:30]}")
+                
+                articles_processed += 1
+                
+                # Delay between articles
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error processing discovery article: {e}")
+                continue
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
+
+
 
 
 
@@ -1412,3 +1818,31 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: ticker_research_job (every 6 hours)")
+
+        # Opportunity Discovery: Every 12 hours
+        scheduler.add_job(
+            opportunity_discovery_job,
+            trigger=CronTrigger(
+                hour='*/12',
+                minute=30,
+                timezone='America/New_York'
+            ),
+            id='opportunity_discovery_job',
+            name='Opportunity Discovery',
+            replace_existing=True
+        )
+        logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
+
+        # Opportunity Discovery: Every 12 hours
+        scheduler.add_job(
+            opportunity_discovery_job,
+            trigger=CronTrigger(
+                hour='*/12',
+                minute=30,
+                timezone='America/New_York'
+            ),
+            id='opportunity_discovery_job',
+            name='Opportunity Discovery',
+            replace_existing=True
+        )
+        logger.info("Registered job: opportunity_discovery_job (every 12 hours)")

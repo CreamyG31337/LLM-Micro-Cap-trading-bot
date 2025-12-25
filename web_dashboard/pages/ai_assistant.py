@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 import time
 import logging
+import pandas as pd
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -433,8 +434,18 @@ def build_context_string() -> str:
                 context_parts.append(format_cash_balances(cash))
             
             elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
-                allocations = get_investor_allocations(fund) if fund else {}
-                context_parts.append(format_investor_allocations(allocations))
+                allocations_df = get_investor_allocations(fund) if fund else pd.DataFrame()
+                # Convert DataFrame to dict format for formatter
+                if not allocations_df.empty:
+                    allocations_dict = {}
+                    for _, row in allocations_df.iterrows():
+                        allocations_dict[row['contributor_display']] = {
+                            'value': row['net_contribution'],
+                            'percentage': row['ownership_pct']
+                        }
+                    context_parts.append(format_investor_allocations(allocations_dict))
+                else:
+                    context_parts.append(format_investor_allocations({}))
             
             elif item.item_type == ContextItemType.SEARCH_RESULTS:
                 # Search results are added dynamically when user queries

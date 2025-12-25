@@ -1350,3 +1350,17 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
+
+        # Ticker Research: Every 6 hours
+        scheduler.add_job(
+            ticker_research_job,
+            trigger=CronTrigger(
+                hour='*/6',
+                minute=15,
+                timezone='America/New_York'
+            ),
+            id='ticker_research_job',
+            name='Ticker Specific Research',
+            replace_existing=True
+        )
+        logger.info("Registered job: ticker_research_job (every 6 hours)")

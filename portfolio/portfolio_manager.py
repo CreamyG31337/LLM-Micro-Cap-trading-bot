@@ -65,16 +65,13 @@ class PortfolioManager:
                 start_date, end_date = date_range
                 days_diff = (end_date - start_date).days
                 logger.info(f"Loading portfolio data: {start_date.date()} to {end_date.date()} ({days_diff} days)")
-                print(f"📊 Loading portfolio data: {start_date.date()} to {end_date.date()} ({days_diff} days)")
             else:
                 logger.info(f"Loading portfolio data (no date range specified)")
-                print(f"📊 Loading portfolio data (no date range specified)")
             
             snapshots = self.repository.get_portfolio_data(date_range)
             
             elapsed = time.time() - load_start
             logger.info(f"✅ Loaded {len(snapshots)} portfolio snapshots in {elapsed:.2f}s")
-            print(f"✅ Loaded {len(snapshots)} portfolio snapshots in {elapsed:.2f}s")
             
             # Validate for duplicates
             from collections import defaultdict

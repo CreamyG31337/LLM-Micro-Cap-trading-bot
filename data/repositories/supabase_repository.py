@@ -132,9 +132,10 @@ class SupabaseRepository(BaseRepository):
                 date_range_limited = True
                 logger.info(f"⚠️  No date range specified - loading last 90 days only (for performance)")
                 logger.info(f"   Date range: {start_date.date()} to {end_date.date()}")
-                print(f"⚠️  No date range specified - loading last 90 days only (for performance)")
-                print(f"   Date range: {start_date.date()} to {end_date.date()}")
-                print(f"   Note: Full history available but limited for faster loading")
+                # Use logger for user-facing messages to avoid encoding issues with emojis
+                logger.warning(f"No date range specified - loading last 90 days only (for performance)")
+                logger.info(f"   Date range: {start_date.date()} to {end_date.date()}")
+                logger.info(f"   Note: Full history available but limited for faster loading")
             
             # Supabase Python client has a 1000-row default limit
             # We need to paginate to get all data
@@ -174,11 +175,9 @@ class SupabaseRepository(BaseRepository):
             
             elapsed_time = time.time() - start_time
             logger.info(f"✅ Fetched {len(all_data)} portfolio positions in {elapsed_time:.2f}s")
-            print(f"   Fetched {len(all_data)} portfolio positions in {elapsed_time:.2f}s")
             
             if date_range_limited:
                 logger.warning(f"⚠️  Note: Only showing last 90 days of history. Full history available on request.")
-                print(f"⚠️  Note: Only showing last 90 days of history. Full history available on request.")
             
             # Create a result-like object with all data
             class Result:
@@ -204,7 +203,6 @@ class SupabaseRepository(BaseRepository):
             process_time = time.time() - process_start
             total_time = time.time() - start_time
             logger.info(f"✅ Created {len(snapshots)} snapshots in {process_time:.2f}s (total: {total_time:.2f}s)")
-            print(f"   Created {len(snapshots)} snapshots in {process_time:.2f}s (total: {total_time:.2f}s)")
             
             return sorted(snapshots, key=lambda s: s.timestamp)
             

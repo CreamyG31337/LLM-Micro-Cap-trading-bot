@@ -35,6 +35,15 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     st.sidebar.markdown("### Pages")
     st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
     
+    # Research Articles link (if PostgreSQL is available)
+    try:
+        from postgres_client import PostgresClient
+        client = PostgresClient()
+        if client.test_connection():
+            st.sidebar.page_link("pages/research.py", label="Research Articles", icon="📰")
+    except Exception:
+        pass  # Silently fail if Postgres not available
+    
     # Show admin status and link
     admin_status = is_admin()
     user_email = get_user_email()

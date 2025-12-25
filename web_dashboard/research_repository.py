@@ -343,4 +343,155 @@ class ResearchRepository:
         except Exception as e:
             logger.error(f"❌ Error checking if article exists: {e}")
             return False
+    
+    def get_article_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Get statistics about articles
+        
+        Args:
+            days: Number of days to look back for statistics
+            
+        Returns:
+            Dictionary with statistics:
+            - total_count: Total number of articles
+            - by_type: Count by article_type
+            - by_source: Count by source
+            - by_day: Count by day (last N days)
+        """
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            
+            stats = {}
+            
+            # Total count
+            total_result = self.client.execute_query("SELECT COUNT(*) as count FROM research_articles")
+            stats['total_count'] = total_result[0]['count'] if total_result else 0
+            
+            # Count by type
+            type_result = self.client.execute_query("""
+                SELECT article_type, COUNT(*) as count
+                FROM research_articles
+                GROUP BY article_type
+                ORDER BY count DESC
+            """)
+            stats['by_type'] = {row['article_type']: row['count'] for row in type_result} if type_result else {}
+            
+            # Count by source
+            source_result = self.client.execute_query("""
+                SELECT source, COUNT(*) as count
+                FROM research_articles
+                WHERE source IS NOT NULL
+                GROUP BY source
+                ORDER BY count DESC
+            """)
+            stats['by_source'] = {row['source']: row['count'] for row in source_result} if source_result else {}
+            
+            # Count by day (last N days)
+            day_result = self.client.execute_query("""
+                SELECT DATE(fetched_at) as day, COUNT(*) as count
+                FROM research_articles
+                WHERE fetched_at >= %s
+                GROUP BY DATE(fetched_at)
+                ORDER BY day DESC
+            """, (cutoff_date.isoformat(),))
+            stats['by_day'] = {str(row['day']): row['count'] for row in day_result} if day_result else {}
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting article statistics: {e}")
+            return {
+                'total_count': 0,
+                'by_type': {},
+                'by_source': {},
+                'by_day': {}
+            }
+    
+    def get_unique_sources(self) -> List[str]:
+        """Get list of all unique sources
+        
+        Returns:
+            List of unique source names, sorted alphabetically
+        """
+        try:
+            result = self.client.execute_query("""
+                SELECT DISTINCT source
+                FROM research_articles
+                WHERE source IS NOT NULL
+                ORDER BY source
+            """)
+            return [row['source'] for row in result] if result else []
+        except Exception as e:
+            logger.error(f"❌ Error getting unique sources: {e}")
+            return []
+    
+    def get_articles_by_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        article_type: Optional[str] = None,
+        source: Optional[str] = None,
+        search_text: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """Get articles within a date range with optional filters
+        
+        Args:
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+            article_type: Optional filter by article type
+            source: Optional filter by source
+            search_text: Optional text search in title, summary, content
+            limit: Maximum number of results
+            offset: Number of results to skip
+            
+        Returns:
+            List of article dictionaries
+        """
+        try:
+            # Ensure timezone-aware datetimes
+            if start_date.tzinfo is None:
+                start_date = start_date.replace(tzinfo=timezone.utc)
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            
+            query = """
+                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                       source, published_at, fetched_at, relevance_score
+                FROM research_articles
+                WHERE fetched_at >= %s AND fetched_at <= %s
+            """
+            params = [start_date.isoformat(), end_date.isoformat()]
+            
+            if article_type:
+                query += " AND article_type = %s"
+                params.append(article_type)
+            
+            if source:
+                query += " AND source = %s"
+                params.append(source)
+            
+            if search_text:
+                query += " AND (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)"
+                search_pattern = f"%{search_text}%"
+                params.extend([search_pattern, search_pattern, search_pattern])
+            
+            query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+            
+            results = self.client.execute_query(query, tuple(params))
+            
+            # Convert timestamps to datetime objects
+            for article in results:
+                if article.get('published_at'):
+                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
+                if article.get('fetched_at'):
+                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+            
+            logger.debug(f"Retrieved {len(results)} articles for date range")
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting articles by date range: {e}")
+            return []
 

@@ -168,7 +168,8 @@ class ResearchRepository:
         try:
             query = """
                 SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score
+                       source, published_at, fetched_at, relevance_score,
+                       (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE ticker = %s
             """
@@ -222,7 +223,8 @@ class ResearchRepository:
             
             query = """
                 SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score
+                       source, published_at, fetched_at, relevance_score,
+                       (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s
             """
@@ -335,7 +337,8 @@ class ResearchRepository:
                 SELECT 
                     id, ticker, sector, article_type, title, url, summary, content,
                     source, published_at, fetched_at, relevance_score,
-                    1 - (embedding <=> %s::vector) as similarity
+                    1 - (embedding <=> %s::vector) as similarity,
+                    (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE embedding IS NOT NULL
                   AND 1 - (embedding <=> %s::vector) >= %s
@@ -394,7 +397,8 @@ class ResearchRepository:
         try:
             search_query = """
                 SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score
+                       source, published_at, fetched_at, relevance_score,
+                       (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)
                   AND relevance_score >= %s
@@ -530,6 +534,7 @@ class ResearchRepository:
         article_type: Optional[str] = None,
         source: Optional[str] = None,
         search_text: Optional[str] = None,
+        embedding_filter: Optional[bool] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -541,6 +546,7 @@ class ResearchRepository:
             article_type: Optional filter by article type
             source: Optional filter by source
             search_text: Optional text search in title, summary, content
+            embedding_filter: Optional filter by embedding status (True=has embedding, False=no embedding, None=all)
             limit: Maximum number of results
             offset: Number of results to skip
             
@@ -556,7 +562,8 @@ class ResearchRepository:
             
             query = """
                 SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score
+                       source, published_at, fetched_at, relevance_score,
+                       (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s AND fetched_at <= %s
             """
@@ -575,6 +582,12 @@ class ResearchRepository:
                 query += " AND (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)"
                 search_pattern = f"%{search_text}%"
                 params.extend([search_pattern, search_pattern, search_pattern])
+            
+            if embedding_filter is not None:
+                if embedding_filter:
+                    query += " AND embedding IS NOT NULL"
+                else:
+                    query += " AND embedding IS NULL"
             
             query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])
@@ -603,6 +616,7 @@ class ResearchRepository:
         article_type: Optional[str] = None,
         source: Optional[str] = None,
         search_text: Optional[str] = None,
+        embedding_filter: Optional[bool] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -612,6 +626,7 @@ class ResearchRepository:
             article_type: Optional filter by article type
             source: Optional filter by source
             search_text: Optional text search in title, summary, content
+            embedding_filter: Optional filter by embedding status (True=has embedding, False=no embedding, None=all)
             limit: Maximum number of results
             offset: Number of results to skip
             
@@ -621,7 +636,8 @@ class ResearchRepository:
         try:
             query = """
                 SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score
+                       source, published_at, fetched_at, relevance_score,
+                       (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE 1=1
             """
@@ -639,6 +655,12 @@ class ResearchRepository:
                 query += " AND (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)"
                 search_pattern = f"%{search_text}%"
                 params.extend([search_pattern, search_pattern, search_pattern])
+            
+            if embedding_filter is not None:
+                if embedding_filter:
+                    query += " AND embedding IS NOT NULL"
+                else:
+                    query += " AND embedding IS NULL"
             
             query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])

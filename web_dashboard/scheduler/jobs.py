@@ -322,8 +322,8 @@ def ticker_research_job() -> None:
         # We look at the most recent snapshot for each fund
         
         # Efficient query to get distinct ticker/company pairs from current positions
-        # Using the current_positions view is easiest as it aggregates valid positions
-        positions_result = client.supabase.table("current_positions")\
+        # Using the latest_positions view is easiest as it aggregates valid positions
+        positions_result = client.supabase.table("latest_positions")\
             .select("ticker, company, fund")\
             .in_("fund", prod_funds)\
             .execute()

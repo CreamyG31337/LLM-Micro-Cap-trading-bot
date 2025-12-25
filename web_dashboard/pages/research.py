@@ -185,13 +185,22 @@ with st.sidebar:
     search_text = st.text_input("🔍 Search", placeholder="Search in title, summary, content...")
     search_filter = search_text.strip() if search_text else None
     
+    # Embedding status filter (for RAG)
+    embedding_status = st.selectbox(
+        "Embedding Status",
+        ["All", "Embedded", "Pending"],
+        index=0,
+        help="Filter by whether articles have been embedded for AI search (RAG)"
+    )
+    embedding_filter = None if embedding_status == "All" else (embedding_status == "Embedded")
+    
     # Results per page
     results_per_page = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
     
     st.markdown("---")
     
     # Reset pagination when filters change
-    filter_key = f"{date_range_option}_{article_type}_{selected_source}_{search_filter or ''}"
+    filter_key = f"{date_range_option}_{article_type}_{selected_source}_{search_filter or ''}_{embedding_status}"
     if 'last_filter_key' not in st.session_state or st.session_state.last_filter_key != filter_key:
         st.session_state.current_page = 1
         st.session_state.last_filter_key = filter_key
@@ -211,10 +220,27 @@ try:
     # Statistics dashboard
     st.header("📊 Statistics")
     
-    col1, col2, col3, col4 = st.columns(4)
+    # Get embedding statistics
+    try:
+        embedding_stats_query = "SELECT COUNT(*) as total, COUNT(embedding) as embedded FROM research_articles"
+        embedding_stats = repo.client.execute_query(embedding_stats_query)
+        if embedding_stats:
+            total_articles = embedding_stats[0]['total']
+            embedded_articles = embedding_stats[0]['embedded']
+            embedding_pct = (embedded_articles / total_articles * 100) if total_articles > 0 else 0
+        else:
+            total_articles = stats.get('total_count', 0)
+            embedded_articles = 0
+            embedding_pct = 0
+    except Exception:
+        total_articles = stats.get('total_count', 0)
+        embedded_articles = 0
+        embedding_pct = 0
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("Total Articles", stats.get('total_count', 0))
+        st.metric("Total Articles", total_articles)
     
     with col2:
         type_counts = stats.get('by_type', {})
@@ -228,6 +254,9 @@ try:
     with col4:
         earnings = type_counts.get('earnings', 0)
         st.metric("Earnings", earnings)
+    
+    with col5:
+        st.metric("Embedded (RAG)", f"{embedded_articles}", delta=f"{embedding_pct:.0f}%")
     
     # Charts
     col_chart1, col_chart2 = st.columns(2)
@@ -268,6 +297,7 @@ try:
                     article_type=article_type_filter,
                     source=source_filter,
                     search_text=search_filter,
+                    embedding_filter=embedding_filter,
                     limit=results_per_page,
                     offset=offset
                 )
@@ -278,6 +308,7 @@ try:
                     article_type=article_type_filter,
                     source=source_filter,
                     search_text=search_filter,
+                    embedding_filter=embedding_filter,
                     limit=results_per_page,
                     offset=offset
                 )
@@ -361,8 +392,12 @@ try:
         
         # Display articles
         for idx, article in enumerate(articles):
+            # Build title with embedding badge
+            has_embedding = article.get('has_embedding', False)
+            embedding_badge = "🧠 " if has_embedding else "⏳ "
+            
             with st.expander(
-                f"**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
+                f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
                 expanded=False
             ):
                 col_info1, col_info2 = st.columns(2)

@@ -183,12 +183,14 @@ class ResearchRepository:
             
             results = self.client.execute_query(query, tuple(params))
             
-            # Convert timestamps to datetime objects
+            # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
             for article in results:
-                if article.get('published_at'):
-                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                if article.get('fetched_at'):
-                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
             logger.debug(f"Retrieved {len(results)} articles for ticker {ticker}")
             return results
@@ -239,12 +241,14 @@ class ResearchRepository:
             
             results = self.client.execute_query(query, tuple(params))
             
-            # Convert timestamps to datetime objects
+            # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
             for article in results:
-                if article.get('published_at'):
-                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                if article.get('fetched_at'):
-                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
             logger.debug(f"Retrieved {len(results)} recent articles")
             return results
@@ -313,12 +317,14 @@ class ResearchRepository:
             
             results = self.client.execute_query(search_query, tuple(params))
             
-            # Convert timestamps to datetime objects
+            # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
             for article in results:
-                if article.get('published_at'):
-                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                if article.get('fetched_at'):
-                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
             logger.debug(f"Found {len(results)} articles matching '{query_text}'")
             return results
@@ -482,12 +488,15 @@ class ResearchRepository:
             
             results = self.client.execute_query(query, tuple(params))
             
-            # Convert timestamps to datetime objects
+            # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
+            # so no conversion is needed. Just ensure timezone awareness if needed.
             for article in results:
-                if article.get('published_at'):
-                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                if article.get('fetched_at'):
-                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
             logger.debug(f"Retrieved {len(results)} articles for date range")
             return results
@@ -543,12 +552,15 @@ class ResearchRepository:
             
             results = self.client.execute_query(query, tuple(params))
             
-            # Convert timestamps to datetime objects
+            # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
+            # so no conversion is needed. Just ensure timezone awareness if needed.
             for article in results:
-                if article.get('published_at'):
-                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
-                if article.get('fetched_at'):
-                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
             logger.debug(f"Retrieved {len(results)} articles (all time)")
             return results
@@ -556,4 +568,3 @@ class ResearchRepository:
         except Exception as e:
             logger.error(f"❌ Error getting all articles: {e}")
             return []
-

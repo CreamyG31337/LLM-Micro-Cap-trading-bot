@@ -2291,6 +2291,80 @@ OLLAMA_MODEL={default_model}
 OLLAMA_TIMEOUT={timeout}
 OLLAMA_ENABLED={enabled}""")
         
+        # Domain Health Monitor
+        st.markdown("---")
+        st.markdown("##### 📊 Domain Health Monitor")
+        st.caption("Track extraction success rates and identify problematic domains")
+        
+        try:
+            from research_domain_health import DomainHealthTracker
+            from settings import get_system_setting
+            
+            tracker = DomainHealthTracker()
+            unhealthy_domains = tracker.get_unhealthy_domains(min_failures=1)
+            threshold = get_system_setting("auto_blacklist_threshold", default=4)
+            
+            if unhealthy_domains:
+                # Build table data
+                health_data = []
+                for record in unhealthy_domains:
+                    domain = record.get('domain', '')
+                    total_attempts = record.get('total_attempts', 0)
+                    total_successes = record.get('total_successes', 0)
+                    consecutive_failures = record.get('consecutive_failures', 0)
+                    auto_blacklisted = record.get('auto_blacklisted', False)
+                    last_failure_reason = record.get('last_failure_reason', 'unknown')
+                    
+                    # Calculate success rate
+                    success_rate = (total_successes / total_attempts * 100) if total_attempts > 0 else 0
+                    
+                    # Determine health status
+                    if auto_blacklisted:
+                        status = "🔴 Auto-blacklisted"
+                    elif consecutive_failures >= threshold:
+                        status = "🔴 Critical"
+                    elif consecutive_failures >= threshold - 1:
+                        status = "🟡 Warning"
+                    else:
+                        status = "🟢 Monitoring"
+                    
+                    health_data.append({
+                        "Domain": domain,
+                        "Attempts": total_attempts,
+                        "Success Rate": f"{success_rate:.0f}%",
+                        "Consecutive Failures": f"{consecutive_failures}/{threshold}",
+                        "Last Failure": last_failure_reason,
+                        "Status": status
+                    })
+                
+                # Display as DataFrame
+                import pandas as pd
+                health_df = pd.DataFrame(health_data)
+                
+                st.dataframe(
+                    health_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Domain": st.column_config.TextColumn("Domain", width="medium"),
+                        "Attempts": st.column_config.NumberColumn("Attempts", width="small"),
+                        "Success Rate": st.column_config.TextColumn("Success Rate", width="small"),
+                        "Consecutive Failures": st.column_config.TextColumn("Consecutive Failures", width="small"),
+                        "Last Failure": st.column_config.TextColumn("Last Failure", width="medium"),
+                        "Status": st.column_config.TextColumn("Status", width="medium")
+                    }
+                )
+                
+                st.caption(f"ℹ️ Auto-blacklist threshold: {threshold} consecutive failures")
+                
+            else:
+                st.success("✅ All domains are healthy!")
+                st.caption("No domains with extraction failures found.")
+        
+        except Exception as e:
+            st.warning(f"Could not load domain health data: {e}")
+            st.caption("Make sure the research_domain_health table exists (run migration 10_domain_health_tracking.sql)")
+        
         # Research Domain Blacklist Management
         st.markdown("---")
         st.markdown("##### 🚫 Research Domain Blacklist")

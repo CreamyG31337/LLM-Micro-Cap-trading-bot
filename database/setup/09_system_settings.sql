@@ -51,7 +51,7 @@ VALUES (
     'ai_default_model',
     '"llama3"'::jsonb,
     'Default AI model for new users and system prompts',
-    (SELECT id FROM auth.users WHERE email = 'admin@example.com' LIMIT 1)
+    NULL
 )
 ON CONFLICT (key) DO NOTHING;
 
@@ -61,7 +61,7 @@ VALUES (
     'research_domain_blacklist',
     '["msn.com", "reuters.com"]'::jsonb,
     'Domains to skip during market research article extraction (JSON array)',
-    (SELECT id FROM auth.users WHERE email = 'admin@example.com' LIMIT 1)
+    NULL
 )
 ON CONFLICT (key) DO NOTHING;
 

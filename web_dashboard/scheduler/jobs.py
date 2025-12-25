@@ -144,6 +144,7 @@ def market_research_job() -> None:
                     articles_blacklisted += 1
                     continue
                 
+                
                 # Check if article already exists
                 if research_repo.article_exists(url):
                     logger.debug(f"Article already exists: {title[:50]}...")
@@ -154,10 +155,36 @@ def market_research_job() -> None:
                 logger.info(f"Extracting content: {title[:50]}...")
                 extracted = extract_article_content(url)
                 
+                # Initialize health tracker (lazy import to avoid circular deps)
+                from research_domain_health import DomainHealthTracker, normalize_domain
+                tracker = DomainHealthTracker()
+                
+                # Get auto-blacklist threshold
+                from settings import get_system_setting
+                threshold = get_system_setting("auto_blacklist_threshold", default=4)
+                
+                # Check if extraction succeeded
                 content = extracted.get('content', '')
-                if not content:
-                    logger.warning(f"Could not extract content from {url}")
+                if not content or not extracted.get('success'):
+                    # Record failure with reason
+                    error_reason = extracted.get('error', 'unknown')
+                    failure_count = tracker.record_failure(url, error_reason)
+                    
+                    domain = normalize_domain(url)
+                    logger.warning(f"⚠️ Domain extraction failed: {domain} (failure {failure_count}/{threshold}) - Reason: {error_reason}")
+                    
+                    # Check if we should auto-blacklist
+                    if tracker.should_auto_blacklist(url):
+                        if tracker.auto_blacklist_domain(url):
+                            logger.warning(f"🚫 AUTO-BLACKLISTED: {domain} ({failure_count} consecutive failures of type: {error_reason})")
+                            articles_blacklisted += 1
+                        else:
+                            logger.warning(f"Failed to auto-blacklist {domain}")
+                    
                     continue
+                
+                # Record success
+                tracker.record_success(url)
                 
                 # Generate summary using Ollama (if available)
                 summary = None

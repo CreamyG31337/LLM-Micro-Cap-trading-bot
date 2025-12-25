@@ -54,6 +54,8 @@ def extract_article_content(url: str) -> Dict[str, Any]:
         - content: Full article text
         - published_at: Published date (datetime or None)
         - source: Source name extracted from URL
+        - success: Boolean indicating success
+        - error: Error type if failed ('download_failed', 'extraction_empty', 'extraction_error')
     """
     if not trafilatura:
         logger.error("trafilatura not installed - cannot extract article content")
@@ -61,7 +63,9 @@ def extract_article_content(url: str) -> Dict[str, Any]:
             'title': '',
             'content': '',
             'published_at': None,
-            'source': extract_source_from_url(url)
+            'source': extract_source_from_url(url),
+            'success': False,
+            'error': 'extraction_error'
         }
     
     try:
@@ -73,7 +77,9 @@ def extract_article_content(url: str) -> Dict[str, Any]:
                 'title': '',
                 'content': '',
                 'published_at': None,
-                'source': extract_source_from_url(url)
+                'source': extract_source_from_url(url),
+                'success': False,
+                'error': 'download_failed'
             }
         
         # Extract article data
@@ -91,7 +97,9 @@ def extract_article_content(url: str) -> Dict[str, Any]:
                 'title': '',
                 'content': '',
                 'published_at': None,
-                'source': extract_source_from_url(url)
+                'source': extract_source_from_url(url),
+                'success': False,
+                'error': 'extraction_empty'
             }
         
         # Extract metadata
@@ -122,7 +130,9 @@ def extract_article_content(url: str) -> Dict[str, Any]:
             'title': title,
             'content': extracted,
             'published_at': published_at,
-            'source': extract_source_from_url(url)
+            'source': extract_source_from_url(url),
+            'success': True,
+            'error': None
         }
         
     except Exception as e:
@@ -131,7 +141,9 @@ def extract_article_content(url: str) -> Dict[str, Any]:
             'title': '',
             'content': '',
             'published_at': None,
-            'source': extract_source_from_url(url)
+            'source': extract_source_from_url(url),
+            'success': False,
+            'error': 'extraction_error'
         }
 
 

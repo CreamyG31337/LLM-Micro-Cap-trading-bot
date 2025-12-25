@@ -260,6 +260,7 @@ try:
         
         try:
             if use_date_filter and start_datetime and end_datetime:
+                logger.debug(f"Fetching articles with date filter: {start_datetime} to {end_datetime}")
                 articles = repo.get_articles_by_date_range(
                     start_date=start_datetime,
                     end_date=end_datetime,
@@ -270,30 +271,17 @@ try:
                     offset=offset
                 )
             else:
-                # Use get_recent_articles for "All time" or when date filter is disabled
-                # Get a large number and apply other filters manually
-                all_articles = repo.get_recent_articles(
-                    limit=10000,  # Large limit for "all time"
-                    days=3650,  # 10 years
+                # Use get_all_articles for "All time" - simpler and more efficient
+                logger.debug(f"Fetching all articles (no date filter)")
+                articles = repo.get_all_articles(
                     article_type=article_type_filter,
-                    ticker=None
+                    source=source_filter,
+                    search_text=search_filter,
+                    limit=results_per_page,
+                    offset=offset
                 )
-                
-                # Apply source and search filters manually
-                filtered_articles = all_articles
-                if source_filter:
-                    filtered_articles = [a for a in filtered_articles if a.get('source') == source_filter]
-                if search_filter:
-                    search_lower = search_filter.lower()
-                    filtered_articles = [
-                        a for a in filtered_articles
-                        if search_lower in (a.get('title', '') or '').lower()
-                        or search_lower in (a.get('summary', '') or '').lower()
-                        or search_lower in (a.get('content', '') or '').lower()
-                    ]
-                
-                # Apply pagination
-                articles = filtered_articles[offset:offset + results_per_page]
+            
+            logger.debug(f"Retrieved {len(articles)} articles from database")
             
             # Get total count for pagination (simplified - get one more to check if there are more)
             total_articles = len(articles)
@@ -301,6 +289,8 @@ try:
         except Exception as e:
             logger.error(f"Error fetching articles: {e}", exc_info=True)
             st.error(f"Error loading articles: {e}")
+            import traceback
+            st.code(traceback.format_exc())
             articles = []
             has_more = False
     

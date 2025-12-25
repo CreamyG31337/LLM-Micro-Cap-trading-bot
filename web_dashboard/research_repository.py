@@ -495,4 +495,65 @@ class ResearchRepository:
         except Exception as e:
             logger.error(f"❌ Error getting articles by date range: {e}")
             return []
+    
+    def get_all_articles(
+        self,
+        article_type: Optional[str] = None,
+        source: Optional[str] = None,
+        search_text: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """Get all articles without date filtering
+        
+        Args:
+            article_type: Optional filter by article type
+            source: Optional filter by source
+            search_text: Optional text search in title, summary, content
+            limit: Maximum number of results
+            offset: Number of results to skip
+            
+        Returns:
+            List of article dictionaries
+        """
+        try:
+            query = """
+                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                       source, published_at, fetched_at, relevance_score
+                FROM research_articles
+                WHERE 1=1
+            """
+            params = []
+            
+            if article_type:
+                query += " AND article_type = %s"
+                params.append(article_type)
+            
+            if source:
+                query += " AND source = %s"
+                params.append(source)
+            
+            if search_text:
+                query += " AND (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)"
+                search_pattern = f"%{search_text}%"
+                params.extend([search_pattern, search_pattern, search_pattern])
+            
+            query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+            
+            results = self.client.execute_query(query, tuple(params))
+            
+            # Convert timestamps to datetime objects
+            for article in results:
+                if article.get('published_at'):
+                    article['published_at'] = datetime.fromisoformat(article['published_at'].replace('Z', '+00:00'))
+                if article.get('fetched_at'):
+                    article['fetched_at'] = datetime.fromisoformat(article['fetched_at'].replace('Z', '+00:00'))
+            
+            logger.debug(f"Retrieved {len(results)} articles (all time)")
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting all articles: {e}")
+            return []
 

@@ -75,6 +75,65 @@ if 'chat_messages' not in st.session_state:
 # Limit conversation history to prevent context overflow
 MAX_CONVERSATION_HISTORY = 20  # Keep last N messages (10 exchanges)
 
+# Token estimation (rough approximation: 1 token ≈ 4 characters for English)
+def estimate_tokens(text: str) -> int:
+    """Estimate token count from text (rough approximation)."""
+    if not text:
+        return 0
+    # Simple approximation: 1 token ≈ 4 characters for English text
+    return len(text) // 4
+
+def calculate_context_size(
+    system_prompt: str,
+    context_string: str,
+    conversation_history: List[Dict[str, str]],
+    current_prompt: str
+) -> Dict[str, Any]:
+    """Calculate total context size and token estimates.
+    
+    Returns:
+        Dictionary with size information:
+        - total_chars: Total characters
+        - total_tokens: Estimated tokens
+        - system_prompt_tokens: System prompt tokens
+        - context_tokens: Context data tokens
+        - history_tokens: Conversation history tokens
+        - prompt_tokens: Current prompt tokens
+        - context_window: Model context window size
+        - usage_percent: Percentage of context window used
+    """
+    system_tokens = estimate_tokens(system_prompt)
+    context_tokens = estimate_tokens(context_string)
+    
+    # Calculate history tokens
+    history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
+    history_tokens = estimate_tokens(history_text)
+    
+    prompt_tokens = estimate_tokens(current_prompt)
+    
+    total_tokens = system_tokens + context_tokens + history_tokens + prompt_tokens
+    total_chars = len(system_prompt) + len(context_string) + len(history_text) + len(current_prompt)
+    
+    # Get model context window (default to 4096 if not available)
+    client = get_ollama_client()
+    context_window = 4096  # Default
+    if client:
+        model_settings = client.get_model_settings(selected_model)
+        context_window = model_settings.get('num_ctx', 4096)
+    
+    usage_percent = (total_tokens / context_window * 100) if context_window > 0 else 0
+    
+    return {
+        'total_chars': total_chars,
+        'total_tokens': total_tokens,
+        'system_prompt_tokens': system_tokens,
+        'context_tokens': context_tokens,
+        'history_tokens': history_tokens,
+        'prompt_tokens': prompt_tokens,
+        'context_window': context_window,
+        'usage_percent': usage_percent
+    }
+
 # Header
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -538,8 +597,21 @@ if user_query:
             else:
                 st.info(f"🔍 **Searched:** {search_query_used} | No results found")
     
+    # Calculate context size before sending to AI
+    system_prompt = get_system_prompt()
+    context_info = calculate_context_size(
+        system_prompt=system_prompt,
+        context_string=context_string,
+        conversation_history=st.session_state.chat_messages,
+        current_prompt=full_prompt
+    )
+    
     # Get AI response
     with st.chat_message("assistant"):
+        # Show "thinking..." indicator
+        thinking_placeholder = st.empty()
+        thinking_placeholder.info("🤔 **Thinking...** (Processing your request)")
+        
         message_placeholder = st.empty()
         full_response = ""
         
@@ -549,7 +621,8 @@ if user_query:
                 st.error("AI client not available")
                 st.stop()
             
-            system_prompt = get_system_prompt()
+            # Hide thinking indicator and start streaming
+            thinking_placeholder.empty()
             
             # Stream response
             # Pass None for temperature and max_tokens to let the client handle model-specific defaults
@@ -581,11 +654,75 @@ if user_query:
         if len(st.session_state.chat_messages) > MAX_CONVERSATION_HISTORY:
             st.session_state.chat_messages = st.session_state.chat_messages[-MAX_CONVERSATION_HISTORY:]
 
-# Footer
+# Footer with context usage info
 st.markdown("---")
-search_status = "✅" if searxng_available else "❌"
-current_context_items = chat_context.get_items()
-st.caption(f"Using model: {selected_model} | Context items: {len(current_context_items)} | Search: {search_status}")
+
+# Calculate current context usage (always show, even when no query)
+try:
+    system_prompt = get_system_prompt()
+    current_context_string = build_context_string()
+    # Use last user query if available, otherwise empty
+    current_prompt = ""
+    if st.session_state.chat_messages:
+        # Get the last user message if available
+        last_user_msg = [msg for msg in st.session_state.chat_messages if msg.get('role') == 'user']
+        if last_user_msg:
+            current_prompt = last_user_msg[-1].get('content', '')
+    
+    current_context_info = calculate_context_size(
+        system_prompt=system_prompt,
+        context_string=current_context_string,
+        conversation_history=st.session_state.chat_messages,
+        current_prompt=current_prompt
+    )
+    
+    # Determine color/warning based on usage
+    usage_percent = current_context_info['usage_percent']
+    if usage_percent >= 90:
+        usage_color = "🔴"
+        usage_warning = "⚠️ **WARNING: Context window nearly full!** Consider clearing chat history."
+    elif usage_percent >= 75:
+        usage_color = "🟡"
+        usage_warning = "⚠️ Context window getting full. Consider clearing chat history soon."
+    else:
+        usage_color = "🟢"
+        usage_warning = None
+    
+    # Display context usage
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.caption(f"**Context Usage:** {usage_color} {current_context_info['total_tokens']:,} / {current_context_info['context_window']:,} tokens ({usage_percent:.1f}%)")
+    with col2:
+        st.caption(f"**History:** {len(st.session_state.chat_messages)} messages | **Context Items:** {len(chat_context.get_items())}")
+    with col3:
+        search_status = "✅" if searxng_available else "❌"
+        st.caption(f"**Model:** {selected_model} | **Search:** {search_status}")
+    
+    if usage_warning:
+        st.warning(usage_warning)
+    
+    # Show detailed breakdown in expander
+    with st.expander("📊 Context Breakdown", expanded=False):
+        st.markdown(f"""
+        **Context Window:** {current_context_info['context_window']:,} tokens
+        
+        **Usage Breakdown:**
+        - System Prompt: {current_context_info['system_prompt_tokens']:,} tokens
+        - Portfolio Context: {current_context_info['context_tokens']:,} tokens
+        - Conversation History: {current_context_info['history_tokens']:,} tokens ({len(st.session_state.chat_messages)} messages)
+        - Current Prompt: {current_context_info['prompt_tokens']:,} tokens
+        
+        **Total:** {current_context_info['total_tokens']:,} tokens ({current_context_info['total_chars']:,} characters)
+        """)
+        
+        if usage_percent >= 75:
+            st.info("💡 **Tip:** Clear chat history or reduce context items to free up space.")
+except Exception as e:
+    # Fallback to simple footer if calculation fails
+    logger.error(f"Error calculating context usage: {e}")
+    search_status = "✅" if searxng_available else "❌"
+    current_context_items = chat_context.get_items()
+    st.caption(f"Using model: {selected_model} | Context items: {len(current_context_items)} | Search: {search_status}")
 
 # Debug section
 with st.expander("🔧 Debug Context (Raw AI Input)", expanded=False):

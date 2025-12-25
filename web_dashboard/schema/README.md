@@ -107,19 +107,29 @@ CREATE EXTENSION IF NOT EXISTS vector;
 #### 3. Configure Environment
 Add to `web_dashboard/.env`:
 ```ini
-# For bare metal (app on host):
-# Without password (trust authentication for localhost):
-DATABASE_URL=postgresql://postgres@localhost:5432/trading_db
-# With password (if password is set):
-# DATABASE_URL=postgresql://postgres:your-password@localhost:5432/trading_db
-
-# For Docker (app in Docker):
-# DATABASE_URL=postgresql://postgres@postgres-17.5:5432/trading_db
-# or with password:
-# DATABASE_URL=postgresql://postgres:your-password@postgres-17.5:5432/trading_db
+# IMPORTANT: Hostname depends on WHERE the app runs:
+# 
+# From workstation (Tailscale/SSH):
+DATABASE_URL=postgresql://postgres:password@your-tailscale-hostname:5432/trading_db
+# 
+# From server host:
+DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_db
+# 
+# From Docker container (Postgres also in Docker):
+DATABASE_URL=postgresql://postgres:password@postgres-17.5:5432/trading_db
+# 
+# From Docker container (Postgres on host):
+DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/trading_db
 ```
 
-**Note**: For localhost connections, password may not be required if trust authentication is configured (default for local connections).
+**Note**: 
+- Password is REQUIRED for remote connections (Tailscale/SSH)
+- Password may not be required for localhost (trust authentication)
+- **Not sure which hostname to use?** Run the connection tester:
+  ```bash
+  python web_dashboard/debug/test_postgres_connection.py
+  ```
+  It will test multiple hostnames and recommend the best one for your environment.
 
 #### 4. Run Setup Script
 ```bash
@@ -207,3 +217,49 @@ deleted = repo.delete_old_articles(days_to_keep=30)
 - Ensure user has CREATE TABLE permissions
 - Check that password authentication is working
 - Verify user can connect to `trading_db` database
+
+### Debugging Utilities
+
+Helper utilities are available in `web_dashboard/debug/` for debugging and exploring the database:
+
+#### 1. `postgres_utils.py` - Command-line utilities
+```bash
+# Test connection
+python web_dashboard/debug/postgres_utils.py --test
+
+# Get database info (version, user, pgvector status)
+python web_dashboard/debug/postgres_utils.py --info
+
+# List all tables
+python web_dashboard/debug/postgres_utils.py --list-tables
+
+# Describe a table structure
+python web_dashboard/debug/postgres_utils.py --describe research_articles
+
+# Execute a SQL query
+python web_dashboard/debug/postgres_utils.py --sql "SELECT COUNT(*) FROM research_articles"
+
+# Get research articles statistics
+python web_dashboard/debug/postgres_utils.py --stats
+```
+
+#### 2. `postgres_shell.py` - Interactive SQL shell
+```bash
+# Start interactive shell
+python web_dashboard/debug/postgres_shell.py
+
+# In the shell:
+postgres> SELECT * FROM research_articles LIMIT 5;
+postgres> \dt          # List tables
+postgres> \help        # Show help
+postgres> \quit         # Exit
+```
+
+#### 3. `test_postgres_connection.py` - Connection tester
+```bash
+# Test which hostname works from your environment
+python web_dashboard/debug/test_postgres_connection.py
+```
+This script tests multiple hostname patterns (localhost, host.docker.internal, container name, etc.) and recommends the best one for your setup. Useful when using Tailscale or unsure which hostname to use.
+
+**Note**: These utilities use `DATABASE_URL` from your `.env` file. For Tailscale/remote connections, make sure it includes the password and correct hostname.

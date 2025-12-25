@@ -6,12 +6,19 @@ Handles research articles storage with connection pooling
 
 import os
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from web_dashboard/.env
+# Try web_dashboard/.env first (when running from project root)
+# Then fall back to .env in current directory
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv()  # Fallback to current directory
 
 try:
     import psycopg2
@@ -73,6 +80,10 @@ class PostgresClient:
             logger.error("   - DATABASE_URL is correct (host, port, database name)")
             logger.error("   - Database 'trading_db' exists")
             logger.error("   - Port 5432 is accessible")
+            logger.error("   - Hostname is correct for your environment:")
+            logger.error("     * From workstation (Tailscale): use your Tailscale hostname")
+            logger.error("     * From server host: use localhost")
+            logger.error("     * From Docker container: use container name or host.docker.internal")
             raise
         except psycopg2.Error as e:
             logger.error(f"❌ Postgres error creating connection pool: {e}")

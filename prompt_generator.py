@@ -826,11 +826,14 @@ class PromptGenerator:
             self.portfolio_manager = PortfolioManager(self.repository)
             
         # Load portfolio data with smart price refresh
+        import time
         print("Loading portfolio data...")
+        portfolio_load_start = time.time()
         try:
             # Use centralized portfolio refresh logic
             from utils.portfolio_refresh import refresh_portfolio_prices_if_needed
             
+            refresh_start = time.time()
             was_updated, reason = refresh_portfolio_prices_if_needed(
                 market_hours=self.market_hours,
                 portfolio_manager=self.portfolio_manager,
@@ -839,19 +842,27 @@ class PromptGenerator:
                 price_cache=self.price_cache,
                 verbose=True
             )
+            refresh_time = time.time() - refresh_start
+            if refresh_time > 0.1:  # Only show if it took significant time
+                print(f"   Portfolio refresh: {refresh_time:.2f}s")
             
             # Load the (potentially refreshed) portfolio data
+            load_start = time.time()
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
+            load_time = time.time() - load_start
             if latest_snapshot is None:
                 print(f"{_safe_emoji('❌')} No portfolio data found in {self.data_dir}")
                 print("Please run the main trading script first to create portfolio data.")
                 return
-            print(f"{_safe_emoji('✅')} Loaded portfolio with {len(latest_snapshot.positions)} positions")
+            portfolio_load_time = time.time() - portfolio_load_start
+            print(f"{_safe_emoji('✅')} Loaded portfolio with {len(latest_snapshot.positions)} positions ({portfolio_load_time:.2f}s)")
             
             # Convert to DataFrame with enhanced data (same as main trading script)
             portfolio_data = []
             total_portfolio_value = sum(pos.market_value or 0 for pos in latest_snapshot.positions)
             
+            # Process positions and get trade history (this can be slow)
+            position_process_start = time.time()
             for position in latest_snapshot.positions:
                 # Use the same to_dict() method as main trading script
                 pos_dict = position.to_dict()
@@ -873,7 +884,7 @@ class PromptGenerator:
                     pos_dict['opened_date'] = "N/A"
                 
                 # Calculate daily P&L - now handled in SQL for Supabase
-                if hasattr(self.portfolio_manager.repository, 'get_historical_snapshots_for_pnl'):
+                if hasattr(self.portfolio_manager.repository, 'get_latest_portfolio_snapshot_with_pnl'):
                     # Supabase repository - P&L is calculated in SQL
                     # The daily_pnl_dollar and daily_pnl_pct are already in the position data
                     daily_pnl_dollar = getattr(position, 'daily_pnl_dollar', 0)
@@ -886,8 +897,11 @@ class PromptGenerator:
                 else:
                     # CSV repository - use traditional calculation
                     from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
-                    from datetime import datetime
-                    snapshots = self.portfolio_manager.load_portfolio()
+                    from datetime import datetime, timedelta
+                    # Only load recent snapshots (last 60 days) for performance - daily P&L only needs recent data
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=60)
+                    snapshots = self.portfolio_manager.load_portfolio(date_range=(start_date, end_date))
                     today_date = datetime.now().date()
                     latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
                     
@@ -901,6 +915,10 @@ class PromptGenerator:
                     pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
+            
+            position_process_time = time.time() - position_process_start
+            if position_process_time > 0.5:  # Only show if it took significant time
+                print(f"   Position processing: {position_process_time:.2f}s")
             
             llm_portfolio = pd.DataFrame(portfolio_data)
             
@@ -927,13 +945,17 @@ class PromptGenerator:
 
         # Fetch market data
         print("Fetching current market data...")
+        market_data_start = time.time()
         market_rows = self._get_market_data_table(portfolio_tickers)
-        print(f"{_safe_emoji('✅')} Updated market data for {len(market_rows)} tickers")
+        market_data_time = time.time() - market_data_start
+        print(f"{_safe_emoji('✅')} Updated market data for {len(market_rows)} tickers ({market_data_time:.2f}s)")
 
         # Calculate comprehensive financial overview data
         print("Calculating portfolio metrics...")
+        metrics_start = time.time()
         financial_data = self._calculate_financial_overview_data(latest_snapshot)
-        print(f"{_safe_emoji('✅')} Portfolio metrics calculated successfully")
+        metrics_time = time.time() - metrics_start
+        print(f"{_safe_emoji('✅')} Portfolio metrics calculated successfully ({metrics_time:.2f}s)")
         
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)
@@ -1069,16 +1091,21 @@ class PromptGenerator:
             
         try:
             # Load portfolio data using the same approach as daily prompt
+            import time
             print("Loading portfolio data...")
+            portfolio_load_start = time.time()
             latest_snapshot = self.portfolio_manager.get_latest_portfolio()
+            portfolio_load_time = time.time() - portfolio_load_start
             if latest_snapshot is None:
                 print(f"❌ No portfolio data found in {self.data_dir}")
                 print("Please run the main trading script first to create portfolio data.")
                 return
-            print(f"✅ Loaded portfolio with {len(latest_snapshot.positions)} positions")
+            print(f"✅ Loaded portfolio with {len(latest_snapshot.positions)} positions ({portfolio_load_time:.2f}s)")
             
             # Convert to DataFrame with enhanced data (same as daily prompt)
             portfolio_data = []
+            # Process positions and get trade history (this can be slow)
+            position_process_start = time.time()
             for position in latest_snapshot.positions:
                 # Use the same to_dict() method as main trading script
                 pos_dict = position.to_dict()
@@ -1100,7 +1127,7 @@ class PromptGenerator:
                     pos_dict['opened_date'] = "N/A"
                 
                 # Calculate daily P&L - now handled in SQL for Supabase
-                if hasattr(self.portfolio_manager.repository, 'get_historical_snapshots_for_pnl'):
+                if hasattr(self.portfolio_manager.repository, 'get_latest_portfolio_snapshot_with_pnl'):
                     # Supabase repository - P&L is calculated in SQL
                     # The daily_pnl_dollar and daily_pnl_pct are already in the position data
                     daily_pnl_dollar = getattr(position, 'daily_pnl_dollar', 0)
@@ -1113,8 +1140,14 @@ class PromptGenerator:
                 else:
                     # CSV repository - use traditional calculation
                     from financial.pnl_calculator import calculate_daily_pnl_from_snapshots
-                    from datetime import datetime
-                    snapshots = self.portfolio_manager.load_portfolio()
+                    from datetime import datetime, timedelta
+                    # Only load recent snapshots (last 60 days) for performance - daily P&L only needs recent data
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=60)
+                    print(f"⚠️  Loading limited date range (last 60 days) for daily P&L calculation")
+                    print(f"   Date range: {start_date.date()} to {end_date.date()}")
+                    print(f"   Note: Full history available but not needed for daily P&L")
+                    snapshots = self.portfolio_manager.load_portfolio(date_range=(start_date, end_date))
                     today_date = datetime.now().date()
                     latest_snapshot_date = snapshots[-1].timestamp.date() if snapshots else None
                     
@@ -1126,6 +1159,10 @@ class PromptGenerator:
                     pos_dict['daily_pnl'] = calculate_daily_pnl_from_snapshots(position, historical_snapshots)
                 
                 portfolio_data.append(pos_dict)
+            
+            position_process_time = time.time() - position_process_start
+            if position_process_time > 0.5:  # Only show if it took significant time
+                print(f"   Position processing: {position_process_time:.2f}s")
             
             llm_portfolio = pd.DataFrame(portfolio_data)
             
@@ -1151,13 +1188,17 @@ class PromptGenerator:
 
         # Fetch market data (same as daily prompt)
         print("Fetching current market data...")
+        market_data_start = time.time()
         market_rows = self._get_market_data_table(portfolio_tickers)
-        print(f"✅ Updated market data for {len(market_rows)} tickers")
+        market_data_time = time.time() - market_data_start
+        print(f"✅ Updated market data for {len(market_rows)} tickers ({market_data_time:.2f}s)")
 
         # Calculate comprehensive financial overview data
         print("Calculating portfolio metrics...")
+        metrics_start = time.time()
         financial_data = self._calculate_financial_overview_data(latest_snapshot)
-        print("✅ Portfolio metrics calculated successfully")
+        metrics_time = time.time() - metrics_start
+        print(f"✅ Portfolio metrics calculated successfully ({metrics_time:.2f}s)")
         
         # Format cash information
         cash_display, total_equity = self._format_cash_info(cash)

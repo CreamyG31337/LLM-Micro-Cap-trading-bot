@@ -189,21 +189,23 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Context selection toggles
-    st.header("📋 Include in Analysis")
-    st.caption("Select data to include:")
+    # Context selection - Simplified UI
+    st.header("📋 Analysis Context")
     
     # Get current context items for this fund
     context_items = chat_context.get_items()
     current_types = {item.item_type for item in context_items if item.fund == selected_fund}
     
-    # Holdings toggle
-    include_holdings = st.checkbox(
-        "Current Holdings",
-        value=ContextItemType.HOLDINGS in current_types,
-        help="Include your current portfolio positions",
-        key="toggle_holdings"
-    )
+    # Core context (always included)
+    st.caption("✅ **Always Included:** Holdings (with Daily P&L & Sector), Performance Metrics, Cash Balances")
+    
+    # Auto-enable core items
+    include_holdings = True
+    include_metrics = True
+    include_cash = True
+    
+    # Optional context
+    st.markdown("**Optional:**")
     
     # Thesis toggle
     include_thesis = st.checkbox(
@@ -213,28 +215,12 @@ with st.sidebar:
         key="toggle_thesis"
     )
     
-    # Trades toggle
+    # Trades toggle (optional)
     include_trades = st.checkbox(
         "Recent Trades",
         value=ContextItemType.TRADES in current_types,
-        help="Include recent trading activity",
+        help="Include recent trading activity (last 50 trades)",
         key="toggle_trades"
-    )
-    
-    # Metrics toggle
-    include_metrics = st.checkbox(
-        "Performance Metrics",
-        value=ContextItemType.METRICS in current_types,
-        help="Include performance statistics",
-        key="toggle_metrics"
-    )
-    
-    # Cash balances toggle
-    include_cash = st.checkbox(
-        "Cash Balances",
-        value=ContextItemType.CASH_BALANCES in current_types,
-        help="Include current cash positions by currency",
-        key="toggle_cash"
     )
     
     # Investor allocations toggle
@@ -271,34 +257,62 @@ with st.sidebar:
         include_search = False
         auto_search_tickers = False
     
-    # Apply context updates
+    # =========================================================================
+    # CONTEXT SYNCHRONIZATION LOGIC
+    # =========================================================================
+    # This section syncs the UI checkboxes with the ChatContextManager's internal
+    # state (stored in st.session_state.context_items as a Set[ContextItem]).
+    #
+    # HOW IT WORKS:
+    # 1. current_types (line 197) gets the set of ContextItemType enums currently 
+    #    stored for the selected_fund
+    # 2. Each checkbox uses `ContextItemType.X in current_types` as its initial value
+    # 3. When checkbox state changes, we add/remove the corresponding ContextItem
+    #
+    # WHY METADATA MATTERS:
+    # ContextItem implements __eq__ and __hash__ using (item_type, fund, metadata).
+    # This means add_item and remove_item MUST use IDENTICAL metadata for the 
+    # same item type, or the removal will fail silently (item not found in set).
+    # For example: TRADES uses metadata={'limit': 50} - both add and remove must match.
+    #
+    # DEBUGGING CHECKLIST if checkboxes don't work:
+    # 1. Verify checkbox key is unique (e.g., "toggle_holdings")
+    # 2. Check that current_types correctly contains the ContextItemType
+    # 3. Ensure metadata in add_item matches metadata in remove_item exactly
+    # 4. Confirm selected_fund is not None (logic only runs if selected_fund truthy)
+    # =========================================================================
     if selected_fund:
-        # Update context based on toggles
+        # HOLDINGS - no metadata required
         if include_holdings and ContextItemType.HOLDINGS not in current_types:
             chat_context.add_item(ContextItemType.HOLDINGS, fund=selected_fund)
         elif not include_holdings and ContextItemType.HOLDINGS in current_types:
             chat_context.remove_item(ContextItemType.HOLDINGS, fund=selected_fund)
         
+        # THESIS - no metadata required
         if include_thesis and ContextItemType.THESIS not in current_types:
             chat_context.add_item(ContextItemType.THESIS, fund=selected_fund)
         elif not include_thesis and ContextItemType.THESIS in current_types:
             chat_context.remove_item(ContextItemType.THESIS, fund=selected_fund)
         
+        # TRADES - uses metadata for limit; add/remove MUST use same metadata!
         if include_trades and ContextItemType.TRADES not in current_types:
             chat_context.add_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
         elif not include_trades and ContextItemType.TRADES in current_types:
             chat_context.remove_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
         
+        # METRICS - no metadata required
         if include_metrics and ContextItemType.METRICS not in current_types:
             chat_context.add_item(ContextItemType.METRICS, fund=selected_fund)
         elif not include_metrics and ContextItemType.METRICS in current_types:
             chat_context.remove_item(ContextItemType.METRICS, fund=selected_fund)
         
+        # CASH_BALANCES - no metadata required
         if include_cash and ContextItemType.CASH_BALANCES not in current_types:
             chat_context.add_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
         elif not include_cash and ContextItemType.CASH_BALANCES in current_types:
             chat_context.remove_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
         
+        # INVESTOR_ALLOCATIONS - no metadata required
         if include_investors and ContextItemType.INVESTOR_ALLOCATIONS not in current_types:
             chat_context.add_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
         elif not include_investors and ContextItemType.INVESTOR_ALLOCATIONS in current_types:

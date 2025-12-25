@@ -109,7 +109,7 @@ class SupabaseRepository(BaseRepository):
         """Get portfolio data from Supabase.
         
         Args:
-            date_range: Optional date range filter
+            date_range: Optional date range filter. If None, defaults to last 90 days for performance.
             
         Returns:
             List of portfolio snapshots
@@ -118,11 +118,35 @@ class SupabaseRepository(BaseRepository):
             RepositoryError: If data retrieval fails
         """
         try:
+            import time
+            start_time = time.time()
+            
+            # If no date range provided, default to last 90 days for performance
+            # This avoids loading all historical data when only recent snapshots are needed
+            date_range_limited = False
+            if date_range is None:
+                from datetime import timedelta
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=90)
+                date_range = (start_date, end_date)
+                date_range_limited = True
+                logger.info(f"⚠️  No date range specified - loading last 90 days only (for performance)")
+                logger.info(f"   Date range: {start_date.date()} to {end_date.date()}")
+                print(f"⚠️  No date range specified - loading last 90 days only (for performance)")
+                print(f"   Date range: {start_date.date()} to {end_date.date()}")
+                print(f"   Note: Full history available but limited for faster loading")
+            
             # Supabase Python client has a 1000-row default limit
             # We need to paginate to get all data
             all_data = []
             page_size = 1000
             offset = 0
+            batch_num = 1
+            
+            if date_range:
+                start_date, end_date = date_range
+                days_diff = (end_date - start_date).days
+                logger.info(f"📊 Loading portfolio data from {start_date.date()} to {end_date.date()} ({days_diff} days)...")
             
             while True:
                 query = self.supabase.table("portfolio_positions") \
@@ -131,7 +155,6 @@ class SupabaseRepository(BaseRepository):
                     .range(offset, offset + page_size - 1)
                 
                 if date_range:
-                    start_date, end_date = date_range
                     query = query.gte("date", start_date.isoformat()).lte("date", end_date.isoformat())
                 
                 result = query.execute()
@@ -140,14 +163,22 @@ class SupabaseRepository(BaseRepository):
                     break
                 
                 all_data.extend(result.data)
+                logger.debug(f"   Fetched batch {batch_num}: {len(result.data)} positions (total: {len(all_data)})")
                 
                 # If we got less than page_size rows, we're done
                 if len(result.data) < page_size:
                     break
                 
                 offset += page_size
+                batch_num += 1
             
-            logger.debug(f"Fetched {len(all_data)} total portfolio positions for fund {self.fund}")
+            elapsed_time = time.time() - start_time
+            logger.info(f"✅ Fetched {len(all_data)} portfolio positions in {elapsed_time:.2f}s")
+            print(f"   Fetched {len(all_data)} portfolio positions in {elapsed_time:.2f}s")
+            
+            if date_range_limited:
+                logger.warning(f"⚠️  Note: Only showing last 90 days of history. Full history available on request.")
+                print(f"⚠️  Note: Only showing last 90 days of history. Full history available on request.")
             
             # Create a result-like object with all data
             class Result:
@@ -157,6 +188,8 @@ class SupabaseRepository(BaseRepository):
             result = Result(all_data)
             
             # Use SnapshotMapper to group positions by date and create snapshots
+            process_start = time.time()
+            logger.debug("   Grouping positions by date and creating snapshots...")
             grouped = SnapshotMapper.group_positions_by_date(result.data)
             
             snapshots = []
@@ -167,6 +200,11 @@ class SupabaseRepository(BaseRepository):
                     timestamp = TypeTransformers.iso_to_datetime(position_rows[0]["date"])
                     snapshot = SnapshotMapper.create_snapshot_from_positions(timestamp, position_rows)
                     snapshots.append(snapshot)
+            
+            process_time = time.time() - process_start
+            total_time = time.time() - start_time
+            logger.info(f"✅ Created {len(snapshots)} snapshots in {process_time:.2f}s (total: {total_time:.2f}s)")
+            print(f"   Created {len(snapshots)} snapshots in {process_time:.2f}s (total: {total_time:.2f}s)")
             
             return sorted(snapshots, key=lambda s: s.timestamp)
             
@@ -886,22 +924,16 @@ class SupabaseRepository(BaseRepository):
             raise RepositoryError(f"Failed to get current positions: {e}")
 
     def get_trade_log(self, limit: int = 1000, fund: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get recent trade log entries, optionally filtered by fund."""
+        """Get recent trade log entries, optionally filtered by fund.
+        
+        Always uses pagination to handle Supabase's 1000-row limit safely.
+        """
         try:
             # Use provided fund if explicitly given (including None for all funds)
             # Empty string means "all funds" so treat it as None  
             target_fund = fund if fund else None
             
-            # If limit > 1000, we need pagination
-            # If limit <= 1000, we can use a single query with limit
-            if limit <= 1000:
-                query = self.supabase.table("trade_log").select("*").order("date", desc=True).limit(limit)
-                if target_fund:
-                    query = query.eq("fund", target_fund)
-                result = query.execute()
-                return result.data if result.data else []
-            
-            # For limit > 1000, use pagination
+            # Always use pagination to be safe with Supabase's 1000-row limit
             all_rows = []
             batch_size = 1000
             offset = 0
@@ -920,6 +952,10 @@ class SupabaseRepository(BaseRepository):
                 
                 # If we got fewer rows than batch_size, we're done
                 if len(result.data) < batch_size:
+                    break
+                
+                # If we've collected enough rows, stop
+                if len(all_rows) >= limit:
                     break
                 
                 offset += batch_size

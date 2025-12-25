@@ -1123,45 +1123,51 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             else:
                 print_success(f"Updated market data for {len(market_data)} tickers ({market_data_time:.2f}s)")
 
-        # Calculate portfolio metrics
-        print_info("Calculating portfolio metrics...")
-        metrics_start = time.time()
-        
         # Collect warnings/info messages during metrics calculation to display at bottom
+        # Set this up BEFORE calculating metrics so we capture all warnings
         import logging
         from collections import deque
         
-        class WarningCollector(logging.Handler):
-            """Collects specific warning/info messages to display later."""
-            def __init__(self):
-                super().__init__()
-                self.messages = deque(maxlen=50)  # Keep last 50 messages
-                
-            def emit(self, record):
-                # Only collect specific messages we want to show at bottom
-                msg = record.getMessage()
-                if any(keyword in msg for keyword in [
-                    'Using estimated fees for Webull',
-                    'NAV FALLBACK',
-                    'No timestamp for contribution',
-                    'Missing timestamp for contribution'
-                ]):
-                    self.messages.append({
-                        'level': record.levelname,
-                        'message': msg
-                    })
-                    # Suppress the original log output by not calling super()
-                    return
-                # For other messages, let them through normally
-                # (we're not replacing the handler, just intercepting specific ones)
+        # Store collected messages and original filters
+        warning_messages = deque(maxlen=50)
+        original_filters = {}
         
-        warning_collector = WarningCollector()
-        # Add collector to relevant loggers (set level to capture WARNING and INFO)
+        def suppress_warnings_filter(record):
+            """Filter to suppress specific warning/info messages and collect them instead."""
+            msg = record.getMessage()
+            keywords = [
+                'Using estimated fees for Webull',
+                'NAV FALLBACK',
+                'No timestamp for contribution',
+                'Missing timestamp for contribution'
+            ]
+            if any(keyword in msg for keyword in keywords):
+                warning_messages.append({
+                    'level': record.levelname,
+                    'message': msg
+                })
+                return False  # Suppress this message
+            return True  # Allow other messages through
+        
+        # Apply filter to StreamHandlers to suppress these messages during table generation
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                original_filters[id(handler)] = handler.filters[:]
+                handler.addFilter(suppress_warnings_filter)
+        
+        # Also apply to specific loggers
         main_logger = logging.getLogger('__main__')
         pos_calc_logger = logging.getLogger('portfolio.position_calculator')
-        warning_collector.setLevel(logging.INFO)
-        main_logger.addHandler(warning_collector)
-        pos_calc_logger.addHandler(warning_collector)
+        for handler in main_logger.handlers + pos_calc_logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                if id(handler) not in original_filters:
+                    original_filters[id(handler)] = handler.filters[:]
+                handler.addFilter(suppress_warnings_filter)
+        
+        # Calculate portfolio metrics
+        print_info("Calculating portfolio metrics...")
+        metrics_start = time.time()
 
         # Update positions with current prices
         updated_positions = []
@@ -2110,39 +2116,74 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 # Fallback to just financial table if no ownership data
                 table_formatter.create_unified_financial_table(stats_data, summary_data)
             
-            # Remove warning collector and display collected messages at bottom
-            if 'warning_collector' in locals():
-                main_logger = logging.getLogger('__main__')
-                pos_calc_logger = logging.getLogger('portfolio.position_calculator')
-                try:
-                    main_logger.removeHandler(warning_collector)
-                    pos_calc_logger.removeHandler(warning_collector)
-                except:
-                    pass
-                
-                # Display collected warnings/info at bottom after tables
-                if warning_collector.messages:
-                    print()  # Add spacing before warnings
-                    print_warning("Additional Information:")
-                    for msg_info in warning_collector.messages:
-                        if msg_info['level'] == 'WARNING':
-                            print_warning(f"  • {msg_info['message']}")
-                        else:
-                            print_info(f"  • {msg_info['message']}")
-
             print()  # Add spacing
         except Exception as e:
             logger.debug(f"Could not calculate portfolio statistics or financial summary: {e}")
             print_warning(f"Could not display portfolio metrics: {e}")
-            # Clean up warning collector if it exists
-            if 'warning_collector' in locals():
-                try:
-                    main_logger = logging.getLogger('__main__')
-                    pos_calc_logger = logging.getLogger('portfolio.position_calculator')
-                    main_logger.removeHandler(warning_collector)
-                    pos_calc_logger.removeHandler(warning_collector)
-                except:
-                    pass
+        
+        # Remove filters and display collected messages at bottom (outside try block to ensure it runs)
+        # Check if warning_messages exists in function scope
+        try:
+            # Try to access warning_messages - it's defined in outer scope of this function
+            _test = warning_messages
+            _test2 = original_filters
+            has_warning_vars = True
+        except NameError:
+            has_warning_vars = False
+        
+        if has_warning_vars:
+            # Restore original filters
+            try:
+                root_logger = logging.getLogger()
+                for handler in root_logger.handlers:
+                    if isinstance(handler, logging.StreamHandler) and id(handler) in original_filters:
+                        handler.filters = original_filters[id(handler)]
+                
+                main_logger = logging.getLogger('__main__')
+                pos_calc_logger = logging.getLogger('portfolio.position_calculator')
+                for handler in main_logger.handlers + pos_calc_logger.handlers:
+                    if isinstance(handler, logging.StreamHandler) and id(handler) in original_filters:
+                        handler.filters = original_filters[id(handler)]
+            except Exception:
+                pass
+            
+            # Display collected warnings/info at bottom after tables
+            if warning_messages:
+                print()  # Add spacing before warnings
+                print_warning("Additional Information:")
+                # Remove duplicates by converting to set of tuples, then back to list
+                seen = set()
+                unique_messages = []
+                for msg_info in warning_messages:
+                    msg_key = (msg_info['level'], msg_info['message'])
+                    if msg_key not in seen:
+                        seen.add(msg_key)
+                        unique_messages.append(msg_info)
+                
+                for msg_info in unique_messages:
+                    # Sanitize message to remove Unicode characters that cause encoding issues
+                    message = msg_info['message']
+                    # Remove logger prefixes like "WARNING: " that are already in the message
+                    if message.startswith('WARNING: '):
+                        message = message[9:]  # Remove "WARNING: " prefix
+                    elif message.startswith('INFO: '):
+                        message = message[6:]  # Remove "INFO: " prefix
+                    # Replace common Unicode characters with ASCII equivalents
+                    message = message.replace('⚠️', '')
+                    message = message.replace('✓', '[OK]')
+                    message = message.strip()
+                    # Remove any other problematic Unicode characters
+                    try:
+                        message.encode('cp1252')
+                    except UnicodeEncodeError:
+                        # Fallback: remove non-ASCII characters
+                        message = message.encode('ascii', 'ignore').decode('ascii')
+                    
+                    if msg_info['level'] == 'WARNING':
+                        print_warning(f"  - {message}")
+                    else:
+                        print_info(f"  - {message}")
+                print()  # Add spacing after warnings
 
         # Check if running in non-interactive mode
         if args.non_interactive:

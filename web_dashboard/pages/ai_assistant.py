@@ -583,6 +583,7 @@ if user_query:
                             search_data['results'] = filter_relevant_results(
                                 search_data['results'],
                                 ticker,
+                                company_name=company_name,
                                 min_relevance_score=0.3
                             )
                             logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")

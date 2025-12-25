@@ -289,6 +289,7 @@ def build_search_query(
 def filter_relevant_results(
     results: List[Dict[str, Any]], 
     ticker: str,
+    company_name: Optional[str] = None,
     min_relevance_score: float = 0.3
 ) -> List[Dict[str, Any]]:
     """Filter search results to only include those relevant to the ticker.
@@ -296,6 +297,7 @@ def filter_relevant_results(
     Args:
         results: List of search result dictionaries
         ticker: Ticker symbol to match against (e.g., "XMA.TO" or "AAPL")
+        company_name: Optional company name to check for
         min_relevance_score: Minimum relevance score (0-1) to include result
         
     Returns:
@@ -306,6 +308,18 @@ def filter_relevant_results(
     
     base_ticker = ticker.split('.')[0].upper()
     ticker_upper = ticker.upper()
+    
+    # Prepare company name for matching
+    company_keywords = []
+    if company_name:
+        company_name_upper = company_name.upper()
+        # Use full company name
+        company_keywords.append(company_name_upper)
+        # Also split into significant words if it's long
+        words = [w for w in company_name_upper.split() if len(w) > 3 and w not in ['CORP', 'CORPORATION', 'INC', 'LTD', 'LIMITED', 'GROUP', 'HOLDINGS']]
+        if words:
+            company_keywords.extend(words)
+            
     relevant_results = []
     
     for result in results:
@@ -323,10 +337,16 @@ def filter_relevant_results(
             relevance_score = 1.0
         # Base ticker match in title (high weight)
         elif base_ticker in title:
-            relevance_score = 0.7
+            relevance_score = 0.8
+        # Company name match in title (high weight)
+        elif company_name and any(kw in title for kw in company_keywords):
+            relevance_score = 0.8
         # Base ticker match in content (medium weight)
         elif base_ticker in content:
-            relevance_score = 0.5
+            relevance_score = 0.6
+        # Company name match in content (medium weight)
+        elif company_name and any(kw in content for kw in company_keywords):
+            relevance_score = 0.6
         # Base ticker match in URL (lower weight)
         elif base_ticker in url:
             relevance_score = 0.4

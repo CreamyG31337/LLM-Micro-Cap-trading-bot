@@ -104,7 +104,7 @@ def market_research_job() -> None:
         logger.info("Fetching general market news...")
         search_results = searxng_client.search_news(
             query="stock market news",
-            num_results=10
+            max_results=10
         )
         
         if not search_results or not search_results.get('results'):

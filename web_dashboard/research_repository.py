@@ -304,6 +304,75 @@ class ResearchRepository:
             logger.error(f"❌ Error deleting article {article_id}: {e}")
             return False
     
+    def search_similar_articles(
+        self,
+        query_embedding: List[float],
+        limit: int = 5,
+        min_similarity: float = 0.5,
+        ticker: Optional[str] = None,
+        article_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search for articles similar to the query embedding using vector similarity.
+        
+        Args:
+            query_embedding: Vector embedding of the search query (768 dimensions)
+            limit: Maximum number of results to return
+            min_similarity: Minimum cosine similarity score (0.0 to 1.0)
+            ticker: Optional filter by ticker
+            article_type: Optional filter by article type
+            
+        Returns:
+            List of article dictionaries with similarity scores
+        """
+        try:
+            # Convert embedding list to PostgreSQL vector format
+            embedding_str = "[" + ",".join(str(float(x)) for x in query_embedding) + "]"
+            
+            # Build query with vector similarity search
+            # <=> is cosine distance operator in pgvector
+            # Similarity = 1 - distance
+            query = """
+                SELECT 
+                    id, ticker, sector, article_type, title, url, summary, content,
+                    source, published_at, fetched_at, relevance_score,
+                    1 - (embedding <=> %s::vector) as similarity
+                FROM research_articles
+                WHERE embedding IS NOT NULL
+                  AND 1 - (embedding <=> %s::vector) >= %s
+            """
+            params = [embedding_str, embedding_str, min_similarity]
+            
+            # Add optional filters
+            if ticker:
+                query += " AND ticker = %s"
+                params.append(ticker)
+            
+            if article_type:
+                query += " AND article_type = %s"
+                params.append(article_type)
+            
+            # Order by similarity and limit
+            query += " ORDER BY similarity DESC LIMIT %s"
+            params.append(limit)
+            
+            results = self.client.execute_query(query, tuple(params))
+            
+            # Process datetime fields
+            for article in results:
+                if article.get('published_at') and isinstance(article['published_at'], datetime):
+                    if article['published_at'].tzinfo is None:
+                        article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
+                if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
+                    if article['fetched_at'].tzinfo is None:
+                        article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
+            
+            logger.info(f"✅ Found {len(results)} similar articles (min_similarity={min_similarity})")
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error searching similar articles: {e}")
+            return []
+    
     def search_articles(
         self,
         query_text: str,

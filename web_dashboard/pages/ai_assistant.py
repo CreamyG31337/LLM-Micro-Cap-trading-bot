@@ -280,6 +280,47 @@ with st.sidebar:
         min_relevance_score = 0.3
         filter_general_queries = False
     
+    st.markdown("---")
+    
+    # Research Knowledge section
+    st.header("🧠 Research Knowledge")
+    
+    # Check if Ollama is available (needed for embeddings)
+    if ollama_available:
+        include_repository = st.checkbox(
+            "Use Research Repository",
+            value=True,
+            help="Search your saved research articles for relevant information",
+            key="toggle_repository"
+        )
+        
+        if include_repository:
+            with st.expander("🎛️ Repository Settings"):
+                repository_max_results = st.slider(
+                    "Max articles to retrieve",
+                    min_value=1,
+                    max_value=10,
+                    value=3,
+                    help="Number of similar articles to include in context",
+                    key="repository_max_results"
+                )
+                
+                repository_min_similarity = st.slider(
+                    "Minimum similarity score",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.6,
+                    step=0.05,
+                    help="Lower = more diverse results, higher = only very similar articles",
+                    key="repository_min_similarity"
+                )
+    else:
+        st.warning("⚠️ Repository search requires Ollama")
+        include_repository = False
+        repository_max_results = 3
+        repository_min_similarity = 0.6
+    
+    
     # =========================================================================
     # CONTEXT SYNCHRONIZATION LOGIC
     # =========================================================================
@@ -659,6 +700,62 @@ if user_query:
                     st.warning(f"Web search failed: {e}")
                     logger.error(f"Search error: {e}")
     
+    # Perform repository search (RAG)
+    repository_results_text = ""
+    repository_articles = []
+    repository_triggered = False
+    
+    if include_repository and ollama_available:
+        repository_triggered = True
+        with st.spinner(f"🧠 Searching research repository..."):
+            try:
+                # Import repository
+                from research_repository import ResearchRepository
+                research_repo = ResearchRepository()
+                
+                # Generate embedding for the user query
+                client = get_ollama_client()
+                if client:
+                    query_embedding = client.generate_embedding(user_query)
+                    
+                    if query_embedding:
+                        # Search for similar articles
+                        repository_articles = research_repo.search_similar_articles(
+                            query_embedding=query_embedding,
+                            limit=repository_max_results,
+                            min_similarity=repository_min_similarity
+                        )
+                        
+                        if repository_articles:
+                            # Format articles for context
+                            articles_text = "## Relevant Research from Repository:\n\n"
+                            for i, article in enumerate(repository_articles, 1):
+                                similarity = article.get('similarity', 0)
+                                title = article.get('title', 'Untitled')
+                                summary = article.get('summary', article.get('content', '')[:300])
+                                source = article.get('source', 'Unknown')
+                                published = article.get('published_at', '')
+                                
+                                articles_text += f"### Article {i} (Similarity: {similarity:.2%})\n"
+                                articles_text += f"**{title}**\n"
+                                articles_text += f"*Source: {source}"
+                                if published:
+                                    articles_text += f" | Published: {published}"
+                                articles_text += "*\n\n"
+                                if summary:
+                                    articles_text += f"{summary}\n\n"
+                                articles_text += "---\n\n"
+                            
+                            repository_results_text = articles_text
+                            # Add to context
+                            context_string = f"{context_string}\n\n{repository_results_text}" if context_string else repository_results_text
+                            logger.info(f"✅ Retrieved {len(repository_articles)} articles from repository")
+                    else:
+                        logger.warning("Failed to generate embedding for query")
+            except Exception as e:
+                st.warning(f"Repository search failed: {e}")
+                logger.error(f"Repository search error: {e}")
+    
     # Generate prompt
     current_context_items = chat_context.get_items()
     if current_context_items:
@@ -686,6 +783,21 @@ if user_query:
                 st.warning(f"⚠️ Search completed but returned an error: {search_data['error']}")
             else:
                 st.info(f"🔍 **Searched:** {search_query_used} | No results found")
+        
+        # Show repository results inline
+        if repository_triggered:
+            if repository_articles:
+                st.success(f"🧠 **Repository:** Found {len(repository_articles)} relevant articles")
+                with st.expander("📚 Relevant Articles (click to view)", expanded=True):
+                    for i, article in enumerate(repository_articles, 1):
+                        similarity = article.get('similarity', 0)
+                        title = article.get('title', 'Untitled')
+                        summary = article.get('summary', '')
+                        st.markdown(f"**{i}. {title}** (Similarity: {similarity:.1%})")
+                        if summary:
+                            st.caption(summary[:200] + "...")
+            else:
+                st.info("🧠 **Repository:** No similar articles found")
     
     # Calculate context size before sending to AI
     system_prompt = get_system_prompt()

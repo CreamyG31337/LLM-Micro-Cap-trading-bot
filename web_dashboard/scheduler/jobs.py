@@ -46,6 +46,12 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'Scrape and store general market news articles',
         'default_interval_minutes': 360,  # Every 6 hours (but uses cron triggers instead)
         'enabled_by_default': True
+    },
+    'ticker_research': {
+        'name': 'Ticker Research Collection',
+        'description': 'Fetch news for specific companies in the portfolio',
+        'default_interval_minutes': 360,  # Every 6 hours
+        'enabled_by_default': True
     }
 }
 
@@ -186,15 +192,22 @@ def market_research_job() -> None:
                 # Record success
                 tracker.record_success(url)
                 
-                # Generate summary using Ollama (if available)
+                # Generate summary and embedding using Ollama (if available)
                 summary = None
+                embedding = None
                 if ollama_client:
                     logger.info(f"Generating summary for: {title[:50]}...")
                     summary = ollama_client.generate_summary(content)
                     if not summary:
                         logger.warning(f"Failed to generate summary for {title[:50]}...")
+                    
+                    # Generate embedding for semantic search
+                    logger.debug(f"Generating embedding for: {title[:50]}...")
+                    embedding = ollama_client.generate_embedding(content[:6000])  # Truncate to avoid token limits
+                    if not embedding:
+                        logger.warning(f"Failed to generate embedding for {title[:50]}...")
                 else:
-                    logger.debug("Ollama not available - skipping summary generation")
+                    logger.debug("Ollama not available - skipping summary and embedding generation")
                 
                 # Save article to database
                 article_id = research_repo.save_article(
@@ -207,7 +220,8 @@ def market_research_job() -> None:
                     content=content,
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
-                    relevance_score=0.5  # Default relevance for general market news
+                    relevance_score=0.5,  # Default relevance for general market news
+                    embedding=embedding
                 )
                 
                 if article_id:
@@ -232,6 +246,217 @@ def market_research_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.error(f"❌ Market research job failed: {e}", exc_info=True)
+
+
+def ticker_research_job() -> None:
+    """Fetch news for companies held in the portfolio.
+    
+    This job:
+    1. Identifies all tickers held in production funds
+    2. Searches for news specific to each ticker + company name
+    3. Saves relevant articles to the database
+    """
+    job_id = 'ticker_research'
+    start_time = time.time()
+    
+    try:
+        logger.info("Starting ticker research job...")
+        
+        # Import dependencies (lazy imports)
+        try:
+            from searxng_client import get_searxng_client, check_searxng_health
+            from research_utils import extract_article_content
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+            from supabase_client import SupabaseClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Check SearXNG health
+        if not check_searxng_health():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG is not available - skipping ticker research"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+            
+        searxng_client = get_searxng_client()
+        ollama_client = get_ollama_client()
+        research_repo = ResearchRepository()
+        
+        if not searxng_client:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG client not initialized"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+
+        # Load domain blacklist
+        from settings import get_research_domain_blacklist
+        blacklist = get_research_domain_blacklist()
+
+        # Connect to Supabase
+        client = SupabaseClient(use_service_role=True)
+        
+        # 1. Get production funds
+        funds_result = client.supabase.table("funds")\
+            .select("name")\
+            .eq("is_production", True)\
+            .execute()
+            
+        if not funds_result.data:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No production funds found"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+            
+        prod_funds = [f['name'] for f in funds_result.data]
+        logger.info(f"Scanning holdings for funds: {prod_funds}")
+        
+        # 2. Get distinct tickers and company names from portfolio_positions for these funds
+        # We look at the most recent snapshot for each fund
+        
+        # Efficient query to get distinct ticker/company pairs from current positions
+        # Using the current_positions view is easiest as it aggregates valid positions
+        positions_result = client.supabase.table("current_positions")\
+            .select("ticker, company, fund")\
+            .in_("fund", prod_funds)\
+            .execute()
+            
+        if not positions_result.data:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No active positions found in production funds"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        # Deduplicate tickers (same ticker might be in multiple funds)
+        # Store as dict: ticker -> company_name
+        targets = {}
+        for pos in positions_result.data:
+            ticker = pos['ticker']
+            company = pos.get('company')
+            
+            # Prefer longer company name if multiple exist (more descriptive)
+            if ticker not in targets:
+                targets[ticker] = company
+            elif company and (not targets[ticker] or len(company) > len(targets[ticker])):
+                targets[ticker] = company
+                
+        logger.info(f"Found {len(targets)} unique tickers to research: {list(targets.keys())}")
+        
+        articles_saved = 0
+        articles_failed = 0
+        tickers_processed = 0
+        
+        # 3. Iterate and search for each ticker
+        for ticker, company in targets.items():
+            try:
+                # Construct search query
+                # Use company name if available for better results, otherwise just ticker + "stock"
+                if company and company.lower() != 'none':
+                    query = f"{ticker} {company} stock news"
+                else:
+                    query = f"{ticker} stock news"
+                
+                logger.info(f"🔎 Searching for: '{query}'")
+                
+                # Fetch search results
+                # Limit to 5 per ticker to avoid overwhelming the system/logs
+                search_results = searxng_client.search_news(query=query, max_results=5)
+                
+                if not search_results or not search_results.get('results'):
+                    logger.debug(f"No results for {ticker}")
+                    continue
+                
+                # Process results
+                for result in search_results['results']:
+                    try:
+                        url = result.get('url', '')
+                        title = result.get('title', '')
+                        
+                        if not url or not title:
+                            continue
+                        
+                        # Check blacklist
+                        from research_utils import is_domain_blacklisted
+                        is_blocked, domain = is_domain_blacklisted(url, blacklist)
+                        if is_blocked:
+                            logger.debug(f"Skipping blacklisted: {domain}")
+                            continue
+
+                         # Deduplicate
+                        if research_repo.article_exists(url):
+                            continue
+                        
+                        # Extract content
+                        logger.info(f"  Extracting: {title[:40]}...")
+                        extracted = extract_article_content(url)
+                        
+                        content = extracted.get('content', '')
+                        if not content:
+                            continue
+                        
+                        # Summarize and generate embedding
+                        summary = None
+                        embedding = None
+                        if ollama_client:
+                            summary = ollama_client.generate_summary(content)
+                            
+                            # Generate embedding for semantic search
+                            embedding = ollama_client.generate_embedding(content[:6000])  # Truncate to avoid token limits
+                            if not embedding:
+                                logger.warning(f"Failed to generate embedding for {ticker}")
+                        
+                        # Save
+                        article_id = research_repo.save_article(
+                            ticker=ticker,
+                            sector=None,  # Could fetch sector if available in metadata
+                            article_type="ticker_news",
+                            title=extracted.get('title') or title,
+                            url=url,
+                            summary=summary,
+                            content=content,
+                            source=extracted.get('source'),
+                            published_at=extracted.get('published_at'),
+                            relevance_score=0.8,  # Higher relevance for targeted ticker news
+                            embedding=embedding
+                        )
+                        
+                        if article_id:
+                            articles_saved += 1
+                            logger.info(f"  ✅ Saved: {title[:30]}")
+                        
+                        # Small delay between articles to be nice
+                        time.sleep(1)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing article for {ticker}: {e}")
+                        articles_failed += 1
+                
+                tickers_processed += 1
+                
+                # Delay between tickers to avoid rate limiting SearXNG
+                time.sleep(3)
+                
+            except Exception as e:
+                logger.error(f"Error searching for {ticker}: {e}")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Processed {tickers_processed} tickers. Saved {articles_saved} new articles."
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Ticker research job failed: {e}", exc_info=True)
 
 
 

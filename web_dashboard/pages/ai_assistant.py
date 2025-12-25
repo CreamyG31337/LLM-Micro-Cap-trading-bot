@@ -9,11 +9,7 @@ Users can chat with AI about their portfolio data.
 
 import streamlit as st
 import sys
-import logging
 from pathlib import Path
-
-# Configure logger
-logger = logging.getLogger(__name__)
 from typing import List, Dict, Optional
 import time
 
@@ -28,10 +24,6 @@ from search_utils import (
     format_search_results, build_search_query, search_portfolio_tickers,
     search_market_news
 )
-import os
-
-# Configuration
-MAX_SEARCH_TICKERS = int(os.getenv("MAX_SEARCH_TICKERS", "20"))  # Limit tickers to avoid overwhelming searches
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
     format_cash_balances, format_investor_allocations, format_sector_allocation
@@ -273,11 +265,7 @@ for message in st.session_state.chat_messages:
 
 # Generate context data from selected items
 def build_context_string() -> str:
-    """Build formatted context string from selected items.
-    
-    Returns:
-        Formatted string containing all context items for the AI
-    """
+    """Build formatted context string from selected items."""
     items = chat_context.get_items()
     if not items:
         return ""
@@ -381,13 +369,9 @@ if user_query:
                     try:
                         positions_df = get_current_positions(selected_fund)
                         if not positions_df.empty and 'ticker' in positions_df.columns:
-                            all_tickers = positions_df['ticker'].tolist()
-                            # Limit to MAX_SEARCH_TICKERS to avoid overwhelming the search
-                            tickers = all_tickers[:MAX_SEARCH_TICKERS]
-                            if len(all_tickers) > MAX_SEARCH_TICKERS:
-                                logger.info(f"Limited ticker search from {len(all_tickers)} to {MAX_SEARCH_TICKERS} tickers")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch tickers for search: {e}")
+                            tickers = positions_df['ticker'].tolist()
+                    except Exception:
+                        pass
                 
                 # Build optimized search query
                 search_query = build_search_query(user_query, tickers if auto_search_tickers else None)

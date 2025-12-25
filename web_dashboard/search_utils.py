@@ -9,7 +9,6 @@ for use in AI context and display.
 
 from typing import List, Dict, Any, Optional
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +71,9 @@ def search_portfolio_tickers(
     tickers: List[str],
     search_type: str = "news",
     time_range: Optional[str] = "day",
-    max_results_per_ticker: int = 5,
-    max_workers: int = 10
+    max_results_per_ticker: int = 5
 ) -> Dict[str, Any]:
-    """Search for news about specific portfolio tickers in parallel.
+    """Search for news about specific portfolio tickers.
     
     Args:
         searxng_client: SearXNGClient instance
@@ -83,7 +81,6 @@ def search_portfolio_tickers(
         search_type: Type of search ('news' or 'web')
         time_range: Time range filter ('day', 'week', 'month', 'year')
         max_results_per_ticker: Maximum results per ticker
-        max_workers: Maximum number of parallel search threads (default: 10)
         
     Returns:
         Dictionary mapping ticker to search results
@@ -94,8 +91,7 @@ def search_portfolio_tickers(
     
     ticker_results = {}
     
-    def search_single_ticker(ticker: str) -> tuple[str, Dict[str, Any]]:
-        """Helper function to search a single ticker."""
+    for ticker in tickers:
         try:
             # Build search query for ticker
             query = f"{ticker} stock news"
@@ -113,29 +109,17 @@ def search_portfolio_tickers(
                     max_results=max_results_per_ticker
                 )
             
+            ticker_results[ticker] = search_data
             logger.info(f"Search completed for {ticker}: {len(search_data.get('results', []))} results")
-            return ticker, search_data
             
         except Exception as e:
             logger.error(f"Error searching for {ticker}: {e}")
-            return ticker, {
+            ticker_results[ticker] = {
                 'results': [],
                 'query': f"{ticker} stock news",
                 'error': str(e)
             }
     
-    # Execute searches in parallel using ThreadPoolExecutor
-    logger.info(f"Starting parallel search for {len(tickers)} tickers with {max_workers} workers")
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all ticker searches
-        future_to_ticker = {executor.submit(search_single_ticker, ticker): ticker for ticker in tickers}
-        
-        # Collect results as they complete
-        for future in as_completed(future_to_ticker):
-            ticker, search_data = future.result()
-            ticker_results[ticker] = search_data
-    
-    logger.info(f"Completed parallel search for {len(ticker_results)} tickers")
     return ticker_results
 
 

@@ -959,14 +959,10 @@ class PromptGenerator:
                     
                     searxng_client = get_searxng_client()
                     if searxng_client and searxng_client.enabled:
-                        # Limit tickers based on environment variable
-                        max_search_tickers = int(os.getenv("MAX_SEARCH_TICKERS", "20"))
-                        tickers_to_search = portfolio_tickers[:max_search_tickers]
-                        
                         # Search for news about each ticker
                         ticker_news = search_portfolio_tickers(
                             searxng_client,
-                            tickers_to_search,
+                            portfolio_tickers[:10],  # Limit to first 10 tickers
                             search_type="news",
                             time_range="day",
                             max_results_per_ticker=3
@@ -974,10 +970,7 @@ class PromptGenerator:
                         
                         if ticker_news:
                             news_section = format_ticker_news_results(ticker_news)
-                            if len(portfolio_tickers) > max_search_tickers:
-                                print(f"{_safe_emoji('✅')} Fetched news for {len(ticker_news)} of {len(portfolio_tickers)} tickers (limited to {max_search_tickers})")
-                            else:
-                                print(f"{_safe_emoji('✅')} Fetched news for {len(ticker_news)} tickers")
+                            print(f"{_safe_emoji('✅')} Fetched news for {len(ticker_news)} tickers")
                         else:
                             print(f"{_safe_emoji('⚠️')} No news found for portfolio tickers")
                     else:

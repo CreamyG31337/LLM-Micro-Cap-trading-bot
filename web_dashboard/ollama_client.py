@@ -14,11 +14,18 @@ from typing import Generator, Optional, List, Dict, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (if it exists)
+# This allows local development with .env file, but Docker/CI can override with actual env vars
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 # Default configuration from environment variables
+# Priority: Docker env vars > .env file > Python defaults
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 OLLAMA_ENABLED = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
 

@@ -2032,8 +2032,6 @@ with tab9:
         
         # Get current settings from environment or database
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-        max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
-        temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
         timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
         enabled = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
         
@@ -2179,7 +2177,7 @@ with tab9:
                 # Reset to defaults button
                 if st.button("🔄 Reset to JSON Defaults", key="reset_model_settings"):
                     try:
-                        from settings import get_supabase_client
+                        from streamlit_utils import get_supabase_client
                         client_db = get_supabase_client()
                         if client_db:
                             # Delete overrides
@@ -2206,17 +2204,19 @@ with tab9:
             )
         
         st.markdown("---")
-        st.info("ℹ️ These settings are currently read from environment variables. "
-                "To change them, update your Docker environment variables or .env file and restart the container.")
+        st.info("ℹ️ **Configuration Priority:**\n"
+                "1. **Docker environment variables** (set in `.woodpecker.yml` or Woodpecker secrets)\n"
+                "2. **`.env` file** (for local development - loaded by python-dotenv)\n"
+                "3. **Python defaults** (hardcoded fallbacks)\n\n"
+                "To change settings:\n"
+                "- **Production**: Set Woodpecker secrets (`ollama_base_url`, `ollama_model`, `ollama_enabled`) or edit `.woodpecker.yml`\n"
+                "- **Local dev**: Create `web_dashboard/.env` file from `env.example`\n"
+                "- **Model-specific settings**: Configure below (stored in database)")
         
         # Show current environment variables
-        with st.expander("📋 Environment Variables (Legacy - Not Used for Model Settings)"):
-            st.caption("⚠️ Note: OLLAMA_MAX_TOKENS and OLLAMA_TEMPERATURE are legacy settings. "
-                      "Actual model settings (num_ctx, temperature) are now defined in model_config.json.")
+        with st.expander("📋 Current Environment Variables (Read-Only)"):
             st.code(f"""OLLAMA_BASE_URL={ollama_base_url}
 OLLAMA_MODEL={default_model}
-OLLAMA_MAX_TOKENS={max_tokens} (legacy, not used)
-OLLAMA_TEMPERATURE={temperature} (legacy, not used)
 OLLAMA_TIMEOUT={timeout}
 OLLAMA_ENABLED={enabled}""")
         

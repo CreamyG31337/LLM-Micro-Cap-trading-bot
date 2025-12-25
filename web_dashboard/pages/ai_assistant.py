@@ -227,23 +227,14 @@ if user_query:
             system_prompt = get_system_prompt()
             
             # Stream response
-            # Stream response
-            # We pass None for temperature and max_tokens to let the client handle model-specific defaults
-            # UNLESS override environment variables are set explicitly for debugging
-            
-            # Check for explicit environment overrides (debugging/testing only)
-            env_max_tokens = os.getenv("OLLAMA_MAX_TOKENS")
-            env_temperature = os.getenv("OLLAMA_TEMPERATURE")
-            
-            req_max_tokens = int(env_max_tokens) if env_max_tokens else None
-            req_temperature = float(env_temperature) if env_temperature else None
-            
+            # Pass None for temperature and max_tokens to let the client handle model-specific defaults
+            # Model settings come from model_config.json and database overrides
             for chunk in client.query_ollama(
                 prompt=full_prompt,
                 model=selected_model,
                 stream=True,
-                temperature=req_temperature,
-                max_tokens=req_max_tokens,
+                temperature=None,  # Use model default
+                max_tokens=None,   # Use model default
                 system_prompt=system_prompt
             ):
                 full_response += chunk

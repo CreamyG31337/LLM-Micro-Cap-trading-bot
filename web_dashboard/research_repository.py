@@ -154,7 +154,9 @@ class ResearchRepository:
         offset: int = 0,
         article_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get articles for a specific ticker
+        """Get articles for a specific ticker.
+        
+        For ETFs, also includes sector-level articles (where ticker IS NULL but sector matches).
         
         Args:
             ticker: Stock ticker symbol
@@ -166,14 +168,51 @@ class ResearchRepository:
             List of article dictionaries
         """
         try:
-            query = """
-                SELECT id, ticker, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score,
-                       (embedding IS NOT NULL) as has_embedding
-                FROM research_articles
-                WHERE ticker = %s
-            """
-            params = [ticker]
+            # Check if this is an ETF and get its sector
+            etf_sector = None
+            try:
+                # Check if ticker or company name contains "ETF"
+                sector_query = """
+                    SELECT sector, company_name
+                    FROM securities
+                    WHERE ticker = %s
+                """
+                sector_result = self.client.execute_query(sector_query, (ticker,))
+                
+                if sector_result:
+                    sec = sector_result[0]
+                    company_name = sec.get('company_name', '') or ''
+                    # Check if it's an ETF
+                    is_etf = (
+                        'etf' in ticker.lower() or 
+                        (company_name and 'etf' in company_name.lower())
+                    )
+                    if is_etf:
+                        etf_sector = sec.get('sector')
+                        if etf_sector:
+                            logger.debug(f"Ticker {ticker} is an ETF with sector: {etf_sector}")
+            except Exception as e:
+                logger.debug(f"Could not check ETF status for {ticker}: {e}")
+            
+            # Build query: include ticker-specific articles, and for ETFs also include sector articles
+            if etf_sector:
+                query = """
+                    SELECT id, ticker, sector, article_type, title, url, summary, content,
+                           source, published_at, fetched_at, relevance_score,
+                           (embedding IS NOT NULL) as has_embedding
+                    FROM research_articles
+                    WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
+                """
+                params = [ticker, etf_sector]
+            else:
+                query = """
+                    SELECT id, ticker, sector, article_type, title, url, summary, content,
+                           source, published_at, fetched_at, relevance_score,
+                           (embedding IS NOT NULL) as has_embedding
+                    FROM research_articles
+                    WHERE ticker = %s
+                """
+                params = [ticker]
             
             if article_type:
                 query += " AND article_type = %s"
@@ -193,7 +232,8 @@ class ResearchRepository:
                     if article['fetched_at'].tzinfo is None:
                         article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
             
-            logger.debug(f"Retrieved {len(results)} articles for ticker {ticker}")
+            logger.debug(f"Retrieved {len(results)} articles for ticker {ticker}" + 
+                        (f" (including {etf_sector} sector articles)" if etf_sector else ""))
             return results
             
         except Exception as e:

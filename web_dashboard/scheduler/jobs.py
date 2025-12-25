@@ -382,15 +382,153 @@ def ticker_research_job() -> None:
                 targets[ticker] = company
             elif company and (not targets[ticker] or len(company) > len(targets[ticker])):
                 targets[ticker] = company
-                
-        logger.info(f"Found {len(targets)} unique tickers to research: {list(targets.keys())}")
+        
+        # Separate ETFs from regular tickers
+        # ETFs will be researched by sector instead
+        etf_tickers = {}
+        regular_tickers = {}
+        
+        for ticker, company in targets.items():
+            # Check if ticker or company name contains "ETF" (case-insensitive)
+            is_etf = (
+                'etf' in ticker.lower() or 
+                (company and 'etf' in company.lower())
+            )
+            
+            if is_etf:
+                etf_tickers[ticker] = company
+            else:
+                regular_tickers[ticker] = company
+        
+        # Get sectors for ETF tickers from securities table
+        etf_sectors = set()
+        if etf_tickers:
+            etf_ticker_list = list(etf_tickers.keys())
+            # Query securities table for sector information
+            # Need to query in batches if there are many ETFs
+            batch_size = 50
+            for i in range(0, len(etf_ticker_list), batch_size):
+                batch = etf_ticker_list[i:i + batch_size]
+                try:
+                    securities_result = client.supabase.table("securities")\
+                        .select("ticker, sector")\
+                        .in_("ticker", batch)\
+                        .execute()
+                    
+                    for sec in securities_result.data:
+                        sector = sec.get('sector')
+                        if sector and sector.strip():
+                            etf_sectors.add(sector.strip())
+                except Exception as e:
+                    logger.warning(f"Error fetching sectors for ETFs: {e}")
+        
+        if etf_tickers:
+            logger.info(f"Found {len(etf_tickers)} ETF tickers (skipping direct research): {list(etf_tickers.keys())}")
+            if etf_sectors:
+                logger.info(f"Will research {len(etf_sectors)} sectors instead: {sorted(etf_sectors)}")
+            else:
+                logger.warning("No sector information found for ETFs - they will be skipped")
+        
+        logger.info(f"Found {len(regular_tickers)} regular tickers to research: {list(regular_tickers.keys())}")
         
         articles_saved = 0
         articles_failed = 0
         tickers_processed = 0
+        sectors_researched = 0
         
-        # 3. Iterate and search for each ticker
-        for ticker, company in targets.items():
+        # 3. Research sectors for ETFs first
+        for sector in sorted(etf_sectors):
+            try:
+                query = f"{sector} sector news investment"
+                logger.info(f"🔎 Researching sector for ETFs: '{query}'")
+                
+                search_results = searxng_client.search_news(query=query, max_results=5)
+                
+                if not search_results or not search_results.get('results'):
+                    logger.debug(f"No results for sector: {sector}")
+                    continue
+                
+                # Process results
+                for result in search_results['results']:
+                    try:
+                        url = result.get('url', '')
+                        title = result.get('title', '')
+                        
+                        if not url or not title:
+                            continue
+                        
+                        # Check blacklist
+                        from research_utils import is_domain_blacklisted
+                        is_blocked, domain = is_domain_blacklisted(url, blacklist)
+                        if is_blocked:
+                            logger.debug(f"Skipping blacklisted: {domain}")
+                            continue
+
+                        # Deduplicate
+                        if research_repo.article_exists(url):
+                            continue
+                        
+                        # Extract content
+                        logger.info(f"  Extracting: {title[:40]}...")
+                        extracted = extract_article_content(url)
+                        
+                        content = extracted.get('content', '')
+                        if not content:
+                            continue
+                        
+                        # Summarize and generate embedding
+                        summary = None
+                        summary_data = {}
+                        embedding = None
+                        if ollama_client:
+                            summary_data = ollama_client.generate_summary(content)
+                            
+                            if isinstance(summary_data, str):
+                                summary = summary_data
+                            elif isinstance(summary_data, dict) and summary_data:
+                                summary = summary_data.get("summary", "")
+                            
+                            # Generate embedding for semantic search
+                            embedding = ollama_client.generate_embedding(content[:6000])
+                            if not embedding:
+                                logger.warning(f"Failed to generate embedding for sector {sector}")
+                        
+                        # Save with sector but no specific ticker (since it's ETF sector research)
+                        article_id = research_repo.save_article(
+                            ticker=None,  # No specific ticker for ETF sector research
+                            sector=sector,
+                            article_type="ticker_news",  # Still use ticker_news type
+                            title=extracted.get('title') or title,
+                            url=url,
+                            summary=summary,
+                            content=content,
+                            source=extracted.get('source'),
+                            published_at=extracted.get('published_at'),
+                            relevance_score=0.7,  # Slightly lower relevance for sector-level news
+                            embedding=embedding
+                        )
+                        
+                        if article_id:
+                            articles_saved += 1
+                            logger.info(f"  ✅ Saved sector news: {title[:30]}")
+                        
+                        # Small delay between articles
+                        time.sleep(1)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing sector article for {sector}: {e}")
+                        articles_failed += 1
+                
+                sectors_researched += 1
+                
+                # Delay between sectors
+                time.sleep(3)
+                
+            except Exception as e:
+                logger.error(f"Error researching sector {sector}: {e}")
+        
+        # 4. Iterate and search for each regular (non-ETF) ticker
+        for ticker, company in regular_tickers.items():
             try:
                 # Construct search query
                 # Use company name if available for better results, otherwise just ticker + "stock"
@@ -502,7 +640,11 @@ def ticker_research_job() -> None:
                 logger.error(f"Error searching for {ticker}: {e}")
         
         duration_ms = int((time.time() - start_time) * 1000)
-        message = f"Processed {tickers_processed} tickers. Saved {articles_saved} new articles."
+        message_parts = [f"Processed {tickers_processed} tickers"]
+        if sectors_researched > 0:
+            message_parts.append(f"{sectors_researched} sectors (for ETFs)")
+        message_parts.append(f"Saved {articles_saved} new articles")
+        message = ". ".join(message_parts) + "."
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         

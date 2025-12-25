@@ -292,19 +292,26 @@ class OllamaClient:
             logger.error(f"❌ Unexpected error querying Ollama: {e}", exc_info=True)
             yield f"An error occurred: {str(e)}"
     
-    def generate_summary(self, text: str, model: Optional[str] = None) -> str:
-        """Generate a 3-bullet point summary of text using specified model.
+    def generate_summary(self, text: str, model: Optional[str] = None) -> Dict[str, Any]:
+        """Generate a comprehensive summary with structured metadata extraction.
         
         Args:
             text: Text to summarize (will be truncated to ~6000 chars)
             model: Model name to use. If None, uses get_summarizing_model() from settings.
             
         Returns:
-            Summary text with 3 bullet points
+            Dictionary containing:
+            - summary: Enhanced text summary (5-7+ bullet points)
+            - tickers: List of ticker symbols mentioned (e.g., ["HOOD", "NVDA"])
+            - sectors: List of sectors mentioned (e.g., ["Financial Services", "Technology"])
+            - key_themes: List of key themes/topics
+            - companies: List of company names mentioned
+            
+            Returns empty dict if generation fails or AI is disabled.
         """
         if not self.enabled:
             logger.warning("Ollama summary generation rejected: AI assistant disabled")
-            return ""
+            return {}
         
         # Get model from settings if not provided
         if model is None:
@@ -321,14 +328,32 @@ class OllamaClient:
             text = text[:max_chars] + "..."
             logger.debug(f"Truncated text to {max_chars} characters for summarization")
         
-        # System prompt requesting exactly 3 bullet points
-        system_prompt = "You are a financial news summarizer. Summarize the following article in exactly 3 bullet points. Each bullet should be concise and capture key information."
+        # Enhanced system prompt requesting structured extraction
+        system_prompt = """You are a financial news analyzer. Analyze the following article and provide a comprehensive analysis in JSON format.
+
+Requirements:
+1. Generate a comprehensive summary with 5-7+ bullet points covering all key information
+2. Extract all stock ticker symbols mentioned (e.g., HOOD, NVDA, AAPL)
+3. Identify all sectors/industries discussed (e.g., "Financial Services", "Technology", "Healthcare")
+4. List key themes and topics (e.g., "crypto revenue", "subscription growth", "market expansion")
+5. Extract company names mentioned (e.g., "Robinhood", "NVIDIA")
+
+Return your response as a valid JSON object with these exact fields:
+{
+  "summary": "• First key point...\n• Second key point...\n• Third key point...\n• Fourth key point...\n• Fifth key point...",
+  "tickers": ["TICKER1", "TICKER2"],
+  "sectors": ["Sector1", "Sector2"],
+  "key_themes": ["theme1", "theme2"],
+  "companies": ["Company1", "Company2"]
+}
+
+If no tickers, sectors, themes, or companies are found, use empty arrays []. Always return valid JSON."""
         
         # Get model settings
         model_settings = self.get_model_settings(model)
         effective_temp = model_settings.get('temperature', 0.3)
         effective_ctx = model_settings.get('num_ctx', 4096)
-        effective_max_tokens = model_settings.get('num_predict', 512)
+        effective_max_tokens = model_settings.get('num_predict', 1024)  # Increased for more comprehensive summaries
         
         # Prepare request payload
         payload = {
@@ -344,7 +369,7 @@ class OllamaClient:
         }
         
         try:
-            logger.info(f"Generating summary with model {model}")
+            logger.info(f"Generating enhanced summary with model {model}")
             response = self.session.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
@@ -353,20 +378,66 @@ class OllamaClient:
             response.raise_for_status()
             
             data = response.json()
-            summary = data.get("response", "").strip()
+            raw_response = data.get("response", "").strip()
             
-            logger.debug(f"Generated summary: {len(summary)} characters")
-            return summary
+            if not raw_response:
+                logger.warning("Empty response from Ollama")
+                return {}
+            
+            # Try to parse JSON response
+            try:
+                # Try to extract JSON from response (might have markdown code blocks)
+                json_str = raw_response
+                if "```json" in json_str:
+                    # Extract JSON from markdown code block
+                    start = json_str.find("```json") + 7
+                    end = json_str.find("```", start)
+                    if end > start:
+                        json_str = json_str[start:end].strip()
+                elif "```" in json_str:
+                    # Extract JSON from generic code block
+                    start = json_str.find("```") + 3
+                    end = json_str.find("```", start)
+                    if end > start:
+                        json_str = json_str[start:end].strip()
+                
+                parsed = json.loads(json_str)
+                
+                # Validate and normalize structure
+                result = {
+                    "summary": parsed.get("summary", "").strip(),
+                    "tickers": [t.upper().strip() for t in parsed.get("tickers", []) if t and t.strip()],
+                    "sectors": [s.strip() for s in parsed.get("sectors", []) if s and s.strip()],
+                    "key_themes": [t.strip() for t in parsed.get("key_themes", []) if t and t.strip()],
+                    "companies": [c.strip() for c in parsed.get("companies", []) if c and c.strip()]
+                }
+                
+                logger.debug(f"Generated summary: {len(result['summary'])} chars, {len(result['tickers'])} tickers, {len(result['sectors'])} sectors")
+                logger.debug(f"Extracted tickers: {result['tickers']}, sectors: {result['sectors']}")
+                
+                return result
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse JSON response, falling back to text-only summary: {e}")
+                logger.debug(f"Raw response: {raw_response[:500]}")
+                # Fallback: return text summary only
+                return {
+                    "summary": raw_response,
+                    "tickers": [],
+                    "sectors": [],
+                    "key_themes": [],
+                    "companies": []
+                }
             
         except requests.exceptions.Timeout:
             logger.error(f"❌ Ollama summary request timed out after {self.timeout}s")
-            return ""
+            return {}
         except requests.exceptions.ConnectionError as e:
             logger.error(f"❌ Cannot connect to Ollama API at {self.base_url}: {e}")
-            return ""
+            return {}
         except Exception as e:
             logger.error(f"❌ Error generating summary: {e}", exc_info=True)
-            return ""
+            return {}
     
     def generate_embedding(self, text: str, model: str = "nomic-embed-text") -> List[float]:
         """Generate embedding vector for text using Ollama embedding API.

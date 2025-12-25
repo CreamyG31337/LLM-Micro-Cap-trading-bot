@@ -194,10 +194,39 @@ def market_research_job() -> None:
                 
                 # Generate summary and embedding using Ollama (if available)
                 summary = None
+                summary_data = {}
+                extracted_ticker = None
+                extracted_sector = None
                 embedding = None
                 if ollama_client:
                     logger.info(f"Generating summary for: {title[:50]}...")
-                    summary = ollama_client.generate_summary(content)
+                    summary_data = ollama_client.generate_summary(content)
+                    
+                    # Handle backward compatibility: if old string format is returned
+                    if isinstance(summary_data, str):
+                        summary = summary_data
+                        logger.debug("Received old string format summary, using as-is")
+                    elif isinstance(summary_data, dict) and summary_data:
+                        summary = summary_data.get("summary", "")
+                        
+                        # Extract ticker and sector from structured data
+                        tickers = summary_data.get("tickers", [])
+                        sectors = summary_data.get("sectors", [])
+                        
+                        # Use first ticker if available
+                        if tickers:
+                            extracted_ticker = tickers[0]
+                            logger.info(f"Extracted ticker from article: {extracted_ticker}")
+                        
+                        # Use first sector if available
+                        if sectors:
+                            extracted_sector = sectors[0]
+                            logger.info(f"Extracted sector from article: {extracted_sector}")
+                        
+                        # Log extracted metadata
+                        if tickers or sectors:
+                            logger.debug(f"Extracted metadata - Tickers: {tickers}, Sectors: {sectors}, Themes: {summary_data.get('key_themes', [])}")
+                    
                     if not summary:
                         logger.warning(f"Failed to generate summary for {title[:50]}...")
                     
@@ -211,8 +240,8 @@ def market_research_job() -> None:
                 
                 # Save article to database
                 article_id = research_repo.save_article(
-                    ticker=None,  # General market news, not ticker-specific
-                    sector=None,
+                    ticker=extracted_ticker,  # Use extracted ticker if available
+                    sector=extracted_sector,  # Use extracted sector if available
                     article_type="market_news",
                     title=extracted.get('title') or title,
                     url=url,
@@ -404,9 +433,28 @@ def ticker_research_job() -> None:
                         
                         # Summarize and generate embedding
                         summary = None
+                        summary_data = {}
+                        extracted_sector = None
                         embedding = None
                         if ollama_client:
-                            summary = ollama_client.generate_summary(content)
+                            summary_data = ollama_client.generate_summary(content)
+                            
+                            # Handle backward compatibility: if old string format is returned
+                            if isinstance(summary_data, str):
+                                summary = summary_data
+                                logger.debug("Received old string format summary, using as-is")
+                            elif isinstance(summary_data, dict) and summary_data:
+                                summary = summary_data.get("summary", "")
+                                
+                                # Extract sector from structured data
+                                sectors = summary_data.get("sectors", [])
+                                if sectors:
+                                    extracted_sector = sectors[0]
+                                    logger.info(f"Extracted sector from article: {extracted_sector}")
+                                
+                                # Log extracted metadata
+                                if sectors or summary_data.get("key_themes"):
+                                    logger.debug(f"Extracted metadata - Sectors: {sectors}, Themes: {summary_data.get('key_themes', [])}")
                             
                             # Generate embedding for semantic search
                             embedding = ollama_client.generate_embedding(content[:6000])  # Truncate to avoid token limits
@@ -416,7 +464,7 @@ def ticker_research_job() -> None:
                         # Save
                         article_id = research_repo.save_article(
                             ticker=ticker,
-                            sector=None,  # Could fetch sector if available in metadata
+                            sector=extracted_sector,  # Use extracted sector if available
                             article_type="ticker_news",
                             title=extracted.get('title') or title,
                             url=url,

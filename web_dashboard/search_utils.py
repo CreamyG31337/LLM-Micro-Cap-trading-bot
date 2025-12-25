@@ -470,7 +470,7 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
     research_keywords = [
         'research', 'news', 'latest', 'recent', 'today', 'analysis',
         'analyze', 'information', 'find', 'search', 'what', 'how',
-        'why', 'when', 'where', 'update', 'current', 'happening'
+        'why', 'when', 'where', 'who', 'update', 'current', 'happening'
     ]
     
     # Market-related keywords

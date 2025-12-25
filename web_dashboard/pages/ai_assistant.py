@@ -251,11 +251,34 @@ with st.sidebar:
             help="Automatically search for news about portfolio tickers",
             key="auto_search_tickers"
         )
+        
+        # Search settings expander
+        with st.expander("🎛️ Search Settings"):
+            min_relevance_score = st.slider(
+                "Minimum Relevance Score",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.3,
+                step=0.05,
+                help="Lower = more results, higher = only highly relevant results. Used for ticker and market searches.",
+                key="min_relevance_score"
+            )
+            
+            filter_general_queries = st.checkbox(
+                "Filter general queries",
+                value=False,
+                help="Apply relevance filtering to general knowledge queries. Usually better to leave this off.",
+                key="filter_general_queries"
+            )
+            
+            st.caption("ℹ️ Ticker searches are always filtered for relevance")
     else:
         st.warning("⚠️ SearXNG unavailable")
         st.caption("Web search will be disabled. SearXNG may be starting up or not configured.")
         include_search = False
         auto_search_tickers = False
+        min_relevance_score = 0.3
+        filter_general_queries = False
     
     # =========================================================================
     # CONTEXT SYNCHRONIZATION LOGIC
@@ -584,7 +607,7 @@ if user_query:
                                 search_data['results'],
                                 ticker,
                                 company_name=company_name,
-                                min_relevance_score=0.3
+                                min_relevance_score=min_relevance_score
                             )
                             logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")
                     elif research_intent['research_type'] == 'market':
@@ -599,17 +622,32 @@ if user_query:
                             max_results=10
                         )
                     else:
-                        # General search
+                        # General search (use web search, broader time range)
                         search_query_used = build_search_query(
                             user_query,
                             tickers=portfolio_tickers if auto_search_tickers else None,
                             preserve_keywords=True
                         )
-                        search_data = searxng_client.search_news(
+                        search_data = searxng_client.search_web(
                             query=search_query_used,
-                            time_range='day',
+                            time_range=None,  # No time limit for general queries
                             max_results=10
                         )
+                        
+                        # Apply filtering only if user enabled it
+                        if filter_general_queries and search_data and 'results' in search_data and search_data['results']:
+                            # Extract ticker if present for filtering
+                            original_count = len(search_data['results'])
+                            if research_intent['tickers']:
+                                ticker = research_intent['tickers'][0]
+                                company_name = get_company_name_from_db(ticker)
+                                search_data['results'] = filter_relevant_results(
+                                    search_data['results'],
+                                    ticker,
+                                    company_name=company_name,
+                                    min_relevance_score=min_relevance_score
+                                )
+                                logger.info(f"Filtered {original_count} general search results to {len(search_data['results'])} relevant results")
                     
                     if search_data and 'results' in search_data and search_data['results']:
                         search_results_text = format_search_results(search_data, max_results=10)

@@ -18,7 +18,7 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 # Default configuration from environment variables
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 OLLAMA_ENABLED = os.getenv("OLLAMA_ENABLED", "true").lower() == "true"
 
@@ -36,6 +36,8 @@ class OllamaClient:
         self.base_url = base_url or OLLAMA_BASE_URL
         self.timeout = timeout or OLLAMA_TIMEOUT
         self.enabled = OLLAMA_ENABLED
+        
+        logger.info(f"Ollama client initialized: base_url={self.base_url}, timeout={self.timeout}s, enabled={self.enabled}")
         
         # Create session with retry strategy
         self.session = requests.Session()
@@ -56,16 +58,23 @@ class OllamaClient:
             True if Ollama is reachable, False otherwise
         """
         if not self.enabled:
+            logger.debug("Ollama health check skipped: disabled")
             return False
         
         try:
+            logger.debug(f"Checking Ollama health at {self.base_url}...")
             response = self.session.get(
                 f"{self.base_url}/api/tags",
                 timeout=5
             )
-            return response.status_code == 200
+            if response.status_code == 200:
+                logger.info(f"✅ Ollama health check successful: {self.base_url}")
+                return True
+            else:
+                logger.warning(f"Ollama health check failed: HTTP {response.status_code}")
+                return False
         except Exception as e:
-            logger.warning(f"Ollama health check failed: {e}")
+            logger.warning(f"❌ Ollama health check failed: {e}")
             return False
     
     def list_available_models(self) -> List[str]:
@@ -75,9 +84,11 @@ class OllamaClient:
             List of model names
         """
         if not self.enabled:
+            logger.debug("Model listing skipped: Ollama disabled")
             return []
         
         try:
+            logger.debug(f"Fetching available models from {self.base_url}...")
             response = self.session.get(
                 f"{self.base_url}/api/tags",
                 timeout=10
@@ -85,9 +96,11 @@ class OllamaClient:
             response.raise_for_status()
             data = response.json()
             models = [model.get("name", "") for model in data.get("models", [])]
-            return [m for m in models if m]  # Filter out empty strings
+            models = [m for m in models if m]  # Filter out empty strings
+            logger.info(f"Found {len(models)} Ollama models: {', '.join(models) if models else 'none'}")
+            return models
         except Exception as e:
-            logger.error(f"Error listing Ollama models: {e}")
+            logger.error(f"❌ Error listing Ollama models: {e}")
             return []
     
     def query_ollama(
@@ -115,6 +128,7 @@ class OllamaClient:
             Response chunks as strings (streaming) or full response (non-streaming)
         """
         if not self.enabled:
+            logger.warning("Ollama query rejected: AI assistant disabled")
             yield "AI assistant is currently disabled."
             return
         
@@ -139,6 +153,9 @@ class OllamaClient:
             payload["system"] = system_prompt
         
         try:
+            logger.info(f"Ollama query: model={model}, temp={temperature}, max_tokens={max_tokens}, stream={stream}")
+            logger.debug(f"Prompt length: {len(full_prompt)} chars")
+            
             response = self.session.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
@@ -146,6 +163,7 @@ class OllamaClient:
                 timeout=self.timeout
             )
             response.raise_for_status()
+            logger.debug("Ollama response received, streaming...")
             
             if stream:
                 # Stream response chunks
@@ -165,16 +183,16 @@ class OllamaClient:
                 yield data.get("response", "")
                 
         except requests.exceptions.Timeout:
-            logger.error("Ollama request timed out")
+            logger.error(f"❌ Ollama request timed out after {self.timeout}s")
             yield "Request timed out. Please try again with a shorter prompt or context."
-        except requests.exceptions.ConnectionError:
-            logger.error("Cannot connect to Ollama API")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Cannot connect to Ollama API at {self.base_url}: {e}")
             yield "Cannot connect to AI assistant. Please check if Ollama is running."
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Ollama API error: {e}")
+            logger.error(f"❌ Ollama API HTTP error: {e}")
             yield f"AI assistant error: {str(e)}"
         except Exception as e:
-            logger.error(f"Unexpected error querying Ollama: {e}")
+            logger.error(f"❌ Unexpected error querying Ollama: {e}", exc_info=True)
             yield f"An error occurred: {str(e)}"
     
     def query_ollama_chat(

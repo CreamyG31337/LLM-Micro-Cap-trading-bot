@@ -170,6 +170,7 @@ def setup_logging(level=logging.INFO):
         'scheduler.scheduler_core',
         'scheduler.jobs',
         'log_handler',
+        'ollama_client',  # AI integration
         '__main__',
         'web_dashboard',
     ]

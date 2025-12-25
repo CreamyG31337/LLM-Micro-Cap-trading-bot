@@ -2031,7 +2031,7 @@ with tab9:
         st.subheader("Configuration")
         
         # Get current settings from environment or database
-        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
         max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
         temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
         timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))

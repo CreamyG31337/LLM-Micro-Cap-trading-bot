@@ -1024,7 +1024,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
         check_table_display_issues()
 
         # Load portfolio data
+        import time
         print_info("Loading portfolio data...")
+        portfolio_load_start = time.time()
         
         # Get latest snapshot using view-based method (includes company names from securities table)
         latest_snapshot = portfolio_manager.get_latest_portfolio()
@@ -1033,11 +1035,13 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             print_warning("No portfolio data found")
             return
         
-        print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions")
+        portfolio_load_time = time.time() - portfolio_load_start
+        print_success(f"Loaded portfolio with {len(latest_snapshot.positions)} positions ({portfolio_load_time:.2f}s)")
         
         # Load historical snapshots for duplicate checking (separate from display data)
         # Use repository directly to avoid duplicate check raising exception
         # We'll check duplicates ourselves with strict=False to just warn
+        snapshots_load_start = time.time()
         try:
             portfolio_snapshots = portfolio_manager.load_portfolio()
         except PortfolioManagerError as e:
@@ -1045,6 +1049,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             # to allow us to check and warn instead of crashing
             print_warning("Duplicate snapshots detected during load - loading data directly for validation")
             portfolio_snapshots = portfolio_manager.repository.get_portfolio_data()
+        snapshots_load_time = time.time() - snapshots_load_start
+        if snapshots_load_time > 0.5:
+            print_info(f"   Historical snapshots loaded: {snapshots_load_time:.2f}s")
 
         # Optional: Additional validation
         from utils.validation import check_duplicate_snapshots, validate_snapshot_timestamps
@@ -1061,10 +1068,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
 
         # Update exchange rates CSV with current rates
         print_info("Updating exchange rates...")
+        exchange_rates_start = time.time()
         currency_handler.update_exchange_rates_csv()
+        exchange_rates_time = time.time() - exchange_rates_start
+        if exchange_rates_time > 0.5:
+            print_info(f"   Exchange rates updated: {exchange_rates_time:.2f}s")
 
         # Fetch current market data with cache-first optimization
         print_info("Fetching current market data...")
+        market_data_start = time.time()
         tickers = [pos.ticker for pos in latest_snapshot.positions]
 
         if tickers:
@@ -1105,13 +1117,15 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                     market_data[ticker] = pd.DataFrame()
 
             # Report optimization results
+            market_data_time = time.time() - market_data_start
             if cache_hits > 0:
-                print_success(f"Updated market data for {len(market_data)} tickers ({cache_hits} from cache, {api_calls} fresh fetches)")
+                print_success(f"Updated market data for {len(market_data)} tickers ({cache_hits} from cache, {api_calls} fresh fetches) ({market_data_time:.2f}s)")
             else:
-                print_success(f"Updated market data for {len(market_data)} tickers")
+                print_success(f"Updated market data for {len(market_data)} tickers ({market_data_time:.2f}s)")
 
         # Calculate portfolio metrics
         print_info("Calculating portfolio metrics...")
+        metrics_start = time.time()
 
         # Update positions with current prices
         updated_positions = []
@@ -1186,6 +1200,20 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 debug_file.write(f"Number of positions to process: {len(updated_positions)}\n")
                 debug_file.flush()
 
+        # OPTIMIZATION: Get all trade history once instead of per-position (N+1 query fix)
+        # Build a lookup dictionary: ticker -> list of trades
+        position_process_start = time.time()
+        trade_history_lookup = {}
+        try:
+            all_trades = repository.get_trade_history()  # Get all trades for the fund
+            for trade in all_trades:
+                if trade.ticker not in trade_history_lookup:
+                    trade_history_lookup[trade.ticker] = []
+                trade_history_lookup[trade.ticker].append(trade)
+        except Exception as e:
+            logger.warning(f"Failed to load trade history for opened_date lookup: {e}")
+            trade_history_lookup = {}
+        
         for position in updated_positions:
             if args.non_interactive:
                 with open('debug_output.txt', 'a') as debug_file:
@@ -1207,9 +1235,9 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
             else:
                 pos_dict['total_pnl'] = "$0.00"
 
-            # Get open date from trade log
+            # Get open date from trade log (optimized - use lookup dictionary)
             try:
-                trades = repository.get_trade_history(position.ticker)
+                trades = trade_history_lookup.get(position.ticker, [])
                 if trades:
                     # Find first BUY trade for this ticker
                     buy_trades = [t for t in trades if t.action.upper() == 'BUY']
@@ -1527,6 +1555,10 @@ def run_portfolio_workflow(args: argparse.Namespace, settings: Settings, reposit
                 pos_dict['five_day_pnl'] = "N/A"
 
             enhanced_positions.append(pos_dict)
+
+        position_process_time = time.time() - position_process_start
+        if position_process_time > 0.5:  # Only show if it took significant time
+            print_info(f"   Position processing: {position_process_time:.2f}s")
 
         # Sort positions based on command-line argument
         def get_sort_key(pos_dict, sort_by):

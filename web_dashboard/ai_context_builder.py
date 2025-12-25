@@ -38,9 +38,9 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         f"Fund: {fund}",
         f"Holdings ({len(positions_df)} positions):",
         "",
-        # Enriched header - includes Daily P&L and Sector
-        "Ticker    | Sector          | Qty     | Price    | Mkt Value  | Daily P&L | Total P&L | Return",
-        "----------|-----------------|---------|----------|------------|-----------|-----------|-------"
+        # Enriched header - includes Company, Daily P&L and Sector
+        "Ticker    | Company    | Sector          | Qty     | Price    | Mkt Value  | Daily P&L | Total P&L | Return",
+        "----------|------------|-----------------|---------|----------|------------|-----------|-----------|-------"
     ]
     
     total_cost = 0.0
@@ -61,6 +61,10 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         # Get daily P&L from view (may be None/null)
         daily_pnl = row.get('daily_pnl', 0)
         daily_pnl_pct = row.get('daily_pnl_pct', 0)
+        
+        # Get company name (truncate to 10 chars)
+        company = row.get('company', '')
+        company_str = str(company)[:10] if company else symbol[:10]
         
         # Get sector from securities join (nested dict)
         sector = "N/A"
@@ -95,14 +99,14 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         sector_str = str(sector)[:15] if sector != "N/A" else "N/A"
         
         # Single line per holding (token-efficient)
-        lines.append(f"{symbol:<9} | {sector_str:<15} | {qty_str:>7} | {price_str:>8} | {value_str:>10} | {daily_str:>9} | {pnl_str:>9} | {pct_str:>6}")
+        lines.append(f"{symbol:<9} | {company_str:<10} | {sector_str:<15} | {qty_str:>7} | {price_str:>8} | {value_str:>10} | {daily_str:>9} | {pnl_str:>9} | {pct_str:>6}")
     
     # Summary row
     if total_value > 0:
         total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
         daily_summary = f"{'+' if total_daily_pnl >= 0 else ''}{total_daily_pnl:>8,.0f}" if total_daily_pnl != 0 else "-"
-        lines.append("----------|-----------------|---------|----------|------------|-----------|-----------|-------")
-        lines.append(f"{'TOTAL':<9} | {'':15} |         | {'':8} | ${total_value:>9,.0f} | {daily_summary:>9} | {'+' if total_pnl >= 0 else ''}{total_pnl:>8,.0f} | {total_pnl_pct:+.1f}%")
+        lines.append("----------|------------|-----------------|---------|----------|------------|-----------|-----------|-------")
+        lines.append(f"{'TOTAL':<9} | {'':10} | {'':15} |         | {'':8} | ${total_value:>9,.0f} | {daily_summary:>9} | {'+' if total_pnl >= 0 else ''}{total_pnl:>8,.0f} | {total_pnl_pct:+.1f}%")
     
     return "\n".join(lines)
 

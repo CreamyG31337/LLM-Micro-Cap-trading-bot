@@ -863,13 +863,27 @@ class PromptGenerator:
             
             # Process positions and get trade history (this can be slow)
             position_process_start = time.time()
+            
+            # OPTIMIZATION: Get all trade history once instead of per-position (N+1 query fix)
+            # Build a lookup dictionary: ticker -> list of trades
+            trade_history_lookup = {}
+            try:
+                all_trades = self.repository.get_trade_history()  # Get all trades for the fund
+                for trade in all_trades:
+                    if trade.ticker not in trade_history_lookup:
+                        trade_history_lookup[trade.ticker] = []
+                    trade_history_lookup[trade.ticker].append(trade)
+            except Exception as e:
+                logger.warning(f"Failed to load trade history for opened_date lookup: {e}")
+                trade_history_lookup = {}
+            
             for position in latest_snapshot.positions:
                 # Use the same to_dict() method as main trading script
                 pos_dict = position.to_dict()
                 
-                # Get open date from trade log (same logic as main script)
+                # Get open date from trade log (optimized - use lookup dictionary)
                 try:
-                    trades = self.repository.get_trade_history(position.ticker)
+                    trades = trade_history_lookup.get(position.ticker, [])
                     if trades:
                         # Find first BUY trade for this ticker
                         buy_trades = [t for t in trades if t.action.upper() == 'BUY']
@@ -1106,13 +1120,27 @@ class PromptGenerator:
             portfolio_data = []
             # Process positions and get trade history (this can be slow)
             position_process_start = time.time()
+            
+            # OPTIMIZATION: Get all trade history once instead of per-position (N+1 query fix)
+            # Build a lookup dictionary: ticker -> list of trades
+            trade_history_lookup = {}
+            try:
+                all_trades = self.repository.get_trade_history()  # Get all trades for the fund
+                for trade in all_trades:
+                    if trade.ticker not in trade_history_lookup:
+                        trade_history_lookup[trade.ticker] = []
+                    trade_history_lookup[trade.ticker].append(trade)
+            except Exception as e:
+                logger.warning(f"Failed to load trade history for opened_date lookup: {e}")
+                trade_history_lookup = {}
+            
             for position in latest_snapshot.positions:
                 # Use the same to_dict() method as main trading script
                 pos_dict = position.to_dict()
                 
-                # Get open date from trade log (same logic as daily prompt)
+                # Get open date from trade log (optimized - use lookup dictionary)
                 try:
-                    trades = self.repository.get_trade_history(position.ticker)
+                    trades = trade_history_lookup.get(position.ticker, [])
                     if trades:
                         # Find first BUY trade for this ticker
                         buy_trades = [t for t in trades if t.action.upper() == 'BUY']

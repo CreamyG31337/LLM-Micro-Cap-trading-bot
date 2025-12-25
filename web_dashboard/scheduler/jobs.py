@@ -100,6 +100,14 @@ def market_research_job() -> None:
         # Initialize research repository
         research_repo = ResearchRepository()
         
+        # Load domain blacklist
+        from settings import get_research_domain_blacklist
+        blacklist = get_research_domain_blacklist()
+        if blacklist:
+            logger.info(f"Loaded domain blacklist: {blacklist}")
+        else:
+            logger.info("No domains blacklisted")
+        
         # Fetch general market news
         logger.info("Fetching general market news...")
         search_results = searxng_client.search_news(
@@ -117,6 +125,7 @@ def market_research_job() -> None:
         articles_processed = 0
         articles_saved = 0
         articles_skipped = 0
+        articles_blacklisted = 0
         
         for result in search_results['results']:
             try:
@@ -125,6 +134,14 @@ def market_research_job() -> None:
                 
                 if not url or not title:
                     logger.debug("Skipping result with missing URL or title")
+                    continue
+                
+                # Check if domain is blacklisted
+                from research_utils import is_domain_blacklisted
+                is_blocked, domain = is_domain_blacklisted(url, blacklist)
+                if is_blocked:
+                    logger.info(f"ℹ️ Skipping blacklisted domain: {domain}")
+                    articles_blacklisted += 1
                     continue
                 
                 # Check if article already exists
@@ -179,7 +196,7 @@ def market_research_job() -> None:
                 continue
         
         duration_ms = int((time.time() - start_time) * 1000)
-        message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped"
+        message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         

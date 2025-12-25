@@ -55,5 +55,15 @@ VALUES (
 )
 ON CONFLICT (key) DO NOTHING;
 
+-- Insert research domain blacklist (if not exists)
+INSERT INTO system_settings (key, value, description, updated_by)
+VALUES (
+    'research_domain_blacklist',
+    '["msn.com", "reuters.com"]'::jsonb,
+    'Domains to skip during market research article extraction (JSON array)',
+    (SELECT id FROM auth.users WHERE email = 'admin@example.com' LIMIT 1)
+)
+ON CONFLICT (key) DO NOTHING;
+
 -- Add comment
 COMMENT ON TABLE system_settings IS 'Global system configuration key-value store. Values are stored as JSONB for flexibility.';

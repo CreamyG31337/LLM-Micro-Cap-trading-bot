@@ -126,14 +126,20 @@ with st.sidebar:
     # Date range filter
     date_range_option = st.selectbox(
         "Date Range",
-        ["Last 7 days", "Last 30 days", "Last 90 days", "Custom"],
-        index=1
+        ["All time", "Last 7 days", "Last 30 days", "Last 90 days", "Custom"],
+        index=0
     )
     
     start_date = None
     end_date = None
+    use_date_filter = True
     
-    if date_range_option == "Custom":
+    if date_range_option == "All time":
+        use_date_filter = False
+        # Set wide range for query (but won't be used)
+        start_date = date.today() - timedelta(days=3650)  # 10 years ago
+        end_date = date.today() + timedelta(days=1)  # Tomorrow
+    elif date_range_option == "Custom":
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("Start Date", value=date.today() - timedelta(days=30))
@@ -144,9 +150,16 @@ with st.sidebar:
         end_date = date.today()
         start_date = end_date - timedelta(days=days)
     
-    # Convert to datetime for query
-    start_datetime = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=None)
-    end_datetime = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=None)
+    # Convert to datetime for query (use UTC timezone)
+    if use_date_filter:
+        # Start of day in UTC
+        start_datetime = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        # End of day in UTC - use start of next day for inclusive end
+        end_datetime = datetime.combine(end_date + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
+    else:
+        # For "All time", use None to skip date filtering
+        start_datetime = None
+        end_datetime = None
     
     # Article type filter
     article_type = st.selectbox(
@@ -245,19 +258,51 @@ try:
         page = st.session_state.get('current_page', 1)
         offset = (page - 1) * results_per_page
         
-        articles = repo.get_articles_by_date_range(
-            start_date=start_datetime,
-            end_date=end_datetime,
-            article_type=article_type_filter,
-            source=source_filter,
-            search_text=search_filter,
-            limit=results_per_page,
-            offset=offset
-        )
-        
-        # Get total count for pagination (simplified - get one more to check if there are more)
-        total_articles = len(articles)
-        has_more = total_articles == results_per_page
+        try:
+            if use_date_filter and start_datetime and end_datetime:
+                articles = repo.get_articles_by_date_range(
+                    start_date=start_datetime,
+                    end_date=end_datetime,
+                    article_type=article_type_filter,
+                    source=source_filter,
+                    search_text=search_filter,
+                    limit=results_per_page,
+                    offset=offset
+                )
+            else:
+                # Use get_recent_articles for "All time" or when date filter is disabled
+                # Get a large number and apply other filters manually
+                all_articles = repo.get_recent_articles(
+                    limit=10000,  # Large limit for "all time"
+                    days=3650,  # 10 years
+                    article_type=article_type_filter,
+                    ticker=None
+                )
+                
+                # Apply source and search filters manually
+                filtered_articles = all_articles
+                if source_filter:
+                    filtered_articles = [a for a in filtered_articles if a.get('source') == source_filter]
+                if search_filter:
+                    search_lower = search_filter.lower()
+                    filtered_articles = [
+                        a for a in filtered_articles
+                        if search_lower in (a.get('title', '') or '').lower()
+                        or search_lower in (a.get('summary', '') or '').lower()
+                        or search_lower in (a.get('content', '') or '').lower()
+                    ]
+                
+                # Apply pagination
+                articles = filtered_articles[offset:offset + results_per_page]
+            
+            # Get total count for pagination (simplified - get one more to check if there are more)
+            total_articles = len(articles)
+            has_more = total_articles == results_per_page
+        except Exception as e:
+            logger.error(f"Error fetching articles: {e}", exc_info=True)
+            st.error(f"Error loading articles: {e}")
+            articles = []
+            has_more = False
     
     # Results header
     st.header("📄 Articles")

@@ -20,7 +20,29 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def is_domain_blacklisted(url: str, blacklist: list[str]) -> tuple[bool, str]:
+    """Check if URL's domain is in the blacklist.
+    
+    Args:
+        url: URL to check
+        blacklist: List of blacklisted domains (e.g., ['msn.com', 'reuters.com'])
+        
+    Returns:
+        Tuple of (is_blacklisted, domain)
+    """
+    domain = extract_source_from_url(url)
+    
+    # Check if domain matches any blacklisted domain
+    for blocked_domain in blacklist:
+        # Case-insensitive match
+        if domain.lower() == blocked_domain.lower():
+            return (True, domain)
+    
+    return (False, domain)
+
+
 def extract_article_content(url: str) -> Dict[str, Any]:
+
     """Extract article content from URL using Trafilatura.
     
     Args:

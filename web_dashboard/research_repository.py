@@ -461,6 +461,7 @@ class ResearchRepository:
                 FROM research_articles
                 WHERE fetched_at >= %s AND fetched_at <= %s
             """
+            # Convert to ISO format strings for PostgreSQL
             params = [start_date.isoformat(), end_date.isoformat()]
             
             if article_type:

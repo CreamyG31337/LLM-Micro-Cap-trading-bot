@@ -2291,6 +2291,92 @@ OLLAMA_MODEL={default_model}
 OLLAMA_TIMEOUT={timeout}
 OLLAMA_ENABLED={enabled}""")
         
+        # Research Domain Blacklist Management
+        st.markdown("---")
+        st.markdown("##### 🚫 Research Domain Blacklist")
+        st.caption("Domains to skip during market research article extraction")
+        
+        try:
+            from settings import get_research_domain_blacklist, set_system_setting
+            
+            current_blacklist = get_research_domain_blacklist()
+            
+            # Display current blacklist
+            if current_blacklist:
+                st.write("**Current Blacklisted Domains:**")
+                for idx, domain in enumerate(current_blacklist):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.text(f"• {domain}")
+                    with col2:
+                        if st.button("❌", key=f"remove_domain_{idx}", help=f"Remove {domain}"):
+                            try:
+                                updated_list = [d for d in current_blacklist if d != domain]
+                                if set_system_setting("research_domain_blacklist", updated_list, 
+                                                     "Domains to skip during market research article extraction (JSON array)"):
+                                    st.toast(f"✅ Removed {domain} from blacklist", icon="✅")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to remove {domain}")
+                            except Exception as e:
+                                st.error(f"Error removing domain: {e}")
+            else:
+                st.info("No domains blacklisted")
+            
+            # Add new domain
+            st.write("**Add New Domain:**")
+            col_add1, col_add2 = st.columns([3, 1])
+            with col_add1:
+                new_domain = st.text_input(
+                    "Domain",
+                    placeholder="example.com",
+                    key="new_blacklist_domain",
+                    label_visibility="collapsed"
+                )
+            with col_add2:
+                if st.button("➕ Add", type="primary", use_container_width=True):
+                    if not new_domain:
+                        st.error("Please enter a domain")
+                    elif new_domain in current_blacklist:
+                        st.warning(f"{new_domain} is already blacklisted")
+                    else:
+                        try:
+                            updated_list = current_blacklist + [new_domain.strip().lower()]
+                            if set_system_setting("research_domain_blacklist", updated_list,
+                                                 "Domains to skip during market research article extraction (JSON array)"):
+                                st.toast(f"✅ Added {new_domain} to blacklist", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error("Failed to add domain")
+                        except Exception as e:
+                            st.error(f"Error adding domain: {e}")
+            
+            # Show stats from last job run
+            try:
+                from streamlit_utils import get_supabase_client
+                client_stats = get_supabase_client()
+                if client_stats:
+                    # Get last market_research job execution
+                    job_result = client_stats.supabase.table("job_executions") \
+                        .select("message, completed_at") \
+                        .eq("job_id", "market_research") \
+                        .eq("success", True) \
+                        .order("completed_at", desc=True) \
+                        .limit(1) \
+                        .execute()
+                    
+                    if job_result.data and len(job_result.data) > 0:
+                        last_job = job_result.data[0]
+                        message = last_job.get("message", "")
+                        # Parse message like: "Processed 5 articles: 3 saved, 1 skipped, 1 blacklisted"
+                        if "blacklisted" in message:
+                            st.caption(f"📊 Last run: {message}")
+            except Exception:
+                pass  # Don't fail if stats unavailable
+        
+        except Exception as e:
+            st.error(f"Error loading blacklist settings: {e}")
+        
         # Test connection button
         st.markdown("---")
         if st.button("🔄 Test Connection", use_container_width=True):

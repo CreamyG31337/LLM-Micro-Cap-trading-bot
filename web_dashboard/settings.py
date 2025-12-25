@@ -138,3 +138,19 @@ def get_summarizing_model() -> str:
     
     # Final fallback
     return "llama3.2:3b"
+
+
+def get_research_domain_blacklist() -> list[str]:
+    """Get the list of blacklisted domains for research article extraction.
+    
+    Returns:
+        List of domain strings to skip (e.g., ['msn.com', 'reuters.com'])
+    """
+    blacklist = get_system_setting("research_domain_blacklist", default=[])
+    
+    # Ensure it's a list
+    if not isinstance(blacklist, list):
+        logger.warning(f"research_domain_blacklist is not a list: {type(blacklist)}")
+        return []
+    
+    return blacklist

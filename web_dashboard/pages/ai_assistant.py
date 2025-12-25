@@ -10,7 +10,7 @@ Users can chat with AI about their portfolio data.
 import streamlit as st
 import sys
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import time
 import logging
 

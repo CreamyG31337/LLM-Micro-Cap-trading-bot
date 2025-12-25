@@ -56,7 +56,7 @@ def _check_postgres_connection():
         # Check if RESEARCH_DATABASE_URL is set
         database_url = os.getenv("RESEARCH_DATABASE_URL")
         if not database_url:
-            logger.info("Postgres: RESEARCH_DATABASE_URL not set - research articles storage disabled")
+            logger.warning("Postgres: RESEARCH_DATABASE_URL not set - research articles storage disabled")
             return
         
         # Try to connect

@@ -16,6 +16,15 @@ st.set_page_config(
     layout="wide"
 )
 
+# Hide Streamlit's default page navigation
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Check authentication
 try:
     from auth_utils import is_authenticated, get_user_email
@@ -33,6 +42,10 @@ except ImportError as e:
 if not is_authenticated():
     st.warning("Please log in to access settings.")
     st.stop()
+
+# Sidebar navigation
+from navigation import render_navigation
+render_navigation(show_ai_assistant=True, show_settings=False)  # Don't show Settings link on this page
 
 st.title("⚙️ Settings")
 st.markdown("Configure your dashboard preferences")

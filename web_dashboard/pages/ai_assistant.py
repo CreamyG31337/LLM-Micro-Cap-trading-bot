@@ -39,6 +39,15 @@ st.set_page_config(
     layout="wide"
 )
 
+# Hide Streamlit's default page navigation
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Check authentication
 if not is_authenticated():
     st.switch_page("streamlit_app.py")
@@ -73,7 +82,10 @@ if not ollama_available:
     st.info("The AI assistant requires Ollama to be running and accessible.")
     st.stop()
 
-# Sidebar - Settings and Context
+# Sidebar - Navigation, Settings and Context
+from navigation import render_navigation
+render_navigation(show_ai_assistant=False, show_settings=True)  # Don't show AI Assistant link on this page
+
 with st.sidebar:
     st.header("⚙️ Settings")
     

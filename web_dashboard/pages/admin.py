@@ -29,6 +29,15 @@ from supabase_client import SupabaseClient
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
 
+# Hide Streamlit's default page navigation
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Check authentication - redirect to main page if not logged in
 if not is_authenticated():
     st.switch_page("streamlit_app.py")
@@ -101,12 +110,8 @@ else:
         st.caption(f"🏷️ Build: Development ({datetime.now().strftime('%Y-%m-%d %H:%M')})")
 
 # Custom page navigation in sidebar
-with st.sidebar:
-    st.title("Navigation")
-    st.markdown("### Pages")
-    st.page_link("streamlit_app.py", label="📈 Dashboard")
-    st.page_link("pages/admin.py", label="⚙️ Admin")
-    st.markdown("---")
+from navigation import render_navigation
+render_navigation(show_ai_assistant=True, show_settings=True)
 
 # Create tabs for different admin sections
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([

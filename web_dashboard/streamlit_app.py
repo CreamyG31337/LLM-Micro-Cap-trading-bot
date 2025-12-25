@@ -96,6 +96,10 @@ st.set_page_config(
 # Custom CSS (dark mode compatible)
 st.markdown("""
     <style>
+    /* Hide Streamlit's default page navigation */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
@@ -925,40 +929,10 @@ def main():
             st.rerun()
     
     # Sidebar - Navigation and Filters
-    st.sidebar.title("Navigation")
+    from navigation import render_navigation
+    render_navigation(show_ai_assistant=True, show_settings=True)
     
-    # Custom page navigation links (replaces default Streamlit page names)
-    st.sidebar.markdown("### Pages")
-    st.sidebar.page_link("streamlit_app.py", label="📈 Dashboard")
-    
-    # Show admin status
-    admin_status = is_admin()
-    user_email = get_user_email()
-    if user_email:
-        if admin_status:
-            st.sidebar.success("✅ Admin Access")
-            # Admin page link (only visible to admins)
-            st.sidebar.page_link("pages/admin.py", label="Admin", icon="⚙️")
-        else:
-            # Check if user profile exists and show role
-            try:
-                client = get_supabase_client()
-                if client:
-                    profile_result = client.supabase.table("user_profiles").select("role").eq("user_id", get_user_id()).execute()
-                    if profile_result.data:
-                        role = profile_result.data[0].get('role', 'user')
-                        if role != 'admin':
-                            st.sidebar.info(f"👤 Role: {role}")
-                            with st.sidebar.expander("🔧 Need Admin Access?"):
-                                st.write("To become an admin, run this command on the server:")
-                                st.code("python web_dashboard/setup_admin.py", language="bash")
-                                st.write(f"Then enter your email: `{user_email}`")
-            except Exception:
-                pass  # Silently fail if we can't check
-    
-    st.sidebar.markdown("---")
-    
-    # Chat Assistant Context UI
+    # Chat Assistant Context UI (only on main dashboard)
     try:
         from chat_context import ChatContextManager
         from ollama_client import check_ollama_health
@@ -966,13 +940,6 @@ def main():
         if check_ollama_health():
             chat_context = st.session_state.chat_context
             chat_context.render_context_ui(sidebar=True)
-            
-            # Add link to AI Assistant page
-            st.sidebar.page_link("pages/ai_assistant.py", label="🤖 AI Assistant", icon="💬")
-        else:
-            with st.sidebar.expander("💬 Chat Assistant", expanded=False):
-                st.warning("AI Assistant unavailable")
-                st.caption("Ollama is not running or not accessible.")
     except Exception as e:
         # Silently fail if chat context not available
         pass

@@ -117,3 +117,24 @@ def get_all_system_settings() -> dict:
     except Exception as e:
         logger.error(f"Error getting all system settings: {e}")
         return {}
+
+
+def get_summarizing_model() -> str:
+    """Get the summarizing model setting.
+    
+    Returns:
+        Model name for summarization (defaults to llama3.2:3b)
+    """
+    import os
+    # Check system setting first
+    model = get_system_setting("ai_summarizing_model", default=None)
+    if model:
+        return model
+    
+    # Fall back to environment variable
+    env_model = os.getenv("OLLAMA_SUMMARIZING_MODEL")
+    if env_model:
+        return env_model
+    
+    # Final fallback
+    return "llama3.2:3b"

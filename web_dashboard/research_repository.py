@@ -89,10 +89,7 @@ class ResearchRepository:
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector
                     )
-                    ON CONFLICT (url) DO UPDATE SET
-                        fetched_at = NOW(),
-                        relevance_score = EXCLUDED.relevance_score,
-                        summary = COALESCE(EXCLUDED.summary, research_articles.summary)
+                    ON CONFLICT (url) DO NOTHING
                     RETURNING id
                 """
                 params = (
@@ -116,10 +113,7 @@ class ResearchRepository:
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
-                    ON CONFLICT (url) DO UPDATE SET
-                        fetched_at = NOW(),
-                        relevance_score = EXCLUDED.relevance_score,
-                        summary = COALESCE(EXCLUDED.summary, research_articles.summary)
+                    ON CONFLICT (url) DO NOTHING
                     RETURNING id
                 """
                 params = (

@@ -40,8 +40,155 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'Fetch current stock prices and update portfolio positions for today',
         'default_interval_minutes': 15,  # Every 15 minutes during market hours
         'enabled_by_default': True
+    },
+    'market_research': {
+        'name': 'Market Research Collection',
+        'description': 'Scrape and store general market news articles',
+        'default_interval_minutes': 360,  # Every 6 hours (but uses cron triggers instead)
+        'enabled_by_default': True
     }
 }
+
+
+def market_research_job() -> None:
+    """Fetch and store general market news articles.
+    
+    This job:
+    1. Fetches general market news using SearXNG
+    2. Extracts article content using trafilatura
+    3. Generates AI summaries using Ollama
+    4. Saves articles to the database
+    """
+    job_id = 'market_research'
+    start_time = time.time()
+    
+    try:
+        logger.info("Starting market research job...")
+        
+        # Import dependencies (lazy imports to avoid circular dependencies)
+        try:
+            from searxng_client import get_searxng_client, check_searxng_health
+            from research_utils import extract_article_content
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Check if SearXNG is available
+        if not check_searxng_health():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG is not available - skipping research job"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        # Get clients
+        searxng_client = get_searxng_client()
+        ollama_client = get_ollama_client()
+        
+        if not searxng_client:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "SearXNG client not initialized"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize research repository
+        research_repo = ResearchRepository()
+        
+        # Fetch general market news
+        logger.info("Fetching general market news...")
+        search_results = searxng_client.search_news(
+            query="stock market news",
+            num_results=10
+        )
+        
+        if not search_results or not search_results.get('results'):
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No search results found"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        articles_processed = 0
+        articles_saved = 0
+        articles_skipped = 0
+        
+        for result in search_results['results']:
+            try:
+                url = result.get('url', '')
+                title = result.get('title', '')
+                
+                if not url or not title:
+                    logger.debug("Skipping result with missing URL or title")
+                    continue
+                
+                # Check if article already exists
+                if research_repo.article_exists(url):
+                    logger.debug(f"Article already exists: {title[:50]}...")
+                    articles_skipped += 1
+                    continue
+                
+                # Extract article content
+                logger.info(f"Extracting content: {title[:50]}...")
+                extracted = extract_article_content(url)
+                
+                content = extracted.get('content', '')
+                if not content:
+                    logger.warning(f"Could not extract content from {url}")
+                    continue
+                
+                # Generate summary using Ollama (if available)
+                summary = None
+                if ollama_client:
+                    logger.info(f"Generating summary for: {title[:50]}...")
+                    summary = ollama_client.generate_summary(content)
+                    if not summary:
+                        logger.warning(f"Failed to generate summary for {title[:50]}...")
+                else:
+                    logger.debug("Ollama not available - skipping summary generation")
+                
+                # Save article to database
+                article_id = research_repo.save_article(
+                    ticker=None,  # General market news, not ticker-specific
+                    sector=None,
+                    article_type="market_news",
+                    title=extracted.get('title') or title,
+                    url=url,
+                    summary=summary,
+                    content=content,
+                    source=extracted.get('source'),
+                    published_at=extracted.get('published_at'),
+                    relevance_score=0.5  # Default relevance for general market news
+                )
+                
+                if article_id:
+                    articles_saved += 1
+                    logger.info(f"✅ Saved article: {title[:50]}...")
+                else:
+                    logger.warning(f"Failed to save article: {title[:50]}...")
+                
+                articles_processed += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing article '{title[:50]}...': {e}")
+                continue
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Market research job failed: {e}", exc_info=True)
+
 
 
 def refresh_exchange_rates_job() -> None:
@@ -810,3 +957,127 @@ def register_default_jobs(scheduler) -> None:
             misfire_grace_time=60 * 60 * 4  # 4 hours - if missed, run when system comes back up
         )
         logger.info("Registered job: update_portfolio_prices_close (weekdays 4:05 PM EST, 4hr misfire grace)")
+    
+    # Market research job - 4 times daily at strategic times
+    if AVAILABLE_JOBS['market_research']['enabled_by_default']:
+        # Pre-Market: 08:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=8,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_premarket',
+            name='Market Research (Pre-Market)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
+        
+        # Mid-Morning: 11:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=11,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_midmorning',
+            name='Market Research (Mid-Morning)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
+        
+        # Power Hour: 14:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=14,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_powerhour',
+            name='Market Research (Power Hour)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
+        
+        # Post-Market: 16:30 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=16,
+                minute=30,
+                timezone='America/New_York'
+            ),
+            id='market_research_postmarket',
+            name='Market Research (Post-Market)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
+    
+    # Market research job - 4 times daily at strategic times
+    if AVAILABLE_JOBS['market_research']['enabled_by_default']:
+        # Pre-Market: 08:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=8,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_premarket',
+            name='Market Research (Pre-Market)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
+        
+        # Mid-Morning: 11:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=11,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_midmorning',
+            name='Market Research (Mid-Morning)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
+        
+        # Power Hour: 14:00 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=14,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='market_research_powerhour',
+            name='Market Research (Power Hour)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
+        
+        # Post-Market: 16:30 EST (Mon-Fri)
+        scheduler.add_job(
+            market_research_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour=16,
+                minute=30,
+                timezone='America/New_York'
+            ),
+            id='market_research_postmarket',
+            name='Market Research (Post-Market)',
+            replace_existing=True
+        )
+        logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")

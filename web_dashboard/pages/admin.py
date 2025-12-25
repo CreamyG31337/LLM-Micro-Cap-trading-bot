@@ -2123,12 +2123,47 @@ with tab9:
                     disabled=True
                 )
             
-            new_enabled = st.checkbox(
+                new_enabled = st.checkbox(
                 "AI Assistant Enabled",
                 value=enabled,
                 help="Enable or disable AI assistant globally",
                 disabled=True  # Read-only, set via environment
             )
+            
+            # Summarizing model selection
+            from settings import get_summarizing_model, set_system_setting
+            summarizing_model = get_summarizing_model()
+            
+            if check_ollama_health() and models:
+                # Ensure current summarizing model is in the list
+                summarizing_options = models if summarizing_model in models else [summarizing_model] + models
+                summarizing_index = summarizing_options.index(summarizing_model) if summarizing_model in summarizing_options else 0
+                
+                new_summarizing_model = st.selectbox(
+                    "Summarizing Model",
+                    options=summarizing_options,
+                    index=summarizing_index,
+                    help="Model used for generating article summaries (default: llama3.2:3b)"
+                )
+                
+                # Save button for summarizing model selection
+                if new_summarizing_model != summarizing_model:
+                    if st.button("💾 Save Summarizing Model", type="primary", key="save_summarizing_model"):
+                        try:
+                            if set_system_setting("ai_summarizing_model", new_summarizing_model, "Model for generating article summaries"):
+                                st.toast(f"✅ Summarizing model set to {new_summarizing_model}", icon="✅")
+                                st.rerun()
+                            else:
+                                st.error("Failed to save summarizing model setting")
+                        except Exception as e:
+                            st.error(f"Error saving summarizing model: {e}")
+            else:
+                st.text_input(
+                    "Summarizing Model",
+                    value=summarizing_model,
+                    help="Model name for summarization (Ollama not connected - cannot list models)",
+                    disabled=True
+                )
         
         with col2:
             st.markdown("##### Model-Specific Settings")

@@ -292,6 +292,131 @@ class OllamaClient:
             logger.error(f"❌ Unexpected error querying Ollama: {e}", exc_info=True)
             yield f"An error occurred: {str(e)}"
     
+    def generate_summary(self, text: str, model: Optional[str] = None) -> str:
+        """Generate a 3-bullet point summary of text using specified model.
+        
+        Args:
+            text: Text to summarize (will be truncated to ~6000 chars)
+            model: Model name to use. If None, uses get_summarizing_model() from settings.
+            
+        Returns:
+            Summary text with 3 bullet points
+        """
+        if not self.enabled:
+            logger.warning("Ollama summary generation rejected: AI assistant disabled")
+            return ""
+        
+        # Get model from settings if not provided
+        if model is None:
+            try:
+                from settings import get_summarizing_model
+                model = get_summarizing_model()
+            except Exception as e:
+                logger.warning(f"Could not load summarizing model from settings: {e}, using fallback")
+                model = "llama3.2:3b"
+        
+        # Truncate text to ~6000 characters
+        max_chars = 6000
+        if len(text) > max_chars:
+            text = text[:max_chars] + "..."
+            logger.debug(f"Truncated text to {max_chars} characters for summarization")
+        
+        # System prompt requesting exactly 3 bullet points
+        system_prompt = "You are a financial news summarizer. Summarize the following article in exactly 3 bullet points. Each bullet should be concise and capture key information."
+        
+        # Get model settings
+        model_settings = self.get_model_settings(model)
+        effective_temp = model_settings.get('temperature', 0.3)
+        effective_ctx = model_settings.get('num_ctx', 4096)
+        effective_max_tokens = model_settings.get('num_predict', 512)
+        
+        # Prepare request payload
+        payload = {
+            "model": model,
+            "prompt": text,
+            "stream": False,
+            "system": system_prompt,
+            "options": {
+                "temperature": effective_temp,
+                "num_predict": effective_max_tokens,
+                "num_ctx": effective_ctx
+            }
+        }
+        
+        try:
+            logger.info(f"Generating summary with model {model}")
+            response = self.session.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            summary = data.get("response", "").strip()
+            
+            logger.debug(f"Generated summary: {len(summary)} characters")
+            return summary
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Ollama summary request timed out after {self.timeout}s")
+            return ""
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Cannot connect to Ollama API at {self.base_url}: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"❌ Error generating summary: {e}", exc_info=True)
+            return ""
+    
+    def generate_embedding(self, text: str, model: str = "nomic-embed-text") -> List[float]:
+        """Generate embedding vector for text using Ollama embedding API.
+        
+        Args:
+            text: Text to generate embedding for
+            model: Embedding model name (defaults to nomic-embed-text)
+            
+        Returns:
+            List of floats (768 dimensions for nomic-embed-text)
+        """
+        if not self.enabled:
+            logger.warning("Ollama embedding generation rejected: AI assistant disabled")
+            return []
+        
+        # Prepare request payload
+        payload = {
+            "model": model,
+            "prompt": text
+        }
+        
+        try:
+            logger.debug(f"Generating embedding with model {model}")
+            response = self.session.post(
+                f"{self.base_url}/api/embeddings",
+                json=payload,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            embedding = data.get("embedding", [])
+            
+            if not embedding:
+                logger.warning(f"No embedding returned from model {model}")
+                return []
+            
+            logger.debug(f"Generated embedding: {len(embedding)} dimensions")
+            return embedding
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Ollama embedding request timed out after {self.timeout}s")
+            return []
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Cannot connect to Ollama API at {self.base_url}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Error generating embedding: {e}", exc_info=True)
+            return []
+    
     def query_ollama_chat(
         self,
         messages: List[Dict[str, str]],

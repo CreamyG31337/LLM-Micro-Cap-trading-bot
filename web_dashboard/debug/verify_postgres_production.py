@@ -38,10 +38,10 @@ def main():
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     
-    # Check DATABASE_URL
-    database_url = os.getenv("DATABASE_URL")
+    # Check RESEARCH_DATABASE_URL
+    database_url = os.getenv("RESEARCH_DATABASE_URL")
     if not database_url:
-        print("ERROR: DATABASE_URL not set in environment")
+        print("ERROR: RESEARCH_DATABASE_URL not set in environment")
         print("   Check web_dashboard/.env file")
         return 1
     

@@ -13,6 +13,10 @@
 # - supabase_url: Your Supabase project URL
 # - supabase_publishable_key: For user authentication
 # - supabase_secret_key: For admin scripts and debug operations
+# - research_database_url: (optional) Postgres connection string for research articles
+#                          Format: postgresql://user:password@host:port/database
+#                          For Docker container connecting to host Postgres: use host.docker.internal
+#                          Example: postgresql://postgres:password@host.docker.internal:5432/trading_db
 # - ollama_base_url: (optional) Ollama API URL (default: http://host.docker.internal:11434)
 # - ollama_model: (optional) Default AI model (default: mistral-nemo:12b)
 # - ollama_enabled: (optional) Enable AI assistant (default: true)
@@ -34,6 +38,8 @@ steps:
         from_secret: supabase_publishable_key
       SUPABASE_SECRET_KEY:
         from_secret: supabase_secret_key
+      RESEARCH_DATABASE_URL:
+        from_secret: research_database_url
     commands:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -68,7 +74,8 @@ steps:
       # Added --add-host to allow connecting to Ollama on the host machine via host.docker.internal (Linux support)
       # NOTE: On Windows/Mac, host.docker.internal works natively. On Linux, you MUST add "--add-host=host.docker.internal:host-gateway"
       # Ollama settings can be overridden via Woodpecker secrets or environment variables
-      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
+      # RESEARCH_DATABASE_URL is optional - only set if research articles storage is needed
+      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e RESEARCH_DATABASE_URL="${RESEARCH_DATABASE_URL:-}" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

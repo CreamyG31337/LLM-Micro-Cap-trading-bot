@@ -110,16 +110,16 @@ Add to `web_dashboard/.env`:
 # IMPORTANT: Hostname depends on WHERE the app runs:
 # 
 # From workstation (Tailscale/SSH):
-DATABASE_URL=postgresql://postgres:password@your-tailscale-hostname:5432/trading_db
+RESEARCH_DATABASE_URL=postgresql://postgres:password@your-tailscale-hostname:5432/trading_db
 # 
 # From server host:
-DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_db
+RESEARCH_DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_db
 # 
 # From Docker container (Postgres also in Docker):
-DATABASE_URL=postgresql://postgres:password@postgres-17.5:5432/trading_db
+RESEARCH_DATABASE_URL=postgresql://postgres:password@postgres-17.5:5432/trading_db
 # 
 # From Docker container (Postgres on host):
-DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/trading_db
+RESEARCH_DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/trading_db
 ```
 
 **Note**: 
@@ -204,7 +204,7 @@ deleted = repo.delete_old_articles(days_to_keep=30)
 
 **Connection Errors**:
 - Verify Postgres container is running
-- Check DATABASE_URL format (no spaces, correct password)
+- Check RESEARCH_DATABASE_URL format (no spaces, correct password)
 - Ensure database `trading_db` exists
 - Test connection: `psql -h localhost -U postgres -d trading_db`
 
@@ -262,7 +262,7 @@ python web_dashboard/debug/test_postgres_connection.py
 ```
 This script tests multiple hostname patterns (localhost, host.docker.internal, container name, etc.) and recommends the best one for your setup. Useful when using Tailscale or unsure which hostname to use.
 
-**Note**: These utilities use `DATABASE_URL` from your `.env` file. For Tailscale/remote connections, make sure it includes the password and correct hostname.
+**Note**: These utilities use `RESEARCH_DATABASE_URL` from your `.env` file. For Tailscale/remote connections, make sure it includes the password and correct hostname.
 
 #### 4. `verify_postgres_production.py` - Production verification
 ```bash

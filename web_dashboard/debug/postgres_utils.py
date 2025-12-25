@@ -3,7 +3,7 @@
 Postgres Database Utilities for Debugging
 
 Helper utilities for connecting to and debugging the local Postgres database.
-These utilities use the DATABASE_URL from environment (with password support).
+These utilities use the RESEARCH_DATABASE_URL from environment (with password support).
 
 SECURITY NOTE: This script should ONLY be run from the server/command line.
 It is NOT accessible via web interface and should never be exposed as a web endpoint.

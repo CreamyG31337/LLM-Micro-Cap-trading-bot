@@ -44,12 +44,12 @@ class PostgresClient:
         """Initialize Postgres client
         
         Args:
-            database_url: Optional connection string. If not provided, uses DATABASE_URL from environment.
+            database_url: Optional connection string. If not provided, uses RESEARCH_DATABASE_URL from environment.
         """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
+        self.database_url = database_url or os.getenv("RESEARCH_DATABASE_URL")
         
         if not self.database_url:
-            raise ValueError("DATABASE_URL must be set in environment or provided as parameter")
+            raise ValueError("RESEARCH_DATABASE_URL must be set in environment or provided as parameter")
         
         # Initialize connection pool if not already created
         if PostgresClient._connection_pool is None:
@@ -77,7 +77,7 @@ class PostgresClient:
             logger.error(f"❌ Connection error: {e}")
             logger.error("   Check that:")
             logger.error("   - Postgres container is running")
-            logger.error("   - DATABASE_URL is correct (host, port, database name)")
+            logger.error("   - RESEARCH_DATABASE_URL is correct (host, port, database name)")
             logger.error("   - Database 'trading_db' exists")
             logger.error("   - Port 5432 is accessible")
             logger.error("   - Hostname is correct for your environment:")

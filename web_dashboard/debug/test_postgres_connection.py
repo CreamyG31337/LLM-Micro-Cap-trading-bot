@@ -2,7 +2,7 @@
 """
 Test Postgres Connection from Different Contexts
 
-This script helps you determine which DATABASE_URL works from your current environment.
+This script helps you determine which RESEARCH_DATABASE_URL works from your current environment.
 It tries multiple common hostname patterns to help you find the right one.
 
 SECURITY NOTE: This script should ONLY be run from the server/command line.
@@ -78,10 +78,10 @@ def main():
     print("\nThis script tests different hostname patterns to find which works")
     print("from your current environment.\n")
     
-    # Get base connection info from DATABASE_URL
-    database_url = os.getenv("DATABASE_URL")
+    # Get base connection info from RESEARCH_DATABASE_URL
+    database_url = os.getenv("RESEARCH_DATABASE_URL")
     if not database_url:
-        print("ERROR: DATABASE_URL not set in environment")
+        print("ERROR: RESEARCH_DATABASE_URL not set in environment")
         print("   Set it in web_dashboard/.env first")
         return 1
     
@@ -150,7 +150,7 @@ def main():
         print(f"\nRecommended: {recommended}")
         print(f"   Reason: {reason}")
         print(f"\n   Update your .env with:")
-        print(f"   DATABASE_URL=postgresql://{auth}{recommended}:{port}/{database}")
+        print(f"   RESEARCH_DATABASE_URL=postgresql://{auth}{recommended}:{port}/{database}")
     else:
         print("\nNo working connections found!")
         print("\nTroubleshooting:")

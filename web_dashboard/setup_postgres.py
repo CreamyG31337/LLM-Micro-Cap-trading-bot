@@ -38,16 +38,16 @@ def setup_postgres():
         format='%(levelname)s: %(message)s'
     )
     
-    # Check for DATABASE_URL
-    database_url = os.getenv("DATABASE_URL")
+    # Check for RESEARCH_DATABASE_URL
+    database_url = os.getenv("RESEARCH_DATABASE_URL")
     if not database_url:
-        print("❌ DATABASE_URL must be set in environment")
+        print("❌ RESEARCH_DATABASE_URL must be set in environment")
         print("   Add to web_dashboard/.env:")
-        print("   DATABASE_URL=postgresql://postgres@localhost:5432/trading_db")
+        print("   RESEARCH_DATABASE_URL=postgresql://postgres@localhost:5432/trading_db")
         print("   (Password may not be required for localhost connections)")
         return False
     
-    print(f"📋 Using DATABASE_URL: {database_url.split('@')[0]}@***")  # Mask password
+    print(f"📋 Using RESEARCH_DATABASE_URL: {database_url.split('@')[0]}@***")  # Mask password
     
     # Initialize Postgres client
     try:
@@ -58,7 +58,7 @@ def setup_postgres():
         print(f"\n❌ Failed to initialize Postgres client: {e}")
         print("\n💡 Troubleshooting:")
         print("   1. Make sure your Postgres container is running")
-        print("   2. Check that DATABASE_URL is correct in .env")
+        print("   2. Check that RESEARCH_DATABASE_URL is correct in .env")
         print("   3. Verify the database 'trading_db' exists")
         print("   4. Check port 5432 is accessible")
         print("   5. For localhost, password may not be required (trust authentication)")

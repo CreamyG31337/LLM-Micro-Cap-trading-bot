@@ -16,9 +16,17 @@ Woodpecker will build the Docker image for the Streamlit dashboard. You'll use P
 In Woodpecker, go to your repository → **Settings** → **Secrets**, and add:
 
 ### Required Secrets:
-- **`SUPABASE_URL`** - Your Supabase project URL (e.g., `https://xxxxx.supabase.co`)
-- **`SUPABASE_PUBLISHABLE_KEY`** - Your Supabase publishable key (for user authentication)
-- **`SUPABASE_SECRET_KEY`** - Your Supabase service role key (for admin scripts and debug operations)
+- **`supabase_url`** - Your Supabase project URL (e.g., `https://xxxxx.supabase.co`)
+- **`supabase_publishable_key`** - Your Supabase publishable key (for user authentication)
+- **`supabase_secret_key`** - Your Supabase service role key (for admin scripts and debug operations)
+
+### Optional Secrets:
+- **`research_database_url`** - Postgres connection string for research articles storage
+  - Format: `postgresql://user:password@host:port/database`
+  - For Docker container connecting to host Postgres: use `host.docker.internal`
+  - Example: `postgresql://postgres:password@host.docker.internal:5432/trading_db`
+  - If not set, research articles storage will be disabled (non-critical)
+  - Note: This is separate from Supabase (which handles portfolio data)
 
 ### Optional Secrets (if using Docker registry):
 - **`DOCKER_USERNAME`** - Docker Hub/registry username
@@ -62,9 +70,12 @@ When creating the container in Portainer, set these environment variables:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 SUPABASE_SECRET_KEY=your-secret-key
+RESEARCH_DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/trading_db
 STREAMLIT_SERVER_HEADLESS=true
 STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ```
+
+**Note:** `RESEARCH_DATABASE_URL` is optional. If not set, research articles storage will be disabled (you'll see a log message but the app will work normally). This is separate from Supabase, which handles portfolio data.
 
 **Note:** `SUPABASE_SECRET_KEY` is required for admin scripts and debug operations. It's safe to include in the container since it's server-side only and never exposed to users.
 

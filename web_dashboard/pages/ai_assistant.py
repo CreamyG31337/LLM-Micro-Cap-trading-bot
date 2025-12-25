@@ -24,7 +24,7 @@ from searxng_client import get_searxng_client, check_searxng_health
 from search_utils import (
     format_search_results, build_search_query, search_portfolio_tickers,
     search_market_news, should_trigger_search, extract_tickers_from_query,
-    detect_research_intent
+    detect_research_intent, get_company_name_from_db, filter_relevant_results
 )
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
@@ -533,15 +533,40 @@ if user_query:
                     if research_intent['tickers']:
                         # Ticker-specific search
                         ticker = research_intent['tickers'][0]
-                        search_query_used = f"{ticker} stock news"
+                        
+                        # Lookup company name from database
+                        company_name = get_company_name_from_db(ticker)
+                        
+                        # Build query with ticker, company name, and preserved keywords
+                        search_query_used = build_search_query(
+                            user_query,
+                            tickers=[ticker],
+                            company_name=company_name,
+                            preserve_keywords=True
+                        )
+                        
+                        # Fetch more results for filtering
                         search_data = searxng_client.search_news(
                             query=search_query_used,
                             time_range='day',
-                            max_results=10
+                            max_results=20  # Get more results for filtering
                         )
+                        
+                        # Filter results for relevance
+                        if search_data and 'results' in search_data and search_data['results']:
+                            original_count = len(search_data['results'])
+                            search_data['results'] = filter_relevant_results(
+                                search_data['results'],
+                                ticker,
+                                min_relevance_score=0.3
+                            )
+                            logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")
                     elif research_intent['research_type'] == 'market':
                         # Market news search
-                        search_query_used = build_search_query(user_query)
+                        search_query_used = build_search_query(
+                            user_query,
+                            preserve_keywords=True
+                        )
                         search_data = searxng_client.search_news(
                             query=search_query_used,
                             time_range='day',
@@ -551,7 +576,8 @@ if user_query:
                         # General search
                         search_query_used = build_search_query(
                             user_query,
-                            portfolio_tickers if auto_search_tickers else None
+                            tickers=portfolio_tickers if auto_search_tickers else None,
+                            preserve_keywords=True
                         )
                         search_data = searxng_client.search_news(
                             query=search_query_used,

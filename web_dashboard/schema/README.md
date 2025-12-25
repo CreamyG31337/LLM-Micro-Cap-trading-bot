@@ -73,3 +73,137 @@ After running all schemas:
 - Users can only access funds assigned to them
 - No "All Funds" access - each user sees only their assigned funds
 - JWT tokens expire after 24 hours
+
+## 🗄️ Local Postgres Setup (Research Articles)
+
+### Overview
+Research articles are stored in a local Postgres Docker container to avoid hitting Supabase's 500MB free tier limit. This uses a hybrid approach: Supabase for portfolio data, local Postgres for research articles.
+
+### Prerequisites
+1. **Postgres Docker Container**: Running via Portainer
+   - **Recommended Image**: `pgvector/pgvector:pg17` (includes pgvector extension)
+   - **Container Name**: `postgres-17.5` (or your container name)
+   - **Port**: 5432 (default Postgres port)
+2. **Database Created**: `trading_db` database exists
+3. **pgvector Extension**: Installed and enabled (included in `pgvector/pgvector:pg17` image)
+4. **Password Authentication**: Optional for localhost (trust authentication may work)
+
+### Setup Steps
+
+#### 1. Use pgvector Image (Recommended)
+If you haven't already, switch your Postgres container to use the pgvector image:
+- **Image**: `pgvector/pgvector:pg17`
+- This image includes Postgres 17 with pgvector extension pre-installed
+- Update your container in Portainer to use this image
+
+#### 2. Enable pgvector Extension
+If using a standard Postgres image, enable the extension:
+```sql
+-- Connect to trading_db database
+-- Via Portainer console or: docker exec -it postgres-17.5 psql -U postgres -d trading_db
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+#### 3. Configure Environment
+Add to `web_dashboard/.env`:
+```ini
+# For bare metal (app on host):
+# Without password (trust authentication for localhost):
+DATABASE_URL=postgresql://postgres@localhost:5432/trading_db
+# With password (if password is set):
+# DATABASE_URL=postgresql://postgres:your-password@localhost:5432/trading_db
+
+# For Docker (app in Docker):
+# DATABASE_URL=postgresql://postgres@postgres-17.5:5432/trading_db
+# or with password:
+# DATABASE_URL=postgresql://postgres:your-password@postgres-17.5:5432/trading_db
+```
+
+**Note**: For localhost connections, password may not be required if trust authentication is configured (default for local connections).
+
+#### 4. Run Setup Script
+```bash
+python web_dashboard/setup_postgres.py
+```
+
+This will:
+- Test the database connection
+- Verify pgvector extension
+- Create the `research_articles` table
+- Create indexes for fast queries
+
+### Schema: `10_research_articles.sql`
+
+**Table**: `research_articles`
+
+**Fields**:
+- `id` (UUID): Primary key
+- `ticker` (VARCHAR): Stock ticker symbol
+- `sector` (VARCHAR): Sector name
+- `article_type` (VARCHAR): 'ticker_news', 'market_news', 'earnings'
+- `title` (TEXT): Article title
+- `url` (TEXT, UNIQUE): Article URL (prevents duplicates)
+- `summary` (TEXT): AI-generated summary
+- `content` (TEXT): Full article content
+- `source` (VARCHAR): Source name (e.g., "Yahoo Finance")
+- `published_at` (TIMESTAMP): When article was published
+- `fetched_at` (TIMESTAMP): When we scraped it
+- `relevance_score` (DECIMAL): 0.00 to 1.00
+- `embedding` (vector(768)): Vector embedding for semantic search
+
+**Indexes**:
+- `idx_research_ticker`: Fast lookups by ticker
+- `idx_research_fetched`: Fast queries by fetch date (DESC for recent first)
+- `idx_research_type`: Filter by article type
+
+### Usage Example
+
+```python
+from web_dashboard.research_repository import ResearchRepository
+
+# Initialize repository
+repo = ResearchRepository()
+
+# Save an article
+article_id = repo.save_article(
+    ticker="NVDA",
+    sector="Technology",
+    article_type="ticker_news",
+    title="NVIDIA Announces New GPU",
+    url="https://example.com/article",
+    summary="NVIDIA released a new GPU...",
+    content="Full article text...",
+    source="Yahoo Finance",
+    relevance_score=0.85
+)
+
+# Get articles by ticker
+articles = repo.get_articles_by_ticker("NVDA", limit=10)
+
+# Get recent articles
+recent = repo.get_recent_articles(limit=20, days=7)
+
+# Search articles
+results = repo.search_articles("earnings report", ticker="NVDA")
+
+# Clean up old articles (keep last 30 days)
+deleted = repo.delete_old_articles(days_to_keep=30)
+```
+
+### Troubleshooting
+
+**Connection Errors**:
+- Verify Postgres container is running
+- Check DATABASE_URL format (no spaces, correct password)
+- Ensure database `trading_db` exists
+- Test connection: `psql -h localhost -U postgres -d trading_db`
+
+**pgvector Errors**:
+- Verify extension: `SELECT * FROM pg_extension WHERE extname = 'vector';`
+- **Recommended**: Switch to `pgvector/pgvector:pg17` image in Portainer (includes extension)
+- If using standard Postgres image: `CREATE EXTENSION IF NOT EXISTS vector;`
+
+**Permission Errors**:
+- Ensure user has CREATE TABLE permissions
+- Check that password authentication is working
+- Verify user can connect to `trading_db` database

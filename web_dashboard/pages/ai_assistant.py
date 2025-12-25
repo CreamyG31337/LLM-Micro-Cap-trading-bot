@@ -96,6 +96,13 @@ with st.sidebar:
             help="Select the AI model to use for analysis"
         )
         
+        # Display model description if available
+        client = get_ollama_client()
+        if client:
+            desc = client.get_model_description(selected_model)
+            if desc:
+                st.caption(f"ℹ️ {desc}")
+        
         # Save model preference if changed
         if selected_model != user_model:
             set_user_ai_model(selected_model)
@@ -240,12 +247,23 @@ if user_query:
             system_prompt = get_system_prompt()
             
             # Stream response
+            # Stream response
+            # We pass None for temperature and max_tokens to let the client handle model-specific defaults
+            # UNLESS override environment variables are set explicitly for debugging
+            
+            # Check for explicit environment overrides (debugging/testing only)
+            env_max_tokens = os.getenv("OLLAMA_MAX_TOKENS")
+            env_temperature = os.getenv("OLLAMA_TEMPERATURE")
+            
+            req_max_tokens = int(env_max_tokens) if env_max_tokens else None
+            req_temperature = float(env_temperature) if env_temperature else None
+            
             for chunk in client.query_ollama(
                 prompt=full_prompt,
                 model=selected_model,
                 stream=True,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                temperature=req_temperature,
+                max_tokens=req_max_tokens,
                 system_prompt=system_prompt
             ):
                 full_response += chunk

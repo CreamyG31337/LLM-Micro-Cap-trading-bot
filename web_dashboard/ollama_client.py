@@ -50,6 +50,61 @@ class OllamaClient:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
+        
+        # Load model configuration
+        self.model_config = self._load_model_config()
+
+    def _load_model_config(self) -> Dict[str, Any]:
+        """Load model configuration from JSON file.
+        
+        Returns:
+            Dict containing model settings
+        """
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), 'model_config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    logger.info(f"Loaded configuration for {len(config.get('models', {}))} models")
+                    return config
+            else:
+                logger.warning(f"Model config file not found at {config_path}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error loading model config: {e}")
+            return {}
+
+    def get_model_settings(self, model_name: str) -> Dict[str, Any]:
+        """Get settings for specific model.
+        
+        Args:
+            model_name: Name of the model
+            
+        Returns:
+            Dict with settings (num_ctx, temperature, etc.)
+        """
+        models = self.model_config.get('models', {})
+        default_config = self.model_config.get('default_config', {})
+        
+        # Exact match
+        if model_name in models:
+            return models[model_name]
+            
+        # Try finding closest match (e.g. ignoring version tags if needed)
+        # For now, just return defaults merged with any partial info if we add that later
+        return default_config
+        
+    def get_model_description(self, model_name: str) -> str:
+        """Get description for a model.
+        
+        Args:
+            model_name: Name of the model
+            
+        Returns:
+            Description string
+        """
+        settings = self.get_model_settings(model_name)
+        return settings.get('desc', '')
     
     def check_health(self) -> bool:
         """Check if Ollama API is available.
@@ -109,8 +164,9 @@ class OllamaClient:
         context: str = "",
         model: str = "llama3",
         stream: bool = True,
-        temperature: float = 0.7,
+        temperature: Optional[float] = None,
         max_tokens: int = 2048,
+        num_ctx: Optional[int] = None,
         system_prompt: Optional[str] = None
     ) -> Generator[str, None, None]:
         """Query Ollama API with a prompt and optional context.
@@ -120,8 +176,9 @@ class OllamaClient:
             context: Additional context data (formatted portfolio data, etc.)
             model: Model name to use
             stream: Whether to stream the response
-            temperature: Model temperature (0.0-1.0)
-            max_tokens: Maximum tokens in response
+            temperature: Model temperature (0.0-1.0). If None, uses model default.
+            max_tokens: Maximum tokens in response (num_predict)
+            num_ctx: Context window size. If None, uses model default.
             system_prompt: Optional system prompt to set model behavior
             
         Yields:
@@ -137,14 +194,22 @@ class OllamaClient:
         if context:
             full_prompt = f"{context}\n\nUser question: {prompt}"
         
+        # Get model-specific defaults if values not provided
+        model_settings = self.get_model_settings(model)
+        
+        # Use provided values, or model specific defaults, or global defaults
+        effective_temp = temperature if temperature is not None else model_settings.get('temperature', 0.7)
+        effective_ctx = num_ctx if num_ctx is not None else model_settings.get('num_ctx', 4096)
+        
         # Prepare request payload
         payload = {
             "model": model,
             "prompt": full_prompt,
             "stream": stream,
             "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens
+                "temperature": effective_temp,
+                "num_predict": max_tokens,
+                "num_ctx": effective_ctx
             }
         }
         
@@ -153,7 +218,7 @@ class OllamaClient:
             payload["system"] = system_prompt
         
         try:
-            logger.info(f"Ollama query: model={model}, temp={temperature}, max_tokens={max_tokens}, stream={stream}")
+            logger.info(f"Ollama query: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={max_tokens}, stream={stream}")
             logger.debug(f"Prompt length: {len(full_prompt)} chars")
             
             response = self.session.post(
@@ -200,8 +265,9 @@ class OllamaClient:
         messages: List[Dict[str, str]],
         model: str = "llama3",
         stream: bool = True,
-        temperature: float = 0.7,
-        max_tokens: int = 2048
+        temperature: Optional[float] = None,
+        max_tokens: int = 2048,
+        num_ctx: Optional[int] = None
     ) -> Generator[str, None, None]:
         """Query Ollama using chat API format.
         
@@ -209,8 +275,9 @@ class OllamaClient:
             messages: List of message dicts with "role" and "content" keys
             model: Model name to use
             stream: Whether to stream the response
-            temperature: Model temperature (0.0-1.0)
+            temperature: Model temperature (0.0-1.0). If None, uses model default.
             max_tokens: Maximum tokens in response
+            num_ctx: Context window size. If None, uses model default.
             
         Yields:
             Response chunks as strings
@@ -219,13 +286,21 @@ class OllamaClient:
             yield "AI assistant is currently disabled."
             return
         
+        # Get model-specific defaults if values not provided
+        model_settings = self.get_model_settings(model)
+        
+        # Use provided values, or model specific defaults, or global defaults
+        effective_temp = temperature if temperature is not None else model_settings.get('temperature', 0.7)
+        effective_ctx = num_ctx if num_ctx is not None else model_settings.get('num_ctx', 4096)
+        
         payload = {
             "model": model,
             "messages": messages,
             "stream": stream,
             "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens
+                "temperature": effective_temp,
+                "num_predict": max_tokens,
+                "num_ctx": effective_ctx
             }
         }
         

@@ -87,14 +87,14 @@ from navigation import render_navigation
 render_navigation(show_ai_assistant=False, show_settings=True)  # Don't show AI Assistant link on this page
 
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Model")
     
     # Get the system default model (admin-configured)
     from user_preferences import get_user_ai_model
     selected_model = get_user_ai_model()
     
     # Display current model (read-only)
-    st.info(f"**Using Model:** {selected_model}")
+    st.info(f"**Using:** {selected_model}")
     
     # Get model description if available
     client = get_ollama_client()
@@ -105,39 +105,113 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Context items display
-    st.header("📋 Selected Context")
-    context_items = chat_context.get_items()
-    
-    if not context_items:
-        st.info("No context items selected.")
-        st.caption("Go to the dashboard and click 'Add to Chat' buttons on data objects.")
-    else:
-        st.caption(f"{len(context_items)} item(s) selected:")
-        
-        for item in context_items:
-            with st.expander(f"• {item.item_type.value.replace('_', ' ').title()}"):
-                if item.fund:
-                    st.caption(f"Fund: {item.fund}")
-                if item.metadata:
-                    st.caption(f"Metadata: {item.metadata}")
-                if st.button("Remove", key=f"remove_{id(item)}"):
-                    chat_context.remove_item(item.item_type, item.fund, item.metadata)
-                    st.rerun()
-        
-        if st.button("🗑️ Clear All Context", use_container_width=True):
-            chat_context.clear_all()
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Fund selection (for fetching data)
+    # Fund selection
+    st.header("📊 Data Source")
     funds = get_available_funds()
     if funds:
-        selected_fund = st.selectbox("Fund", options=funds, help="Select fund for context data")
+        selected_fund = st.selectbox("Fund", options=funds, help="Select fund for AI analysis", key="fund_selector")
     else:
         selected_fund = None
         st.warning("No funds available")
+    
+    st.markdown("---")
+    
+    # Context selection toggles
+    st.header("📋 Include in Analysis")
+    st.caption("Select data to include:")
+    
+    # Get current context items for this fund
+    context_items = chat_context.get_items()
+    current_types = {item.item_type for item in context_items if item.fund == selected_fund}
+    
+    # Holdings toggle
+    include_holdings = st.checkbox(
+        "Current Holdings",
+        value=ContextItemType.HOLDINGS in current_types,
+        help="Include your current portfolio positions",
+        key="toggle_holdings"
+    )
+    
+    # Thesis toggle
+    include_thesis = st.checkbox(
+        "Investment Thesis",
+        value=ContextItemType.THESIS in current_types,
+        help="Include your investment strategy and pillars",
+        key="toggle_thesis"
+    )
+    
+    # Trades toggle
+    include_trades = st.checkbox(
+        "Recent Trades",
+        value=ContextItemType.TRADES in current_types,
+        help="Include recent trading activity",
+        key="toggle_trades"
+    )
+    
+    # Metrics toggle
+    include_metrics = st.checkbox(
+        "Performance Metrics",
+        value=ContextItemType.METRICS in current_types,
+        help="Include performance statistics",
+        key="toggle_metrics"
+    )
+    
+    # Cash balances toggle
+    include_cash = st.checkbox(
+        "Cash Balances",
+        value=ContextItemType.CASH_BALANCES in current_types,
+        help="Include current cash positions by currency",
+        key="toggle_cash"
+    )
+    
+    # Investor allocations toggle
+    include_investors = st.checkbox(
+        "Investor Allocations",
+        value=ContextItemType.INVESTOR_ALLOCATIONS in current_types,
+        help="Include investor ownership breakdown",
+        key="toggle_investors"
+    )
+    
+    # Apply context updates
+    if selected_fund:
+        # Update context based on toggles
+        if include_holdings and ContextItemType.HOLDINGS not in current_types:
+            chat_context.add_item(ContextItemType.HOLDINGS, fund=selected_fund)
+        elif not include_holdings and ContextItemType.HOLDINGS in current_types:
+            chat_context.remove_item(ContextItemType.HOLDINGS, fund=selected_fund)
+        
+        if include_thesis and ContextItemType.THESIS not in current_types:
+            chat_context.add_item(ContextItemType.THESIS, fund=selected_fund)
+        elif not include_thesis and ContextItemType.THESIS in current_types:
+            chat_context.remove_item(ContextItemType.THESIS, fund=selected_fund)
+        
+        if include_trades and ContextItemType.TRADES not in current_types:
+            chat_context.add_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
+        elif not include_trades and ContextItemType.TRADES in current_types:
+            chat_context.remove_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
+        
+        if include_metrics and ContextItemType.METRICS not in current_types:
+            chat_context.add_item(ContextItemType.METRICS, fund=selected_fund)
+        elif not include_metrics and ContextItemType.METRICS in current_types:
+            chat_context.remove_item(ContextItemType.METRICS, fund=selected_fund)
+        
+        if include_cash and ContextItemType.CASH_BALANCES not in current_types:
+            chat_context.add_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
+        elif not include_cash and ContextItemType.CASH_BALANCES in current_types:
+            chat_context.remove_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
+        
+        if include_investors and ContextItemType.INVESTOR_ALLOCATIONS not in current_types:
+            chat_context.add_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
+        elif not include_investors and ContextItemType.INVESTOR_ALLOCATIONS in current_types:
+            chat_context.remove_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
+    
+    # Show count
+    updated_items = chat_context.get_items()
+    if updated_items:
+        st.caption(f"✅ {len(updated_items)} data source(s) selected")
+        if st.button("🗑️ Clear All", use_container_width=True, key="clear_all"):
+            chat_context.clear_all()
+            st.rerun()
 
 # Main chat area
 st.markdown("### 💬 Chat")
@@ -192,10 +266,13 @@ def build_context_string() -> str:
     
     return "\n\n---\n\n".join(context_parts)
 
-# Generate initial prompt if context items exist
-initial_prompt = ""
-if context_items:
-    initial_prompt = chat_context.generate_prompt()
+# Prompt preview section
+if updated_items:
+    with st.expander("📝 Prompt Preview", expanded=False):
+        preview_prompt = chat_context.generate_prompt()
+        st.caption("The AI assistant will analyze:")
+        st.info(preview_prompt)
+        st.caption(f"_{len(updated_items)} data source(s) selected from {selected_fund if selected_fund else 'N/A'}_")
 
 # Chat input
 user_query = st.chat_input("Ask about your portfolio...")
@@ -267,19 +344,6 @@ if user_query:
         # Enforce conversation history limit (trim oldest messages)
         if len(st.session_state.chat_messages) > MAX_CONVERSATION_HISTORY:
             st.session_state.chat_messages = st.session_state.chat_messages[-MAX_CONVERSATION_HISTORY:]
-
-# Show prompt preview if context items exist
-if context_items and not st.session_state.chat_messages:
-    with st.expander("📝 Generated Prompt Preview", expanded=True):
-        preview_prompt = chat_context.generate_prompt()
-        st.text_area(
-            "Prompt that will be sent to AI:",
-            preview_prompt,
-            height=150,
-            disabled=True,
-            label_visibility="collapsed"
-        )
-        st.caption("This prompt will be automatically generated based on your selected context items.")
 
 # Footer
 st.markdown("---")

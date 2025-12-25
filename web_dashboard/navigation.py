@@ -43,7 +43,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         if admin_status:
             st.sidebar.success("✅ Admin Access")
             # Admin page link (only visible to admins)
-            st.sidebar.page_link("pages/admin.py", label="⚙️ Admin", icon="⚙️")
+            st.sidebar.page_link("pages/admin.py", label="🔧 Admin Panel", icon="🔧")
         else:
             # Check if user profile exists and show role
             try:
@@ -78,7 +78,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # Settings link (if requested)
     if show_settings:
-        st.sidebar.page_link("pages/settings.py", label="⚙️ Settings", icon="⚙️")
+        st.sidebar.page_link("pages/settings.py", label="👤 User Preferences", icon="👤")
     
     st.sidebar.markdown("---")
 

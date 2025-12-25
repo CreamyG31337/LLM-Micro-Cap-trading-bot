@@ -47,7 +47,7 @@ if not is_authenticated():
 from navigation import render_navigation
 render_navigation(show_ai_assistant=True, show_settings=False)  # Don't show Settings link on this page
 
-st.title("⚙️ Settings")
+st.title("👤 User Preferences")
 st.markdown("Configure your dashboard preferences")
 
 # Get current user email

@@ -52,7 +52,7 @@ if not is_admin():
 # Header with cache clearing button
 col_header1, col_header2, col_header3 = st.columns([2, 2, 1])
 with col_header1:
-    st.markdown("# ⚙️ Admin Dashboard")
+    st.markdown("# 🔧 Admin Dashboard")
 with col_header3:
     st.write("")  # Spacer for alignment
     if st.button("🔄 Clear Cache", help="Force refresh all cached data from database", use_container_width=True):

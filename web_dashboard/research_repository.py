@@ -280,6 +280,30 @@ class ResearchRepository:
             logger.error(f"❌ Error deleting old articles: {e}")
             return 0
     
+    def delete_article(self, article_id: str) -> bool:
+        """Delete a single article by ID
+        
+        Args:
+            article_id: UUID of the article to delete
+            
+        Returns:
+            True if deleted, False otherwise
+        """
+        try:
+            query = "DELETE FROM research_articles WHERE id = %s"
+            rows_deleted = self.client.execute_update(query, (article_id,))
+            
+            if rows_deleted > 0:
+                logger.info(f"✅ Deleted article {article_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ Article {article_id} not found for deletion")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error deleting article {article_id}: {e}")
+            return False
+    
     def search_articles(
         self,
         query_text: str,

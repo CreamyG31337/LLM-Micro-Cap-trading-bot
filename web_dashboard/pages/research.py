@@ -14,6 +14,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, date, timezone
 import pandas as pd
 import logging
+import time
 
 # Try to import zoneinfo for timezone conversion (Python 3.9+)
 try:
@@ -29,7 +30,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email
+from auth_utils import is_authenticated, get_user_email, is_admin
 from navigation import render_navigation
 from research_repository import ResearchRepository
 from postgres_client import PostgresClient
@@ -395,6 +396,16 @@ try:
                 # URL link
                 if article.get('url'):
                     st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
+                
+                # Admin actions
+                if is_admin():
+                    if st.button("🗑️ Delete", key=f"del_{article['id']}", type="secondary", use_container_width=True):
+                        if repo.delete_article(article['id']):
+                            st.toast(f"✅ Deleted: {article.get('title', 'Article')}")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete article")
                 
                 st.markdown("---")
                 

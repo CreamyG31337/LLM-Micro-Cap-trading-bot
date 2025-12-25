@@ -239,7 +239,7 @@ with st.sidebar:
         st.success("✅ SearXNG available")
         include_search = st.checkbox(
             "Enable Web Search",
-            value=ContextItemType.SEARCH_RESULTS in current_types,
+            value=True,
             help="Search the web for relevant information when answering questions",
             key="toggle_search"
         )

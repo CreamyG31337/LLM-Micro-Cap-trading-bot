@@ -39,8 +39,8 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         f"Holdings ({len(positions_df)} positions):",
         "",
         # Enriched header - includes Company, Daily P&L and Sector
-        "Ticker    | Company    | Sector          | Qty     | Price    | Mkt Value  | Daily P&L | Total P&L | Return",
-        "----------|------------|-----------------|---------|----------|------------|-----------|-----------|-------"
+        "Ticker    | Company                  | Sector          | Qty     | Price    | Mkt Value  | Daily P&L | Total P&L | Return",
+        "----------|--------------------------|-----------------|---------|----------|------------|-----------|-----------|-------"
     ]
     
     total_cost = 0.0
@@ -62,9 +62,12 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         daily_pnl = row.get('daily_pnl', 0)
         daily_pnl_pct = row.get('daily_pnl_pct', 0)
         
-        # Get company name (truncate to 10 chars)
+        # Get company name (truncate to 25 chars, matching console app format)
         company = row.get('company', '')
-        company_str = str(company)[:10] if company else symbol[:10]
+        if company:
+            company_str = str(company)[:22] + "..." if len(str(company)) > 25 else str(company)
+        else:
+            company_str = symbol[:25]
         
         # Get sector from securities join (nested dict)
         sector = "N/A"
@@ -99,14 +102,14 @@ def format_holdings(positions_df: pd.DataFrame, fund: str) -> str:
         sector_str = str(sector)[:15] if sector != "N/A" else "N/A"
         
         # Single line per holding (token-efficient)
-        lines.append(f"{symbol:<9} | {company_str:<10} | {sector_str:<15} | {qty_str:>7} | {price_str:>8} | {value_str:>10} | {daily_str:>9} | {pnl_str:>9} | {pct_str:>6}")
+        lines.append(f"{symbol:<9} | {company_str:<25} | {sector_str:<15} | {qty_str:>7} | {price_str:>8} | {value_str:>10} | {daily_str:>9} | {pnl_str:>9} | {pct_str:>6}")
     
     # Summary row
     if total_value > 0:
         total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
         daily_summary = f"{'+' if total_daily_pnl >= 0 else ''}{total_daily_pnl:>8,.0f}" if total_daily_pnl != 0 else "-"
-        lines.append("----------|------------|-----------------|---------|----------|------------|-----------|-----------|-------")
-        lines.append(f"{'TOTAL':<9} | {'':10} | {'':15} |         | {'':8} | ${total_value:>9,.0f} | {daily_summary:>9} | {'+' if total_pnl >= 0 else ''}{total_pnl:>8,.0f} | {total_pnl_pct:+.1f}%")
+        lines.append("----------|--------------------------|-----------------|---------|----------|------------|-----------|-----------|-------")
+        lines.append(f"{'TOTAL':<9} | {'':25} | {'':15} |         | {'':8} | ${total_value:>9,.0f} | {daily_summary:>9} | {'+' if total_pnl >= 0 else ''}{total_pnl:>8,.0f} | {total_pnl_pct:+.1f}%")
     
     return "\n".join(lines)
 
@@ -245,20 +248,7 @@ def format_performance_metrics(metrics: Dict[str, Any], portfolio_df: Optional[p
     
     if 'max_drawdown_pct' in metrics and 'max_drawdown_date' in metrics:
         lines.append(f"Max Drawdown: {metrics['max_drawdown_pct']:.2f}% (on {metrics['max_drawdown_date']})")
-    
-    # Portfolio value over time summary
-    if portfolio_df is not None and not portfolio_df.empty:
-        if 'date' in portfolio_df.columns and 'value' in portfolio_df.columns:
-            lines.append("\nPortfolio Value Over Time:")
-            lines.append(f"  Start Date: {portfolio_df['date'].min()}")
-            lines.append(f"  End Date: {portfolio_df['date'].max()}")
-            lines.append(f"  Start Value: ${portfolio_df['value'].iloc[0]:,.2f}")
-            lines.append(f"  End Value: ${portfolio_df['value'].iloc[-1]:,.2f}")
-            
-            if len(portfolio_df) > 1:
-                growth = ((portfolio_df['value'].iloc[-1] - portfolio_df['value'].iloc[0]) / portfolio_df['value'].iloc[0]) * 100
-                lines.append(f"  Period Growth: {growth:+.2f}%")
-    
+
     return "\n".join(lines)
 
 

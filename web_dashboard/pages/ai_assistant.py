@@ -77,35 +77,21 @@ if not ollama_available:
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # Model selection
-    available_models = list_available_models()
-    user_model = get_user_ai_model()
+    # Get the system default model (admin-configured)
+    from user_preferences import get_user_ai_model
+    selected_model = get_user_ai_model()
     
-    if available_models:
-        if user_model not in available_models:
-            user_model = available_models[0] if available_models else "llama3"
-        
-        selected_model = st.selectbox(
-            "AI Model",
-            options=available_models,
-            index=available_models.index(user_model) if user_model in available_models else 0,
-            help="Select the AI model to use for analysis"
-        )
-        
-        # Display model description if available
-        client = get_ollama_client()
-        if client:
-            desc = client.get_model_description(selected_model)
-            if desc:
-                st.caption(f"ℹ️ {desc}")
-        
-        # Save model preference if changed
-        if selected_model != user_model:
-            set_user_ai_model(selected_model)
-            st.rerun()
-    else:
-        st.warning("No models available. Pull a model first (e.g., `ollama pull llama3`)")
-        selected_model = "llama3"
+    # Display current model (read-only)
+    st.info(f"**Using Model:** {selected_model}")
+    
+    # Get model description if available
+    client = get_ollama_client()
+    if client:
+        desc = client.get_model_description(selected_model)
+        if desc:
+            st.caption(f"ℹ️ {desc}")
+    
+    st.caption("_Model is configured by admin in Admin > AI Settings_")
     
     st.markdown("---")
     

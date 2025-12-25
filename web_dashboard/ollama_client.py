@@ -77,22 +77,46 @@ class OllamaClient:
     def get_model_settings(self, model_name: str) -> Dict[str, Any]:
         """Get settings for specific model.
         
+        Checks database for admin overrides first, then falls back to JSON config.
+        
         Args:
             model_name: Name of the model
             
         Returns:
-            Dict with settings (num_ctx, temperature, etc.)
+            Dict with settings (num_ctx, temperature, num_predict, etc.)
         """
         models = self.model_config.get('models', {})
         default_config = self.model_config.get('default_config', {})
         
-        # Exact match
+        # Start with JSON defaults (exact match or global defaults)
         if model_name in models:
-            return models[model_name]
+            settings = models[model_name].copy()
+        else:
+            settings = default_config.copy()
+        
+        # Check database for admin overrides
+        try:
+            from settings import get_system_setting
             
-        # Try finding closest match (e.g. ignoring version tags if needed)
-        # For now, just return defaults merged with any partial info if we add that later
-        return default_config
+            # Check for temperature override
+            db_temp = get_system_setting(f"model_{model_name}_temperature", default=None)
+            if db_temp is not None:
+                settings['temperature'] = db_temp
+            
+            # Check for context window override
+            db_ctx = get_system_setting(f"model_{model_name}_num_ctx", default=None)
+            if db_ctx is not None:
+                settings['num_ctx'] = db_ctx
+            
+            # Check for max tokens override
+            db_predict = get_system_setting(f"model_{model_name}_num_predict", default=None)
+            if db_predict is not None:
+                settings['num_predict'] = db_predict
+                
+        except Exception as e:
+            logger.debug(f"Could not load database overrides for {model_name}: {e}")
+        
+        return settings
         
     def get_model_description(self, model_name: str) -> str:
         """Get description for a model.
@@ -165,7 +189,7 @@ class OllamaClient:
         model: str = "llama3",
         stream: bool = True,
         temperature: Optional[float] = None,
-        max_tokens: int = 2048,
+        max_tokens: Optional[int] = None,
         num_ctx: Optional[int] = None,
         system_prompt: Optional[str] = None
     ) -> Generator[str, None, None]:
@@ -200,6 +224,7 @@ class OllamaClient:
         # Use provided values, or model specific defaults, or global defaults
         effective_temp = temperature if temperature is not None else model_settings.get('temperature', 0.7)
         effective_ctx = num_ctx if num_ctx is not None else model_settings.get('num_ctx', 4096)
+        effective_max_tokens = max_tokens if max_tokens is not None else model_settings.get('num_predict', 2048)
         
         # Prepare request payload
         payload = {
@@ -208,7 +233,7 @@ class OllamaClient:
             "stream": stream,
             "options": {
                 "temperature": effective_temp,
-                "num_predict": max_tokens,
+                "num_predict": effective_max_tokens,
                 "num_ctx": effective_ctx
             }
         }
@@ -218,7 +243,7 @@ class OllamaClient:
             payload["system"] = system_prompt
         
         try:
-            logger.info(f"Ollama query: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={max_tokens}, stream={stream}")
+            logger.info(f"Ollama query: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={effective_max_tokens}, stream={stream}")
             logger.debug(f"Prompt length: {len(full_prompt)} chars")
             
             response = self.session.post(
@@ -292,6 +317,7 @@ class OllamaClient:
         # Use provided values, or model specific defaults, or global defaults
         effective_temp = temperature if temperature is not None else model_settings.get('temperature', 0.7)
         effective_ctx = num_ctx if num_ctx is not None else model_settings.get('num_ctx', 4096)
+        effective_max_tokens = max_tokens if max_tokens is not None else model_settings.get('num_predict', 2048)
         
         payload = {
             "model": model,
@@ -299,7 +325,7 @@ class OllamaClient:
             "stream": stream,
             "options": {
                 "temperature": effective_temp,
-                "num_predict": max_tokens,
+                "num_predict": effective_max_tokens,
                 "num_ctx": effective_ctx
             }
         }

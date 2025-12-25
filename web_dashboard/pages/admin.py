@@ -2097,24 +2097,104 @@ with tab9:
             )
         
         with col2:
-            st.markdown("##### Performance Settings")
-            new_max_tokens = st.number_input(
-                "Max Tokens",
-                min_value=256,
-                max_value=8192,
-                value=max_tokens,
-                step=256,
-                help="Maximum tokens per AI response"
-            )
+            st.markdown("##### Model-Specific Settings")
             
-            new_temperature = st.slider(
-                "Temperature",
-                min_value=0.0,
-                max_value=2.0,
-                value=temperature,
-                step=0.1,
-                help="Model temperature (0.0 = deterministic, 2.0 = creative)"
-            )
+            # Get model-specific defaults from JSON config
+            client = get_ollama_client()
+            if client and default_model:
+                model_settings = client.get_model_settings(default_model)
+                model_desc = client.get_model_description(default_model)
+                
+                if model_desc:
+                    st.caption(f"ℹ️ {model_desc}")
+                
+                # Load any database overrides
+                from settings import get_system_setting
+                
+                # Temperature
+                db_temp = get_system_setting(f"model_{default_model}_temperature", default=None)
+                default_temp = db_temp if db_temp is not None else model_settings.get('temperature', 0.7)
+                
+                new_temperature = st.slider(
+                    "Temperature",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=float(default_temp),
+                    step=0.1,
+                    help=f"Model temperature (JSON default: {model_settings.get('temperature', 0.7)})"
+                )
+                
+                # Context window
+                db_ctx = get_system_setting(f"model_{default_model}_num_ctx", default=None)
+                default_ctx = db_ctx if db_ctx is not None else model_settings.get('num_ctx', 4096)
+                
+                new_num_ctx = st.number_input(
+                    "Context Window (num_ctx)",
+                    min_value=512,
+                    max_value=32768,
+                    value=int(default_ctx),
+                    step=512,
+                    help=f"Context window size in tokens (JSON default: {model_settings.get('num_ctx', 4096)})"
+                )
+                
+                # Max output tokens
+                db_predict = get_system_setting(f"model_{default_model}_num_predict", default=None)
+                default_predict = db_predict if db_predict is not None else model_settings.get('num_predict', 2048)
+                
+                new_num_predict = st.number_input(
+                    "Max Output Tokens (num_predict)",
+                    min_value=256,
+                    max_value=8192,
+                    value=int(default_predict),
+                    step=256,
+                    help=f"Maximum tokens in response (JSON default: {model_settings.get('num_predict', 2048)})"
+                )
+                
+                # Save button for model-specific settings
+                if st.button("💾 Save Model Settings", type="primary", key="save_model_settings"):
+                    try:
+                        from settings import set_system_setting
+                        success = True
+                        
+                        # Save temperature
+                        if not set_system_setting(f"model_{default_model}_temperature", new_temperature, f"Temperature override for {default_model}"):
+                            success = False
+                        
+                        # Save context window
+                        if not set_system_setting(f"model_{default_model}_num_ctx", new_num_ctx, f"Context window override for {default_model}"):
+                            success = False
+                        
+                        # Save max tokens
+                        if not set_system_setting(f"model_{default_model}_num_predict", new_num_predict, f"Max tokens override for {default_model}"):
+                            success = False
+                        
+                        if success:
+                            st.toast(f"✅ Settings saved for {default_model}", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error("Failed to save some settings")
+                    except Exception as e:
+                        st.error(f"Error saving settings: {e}")
+                
+                # Reset to defaults button
+                if st.button("🔄 Reset to JSON Defaults", key="reset_model_settings"):
+                    try:
+                        from settings import get_supabase_client
+                        client_db = get_supabase_client()
+                        if client_db:
+                            # Delete overrides
+                            client_db.supabase.table('system_settings').delete().eq('key', f"model_{default_model}_temperature").execute()
+                            client_db.supabase.table('system_settings').delete().eq('key', f"model_{default_model}_num_ctx").execute()
+                            client_db.supabase.table('system_settings').delete().eq('key', f"model_{default_model}_num_predict").execute()
+                            st.toast(f"✅ Reset {default_model} to JSON defaults", icon="✅")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error resetting: {e}")
+            else:
+                st.info("Select a model to configure settings")
+            
+            st.markdown("---")
+            st.markdown("##### Connection Settings")
             
             new_timeout = st.number_input(
                 "Request Timeout (seconds)",
@@ -2130,11 +2210,13 @@ with tab9:
                 "To change them, update your Docker environment variables or .env file and restart the container.")
         
         # Show current environment variables
-        with st.expander("📋 Current Environment Variables"):
+        with st.expander("📋 Environment Variables (Legacy - Not Used for Model Settings)"):
+            st.caption("⚠️ Note: OLLAMA_MAX_TOKENS and OLLAMA_TEMPERATURE are legacy settings. "
+                      "Actual model settings (num_ctx, temperature) are now defined in model_config.json.")
             st.code(f"""OLLAMA_BASE_URL={ollama_base_url}
 OLLAMA_MODEL={default_model}
-OLLAMA_MAX_TOKENS={max_tokens}
-OLLAMA_TEMPERATURE={temperature}
+OLLAMA_MAX_TOKENS={max_tokens} (legacy, not used)
+OLLAMA_TEMPERATURE={temperature} (legacy, not used)
 OLLAMA_TIMEOUT={timeout}
 OLLAMA_ENABLED={enabled}""")
         

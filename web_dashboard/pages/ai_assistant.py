@@ -57,10 +57,6 @@ if 'chat_messages' not in st.session_state:
 # Limit conversation history to prevent context overflow
 MAX_CONVERSATION_HISTORY = 20  # Keep last N messages (10 exchanges)
 
-# Get admin settings from environment
-max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "2048"))
-temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
-
 # Header
 col1, col2 = st.columns([3, 1])
 with col1:

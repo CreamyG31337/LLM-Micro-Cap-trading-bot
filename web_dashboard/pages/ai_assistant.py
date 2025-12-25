@@ -9,7 +9,11 @@ Users can chat with AI about their portfolio data.
 
 import streamlit as st
 import sys
+import logging
 from pathlib import Path
+
+# Configure logger
+logger = logging.getLogger(__name__)
 from typing import List, Dict, Optional
 import time
 
@@ -19,6 +23,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from auth_utils import is_authenticated, get_user_email, get_user_id
 from chat_context import ChatContextManager, ContextItemType
 from ollama_client import get_ollama_client, check_ollama_health, list_available_models
+from searxng_client import get_searxng_client, check_searxng_health
+from search_utils import (
+    format_search_results, build_search_query, search_portfolio_tickers,
+    search_market_news
+)
+import os
+
+# Configuration
+MAX_SEARCH_TICKERS = int(os.getenv("MAX_SEARCH_TICKERS", "20"))  # Limit tickers to avoid overwhelming searches
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
     format_cash_balances, format_investor_allocations, format_sector_allocation
@@ -81,6 +94,10 @@ if not ollama_available:
     st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
     st.info("The AI assistant requires Ollama to be running and accessible.")
     st.stop()
+
+# Check SearXNG connection (non-blocking)
+searxng_available = check_searxng_health()
+searxng_client = get_searxng_client()
 
 # Sidebar - Navigation, Settings and Context
 from navigation import render_navigation
@@ -172,6 +189,32 @@ with st.sidebar:
         key="toggle_investors"
     )
     
+    st.markdown("---")
+    
+    # Web Search section
+    st.header("🔍 Web Search")
+    if searxng_available:
+        st.success("✅ SearXNG available")
+        include_search = st.checkbox(
+            "Enable Web Search",
+            value=ContextItemType.SEARCH_RESULTS in current_types,
+            help="Search the web for relevant information when answering questions",
+            key="toggle_search"
+        )
+        
+        # Auto-search for tickers option
+        auto_search_tickers = st.checkbox(
+            "Auto-search ticker news",
+            value=False,
+            help="Automatically search for news about portfolio tickers",
+            key="auto_search_tickers"
+        )
+    else:
+        st.warning("⚠️ SearXNG unavailable")
+        st.caption("Web search will be disabled. SearXNG may be starting up or not configured.")
+        include_search = False
+        auto_search_tickers = False
+    
     # Apply context updates
     if selected_fund:
         # Update context based on toggles
@@ -205,6 +248,13 @@ with st.sidebar:
         elif not include_investors and ContextItemType.INVESTOR_ALLOCATIONS in current_types:
             chat_context.remove_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
     
+    # Handle search context
+    if include_search and searxng_available:
+        if ContextItemType.SEARCH_RESULTS not in current_types:
+            chat_context.add_item(ContextItemType.SEARCH_RESULTS, fund=selected_fund)
+    elif not include_search and ContextItemType.SEARCH_RESULTS in current_types:
+        chat_context.remove_item(ContextItemType.SEARCH_RESULTS, fund=selected_fund)
+    
     # Show count
     updated_items = chat_context.get_items()
     if updated_items:
@@ -223,13 +273,18 @@ for message in st.session_state.chat_messages:
 
 # Generate context data from selected items
 def build_context_string() -> str:
-    """Build formatted context string from selected items."""
-    if not context_items:
+    """Build formatted context string from selected items.
+    
+    Returns:
+        Formatted string containing all context items for the AI
+    """
+    items = chat_context.get_items()
+    if not items:
         return ""
     
     context_parts = []
     
-    for item in context_items:
+    for item in items:
         fund = item.fund or selected_fund
         
         try:
@@ -259,6 +314,11 @@ def build_context_string() -> str:
             elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
                 allocations = get_investor_allocations(fund) if fund else {}
                 context_parts.append(format_investor_allocations(allocations))
+            
+            elif item.item_type == ContextItemType.SEARCH_RESULTS:
+                # Search results are added dynamically when user queries
+                # This is handled in the query processing section
+                pass
             
         except Exception as e:
             st.warning(f"Error loading {item.item_type.value}: {e}")
@@ -309,8 +369,47 @@ if user_query:
     # Build context
     context_string = build_context_string()
     
+    # Perform web search if enabled
+    search_results_text = ""
+    search_data = None
+    if include_search and searxng_client and searxng_available:
+        with st.spinner("🔍 Searching the web..."):
+            try:
+                # Get portfolio tickers if available for enhanced search
+                tickers = []
+                if selected_fund:
+                    try:
+                        positions_df = get_current_positions(selected_fund)
+                        if not positions_df.empty and 'ticker' in positions_df.columns:
+                            all_tickers = positions_df['ticker'].tolist()
+                            # Limit to MAX_SEARCH_TICKERS to avoid overwhelming the search
+                            tickers = all_tickers[:MAX_SEARCH_TICKERS]
+                            if len(all_tickers) > MAX_SEARCH_TICKERS:
+                                logger.info(f"Limited ticker search from {len(all_tickers)} to {MAX_SEARCH_TICKERS} tickers")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch tickers for search: {e}")
+                
+                # Build optimized search query
+                search_query = build_search_query(user_query, tickers if auto_search_tickers else None)
+                
+                # Perform search
+                search_data = searxng_client.search_news(
+                    query=search_query,
+                    time_range='day',
+                    max_results=10
+                )
+                
+                if search_data and 'results' in search_data and search_data['results']:
+                    search_results_text = format_search_results(search_data, max_results=10)
+                    context_string = f"{context_string}\n\n---\n\n{search_results_text}" if context_string else search_results_text
+                    
+            except Exception as e:
+                st.warning(f"Web search failed: {e}")
+                logger.error(f"Search error: {e}")
+    
     # Generate prompt
-    if context_items:
+    current_context_items = chat_context.get_items()
+    if current_context_items:
         prompt = chat_context.generate_prompt(user_query)
     else:
         prompt = user_query
@@ -323,6 +422,11 @@ if user_query:
     # Display user message
     with st.chat_message("user"):
         st.markdown(user_query)
+        
+        # Show search results if available
+        if search_data and search_data.get('results'):
+            with st.expander("🔍 Web Search Results", expanded=False):
+                st.markdown(format_search_results(search_data, max_results=5))
     
     # Get AI response
     with st.chat_message("assistant"):
@@ -369,14 +473,27 @@ if user_query:
 
 # Footer
 st.markdown("---")
-st.caption(f"Using model: {selected_model} | Context items: {len(context_items)}")
+search_status = "✅" if searxng_available else "❌"
+current_context_items = chat_context.get_items()
+st.caption(f"Using model: {selected_model} | Context items: {len(current_context_items)} | Search: {search_status}")
 
 # Debug section
 with st.expander("🔧 Debug Context (Raw AI Input)", expanded=False):
-    if context_items:
-        st.caption("This is the exact text data being sent to the AI:")
+    current_context_items = chat_context.get_items()
+    st.caption(f"**Context Items Count:** {len(current_context_items)}")
+    
+    if current_context_items:
+        st.caption("**Item Types:**")
+        for item in current_context_items:
+            st.text(f"  • {item.item_type.value} (Fund: {item.fund})")
+        
+        st.markdown("---")
+        st.caption("**Full Context String:**")
         debug_context = build_context_string()
-        st.code(debug_context, language="text")
+        if debug_context:
+            st.code(debug_context, language="text")
+        else:
+            st.warning("Context string is empty (build_context_string returned nothing)")
     else:
         st.info("No context items selected.")
 

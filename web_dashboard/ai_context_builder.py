@@ -117,7 +117,7 @@ def format_trades(trades_df: pd.DataFrame, limit: int = 100) -> str:
     
     for idx, row in df.iterrows():
         timestamp = row.get('timestamp', '')
-        symbol = row.get('symbol', 'N/A')
+        symbol = row.get('symbol', row.get('ticker', 'N/A'))
         action = row.get('action', 'N/A')
         quantity = row.get('quantity', 0)
         price = row.get('price', 0)

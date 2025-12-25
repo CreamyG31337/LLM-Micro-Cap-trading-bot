@@ -65,10 +65,10 @@ steps:
         fi
       
       # Deploy new container (single line to avoid parsing issues)
-      # Added --add-host to allow connecting to Ollama on the host machine via host.docker.internal (Linux support)
+      # Added --add-host to allow connecting to Ollama and SearXNG on the host machine via host.docker.internal (Linux support)
       # NOTE: On Windows/Mac, host.docker.internal works natively. On Linux, you MUST add "--add-host=host.docker.internal:host-gateway"
-      # Ollama settings can be overridden via Woodpecker secrets or environment variables
-      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
+      # Ollama and SearXNG settings can be overridden via Woodpecker secrets or environment variables
+      - docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e SEARXNG_BASE_URL="${SEARXNG_BASE_URL:-http://host.docker.internal:8080}" -e SEARXNG_TIMEOUT="${SEARXNG_TIMEOUT:-10}" -e SEARXNG_ENABLED="${SEARXNG_ENABLED:-true}" -e MAX_SEARCH_TICKERS="${MAX_SEARCH_TICKERS:-20}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

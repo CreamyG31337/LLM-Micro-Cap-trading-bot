@@ -24,6 +24,7 @@ class ContextItemType(Enum):
     INVESTOR_ALLOCATIONS = "investor_allocations"
     PNL_CHART = "pnl_chart"
     SECTOR_ALLOCATION = "sector_allocation"
+    SEARCH_RESULTS = "search_results"
 
 
 @dataclass

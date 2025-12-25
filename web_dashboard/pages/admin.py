@@ -1111,6 +1111,37 @@ with tab5:
         except Exception as e:
             st.error(f"Error checking performance metrics: {e}")
         
+        # Postgres (Research Articles) status
+        st.subheader("Postgres (Research Articles)")
+        try:
+            from web_dashboard.postgres_client import PostgresClient
+            from web_dashboard.research_repository import ResearchRepository
+            
+            pg_client = PostgresClient()
+            if pg_client.test_connection():
+                st.success("✅ Postgres: Connected")
+                
+                # Get stats
+                repo = ResearchRepository(pg_client)
+                stats_result = pg_client.execute_query("SELECT COUNT(*) as count FROM research_articles")
+                total = stats_result[0]['count'] if stats_result else 0
+                st.info(f"Total research articles: {total}")
+                
+                # Recent articles
+                recent_result = pg_client.execute_query("""
+                    SELECT COUNT(*) as count 
+                    FROM research_articles 
+                    WHERE fetched_at >= NOW() - INTERVAL '7 days'
+                """)
+                recent = recent_result[0]['count'] if recent_result else 0
+                st.info(f"Articles (last 7 days): {recent}")
+            else:
+                st.error("❌ Postgres: Connection Failed")
+        except ImportError:
+            st.warning("⚠️ Postgres client not available (psycopg2 not installed)")
+        except Exception as e:
+            st.error(f"❌ Postgres: Error - {str(e)[:100]}")
+        
         # Job execution logs (from scheduler)
         st.subheader("Recent Job Executions")
         try:

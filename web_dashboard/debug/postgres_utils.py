@@ -4,6 +4,9 @@ Postgres Database Utilities for Debugging
 
 Helper utilities for connecting to and debugging the local Postgres database.
 These utilities use the DATABASE_URL from environment (with password support).
+
+SECURITY NOTE: This script should ONLY be run from the server/command line.
+It is NOT accessible via web interface and should never be exposed as a web endpoint.
 """
 
 import os
@@ -356,6 +359,7 @@ Examples:
     parser.add_argument('--describe', metavar='TABLE', help='Describe a table structure')
     parser.add_argument('--sql', metavar='QUERY', help='Execute a SQL query')
     parser.add_argument('--stats', action='store_true', help='Get research articles statistics')
+    parser.add_argument('--verify', action='store_true', help='Verify production connection (quick check)')
     
     args = parser.parse_args()
     
@@ -390,6 +394,26 @@ Examples:
         if args.stats:
             utils.get_research_articles_stats()
             return 0
+        
+        if args.verify:
+            # Quick verification
+            print("Verifying Postgres connection...")
+            if utils.test_connection():
+                info = utils.get_database_info()
+                tables = utils.list_tables()
+                if 'research_articles' in tables:
+                    stats = utils.get_research_articles_stats()
+                    print("\nProduction Status: OK")
+                    print(f"  - Connected to: {info.get('database', 'unknown')}")
+                    print(f"  - pgvector: {'installed' if info.get('pgvector') else 'not found'}")
+                    print(f"  - Total articles: {stats.get('total', 0)}")
+                    return 0
+                else:
+                    print("\nWARNING: research_articles table not found")
+                    return 1
+            else:
+                print("\nERROR: Connection failed")
+                return 1
         
     except Exception as e:
         print(f"❌ Error: {e}")

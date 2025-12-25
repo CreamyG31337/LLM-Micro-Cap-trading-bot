@@ -5,6 +5,9 @@ Interactive Postgres Shell
 Simple interactive shell for running SQL queries against the local Postgres database.
 Useful for quick debugging and exploration.
 
+SECURITY NOTE: This script should ONLY be run from the server/command line.
+It is NOT accessible via web interface and should never be exposed as a web endpoint.
+
 Usage:
     python web_dashboard/debug/postgres_shell.py
 """

@@ -4,6 +4,9 @@ Test Postgres Connection from Different Contexts
 
 This script helps you determine which DATABASE_URL works from your current environment.
 It tries multiple common hostname patterns to help you find the right one.
+
+SECURITY NOTE: This script should ONLY be run from the server/command line.
+It is NOT accessible via web interface and should never be exposed as a web endpoint.
 """
 
 import os

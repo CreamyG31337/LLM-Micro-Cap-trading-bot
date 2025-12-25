@@ -263,3 +263,20 @@ python web_dashboard/debug/test_postgres_connection.py
 This script tests multiple hostname patterns (localhost, host.docker.internal, container name, etc.) and recommends the best one for your setup. Useful when using Tailscale or unsure which hostname to use.
 
 **Note**: These utilities use `DATABASE_URL` from your `.env` file. For Tailscale/remote connections, make sure it includes the password and correct hostname.
+
+#### 4. `verify_postgres_production.py` - Production verification
+```bash
+# Verify Postgres is working in production (run on server)
+python web_dashboard/debug/verify_postgres_production.py
+```
+This script performs a comprehensive check:
+- Tests database connection
+- Verifies research_articles table exists
+- Shows table statistics (total articles, recent articles)
+- Checks read/write permissions
+- Displays latest article info
+
+**Quick verification** (using postgres_utils):
+```bash
+python web_dashboard/debug/postgres_utils.py --verify
+```

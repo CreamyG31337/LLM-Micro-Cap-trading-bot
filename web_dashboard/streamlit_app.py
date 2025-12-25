@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Initialize scheduler once per Streamlit worker process (lazy initialization)
 # Don't initialize at module load - only when needed after authentication
 _scheduler_initialized = False
+_postgres_checked = False
 
 def _init_scheduler():
     """Initialize background scheduler once per Streamlit worker."""
@@ -39,6 +40,47 @@ def _init_scheduler():
         print(f"⚠️ Scheduler initialization failed (non-critical): {e}")
         _scheduler_initialized = True  # Mark as initialized to prevent retry loops
         return False
+
+def _check_postgres_connection():
+    """Check Postgres connection on startup and log status."""
+    global _postgres_checked
+    if _postgres_checked:
+        return
+    
+    _postgres_checked = True
+    
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Check if DATABASE_URL is set
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            logger.info("Postgres: DATABASE_URL not set - research articles storage disabled")
+            return
+        
+        # Try to connect
+        from web_dashboard.postgres_client import PostgresClient
+        client = PostgresClient()
+        
+        if client.test_connection():
+            # Get basic stats
+            try:
+                result = client.execute_query("SELECT COUNT(*) as count FROM research_articles")
+                count = result[0]['count'] if result else 0
+                logger.info(f"Postgres: Connected successfully - {count} research articles in database")
+            except Exception:
+                logger.info("Postgres: Connected successfully (table may not exist yet)")
+        else:
+            logger.warning("Postgres: Connection test failed - research articles storage may not work")
+    except ImportError:
+        # psycopg2 not installed - that's okay, Postgres is optional
+        logger = logging.getLogger(__name__)
+        logger.debug("Postgres: psycopg2 not installed - research articles storage disabled")
+    except Exception as e:
+        # Fail gracefully - Postgres is optional
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Postgres: Connection check failed (non-critical): {e}")
 
 
 
@@ -915,6 +957,12 @@ def main():
         _init_scheduler()
     except Exception:
         pass  # Scheduler is optional
+    
+    # Check Postgres connection (non-blocking, logs status)
+    try:
+        _check_postgres_connection()
+    except Exception:
+        pass  # Postgres is optional
     
     # Header with user info and logout
     col1, col2 = st.columns([3, 1])

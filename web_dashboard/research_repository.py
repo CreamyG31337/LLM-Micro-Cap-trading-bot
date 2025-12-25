@@ -23,7 +23,12 @@ class ResearchRepository:
         Args:
             postgres_client: Optional PostgresClient instance. If not provided, creates a new one.
         """
-        self.client = postgres_client or PostgresClient()
+        try:
+            self.client = postgres_client or PostgresClient()
+            logger.debug("ResearchRepository initialized successfully")
+        except Exception as e:
+            logger.error(f"ResearchRepository initialization failed: {e}")
+            raise
     
     def save_article(
         self,

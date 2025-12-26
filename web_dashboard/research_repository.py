@@ -803,11 +803,12 @@ class ResearchRepository:
         """
         try:
             # Use UNNEST to extract tickers from the array column
+            # Use 't' as alias to avoid conflict with 'ticker' column (if it exists)
             result = self.client.execute_query("""
-                SELECT DISTINCT ticker
-                FROM research_articles, UNNEST(tickers) AS ticker
+                SELECT DISTINCT t AS ticker
+                FROM research_articles, UNNEST(tickers) AS t
                 WHERE tickers IS NOT NULL
-                ORDER BY ticker
+                ORDER BY t
             """)
             return [row['ticker'] for row in result] if result else []
         except Exception as e:

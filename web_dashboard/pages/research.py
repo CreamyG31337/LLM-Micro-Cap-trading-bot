@@ -335,6 +335,9 @@ with st.sidebar:
     # )
     # embedding_filter = None if embedding_status == "All" else (embedding_status == "Embedded")
     
+    # Results per page
+    results_per_page = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
+    
     # Admin-only: Model selector for re-analysis
     if is_admin():
         st.markdown("---")
@@ -375,11 +378,6 @@ with st.sidebar:
         else:
             st.warning("Ollama not available")
             st.session_state.reanalysis_model = get_summarizing_model()
-    
-    st.markdown("---")
-    
-    # Results per page
-    results_per_page = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
     
     st.markdown("---")
     

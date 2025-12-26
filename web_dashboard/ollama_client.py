@@ -369,7 +369,11 @@ Requirements:
    - May include exchange suffixes like .TO, .V, .CN, .TSX
    - Do NOT extract company names (e.g., "Apple Inc" is NOT a ticker, "AAPL" is)
    - Do NOT extract long phrases or descriptions
-   - Only extract actual ticker symbols mentioned in the article
+   - First, look for explicit ticker symbols mentioned in the article
+   - If no explicit tickers found BUT the article is clearly about specific companies, infer the likely ticker(s)
+   - For well-known companies, provide your best guess of the ticker symbol
+   - If you're uncertain about a ticker, add a '?' suffix (e.g., "RKLB?" for Rocket Lab)
+   - Examples: "Apple" → "AAPL", "Microsoft" → "MSFT", "Tesla" → "TSLA", "NVIDIA" → "NVDA"
 3. Identify all sectors/industries discussed (e.g., "Financial Services", "Technology", "Healthcare")
 4. List key themes and topics (e.g., "crypto revenue", "subscription growth", "market expansion")
 5. Extract company names mentioned (e.g., "Robinhood", "NVIDIA") - these go in "companies" field, NOT "tickers"
@@ -377,7 +381,7 @@ Requirements:
 Return your response as a valid JSON object with these exact fields:
 {
   "summary": "• First key point...\n• Second key point...\n• Third key point...\n• Fourth key point...\n• Fifth key point...",
-  "tickers": ["TICKER1", "TICKER2"],
+  "tickers": ["TICKER1", "TICKER2", "INFERRED?"],
   "sectors": ["Sector1", "Sector2"],
   "key_themes": ["theme1", "theme2"],
   "companies": ["Company1", "Company2"]

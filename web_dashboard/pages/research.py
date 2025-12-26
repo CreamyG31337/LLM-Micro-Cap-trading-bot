@@ -293,6 +293,30 @@ with st.sidebar:
         start_datetime = None
         end_datetime = None
     
+    # Fund selector (for context and uploads)
+    st.markdown("---")
+    st.header("📊 Fund Context")
+    try:
+        available_funds = get_available_funds()
+        if available_funds:
+            selected_fund_context = st.selectbox(
+                "Active Fund",
+                options=[""] + available_funds,
+                help="Select the fund you're working with. This will be used when uploading reports.",
+                key="fund_context_selector"
+            )
+            fund_context = selected_fund_context if selected_fund_context else None
+            if fund_context:
+                st.info(f"📊 Working with: **{fund_context}**")
+        else:
+            st.warning("No funds available")
+            fund_context = None
+    except Exception as e:
+        logger.error(f"Error getting funds: {e}")
+        fund_context = None
+    
+    st.markdown("---")
+    
     # Article type filter
     article_type = st.selectbox(
         "Article Type",
@@ -354,16 +378,22 @@ with st.sidebar:
         
         # Upload Report Section
         with st.expander("📤 Upload Report", expanded=False):
-            # Fund selection for uploaded reports
-            # Note: Fund is only for fund-specific materials (uploaded reports)
-            # General market news should remain NULL
+            # Use the fund context from sidebar, but allow override
+            st.info(f"💡 **Tip:** The fund selected in the sidebar will be used for this upload. You can change it below if needed.")
+            
             try:
                 funds = get_available_funds()
                 if funds:
+                    # Default to the fund context from sidebar
+                    default_fund = fund_context if fund_context else ""
+                    fund_options = [""] + funds
+                    default_index = fund_options.index(default_fund) if default_fund in fund_options else 0
+                    
                     selected_fund = st.selectbox(
                         "📊 Fund (for fund-specific reports)",
-                        options=[""] + funds,
-                        help="Select the fund this report is prepared for. Leave blank for general market news.",
+                        options=fund_options,
+                        index=default_index,
+                        help="Select the fund this report is prepared for. Leave blank for general market news. Defaults to the fund selected in the sidebar.",
                         key="upload_fund_selector"
                     )
                     upload_fund = selected_fund if selected_fund else None

@@ -102,6 +102,13 @@
             "num_predict": 512,
             "temperature": 0.1,
             "desc": "Small, fast model optimized for summarization tasks"
+        },
+        "nomic-embed-text:latest": {
+            "num_ctx": 2048,
+            "num_predict": 512,
+            "temperature": 0.1,
+            "desc": "Embedding model for text similarity and RAG",
+            "hidden": true
         }
     }
 }

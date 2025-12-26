@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS research_articles (
     ticker VARCHAR(20),             -- e.g. "NVDA"
     sector VARCHAR(100),           -- e.g. "Technology"
     article_type VARCHAR(50),      -- 'ticker_news', 'market_news', 'earnings'
+    fund VARCHAR(100),             -- Fund name for fund-specific materials (e.g., uploaded research reports)
+                                  -- NULL for general market news/articles that apply to all funds
+                                  -- Purpose: Tag fund-specific research reports prepared for a specific fund
+                                  -- Note: A stock (e.g., NVDA) may exist in multiple funds, but fund-specific
+                                  -- research documents should be tagged with the fund they were created for
     
     -- Content
     title TEXT NOT NULL,

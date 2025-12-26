@@ -95,18 +95,65 @@ def run_ticker_migration() -> bool:
     return run_migration(migration_file)
 
 
+def run_fund_migration() -> bool:
+    """Run the fund column migration for research_articles.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    # Use absolute path from project root
+    migration_file = project_root / "web_dashboard" / "schema" / "14_add_fund_to_research_articles.sql"
+    return run_migration(migration_file)
+
+
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run database migrations for research articles")
+    parser.add_argument(
+        "migration",
+        nargs="?",
+        choices=["ticker", "fund"],
+        default="fund",
+        help="Migration to run: 'ticker' (ticker to tickers) or 'fund' (add fund column). Default: fund"
+    )
+    parser.add_argument(
+        "--file",
+        type=str,
+        help="Path to a custom migration SQL file to run"
+    )
+    
+    args = parser.parse_args()
+    
     print("Running Database Migration")
     print("=" * 50)
     
-    success = run_ticker_migration()
+    if args.file:
+        # Run custom migration file
+        migration_file = Path(args.file)
+        if not migration_file.is_absolute():
+            migration_file = project_root / migration_file
+        success = run_migration(migration_file)
+    elif args.migration == "ticker":
+        success = run_ticker_migration()
+    elif args.migration == "fund":
+        success = run_fund_migration()
+    else:
+        print(f"[ERROR] Unknown migration: {args.migration}")
+        sys.exit(1)
     
     if success:
         print("\n[OK] Migration complete!")
-        print("\n[INFO] Verification:")
-        print("   You can verify the migration by checking:")
-        print("   SELECT column_name FROM information_schema.columns")
-        print("   WHERE table_name = 'research_articles' AND column_name = 'tickers';")
+        if args.migration == "fund":
+            print("\n[INFO] Verification:")
+            print("   You can verify the migration by checking:")
+            print("   SELECT column_name FROM information_schema.columns")
+            print("   WHERE table_name = 'research_articles' AND column_name = 'fund';")
+        elif args.migration == "ticker":
+            print("\n[INFO] Verification:")
+            print("   You can verify the migration by checking:")
+            print("   SELECT column_name FROM information_schema.columns")
+            print("   WHERE table_name = 'research_articles' AND column_name = 'tickers';")
     else:
         print("\n[ERROR] Migration failed!")
         sys.exit(1)

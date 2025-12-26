@@ -92,14 +92,15 @@ class ResearchRepository:
         source: Optional[str] = None,
         published_at: Optional[datetime] = None,
         relevance_score: Optional[float] = None,
-        embedding: Optional[List[float]] = None
+        embedding: Optional[List[float]] = None,
+        fund: Optional[str] = None
     ) -> Optional[str]:
         """Save a research article to the database
         
         Args:
             tickers: List of stock ticker symbols (e.g., ["NVDA", "AMD"])
             sector: Sector name (e.g., "Technology")
-            article_type: Type of article ('ticker_news', 'market_news', 'earnings')
+            article_type: Type of article ('ticker_news', 'market_news', 'earnings', 'uploaded_report')
             title: Article title (required)
             url: Article URL (required, must be unique)
             summary: AI-generated summary
@@ -108,6 +109,9 @@ class ResearchRepository:
             published_at: When the article was published
             relevance_score: Relevance score (0.00 to 1.00)
             embedding: Vector embedding (list of 768 floats)
+            fund: Fund name for fund-specific materials (e.g., uploaded research reports).
+                  Should be NULL for general market news/articles that apply to all funds.
+                  Purpose: Tag fund-specific research reports prepared for a specific fund.
             
         Returns:
             Article ID (UUID as string) if successful, None otherwise
@@ -138,9 +142,9 @@ class ResearchRepository:
                 query = """
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
-                        source, published_at, relevance_score, embedding
+                        source, published_at, relevance_score, embedding, fund
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -156,15 +160,16 @@ class ResearchRepository:
                     source,
                     published_at_str,
                     relevance_score,
-                    embedding_str
+                    embedding_str,
+                    fund
                 )
             else:
                 query = """
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
-                        source, published_at, relevance_score
+                        source, published_at, relevance_score, fund
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -179,7 +184,8 @@ class ResearchRepository:
                     content,
                     source,
                     published_at_str,
-                    relevance_score
+                    relevance_score,
+                    fund
                 )
             
             with self.client.get_connection() as conn:

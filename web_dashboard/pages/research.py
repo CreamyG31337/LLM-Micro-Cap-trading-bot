@@ -37,6 +37,7 @@ from postgres_client import PostgresClient
 from ollama_client import get_ollama_client, check_ollama_health
 from settings import get_summarizing_model
 from file_parsers import extract_text_from_file
+from streamlit_utils import get_available_funds
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,26 @@ with st.sidebar:
         
         # Upload Report Section
         with st.expander("📤 Upload Report", expanded=False):
+            # Fund selection for uploaded reports
+            # Note: Fund is only for fund-specific materials (uploaded reports)
+            # General market news should remain NULL
+            try:
+                funds = get_available_funds()
+                if funds:
+                    selected_fund = st.selectbox(
+                        "📊 Fund (for fund-specific reports)",
+                        options=[""] + funds,
+                        help="Select the fund this report is prepared for. Leave blank for general market news.",
+                        key="upload_fund_selector"
+                    )
+                    upload_fund = selected_fund if selected_fund else None
+                else:
+                    st.warning("No funds available")
+                    upload_fund = None
+            except Exception as e:
+                logger.error(f"Error getting funds: {e}")
+                upload_fund = None
+            
             uploaded_file = st.file_uploader("Upload PDF or DOCX", type=['pdf', 'docx'])
             
             if uploaded_file is not None:
@@ -381,7 +402,7 @@ with st.sidebar:
                                 # Use AI extracted companies/tickers if available
                                 companies = summary_result.get('companies', [])
                                 
-                                # Save to database
+                                # Save to database with fund (if selected)
                                 article_id = repo.save_article(
                                     tickers=companies if companies else None,
                                     sector=None,
@@ -393,7 +414,8 @@ with st.sidebar:
                                     source="Uploaded File",
                                     published_at=datetime.now(timezone.utc),
                                     relevance_score=0.9,  # Assume uploaded reports are highly relevant
-                                    embedding=summary_result.get('embedding')
+                                    embedding=summary_result.get('embedding'),
+                                    fund=upload_fund  # Fund-specific tag for uploaded reports
                                 )
                                 
                                 if article_id:

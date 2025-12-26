@@ -661,6 +661,13 @@ with right_col:
             st.markdown("---")
             st.caption("**Quick Actions:**")
             
+            # Portfolio Analysis button (restores initial prompt)
+            if st.button("📊 Portfolio Analysis", use_container_width=True, key="btn_portfolio_analysis"):
+                # Generate the default analysis prompt
+                default_prompt = chat_context.generate_prompt()
+                st.session_state.suggested_prompt = default_prompt
+                st.rerun()
+            
             # Buttons (Stacked for Sidebar Feel)
             if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
                 st.session_state.suggested_prompt = "What's the latest stock market news today?"
@@ -756,9 +763,9 @@ with main_col:
         with col1:
             if st.button("📤 Send", type="primary", use_container_width=True, key="send_edited_prompt"):
                 user_query = editable_prompt
-                # Clear the suggested prompt after sending
+                # Clear the suggested prompt after sending (will hide UI on next rerun)
                 st.session_state.suggested_prompt = None
-                st.rerun()
+                # Don't call st.rerun() here - let the query be processed below
         with col2:
             if st.button("❌ Cancel", use_container_width=True, key="cancel_edited_prompt"):
                 st.session_state.suggested_prompt = None

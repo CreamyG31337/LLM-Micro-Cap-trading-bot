@@ -260,7 +260,7 @@ class ResearchRepository:
                 if etf_sector:
                     query = """
                         SELECT id, tickers, sector, article_type, title, url, summary, content,
-                               source, published_at, fetched_at, relevance_score,
+                               source, published_at, fetched_at, relevance_score, fund,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
@@ -269,7 +269,7 @@ class ResearchRepository:
                 else:
                     query = """
                         SELECT id, tickers, sector, article_type, title, url, summary, content,
-                               source, published_at, fetched_at, relevance_score,
+                               source, published_at, fetched_at, relevance_score, fund,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE %s = ANY(tickers)
@@ -280,7 +280,7 @@ class ResearchRepository:
                 if etf_sector:
                     query = """
                         SELECT id, ticker, sector, article_type, title, url, summary, content,
-                               source, published_at, fetched_at, relevance_score,
+                               source, published_at, fetched_at, relevance_score, fund,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
@@ -289,7 +289,7 @@ class ResearchRepository:
                 else:
                     query = """
                         SELECT id, ticker, sector, article_type, title, url, summary, content,
-                               source, published_at, fetched_at, relevance_score,
+                               source, published_at, fetched_at, relevance_score, fund,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE ticker = %s
@@ -351,7 +351,7 @@ class ResearchRepository:
             ticker_column = "tickers" if self._has_tickers_column else "ticker"
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score,
+                       source, published_at, fetched_at, relevance_score, fund,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s
@@ -539,6 +539,33 @@ class ResearchRepository:
             logger.error(f"❌ Error updating article {article_id} analysis: {e}")
             return False
     
+    def update_article_fund(self, article_id: str, fund: Optional[str] = None) -> bool:
+        """Update the fund assignment for an article.
+        
+        Args:
+            article_id: UUID of the article to update
+            fund: Fund name (None to clear fund assignment)
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            query = "UPDATE research_articles SET fund = %s WHERE id = %s"
+            params = (fund, article_id)
+            
+            rows_updated = self.client.execute_update(query, params)
+            
+            if rows_updated > 0:
+                logger.info(f"✅ Updated fund for article {article_id} to {fund}")
+                return True
+            else:
+                logger.warning(f"⚠️ Article {article_id} not found for fund update")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating article fund: {e}")
+            return False
+    
     def search_similar_articles(
         self,
         query_embedding: List[float],
@@ -668,7 +695,7 @@ class ResearchRepository:
             ticker_column = "tickers" if self._has_tickers_column else "ticker"
             search_query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score,
+                       source, published_at, fetched_at, relevance_score, fund,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)
@@ -858,7 +885,7 @@ class ResearchRepository:
             ticker_column = "tickers" if self._has_tickers_column else "ticker"
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score,
+                       source, published_at, fetched_at, relevance_score, fund,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s AND fetched_at <= %s
@@ -938,7 +965,7 @@ class ResearchRepository:
             ticker_column = "tickers" if self._has_tickers_column else "ticker"
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
-                       source, published_at, fetched_at, relevance_score,
+                       source, published_at, fetched_at, relevance_score, fund,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE 1=1

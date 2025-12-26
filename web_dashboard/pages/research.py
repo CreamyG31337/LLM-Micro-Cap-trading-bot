@@ -296,7 +296,7 @@ with st.sidebar:
     # Article type filter
     article_type = st.selectbox(
         "Article Type",
-        ["All", "market_news", "ticker_news", "earnings", "opportunity_discovery"],
+        ["All", "market_news", "ticker_news", "earnings", "opportunity_discovery", "uploaded_report"],
         index=0
     )
     article_type_filter = None if article_type == "All" else article_type
@@ -758,9 +758,54 @@ try:
         # Define fragment ONCE outside the loop for admin actions (major performance win)
         if user_is_admin:
             @st.fragment
-            def render_admin_actions(article_id: str, article_title: str):
+            def render_admin_actions(article_id: str, article_title: str, article: dict):
                 """Fragment for admin actions - only this section re-renders on button click"""
-                # Only Delete button - Re-analyze moved to sidebar batch actions
+                # Fund assignment for uploaded reports
+                article_type = article.get('article_type', '')
+                if article_type == "uploaded_report":
+                    st.markdown("**📊 Fund Assignment**")
+                    try:
+                        funds = get_available_funds()
+                        current_fund = article.get('fund')
+                        
+                        # Create options: current fund (if set), blank option, then other funds
+                        fund_options = []
+                        if current_fund:
+                            fund_options.append(current_fund)
+                        fund_options.append("")  # Blank option to clear fund
+                        for fund in funds:
+                            if fund != current_fund:
+                                fund_options.append(fund)
+                        
+                        # Find index of current fund (or blank if None)
+                        default_index = 0 if current_fund else 1
+                        
+                        selected_fund = st.selectbox(
+                            "Change Fund",
+                            options=fund_options,
+                            index=default_index,
+                            key=f"fund_select_{article_id}",
+                            help="Select a fund for this uploaded report, or leave blank for general use"
+                        )
+                        
+                        # Always show save button for uploaded reports
+                        new_fund = selected_fund if selected_fund else None
+                        if st.button("💾 Save Fund", key=f"save_fund_{article_id}", type="primary", use_container_width=True):
+                            if new_fund == current_fund:
+                                st.info("No changes to save")
+                            elif repo.update_article_fund(article_id, new_fund):
+                                st.success(f"✅ Fund updated to: {new_fund if new_fund else 'None (general)'}")
+                                st.session_state.refresh_key += 1
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to update fund")
+                    except Exception as e:
+                        logger.error(f"Error loading funds for fund selector: {e}")
+                        st.warning("Could not load funds list")
+                
+                st.markdown("---")
+                
+                # Delete button
                 if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
                     if repo.delete_article(article_id):
                         st.success(f"✅ Deleted: {article_title}")
@@ -827,7 +872,7 @@ try:
             
             # Admin actions
             if show_admin_actions:
-                render_admin_actions(article['id'], article.get('title', 'Article'))
+                render_admin_actions(article['id'], article.get('title', 'Article'), article)
             
             st.markdown("---")
             
@@ -847,9 +892,11 @@ try:
             # Job icon shows which job created the article
             article_type = article.get('article_type', '')
             job_icon_map = {
-                'market_research': '📰',
-                'ticker_research': '🔍',
+                'market_news': '📰',
+                'ticker_news': '🔍',
                 'opportunity_discovery': '💡',
+                'uploaded_report': '📤',
+                'earnings': '💰',
                 'general': '📄'
             }
             job_icon = job_icon_map.get(article_type, '📄')
@@ -872,6 +919,12 @@ try:
             else:
                 ticker_str = ""
             
+            # Show fund for uploaded reports
+            fund = article.get('fund')
+            fund_badge = ""
+            if fund and article_type == "uploaded_report":
+                fund_badge = f" | 📊 Fund: {fund}"
+            
             # Format short date (e.g., "Dec 25")
             pub_date = article.get('published_at') or article.get('fetched_at')
             if pub_date:
@@ -881,7 +934,7 @@ try:
             else:
                 date_str = ""
             
-            # Build title: Ticker | Title | Date
+            # Build title: Ticker | Title | Date | Fund (if uploaded report)
             title_parts = []
             if ticker_str:
                 title_parts.append(f"**{ticker_str}**")
@@ -889,7 +942,7 @@ try:
             if date_str:
                 title_parts.append(date_str)
             
-            expander_title = f"{icon_badge}{' | '.join(title_parts)}"
+            expander_title = f"{icon_badge}{' | '.join(title_parts)}{fund_badge}"
             
             if user_is_admin:
                 # Admin view with checkbox

@@ -186,15 +186,83 @@ def _save_snapshot_batch(repository, snapshot_batch: list, fund_name: str, is_do
         except Exception:
             pass  # Use default
         
+        # Import exchange rate utility (same as scheduled job uses)
+        try:
+            sys.path.insert(0, str(project_root / 'web_dashboard'))
+            from exchange_rates_utils import get_exchange_rate_for_date_from_db
+        except ImportError:
+            print_warning("Could not import exchange_rates_utils - pre-converted values will use fallback rates")
+            get_exchange_rate_for_date_from_db = None
+        
+        # Cache exchange rates per date to avoid redundant lookups (performance optimization)
+        # Key: (date, from_currency, to_currency), Value: rate
+        exchange_rate_cache = {}
+        
+        def get_cached_exchange_rate(date, from_curr, to_curr):
+            """Get exchange rate with caching to minimize database lookups."""
+            cache_key = (date.date(), from_curr, to_curr)
+            if cache_key in exchange_rate_cache:
+                return exchange_rate_cache[cache_key]
+            
+            if get_exchange_rate_for_date_from_db:
+                rate = get_exchange_rate_for_date_from_db(date, from_curr, to_curr)
+                if rate is not None:
+                    exchange_rate_cache[cache_key] = rate
+                    return rate
+                # Try inverse if available
+                inverse_key = (date.date(), to_curr, from_curr)
+                if inverse_key in exchange_rate_cache:
+                    inverse_rate = exchange_rate_cache[inverse_key]
+                    if inverse_rate != 0:
+                        rate = 1.0 / float(inverse_rate)
+                        exchange_rate_cache[cache_key] = rate
+                        return rate
+            
+            # Fallback rates
+            if from_curr == 'USD' and to_curr == 'CAD':
+                return Decimal('1.35')
+            elif from_curr == 'CAD' and to_curr == 'USD':
+                return Decimal('1.0') / Decimal('1.35')
+            else:
+                return Decimal('1.0')
+        
         for snapshot, trading_day in snapshot_batch:
+            # Get exchange rate for this snapshot date (cached, fetched once per date)
+            # This matches the scheduled job's approach - one lookup per snapshot date
+            usd_to_base_rate = get_cached_exchange_rate(
+                snapshot.timestamp,
+                'USD',
+                base_currency
+            ) if base_currency != 'USD' else Decimal('1.0')
+            
             for position in snapshot.positions:
-                # Use PositionMapper to convert (same as repository does)
+                position_currency = (position.currency or 'CAD').upper()
+                
+                # Calculate exchange rate for this position (optimized with caching)
+                if position_currency == 'USD' and base_currency != 'USD':
+                    # Converting USD to base currency - use cached rate
+                    position_exchange_rate = float(usd_to_base_rate)
+                elif position_currency == base_currency:
+                    # Already in base currency - no conversion
+                    position_exchange_rate = 1.0
+                elif base_currency == 'USD' and position_currency != 'USD':
+                    # Converting from position currency to USD - use cached lookup
+                    position_exchange_rate = float(get_cached_exchange_rate(
+                        snapshot.timestamp,
+                        position_currency,
+                        'USD'
+                    ))
+                else:
+                    # Other currency combinations - use 1.0 (store as-is)
+                    position_exchange_rate = 1.0
+                
+                # Use PositionMapper to convert with calculated exchange rate
                 position_data = PositionMapper.model_to_db(
                     position,
                     fund_name,
                     snapshot.timestamp,
                     base_currency=base_currency,
-                    exchange_rate=None  # Will be calculated by scheduled job if needed
+                    exchange_rate=position_exchange_rate
                 )
                 all_positions_data.append(position_data)
         

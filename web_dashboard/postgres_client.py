@@ -58,19 +58,13 @@ class PostgresClient:
     def _create_connection_pool(self) -> None:
         """Create connection pool for database connections"""
         try:
-            # Log connection attempt (without password for security)
-            safe_url = self._mask_password(self.database_url)
-            logger.info(f"Attempting to create Postgres connection pool: {safe_url}")
-            
             PostgresClient._connection_pool = psycopg2.pool.SimpleConnectionPool(
                 PostgresClient._min_connections,
                 PostgresClient._max_connections,
                 self.database_url
             )
             
-            if PostgresClient._connection_pool:
-                logger.info("✅ Postgres connection pool created successfully")
-            else:
+            if not PostgresClient._connection_pool:
                 raise ValueError("Failed to create connection pool")
                 
         except psycopg2.OperationalError as e:
@@ -133,18 +127,10 @@ class PostgresClient:
     def test_connection(self) -> bool:
         """Test database connection"""
         try:
-            logger.debug("Testing Postgres connection...")
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT version()")
-                version = cursor.fetchone()[0]
-                logger.info(f"✅ Postgres connection successful (version: {version.split(',')[0]})")
-                
-                # Also check database name
                 cursor.execute("SELECT current_database()")
-                db_name = cursor.fetchone()[0]
-                logger.info(f"   Connected to database: {db_name}")
-                
                 return True
         except psycopg2.OperationalError as e:
             logger.error(f"❌ Connection failed: {e}")
@@ -230,7 +216,6 @@ class PostgresClient:
         if PostgresClient._connection_pool:
             PostgresClient._connection_pool.closeall()
             PostgresClient._connection_pool = None
-            logger.info("Postgres connection pool closed")
     
     def __del__(self):
         """Cleanup on object destruction"""

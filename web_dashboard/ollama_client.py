@@ -145,17 +145,14 @@ class OllamaClient:
             True if Ollama is reachable, False otherwise
         """
         if not self.enabled:
-            logger.debug("Ollama health check skipped: disabled")
             return False
         
         try:
-            logger.debug(f"Checking Ollama health at {self.base_url}...")
             response = self.session.get(
                 f"{self.base_url}/api/tags",
                 timeout=5
             )
             if response.status_code == 200:
-                logger.info(f"✅ Ollama health check successful: {self.base_url}")
                 return True
             else:
                 logger.warning(f"Ollama health check failed: HTTP {response.status_code}")

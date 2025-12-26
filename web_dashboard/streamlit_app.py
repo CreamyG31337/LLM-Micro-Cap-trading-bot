@@ -138,10 +138,6 @@ st.set_page_config(
 # Custom CSS (dark mode compatible)
 st.markdown("""
     <style>
-    /* Hide Streamlit's default page navigation */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;

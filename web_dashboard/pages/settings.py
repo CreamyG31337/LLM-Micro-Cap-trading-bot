@@ -16,15 +16,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Hide Streamlit's default page navigation
-st.markdown("""
-    <style>
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # Check authentication
 try:
     from auth_utils import is_authenticated, get_user_email

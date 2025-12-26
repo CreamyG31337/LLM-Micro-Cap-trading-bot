@@ -1,27 +1,2 @@
-[server]
-# Disable file watcher in production to prevent "File change" messages
-fileWatcherType = "none"
-
-# Headless mode for server deployment
-headless = true
-
-# Enable CORS for API access
-enableCORS = false
-
-# Enable XSRF protection
-enableXsrfProtection = true
-
-[browser]
-# Disable auto-opening browser on server
-gatherUsageStats = false
-
-[logger]
-# Log level (can be "error", "warning", "info", or "debug")
-level = "info"
-
 [client]
-# Disable toolbar in production
-toolbarMode = "minimal"
-
-# Show running indicator
-showErrorDetails = true
+showSidebarNavigation = false

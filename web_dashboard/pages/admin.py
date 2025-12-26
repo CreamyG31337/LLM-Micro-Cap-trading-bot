@@ -29,15 +29,6 @@ from supabase_client import SupabaseClient
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
 
-# Hide Streamlit's default page navigation
-st.markdown("""
-    <style>
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # Check authentication - redirect to main page if not logged in
 if not is_authenticated():
     st.switch_page("streamlit_app.py")

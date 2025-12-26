@@ -10,6 +10,7 @@ Supports streaming responses for real-time chat.
 import os
 import json
 import logging
+import time
 from typing import Generator, Optional, List, Dict, Any
 import requests
 from requests.adapters import HTTPAdapter
@@ -407,6 +408,7 @@ If no tickers, sectors, themes, or companies are found, use empty arrays []. Alw
         }
         
         try:
+            start_time = time.time()
             logger.info(f"Generating enhanced summary with model {model}")
             response = self.session.post(
                 f"{self.base_url}/api/generate",
@@ -414,6 +416,9 @@ If no tickers, sectors, themes, or companies are found, use empty arrays []. Alw
                 timeout=self.timeout
             )
             response.raise_for_status()
+            
+            elapsed_time = time.time() - start_time
+            logger.info(f"✅ Summary generated in {elapsed_time:.2f}s")
             
             data = response.json()
             raw_response = data.get("response", "").strip()

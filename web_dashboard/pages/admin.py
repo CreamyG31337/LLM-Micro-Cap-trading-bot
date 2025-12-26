@@ -1311,6 +1311,9 @@ with tab6:
                             
                             client.supabase.table("trade_log").insert(trade_data).execute()
                             
+                            # Clear data caches to prevent stale data (particularly get_trade_log which is cached forever)
+                            st.cache_data.clear()
+                            
                             st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                             st.info("💡 Note: Run portfolio rebuild to update positions based on trade log.")
                             

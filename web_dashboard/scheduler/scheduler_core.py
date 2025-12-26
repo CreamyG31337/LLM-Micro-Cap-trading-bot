@@ -147,9 +147,12 @@ def get_all_jobs_status() -> List[Dict[str, Any]]:
 
 
 def run_job_now(job_id: str) -> bool:
-    """Trigger a job to run immediately.
+    """Trigger a job to run immediately in the background.
     
-    Returns True if job was triggered, False if job not found.
+    This schedules the job to run asynchronously via the scheduler's thread pool
+    instead of calling it synchronously in the main thread, which prevents UI freezing.
+    
+    Returns True if job was scheduled, False if job not found.
     """
     scheduler = get_scheduler()
     job = scheduler.get_job(job_id)
@@ -158,13 +161,24 @@ def run_job_now(job_id: str) -> bool:
         logger.warning(f"Job not found: {job_id}")
         return False
     
-    # Run the job function directly
+    # Schedule the job to run ASYNCHRONOUSLY via the scheduler
+    # This prevents blocking the main thread (and the UI)
     try:
-        logger.info(f"Manually triggering job: {job_id}")
-        job.func()
+        logger.info(f"Scheduling job for immediate async execution: {job_id}")
+        
+        # Use add_job with trigger='date' to run once, immediately, in background thread
+        scheduler.add_job(
+            job.func,
+            trigger='date',  # Run once at a specific datetime (now)
+            id=f"{job_id}_manual_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            name=f"Manual: {job.name or job_id}",
+            replace_existing=False  # Allow multiple manual runs
+        )
+        
+        logger.info(f"Job {job_id} scheduled for async execution")
         return True
     except Exception as e:
-        logger.error(f"Error running job {job_id}: {e}")
+        logger.error(f"Error scheduling job {job_id}: {e}")
         return False
 
 

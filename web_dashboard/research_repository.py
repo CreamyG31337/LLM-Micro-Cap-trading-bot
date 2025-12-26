@@ -998,16 +998,20 @@ class ResearchRepository:
             
             # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
             # so no conversion is needed. Just ensure timezone awareness if needed.
+            # Normalize ticker data to always use 'tickers' array format (same as get_articles_by_date_range)
+            normalized_results = []
             for article in results:
+                article = self._normalize_ticker_data(article)
                 if article.get('published_at') and isinstance(article['published_at'], datetime):
                     if article['published_at'].tzinfo is None:
                         article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
                 if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
                     if article['fetched_at'].tzinfo is None:
                         article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
+                normalized_results.append(article)
             
-            logger.debug(f"Retrieved {len(results)} articles (all time)")
-            return results
+            logger.debug(f"Retrieved {len(normalized_results)} articles (all time)")
+            return normalized_results
             
         except Exception as e:
             logger.error(f"❌ Error getting all articles: {e}")

@@ -34,6 +34,16 @@ if not is_authenticated():
     st.switch_page("streamlit_app.py")
     st.stop()
 
+# Refresh token if needed (auto-refresh before expiry)
+from auth_utils import refresh_token_if_needed
+if not refresh_token_if_needed():
+    # Token refresh failed - session is invalid, redirect to login
+    from auth_utils import logout_user
+    logout_user()
+    st.error("Your session has expired. Please log in again.")
+    st.switch_page("streamlit_app.py")
+    st.stop()
+
 # Sidebar navigation
 from navigation import render_navigation
 render_navigation(show_ai_assistant=True, show_settings=False)  # Don't show Settings link on this page

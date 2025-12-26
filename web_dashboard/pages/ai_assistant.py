@@ -65,12 +65,21 @@ st.markdown("""
     
     /* Chat container - scrollable with fixed height */
     .chat-container {
-        height: calc(100vh - 250px);
+        max-height: calc(100vh - 300px);
+        min-height: 400px;
         overflow-y: auto;
+        overflow-x: hidden;
         padding: 1rem;
         margin-bottom: 1rem;
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 0.5rem;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Prevent child elements from breaking out of container */
+    .chat-container > div {
+        flex-shrink: 0;
     }
     
     /* Auto-scroll to bottom behavior */
@@ -118,7 +127,7 @@ st.markdown("""
 </style>
 
 <script>
-    // Auto-scroll chat container to bottom on load
+    // Auto-scroll chat container to bottom on load and updates
     function scrollChatToBottom() {
         const chatContainer = document.querySelector('.chat-container');
         if (chatContainer) {
@@ -133,14 +142,39 @@ st.markdown("""
         scrollChatToBottom();
     }
     
-    // Also run after a short delay to catch dynamic content
+    // Also run after delays to catch dynamic content
     setTimeout(scrollChatToBottom, 100);
+    setTimeout(scrollChatToBottom, 300);
     setTimeout(scrollChatToBottom, 500);
+    setTimeout(scrollChatToBottom, 1000);
+    
+    // Watch for DOM changes in the chat container
+    const observer = new MutationObserver(scrollChatToBottom);
+    const observeChatContainer = () => {
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+            observer.observe(chatContainer, { childList: true, subtree: true });
+        } else {
+            // Retry after a short delay if container not found yet
+            setTimeout(observeChatContainer, 100);
+        }
+    };
+    observeChatContainer();
 </script>
 """, unsafe_allow_html=True)
 
 # Check authentication
 if not is_authenticated():
+    st.switch_page("streamlit_app.py")
+    st.stop()
+
+# Refresh token if needed (auto-refresh before expiry)
+from auth_utils import refresh_token_if_needed
+if not refresh_token_if_needed():
+    # Token refresh failed - session is invalid, redirect to login
+    from auth_utils import logout_user
+    logout_user()
+    st.error("Your session has expired. Please log in again.")
     st.switch_page("streamlit_app.py")
     st.stop()
 

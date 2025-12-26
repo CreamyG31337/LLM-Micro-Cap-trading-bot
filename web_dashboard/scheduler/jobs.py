@@ -58,8 +58,123 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'Hunt for new investment opportunities using targeted search queries',
         'default_interval_minutes': 720,  # Every 12 hours
         'enabled_by_default': True
+    },
+    'benchmark_refresh': {
+        'name': 'Refresh Benchmark Data',
+        'description': 'Fetch and cache benchmark data (S&P 500, QQQ, Russell 2000, VTI) for chart performance',
+        'default_interval_minutes': 1440,  # Once per day
+        'enabled_by_default': True,
+        'cron_triggers': [
+            {'hour': 15, 'minute': 15, 'timezone': 'America/Los_Angeles'}  # 15:15 PST / 18:15 EST - after market close
+        ]
     }
 }
+
+
+def benchmark_refresh_job() -> None:
+    """Refresh benchmark data cache for chart performance.
+    
+    This job:
+    1. Fetches latest benchmark data from Yahoo Finance
+    2. Caches it in the benchmark_data table
+    3. Ensures charts always have up-to-date market index data
+    
+    Benchmarks refreshed:
+    - S&P 500 (^GSPC)
+    - Nasdaq-100 (QQQ)
+    - Russell 2000 (^RUT)
+    - Total Market (VTI)
+    """
+    job_id = 'benchmark_refresh'
+    start_time = time.time()
+    
+    try:
+        logger.info("Starting benchmark refresh job...")
+        
+        # Import dependencies
+        try:
+            import yfinance as yf
+            from supabase_client import SupabaseClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize Supabase client (use service role for writing)
+        client = SupabaseClient(use_service_role=True)
+        
+        # Define benchmarks to refresh
+        benchmarks = [
+            {"ticker": "^GSPC", "name": "S&P 500"},
+            {"ticker": "QQQ", "name": "Nasdaq-100"},
+            {"ticker": "^RUT", "name": "Russell 2000"},
+            {"ticker": "VTI", "name": "Total Market"}
+        ]
+        
+        # Fetch data for the last 30 days to ensure we have recent data
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        benchmarks_updated = 0
+        benchmarks_failed = 0
+        total_rows_cached = 0
+        
+        for benchmark in benchmarks:
+            ticker = benchmark["ticker"]
+            name = benchmark["name"]
+            
+            try:
+                logger.info(f"Fetching {name} ({ticker})...")
+                
+                # Fetch data from Yahoo Finance
+                data = yf.download(
+                    ticker,
+                    start=start_date,
+                    end=end_date,
+                    progress=False,
+                    auto_adjust=False
+                )
+                
+                if data.empty:
+                    logger.warning(f"No data available for {name} ({ticker})")
+                    benchmarks_failed += 1
+                    continue
+                
+                # Reset index to get Date as a column
+                data = data.reset_index()
+                
+                # Handle MultiIndex columns from yfinance
+                if hasattr(data.columns, 'levels'):
+                    data.columns = data.columns.get_level_values(0)
+                
+                # Convert to list of dicts for caching
+                rows = data.to_dict('records')
+                
+                # Cache in database
+                if client.cache_benchmark_data(ticker, rows):
+                    total_rows_cached += len(rows)
+                    benchmarks_updated += 1
+                    logger.info(f"✅ Cached {len(rows)} rows for {name} ({ticker})")
+                else:
+                    benchmarks_failed += 1
+                    logger.warning(f"Failed to cache data for {name} ({ticker})")
+                
+            except Exception as e:
+                logger.error(f"Error fetching {name} ({ticker}): {e}")
+                benchmarks_failed += 1
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Updated {benchmarks_updated} benchmarks ({total_rows_cached} rows), {benchmarks_failed} failed"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Benchmark refresh job failed: {e}", exc_info=True)
 
 
 def calculate_relevance_score(
@@ -248,13 +363,18 @@ def market_research_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content
+                        from research_utils import validate_ticker_in_content, validate_ticker_format
                         for ticker in tickers:
+                            # First validate format (reject company names, invalid formats)
+                            if not validate_ticker_format(ticker):
+                                logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
+                                continue
+                            # Then validate it appears in content
                             if validate_ticker_in_content(ticker, content):
                                 extracted_tickers.append(ticker)
                                 logger.debug(f"Extracted ticker from article: {ticker} (validated in content)")
                             else:
-                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
                         
                         if extracted_tickers:
                             logger.info(f"Extracted {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
@@ -634,13 +754,18 @@ def ticker_research_job() -> None:
                                 sectors = summary_data.get("sectors", [])
                                 
                                 # Extract all validated tickers
-                                from research_utils import validate_ticker_in_content
+                                from research_utils import validate_ticker_in_content, validate_ticker_format
                                 for candidate_ticker in tickers:
+                                    # First validate format (reject company names, invalid formats)
+                                    if not validate_ticker_format(candidate_ticker):
+                                        logger.warning(f"Rejected invalid ticker format: {candidate_ticker} (likely company name or invalid format)")
+                                        continue
+                                    # Then validate it appears in content
                                     if validate_ticker_in_content(candidate_ticker, content):
                                         extracted_tickers.append(candidate_ticker)
                                         logger.debug(f"Extracted ticker from article: {candidate_ticker} (validated in content)")
                                     else:
-                                        logger.warning(f"Extracted ticker {candidate_ticker} not found in article content - likely AI error, skipping")
+                                        logger.warning(f"Ticker {candidate_ticker} not found in article content - skipping")
                                 
                                 if extracted_tickers:
                                     logger.info(f"Extracted {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
@@ -865,13 +990,18 @@ def opportunity_discovery_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content
+                        from research_utils import validate_ticker_in_content, validate_ticker_format
                         for ticker in tickers:
+                            # First validate format (reject company names, invalid formats)
+                            if not validate_ticker_format(ticker):
+                                logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
+                                continue
+                            # Then validate it appears in content
                             if validate_ticker_in_content(ticker, content):
                                 extracted_tickers.append(ticker)
                                 logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
                             else:
-                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
                         
                         if extracted_tickers:
                             logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
@@ -1076,13 +1206,18 @@ def opportunity_discovery_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content
+                        from research_utils import validate_ticker_in_content, validate_ticker_format
                         for ticker in tickers:
+                            # First validate format (reject company names, invalid formats)
+                            if not validate_ticker_format(ticker):
+                                logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
+                                continue
+                            # Then validate it appears in content
                             if validate_ticker_in_content(ticker, content):
                                 extracted_tickers.append(ticker)
                                 logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
                             else:
-                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
                         
                         if extracted_tickers:
                             logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")

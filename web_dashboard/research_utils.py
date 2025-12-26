@@ -7,6 +7,7 @@ Helper functions for extracting and processing research articles.
 """
 
 import logging
+import re
 from typing import Dict, Any, Optional
 from datetime import datetime
 from urllib.parse import urlparse
@@ -173,6 +174,45 @@ def extract_source_from_url(url: str) -> str:
     except Exception as e:
         logger.warning(f"Error extracting source from URL {url}: {e}")
         return "unknown"
+
+
+def validate_ticker_format(ticker: Optional[str], max_length: int = 20) -> bool:
+    """Validate ticker symbol format.
+    
+    Args:
+        ticker: Ticker symbol to validate
+        max_length: Maximum allowed length (default 20, database limit)
+        
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not ticker or not isinstance(ticker, str):
+        return False
+    
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return False
+    
+    # Check length
+    if len(ticker) > max_length:
+        return False
+    
+    # Valid tickers: start with a letter; allow letters/digits/dot/dash afterwards
+    # No spaces allowed
+    pattern = r"^[A-Z][A-Z0-9\.-]*$"
+    if not re.fullmatch(pattern, ticker):
+        return False
+    
+    # Additional checks: reject if looks like a company name
+    # - Contains multiple words (spaces would be caught by pattern, but check for common words)
+    # - Too long (already checked)
+    # - Contains common company name words
+    company_name_indicators = ['LIMITED', 'INC', 'CORP', 'CORPORATION', 'LLC', 'LTD', 'HOLDINGS', 'GROUP', 'COMPANY']
+    ticker_upper = ticker.upper()
+    if any(indicator in ticker_upper for indicator in company_name_indicators):
+        return False
+    
+    return True
 
 
 def validate_ticker_in_content(ticker: Optional[str], content: str) -> bool:

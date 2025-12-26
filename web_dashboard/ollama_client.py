@@ -366,10 +366,15 @@ class OllamaClient:
 
 Requirements:
 1. Generate a comprehensive summary with 5-7+ bullet points covering all key information
-2. Extract all stock ticker symbols mentioned (e.g., HOOD, NVDA, AAPL)
+2. Extract all stock ticker symbols mentioned (e.g., HOOD, NVDA, AAPL, XMA.TO)
+   - Tickers are SHORT symbols (1-10 characters), typically 1-5 uppercase letters
+   - May include exchange suffixes like .TO, .V, .CN, .TSX
+   - Do NOT extract company names (e.g., "Apple Inc" is NOT a ticker, "AAPL" is)
+   - Do NOT extract long phrases or descriptions
+   - Only extract actual ticker symbols mentioned in the article
 3. Identify all sectors/industries discussed (e.g., "Financial Services", "Technology", "Healthcare")
 4. List key themes and topics (e.g., "crypto revenue", "subscription growth", "market expansion")
-5. Extract company names mentioned (e.g., "Robinhood", "NVIDIA")
+5. Extract company names mentioned (e.g., "Robinhood", "NVIDIA") - these go in "companies" field, NOT "tickers"
 
 Return your response as a valid JSON object with these exact fields:
 {

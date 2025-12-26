@@ -207,21 +207,54 @@ def startup_backfill_check() -> None:
         logger.warning(f"⚠️  Found {len(missing_days)} days with incomplete/missing jobs")
         logger.info(f"   Date range: {missing_days[0]} to {missing_days[-1]}")
         
-        # 4. Run job for each missing date
+        # 4. OPTIMIZATION: Group consecutive days into ranges for batch processing
+        # This reduces API calls from O(Days * Tickers) to O(Tickers)
+        date_ranges = []
+        if missing_days:
+            range_start = missing_days[0]
+            range_end = missing_days[0]
+            
+            for i in range(1, len(missing_days)):
+                current_day = missing_days[i]
+                # Check if current day is consecutive (next day after range_end)
+                if (current_day - range_end).days == 1:
+                    # Extend current range
+                    range_end = current_day
+                else:
+                    # Save current range and start new one
+                    date_ranges.append((range_start, range_end))
+                    range_start = current_day
+                    range_end = current_day
+            
+            # Don't forget the last range
+            date_ranges.append((range_start, range_end))
+        
+        logger.info(f"   Grouped into {len(date_ranges)} date range(s) for batch processing")
+        
+        # 5. Process each range using batch backfill
         success_count = 0
         fail_count = 0
         
-        for day in missing_days:
+        for range_start, range_end in date_ranges:
             try:
-                logger.info(f"   Backfilling {day}...")
-                update_portfolio_prices_job(target_date=day)
-                success_count += 1
+                if range_start == range_end:
+                    logger.info(f"   Backfilling single day: {range_start}...")
+                else:
+                    logger.info(f"   Backfilling date range: {range_start} to {range_end}...")
+                
+                from scheduler.jobs import backfill_portfolio_prices_range
+                backfill_portfolio_prices_range(range_start, range_end)
+                
+                # Count days in this range
+                days_in_range = (range_end - range_start).days + 1
+                success_count += days_in_range
             except Exception as e:
-                logger.error(f"   ❌ Failed to backfill {day}: {e}")
-                fail_count += 1
-                # Continue with next day even if one fails
+                logger.error(f"   ❌ Failed to backfill range {range_start} to {range_end}: {e}")
+                days_in_range = (range_end - range_start).days + 1
+                fail_count += days_in_range
+                # Continue with next range even if one fails
         
-        logger.info(f"✅ Backfill complete: {success_count} succeeded, {fail_count} failed")
+        logger.info(f"✅ Backfill complete: {success_count} days succeeded, {fail_count} days failed")
         
     except Exception as e:
         logger.error(f"❌ Backfill check failed: {e}", exc_info=True)

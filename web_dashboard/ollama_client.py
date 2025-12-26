@@ -378,16 +378,24 @@ Requirements:
 4. List key themes and topics (e.g., "crypto revenue", "subscription growth", "market expansion")
 5. Extract company names mentioned (e.g., "Robinhood", "NVIDIA") - these go in "companies" field, NOT "tickers"
 
+CRITICAL: Return ONLY valid, parseable JSON. Do NOT include:
+- Explanatory text before or after the JSON
+- Comments (// or /* */)
+- Markdown formatting
+- Any text outside the JSON object
+
+The "summary" field must be a single STRING with bullet points separated by newlines (\\n), NOT an array.
+
 Return your response as a valid JSON object with these exact fields:
 {
-  "summary": "• First key point...\n• Second key point...\n• Third key point...\n• Fourth key point...\n• Fifth key point...",
+  "summary": "• First key point...\\n• Second key point...\\n• Third key point...\\n• Fourth key point...\\n• Fifth key point...",
   "tickers": ["TICKER1", "TICKER2", "INFERRED?"],
   "sectors": ["Sector1", "Sector2"],
   "key_themes": ["theme1", "theme2"],
   "companies": ["Company1", "Company2"]
 }
 
-If no tickers, sectors, themes, or companies are found, use empty arrays []. Always return valid JSON."""
+If no tickers, sectors, themes, or companies are found, use empty arrays []. Return ONLY the JSON object, nothing else."""
         
         # Get model settings
         model_settings = self.get_model_settings(model)

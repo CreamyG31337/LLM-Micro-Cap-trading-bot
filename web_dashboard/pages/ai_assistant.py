@@ -224,6 +224,26 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Portfolio Table Options
+    st.header("📊 Portfolio Table Options")
+    st.caption("Customize which portfolio data tables to include")
+    
+    include_price_volume = st.checkbox(
+        "Price & Volume Table",
+        value=True,  # Default ON
+        help="Include Price & Volume data (Close, % Chg, Volume, Avg Vol)",
+        key="toggle_price_volume"
+    )
+    
+    include_fundamentals = st.checkbox(
+        "Company Fundamentals Table",
+        value=True,  # Default ON
+        help="Include Company Fundamentals (Sector, Industry, Mkt Cap, P/E, etc.)",
+        key="toggle_fundamentals"
+    )
+    
+    st.markdown("---")
+    
     # Web Search section
     st.header("🔍 Web Search")
     if searxng_available:
@@ -394,7 +414,7 @@ st.markdown("### 💬 Chat")
 # Example query buttons section
 if searxng_available:
     st.markdown("#### 🔍 Quick Research")
-    st.caption("Click a button to start a research query, or type your own question below")
+    st.caption("Select tickers and click a button to start analysis.")
     
     # Get portfolio tickers for ticker-specific queries
     portfolio_tickers_list = []
@@ -402,10 +422,41 @@ if searxng_available:
         try:
             positions_df = get_current_positions(selected_fund)
             if not positions_df.empty and 'ticker' in positions_df.columns:
-                portfolio_tickers_list = positions_df['ticker'].tolist()
+                portfolio_tickers_list = sorted(positions_df['ticker'].unique().tolist())
         except Exception:
             pass
     
+    # Unified Ticker Selection
+    col_sel1, col_sel2 = st.columns([2, 1])
+    with col_sel1:
+        selected_tickers = st.multiselect(
+            "Select Tickers:",
+            options=portfolio_tickers_list,
+            placeholder="Select tickers for analysis...",
+            key="multi_select_tickers",
+            label_visibility="collapsed"
+        )
+    with col_sel2:
+        custom_ticker = st.text_input(
+            "Custom Ticker",
+            placeholder="e.g. NVDA",
+            label_visibility="collapsed",
+            key="custom_ticker_input"
+        ).strip().upper()
+    
+    # Combine selections
+    active_tickers = list(selected_tickers)
+    if custom_ticker and custom_ticker not in active_tickers:
+        active_tickers.append(custom_ticker)
+        
+    # Helper to get display name for buttons
+    def get_ticker_display():
+        if not active_tickers:
+            return ""
+        if len(active_tickers) == 1:
+            return f" {active_tickers[0]}"
+        return f" ({len(active_tickers)})"
+
     # Create columns for example query buttons
     col1, col2, col3 = st.columns(3)
     
@@ -413,38 +464,39 @@ if searxng_available:
         if st.button("📰 Market News Today", use_container_width=True, key="btn_market_news"):
             st.session_state.pending_query = "What's the latest stock market news today?"
         
-        if portfolio_tickers_list:
-            selected_ticker = st.selectbox(
-                "Research Ticker:",
-                options=portfolio_tickers_list,
-                key="select_research_ticker",
-                help="Select a ticker from your portfolio to research"
-            )
-            if st.button(f"🔍 Research {selected_ticker}", use_container_width=True, key="btn_research_ticker"):
-                st.session_state.pending_query = f"Research {selected_ticker} - latest news and analysis"
-        else:
-            ticker_input = st.text_input(
-                "Research Ticker:",
-                placeholder="Enter ticker (e.g., AAPL)",
-                key="input_research_ticker",
-                help="Enter a stock ticker to research"
-            )
-            if ticker_input and st.button(f"🔍 Research {ticker_input.upper()}", use_container_width=True, key="btn_research_ticker_input"):
-                st.session_state.pending_query = f"Research {ticker_input.upper()} - latest news and analysis"
+        # Research Button
+        btn_label = f"🔍 Research{get_ticker_display()}"
+        if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
+            if active_tickers:
+                # Research specific tickers
+                if len(active_tickers) == 1:
+                    st.session_state.pending_query = f"Research {active_tickers[0]} - latest news and analysis"
+                else:
+                    tickers_str = ", ".join(active_tickers)
+                    st.session_state.pending_query = f"Research the following stocks: {tickers_str}. Provide latest news for each."
+            else:
+                # Fallback if nothing selected but button clicked (though label is generic)
+                st.session_state.pending_query = "Research stocks - find interesting opportunities"
     
     with col2:
-        if st.button("📊 Stock Analysis", use_container_width=True, key="btn_stock_analysis"):
-            if portfolio_tickers_list:
-                # Use first ticker if available
-                ticker = portfolio_tickers_list[0]
-                st.session_state.pending_query = f"Analyze {ticker} stock - recent performance and outlook"
+        # Analysis Button
+        btn_label = f"📊 Analysis{get_ticker_display()}"
+        if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
+            if active_tickers:
+                if len(active_tickers) == 1:
+                    st.session_state.pending_query = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
+                else:
+                    tickers_str = ", ".join(active_tickers)
+                    st.session_state.pending_query = f"Analyze and compare the outlooks for: {tickers_str}"
             else:
-                st.session_state.pending_query = "Analyze a stock - provide recent performance and outlook analysis"
+                 st.session_state.pending_query = "Analyze a stock - provide recent performance and outlook analysis"
         
-        if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks"):
-            if len(portfolio_tickers_list) >= 2:
-                tickers_str = " and ".join(portfolio_tickers_list[:2])
-                st.session_state.pending_query = f"Compare {tickers_str} stocks"
+        # Compare Button - Only active if multiple tickers or generic intent
+        disabled_compare = len(active_tickers) == 1 # Disable if exactly 1 is selected (need 2+ or 0 for generic)
+        if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
+            if len(active_tickers) >= 2:
+                tickers_str = " and ".join(active_tickers)
+                st.session_state.pending_query = f"Compare {tickers_str} stocks. Which is a better investment?"
             else:
                 st.session_state.pending_query = "Compare two stocks - provide a detailed comparison"
     
@@ -452,10 +504,15 @@ if searxng_available:
         if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
             st.session_state.pending_query = "What's happening in the stock market sectors today?"
         
-        if st.button("💰 Earnings News", use_container_width=True, key="btn_earnings"):
-            if portfolio_tickers_list:
-                ticker = portfolio_tickers_list[0]
-                st.session_state.pending_query = f"Find recent earnings news for {ticker}"
+        # Earnings Button
+        btn_label = f"💰 Earnings{get_ticker_display()}"
+        if st.button(btn_label, use_container_width=True, key="btn_earnings"):
+            if active_tickers:
+                if len(active_tickers) == 1:
+                    st.session_state.pending_query = f"Find recent earnings news for {active_tickers[0]}"
+                else:
+                    tickers_str = ", ".join(active_tickers)
+                    st.session_state.pending_query = f"Find recent earnings reports for: {tickers_str}"
             else:
                 st.session_state.pending_query = "Find recent earnings news and announcements"
     
@@ -481,7 +538,20 @@ def build_context_string() -> str:
         try:
             if item.item_type == ContextItemType.HOLDINGS:
                 positions_df = get_current_positions(fund)
-                context_parts.append(format_holdings(positions_df, fund or "Unknown"))
+                # Get trades_df for opened date lookup
+                trades_df_for_holdings = get_trade_log(limit=1000, fund=fund) if fund else None
+                # Get toggle values from sidebar (use session state or default to True)
+                include_pv = st.session_state.get('toggle_price_volume', True)
+                include_fund = st.session_state.get('toggle_fundamentals', True)
+                context_parts.append(
+                    format_holdings(
+                        positions_df, 
+                        fund or "Unknown",
+                        trades_df=trades_df_for_holdings,
+                        include_price_volume=include_pv,
+                        include_fundamentals=include_fund
+                    )
+                )
             
             elif item.item_type == ContextItemType.THESIS:
                 thesis_data = get_fund_thesis_data(fund or "")

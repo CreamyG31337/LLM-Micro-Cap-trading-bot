@@ -36,6 +36,7 @@ from research_repository import ResearchRepository
 from postgres_client import PostgresClient
 from ollama_client import get_ollama_client, check_ollama_health
 from settings import get_summarizing_model
+from file_parsers import extract_text_from_file
 
 logger = logging.getLogger(__name__)
 

@@ -791,9 +791,23 @@ try:
         
         # Display articles
         for idx, article in enumerate(articles):
-            # Build enhanced title with ticker and short date for easy scanning
+            # Build enhanced title with job icon + status icon
+            # Job icon shows which job created the article
+            article_type = article.get('article_type', '')
+            job_icon_map = {
+                'market_research': '📰',
+                'ticker_research': '🔍',
+                'opportunity_discovery': '💡',
+                'general': '📄'
+            }
+            job_icon = job_icon_map.get(article_type, '📄')
+            
+            # Status icon shows AI processing state
             has_embedding = article.get('has_embedding', False)
-            embedding_badge = "🧠 " if has_embedding else "⏳ "
+            status_icon = "🧠" if has_embedding else "⏳"
+            
+            # Combine both icons
+            icon_badge = f"{job_icon}{status_icon} "
             
             # Format tickers (show first 2 tickers max)
             tickers = article.get('tickers', [])
@@ -823,7 +837,7 @@ try:
             if date_str:
                 title_parts.append(date_str)
             
-            expander_title = f"{embedding_badge}{' | '.join(title_parts)}"
+            expander_title = f"{icon_badge}{' | '.join(title_parts)}"
             
             if user_is_admin:
                 # Admin view with checkbox

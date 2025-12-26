@@ -2460,3 +2460,17 @@ OLLAMA_ENABLED={enabled}""")
         st.error(f"Error loading AI settings: {e}")
         import traceback
         st.code(traceback.format_exc())
+
+# Display Streamlit version at the bottom of the page
+st.markdown("---")
+try:
+    streamlit_version = st.__version__
+    st.caption(f"Streamlit v{streamlit_version}")
+except AttributeError:
+    # Fallback if __version__ is not available
+    try:
+        import pkg_resources
+        streamlit_version = pkg_resources.get_distribution("streamlit").version
+        st.caption(f"Streamlit v{streamlit_version}")
+    except Exception:
+        st.caption("Streamlit version unavailable")

@@ -27,48 +27,87 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'name': 'Refresh Exchange Rates',
         'description': 'Fetch latest USD/CAD exchange rate and store in database',
         'default_interval_minutes': 120,  # Every 2 hours
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '💰'
     },
     'performance_metrics': {
         'name': 'Populate Performance Metrics',
         'description': 'Aggregate daily portfolio performance into metrics table',
         'default_interval_minutes': 1440,  # Once per day
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '📊'
     },
     'update_portfolio_prices': {
         'name': 'Update Portfolio Prices',
         'description': 'Fetch current stock prices and update portfolio positions for today',
         'default_interval_minutes': 15,  # Every 15 minutes during market hours
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '📈'
     },
     'market_research': {
         'name': 'Market Research Collection',
         'description': 'Scrape and store general market news articles',
         'default_interval_minutes': 360,  # Every 6 hours (but uses cron triggers instead)
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '📰'
     },
     'ticker_research': {
         'name': 'Ticker Research Collection',
         'description': 'Fetch news for specific companies in the portfolio',
         'default_interval_minutes': 360,  # Every 6 hours
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '🔍'
     },
     'opportunity_discovery': {
         'name': 'Opportunity Discovery',
         'description': 'Hunt for new investment opportunities using targeted search queries',
         'default_interval_minutes': 720,  # Every 12 hours
-        'enabled_by_default': True
+        'enabled_by_default': True,
+        'icon': '🔍'
     },
     'benchmark_refresh': {
         'name': 'Refresh Benchmark Data',
         'description': 'Fetch and cache benchmark data (S&P 500, QQQ, Russell 2000, VTI) for chart performance',
         'default_interval_minutes': 1440,  # Once per day
         'enabled_by_default': True,
+        'icon': '📊',
         'cron_triggers': [
             {'hour': 15, 'minute': 15, 'timezone': 'America/Los_Angeles'}  # 15:15 PST / 18:15 EST - after market close
         ]
     }
 }
+
+
+def get_job_icon(job_id: str) -> str:
+    """Get the icon emoji for a job ID.
+    
+    Handles special cases for job variants:
+    - update_portfolio_prices_close uses same icon as update_portfolio_prices
+    - market_research_* variants use same icon as market_research
+    - ticker_research_job uses icon from ticker_research
+    - opportunity_discovery_job uses icon from opportunity_discovery
+    
+    Args:
+        job_id: The job identifier
+        
+    Returns:
+        Icon emoji string, or empty string if not found
+    """
+    # Handle special cases for job variants
+    if job_id == 'update_portfolio_prices_close':
+        job_id = 'update_portfolio_prices'
+    elif job_id.startswith('market_research_'):
+        job_id = 'market_research'
+    elif job_id == 'ticker_research_job':
+        job_id = 'ticker_research'
+    elif job_id == 'opportunity_discovery_job':
+        job_id = 'opportunity_discovery'
+    
+    # Look up icon from AVAILABLE_JOBS
+    if job_id in AVAILABLE_JOBS:
+        return AVAILABLE_JOBS[job_id].get('icon', '')
+    
+    return ''
 
 
 def benchmark_refresh_job() -> None:
@@ -1983,7 +2022,7 @@ def register_default_jobs(scheduler) -> None:
             refresh_exchange_rates_job,
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['exchange_rates']['default_interval_minutes']),
             id='exchange_rates',
-            name='Refresh Exchange Rates',
+            name=f"{get_job_icon('exchange_rates')} Refresh Exchange Rates",
             replace_existing=True
         )
         logger.info("Registered job: exchange_rates (every 2 hours)")
@@ -1994,7 +2033,7 @@ def register_default_jobs(scheduler) -> None:
             populate_performance_metrics_job,
             trigger=CronTrigger(hour=17, minute=0, timezone='America/New_York'),
             id='performance_metrics',
-            name='Populate Performance Metrics',
+            name=f"{get_job_icon('performance_metrics')} Populate Performance Metrics",
             replace_existing=True
         )
         logger.info("Registered job: performance_metrics (daily at 5 PM EST)")
@@ -2014,7 +2053,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='update_portfolio_prices',
-            name='Update Portfolio Prices',
+            name=f"{get_job_icon('update_portfolio_prices')} Update Portfolio Prices",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -2033,7 +2072,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='update_portfolio_prices_close',
-            name='Update Portfolio Prices (Market Close)',
+            name=f"{get_job_icon('update_portfolio_prices_close')} Update Portfolio Prices (Market Close)",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -2053,7 +2092,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_premarket',
-            name='Market Research (Pre-Market)',
+            name=f"{get_job_icon('market_research_premarket')} Market Research (Pre-Market)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
@@ -2068,7 +2107,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_midmorning',
-            name='Market Research (Mid-Morning)',
+            name=f"{get_job_icon('market_research_midmorning')} Market Research (Mid-Morning)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
@@ -2083,7 +2122,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_powerhour',
-            name='Market Research (Power Hour)',
+            name=f"{get_job_icon('market_research_powerhour')} Market Research (Power Hour)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
@@ -2098,7 +2137,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_postmarket',
-            name='Market Research (Post-Market)',
+            name=f"{get_job_icon('market_research_postmarket')} Market Research (Post-Market)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
@@ -2115,7 +2154,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_premarket',
-            name='Market Research (Pre-Market)',
+            name=f"{get_job_icon('market_research_premarket')} Market Research (Pre-Market)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
@@ -2130,7 +2169,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_midmorning',
-            name='Market Research (Mid-Morning)',
+            name=f"{get_job_icon('market_research_midmorning')} Market Research (Mid-Morning)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
@@ -2145,7 +2184,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_powerhour',
-            name='Market Research (Power Hour)',
+            name=f"{get_job_icon('market_research_powerhour')} Market Research (Power Hour)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
@@ -2160,7 +2199,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='market_research_postmarket',
-            name='Market Research (Post-Market)',
+            name=f"{get_job_icon('market_research_postmarket')} Market Research (Post-Market)",
             replace_existing=True
         )
         logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
@@ -2174,7 +2213,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='ticker_research_job',
-            name='Ticker Specific Research',
+            name=f"{get_job_icon('ticker_research_job')} Ticker Specific Research",
             replace_existing=True
         )
         logger.info("Registered job: ticker_research_job (every 6 hours)")
@@ -2188,7 +2227,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='opportunity_discovery_job',
-            name='Opportunity Discovery',
+            name=f"{get_job_icon('opportunity_discovery_job')} Opportunity Discovery",
             replace_existing=True
         )
         logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
@@ -2202,7 +2241,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='opportunity_discovery_job',
-            name='Opportunity Discovery',
+            name=f"{get_job_icon('opportunity_discovery_job')} Opportunity Discovery",
             replace_existing=True
         )
         logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
@@ -2218,7 +2257,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone=cron_config['timezone']
             ),
             id='benchmark_refresh',
-            name='Refresh Benchmark Data',
+            name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data",
             replace_existing=True
         )
         logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")

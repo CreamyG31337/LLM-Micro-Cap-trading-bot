@@ -1864,8 +1864,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                     """Fetch price for a single ticker. Returns (ticker, price, error_type)."""
                     try:
                         # Fetch price data for target date
-                        start_dt = datetime.combine(target_date, datetime.min.time())
-                        end_dt = datetime.combine(target_date, datetime.max.time())
+                        start_dt = datetime.combine(target_date, dt_time(0, 0, 0))
+                        end_dt = datetime.combine(target_date, dt_time(23, 59, 59, 999999))
                         result = market_fetcher.fetch_price_data(ticker, start=start_dt, end=end_dt)
                         
                         if result and result.df is not None and not result.df.empty:
@@ -2020,8 +2020,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                 # CRITICAL: Delete ALL existing positions for target date BEFORE inserting
                 # This prevents duplicates - there should only be one snapshot per day
                 # Use a more comprehensive delete query to ensure we catch all records
-                start_of_day = datetime.combine(target_date, datetime.min.time()).isoformat()
-                end_of_day = datetime.combine(target_date, datetime.max.time()).isoformat()
+                start_of_day = datetime.combine(target_date, dt_time(0, 0, 0)).isoformat()
+                end_of_day = datetime.combine(target_date, dt_time(23, 59, 59, 999999)).isoformat()
                 
                 # Delete in batches to handle large datasets
                 deleted_total = 0
@@ -2239,8 +2239,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 for ticker in all_tickers:
                     try:
                         # Fetch data for entire range with some padding
-                        range_start = datetime.combine(trading_days[0], datetime.min.time())
-                        range_end = datetime.combine(trading_days[-1], datetime.max.time())
+                        range_start = datetime.combine(trading_days[0], dt_time(0, 0, 0))
+                        range_end = datetime.combine(trading_days[-1], dt_time(23, 59, 59, 999999))
                         
                         result = market_fetcher.fetch_price_data(ticker, start=range_start, end=range_end)
                         
@@ -2403,8 +2403,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 logger.info(f"  Created {len(all_positions)} position records across {len(trading_days)} days")
                 
                 # BATCH DELETE: Remove all existing positions for this fund in the date range
-                start_of_range = datetime.combine(trading_days[0], datetime.min.time()).isoformat()
-                end_of_range = datetime.combine(trading_days[-1], datetime.max.time()).isoformat()
+                start_of_range = datetime.combine(trading_days[0], dt_time(0, 0, 0)).isoformat()
+                end_of_range = datetime.combine(trading_days[-1], dt_time(23, 59, 59, 999999)).isoformat()
                 
                 deleted_total = 0
                 while True:

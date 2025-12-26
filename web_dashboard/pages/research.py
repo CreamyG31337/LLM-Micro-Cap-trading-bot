@@ -218,14 +218,19 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
             logger.warning(f"Failed to generate embedding for article {article_id}, continuing without embedding")
             embedding = None
         
-        # Update article in database
+        # Update article in database (including Chain of Thought fields)
         success = repo.update_article_analysis(
             article_id=article_id,
             summary=summary,
             tickers=extracted_tickers if extracted_tickers else None,
             sector=extracted_sector,
             embedding=embedding,
-            relevance_score=calculated_relevance
+            relevance_score=calculated_relevance,
+            claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+            fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+            conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+            sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
         )
         
         if success:
@@ -923,10 +928,55 @@ try:
             
             st.markdown("---")
             
+            # Sentiment Badge (if available)
+            sentiment = article.get('sentiment')
+            sentiment_score = article.get('sentiment_score')
+            if sentiment:
+                sentiment_colors = {
+                    'VERY_BULLISH': '🟢',
+                    'BULLISH': '🟡',
+                    'NEUTRAL': '⚪',
+                    'BEARISH': '🟠',
+                    'VERY_BEARISH': '🔴'
+                }
+                sentiment_icon = sentiment_colors.get(sentiment, '⚪')
+                score_text = f" (Score: {sentiment_score:.1f})" if sentiment_score is not None else ""
+                st.markdown(f"**Sentiment:** {sentiment_icon} {sentiment}{score_text}")
+            
             # Summary
             if article.get('summary'):
                 st.subheader("Summary")
                 st.write(article['summary'])
+            
+            # Chain of Thought Analysis (if available)
+            if article.get('claims') or article.get('fact_check') or article.get('conclusion'):
+                st.markdown("---")
+                st.subheader("🔍 Chain of Thought Analysis")
+                
+                # Claims
+                claims = article.get('claims')
+                if claims:
+                    if isinstance(claims, list) and len(claims) > 0:
+                        st.markdown("**📋 Claims Identified:**")
+                        for i, claim in enumerate(claims[:10], 1):  # Show first 10
+                            st.markdown(f"{i}. {claim}")
+                        if len(claims) > 10:
+                            st.caption(f"... and {len(claims) - 10} more claims")
+                    elif isinstance(claims, str):
+                        st.markdown("**📋 Claims:**")
+                        st.write(claims)
+                
+                # Fact Check
+                fact_check = article.get('fact_check')
+                if fact_check:
+                    st.markdown("**✅ Fact Check:**")
+                    st.write(fact_check)
+                
+                # Conclusion
+                conclusion = article.get('conclusion')
+                if conclusion:
+                    st.markdown("**💡 Conclusion:**")
+                    st.write(conclusion)
             
             # Content (if available and different from summary)
             if article.get('content') and article.get('content') != article.get('summary'):

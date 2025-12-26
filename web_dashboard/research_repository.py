@@ -289,6 +289,7 @@ class ResearchRepository:
                     query = """
                         SELECT id, tickers, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
+                               claims, fact_check, conclusion, sentiment, sentiment_score,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
@@ -309,6 +310,7 @@ class ResearchRepository:
                     query = """
                         SELECT id, ticker, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
+                               claims, fact_check, conclusion, sentiment, sentiment_score,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
@@ -490,9 +492,14 @@ class ResearchRepository:
         tickers: Optional[List[str]] = None,
         sector: Optional[str] = None,
         embedding: Optional[List[float]] = None,
-        relevance_score: Optional[float] = None
+        relevance_score: Optional[float] = None,
+        claims: Optional[List[str]] = None,
+        fact_check: Optional[str] = None,
+        conclusion: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        sentiment_score: Optional[float] = None
     ) -> bool:
-        """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score).
+        """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score, Chain of Thought fields).
         
         Preserves original fields: title, url, content, source, published_at, fetched_at, article_type.
         
@@ -503,6 +510,11 @@ class ResearchRepository:
             sector: Extracted sector (can be None to clear)
             embedding: New vector embedding (list of 768 floats)
             relevance_score: Recalculated relevance score (0.0 to 1.0)
+            claims: List of specific claims extracted (Chain of Thought Step 1)
+            fact_check: Simple fact-checking analysis (Chain of Thought Step 2)
+            conclusion: Net impact on ticker(s) (Chain of Thought Step 3)
+            sentiment: Sentiment category (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH)
+            sentiment_score: Numeric sentiment score for calculations
             
         Returns:
             True if updated successfully, False otherwise
@@ -544,6 +556,28 @@ class ResearchRepository:
             if relevance_score is not None:
                 updates.append("relevance_score = %s")
                 params.append(float(relevance_score))
+            
+            # Chain of Thought fields
+            if claims is not None:
+                claims_json = json.dumps(claims) if claims else None
+                updates.append("claims = %s::jsonb")
+                params.append(claims_json)
+            
+            if fact_check is not None:
+                updates.append("fact_check = %s")
+                params.append(fact_check)
+            
+            if conclusion is not None:
+                updates.append("conclusion = %s")
+                params.append(conclusion)
+            
+            if sentiment is not None:
+                updates.append("sentiment = %s")
+                params.append(sentiment)
+            
+            if sentiment_score is not None:
+                updates.append("sentiment_score = %s")
+                params.append(float(sentiment_score))
             
             if not updates:
                 logger.warning(f"No fields to update for article {article_id}")
@@ -914,6 +948,7 @@ class ResearchRepository:
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score, fund,
+                       claims, fact_check, conclusion, sentiment, sentiment_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s AND fetched_at <= %s

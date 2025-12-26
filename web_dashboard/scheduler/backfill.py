@@ -109,8 +109,8 @@ def startup_backfill_check() -> None:
             if market_holidays.is_trading_day(check_date, market="any"):
                 # Check if portfolio data exists for this date
                 try:
-                    start_of_day = datetime.combine(check_date, datetime.min.time()).isoformat()
-                    end_of_day = datetime.combine(check_date, datetime.max.time()).isoformat()
+                    start_of_day = datetime.combine(check_date, dt_time(0, 0, 0)).isoformat()
+                    end_of_day = datetime.combine(check_date, dt_time(23, 59, 59, 999999)).isoformat()
                     
                     result = client.supabase.table("portfolio_positions")\
                         .select("id", count='exact')\
@@ -172,8 +172,8 @@ def startup_backfill_check() -> None:
                 # Check data existence
                 data_exists = False
                 try:
-                    start_of_day = datetime.combine(current, datetime.min.time()).isoformat()
-                    end_of_day = datetime.combine(current, datetime.max.time()).isoformat()
+                    start_of_day = datetime.combine(current, dt_time(0, 0, 0)).isoformat()
+                    end_of_day = datetime.combine(current, dt_time(23, 59, 59, 999999)).isoformat()
                     
                     result = client.supabase.table("portfolio_positions")\
                         .select("id", count='exact')\

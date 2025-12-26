@@ -723,7 +723,7 @@ def ticker_research_job() -> None:
                         
                         # Save with sector but no specific ticker (since it's ETF sector research)
                         article_id = research_repo.save_article(
-                            ticker=None,  # No specific ticker for ETF sector research
+                            tickers=None,  # No specific ticker for ETF sector research
                             sector=sector,
                             article_type="ticker_news",  # Still use ticker_news type
                             title=extracted.get('title') or title,

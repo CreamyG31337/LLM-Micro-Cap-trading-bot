@@ -160,7 +160,7 @@ def opportunity_discovery_job() -> None:
                 
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
-                    ticker=extracted_ticker,
+                    tickers=[extracted_ticker] if extracted_ticker else None,
                     sector=extracted_sector,
                     article_type="opportunity_discovery",  # Special tag
                     title=extracted.get('title') or title,

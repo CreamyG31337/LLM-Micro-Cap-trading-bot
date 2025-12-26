@@ -179,14 +179,21 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
         try:
             from supabase_client import SupabaseClient
             client = SupabaseClient(use_service_role=True)
-            from settings import get_production_funds
-            prod_funds = get_production_funds()
-            positions_result = client.supabase.table("latest_positions")\
-                .select("ticker")\
-                .in_("fund", prod_funds)\
+            
+            # Get production funds directly from Supabase (matching pattern from scheduler/jobs.py)
+            funds_result = client.supabase.table("funds")\
+                .select("name")\
+                .eq("is_production", True)\
                 .execute()
-            if positions_result.data:
-                owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
+            
+            if funds_result.data:
+                prod_funds = [f['name'] for f in funds_result.data]
+                positions_result = client.supabase.table("latest_positions")\
+                    .select("ticker")\
+                    .in_("fund", prod_funds)\
+                    .execute()
+                if positions_result.data:
+                    owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
         except Exception as e:
             logger.warning(f"Could not fetch owned tickers for relevance scoring: {e}")
         

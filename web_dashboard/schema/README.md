@@ -133,7 +133,7 @@ RESEARCH_DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/t
 
 #### 4. Run Setup Script
 ```bash
-python web_dashboard/setup_postgres.py
+python web_dashboard/scripts/setup_postgres.py
 ```
 
 This will:

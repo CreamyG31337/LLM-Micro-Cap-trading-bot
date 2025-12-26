@@ -55,7 +55,7 @@ def test_table_exists():
             return True
         else:
             print("❌ research_articles table not found")
-            print("   Run: python web_dashboard/setup_postgres.py")
+            print("   Run: python web_dashboard/scripts/setup_postgres.py")
             return False
     except Exception as e:
         print(f"❌ Error: {e}")

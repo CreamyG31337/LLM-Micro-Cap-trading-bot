@@ -80,7 +80,7 @@ def main():
             print("   SUCCESS: research_articles table exists")
         else:
             print("   WARNING: research_articles table not found")
-            print("   Run: python web_dashboard/setup_postgres.py")
+            print("   Run: python web_dashboard/scripts/setup_postgres.py")
             return 1
     except Exception as e:
         print(f"   ERROR: {e}")

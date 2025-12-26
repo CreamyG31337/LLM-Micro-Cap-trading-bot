@@ -90,11 +90,31 @@ def _format_portfolio_snapshot_table(
     if trades_df is not None and not trades_df.empty:
         # Get ticker column (try both 'ticker' and 'symbol')
         ticker_col = 'ticker' if 'ticker' in trades_df.columns else 'symbol'
-        action_col = 'action'
         timestamp_col = 'timestamp' if 'timestamp' in trades_df.columns else 'date'
         
-        # Filter BUY trades only
-        buy_trades = trades_df[trades_df[action_col].str.upper() == 'BUY'].copy()
+        # Check if action column exists before trying to filter by it
+        action_col = None
+        for col_name in ['action', 'type', 'trade_type']:
+            if col_name in trades_df.columns:
+                action_col = col_name
+                break
+        
+        # Filter BUY trades only (if action column exists)
+        if action_col:
+            buy_trades = trades_df[trades_df[action_col].str.upper() == 'BUY'].copy()
+        else:
+            # If no action column, assume all trades are BUY (or infer from reason field)
+            if 'reason' in trades_df.columns:
+                # Infer from reason field - only include non-SELL trades
+                def is_buy_trade(reason):
+                    if pd.isna(reason) or reason is None:
+                        return True  # Default to BUY if no reason
+                    reason_lower = str(reason).lower()
+                    return not ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower)
+                buy_trades = trades_df[trades_df['reason'].apply(is_buy_trade)].copy()
+            else:
+                # No way to determine action, assume all are BUY trades
+                buy_trades = trades_df.copy()
         
         if not buy_trades.empty:
             # Convert timestamp to datetime for sorting

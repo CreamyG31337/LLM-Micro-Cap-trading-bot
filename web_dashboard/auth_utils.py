@@ -303,10 +303,10 @@ def refresh_token_if_needed() -> bool:
     This means:
     - Active users (using the app) will have tokens refreshed automatically
     - Users returning after closing the browser won't have refresh_token available,
-      so they'll need to log in again if the token expired (acceptable security trade-off)
+      but can still use the app if their access_token is valid
     
     Returns:
-        True if token was refreshed or is still valid, False if refresh failed
+        True if token is valid or was refreshed, False only if token is expired/invalid
     """
     if not is_authenticated():
         return False
@@ -316,18 +316,19 @@ def refresh_token_if_needed() -> bool:
     refresh_token = st.session_state.get("refresh_token")
     expires_at = st.session_state.get("token_expires_at")
     
-    if not access_token or not refresh_token:
-        # Can't refresh without both tokens
+    if not access_token:
+        # No access token at all - not authenticated
         return False
     
-    # Check if we have expiration time
+    # Try to determine token expiration
+    current_time = int(time.time())
+    token_valid = False
+    time_until_expiry = None
+    
+    # First, check stored expiration time
     if expires_at:
-        current_time = int(time.time())
-        # Refresh if token expires within 5 minutes (300 seconds)
         time_until_expiry = expires_at - current_time
-        if time_until_expiry > 300:
-            # Token is still valid for more than 5 minutes, no refresh needed
-            return True
+        token_valid = time_until_expiry > 0
     else:
         # Try to decode expiration from JWT token
         try:
@@ -339,16 +340,35 @@ def refresh_token_if_needed() -> bool:
                 user_data = json.loads(decoded)
                 expires_at = user_data.get("exp")
                 if expires_at:
-                    current_time = int(time.time())
                     time_until_expiry = expires_at - current_time
-                    if time_until_expiry > 300:
-                        # Token is still valid, update stored expiration
-                        st.session_state.token_expires_at = expires_at
-                        return True
+                    token_valid = time_until_expiry > 0
+                    # Cache the expiration for future checks
+                    st.session_state.token_expires_at = expires_at
         except Exception:
-            pass  # If we can't decode, try to refresh anyway
+            # If we can't decode the token, assume it's valid for now
+            # It will fail on actual API calls if it's truly invalid
+            token_valid = True
     
-    # Token is expired or about to expire, refresh it
+    # If token is expired, fail immediately
+    if token_valid is False or (time_until_expiry is not None and time_until_expiry <= 0):
+        return False
+    
+    # Token is valid - check if we should refresh it
+    # Only try to refresh if:
+    # 1. We have a refresh_token available
+    # 2. Token is expiring soon (within 5 minutes)
+    should_refresh = (
+        refresh_token and 
+        time_until_expiry is not None and 
+        0 < time_until_expiry <= 300  # Between 0 and 5 minutes
+    )
+    
+    if not should_refresh:
+        # Token is valid and either doesn't need refresh or we can't refresh
+        # This is the normal case for page navigation
+        return True
+    
+    # Token is about to expire and we can refresh - try to refresh it
     try:
         response = requests.post(
             f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
@@ -381,13 +401,15 @@ def refresh_token_if_needed() -> bool:
                 
                 return True
             else:
-                return False
+                # Refresh response didn't include new token - keep existing one if valid
+                return token_valid
         else:
-            # Refresh failed - token may be invalid, user needs to log in again
-            return False
+            # Refresh failed - but existing token might still be valid
+            # Only fail if token is actually expired
+            return token_valid
     except Exception as e:
-        # Refresh failed due to error
-        return False
+        # Refresh failed due to error - but existing token might still be valid
+        return token_valid
 
 
 def is_admin() -> bool:

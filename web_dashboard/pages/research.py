@@ -151,23 +151,51 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
             return False, "Failed to generate summary"
         
         # Extract summary text
+        extracted_tickers = []
+        extracted_sector = None
         if isinstance(summary_data, str):
             summary = summary_data
-            extracted_ticker = None
-            extracted_sector = None
         elif isinstance(summary_data, dict):
             summary = summary_data.get("summary", "")
             tickers = summary_data.get("tickers", [])
             sectors = summary_data.get("sectors", [])
             
-            # Use first ticker if available
-            extracted_ticker = tickers[0] if tickers else None
+            # Extract all validated tickers
+            extracted_tickers = []
+            if tickers:
+                from research_utils import validate_ticker_in_content
+                for ticker in tickers:
+                    if validate_ticker_in_content(ticker, content):
+                        extracted_tickers.append(ticker)
+                    else:
+                        logger.warning(f"Extracted ticker {ticker} not found in article content - skipping ticker assignment")
+            
             extracted_sector = sectors[0] if sectors else None
         else:
             return False, "Invalid summary data format"
         
         if not summary:
             return False, "Generated summary is empty"
+        
+        # Get owned tickers for relevance scoring
+        owned_tickers = []
+        try:
+            from supabase_client import SupabaseClient
+            client = SupabaseClient(use_service_role=True)
+            from settings import get_production_funds
+            prod_funds = get_production_funds()
+            positions_result = client.supabase.table("latest_positions")\
+                .select("ticker")\
+                .in_("fund", prod_funds)\
+                .execute()
+            if positions_result.data:
+                owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
+        except Exception as e:
+            logger.warning(f"Could not fetch owned tickers for relevance scoring: {e}")
+        
+        # Calculate relevance_score based on what was extracted
+        from scheduler.jobs import calculate_relevance_score
+        calculated_relevance = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
         
         # Generate embedding
         embedding = ollama_client.generate_embedding(content[:6000])
@@ -179,9 +207,10 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
         success = repo.update_article_analysis(
             article_id=article_id,
             summary=summary,
-            ticker=extracted_ticker,
+            tickers=extracted_tickers if extracted_tickers else None,
             sector=extracted_sector,
-            embedding=embedding
+            embedding=embedding,
+            relevance_score=calculated_relevance
         )
         
         if success:
@@ -349,31 +378,79 @@ with st.sidebar:
         st.session_state.current_page = 1  # Reset to first page
         st.rerun()
 
+# Cached data fetching functions
+@st.cache_data(ttl=60, show_spinner=False)
+def get_cached_statistics(_repo, refresh_key: int):
+    """Get article statistics with caching (60s TTL)"""
+    return _repo.get_article_statistics(days=90)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_cached_embedding_stats(_repo, refresh_key: int):
+    """Get embedding statistics with caching (60s TTL)"""
+    try:
+        embedding_stats_query = "SELECT COUNT(*) as total, COUNT(embedding) as embedded FROM research_articles"
+        result = _repo.client.execute_query(embedding_stats_query)
+        if result:
+            return result[0]['total'], result[0]['embedded']
+        return 0, 0
+    except Exception:
+        return 0, 0
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_articles(
+    _repo,
+    refresh_key: int,
+    use_date_filter: bool,
+    start_datetime_str: str,
+    end_datetime_str: str,
+    article_type_filter: str,
+    source_filter: str,
+    search_filter: str,
+    embedding_filter: bool,
+    results_per_page: int,
+    offset: int
+):
+    """Get articles with caching (30s TTL for fresher data during active use)"""
+    try:
+        if use_date_filter and start_datetime_str and end_datetime_str:
+            start_dt = datetime.fromisoformat(start_datetime_str)
+            end_dt = datetime.fromisoformat(end_datetime_str)
+            articles = _repo.get_articles_by_date_range(
+                start_date=start_dt,
+                end_date=end_dt,
+                article_type=article_type_filter if article_type_filter else None,
+                source=source_filter if source_filter else None,
+                search_text=search_filter if search_filter else None,
+                embedding_filter=embedding_filter,
+                limit=results_per_page,
+                offset=offset
+            )
+        else:
+            articles = _repo.get_all_articles(
+                article_type=article_type_filter if article_type_filter else None,
+                source=source_filter if source_filter else None,
+                search_text=search_filter if search_filter else None,
+                embedding_filter=embedding_filter,
+                limit=results_per_page,
+                offset=offset
+            )
+        return articles
+    except Exception as e:
+        logger.error(f"Error fetching articles: {e}", exc_info=True)
+        return []
+
 # Main content area
 try:
-    # Get statistics
+    # Get statistics (cached)
     with st.spinner("Loading statistics..."):
-        stats = repo.get_article_statistics(days=90)
+        stats = get_cached_statistics(repo, st.session_state.refresh_key)
     
     # Statistics dashboard
     st.header("📊 Statistics")
     
-    # Get embedding statistics
-    try:
-        embedding_stats_query = "SELECT COUNT(*) as total, COUNT(embedding) as embedded FROM research_articles"
-        embedding_stats = repo.client.execute_query(embedding_stats_query)
-        if embedding_stats:
-            total_articles = embedding_stats[0]['total']
-            embedded_articles = embedding_stats[0]['embedded']
-            embedding_pct = (embedded_articles / total_articles * 100) if total_articles > 0 else 0
-        else:
-            total_articles = stats.get('total_count', 0)
-            embedded_articles = 0
-            embedding_pct = 0
-    except Exception:
-        total_articles = stats.get('total_count', 0)
-        embedded_articles = 0
-        embedding_pct = 0
+    # Get embedding statistics (cached)
+    total_articles, embedded_articles = get_cached_embedding_stats(repo, st.session_state.refresh_key)
+    embedding_pct = (embedded_articles / total_articles * 100) if total_articles > 0 else 0
     
     col1, col2, col3, col4, col5 = st.columns(5)
     
@@ -420,49 +497,33 @@ try:
     
     st.markdown("---")
     
-    # Get filtered articles
+    # Get filtered articles (cached)
     with st.spinner("Loading articles..."):
         # Calculate pagination
         page = st.session_state.get('current_page', 1)
         offset = (page - 1) * results_per_page
         
-        try:
-            if use_date_filter and start_datetime and end_datetime:
-                logger.debug(f"Fetching articles with date filter: {start_datetime} to {end_datetime}")
-                articles = repo.get_articles_by_date_range(
-                    start_date=start_datetime,
-                    end_date=end_datetime,
-                    article_type=article_type_filter,
-                    source=source_filter,
-                    search_text=search_filter,
-                    embedding_filter=embedding_filter,
-                    limit=results_per_page,
-                    offset=offset
-                )
-            else:
-                # Use get_all_articles for "All time" - simpler and more efficient
-                logger.debug(f"Fetching all articles (no date filter)")
-                articles = repo.get_all_articles(
-                    article_type=article_type_filter,
-                    source=source_filter,
-                    search_text=search_filter,
-                    embedding_filter=embedding_filter,
-                    limit=results_per_page,
-                    offset=offset
-                )
-            
-            logger.debug(f"Retrieved {len(articles)} articles from database")
-            
-            # Get total count for pagination (simplified - get one more to check if there are more)
-            total_articles = len(articles)
-            has_more = total_articles == results_per_page
-        except Exception as e:
-            logger.error(f"Error fetching articles: {e}", exc_info=True)
-            st.error(f"Error loading articles: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-            articles = []
-            has_more = False
+        # Convert datetime to ISO string for cache key (or empty string if None)
+        start_dt_str = start_datetime.isoformat() if start_datetime else ""
+        end_dt_str = end_datetime.isoformat() if end_datetime else ""
+        
+        articles = get_cached_articles(
+            repo,
+            st.session_state.refresh_key,
+            use_date_filter,
+            start_dt_str,
+            end_dt_str,
+            article_type_filter or "",
+            source_filter or "",
+            search_filter or "",
+            embedding_filter,
+            results_per_page,
+            offset
+        )
+        
+        # Get total count for pagination (simplified - get one more to check if there are more)
+        article_count = len(articles)
+        has_more = article_count == results_per_page
     
     # Results header
     st.header("📄 Articles")
@@ -470,6 +531,81 @@ try:
     if not articles:
         st.info("No articles found matching your filters. Try adjusting your search criteria.")
     else:
+        # Initialize selected articles in session state
+        if 'selected_articles' not in st.session_state:
+            st.session_state.selected_articles = set()
+        
+        # Admin batch actions section
+        if is_admin():
+            st.markdown("### Batch Actions")
+            col_batch1, col_batch2, col_batch3 = st.columns([1, 1, 2])
+            
+            with col_batch1:
+                # Select All checkbox
+                select_all = st.checkbox("Select All", key="select_all_checkbox")
+                if select_all:
+                    # Select all articles on current page
+                    st.session_state.selected_articles.update([article['id'] for article in articles])
+                else:
+                    # Deselect all articles on current page
+                    current_page_ids = {article['id'] for article in articles}
+                    st.session_state.selected_articles = st.session_state.selected_articles - current_page_ids
+            
+            with col_batch2:
+                selected_count = len([aid for aid in st.session_state.selected_articles if any(a['id'] == aid for a in articles)])
+                st.caption(f"Selected: {selected_count} on this page")
+            
+            with col_batch3:
+                # Batch re-analyze button
+                if st.button("🔄 Re-Analyze Selected", key="batch_reanalyze", type="primary", use_container_width=True):
+                    # Get model from session state
+                    model = st.session_state.get('reanalysis_model', get_summarizing_model())
+                    
+                    # Get all selected article IDs that are in current articles
+                    selected_ids = [aid for aid in st.session_state.selected_articles if any(a['id'] == aid for a in articles)]
+                    
+                    if not selected_ids:
+                        st.warning("No articles selected. Please select articles using the checkboxes.")
+                    else:
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        success_count = 0
+                        error_count = 0
+                        
+                        for idx, article_id in enumerate(selected_ids):
+                            # Find article title for status
+                            article_title = next((a.get('title', 'Article') for a in articles if a['id'] == article_id), 'Article')
+                            status_text.text(f"Re-analyzing: {article_title[:50]}... ({idx + 1}/{len(selected_ids)})")
+                            
+                            success, message = reanalyze_article(article_id, model)
+                            
+                            if success:
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                logger.error(f"Failed to re-analyze {article_id}: {message}")
+                            
+                            # Update progress
+                            progress_bar.progress((idx + 1) / len(selected_ids))
+                            time.sleep(0.1)  # Small delay to show progress
+                        
+                        # Clear progress and show results
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        if success_count > 0:
+                            st.success(f"✅ Successfully re-analyzed {success_count} article(s)")
+                            # Increment refresh key to invalidate cache
+                            st.session_state.refresh_key += 1
+                            # Clear selection
+                            st.session_state.selected_articles = set()
+                        
+                        if error_count > 0:
+                            st.error(f"❌ Failed to re-analyze {error_count} article(s)")
+            
+            st.markdown("---")
+        
         # Pagination controls
         col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
         with col_pag1:
@@ -510,7 +646,7 @@ try:
                         'Fetched': article.get('fetched_at', ''),
                         'URL': article.get('url', ''),
                         'Summary': article.get('summary', '')[:500] if article.get('summary') else '',
-                        'Ticker': article.get('ticker', ''),
+                        'Tickers': ', '.join(article.get('tickers', [])) if isinstance(article.get('tickers'), list) else (article.get('ticker', '') or ''),
                         'Sector': article.get('sector', ''),
                         'Relevance Score': article.get('relevance_score', '')
                     })
@@ -534,16 +670,49 @@ try:
             has_embedding = article.get('has_embedding', False)
             embedding_badge = "🧠 " if has_embedding else "⏳ "
             
-            with st.expander(
+            # Checkbox for selection (admin only)
+            col_check, col_expander = st.columns([0.05, 0.95]) if is_admin() else (None, None)
+            
+            if is_admin():
+                with col_check:
+                    article_id = article['id']
+                    is_selected = article_id in st.session_state.selected_articles
+                    selected = st.checkbox(
+                        "",
+                        value=is_selected,
+                        key=f"select_{article_id}",
+                        label_visibility="collapsed"
+                    )
+                    if selected and not is_selected:
+                        st.session_state.selected_articles.add(article_id)
+                    elif not selected and is_selected:
+                        st.session_state.selected_articles.discard(article_id)
+                
+                with col_expander:
+                    expander_key = f"expander_{article_id}"
+            else:
+                expander_key = f"expander_{idx}"
+            
+            # Create expander with appropriate key
+            expander_container = col_expander if is_admin() else st
+            with expander_container.expander(
                 f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
-                expanded=False
+                expanded=False,
+                key=expander_key
             ):
                 col_info1, col_info2 = st.columns(2)
                 
                 with col_info1:
                     st.write("**Source:**", article.get('source', 'N/A'))
                     st.write("**Type:**", article.get('article_type', 'N/A'))
-                    if article.get('ticker'):
+                    # Handle both old ticker format and new tickers array format
+                    tickers = article.get('tickers')
+                    if tickers:
+                        if isinstance(tickers, list):
+                            st.write("**Tickers:**", ", ".join(tickers))
+                        else:
+                            st.write("**Tickers:**", str(tickers))
+                    elif article.get('ticker'):  # Fallback for old format
                         st.write("**Ticker:**", article.get('ticker'))
                     if article.get('sector'):
                         st.write("**Sector:**", article.get('sector'))
@@ -570,33 +739,40 @@ try:
                 if article.get('url'):
                     st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
                 
-                # Admin actions
+                # Admin actions - wrapped in fragment for partial re-render
                 if is_admin():
-                    col_admin1, col_admin2 = st.columns(2)
-                    
-                    with col_admin1:
-                        if st.button("🔄 Re-Analyze", key=f"reanalyze_{article['id']}", type="primary", use_container_width=True):
-                            # Get model from session state (default to current summarizing model if not set)
-                            model = st.session_state.get('reanalysis_model', get_summarizing_model())
-                            
-                            with st.spinner(f"Re-analyzing with {model}..."):
-                                success, message = reanalyze_article(article['id'], model)
+                    # Create a fragment for admin actions to avoid full page refresh
+                    @st.fragment
+                    def render_admin_actions(article_id: str, article_title: str, article_idx: int):
+                        """Fragment for admin actions - only this section re-renders on button click"""
+                        col_admin1, col_admin2 = st.columns(2)
+                        
+                        with col_admin1:
+                            if st.button("🔄 Re-Analyze", key=f"reanalyze_{article_id}", type="primary", use_container_width=True):
+                                # Get model from session state (default to current summarizing model if not set)
+                                model = st.session_state.get('reanalysis_model', get_summarizing_model())
                                 
-                                if success:
-                                    st.toast(f"✅ {message}", icon="✅")
-                                    time.sleep(1)
-                                    st.rerun()
+                                with st.spinner(f"Re-analyzing with {model}..."):
+                                    success, message = reanalyze_article(article_id, model)
+                                    
+                                    if success:
+                                        st.success(f"✅ {message}")
+                                        # Increment refresh key to invalidate article cache on next full page load
+                                        st.session_state.refresh_key += 1
+                                    else:
+                                        st.error(f"❌ {message}")
+                        
+                        with col_admin2:
+                            if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
+                                if repo.delete_article(article_id):
+                                    st.success(f"✅ Deleted: {article_title}")
+                                    # Increment refresh key to invalidate article cache
+                                    st.session_state.refresh_key += 1
                                 else:
-                                    st.error(f"❌ {message}")
+                                    st.error("❌ Failed to delete article")
                     
-                    with col_admin2:
-                        if st.button("🗑️ Delete", key=f"del_{article['id']}", type="secondary", use_container_width=True):
-                            if repo.delete_article(article['id']):
-                                st.toast(f"✅ Deleted: {article.get('title', 'Article')}")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error("❌ Failed to delete article")
+                    # Render the fragment for this article
+                    render_admin_actions(article['id'], article.get('title', 'Article'), idx)
                 
                 st.markdown("---")
                 

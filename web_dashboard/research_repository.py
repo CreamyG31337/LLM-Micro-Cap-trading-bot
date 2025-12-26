@@ -32,7 +32,7 @@ class ResearchRepository:
     
     def save_article(
         self,
-        ticker: Optional[str] = None,
+        tickers: Optional[List[str]] = None,
         sector: Optional[str] = None,
         article_type: str = "ticker_news",
         title: str = "",
@@ -47,7 +47,7 @@ class ResearchRepository:
         """Save a research article to the database
         
         Args:
-            ticker: Stock ticker symbol (e.g., "NVDA")
+            tickers: List of stock ticker symbols (e.g., ["NVDA", "AMD"])
             sector: Sector name (e.g., "Technology")
             article_type: Type of article ('ticker_news', 'market_news', 'earnings')
             title: Article title (required)
@@ -80,11 +80,14 @@ class ResearchRepository:
                 # PostgreSQL vector format: '[0.1,0.2,0.3]'
                 embedding_str = "[" + ",".join(str(float(x)) for x in embedding) + "]"
             
+            # Prepare tickers array (convert None/empty to None for database)
+            tickers_array = tickers if tickers else None
+            
             # Build query dynamically based on whether embedding is provided
             if embedding_str:
                 query = """
                     INSERT INTO research_articles (
-                        ticker, sector, article_type, title, url, summary, content,
+                        tickers, sector, article_type, title, url, summary, content,
                         source, published_at, relevance_score, embedding
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector
@@ -93,7 +96,7 @@ class ResearchRepository:
                     RETURNING id
                 """
                 params = (
-                    ticker,
+                    tickers_array,
                     sector,
                     article_type,
                     title,
@@ -108,7 +111,7 @@ class ResearchRepository:
             else:
                 query = """
                     INSERT INTO research_articles (
-                        ticker, sector, article_type, title, url, summary, content,
+                        tickers, sector, article_type, title, url, summary, content,
                         source, published_at, relevance_score
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -117,7 +120,7 @@ class ResearchRepository:
                     RETURNING id
                 """
                 params = (
-                    ticker,
+                    tickers_array,
                     sector,
                     article_type,
                     title,
@@ -195,22 +198,23 @@ class ResearchRepository:
                 logger.debug(f"Could not check ETF status for {ticker}: {e}")
             
             # Build query: include ticker-specific articles, and for ETFs also include sector articles
+            # Use array lookup: WHERE %s = ANY(tickers) for fast GIN index lookup
             if etf_sector:
                 query = """
-                    SELECT id, ticker, sector, article_type, title, url, summary, content,
+                    SELECT id, tickers, sector, article_type, title, url, summary, content,
                            source, published_at, fetched_at, relevance_score,
                            (embedding IS NOT NULL) as has_embedding
                     FROM research_articles
-                    WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
+                    WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
                 """
                 params = [ticker, etf_sector]
             else:
                 query = """
-                    SELECT id, ticker, sector, article_type, title, url, summary, content,
+                    SELECT id, tickers, sector, article_type, title, url, summary, content,
                            source, published_at, fetched_at, relevance_score,
                            (embedding IS NOT NULL) as has_embedding
                     FROM research_articles
-                    WHERE ticker = %s
+                    WHERE %s = ANY(tickers)
                 """
                 params = [ticker]
             
@@ -262,7 +266,7 @@ class ResearchRepository:
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
             
             query = """
-                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                SELECT id, tickers, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -293,10 +297,10 @@ class ResearchRepository:
                 
                 # Include sector articles for ETFs
                 if etf_sector:
-                    query += " AND (ticker = %s OR (ticker IS NULL AND sector = %s))"
+                    query += " AND (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))"
                     params.extend([ticker, etf_sector])
                 else:
-                    query += " AND ticker = %s"
+                    query += " AND %s = ANY(tickers)"
                     params.append(ticker)
             
             query += " ORDER BY fetched_at DESC LIMIT %s"
@@ -371,20 +375,22 @@ class ResearchRepository:
         self,
         article_id: str,
         summary: Optional[str] = None,
-        ticker: Optional[str] = None,
+        tickers: Optional[List[str]] = None,
         sector: Optional[str] = None,
-        embedding: Optional[List[float]] = None
+        embedding: Optional[List[float]] = None,
+        relevance_score: Optional[float] = None
     ) -> bool:
-        """Update AI-generated fields of an article (summary, ticker, sector, embedding).
+        """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score).
         
         Preserves original fields: title, url, content, source, published_at, fetched_at, article_type.
         
         Args:
             article_id: UUID of the article to update
             summary: New AI-generated summary
-            ticker: Extracted ticker (can be None to clear)
+            tickers: List of extracted tickers (can be None to clear)
             sector: Extracted sector (can be None to clear)
             embedding: New vector embedding (list of 768 floats)
+            relevance_score: Recalculated relevance score (0.0 to 1.0)
             
         Returns:
             True if updated successfully, False otherwise
@@ -398,19 +404,21 @@ class ResearchRepository:
                 updates.append("summary = %s")
                 params.append(summary)
             
-            if ticker is not None:
-                updates.append("ticker = %s")
-                params.append(ticker)
-            elif ticker is None and any(x is not None for x in [summary, sector, embedding]):
-                # Allow explicitly clearing ticker by passing None
+            if tickers is not None:
+                # Convert None/empty list to None for database
+                tickers_array = tickers if tickers else None
+                updates.append("tickers = %s")
+                params.append(tickers_array)
+            elif tickers is None and any(x is not None for x in [summary, sector, embedding, relevance_score]):
+                # Allow explicitly clearing tickers by passing None
                 # Only add if we're actually updating something
-                updates.append("ticker = %s")
+                updates.append("tickers = %s")
                 params.append(None)
             
             if sector is not None:
                 updates.append("sector = %s")
                 params.append(sector)
-            elif sector is None and any(x is not None for x in [summary, ticker, embedding]):
+            elif sector is None and any(x is not None for x in [summary, tickers, embedding, relevance_score]):
                 # Allow explicitly clearing sector
                 updates.append("sector = %s")
                 params.append(None)
@@ -420,6 +428,10 @@ class ResearchRepository:
                 embedding_str = "[" + ",".join(str(float(x)) for x in embedding) + "]"
                 updates.append("embedding = %s::vector")
                 params.append(embedding_str)
+            
+            if relevance_score is not None:
+                updates.append("relevance_score = %s")
+                params.append(float(relevance_score))
             
             if not updates:
                 logger.warning(f"No fields to update for article {article_id}")
@@ -472,7 +484,7 @@ class ResearchRepository:
             # Similarity = 1 - distance
             query = """
                 SELECT 
-                    id, ticker, sector, article_type, title, url, summary, content,
+                    id, tickers, sector, article_type, title, url, summary, content,
                     source, published_at, fetched_at, relevance_score,
                     1 - (embedding <=> %s::vector) as similarity,
                     (embedding IS NOT NULL) as has_embedding
@@ -502,10 +514,10 @@ class ResearchRepository:
                 
                 # Include sector articles for ETFs
                 if etf_sector:
-                    query += " AND (ticker = %s OR (ticker IS NULL AND sector = %s))"
+                    query += " AND (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))"
                     params.extend([ticker, etf_sector])
                 else:
-                    query += " AND ticker = %s"
+                    query += " AND %s = ANY(tickers)"
                     params.append(ticker)
             
             if article_type:
@@ -554,7 +566,7 @@ class ResearchRepository:
         """
         try:
             search_query = """
-                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                SELECT id, tickers, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -564,7 +576,7 @@ class ResearchRepository:
             params = [f"%{query_text}%", f"%{query_text}%", f"%{query_text}%", min_relevance]
             
             if ticker:
-                search_query += " AND ticker = %s"
+                search_query += " AND %s = ANY(tickers)"
                 params.append(ticker)
             
             search_query += " ORDER BY relevance_score DESC, fetched_at DESC LIMIT %s"
@@ -719,7 +731,7 @@ class ResearchRepository:
                 end_date = end_date.replace(tzinfo=timezone.utc)
             
             query = """
-                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                SELECT id, tickers, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -793,7 +805,7 @@ class ResearchRepository:
         """
         try:
             query = """
-                SELECT id, ticker, sector, article_type, title, url, summary, content,
+                SELECT id, tickers, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles

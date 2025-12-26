@@ -157,6 +157,7 @@ def convert_to_display_currency(value: float, from_currency: str, date: Optional
     return value * float(rate)
 
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour - exchange rates are relatively stable
 def fetch_latest_rates_bulk(currencies: List[str], target_currency: str) -> Dict[str, float]:
     """
     Fetch latest exchange rates for a list of currencies to the target currency in one go.

@@ -174,3 +174,19 @@ def extract_source_from_url(url: str) -> str:
         logger.warning(f"Error extracting source from URL {url}: {e}")
         return "unknown"
 
+
+def validate_ticker_in_content(ticker: Optional[str], content: str) -> bool:
+    """Validate that ticker appears in article content.
+    
+    Args:
+        ticker: Ticker symbol to validate
+        content: Full article content to search
+        
+    Returns:
+        True if ticker appears in content (case-insensitive), False otherwise
+    """
+    if not ticker or not content:
+        return False
+    
+    # Case-insensitive search for ticker in content
+    return ticker.upper() in content.upper()

@@ -1536,8 +1536,7 @@ def main():
                         chat_context = st.session_state.chat_context
                         if st.button("💬 Add to Chat", key="add_thesis_to_chat", help="Add investment thesis to AI chat context"):
                             chat_context.add_item(ContextItemType.THESIS, fund=fund_filter)
-                            st.success("Thesis added to chat!")
-                            st.rerun()
+                            st.toast("✅ Thesis added to chat!", icon="💬")
                     with col_btn2:
                         st.write("")  # Spacer
                     
@@ -1940,8 +1939,7 @@ def main():
                 chat_context = st.session_state.chat_context
                 if st.button("💬 Add to Chat", key="add_holdings_to_chat", help="Add current holdings to AI chat context"):
                     chat_context.add_item(ContextItemType.HOLDINGS, fund=fund_filter)
-                    st.success("Holdings added to chat!")
-                    st.rerun()
+                    st.toast("✅ Holdings added to chat!", icon="💬")
             
             # Holdings Info table - Company, Sector, Industry
             # Data is already available from latest_positions view (joins with securities table)
@@ -2099,8 +2097,7 @@ def main():
                 chat_context = st.session_state.chat_context
                 if st.button("💬 Add to Chat", key="add_trades_to_chat", help="Add recent trades to AI chat context"):
                     chat_context.add_item(ContextItemType.TRADES, fund=fund_filter, metadata={'limit': 100})
-                    st.success("Trades added to chat!")
-                    st.rerun()
+                    st.toast("✅ Trades added to chat!", icon="💬")
         else:
             st.info("No recent trades found")
         

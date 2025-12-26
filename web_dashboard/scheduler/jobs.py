@@ -11,7 +11,7 @@ Define all background jobs here. Each job should:
 import logging
 import time
 from datetime import datetime, timezone, timedelta, date, time as dt_time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from decimal import Decimal
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -60,6 +60,34 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True
     }
 }
+
+
+def calculate_relevance_score(
+    tickers: List[str], 
+    sector: Optional[str],
+    owned_tickers: Optional[List[str]] = None
+) -> float:
+    """Calculate relevance score based on tickers and ownership.
+    
+    Args:
+        tickers: List of ticker symbols extracted from article
+        sector: Sector name if available
+        owned_tickers: Optional list of tickers we own (for performance)
+        
+    Returns:
+        Relevance score: 0.8 (owned tickers), 0.7 (opportunities), 0.5 (general)
+    """
+    if not tickers:
+        return 0.5  # General market news
+    
+    # Check if any tickers are owned
+    if owned_tickers:
+        has_owned = any(ticker in owned_tickers for ticker in tickers)
+        if has_owned:
+            return 0.8  # Ticker-specific, owned
+    
+    # Has tickers but none owned = opportunity discovery
+    return 0.7
 
 
 def market_research_job() -> None:
@@ -201,7 +229,7 @@ def market_research_job() -> None:
                 # Generate summary and embedding using Ollama (if available)
                 summary = None
                 summary_data = {}
-                extracted_ticker = None
+                extracted_tickers = []
                 extracted_sector = None
                 embedding = None
                 if ollama_client:
@@ -219,10 +247,17 @@ def market_research_job() -> None:
                         tickers = summary_data.get("tickers", [])
                         sectors = summary_data.get("sectors", [])
                         
-                        # Use first ticker if available
-                        if tickers:
-                            extracted_ticker = tickers[0]
-                            logger.info(f"Extracted ticker from article: {extracted_ticker}")
+                        # Extract all validated tickers
+                        from research_utils import validate_ticker_in_content
+                        for ticker in tickers:
+                            if validate_ticker_in_content(ticker, content):
+                                extracted_tickers.append(ticker)
+                                logger.debug(f"Extracted ticker from article: {ticker} (validated in content)")
+                            else:
+                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                        
+                        if extracted_tickers:
+                            logger.info(f"Extracted {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
                         
                         # Use first sector if available
                         if sectors:
@@ -244,9 +279,12 @@ def market_research_job() -> None:
                 else:
                     logger.debug("Ollama not available - skipping summary and embedding generation")
                 
+                # Calculate relevance score (market_research_job doesn't check owned tickers - always 0.5 for general market news)
+                relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=None)
+                
                 # Save article to database
                 article_id = research_repo.save_article(
-                    ticker=extracted_ticker,  # Use extracted ticker if available
+                    tickers=extracted_tickers if extracted_tickers else None,  # Use extracted tickers if available
                     sector=extracted_sector,  # Use extracted sector if available
                     article_type="market_news",
                     title=extracted.get('title') or title,
@@ -255,7 +293,7 @@ def market_research_job() -> None:
                     content=content,
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
-                    relevance_score=0.5,  # Default relevance for general market news
+                    relevance_score=relevance_score,
                     embedding=embedding
                 )
                 
@@ -578,6 +616,7 @@ def ticker_research_job() -> None:
                         # Summarize and generate embedding
                         summary = None
                         summary_data = {}
+                        extracted_tickers = []
                         extracted_sector = None
                         embedding = None
                         if ollama_client:
@@ -590,24 +629,46 @@ def ticker_research_job() -> None:
                             elif isinstance(summary_data, dict) and summary_data:
                                 summary = summary_data.get("summary", "")
                                 
-                                # Extract sector from structured data
+                                # Extract ticker and sector from structured data
+                                tickers = summary_data.get("tickers", [])
                                 sectors = summary_data.get("sectors", [])
+                                
+                                # Extract all validated tickers
+                                from research_utils import validate_ticker_in_content
+                                for candidate_ticker in tickers:
+                                    if validate_ticker_in_content(candidate_ticker, content):
+                                        extracted_tickers.append(candidate_ticker)
+                                        logger.debug(f"Extracted ticker from article: {candidate_ticker} (validated in content)")
+                                    else:
+                                        logger.warning(f"Extracted ticker {candidate_ticker} not found in article content - likely AI error, skipping")
+                                
+                                if extracted_tickers:
+                                    logger.info(f"Extracted {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
+                                
+                                # Use first sector if available
                                 if sectors:
                                     extracted_sector = sectors[0]
                                     logger.info(f"Extracted sector from article: {extracted_sector}")
                                 
                                 # Log extracted metadata
-                                if sectors or summary_data.get("key_themes"):
-                                    logger.debug(f"Extracted metadata - Sectors: {sectors}, Themes: {summary_data.get('key_themes', [])}")
+                                if tickers or sectors or summary_data.get("key_themes"):
+                                    logger.debug(f"Extracted metadata - Tickers: {tickers}, Sectors: {sectors}, Themes: {summary_data.get('key_themes', [])}")
                             
                             # Generate embedding for semantic search
                             embedding = ollama_client.generate_embedding(content[:6000])  # Truncate to avoid token limits
                             if not embedding:
                                 logger.warning(f"Failed to generate embedding for {ticker}")
                         
-                        # Save
+                        # If AI didn't extract any tickers, use the search ticker (we're searching for it, so it's relevant)
+                        if not extracted_tickers:
+                            extracted_tickers = [ticker]
+                        
+                        # Calculate relevance score (check if any tickers are owned)
+                        relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
+                        
+                        # Save article
                         article_id = research_repo.save_article(
-                            ticker=ticker,
+                            tickers=extracted_tickers,
                             sector=extracted_sector,  # Use extracted sector if available
                             article_type="ticker_news",
                             title=extracted.get('title') or title,
@@ -616,7 +677,7 @@ def ticker_research_job() -> None:
                             content=content,
                             source=extracted.get('source'),
                             published_at=extracted.get('published_at'),
-                            relevance_score=0.8,  # Higher relevance for targeted ticker news
+                            relevance_score=relevance_score,
                             embedding=embedding
                         )
                         
@@ -787,7 +848,7 @@ def opportunity_discovery_job() -> None:
                 # Generate summary and embedding
                 summary = None
                 summary_data = {}
-                extracted_ticker = None
+                extracted_tickers = []
                 extracted_sector = None
                 embedding = None
                 
@@ -803,9 +864,17 @@ def opportunity_discovery_job() -> None:
                         tickers = summary_data.get("tickers", [])
                         sectors = summary_data.get("sectors", [])
                         
-                        if tickers:
-                            extracted_ticker = tickers[0]
-                            logger.info(f"  🎯 Discovered ticker: {extracted_ticker}")
+                        # Extract all validated tickers
+                        from research_utils import validate_ticker_in_content
+                        for ticker in tickers:
+                            if validate_ticker_in_content(ticker, content):
+                                extracted_tickers.append(ticker)
+                                logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
+                            else:
+                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                        
+                        if extracted_tickers:
+                            logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
                         
                         if sectors:
                             extracted_sector = sectors[0]
@@ -813,9 +882,12 @@ def opportunity_discovery_job() -> None:
                     # Generate embedding
                     embedding = ollama_client.generate_embedding(content[:6000])
                 
+                # Calculate relevance score (check if any tickers are owned)
+                relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
+                
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
-                    ticker=extracted_ticker,
+                    tickers=extracted_tickers if extracted_tickers else None,
                     sector=extracted_sector,
                     article_type="opportunity_discovery",  # Special tag
                     title=extracted.get('title') or title,
@@ -824,7 +896,7 @@ def opportunity_discovery_job() -> None:
                     content=content,
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
-                    relevance_score=0.7,  # Moderate-high relevance
+                    relevance_score=relevance_score,
                     embedding=embedding
                 )
                 
@@ -987,7 +1059,7 @@ def opportunity_discovery_job() -> None:
                 # Generate summary and embedding
                 summary = None
                 summary_data = {}
-                extracted_ticker = None
+                extracted_tickers = []
                 extracted_sector = None
                 embedding = None
                 
@@ -1003,9 +1075,17 @@ def opportunity_discovery_job() -> None:
                         tickers = summary_data.get("tickers", [])
                         sectors = summary_data.get("sectors", [])
                         
-                        if tickers:
-                            extracted_ticker = tickers[0]
-                            logger.info(f"  🎯 Discovered ticker: {extracted_ticker}")
+                        # Extract all validated tickers
+                        from research_utils import validate_ticker_in_content
+                        for ticker in tickers:
+                            if validate_ticker_in_content(ticker, content):
+                                extracted_tickers.append(ticker)
+                                logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
+                            else:
+                                logger.warning(f"Extracted ticker {ticker} not found in article content - likely AI error, skipping")
+                        
+                        if extracted_tickers:
+                            logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
                         
                         if sectors:
                             extracted_sector = sectors[0]
@@ -1013,9 +1093,12 @@ def opportunity_discovery_job() -> None:
                     # Generate embedding
                     embedding = ollama_client.generate_embedding(content[:6000])
                 
+                # Calculate relevance score (check if any tickers are owned)
+                relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
+                
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
-                    ticker=extracted_ticker,
+                    tickers=extracted_tickers if extracted_tickers else None,
                     sector=extracted_sector,
                     article_type="opportunity_discovery",  # Special tag
                     title=extracted.get('title') or title,
@@ -1024,7 +1107,7 @@ def opportunity_discovery_job() -> None:
                     content=content,
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
-                    relevance_score=0.7,  # Moderate-high relevance
+                    relevance_score=relevance_score,
                     embedding=embedding
                 )
                 

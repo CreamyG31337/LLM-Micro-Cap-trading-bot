@@ -60,6 +60,11 @@ if 'chat_context' not in st.session_state:
 
 chat_context = st.session_state.chat_context
 
+# Handle clear context pending from Clear Chat button
+if st.session_state.get('clear_context_pending', False):
+    chat_context.clear_all()
+    st.session_state.clear_context_pending = False
+
 # Initialize conversation history
 if 'chat_messages' not in st.session_state:
     st.session_state.chat_messages: List[Dict[str, str]] = []
@@ -133,7 +138,15 @@ with col1:
 with col2:
     if st.button("🔄 Clear Chat", use_container_width=True):
         st.session_state.chat_messages = []
+        st.session_state.suggested_prompt = None
+        # Clear context items will be done after chat_context is initialized
+        if 'clear_context_pending' not in st.session_state:
+            st.session_state.clear_context_pending = True
         st.rerun()
+
+# Initialize suggested_prompt if it doesn't exist
+if 'suggested_prompt' not in st.session_state:
+    st.session_state.suggested_prompt = None
 
 # Check Ollama connection
 ollama_available = check_ollama_health()
@@ -174,6 +187,15 @@ with st.sidebar:
     funds = get_available_funds()
     if funds:
         selected_fund = st.selectbox("Fund", options=funds, help="Select fund for AI analysis", key="fund_selector")
+        
+        # Clear chat when fund changes
+        if 'previous_fund' not in st.session_state:
+            st.session_state.previous_fund = selected_fund
+        elif st.session_state.previous_fund != selected_fund:
+            st.session_state.chat_messages = []
+            st.session_state.suggested_prompt = None
+            st.session_state.previous_fund = selected_fund
+            st.rerun()
     else:
         selected_fund = None
         st.warning("No funds available")
@@ -462,7 +484,8 @@ if searxng_available:
     
     with col1:
         if st.button("📰 Market News Today", use_container_width=True, key="btn_market_news"):
-            st.session_state.pending_query = "What's the latest stock market news today?"
+            st.session_state.suggested_prompt = "What's the latest stock market news today?"
+            st.rerun()
         
         # Research Button
         btn_label = f"🔍 Research{get_ticker_display()}"
@@ -470,13 +493,16 @@ if searxng_available:
             if active_tickers:
                 # Research specific tickers
                 if len(active_tickers) == 1:
-                    st.session_state.pending_query = f"Research {active_tickers[0]} - latest news and analysis"
+                    st.session_state.suggested_prompt = f"Research {active_tickers[0]} - latest news and analysis"
+                    st.rerun()
                 else:
                     tickers_str = ", ".join(active_tickers)
-                    st.session_state.pending_query = f"Research the following stocks: {tickers_str}. Provide latest news for each."
+                    st.session_state.suggested_prompt = f"Research the following stocks: {tickers_str}. Provide latest news for each."
+                    st.rerun()
             else:
                 # Fallback if nothing selected but button clicked (though label is generic)
-                st.session_state.pending_query = "Research stocks - find interesting opportunities"
+                st.session_state.suggested_prompt = "Research stocks - find interesting opportunities"
+                st.rerun()
     
     with col2:
         # Analysis Button
@@ -484,42 +510,51 @@ if searxng_available:
         if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
             if active_tickers:
                 if len(active_tickers) == 1:
-                    st.session_state.pending_query = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
+                    st.session_state.suggested_prompt = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
+                    st.rerun()
                 else:
                     tickers_str = ", ".join(active_tickers)
-                    st.session_state.pending_query = f"Analyze and compare the outlooks for: {tickers_str}"
+                    st.session_state.suggested_prompt = f"Analyze and compare the outlooks for: {tickers_str}"
+                    st.rerun()
             else:
-                 st.session_state.pending_query = "Analyze a stock - provide recent performance and outlook analysis"
+                 st.session_state.suggested_prompt = "Analyze a stock - provide recent performance and outlook analysis"
+                 st.rerun()
         
         # Compare Button - Only active if multiple tickers or generic intent
         disabled_compare = len(active_tickers) == 1 # Disable if exactly 1 is selected (need 2+ or 0 for generic)
         if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
             if len(active_tickers) >= 2:
                 tickers_str = " and ".join(active_tickers)
-                st.session_state.pending_query = f"Compare {tickers_str} stocks. Which is a better investment?"
+                st.session_state.suggested_prompt = f"Compare {tickers_str} stocks. Which is a better investment?"
+                st.rerun()
             else:
-                st.session_state.pending_query = "Compare two stocks - provide a detailed comparison"
+                st.session_state.suggested_prompt = "Compare two stocks - provide a detailed comparison"
+                st.rerun()
     
     with col3:
         if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
-            st.session_state.pending_query = "What's happening in the stock market sectors today?"
+            st.session_state.suggested_prompt = "What's happening in the stock market sectors today?"
+            st.rerun()
         
         # Earnings Button
         btn_label = f"💰 Earnings{get_ticker_display()}"
         if st.button(btn_label, use_container_width=True, key="btn_earnings"):
             if active_tickers:
                 if len(active_tickers) == 1:
-                    st.session_state.pending_query = f"Find recent earnings news for {active_tickers[0]}"
+                    st.session_state.suggested_prompt = f"Find recent earnings news for {active_tickers[0]}"
+                    st.rerun()
                 else:
                     tickers_str = ", ".join(active_tickers)
-                    st.session_state.pending_query = f"Find recent earnings reports for: {tickers_str}"
+                    st.session_state.suggested_prompt = f"Find recent earnings reports for: {tickers_str}"
+                    st.rerun()
             else:
-                st.session_state.pending_query = "Find recent earnings news and announcements"
+                st.session_state.suggested_prompt = "Find recent earnings news and announcements"
+                st.rerun()
     
     st.markdown("---")
 
-# Display conversation history
-for message in st.session_state.chat_messages:
+# Display conversation history (newest first)
+for message in reversed(st.session_state.chat_messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
@@ -600,13 +635,37 @@ def build_context_string() -> str:
 # Start Analysis Workflow vs Standard Chat
 user_query = None
 
-# Check for pending query from example buttons
-if 'pending_query' in st.session_state:
-    user_query = st.session_state.pending_query
-    del st.session_state.pending_query
+# Show editable prompt area if a button was clicked
+if 'suggested_prompt' in st.session_state and st.session_state.suggested_prompt:
+    st.markdown("### ✏️ Edit Your Prompt")
+    st.caption("Review and edit the prompt below, then click Send.")
+    
+    # Editable prompt area
+    editable_prompt = st.text_area(
+        "Prompt",
+        value=st.session_state.suggested_prompt,
+        height=100,
+        help="You can edit this prompt before sending",
+        label_visibility="collapsed",
+        key="editable_prompt_area"
+    )
+    
+    col1, col2, col3 = st.columns([1, 1, 4])
+    with col1:
+        if st.button("📤 Send", type="primary", use_container_width=True, key="send_edited_prompt"):
+            user_query = editable_prompt
+            # Clear the suggested prompt after sending
+            st.session_state.suggested_prompt = None
+            st.rerun()
+    with col2:
+        if st.button("❌ Cancel", use_container_width=True, key="cancel_edited_prompt"):
+            st.session_state.suggested_prompt = None
+            st.rerun()
+    
+    st.markdown("---")
 
 # If no messages yet, show the "Start Analysis" workflow
-if updated_items and not st.session_state.chat_messages and not user_query:
+elif updated_items and not st.session_state.chat_messages:
     st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
     
     with st.container():
@@ -681,37 +740,96 @@ if user_query:
                 try:
                     # Build optimized search query based on intent
                     if research_intent['tickers']:
-                        # Ticker-specific search
-                        ticker = research_intent['tickers'][0]
+                        tickers = research_intent['tickers']
                         
-                        # Lookup company name from database
-                        company_name = get_company_name_from_db(ticker)
+                        # Multi-ticker search: search each ticker individually and combine results
+                        if len(tickers) > 1:
+                            logger.info(f"Multi-ticker search for: {', '.join(tickers)}")
+                            all_results = []
+                            seen_urls = set()
+                            
+                            for ticker in tickers:
+                                # Lookup company name from database
+                                company_name = get_company_name_from_db(ticker)
+                                
+                                # Build query for this specific ticker
+                                ticker_search_query = build_search_query(
+                                    user_query,
+                                    tickers=[ticker],
+                                    company_name=company_name,
+                                    preserve_keywords=True
+                                )
+                                
+                                # Search for this ticker
+                                ticker_search_data = searxng_client.search_news(
+                                    query=ticker_search_query,
+                                    time_range='day',
+                                    max_results=10  # Fewer per ticker since we're combining multiple
+                                )
+                                
+                                # Filter results for relevance to this specific ticker
+                                if ticker_search_data and 'results' in ticker_search_data and ticker_search_data['results']:
+                                    original_count = len(ticker_search_data['results'])
+                                    filtered_results = filter_relevant_results(
+                                        ticker_search_data['results'],
+                                        ticker,
+                                        company_name=company_name,
+                                        min_relevance_score=min_relevance_score
+                                    )
+                                    
+                                    logger.info(f"Ticker {ticker}: Filtered {original_count} to {len(filtered_results)} relevant results")
+                                    
+                                    # Deduplicate by URL and tag with ticker
+                                    for result in filtered_results:
+                                        url = result.get('url', '')
+                                        if url and url not in seen_urls:
+                                            seen_urls.add(url)
+                                            # Tag result with related ticker for context
+                                            result['related_ticker'] = ticker
+                                            all_results.append(result)
+                            
+                            # Combine all results
+                            if all_results:
+                                search_data = {'results': all_results}
+                                tickers_str = ", ".join(tickers)
+                                search_query_used = f"News for {tickers_str}"
+                                logger.info(f"Multi-ticker search: Combined {len(all_results)} unique results from {len(tickers)} tickers")
+                            else:
+                                search_data = None
+                                search_query_used = f"News for {', '.join(tickers)}"
                         
-                        # Build query with ticker, company name, and preserved keywords
-                        search_query_used = build_search_query(
-                            user_query,
-                            tickers=[ticker],
-                            company_name=company_name,
-                            preserve_keywords=True
-                        )
-                        
-                        # Fetch more results for filtering
-                        search_data = searxng_client.search_news(
-                            query=search_query_used,
-                            time_range='day',
-                            max_results=20  # Get more results for filtering
-                        )
-                        
-                        # Filter results for relevance
-                        if search_data and 'results' in search_data and search_data['results']:
-                            original_count = len(search_data['results'])
-                            search_data['results'] = filter_relevant_results(
-                                search_data['results'],
-                                ticker,
+                        # Single-ticker search (existing logic)
+                        else:
+                            ticker = tickers[0]
+                            
+                            # Lookup company name from database
+                            company_name = get_company_name_from_db(ticker)
+                            
+                            # Build query with ticker, company name, and preserved keywords
+                            search_query_used = build_search_query(
+                                user_query,
+                                tickers=[ticker],
                                 company_name=company_name,
-                                min_relevance_score=min_relevance_score
+                                preserve_keywords=True
                             )
-                            logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")
+                            
+                            # Fetch more results for filtering
+                            search_data = searxng_client.search_news(
+                                query=search_query_used,
+                                time_range='day',
+                                max_results=20  # Get more results for filtering
+                            )
+                            
+                            # Filter results for relevance
+                            if search_data and 'results' in search_data and search_data['results']:
+                                original_count = len(search_data['results'])
+                                search_data['results'] = filter_relevant_results(
+                                    search_data['results'],
+                                    ticker,
+                                    company_name=company_name,
+                                    min_relevance_score=min_relevance_score
+                                )
+                                logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")
                     elif research_intent['research_type'] == 'market':
                         # Market news search
                         search_query_used = build_search_query(

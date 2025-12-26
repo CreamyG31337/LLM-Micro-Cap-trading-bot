@@ -660,14 +660,117 @@ try:
         
         st.markdown("---")
         
+        # Cache admin status once (avoid repeated function calls)
+        user_is_admin = is_admin()
+        
+        # Define fragment ONCE outside the loop for admin actions (major performance win)
+        if user_is_admin:
+            @st.fragment
+            def render_admin_actions(article_id: str, article_title: str):
+                """Fragment for admin actions - only this section re-renders on button click"""
+                col_admin1, col_admin2 = st.columns(2)
+                
+                with col_admin1:
+                    if st.button("🔄 Re-Analyze", key=f"reanalyze_{article_id}", type="primary", use_container_width=True):
+                        model = st.session_state.get('reanalysis_model', get_summarizing_model())
+                        with st.spinner(f"Re-analyzing with {model}..."):
+                            success, message = reanalyze_article(article_id, model)
+                            if success:
+                                st.success(f"✅ {message}")
+                                st.session_state.refresh_key += 1
+                            else:
+                                st.error(f"❌ {message}")
+                
+                with col_admin2:
+                    if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
+                        if repo.delete_article(article_id):
+                            st.success(f"✅ Deleted: {article_title}")
+                            st.session_state.refresh_key += 1
+                        else:
+                            st.error("❌ Failed to delete article")
+        
+        # Helper to format article metadata (reduces duplication)
+        def format_article_metadata(article: dict) -> str:
+            """Build metadata HTML string for faster single-render."""
+            parts = []
+            parts.append(f"**Source:** {article.get('source', 'N/A')}")
+            parts.append(f"**Type:** {article.get('article_type', 'N/A')}")
+            
+            tickers = article.get('tickers')
+            if tickers:
+                if isinstance(tickers, list):
+                    parts.append(f"**Tickers:** {', '.join(tickers)}")
+                else:
+                    parts.append(f"**Tickers:** {str(tickers)}")
+            elif article.get('ticker'):
+                parts.append(f"**Ticker:** {article.get('ticker')}")
+            
+            if article.get('sector'):
+                parts.append(f"**Sector:** {article.get('sector')}")
+            
+            return "  \n".join(parts)  # Markdown line breaks
+        
+        def format_article_dates(article: dict) -> str:
+            """Build date metadata HTML string."""
+            parts = []
+            if article.get('published_at'):
+                pub_date = article['published_at']
+                if isinstance(pub_date, str):
+                    pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                pub_date_local = to_local_time(pub_date)
+                parts.append(f"**Published:** {pub_date_local.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if article.get('fetched_at'):
+                fetch_date = article['fetched_at']
+                if isinstance(fetch_date, str):
+                    fetch_date = datetime.fromisoformat(fetch_date.replace('Z', '+00:00'))
+                fetch_date_local = to_local_time(fetch_date)
+                parts.append(f"**Fetched:** {fetch_date_local.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            if article.get('relevance_score'):
+                parts.append(f"**Relevance:** {article['relevance_score']:.2f}")
+            
+            return "  \n".join(parts)
+        
+        def render_article_content(article: dict, show_admin_actions: bool):
+            """Render article content inside expander (shared by admin/non-admin paths)."""
+            col_info1, col_info2 = st.columns(2)
+            
+            with col_info1:
+                st.markdown(format_article_metadata(article))
+            
+            with col_info2:
+                st.markdown(format_article_dates(article))
+            
+            # URL link
+            if article.get('url'):
+                st.link_button("� Open Original Article", article['url'], use_container_width=True)
+            
+            # Admin actions
+            if show_admin_actions:
+                render_admin_actions(article['id'], article.get('title', 'Article'))
+            
+            st.markdown("---")
+            
+            # Summary
+            if article.get('summary'):
+                st.subheader("Summary")
+                st.write(article['summary'])
+            
+            # Content (if available and different from summary)
+            if article.get('content') and article.get('content') != article.get('summary'):
+                with st.expander("📄 Full Content", expanded=False):
+                    st.write(article['content'])
+        
         # Display articles
         for idx, article in enumerate(articles):
             # Build title with embedding badge
             has_embedding = article.get('has_embedding', False)
             embedding_badge = "🧠 " if has_embedding else "⏳ "
+            expander_title = f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}"
             
-            # Checkbox for selection (admin only)
-            if is_admin():
+            if user_is_admin:
+                # Admin view with checkbox
                 col_check, col_expander = st.columns([0.05, 0.95])
                 with col_check:
                     article_id = article['id']
@@ -684,160 +787,13 @@ try:
                         st.session_state.selected_articles.discard(article_id)
                 
                 with col_expander:
-                    # Note: Cannot use key parameter on expanders inside column context (LayoutsMixin limitation)
-                    with st.expander(
-                        f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
-                        expanded=False
-                    ):
-                        col_info1, col_info2 = st.columns(2)
-                
-                        with col_info1:
-                            st.write("**Source:**", article.get('source', 'N/A'))
-                            st.write("**Type:**", article.get('article_type', 'N/A'))
-                            # Handle both old ticker format and new tickers array format
-                            tickers = article.get('tickers')
-                            if tickers:
-                                if isinstance(tickers, list):
-                                    st.write("**Tickers:**", ", ".join(tickers))
-                                else:
-                                    st.write("**Tickers:**", str(tickers))
-                            elif article.get('ticker'):  # Fallback for old format
-                                st.write("**Ticker:**", article.get('ticker'))
-                            if article.get('sector'):
-                                st.write("**Sector:**", article.get('sector'))
-                        
-                        with col_info2:
-                            if article.get('published_at'):
-                                pub_date = article['published_at']
-                                if isinstance(pub_date, str):
-                                    pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
-                                pub_date_local = to_local_time(pub_date)
-                                st.write("**Published:**", pub_date_local.strftime('%Y-%m-%d %H:%M:%S'))
-                            
-                            if article.get('fetched_at'):
-                                fetch_date = article['fetched_at']
-                                if isinstance(fetch_date, str):
-                                    fetch_date = datetime.fromisoformat(fetch_date.replace('Z', '+00:00'))
-                                fetch_date_local = to_local_time(fetch_date)
-                                st.write("**Fetched:**", fetch_date_local.strftime('%Y-%m-%d %H:%M:%S'))
-                            
-                            if article.get('relevance_score'):
-                                st.write("**Relevance:**", f"{article['relevance_score']:.2f}")
-                        
-                        # URL link
-                        if article.get('url'):
-                            st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
-                        
-                        # Admin actions - wrapped in fragment for partial re-render
-                        if is_admin():
-                            # Create a fragment for admin actions to avoid full page refresh
-                            @st.fragment
-                            def render_admin_actions(article_id: str, article_title: str, article_idx: int):
-                                """Fragment for admin actions - only this section re-renders on button click"""
-                                col_admin1, col_admin2 = st.columns(2)
-                                
-                                with col_admin1:
-                                    if st.button("🔄 Re-Analyze", key=f"reanalyze_{article_id}", type="primary", use_container_width=True):
-                                        # Get model from session state (default to current summarizing model if not set)
-                                        model = st.session_state.get('reanalysis_model', get_summarizing_model())
-                                        
-                                        with st.spinner(f"Re-analyzing with {model}..."):
-                                            success, message = reanalyze_article(article_id, model)
-                                            
-                                            if success:
-                                                st.success(f"✅ {message}")
-                                                # Increment refresh key to invalidate article cache on next full page load
-                                                st.session_state.refresh_key += 1
-                                            else:
-                                                st.error(f"❌ {message}")
-                                
-                                with col_admin2:
-                                    if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
-                                        if repo.delete_article(article_id):
-                                            st.success(f"✅ Deleted: {article_title}")
-                                            # Increment refresh key to invalidate article cache
-                                            st.session_state.refresh_key += 1
-                                        else:
-                                            st.error("❌ Failed to delete article")
-                            
-                            # Render the fragment for this article
-                            render_admin_actions(article['id'], article.get('title', 'Article'), idx)
-                        
-                        st.markdown("---")
-                        
-                        # Summary
-                        if article.get('summary'):
-                            st.subheader("Summary")
-                            st.write(article['summary'])
-                        
-                        # Content (if available and different from summary)
-                        if article.get('content') and article.get('content') != article.get('summary'):
-                            with st.expander("📄 Full Content", expanded=False):
-                                st.write(article['content'])
-                        
-                        if idx < len(articles) - 1:
-                            st.markdown("---")
-            
+                    with st.expander(expander_title, expanded=False):
+                        render_article_content(article, show_admin_actions=True)
             else:
                 # Non-admin view - no checkbox column
-                with st.expander(
-                    f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
-                    expanded=False,
-                    key=f"article_expander_{article['id']}"
-                ):
-                    col_info1, col_info2 = st.columns(2)
-            
-                    with col_info1:
-                        st.write("**Source:**", article.get('source', 'N/A'))
-                        st.write("**Type:**", article.get('article_type', 'N/A'))
-                        # Handle both old ticker format and new tickers array format
-                        tickers = article.get('tickers')
-                        if tickers:
-                            if isinstance(tickers, list):
-                                st.write("**Tickers:**", ", ".join(tickers))
-                            else:
-                                st.write("**Tickers:**", str(tickers))
-                        elif article.get('ticker'):  # Fallback for old format
-                            st.write("**Ticker:**", article.get('ticker'))
-                        if article.get('sector'):
-                            st.write("**Sector:**", article.get('sector'))
-                    
-                    with col_info2:
-                        if article.get('published_at'):
-                            pub_date = article['published_at']
-                            if isinstance(pub_date, str):
-                                pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
-                            pub_date_local = to_local_time(pub_date)
-                            st.write("**Published:**", pub_date_local.strftime('%Y-%m-%d %H:%M:%S'))
-                        
-                        if article.get('fetched_at'):
-                            fetch_date = article['fetched_at']
-                            if isinstance(fetch_date, str):
-                                fetch_date = datetime.fromisoformat(fetch_date.replace('Z', '+00:00'))
-                            fetch_date_local = to_local_time(fetch_date)
-                            st.write("**Fetched:**", fetch_date_local.strftime('%Y-%m-%d %H:%M:%S'))
-                        
-                        if article.get('relevance_score'):
-                            st.write("**Relevance:**", f"{article['relevance_score']:.2f}")
-                    
-                    # URL link
-                    if article.get('url'):
-                        st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
-                    
-                    st.markdown("---")
-                    
-                    # Summary
-                    if article.get('summary'):
-                        st.subheader("Summary")
-                        st.write(article['summary'])
-                    
-                    # Content (if available and different from summary)
-                    if article.get('content') and article.get('content') != article.get('summary'):
-                        with st.expander("📄 Full Content", expanded=False, key=f"content_expander_{article['id']}"):
-                            st.write(article['content'])
-                    
-                    if idx < len(articles) - 1:
-                        st.markdown("---")
+                with st.expander(expander_title, expanded=False, key=f"article_expander_{article['id']}"):
+                    render_article_content(article, show_admin_actions=False)
+
 
 
 except Exception as e:

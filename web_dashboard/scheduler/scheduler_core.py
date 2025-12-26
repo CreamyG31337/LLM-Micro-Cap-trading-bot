@@ -6,7 +6,7 @@ Provides the background scheduler instance and management functions.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from typing import Dict, List, Optional, Any
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -115,9 +115,141 @@ def log_job_execution(job_id: str, success: bool, message: str, duration_ms: int
         _job_logs[job_id] = _job_logs[job_id][:MAX_LOG_ENTRIES]
 
 
+def _map_job_id_to_job_name(job_id: str) -> str:
+    """Map scheduler job ID to job_executions.job_name.
+    
+    Some scheduler job IDs have variants (e.g., 'update_portfolio_prices_close')
+    that map to the same job_name in the database.
+    
+    Args:
+        job_id: The scheduler job ID
+        
+    Returns:
+        The job_name to use in job_executions table
+    """
+    # Handle special cases for job variants
+    if job_id == 'update_portfolio_prices_close':
+        return 'update_portfolio_prices'
+    elif job_id.startswith('market_research_'):
+        return 'market_research'
+    elif job_id == 'ticker_research_job':
+        return 'ticker_research'
+    elif job_id == 'opportunity_discovery_job':
+        return 'opportunity_discovery'
+    # Default: use job_id as-is
+    return job_id
+
+
 def get_job_logs(job_id: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Get recent execution logs for a job."""
-    return _job_logs.get(job_id, [])[:limit]
+    """Get recent execution logs for a job.
+    
+    Reads from both:
+    1. Database job_executions table (persistent, survives restarts)
+    2. In-memory _job_logs (recent executions in current session)
+    
+    Args:
+        job_id: The scheduler job ID
+        limit: Maximum number of logs to return
+        
+    Returns:
+        List of log entries with keys: timestamp, success, message, duration_ms
+    """
+    job_name = _map_job_id_to_job_name(job_id)
+    logs: List[Dict[str, Any]] = []
+    
+    # First, try to read from database (persistent)
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        # Get recent successful/failed executions from database
+        # Use completed_at for ordering (most recent first)
+        result = client.supabase.table("job_executions")\
+            .select("*")\
+            .eq("job_name", job_name)\
+            .in_("status", ["success", "failed"])\
+            .order("completed_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        if result.data:
+            for record in result.data:
+                # Convert database record to log format
+                completed_at = record.get('completed_at')
+                if completed_at:
+                    try:
+                        # Parse timestamp string to datetime
+                        if isinstance(completed_at, str):
+                            # Handle ISO format strings
+                            timestamp = datetime.fromisoformat(completed_at.replace('Z', '+00:00'))
+                        else:
+                            timestamp = completed_at
+                    except Exception:
+                        # Fallback to current time if parsing fails
+                        timestamp = datetime.now(timezone.utc)
+                else:
+                    timestamp = datetime.now(timezone.utc)
+                
+                status = record.get('status', 'failed')
+                success = (status == 'success')
+                
+                # Build message from error_message or funds_processed
+                message = record.get('error_message', '')
+                if not message and record.get('funds_processed'):
+                    funds = record.get('funds_processed', [])
+                    if isinstance(funds, list) and funds:
+                        message = f"Processed {len(funds)} fund(s)"
+                    else:
+                        message = "Completed successfully"
+                elif not message:
+                    message = "Completed successfully" if success else "Job failed"
+                
+                # Calculate duration if we have both timestamps
+                duration_ms = 0
+                started_at = record.get('started_at')
+                if started_at and completed_at:
+                    try:
+                        if isinstance(started_at, str):
+                            start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                        else:
+                            start_dt = started_at
+                        if isinstance(completed_at, str):
+                            end_dt = datetime.fromisoformat(completed_at.replace('Z', '+00:00'))
+                        else:
+                            end_dt = completed_at
+                        duration_ms = int((end_dt - start_dt).total_seconds() * 1000)
+                    except Exception:
+                        pass
+                
+                logs.append({
+                    'timestamp': timestamp,
+                    'success': success,
+                    'message': message,
+                    'duration_ms': duration_ms
+                })
+    except Exception as e:
+        logger.warning(f"Failed to read job logs from database for {job_id}: {e}")
+    
+    # Also include in-memory logs (for very recent executions not yet in DB)
+    # Merge and deduplicate by timestamp
+    in_memory_logs = _job_logs.get(job_id, [])
+    for mem_log in in_memory_logs:
+        # Check if we already have this log from database
+        mem_ts = mem_log.get('timestamp')
+        if mem_ts:
+            # Check if timestamp is close to any existing log (within 1 second)
+            is_duplicate = False
+            for existing_log in logs:
+                existing_ts = existing_log.get('timestamp')
+                if existing_ts and abs((mem_ts - existing_ts).total_seconds()) < 1:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                logs.append(mem_log)
+    
+    # Sort by timestamp (most recent first) and limit
+    logs.sort(key=lambda x: x.get('timestamp', datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+    return logs[:limit]
 
 
 def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:

@@ -126,9 +126,16 @@ def benchmark_refresh_job() -> None:
     """
     job_id = 'benchmark_refresh'
     start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting benchmark refresh job...")
+        
+        # Mark job as started in database
+        mark_job_started('benchmark_refresh', target_date)
         
         # Import dependencies
         try:
@@ -207,12 +214,17 @@ def benchmark_refresh_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Updated {benchmarks_updated} benchmarks ({total_rows_cached} rows), {benchmarks_failed} failed"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('benchmark_refresh', target_date, None, [])
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('benchmark_refresh', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Benchmark refresh job failed: {e}", exc_info=True)
 
 
@@ -255,9 +267,16 @@ def market_research_job() -> None:
     """
     job_id = 'market_research'
     start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting market research job...")
+        
+        # Mark job as started in database
+        mark_job_started('market_research', target_date)
         
         # Import dependencies (lazy imports to avoid circular dependencies)
         try:
@@ -471,12 +490,17 @@ def market_research_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('market_research', target_date, None, [])
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('market_research', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Market research job failed: {e}", exc_info=True)
 
 
@@ -490,9 +514,16 @@ def ticker_research_job() -> None:
     """
     job_id = 'ticker_research'
     start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting ticker research job...")
+        
+        # Mark job as started in database
+        mark_job_started('ticker_research', target_date)
         
         # Import dependencies (lazy imports)
         try:
@@ -871,12 +902,17 @@ def ticker_research_job() -> None:
         message_parts.append(f"Saved {articles_saved} new articles")
         message = ". ".join(message_parts) + "."
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('ticker_research', target_date, None, [])
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('ticker_research', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Ticker research job failed: {e}", exc_info=True)
 
 
@@ -890,9 +926,16 @@ def opportunity_discovery_job() -> None:
     """
     job_id = 'opportunity_discovery'
     start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting opportunity discovery job...")
+        
+        # Mark job as started in database
+        mark_job_started('opportunity_discovery', target_date)
         
         # Import dependencies
         try:
@@ -1085,12 +1128,17 @@ def opportunity_discovery_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('opportunity_discovery', target_date, None, [])
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('opportunity_discovery', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
 
 
@@ -1301,12 +1349,17 @@ def opportunity_discovery_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('opportunity_discovery', target_date, None, [])
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('opportunity_discovery', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
 
 
@@ -1320,9 +1373,16 @@ def refresh_exchange_rates_job() -> None:
     """
     job_id = 'exchange_rates'
     start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting exchange rates refresh job...")
+        
+        # Mark job as started in database
+        mark_job_started('exchange_rates', target_date)
         
         # Import here to avoid circular imports
         from exchange_rates_utils import reload_exchange_rate_for_date
@@ -1335,17 +1395,24 @@ def refresh_exchange_rates_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Updated USD/CAD rate: {rate}"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed('exchange_rates', target_date, None, [])
             logger.info(f"✅ {message}")
         else:
             duration_ms = int((time.time() - start_time) * 1000)
             message = "Failed to fetch exchange rate from API"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            mark_job_failed('exchange_rates', target_date, None, message)
             logger.warning(f"⚠️ {message}")
             
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            from utils.job_tracking import mark_job_failed
+            mark_job_failed('exchange_rates', target_date, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Exchange rates job failed: {e}")
 
 
@@ -1359,6 +1426,9 @@ def populate_performance_metrics_job() -> None:
     start_time = time.time()
     
     try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
         logger.info("Starting performance metrics population job...")
         
         # Import here to avoid circular imports
@@ -1371,6 +1441,9 @@ def populate_performance_metrics_job() -> None:
         
         # Process yesterday's data (today's data may still be updating)
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        
+        # Mark job as started in database
+        mark_job_started('performance_metrics', yesterday)
         
         # Get all funds that have data for yesterday
         positions_result = client.supabase.table("portfolio_positions")\
@@ -1461,12 +1534,19 @@ def populate_performance_metrics_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Populated {rows_inserted} fund(s) for {yesterday}"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('performance_metrics', yesterday, None, list(fund_totals.keys()))
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            from utils.job_tracking import mark_job_failed
+            yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+            mark_job_failed('performance_metrics', yesterday, None, message)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.error(f"❌ Performance metrics job failed: {e}")
 
 

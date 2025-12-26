@@ -577,54 +577,53 @@ with st.sidebar:
             st.rerun()
 
 # Main chat area
-st.markdown("### 💬 Chat")
+# Main Layout
+main_col, right_col = st.columns([7, 3])
 
-# Example query buttons section
-if searxng_available:
-    st.markdown("#### 🔍 Quick Research")
-    st.caption("Select tickers and click a button to start analysis.")
-    
-    # Get portfolio tickers for ticker-specific queries (cached)
-    portfolio_tickers_list = []
-    if selected_fund:
-        portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
-    
-    # Unified Ticker Selection
-    col_sel1, col_sel2 = st.columns([2, 1])
-    with col_sel1:
-        selected_tickers = st.multiselect(
-            "Select Tickers:",
-            options=portfolio_tickers_list,
-            placeholder="Select tickers for analysis...",
-            key="multi_select_tickers",
-            label_visibility="collapsed"
-        )
-    with col_sel2:
-        custom_ticker = st.text_input(
-            "Custom Ticker",
-            placeholder="e.g. NVDA",
-            label_visibility="collapsed",
-            key="custom_ticker_input"
-        ).strip().upper()
-    
-    # Combine selections
-    active_tickers = list(selected_tickers)
-    if custom_ticker and custom_ticker not in active_tickers:
-        active_tickers.append(custom_ticker)
+# Right Column: Quick Research Tools
+with right_col:
+    if searxng_available:
+        st.markdown("#### 🔍 Quick Research")
+        st.caption("Select tickers to analyze")
         
-    # Helper to get display name for buttons
-    def get_ticker_display():
-        if not active_tickers:
-            return ""
-        if len(active_tickers) == 1:
-            return f" {active_tickers[0]}"
-        return f" ({len(active_tickers)})"
+        # Get portfolio tickers for ticker-specific queries (cached)
+        portfolio_tickers_list = []
+        if selected_fund:
+            portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
+        
+        # Unified Ticker Selection
+        col_sel1, col_sel2 = st.columns([2, 1])
+        with col_sel1:
+            selected_tickers = st.multiselect(
+                "Select Tickers:",
+                options=portfolio_tickers_list,
+                placeholder="Tickers...",
+                key="multi_select_tickers",
+                label_visibility="collapsed"
+            )
+        with col_sel2:
+            custom_ticker = st.text_input(
+                "Custom",
+                placeholder="NVDA",
+                label_visibility="collapsed",
+                key="custom_ticker_input"
+            ).strip().upper()
+        
+        # Combine selections
+        active_tickers = list(selected_tickers)
+        if custom_ticker and custom_ticker not in active_tickers:
+            active_tickers.append(custom_ticker)
+            
+        # Helper to get display name for buttons
+        def get_ticker_display():
+            if not active_tickers:
+                return ""
+            if len(active_tickers) == 1:
+                return f" {active_tickers[0]}"
+            return f" ({len(active_tickers)})"
 
-    # Create columns for example query buttons
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📰 Market News Today", use_container_width=True, key="btn_market_news"):
+        # Buttons (Stacked for Sidebar Feel)
+        if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
             st.session_state.suggested_prompt = "What's the latest stock market news today?"
             st.rerun()
         
@@ -632,7 +631,6 @@ if searxng_available:
         btn_label = f"🔍 Research{get_ticker_display()}"
         if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
             if active_tickers:
-                # Research specific tickers
                 if len(active_tickers) == 1:
                     st.session_state.suggested_prompt = f"Research {active_tickers[0]} - latest news and analysis"
                     st.rerun()
@@ -641,11 +639,9 @@ if searxng_available:
                     st.session_state.suggested_prompt = f"Research the following stocks: {tickers_str}. Provide latest news for each."
                     st.rerun()
             else:
-                # Fallback if nothing selected but button clicked (though label is generic)
                 st.session_state.suggested_prompt = "Research stocks - find interesting opportunities"
                 st.rerun()
-    
-    with col2:
+        
         # Analysis Button
         btn_label = f"📊 Analysis{get_ticker_display()}"
         if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
@@ -661,8 +657,8 @@ if searxng_available:
                  st.session_state.suggested_prompt = "Analyze a stock - provide recent performance and outlook analysis"
                  st.rerun()
         
-        # Compare Button - Only active if multiple tickers or generic intent
-        disabled_compare = len(active_tickers) == 1 # Disable if exactly 1 is selected (need 2+ or 0 for generic)
+        # Compare Button
+        disabled_compare = len(active_tickers) == 1
         if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
             if len(active_tickers) >= 2:
                 tickers_str = " and ".join(active_tickers)
@@ -671,8 +667,7 @@ if searxng_available:
             else:
                 st.session_state.suggested_prompt = "Compare two stocks - provide a detailed comparison"
                 st.rerun()
-    
-    with col3:
+
         if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
             st.session_state.suggested_prompt = "What's happening in the stock market sectors today?"
             st.rerun()
@@ -691,144 +686,88 @@ if searxng_available:
             else:
                 st.session_state.suggested_prompt = "Find recent earnings news and announcements"
                 st.rerun()
-    
-    st.markdown("---")
 
-# Display conversation history (newest first)
-for message in reversed(st.session_state.chat_messages):
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Left Column: Chat
+with main_col:
+    st.markdown("### 💬 Chat")
+    
+    # Start Analysis Workflow vs Standard Chat
+    user_query = None
 
-# Generate context data from selected items
-def build_context_string_internal() -> str:
-    """Build formatted context string from selected items."""
-    items = chat_context.get_items()
-    if not items:
-        return ""
-    
-    context_parts = []
-    
-    for item in items:
-        fund = item.fund or selected_fund
-        
-        try:
-            if item.item_type == ContextItemType.HOLDINGS:
-                positions_df = get_current_positions(fund)
-                # Get trades_df for opened date lookup
-                trades_df_for_holdings = get_trade_log(limit=1000, fund=fund) if fund else None
-                # Get toggle values from sidebar (use session state or default to True)
-                include_pv = st.session_state.get('toggle_price_volume', True)
-                include_fund = st.session_state.get('toggle_fundamentals', True)
-                context_parts.append(
-                    format_holdings(
-                        positions_df, 
-                        fund or "Unknown",
-                        trades_df=trades_df_for_holdings,
-                        include_price_volume=include_pv,
-                        include_fundamentals=include_fund
-                    )
-                )
-            
-            elif item.item_type == ContextItemType.THESIS:
-                thesis_data = get_fund_thesis_data(fund or "")
-                if thesis_data:
-                    context_parts.append(format_thesis(thesis_data))
-            
-            elif item.item_type == ContextItemType.TRADES:
-                limit = item.metadata.get('limit', 100)
-                trades_df = get_trade_log(limit=limit, fund=fund)
-                context_parts.append(format_trades(trades_df, limit))
-            
-            elif item.item_type == ContextItemType.METRICS:
-                portfolio_df = calculate_portfolio_value_over_time(fund, days=365) if fund else None
-                metrics = calculate_performance_metrics(fund) if fund else {}
-                context_parts.append(format_performance_metrics(metrics, portfolio_df))
-            
-            elif item.item_type == ContextItemType.CASH_BALANCES:
-                cash = get_cash_balances(fund) if fund else {}
-                context_parts.append(format_cash_balances(cash))
-            
-            elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
-                allocations_df = get_investor_allocations(fund) if fund else pd.DataFrame()
-                # Convert DataFrame to dict format for formatter
-                if not allocations_df.empty:
-                    allocations_dict = {}
-                    for _, row in allocations_df.iterrows():
-                        allocations_dict[row['contributor_display']] = {
-                            'value': row['net_contribution'],
-                            'percentage': row['ownership_pct']
-                        }
-                    context_parts.append(format_investor_allocations(allocations_dict))
-                else:
-                    context_parts.append(format_investor_allocations({}))
-            
-            elif item.item_type == ContextItemType.SEARCH_RESULTS:
-                # Search results are added dynamically when user queries
-                # This is handled in the query processing section
-                pass
-            
-        except Exception as e:
-            st.warning(f"Error loading {item.item_type.value}: {e}")
-            continue
-    
-    return "\n\n---\n\n".join(context_parts)
-
-# Start Analysis Workflow vs Standard Chat
-user_query = None
-
-# Show editable prompt area if a button was clicked
-if 'suggested_prompt' in st.session_state and st.session_state.suggested_prompt:
-    st.markdown("### ✏️ Edit Your Prompt")
-    st.caption("Review and edit the prompt below, then click Send.")
-    
-    # Editable prompt area
-    editable_prompt = st.text_area(
-        "Prompt",
-        value=st.session_state.suggested_prompt,
-        height=100,
-        help="You can edit this prompt before sending",
-        label_visibility="collapsed",
-        key="editable_prompt_area"
-    )
-    
-    col1, col2, col3 = st.columns([1, 1, 4])
-    with col1:
-        if st.button("📤 Send", type="primary", use_container_width=True, key="send_edited_prompt"):
-            user_query = editable_prompt
-            # Clear the suggested prompt after sending
-            st.session_state.suggested_prompt = None
-            st.rerun()
-    with col2:
-        if st.button("❌ Cancel", use_container_width=True, key="cancel_edited_prompt"):
-            st.session_state.suggested_prompt = None
-            st.rerun()
-    
-    st.markdown("---")
-
-# If no messages yet, show the "Start Analysis" workflow
-elif updated_items and not st.session_state.chat_messages:
-    st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
-    
-    with st.container():
-        st.markdown("### 🚀 Start Analysis")
-        st.caption("Review and edit the prompt below, then click Run to start.")
-        
-        # Generate default prompt
-        default_prompt = chat_context.generate_prompt()
+    # Show editable prompt area if a button was clicked
+    if 'suggested_prompt' in st.session_state and st.session_state.suggested_prompt:
+        st.markdown("### ✏️ Edit Your Prompt")
+        st.caption("Review and edit the prompt below, then click Send.")
         
         # Editable prompt area
-        initial_query = st.text_area(
-            "Analysis Prompt",
-            value=default_prompt,
-            height=150,
+        editable_prompt = st.text_area(
+            "Prompt",
+            value=st.session_state.suggested_prompt,
+            height=100,
             help="You can edit this prompt before sending",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="editable_prompt_area"
         )
         
-        col1, col2 = st.columns([1, 4])
+        col1, col2, col3 = st.columns([1, 1, 4])
         with col1:
-            if st.button("▶️ Run Analysis", type="primary", use_container_width=True):
-                user_query = initial_query
+            if st.button("📤 Send", type="primary", use_container_width=True, key="send_edited_prompt"):
+                user_query = editable_prompt
+                # Clear the suggested prompt after sending
+                st.session_state.suggested_prompt = None
+                st.rerun()
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True, key="cancel_edited_prompt"):
+                st.session_state.suggested_prompt = None
+                st.rerun()
+        
+        st.markdown("---")
+
+    # Display conversation history (newest first)
+    # Display conversation history (newest first)
+    for message in reversed(st.session_state.chat_messages):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Retry Button Logic (Only if last message was from assistant)
+    if st.session_state.chat_messages and st.session_state.chat_messages[-1]['role'] == 'assistant':
+        if st.button("🔄 Retry Last Response"):
+            # Remove last assistant message
+            st.session_state.chat_messages.pop()
+            # Get the previous user message to re-run
+            if st.session_state.chat_messages and st.session_state.chat_messages[-1]['role'] == 'user':
+                last_user_msg = st.session_state.chat_messages[-1]
+                user_query = last_user_msg['content']
+                # We don't pop the user message, we just re-run with it.
+                # BUT: the logic below appends user_query to history if user_query is set.
+                # So we MUST pop the user message too, otherwise it will be duplicated.
+                st.session_state.chat_messages.pop()
+                st.rerun()
+
+    # If no messages yet and no suggested prompt active, show the "Start Analysis" workflow
+    if updated_items and not st.session_state.chat_messages and not st.session_state.get('suggested_prompt'):
+        st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
+        
+        with st.container():
+            st.markdown("### 🚀 Start Analysis")
+            st.caption("Review and edit the prompt below, then click Run to start.")
+            
+            # Generate default prompt
+            default_prompt = chat_context.generate_prompt()
+            
+            # Editable prompt area
+            initial_query = st.text_area(
+                "Analysis Prompt",
+                value=default_prompt,
+                height=150,
+                help="You can edit this prompt before sending",
+                label_visibility="collapsed"
+            )
+            
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("▶️ Run Analysis", type="primary", use_container_width=True):
+                    user_query = initial_query
 
 # Standard chat input (always available)
 chat_input_query = st.chat_input("Ask about your portfolio...")
@@ -1144,25 +1083,34 @@ if user_query:
     )
     
     # Get AI response
+    # Get AI response
     with st.chat_message("assistant"):
-        # Show thinking indicator with status
-        status_container = st.status("🤔 Analyzing your request...", expanded=True)
-        with status_container:
-            st.write("📊 Loading context data...")
-            st.write("🔍 Processing search results...")
-            st.write("🧠 Generating response...")
+        # Show visible status indicators (non-collapsible)
+        status_placeholder = st.empty()
+        status_placeholder.markdown("🤔 **Analyzing your request...**")
+        
+        # Emulate processing steps (since we can't context manager st.empty)
+        # We'll update the placeholder as we go
+        status_placeholder.markdown("📊 **Loading context data...**")
         
         message_placeholder = st.empty()
         full_response = ""
         
         try:
+            status_placeholder.markdown("🔍 **Processing search results...**")
+            
             client = get_ollama_client()
             if not client:
                 st.error("AI client not available")
                 st.stop()
             
-            # Update status to complete
-            status_container.update(label="✅ Analysis complete", state="complete", expanded=False)
+            status_placeholder.markdown("🧠 **Generating response...**")
+            
+            # Clear status before showing response or keep it? 
+            # Usually better to clear it or replace with "Done" if it was taking space.
+            # But the user wants "visible right away".
+            # We'll clear it just before streaming starts so it doesn't clutter.
+            status_placeholder.empty()
             
             # Stream response
             # Pass None for temperature and max_tokens to let the client handle model-specific defaults

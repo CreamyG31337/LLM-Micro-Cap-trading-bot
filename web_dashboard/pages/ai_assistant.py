@@ -50,7 +50,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for right sidebar styling
+# Custom CSS for right sidebar and chat container styling
 st.markdown("""
 <style>
     /* Right sidebar container - make it sticky */
@@ -63,10 +63,42 @@ st.markdown("""
         border-left: 2px solid rgba(128, 128, 128, 0.2);
     }
     
+    /* Chat container - scrollable with fixed height */
+    .chat-container {
+        height: calc(100vh - 250px);
+        overflow-y: auto;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 0.5rem;
+    }
+    
+    /* Auto-scroll to bottom behavior */
+    .chat-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .chat-container::-webkit-scrollbar-track {
+        background: rgba(128, 128, 128, 0.1);
+        border-radius: 4px;
+    }
+    
+    .chat-container::-webkit-scrollbar-thumb {
+        background: rgba(128, 128, 128, 0.3);
+        border-radius: 4px;
+    }
+    
+    .chat-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(128, 128, 128, 0.5);
+    }
+    
     /* Dark mode support */
     @media (prefers-color-scheme: dark) {
         .quick-research-sidebar {
             border-left-color: rgba(128, 128, 128, 0.3);
+        }
+        .chat-container {
+            border-color: rgba(128, 128, 128, 0.3);
         }
     }
     
@@ -79,8 +111,32 @@ st.markdown("""
             padding-left: 0;
             padding-top: 1rem;
         }
+        .chat-container {
+            height: 60vh;
+        }
     }
 </style>
+
+<script>
+    // Auto-scroll chat container to bottom on load
+    function scrollChatToBottom() {
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    }
+    
+    // Run on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scrollChatToBottom);
+    } else {
+        scrollChatToBottom();
+    }
+    
+    // Also run after a short delay to catch dynamic content
+    setTimeout(scrollChatToBottom, 100);
+    setTimeout(scrollChatToBottom, 500);
+</script>
 """, unsafe_allow_html=True)
 
 # Check authentication
@@ -773,26 +829,30 @@ with main_col:
         
         st.markdown("---")
 
-    # Display conversation history (newest first)
-    # Display conversation history (newest first)
-    for message in reversed(st.session_state.chat_messages):
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Retry Button Logic (Only if last message was from assistant)
-    if st.session_state.chat_messages and st.session_state.chat_messages[-1]['role'] == 'assistant':
-        if st.button("🔄 Retry Last Response"):
-            # Remove last assistant message
-            st.session_state.chat_messages.pop()
-            # Get the previous user message to re-run
-            if st.session_state.chat_messages and st.session_state.chat_messages[-1]['role'] == 'user':
-                last_user_msg = st.session_state.chat_messages[-1]
-                user_query = last_user_msg['content']
-                # We don't pop the user message, we just re-run with it.
-                # BUT: the logic below appends user_query to history if user_query is set.
-                # So we MUST pop the user message too, otherwise it will be duplicated.
+    # Display conversation history in scrollable container (chronological order)
+    if st.session_state.chat_messages:
+        # Create scrollable chat container
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        
+        # Display messages in chronological order (oldest first)
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Retry Button Logic (Only if last message was from assistant)
+        if st.session_state.chat_messages[-1]['role'] == 'assistant':
+            if st.button("🔄 Retry Last Response"):
+                # Remove last assistant message
                 st.session_state.chat_messages.pop()
-                st.rerun()
+                # Get the previous user message to re-run
+                if st.session_state.chat_messages and st.session_state.chat_messages[-1]['role'] == 'user':
+                    last_user_msg = st.session_state.chat_messages[-1]
+                    user_query = last_user_msg['content']
+                    # Pop the user message too, since the logic below will append it again
+                    st.session_state.chat_messages.pop()
+                    # Don't call st.rerun() here - let the query be processed below
 
     # If no messages yet and no suggested prompt active, show the "Start Analysis" workflow
     if updated_items and not st.session_state.chat_messages and not st.session_state.get('suggested_prompt'):

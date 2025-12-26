@@ -484,6 +484,37 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
     """
     query_lower = query.lower()
     
+    # Check if query references existing context (don't search for these)
+    context_reference_phrases = [
+        'provided above',
+        'based on the',
+        'in the portfolio',
+        'current holdings',
+        'these holdings',
+        'this portfolio',
+        'from the data',
+        'given the',
+        'according to',
+        'as shown',
+        'in my portfolio',
+        'my holdings',
+        'the portfolio',
+        'the holdings'
+    ]
+    
+    # If query clearly references existing context, don't trigger search
+    if any(phrase in query_lower for phrase in context_reference_phrases):
+        return {
+            'needs_search': False,
+            'research_type': 'none',
+            'tickers': [],
+            'keywords': {
+                'research': [],
+                'market': [],
+                'time': []
+            }
+        }
+    
     # Extract tickers
     tickers = extract_tickers_from_query(query)
     

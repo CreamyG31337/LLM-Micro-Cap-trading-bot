@@ -291,7 +291,7 @@ def filter_relevant_results(
     ticker: str,
     company_name: Optional[str] = None,
     min_relevance_score: float = 0.3
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Filter search results to only include those relevant to the ticker.
     
     Args:
@@ -301,10 +301,19 @@ def filter_relevant_results(
         min_relevance_score: Minimum relevance score (0-1) to include result
         
     Returns:
-        Filtered list of relevant results, sorted by relevance score
+        Dictionary with:
+        - 'relevant': List of relevant results (sorted by relevance score)
+        - 'filtered_out': List of filtered-out results with scores
+        - 'filtered_count': Number of filtered-out results
+        - 'relevant_count': Number of relevant results
     """
     if not results:
-        return []
+        return {
+            'relevant': [],
+            'filtered_out': [],
+            'filtered_count': 0,
+            'relevant_count': 0
+        }
     
     base_ticker = ticker.split('.')[0].upper()
     ticker_upper = ticker.upper()
@@ -321,6 +330,7 @@ def filter_relevant_results(
             company_keywords.extend(words)
             
     relevant_results = []
+    filtered_out_results = []
     
     for result in results:
         title = result.get('title', '').upper()
@@ -351,15 +361,26 @@ def filter_relevant_results(
         elif base_ticker in url:
             relevance_score = 0.4
         
-        # Only include if meets minimum relevance threshold
+        # Always add the relevance score to the result
+        result['relevance_score'] = relevance_score
+        
+        # Categorize as relevant or filtered out
         if relevance_score >= min_relevance_score:
-            result['relevance_score'] = relevance_score
             relevant_results.append(result)
+        else:
+            filtered_out_results.append(result)
     
     # Sort by relevance score descending
     relevant_results.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+    filtered_out_results.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
     
-    return relevant_results
+    return {
+        'relevant': relevant_results,
+        'filtered_out': filtered_out_results,
+        'filtered_count': len(filtered_out_results),
+        'relevant_count': len(relevant_results)
+    }
+
 
 
 def format_ticker_news_results(ticker_results: Dict[str, Dict[str, Any]]) -> str:

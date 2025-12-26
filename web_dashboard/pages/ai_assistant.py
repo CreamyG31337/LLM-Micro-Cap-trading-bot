@@ -50,6 +50,39 @@ st.set_page_config(
     layout="wide"
 )
 
+# Custom CSS for right sidebar styling
+st.markdown("""
+<style>
+    /* Right sidebar container - make it sticky */
+    .quick-research-sidebar {
+        position: sticky;
+        top: 3.5rem;
+        max-height: calc(100vh - 4rem);
+        overflow-y: auto;
+        padding-left: 1rem;
+        border-left: 2px solid rgba(128, 128, 128, 0.2);
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .quick-research-sidebar {
+            border-left-color: rgba(128, 128, 128, 0.3);
+        }
+    }
+    
+    /* Improve scrolling on mobile */
+    @media (max-width: 768px) {
+        .quick-research-sidebar {
+            position: relative;
+            border-left: none;
+            border-top: 2px solid rgba(128, 128, 128, 0.2);
+            padding-left: 0;
+            padding-top: 1rem;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Check authentication
 if not is_authenticated():
     st.switch_page("streamlit_app.py")
@@ -576,116 +609,126 @@ with st.sidebar:
             chat_context.clear_all()
             st.rerun()
 
-# Main chat area
-# Main Layout
+# Main layout: Left column for chat, right column for quick research
 main_col, right_col = st.columns([7, 3])
 
-# Right Column: Quick Research Tools
+# Right Column: Quick Research Tools (styled as sidebar)
 with right_col:
-    if searxng_available:
-        st.markdown("#### 🔍 Quick Research")
-        st.caption("Select tickers to analyze")
+    # Wrap everything in a container with the CSS class
+    with st.container():
+        st.markdown('<div class="quick-research-sidebar">', unsafe_allow_html=True)
         
-        # Get portfolio tickers for ticker-specific queries (cached)
-        portfolio_tickers_list = []
-        if selected_fund:
-            portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
-        
-        # Unified Ticker Selection
-        col_sel1, col_sel2 = st.columns([2, 1])
-        with col_sel1:
-            selected_tickers = st.multiselect(
-                "Select Tickers:",
-                options=portfolio_tickers_list,
-                placeholder="Tickers...",
-                key="multi_select_tickers",
-                label_visibility="collapsed"
-            )
-        with col_sel2:
-            custom_ticker = st.text_input(
-                "Custom",
-                placeholder="NVDA",
-                label_visibility="collapsed",
-                key="custom_ticker_input"
-            ).strip().upper()
-        
-        # Combine selections
-        active_tickers = list(selected_tickers)
-        if custom_ticker and custom_ticker not in active_tickers:
-            active_tickers.append(custom_ticker)
+        if searxng_available:
+            st.markdown("#### 🔍 Quick Research")
+            st.caption("Select tickers to analyze")
             
-        # Helper to get display name for buttons
-        def get_ticker_display():
-            if not active_tickers:
-                return ""
-            if len(active_tickers) == 1:
-                return f" {active_tickers[0]}"
-            return f" ({len(active_tickers)})"
+            # Get portfolio tickers for ticker-specific queries (cached)
+            portfolio_tickers_list = []
+            if selected_fund:
+                portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
+            
+            # Unified Ticker Selection
+            col_sel1, col_sel2 = st.columns([2, 1])
+            with col_sel1:
+                selected_tickers = st.multiselect(
+                    "Select Tickers:",
+                    options=portfolio_tickers_list,
+                    placeholder="Tickers...",
+                    key="multi_select_tickers",
+                    label_visibility="collapsed"
+                )
+            with col_sel2:
+                custom_ticker = st.text_input(
+                    "Custom",
+                    placeholder="NVDA",
+                    label_visibility="collapsed",
+                    key="custom_ticker_input"
+                ).strip().upper()
+            
+            # Combine selections
+            active_tickers = list(selected_tickers)
+            if custom_ticker and custom_ticker not in active_tickers:
+                active_tickers.append(custom_ticker)
+                
+            # Helper to get display name for buttons
+            def get_ticker_display():
+                if not active_tickers:
+                    return ""
+                if len(active_tickers) == 1:
+                    return f" {active_tickers[0]}"
+                return f" ({len(active_tickers)})"
 
-        # Buttons (Stacked for Sidebar Feel)
-        if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
-            st.session_state.suggested_prompt = "What's the latest stock market news today?"
-            st.rerun()
-        
-        # Research Button
-        btn_label = f"🔍 Research{get_ticker_display()}"
-        if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
-            if active_tickers:
-                if len(active_tickers) == 1:
-                    st.session_state.suggested_prompt = f"Research {active_tickers[0]} - latest news and analysis"
+            st.markdown("---")
+            st.caption("**Quick Actions:**")
+            
+            # Buttons (Stacked for Sidebar Feel)
+            if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
+                st.session_state.suggested_prompt = "What's the latest stock market news today?"
+                st.rerun()
+            
+            # Research Button
+            btn_label = f"🔍 Research{get_ticker_display()}"
+            if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
+                if active_tickers:
+                    if len(active_tickers) == 1:
+                        st.session_state.suggested_prompt = f"Research {active_tickers[0]} - latest news and analysis"
+                        st.rerun()
+                    else:
+                        tickers_str = ", ".join(active_tickers)
+                        st.session_state.suggested_prompt = f"Research the following stocks: {tickers_str}. Provide latest news for each."
+                        st.rerun()
+                else:
+                    st.session_state.suggested_prompt = "Research stocks - find interesting opportunities"
+                    st.rerun()
+            
+            # Analysis Button
+            btn_label = f"📊 Analysis{get_ticker_display()}"
+            if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
+                if active_tickers:
+                    if len(active_tickers) == 1:
+                        st.session_state.suggested_prompt = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
+                        st.rerun()
+                    else:
+                        tickers_str = ", ".join(active_tickers)
+                        st.session_state.suggested_prompt = f"Analyze and compare the outlooks for: {tickers_str}"
+                        st.rerun()
+                else:
+                     st.session_state.suggested_prompt = "Analyze a stock - provide recent performance and outlook analysis"
+                     st.rerun()
+            
+            # Compare Button
+            disabled_compare = len(active_tickers) == 1
+            if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
+                if len(active_tickers) >= 2:
+                    tickers_str = " and ".join(active_tickers)
+                    st.session_state.suggested_prompt = f"Compare {tickers_str} stocks. Which is a better investment?"
                     st.rerun()
                 else:
-                    tickers_str = ", ".join(active_tickers)
-                    st.session_state.suggested_prompt = f"Research the following stocks: {tickers_str}. Provide latest news for each."
+                    st.session_state.suggested_prompt = "Compare two stocks - provide a detailed comparison"
                     st.rerun()
-            else:
-                st.session_state.suggested_prompt = "Research stocks - find interesting opportunities"
-                st.rerun()
-        
-        # Analysis Button
-        btn_label = f"📊 Analysis{get_ticker_display()}"
-        if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
-            if active_tickers:
-                if len(active_tickers) == 1:
-                    st.session_state.suggested_prompt = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
-                    st.rerun()
-                else:
-                    tickers_str = ", ".join(active_tickers)
-                    st.session_state.suggested_prompt = f"Analyze and compare the outlooks for: {tickers_str}"
-                    st.rerun()
-            else:
-                 st.session_state.suggested_prompt = "Analyze a stock - provide recent performance and outlook analysis"
-                 st.rerun()
-        
-        # Compare Button
-        disabled_compare = len(active_tickers) == 1
-        if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
-            if len(active_tickers) >= 2:
-                tickers_str = " and ".join(active_tickers)
-                st.session_state.suggested_prompt = f"Compare {tickers_str} stocks. Which is a better investment?"
-                st.rerun()
-            else:
-                st.session_state.suggested_prompt = "Compare two stocks - provide a detailed comparison"
-                st.rerun()
 
-        if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
-            st.session_state.suggested_prompt = "What's happening in the stock market sectors today?"
-            st.rerun()
-        
-        # Earnings Button
-        btn_label = f"💰 Earnings{get_ticker_display()}"
-        if st.button(btn_label, use_container_width=True, key="btn_earnings"):
-            if active_tickers:
-                if len(active_tickers) == 1:
-                    st.session_state.suggested_prompt = f"Find recent earnings news for {active_tickers[0]}"
-                    st.rerun()
-                else:
-                    tickers_str = ", ".join(active_tickers)
-                    st.session_state.suggested_prompt = f"Find recent earnings reports for: {tickers_str}"
-                    st.rerun()
-            else:
-                st.session_state.suggested_prompt = "Find recent earnings news and announcements"
+            if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
+                st.session_state.suggested_prompt = "What's happening in the stock market sectors today?"
                 st.rerun()
+            
+            # Earnings Button
+            btn_label = f"💰 Earnings{get_ticker_display()}"
+            if st.button(btn_label, use_container_width=True, key="btn_earnings"):
+                if active_tickers:
+                    if len(active_tickers) == 1:
+                        st.session_state.suggested_prompt = f"Find recent earnings news for {active_tickers[0]}"
+                        st.rerun()
+                    else:
+                        tickers_str = ", ".join(active_tickers)
+                        st.session_state.suggested_prompt = f"Find recent earnings reports for: {tickers_str}"
+                        st.rerun()
+                else:
+                    st.session_state.suggested_prompt = "Find recent earnings news and announcements"
+                    st.rerun()
+        else:
+            st.info("🔍 Quick Research requires SearXNG to be available.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Left Column: Chat
 with main_col:
@@ -799,6 +842,7 @@ if user_query:
     search_data = None
     search_query_used = None
     search_triggered = False
+    filtering_info = None  # Track filtering details for display
     
     # Determine if search should be triggered
     if searxng_client and searxng_available:
@@ -853,18 +897,19 @@ if user_query:
                                     # Filter results for relevance to this specific ticker
                                     if ticker_search_data and 'results' in ticker_search_data and ticker_search_data['results']:
                                         original_count = len(ticker_search_data['results'])
-                                        filtered_results = filter_relevant_results(
+                                        filter_result = filter_relevant_results(
                                             ticker_search_data['results'],
                                             ticker,
                                             company_name=company_name,
                                             min_relevance_score=min_relevance_score
                                         )
-                                        logger.info(f"Ticker {ticker}: Filtered {original_count} to {len(filtered_results)} relevant results")
+                                        logger.info(f"Ticker {ticker}: Filtered {original_count} to {filter_result['relevant_count']} relevant results")
                                         
                                         # Tag results with ticker
-                                        for result in filtered_results:
+                                        relevant_results = filter_result['relevant']
+                                        for result in relevant_results:
                                             result['related_ticker'] = ticker
-                                        return filtered_results
+                                        return relevant_results
                                     return []
                                 except Exception as e:
                                     logger.error(f"Error searching ticker {ticker}: {e}")
@@ -918,13 +963,25 @@ if user_query:
                             # Filter results for relevance
                             if search_data and 'results' in search_data and search_data['results']:
                                 original_count = len(search_data['results'])
-                                search_data['results'] = filter_relevant_results(
+                                filter_result = filter_relevant_results(
                                     search_data['results'],
                                     ticker,
                                     company_name=company_name,
                                     min_relevance_score=min_relevance_score
                                 )
-                                logger.info(f"Filtered {original_count} results to {len(search_data['results'])} relevant results for {ticker}")
+                                
+                                # Store filtering info for display
+                                filtering_info = {
+                                    'original_count': original_count,
+                                    'relevant_count': filter_result['relevant_count'],
+                                    'filtered_count': filter_result['filtered_count'],
+                                    'filtered_scores': [r['relevance_score'] for r in filter_result['filtered_out']],
+                                    'min_score': min_relevance_score
+                                }
+                                
+                                # Update search_data with filtered results
+                                search_data['results'] = filter_result['relevant']
+                                logger.info(f"Filtered {original_count} results to {filter_result['relevant_count']} relevant results for {ticker}")
                     elif research_intent['research_type'] == 'market':
                         # Market news search
                         search_query_used = build_search_query(
@@ -956,13 +1013,25 @@ if user_query:
                             if research_intent['tickers']:
                                 ticker = research_intent['tickers'][0]
                                 company_name = get_company_name_from_db(ticker)
-                                search_data['results'] = filter_relevant_results(
+                                filter_result = filter_relevant_results(
                                     search_data['results'],
                                     ticker,
                                     company_name=company_name,
                                     min_relevance_score=min_relevance_score
                                 )
-                                logger.info(f"Filtered {original_count} general search results to {len(search_data['results'])} relevant results")
+                                
+                                # Store filtering info for display
+                                filtering_info = {
+                                    'original_count': original_count,
+                                    'relevant_count': filter_result['relevant_count'],
+                                    'filtered_count': filter_result['filtered_count'],
+                                    'filtered_scores': [r['relevance_score'] for r in filter_result['filtered_out']],
+                                    'min_score': min_relevance_score
+                                }
+                                
+                                # Update search_data with filtered results
+                                search_data['results'] = filter_result['relevant']
+                                logger.info(f"Filtered {original_count} general search results to {filter_result['relevant_count']} relevant results")
                     
                     if search_data and 'results' in search_data and search_data['results']:
                         search_results_text = format_search_results(search_data, max_results=10)
@@ -1049,14 +1118,53 @@ if user_query:
         # Show search status and results inline
         if search_triggered:
             if search_data and search_data.get('results'):
-                st.info(f"🔍 **Searched:** {search_query_used} | Found {len(search_data['results'])} results")
+                # Build status message with filtering info
+                status_msg = f"🔍 **Searched:** {search_query_used}"
+                
+                if filtering_info:
+                    # Show detailed filtering information
+                    original = filtering_info['original_count']
+                    relevant = filtering_info['relevant_count']
+                    filtered = filtering_info['filtered_count']
+                    min_score = filtering_info['min_score']
+                    filtered_scores = filtering_info['filtered_scores']
+                    
+                    status_msg += f" | Found {relevant} results"
+                    if filtered > 0:
+                        # Format scores as comma-separated list, limited to first 10
+                        scores_str = ", ".join([f"{s:.2f}" for s in filtered_scores[:10]])
+                        if len(filtered_scores) > 10:
+                            scores_str += f", ... ({len(filtered_scores) - 10} more)"
+                        status_msg += f". {filtered} results did not meet {min_score} filter ({scores_str})"
+                else:
+                    # No filtering applied
+                    status_msg += f" | Found {len(search_data['results'])} results"
+                
+                st.info(status_msg)
                 # Show top results inline
                 with st.expander("📰 Search Results (click to view)", expanded=True):
                     st.markdown(format_search_results(search_data, max_results=5))
             elif search_data and 'error' in search_data:
                 st.warning(f"⚠️ Search completed but returned an error: {search_data['error']}")
-            else:
-                st.info(f"🔍 **Searched:** {search_query_used} | No results found")
+            elif search_query_used:
+                # Search was triggered but no results (not even before filtering)
+                status_msg = f"🔍 **Searched:** {search_query_used}"
+                if filtering_info and filtering_info['original_count'] > 0:
+                    # Had results but all were filtered out
+                    original = filtering_info['original_count']
+                    filtered = filtering_info['filtered_count']
+                    min_score = filtering_info['min_score']
+                    filtered_scores = filtering_info['filtered_scores']
+                    
+                    scores_str = ", ".join([f"{s:.2f}" for s in filtered_scores[:10]])
+                    if len(filtered_scores) > 10:
+                        scores_str += f", ... ({len(filtered_scores) - 10} more)"
+                    
+                    status_msg += f" | Found 0 results. {filtered} results did not meet {min_score} filter ({scores_str})"
+                else:
+                    # No results at all from search
+                    status_msg += " | No results found"
+                st.info(status_msg)
         
         # Show repository results inline
         if repository_triggered:

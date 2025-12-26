@@ -299,9 +299,11 @@ with st.sidebar:
     try:
         available_funds = get_available_funds()
         if available_funds:
+            # Default to first fund (index 1, since index 0 is the empty string)
             selected_fund_context = st.selectbox(
                 "Active Fund",
                 options=[""] + available_funds,
+                index=1,  # Default to first fund instead of blank
                 help="Select the fund you're working with. This will be used when uploading reports.",
                 key="fund_context_selector"
             )

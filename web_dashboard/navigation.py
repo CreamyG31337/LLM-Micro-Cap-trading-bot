@@ -12,7 +12,7 @@ import streamlit as st
 
 def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True) -> None:
     """
-    Render the shared navigation sidebar component.
+    Render the shared navigation sidebar component with modern card-based design.
     
     Args:
         show_ai_assistant: Whether to show AI Assistant link (default: True)
@@ -24,15 +24,15 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     except ImportError:
         # If auth utils not available, render minimal navigation
         st.sidebar.title("Navigation")
-        st.sidebar.markdown("### Pages")
+        st.sidebar.markdown('<div class="nav-section-title">Pages</div>', unsafe_allow_html=True)
         st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
         return
     
-    # Navigation title
+    # Navigation title with modern styling
     st.sidebar.title("Navigation")
     
-    # Page links
-    st.sidebar.markdown("### Pages")
+    # Page links section with styled header
+    st.sidebar.markdown('<div class="nav-section-title">Pages</div>', unsafe_allow_html=True)
     st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
     
     # Research Articles link (if PostgreSQL is available)
@@ -50,7 +50,11 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     if user_email:
         if admin_status:
-            st.sidebar.success("✅ Admin Access")
+            # Modern badge for admin status
+            st.sidebar.markdown(
+                '<div class="nav-badge nav-badge-admin">✅ Admin Access</div>',
+                unsafe_allow_html=True
+            )
             # Admin page link (only visible to admins)
             st.sidebar.page_link("pages/admin.py", label="Admin Panel", icon="🔧")
         else:
@@ -62,8 +66,12 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                     if profile_result.data:
                         role = profile_result.data[0].get('role', 'user')
                         if role != 'admin':
-                            st.sidebar.info(f"👤 Role: {role}")
-                            with st.sidebar.expander("🔧 Need Admin Access?"):
+                            # Modern badge for user role
+                            st.sidebar.markdown(
+                                f'<div class="nav-badge nav-badge-role">👤 Role: {role.title()}</div>',
+                                unsafe_allow_html=True
+                            )
+                            with st.sidebar.expander("🔧 Need Admin Access?", expanded=False):
                                 st.write("To become an admin, run this command on the server:")
                                 st.code("python web_dashboard/setup_admin.py", language="bash")
                                 st.write(f"Then enter your email: `{user_email}`")
@@ -89,5 +97,6 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     if show_settings:
         st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
     
-    st.sidebar.markdown("---")
+    # Modern divider
+    st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)
 

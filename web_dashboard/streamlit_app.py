@@ -155,6 +155,178 @@ st.markdown("""
         margin-top: -0.8rem;
         margin-bottom: 0.5rem;
     }
+    
+    /* Modern Navigation Styling */
+    /* Navigation section titles */
+    .nav-section-title {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgb(49, 51, 63);
+        opacity: 0.7;
+        margin: 1.5rem 0 0.75rem 0;
+        padding: 0 0.5rem;
+    }
+    
+    /* Dark mode support for section titles */
+    @media (prefers-color-scheme: dark) {
+        .nav-section-title {
+            color: rgb(250, 250, 250);
+        }
+    }
+    
+    /* Navigation cards - style the page link containers */
+    section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div {
+        transition: all 0.25s ease;
+    }
+    
+    /* Style page links as cards */
+    section[data-testid="stSidebar"] a[data-testid="stPageLink"] {
+        display: block;
+        padding: 0.75rem 1rem;
+        margin: 0.5rem 0;
+        background-color: var(--secondary-background-color, #f0f2f6);
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 128, 128, 0.1);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        transition: all 0.25s ease;
+        text-decoration: none;
+        color: inherit;
+    }
+    
+    /* Dark mode adjustments for page links */
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] a[data-testid="stPageLink"] {
+            background-color: var(--secondary-background-color, #262730);
+            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+    }
+    
+    section[data-testid="stSidebar"] a[data-testid="stPageLink"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        background-color: var(--background-color, #ffffff);
+        border-color: rgba(128, 128, 128, 0.2);
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] a[data-testid="stPageLink"]:hover {
+            background-color: var(--background-color, #0e1117);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+    }
+    
+    /* Active page link styling */
+    section[data-testid="stSidebar"] a[data-testid="stPageLink"][aria-current="page"] {
+        background: linear-gradient(135deg, rgba(255, 75, 75, 0.2) 0%, var(--secondary-background-color, #f0f2f6) 100%);
+        border-color: rgba(255, 75, 75, 0.5);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        font-weight: 600;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] a[data-testid="stPageLink"][aria-current="page"] {
+            background: linear-gradient(135deg, rgba(255, 75, 75, 0.3) 0%, var(--secondary-background-color, #262730) 100%);
+            border-color: rgba(255, 75, 75, 0.6);
+        }
+    }
+    
+    /* Navigation badges */
+    .nav-badge {
+        display: inline-block;
+        padding: 0.35rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin: 0.5rem 0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+    }
+    
+    .nav-badge-admin {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    
+    .nav-badge-role {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    
+    .nav-badge:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Modern divider */
+    .nav-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(128, 128, 128, 0.3) 50%, transparent 100%);
+        margin: 1.5rem 0;
+        border: none;
+    }
+    
+    /* Style expander in sidebar */
+    section[data-testid="stSidebar"] div[data-testid="stExpander"] {
+        background-color: var(--secondary-background-color, #f0f2f6);
+        border-radius: 0.5rem;
+        border: 1px solid rgba(128, 128, 128, 0.1);
+        margin: 0.5rem 0;
+        padding: 0.5rem;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] {
+            background-color: var(--secondary-background-color, #262730);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+    }
+    
+    section[data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
+        border-color: rgba(128, 128, 128, 0.2);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+    }
+    
+    /* Improve sidebar title styling */
+    section[data-testid="stSidebar"] h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        background: linear-gradient(135deg, #ff4b4b 0%, #1f77b4 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        section[data-testid="stSidebar"] h1 {
+            background: linear-gradient(135deg, #ff6b6b 0%, #4dabf7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    }
+    
+    /* Style info/success boxes in sidebar */
+    section[data-testid="stSidebar"] div[data-baseweb="notification"] {
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin: 0.5rem 0;
+        transition: all 0.2s ease;
+    }
+    
+    section[data-testid="stSidebar"] div[data-baseweb="notification"]:hover {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
     </style>
 """, unsafe_allow_html=True)
 

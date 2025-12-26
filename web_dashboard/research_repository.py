@@ -795,6 +795,25 @@ class ResearchRepository:
             logger.error(f"❌ Error getting unique sources: {e}")
             return []
     
+    def get_unique_tickers(self) -> List[str]:
+        """Get list of all unique tickers from articles
+        
+        Returns:
+            List of unique ticker symbols, sorted alphabetically
+        """
+        try:
+            # Use UNNEST to extract tickers from the array column
+            result = self.client.execute_query("""
+                SELECT DISTINCT ticker
+                FROM research_articles, UNNEST(tickers) AS ticker
+                WHERE tickers IS NOT NULL
+                ORDER BY ticker
+            """)
+            return [row['ticker'] for row in result] if result else []
+        except Exception as e:
+            logger.error(f"❌ Error getting unique tickers: {e}")
+            return []
+    
     def get_articles_by_date_range(
         self,
         start_date: datetime,

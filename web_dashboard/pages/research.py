@@ -292,29 +292,48 @@ with st.sidebar:
     )
     article_type_filter = None if article_type == "All" else article_type
     
-    # Source filter
-    selected_source = "All"
+    # Ticker filter (searchable dropdown)
+    selected_ticker = "All"
     try:
-        sources = repo.get_unique_sources()
-        source_options = ["All"] + sources
-        selected_source = st.selectbox("Source", source_options, index=0)
-        source_filter = None if selected_source == "All" else selected_source
+        tickers = repo.get_unique_tickers()
+        ticker_options = ["All"] + tickers
+        selected_ticker = st.selectbox(
+            "🏷️ Ticker",
+            ticker_options,
+            index=0,
+            help="Filter by ticker symbol"
+        )
+        ticker_filter = None if selected_ticker == "All" else selected_ticker
     except Exception as e:
-        logger.error(f"Error getting sources: {e}")
-        source_filter = None
+        logger.error(f"Error getting tickers: {e}")
+        ticker_filter = None
     
     # Search text filter
     search_text = st.text_input("🔍 Search", placeholder="Search in title, summary, content...")
     search_filter = search_text.strip() if search_text else None
     
-    # Embedding status filter (for RAG)
-    embedding_status = st.selectbox(
-        "Embedding Status",
-        ["All", "Embedded", "Pending"],
-        index=0,
-        help="Filter by whether articles have been embedded for AI search (RAG)"
-    )
-    embedding_filter = None if embedding_status == "All" else (embedding_status == "Embedded")
+    # Hidden filters (for debugging - uncomment to re-enable)
+    # Source filter
+    source_filter = None
+    # selected_source = "All"
+    # try:
+    #     sources = repo.get_unique_sources()
+    #     source_options = ["All"] + sources
+    #     selected_source = st.selectbox("Source", source_options, index=0)
+    #     source_filter = None if selected_source == "All" else selected_source
+    # except Exception as e:
+    #     logger.error(f"Error getting sources: {e}")
+    #     source_filter = None
+    
+    # Embedding status filter (for RAG debugging)
+    embedding_filter = None
+    # embedding_status = st.selectbox(
+    #     "Embedding Status",
+    #     ["All", "Embedded", "Pending"],
+    #     index=0,
+    #     help="Filter by whether articles have been embedded for AI search (RAG)"
+    # )
+    # embedding_filter = None if embedding_status == "All" else (embedding_status == "Embedded")
     
     # Results per page
     results_per_page = st.selectbox("Results per page", [10, 20, 50, 100], index=1)
@@ -363,7 +382,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Reset pagination when filters change
-    filter_key = f"{date_range_option}_{article_type}_{selected_source}_{search_filter or ''}_{embedding_status}"
+    filter_key = f"{date_range_option}_{article_type}_{selected_ticker}_{search_filter or ''}"
     if 'last_filter_key' not in st.session_state or st.session_state.last_filter_key != filter_key:
         st.session_state.current_page = 1
         st.session_state.last_filter_key = filter_key
@@ -516,6 +535,14 @@ try:
             results_per_page,
             offset
         )
+        
+        # Apply ticker filter client-side (after fetch)
+        if ticker_filter:
+            articles = [
+                a for a in articles 
+                if (a.get('tickers') and ticker_filter in a.get('tickers', [])) 
+                   or a.get('ticker') == ticker_filter
+            ]
         
         # Get total count for pagination (simplified - get one more to check if there are more)
         article_count = len(articles)
@@ -764,10 +791,39 @@ try:
         
         # Display articles
         for idx, article in enumerate(articles):
-            # Build title with embedding badge
+            # Build enhanced title with ticker and short date for easy scanning
             has_embedding = article.get('has_embedding', False)
             embedding_badge = "🧠 " if has_embedding else "⏳ "
-            expander_title = f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}"
+            
+            # Format tickers (show first 2 tickers max)
+            tickers = article.get('tickers', [])
+            if tickers and isinstance(tickers, list):
+                ticker_str = ", ".join(tickers[:2])
+                if len(tickers) > 2:
+                    ticker_str += f" +{len(tickers)-2}"
+            elif article.get('ticker'):
+                ticker_str = article.get('ticker')
+            else:
+                ticker_str = ""
+            
+            # Format short date (e.g., "Dec 25")
+            pub_date = article.get('published_at') or article.get('fetched_at')
+            if pub_date:
+                if isinstance(pub_date, str):
+                    pub_date = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                date_str = pub_date.strftime("%b %d")
+            else:
+                date_str = ""
+            
+            # Build title: Ticker | Title | Date
+            title_parts = []
+            if ticker_str:
+                title_parts.append(f"**{ticker_str}**")
+            title_parts.append(article.get('title', 'Untitled')[:60])
+            if date_str:
+                title_parts.append(date_str)
+            
+            expander_title = f"{embedding_badge}{' | '.join(title_parts)}"
             
             if user_is_admin:
                 # Admin view with checkbox

@@ -324,7 +324,10 @@ class OllamaClient:
             yield f"An error occurred: {str(e)}"
     
     def generate_summary(self, text: str, model: Optional[str] = None) -> Dict[str, Any]:
-        """Generate a comprehensive summary with structured metadata extraction.
+        """Generate a comprehensive summary with Chain of Thought analysis and sentiment categorization.
+        
+        Uses a 3-step Chain of Thought process: Identify Claims, Fact Check, Conclusion.
+        Also categorizes sentiment (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH).
         
         Args:
             text: Text to summarize (will be truncated to ~6000 chars)
@@ -333,6 +336,11 @@ class OllamaClient:
         Returns:
             Dictionary containing:
             - summary: Enhanced text summary (5-7+ bullet points)
+            - claims: List of specific claims with numbers/dates extracted from article
+            - fact_check: Simple fact-checking analysis (filters garbage/clickbait)
+            - conclusion: Net impact on ticker(s) with specific implications
+            - sentiment: One of "VERY_BULLISH", "BULLISH", "NEUTRAL", "BEARISH", "VERY_BEARISH"
+            - sentiment_score: Numeric score for calculations (VERY_BULLISH=2.0, BULLISH=1.0, NEUTRAL=0.0, BEARISH=-1.0, VERY_BEARISH=-2.0)
             - tickers: List of ticker symbols mentioned (e.g., ["HOOD", "NVDA"])
             - sectors: List of sectors mentioned (e.g., ["Financial Services", "Technology"])
             - key_themes: List of key themes/topics
@@ -359,10 +367,32 @@ class OllamaClient:
             text = text[:max_chars] + "..."
             logger.debug(f"Truncated text to {max_chars} characters for summarization")
         
-        # Enhanced system prompt requesting structured extraction
-        system_prompt = """You are a financial news analyzer. Analyze the following article and provide a comprehensive analysis in JSON format.
+        # Enhanced system prompt with Chain of Thought reasoning and sentiment categorization
+        system_prompt = """You are a skeptical financial analyst. Analyze the following article using a 3-step Chain of Thought process, then provide a comprehensive analysis in JSON format.
 
-Requirements:
+ANALYSIS PROCESS (Chain of Thought):
+Step 1 - Identify Claims: Extract specific numbers, dates, percentages, and causal claims made in the article. List all factual assertions with concrete data points.
+
+Step 2 - Fact Check: Perform simple fact-checking to filter out garbage and clickbait. Ask yourself:
+- Are the claims plausible? (e.g., "stock up 1000%" is likely clickbait)
+- Are there obvious contradictions within the article?
+- Does the headline match the content?
+- Are there red flags (e.g., "guaranteed returns", "secret method")?
+Keep this simple - you're a fact checker, not a PhD economist. Focus on filtering obvious noise.
+
+Step 3 - Conclusion: Summarize the net impact on the stock ticker(s). What does this article actually mean for the stock? Be specific about potential price impact or business implications.
+
+SENTIMENT CATEGORIZATION:
+Categorize the article's sentiment into exactly ONE of these buckets:
+- "VERY_BULLISH" - Game-changing positive news (e.g., massive earnings beat, breakthrough product, major acquisition)
+- "BULLISH" - Good news (e.g., price target upgrade, partnership announcement, positive guidance)
+- "NEUTRAL" - Noise, standard reporting, mixed results, routine updates
+- "BEARISH" - Bad news (e.g., missed earnings, minor lawsuit, downgrade)
+- "VERY_BEARISH" - Catastrophic news (e.g., fraud investigation, CEO fired, bankruptcy filing)
+
+Most articles should be "NEUTRAL" - only categorize as BULLISH/BEARISH if there's significant news.
+
+EXTRACTION REQUIREMENTS:
 1. Generate a comprehensive summary with 5-7+ bullet points covering all key information
 2. Extract all stock ticker symbols mentioned (e.g., HOOD, NVDA, AAPL, XMA.TO)
    - Tickers are SHORT symbols (1-10 characters), typically 1-5 uppercase letters
@@ -389,13 +419,17 @@ The "summary" field must be a single STRING with bullet points separated by newl
 Return your response as a valid JSON object with these exact fields:
 {
   "summary": "• First key point...\\n• Second key point...\\n• Third key point...\\n• Fourth key point...\\n• Fifth key point...",
+  "claims": ["Claim 1 with specific numbers/dates", "Claim 2 with percentages", "Claim 3..."],
+  "fact_check": "Simple fact-checking analysis: Are claims plausible? Any obvious contradictions? Filter garbage/clickbait.",
+  "conclusion": "Net impact on ticker(s): What does this article mean for the stock? Specific price impact or business implications.",
+  "sentiment": "VERY_BULLISH" | "BULLISH" | "NEUTRAL" | "BEARISH" | "VERY_BEARISH",
   "tickers": ["TICKER1", "TICKER2", "INFERRED?"],
   "sectors": ["Sector1", "Sector2"],
   "key_themes": ["theme1", "theme2"],
   "companies": ["Company1", "Company2"]
 }
 
-If no tickers, sectors, themes, or companies are found, use empty arrays []. Return ONLY the JSON object, nothing else."""
+If no tickers, sectors, themes, or companies are found, use empty arrays []. The sentiment field is REQUIRED and must be exactly one of the 5 values listed above. Return ONLY the JSON object, nothing else."""
         
         # Get model settings
         model_settings = self.get_model_settings(model)
@@ -474,25 +508,67 @@ If no tickers, sectors, themes, or companies are found, use empty arrays []. Ret
                 if not isinstance(summary_text, str):
                     summary_text = str(summary_text) if summary_text else ""
                 
+                # Extract Chain of Thought fields
+                claims = extract_strings(parsed.get("claims", []))
+                fact_check = parsed.get("fact_check", "")
+                if not isinstance(fact_check, str):
+                    fact_check = str(fact_check) if fact_check else ""
+                
+                conclusion = parsed.get("conclusion", "")
+                if not isinstance(conclusion, str):
+                    conclusion = str(conclusion) if conclusion else ""
+                
+                # Extract sentiment (validate it's one of the allowed values)
+                sentiment = parsed.get("sentiment", "NEUTRAL")
+                if not isinstance(sentiment, str):
+                    sentiment = str(sentiment) if sentiment else "NEUTRAL"
+                sentiment = sentiment.strip().upper()
+                valid_sentiments = ["VERY_BULLISH", "BULLISH", "NEUTRAL", "BEARISH", "VERY_BEARISH"]
+                if sentiment not in valid_sentiments:
+                    logger.warning(f"Invalid sentiment '{sentiment}', defaulting to NEUTRAL")
+                    sentiment = "NEUTRAL"
+                
+                # Calculate sentiment_score for database calculations (avoids CASE WHEN in queries)
+                # Mapping: VERY_BULLISH=2.0, BULLISH=1.0, NEUTRAL=0.0, BEARISH=-1.0, VERY_BEARISH=-2.0
+                sentiment_score_map = {
+                    "VERY_BULLISH": 2.0,
+                    "BULLISH": 1.0,
+                    "NEUTRAL": 0.0,
+                    "BEARISH": -1.0,
+                    "VERY_BEARISH": -2.0
+                }
+                sentiment_score = sentiment_score_map.get(sentiment, 0.0)
+                
                 result = {
                     "summary": summary_text.strip(),
+                    "claims": claims,
+                    "fact_check": fact_check.strip(),
+                    "conclusion": conclusion.strip(),
+                    "sentiment": sentiment,
+                    "sentiment_score": sentiment_score,
                     "tickers": [t.upper() for t in extract_strings(parsed.get("tickers", []))],
                     "sectors": extract_strings(parsed.get("sectors", [])),
                     "key_themes": extract_strings(parsed.get("key_themes", [])),
                     "companies": extract_strings(parsed.get("companies", []))
                 }
                 
-                logger.debug(f"Generated summary: {len(result['summary'])} chars, {len(result['tickers'])} tickers, {len(result['sectors'])} sectors")
+                logger.debug(f"Generated summary: {len(result['summary'])} chars, {len(result['tickers'])} tickers, {len(result['sectors'])} sectors, sentiment: {result['sentiment']}")
                 logger.debug(f"Extracted tickers: {result['tickers']}, sectors: {result['sectors']}")
+                logger.debug(f"Claims: {len(result['claims'])} items, Fact check: {len(result['fact_check'])} chars, Conclusion: {len(result['conclusion'])} chars")
                 
                 return result
                 
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON response, falling back to text-only summary: {e}")
                 logger.debug(f"Raw response: {raw_response[:500]}")
-                # Fallback: return text summary only
+                # Fallback: return text summary only with default values for new fields
                 return {
                     "summary": raw_response,
+                    "claims": [],
+                    "fact_check": "",
+                    "conclusion": "",
+                    "sentiment": "NEUTRAL",
+                    "sentiment_score": 0.0,
                     "tickers": [],
                     "sectors": [],
                     "key_themes": [],

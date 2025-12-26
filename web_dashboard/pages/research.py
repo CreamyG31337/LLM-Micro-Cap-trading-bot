@@ -457,7 +457,12 @@ with st.sidebar:
                                     published_at=datetime.now(timezone.utc),
                                     relevance_score=0.9,  # Assume uploaded reports are highly relevant
                                     embedding=summary_result.get('embedding'),
-                                    fund=upload_fund  # Fund-specific tag for uploaded reports
+                                    fund=upload_fund,  # Fund-specific tag for uploaded reports
+                                    claims=summary_result.get("claims") if isinstance(summary_result, dict) else None,
+                                    fact_check=summary_result.get("fact_check") if isinstance(summary_result, dict) else None,
+                                    conclusion=summary_result.get("conclusion") if isinstance(summary_result, dict) else None,
+                                    sentiment=summary_result.get("sentiment") if isinstance(summary_result, dict) else None,
+                                    sentiment_score=summary_result.get("sentiment_score") if isinstance(summary_result, dict) else None
                                 )
                                 
                                 if article_id:

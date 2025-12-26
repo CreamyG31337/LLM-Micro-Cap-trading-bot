@@ -472,7 +472,12 @@ def market_research_job() -> None:
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
                     relevance_score=relevance_score,
-                    embedding=embedding
+                    embedding=embedding,
+                    claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                    fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                    conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                    sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
                 )
                 
                 if article_id:
@@ -733,7 +738,11 @@ def ticker_research_job() -> None:
                             source=extracted.get('source'),
                             published_at=extracted.get('published_at'),
                             relevance_score=0.7,  # Slightly lower relevance for sector-level news
-                            embedding=embedding
+                            embedding=embedding,
+                            claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                            fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                            conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None
                         )
                         
                         if article_id:
@@ -873,7 +882,11 @@ def ticker_research_job() -> None:
                             source=extracted.get('source'),
                             published_at=extracted.get('published_at'),
                             relevance_score=relevance_score,
-                            embedding=embedding
+                            embedding=embedding,
+                            claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                            fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                            conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None
                         )
                         
                         if article_id:
@@ -1109,7 +1122,12 @@ def opportunity_discovery_job() -> None:
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
                     relevance_score=relevance_score,
-                    embedding=embedding
+                    embedding=embedding,
+                    claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                    fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                    conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                    sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
                 )
                 
                 if article_id:
@@ -1330,7 +1348,12 @@ def opportunity_discovery_job() -> None:
                     source=extracted.get('source'),
                     published_at=extracted.get('published_at'),
                     relevance_score=relevance_score,
-                    embedding=embedding
+                    embedding=embedding,
+                    claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                    fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                    conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                    sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
                 )
                 
                 if article_id:

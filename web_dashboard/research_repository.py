@@ -4,6 +4,7 @@ Research Articles Repository
 Handles CRUD operations for research articles stored in local Postgres
 """
 
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
@@ -93,7 +94,12 @@ class ResearchRepository:
         published_at: Optional[datetime] = None,
         relevance_score: Optional[float] = None,
         embedding: Optional[List[float]] = None,
-        fund: Optional[str] = None
+        fund: Optional[str] = None,
+        claims: Optional[List[str]] = None,
+        fact_check: Optional[str] = None,
+        conclusion: Optional[str] = None,
+        sentiment: Optional[str] = None,
+        sentiment_score: Optional[float] = None
     ) -> Optional[str]:
         """Save a research article to the database
         
@@ -112,6 +118,11 @@ class ResearchRepository:
             fund: Fund name for fund-specific materials (e.g., uploaded research reports).
                   Should be NULL for general market news/articles that apply to all funds.
                   Purpose: Tag fund-specific research reports prepared for a specific fund.
+            claims: List of specific claims extracted from article (Chain of Thought Step 1)
+            fact_check: Simple fact-checking analysis (Chain of Thought Step 2)
+            conclusion: Net impact on ticker(s) (Chain of Thought Step 3)
+            sentiment: Sentiment category (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH)
+            sentiment_score: Numeric sentiment score for calculations (VERY_BULLISH=2.0, BULLISH=1.0, NEUTRAL=0.0, BEARISH=-1.0, VERY_BEARISH=-2.0)
             
         Returns:
             Article ID (UUID as string) if successful, None otherwise
@@ -137,14 +148,19 @@ class ResearchRepository:
             # Prepare tickers array (convert None/empty to None for database)
             tickers_array = tickers if tickers else None
             
+            # Prepare claims as JSONB (convert list to JSON string)
+            claims_json = json.dumps(claims) if claims else None
+            
             # Build query dynamically based on whether embedding is provided
             if embedding_str:
                 query = """
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
-                        source, published_at, relevance_score, embedding, fund
+                        source, published_at, relevance_score, embedding, fund,
+                        claims, fact_check, conclusion, sentiment, sentiment_score
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s,
+                        %s::jsonb, %s, %s, %s, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -161,15 +177,22 @@ class ResearchRepository:
                     published_at_str,
                     relevance_score,
                     embedding_str,
-                    fund
+                    fund,
+                    claims_json,
+                    fact_check,
+                    conclusion,
+                    sentiment,
+                    sentiment_score
                 )
             else:
                 query = """
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
-                        source, published_at, relevance_score, fund
+                        source, published_at, relevance_score, fund,
+                        claims, fact_check, conclusion, sentiment, sentiment_score
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::jsonb, %s, %s, %s, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -185,7 +208,12 @@ class ResearchRepository:
                     source,
                     published_at_str,
                     relevance_score,
-                    fund
+                    fund,
+                    claims_json,
+                    fact_check,
+                    conclusion,
+                    sentiment,
+                    sentiment_score
                 )
             
             with self.client.get_connection() as conn:

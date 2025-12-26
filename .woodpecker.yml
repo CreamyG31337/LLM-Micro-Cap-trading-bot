@@ -44,14 +44,13 @@ steps:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
       
-      # Format build timestamp in Pacific Time (PST/PDT)
-      # CI_PIPELINE_STARTED is Unix timestamp, convert to Pacific Time
-      # Use date command compatible with both GNU and BSD date
+      # Format build timestamp in UTC (will be converted to user's timezone in Python)
+      # CI_PIPELINE_STARTED is Unix timestamp, format in UTC
       - |
         if [ -n "$CI_PIPELINE_STARTED" ]; then
-          export BUILD_TIMESTAMP=$(TZ=America/Vancouver date -d "@$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M %Z" 2>/dev/null || TZ=America/Vancouver date -r "$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M %Z" 2>/dev/null || TZ=America/Vancouver date "+%Y-%m-%d %H:%M %Z")
+          export BUILD_TIMESTAMP=$(date -u -d "@$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M UTC" 2>/dev/null || date -u -r "$CI_PIPELINE_STARTED" "+%Y-%m-%d %H:%M UTC" 2>/dev/null || date -u "+%Y-%m-%d %H:%M UTC")
         else
-          export BUILD_TIMESTAMP=$(TZ=America/Vancouver date "+%Y-%m-%d %H:%M %Z")
+          export BUILD_TIMESTAMP=$(date -u "+%Y-%m-%d %H:%M UTC")
         fi
       
       # Build Docker image from web_dashboard/Dockerfile

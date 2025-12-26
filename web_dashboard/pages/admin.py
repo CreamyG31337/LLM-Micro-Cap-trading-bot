@@ -88,13 +88,23 @@ st.caption(f"Logged in as: {get_user_email()}")
 import os
 build_timestamp = os.getenv("BUILD_TIMESTAMP")
 if build_timestamp:
+    # Convert UTC timestamp to user's preferred timezone
+    try:
+        from user_preferences import format_timestamp_in_user_timezone
+        build_timestamp = format_timestamp_in_user_timezone(build_timestamp)
+    except ImportError:
+        # Fallback if user_preferences not available
+        if "UTC" in build_timestamp:
+            build_timestamp = build_timestamp.replace(" UTC", " PST")
     st.caption(f"🏷️ Build: {build_timestamp}")
 else:
-    # Development mode - show current time
+    # Development mode - show current time in user's timezone (or PST)
     try:
+        from user_preferences import get_user_timezone
         from zoneinfo import ZoneInfo
-        pacific = ZoneInfo("America/Vancouver")
-        now = datetime.now(pacific)
+        user_tz_str = get_user_timezone() or "America/Vancouver"
+        user_tz = ZoneInfo(user_tz_str)
+        now = datetime.now(user_tz)
         dev_timestamp = now.strftime("%Y-%m-%d %H:%M %Z")
         st.caption(f"🏷️ Build: Development ({dev_timestamp})")
     except (ImportError, Exception):

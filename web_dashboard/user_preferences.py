@@ -292,3 +292,76 @@ def set_user_ai_model(model: str) -> bool:
         logger.warning(f"Invalid AI model: {model}")
         return False
     return set_user_preference('ai_model', model)
+
+
+def format_timestamp_in_user_timezone(
+    timestamp_str: str,
+    format: str = "%Y-%m-%d %H:%M %Z"
+) -> str:
+    """Convert UTC timestamp string to user's preferred timezone.
+    
+    Parses a UTC timestamp string and converts it to the user's preferred
+    timezone (from their settings). Falls back to Pacific Time (PST/PDT)
+    if no timezone preference is set.
+    
+    Args:
+        timestamp_str: UTC timestamp string (e.g., "2025-12-26 02:05 UTC" or "2025-12-26 02:05")
+        format: Output format string (default: "%Y-%m-%d %H:%M %Z")
+        
+    Returns:
+        Formatted timestamp in user's timezone (or PST if no preference)
+    """
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        # Fallback for Python < 3.9
+        try:
+            import pytz
+            HAS_PYTZ = True
+        except ImportError:
+            HAS_PYTZ = False
+            # If neither available, just return the original string
+            return timestamp_str
+    
+    # Parse the UTC timestamp string
+    # Remove "UTC" suffix if present
+    timestamp_clean = timestamp_str.replace(" UTC", "").strip()
+    
+    try:
+        # Try parsing with format "YYYY-MM-DD HH:MM"
+        dt_utc = datetime.strptime(timestamp_clean, "%Y-%m-%d %H:%M")
+        
+        # Add UTC timezone
+        try:
+            dt_utc = dt_utc.replace(tzinfo=ZoneInfo("UTC"))
+        except NameError:
+            if HAS_PYTZ:
+                dt_utc = pytz.UTC.localize(dt_utc)
+            else:
+                return timestamp_str
+        
+        # Get user's timezone preference (fallback to PST)
+        user_tz_str = get_user_timezone()
+        if not user_tz_str:
+            user_tz_str = "America/Vancouver"  # PST/PDT fallback
+        
+        # Convert to user's timezone
+        try:
+            user_tz = ZoneInfo(user_tz_str)
+        except NameError:
+            if HAS_PYTZ:
+                user_tz = pytz.timezone(user_tz_str)
+            else:
+                return timestamp_str
+        
+        dt_user = dt_utc.astimezone(user_tz)
+        return dt_user.strftime(format)
+        
+    except ValueError as e:
+        logger.warning(f"Could not parse timestamp '{timestamp_str}': {e}")
+        # If parsing fails, try to just remove UTC and return
+        return timestamp_str.replace(" UTC", "")
+    except Exception as e:
+        logger.warning(f"Error converting timestamp to user timezone: {e}")
+        # Fallback: just return the original string
+        return timestamp_str

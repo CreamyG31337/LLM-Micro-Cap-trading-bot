@@ -2101,12 +2101,23 @@ def main():
         st.markdown("---")
         # Get build timestamp from environment variable (set by CI) or use current time
         build_timestamp = os.getenv("BUILD_TIMESTAMP")
-        if not build_timestamp:
-            # Fallback: generate timestamp in Pacific Time
+        if build_timestamp:
+            # Convert UTC timestamp to user's preferred timezone
             try:
+                from user_preferences import format_timestamp_in_user_timezone
+                build_timestamp = format_timestamp_in_user_timezone(build_timestamp)
+            except ImportError:
+                # Fallback if user_preferences not available
+                if "UTC" in build_timestamp:
+                    build_timestamp = build_timestamp.replace(" UTC", " PST")
+        if not build_timestamp:
+            # Fallback: generate timestamp in user's timezone (or PST)
+            try:
+                from user_preferences import get_user_timezone, format_timestamp_in_user_timezone
                 from zoneinfo import ZoneInfo
-                pacific = ZoneInfo("America/Vancouver")
-                now = datetime.now(pacific)
+                user_tz_str = get_user_timezone() or "America/Vancouver"
+                user_tz = ZoneInfo(user_tz_str)
+                now = datetime.now(user_tz)
                 build_timestamp = now.strftime("%Y-%m-%d %H:%M %Z")
             except (ImportError, Exception):
                 # If zoneinfo not available (Python < 3.9) or other error, use simple format

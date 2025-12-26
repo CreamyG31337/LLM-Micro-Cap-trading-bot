@@ -35,16 +35,35 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     st.sidebar.markdown('<div class="nav-section-title">Pages</div>', unsafe_allow_html=True)
     st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
     
-    # Research Articles link (if PostgreSQL is available)
+    # Research Repository link (if PostgreSQL is available)
     try:
         from postgres_client import PostgresClient
         client = PostgresClient()
         if client.test_connection():
-            st.sidebar.page_link("pages/research.py", label="Research Articles", icon="📰")
+            st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
     except Exception:
         pass  # Silently fail if Postgres not available
     
-    # Show admin status and link
+    # AI Assistant link (if available and requested)
+    if show_ai_assistant:
+        try:
+            from ollama_client import check_ollama_health
+            
+            if check_ollama_health():
+                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🤖")
+            else:
+                with st.sidebar.expander("💬 Chat Assistant", expanded=False):
+                    st.warning("AI Assistant unavailable")
+                    st.caption("Ollama is not running or not accessible.")
+        except Exception:
+            # Silently fail if Ollama check not available
+            pass
+    
+    # Settings link (if requested)
+    if show_settings:
+        st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
+    
+    # Admin section (moved to end of menu)
     admin_status = is_admin()
     user_email = get_user_email()
     
@@ -77,25 +96,6 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                                 st.write(f"Then enter your email: `{user_email}`")
             except Exception:
                 pass  # Silently fail if we can't check
-    
-    # AI Assistant link (if available and requested)
-    if show_ai_assistant:
-        try:
-            from ollama_client import check_ollama_health
-            
-            if check_ollama_health():
-                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🤖")
-            else:
-                with st.sidebar.expander("💬 Chat Assistant", expanded=False):
-                    st.warning("AI Assistant unavailable")
-                    st.caption("Ollama is not running or not accessible.")
-        except Exception:
-            # Silently fail if Ollama check not available
-            pass
-    
-    # Settings link (if requested)
-    if show_settings:
-        st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
     
     # Modern divider
     st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)

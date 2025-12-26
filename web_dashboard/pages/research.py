@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Research Articles Viewer
-========================
+Research Repository Viewer
+===========================
 
 Streamlit page for viewing research articles collected by automated jobs.
 Provides statistics, filtering, and detailed article views.
@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="Research Articles",
-    page_icon="📰",
+    page_title="Research Repository",
+    page_icon="📚",
     layout="wide"
 )
 
@@ -69,9 +69,9 @@ repo = get_research_repository()
 
 # Check if PostgreSQL is available
 if repo is None:
-    st.error("⚠️ Research Articles Database Unavailable")
+    st.error("⚠️ Research Repository Database Unavailable")
     st.info("""
-    The research articles database is not available. This could be because:
+    The research repository database is not available. This could be because:
     - PostgreSQL is not running
     - RESEARCH_DATABASE_URL is not configured
     - Database connection failed
@@ -81,7 +81,7 @@ if repo is None:
     st.stop()
 
 # Header
-st.title("📰 Research Articles")
+st.title("📚 Research Repository")
 st.caption(f"Logged in as: {get_user_email()}")
 
 # Initialize session state for filters

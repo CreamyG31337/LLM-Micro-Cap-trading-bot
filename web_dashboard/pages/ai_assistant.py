@@ -158,6 +158,89 @@ def calculate_context_size(
         'usage_percent': usage_percent
     }
 
+# ============================================================================
+# Context Building Function (must be defined before sidebar code uses it)
+# ============================================================================
+
+def build_context_string_internal() -> str:
+    """Build formatted context string from selected items.
+    
+    Note: This is defined early to avoid NameError when called from sidebar caching logic.
+    It references variables that will be available when called (chat_context, selected_fund, etc.)
+    """
+    items = chat_context.get_items()
+    if not items:
+        return ""
+    
+    context_parts = []
+    
+    for item in items:
+        fund = item.fund or selected_fund
+        
+        try:
+            if item.item_type == ContextItemType.HOLDINGS:
+                positions_df = get_current_positions(fund)
+                # Get trades_df for opened date lookup
+                trades_df_for_holdings = get_trade_log(limit=1000, fund=fund) if fund else None
+                # Get toggle values from sidebar (use session state or default to True)
+                include_pv = st.session_state.get('toggle_price_volume', True)
+                include_fund = st.session_state.get('toggle_fundamentals', True)
+                context_parts.append(
+                    format_holdings(
+                        positions_df, 
+                        fund or "Unknown",
+                        trades_df=trades_df_for_holdings,
+                        include_price_volume=include_pv,
+                        include_fundamentals=include_fund
+                    )
+                )
+            
+            elif item.item_type == ContextItemType.THESIS:
+                thesis_data = get_fund_thesis_data(fund or "")
+                if thesis_data:
+                    context_parts.append(format_thesis(thesis_data))
+            
+            elif item.item_type == ContextItemType.TRADES:
+                limit = item.metadata.get('limit', 100)
+                trades_df = get_trade_log(limit=limit, fund=fund)
+                context_parts.append(format_trades(trades_df, limit))
+            
+            elif item.item_type == ContextItemType.METRICS:
+                portfolio_df = calculate_portfolio_value_over_time(fund, days=365) if fund else None
+                metrics = calculate_performance_metrics(fund) if fund else {}
+                context_parts.append(format_performance_metrics(metrics, portfolio_df))
+            
+            elif item.item_type == ContextItemType.CASH_BALANCES:
+                cash = get_cash_balances(fund) if fund else {}
+                context_parts.append(format_cash_balances(cash))
+            
+            elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
+                allocations_df = get_investor_allocations(fund) if fund else pd.DataFrame()
+                # Convert DataFrame to dict format for formatter
+                if not allocations_df.empty:
+                    allocations_dict = {}
+                    for _, row in allocations_df.iterrows():
+                        allocations_dict[row['contributor_display']] = {
+                            'value': row['net_contribution'],
+                            'percentage': row['ownership_pct']
+                        }
+                    context_parts.append(format_investor_allocations(allocations_dict))
+                else:
+                    context_parts.append(format_investor_allocations({}))
+            
+            elif item.item_type == ContextItemType.SEARCH_RESULTS:
+                # Search results are added dynamically when user queries
+                # This is handled in the query processing section
+                pass
+            
+        except Exception as e:
+            st.warning(f"Error loading {item.item_type.value}: {e}")
+            continue
+    
+    return "\n\n---\n\n".join(context_parts)
+
+# ============================================================================
+
 # Header
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -193,12 +276,22 @@ render_navigation(show_ai_assistant=False, show_settings=True)  # Don't show AI 
 with st.sidebar:
     st.header("⚙️ Model")
     
-    # Get the system default model (admin-configured)
-    from user_preferences import get_user_ai_model
-    selected_model = get_user_ai_model()
+    # Get available models and system default
+    available_models = list_available_models()
+    default_model = get_user_ai_model()
     
-    # Display current model (read-only)
-    st.info(f"**Using:** {selected_model}")
+    # Ensure default model is in the list
+    if default_model not in available_models:
+        available_models.insert(0, default_model)
+    
+    # Model selection dropdown
+    selected_model = st.selectbox(
+        "AI Model",
+        options=available_models,
+        index=available_models.index(default_model) if default_model in available_models else 0,
+        help="Select the AI model for analysis",
+        key="ai_model_selector"
+    )
     
     # Get model description if available
     client = get_ollama_client()
@@ -350,7 +443,7 @@ with st.sidebar:
         include_repository = st.checkbox(
             "Use Research Repository",
             value=True,
-            help="Search your saved research articles for relevant information",
+            help="Search your saved research repository for relevant information",
             key="toggle_repository"
         )
         
@@ -473,7 +566,7 @@ with st.sidebar:
     
     # Rebuild context string only if context items changed
     if st.session_state.context_items_fingerprint != current_fingerprint:
-        st.session_state.cached_context_string = build_context_string()
+        st.session_state.cached_context_string = build_context_string_internal()
         st.session_state.context_items_fingerprint = current_fingerprint
     
     # Show count
@@ -607,7 +700,7 @@ for message in reversed(st.session_state.chat_messages):
         st.markdown(message["content"])
 
 # Generate context data from selected items
-def build_context_string() -> str:
+def build_context_string_internal() -> str:
     """Build formatted context string from selected items."""
     items = chat_context.get_items()
     if not items:
@@ -1052,9 +1145,12 @@ if user_query:
     
     # Get AI response
     with st.chat_message("assistant"):
-        # Show "thinking..." indicator
-        thinking_placeholder = st.empty()
-        thinking_placeholder.info("🤔 **Thinking...** (Processing your request)")
+        # Show thinking indicator with status
+        status_container = st.status("🤔 Analyzing your request...", expanded=True)
+        with status_container:
+            st.write("📊 Loading context data...")
+            st.write("🔍 Processing search results...")
+            st.write("🧠 Generating response...")
         
         message_placeholder = st.empty()
         full_response = ""
@@ -1065,8 +1161,8 @@ if user_query:
                 st.error("AI client not available")
                 st.stop()
             
-            # Hide thinking indicator and start streaming
-            thinking_placeholder.empty()
+            # Update status to complete
+            status_container.update(label="✅ Analysis complete", state="complete", expanded=False)
             
             # Stream response
             # Pass None for temperature and max_tokens to let the client handle model-specific defaults
@@ -1180,7 +1276,7 @@ with st.expander("🔧 Debug Context (Raw AI Input)", expanded=False):
         
         st.markdown("---")
         st.caption("**Full Context String:**")
-        debug_context = build_context_string()
+        debug_context = build_context_string_internal()
         if debug_context:
             st.code(debug_context, language="text")
         else:

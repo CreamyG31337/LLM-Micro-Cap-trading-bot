@@ -1112,8 +1112,8 @@ with tab5:
         except Exception as e:
             st.error(f"Error checking performance metrics: {e}")
         
-        # Postgres (Research Articles) status
-        st.subheader("Postgres (Research Articles)")
+        # Postgres (Research Repository) status
+        st.subheader("Postgres (Research Repository)")
         try:
             from web_dashboard.postgres_client import PostgresClient
             from web_dashboard.research_repository import ResearchRepository

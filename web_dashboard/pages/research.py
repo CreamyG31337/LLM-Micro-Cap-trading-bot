@@ -684,11 +684,10 @@ try:
                         st.session_state.selected_articles.discard(article_id)
                 
                 with col_expander:
-                    # Create expander with unique key for proper state management
+                    # Note: Cannot use key parameter on expanders inside column context (LayoutsMixin limitation)
                     with st.expander(
                         f"{embedding_badge}**{article.get('title', 'Untitled')}** | {article.get('source', 'Unknown')} | {article.get('article_type', 'N/A')}",
-                        expanded=False,
-                        key=f"article_expander_{article['id']}"
+                        expanded=False
                     ):
                         col_info1, col_info2 = st.columns(2)
                 
@@ -773,7 +772,7 @@ try:
                         
                         # Content (if available and different from summary)
                         if article.get('content') and article.get('content') != article.get('summary'):
-                            with st.expander("📄 Full Content", expanded=False, key=f"content_expander_{article['id']}"):
+                            with st.expander("📄 Full Content", expanded=False):
                                 st.write(article['content'])
                         
                         if idx < len(articles) - 1:

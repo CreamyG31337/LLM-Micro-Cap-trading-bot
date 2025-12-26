@@ -11,6 +11,7 @@ import streamlit as st
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import logging
 import pandas as pd
@@ -72,6 +73,32 @@ if 'chat_messages' not in st.session_state:
 # Limit conversation history to prevent context overflow
 MAX_CONVERSATION_HISTORY = 20  # Keep last N messages (10 exchanges)
 
+# ============================================================================
+# PERFORMANCE OPTIMIZATION: Cached Helper Functions
+# ============================================================================
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_ollama_health() -> bool:
+    """Check Ollama health with 30s cache to avoid hitting service on every page load."""
+    return check_ollama_health()
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_searxng_health() -> bool:
+    """Check SearXNG health with 30s cache to avoid hitting service on every page load."""
+    return check_searxng_health()
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_portfolio_tickers_list(fund: str) -> List[str]:
+    """Get portfolio tickers with 60s cache to avoid DB queries on every page load."""
+    try:
+        df = get_current_positions(fund)
+        if not df.empty and 'ticker' in df.columns:
+            return sorted(df['ticker'].unique().tolist())
+    except Exception:
+        pass
+    return []
+
+# ============================================================================
 # Token estimation (rough approximation: 1 token ≈ 4 characters for English)
 def estimate_tokens(text: str) -> int:
     """Estimate token count from text (rough approximation)."""
@@ -148,15 +175,15 @@ with col2:
 if 'suggested_prompt' not in st.session_state:
     st.session_state.suggested_prompt = None
 
-# Check Ollama connection
-ollama_available = check_ollama_health()
+# Check Ollama connection (cached)
+ollama_available = get_cached_ollama_health()
 if not ollama_available:
     st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
     st.info("The AI assistant requires Ollama to be running and accessible.")
     st.stop()
 
-# Check SearXNG connection (non-blocking)
-searxng_available = check_searxng_health()
+# Check SearXNG connection (cached, non-blocking)
+searxng_available = get_cached_searxng_health()
 searxng_client = get_searxng_client()
 
 # Sidebar - Navigation, Settings and Context
@@ -422,8 +449,34 @@ with st.sidebar:
     elif not include_search and ContextItemType.SEARCH_RESULTS in current_types:
         chat_context.remove_item(ContextItemType.SEARCH_RESULTS, fund=selected_fund)
     
-    # Show count
+    # =========================================================================
+    # PERFORMANCE OPTIMIZATION: Cache context string in session state
+    # =========================================================================
+    # The footer displays context usage stats, which requires building the
+    # context string. Building it on EVERY page render is expensive (triggers
+    # all DB queries). Instead, we cache it in session state and only rebuild
+    # when the context items actually change (detected via fingerprint).
+    # =========================================================================
+    
+    # Initialize cache if needed
+    if 'context_items_fingerprint' not in st.session_state:
+        st.session_state.context_items_fingerprint = None
+        st.session_state.cached_context_string = ""
+    
+    # Create fingerprint of current context items (for change detection)
     updated_items = chat_context.get_items()
+    # Include fund, type, and metadata in fingerprint for accurate change detection
+    current_fingerprint = str(sorted([
+        (item.item_type.value, item.fund, tuple(sorted(item.metadata.items())) if item.metadata else ())
+        for item in updated_items
+    ]))
+    
+    # Rebuild context string only if context items changed
+    if st.session_state.context_items_fingerprint != current_fingerprint:
+        st.session_state.cached_context_string = build_context_string()
+        st.session_state.context_items_fingerprint = current_fingerprint
+    
+    # Show count
     if updated_items:
         st.caption(f"✅ {len(updated_items)} data source(s) selected")
         if st.button("🗑️ Clear All", use_container_width=True, key="clear_all"):
@@ -438,15 +491,10 @@ if searxng_available:
     st.markdown("#### 🔍 Quick Research")
     st.caption("Select tickers and click a button to start analysis.")
     
-    # Get portfolio tickers for ticker-specific queries
+    # Get portfolio tickers for ticker-specific queries (cached)
     portfolio_tickers_list = []
     if selected_fund:
-        try:
-            positions_df = get_current_positions(selected_fund)
-            if not positions_df.empty and 'ticker' in positions_df.columns:
-                portfolio_tickers_list = sorted(positions_df['ticker'].unique().tolist())
-        except Exception:
-            pass
+        portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
     
     # Unified Ticker Selection
     col_sel1, col_sel2 = st.columns([2, 1])
@@ -701,8 +749,8 @@ if user_query:
         "content": user_query
     })
     
-    # Build context
-    context_string = build_context_string()
+    # Reuse cached context string (PERFORMANCE OPTIMIZATION)
+    context_string = st.session_state.get('cached_context_string', '')
     
     # Get portfolio tickers for search detection
     portfolio_tickers = []
@@ -742,50 +790,65 @@ if user_query:
                     if research_intent['tickers']:
                         tickers = research_intent['tickers']
                         
-                        # Multi-ticker search: search each ticker individually and combine results
+                        # Multi-ticker search: search each ticker CONCURRENTLY (PERFORMANCE OPTIMIZATION)
                         if len(tickers) > 1:
                             logger.info(f"Multi-ticker search for: {', '.join(tickers)}")
                             all_results = []
                             seen_urls = set()
                             
-                            for ticker in tickers:
-                                # Lookup company name from database
-                                company_name = get_company_name_from_db(ticker)
-                                
-                                # Build query for this specific ticker
-                                ticker_search_query = build_search_query(
-                                    user_query,
-                                    tickers=[ticker],
-                                    company_name=company_name,
-                                    preserve_keywords=True
-                                )
-                                
-                                # Search for this ticker
-                                ticker_search_data = searxng_client.search_news(
-                                    query=ticker_search_query,
-                                    time_range='day',
-                                    max_results=10  # Fewer per ticker since we're combining multiple
-                                )
-                                
-                                # Filter results for relevance to this specific ticker
-                                if ticker_search_data and 'results' in ticker_search_data and ticker_search_data['results']:
-                                    original_count = len(ticker_search_data['results'])
-                                    filtered_results = filter_relevant_results(
-                                        ticker_search_data['results'],
-                                        ticker,
+                            # Define search function for a single ticker
+                            def search_single_ticker(ticker: str) -> List[Dict]:
+                                """Search for a single ticker and return filtered results."""
+                                try:
+                                    # Lookup company name from database
+                                    company_name = get_company_name_from_db(ticker)
+                                    
+                                    # Build query for this specific ticker
+                                    ticker_search_query = build_search_query(
+                                        user_query,
+                                        tickers=[ticker],
                                         company_name=company_name,
-                                        min_relevance_score=min_relevance_score
+                                        preserve_keywords=True
                                     )
                                     
-                                    logger.info(f"Ticker {ticker}: Filtered {original_count} to {len(filtered_results)} relevant results")
+                                    # Search for this ticker
+                                    ticker_search_data = searxng_client.search_news(
+                                        query=ticker_search_query,
+                                        time_range='day',
+                                        max_results=10
+                                    )
                                     
-                                    # Deduplicate by URL and tag with ticker
-                                    for result in filtered_results:
+                                    # Filter results for relevance to this specific ticker
+                                    if ticker_search_data and 'results' in ticker_search_data and ticker_search_data['results']:
+                                        original_count = len(ticker_search_data['results'])
+                                        filtered_results = filter_relevant_results(
+                                            ticker_search_data['results'],
+                                            ticker,
+                                            company_name=company_name,
+                                            min_relevance_score=min_relevance_score
+                                        )
+                                        logger.info(f"Ticker {ticker}: Filtered {original_count} to {len(filtered_results)} relevant results")
+                                        
+                                        # Tag results with ticker
+                                        for result in filtered_results:
+                                            result['related_ticker'] = ticker
+                                        return filtered_results
+                                    return []
+                                except Exception as e:
+                                    logger.error(f"Error searching ticker {ticker}: {e}")
+                                    return []
+                            
+                            # Execute searches in parallel (max 5 concurrent workers)
+                            with ThreadPoolExecutor(max_workers=min(len(tickers), 5)) as executor:
+                                future_to_ticker = {executor.submit(search_single_ticker, ticker): ticker for ticker in tickers}
+                                
+                                for future in as_completed(future_to_ticker):
+                                    ticker_results = future.result()
+                                    # Deduplicate by URL
+                                    for result in ticker_results:
                                         url = result.get('url', '')
                                         if url and url not in seen_urls:
                                             seen_urls.add(url)
-                                            # Tag result with related ticker for context
-                                            result['related_ticker'] = ticker
                                             all_results.append(result)
                             
                             # Combine all results
@@ -1041,7 +1104,7 @@ st.markdown("---")
 # Calculate current context usage (always show, even when no query)
 try:
     system_prompt = get_system_prompt()
-    current_context_string = build_context_string()
+    current_context_string = st.session_state.get('cached_context_string', '')
     # Use last user query if available, otherwise empty
     current_prompt = ""
     if st.session_state.chat_messages:

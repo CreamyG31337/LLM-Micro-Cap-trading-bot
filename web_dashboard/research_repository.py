@@ -25,10 +25,60 @@ class ResearchRepository:
         """
         try:
             self.client = postgres_client or PostgresClient()
-            logger.debug("ResearchRepository initialized successfully")
+            # Check which ticker column exists (for backward compatibility)
+            self._has_tickers_column = self._check_tickers_column_exists()
+            logger.debug(f"ResearchRepository initialized successfully (tickers column: {self._has_tickers_column})")
         except Exception as e:
             logger.error(f"ResearchRepository initialization failed: {e}")
             raise
+    
+    def _check_tickers_column_exists(self) -> bool:
+        """Check if the tickers array column exists in the database.
+        
+        Returns:
+            True if tickers column exists, False if only ticker column exists
+        """
+        try:
+            query = """
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'research_articles' 
+                  AND column_name = 'tickers'
+            """
+            result = self.client.execute_query(query)
+            return len(result) > 0
+        except Exception:
+            # If we can't check, assume old schema (ticker column only)
+            return False
+    
+    def _normalize_ticker_data(self, article: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize ticker data to always use 'tickers' key (array format).
+        
+        Handles backward compatibility with old 'ticker' column.
+        
+        Args:
+            article: Article dictionary from database
+            
+        Returns:
+            Article dictionary with normalized 'tickers' field
+        """
+        # If we have tickers array, use it
+        if 'tickers' in article and article['tickers'] is not None:
+            # Already in array format
+            return article
+        
+        # Fallback to old ticker column
+        if 'ticker' in article and article['ticker'] is not None:
+            # Convert single ticker to array
+            article['tickers'] = [article['ticker']]
+            # Remove old ticker key to avoid confusion
+            if 'ticker' in article:
+                del article['ticker']
+        else:
+            # No ticker data
+            article['tickers'] = None
+        
+        return article
     
     def save_article(
         self,
@@ -198,25 +248,47 @@ class ResearchRepository:
                 logger.debug(f"Could not check ETF status for {ticker}: {e}")
             
             # Build query: include ticker-specific articles, and for ETFs also include sector articles
-            # Use array lookup: WHERE %s = ANY(tickers) for fast GIN index lookup
-            if etf_sector:
-                query = """
-                    SELECT id, tickers, sector, article_type, title, url, summary, content,
-                           source, published_at, fetched_at, relevance_score,
-                           (embedding IS NOT NULL) as has_embedding
-                    FROM research_articles
-                    WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
-                """
-                params = [ticker, etf_sector]
+            # Handle both old (ticker) and new (tickers array) schema
+            if self._has_tickers_column:
+                # New schema: use array lookup
+                if etf_sector:
+                    query = """
+                        SELECT id, tickers, sector, article_type, title, url, summary, content,
+                               source, published_at, fetched_at, relevance_score,
+                               (embedding IS NOT NULL) as has_embedding
+                        FROM research_articles
+                        WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
+                    """
+                    params = [ticker, etf_sector]
+                else:
+                    query = """
+                        SELECT id, tickers, sector, article_type, title, url, summary, content,
+                               source, published_at, fetched_at, relevance_score,
+                               (embedding IS NOT NULL) as has_embedding
+                        FROM research_articles
+                        WHERE %s = ANY(tickers)
+                    """
+                    params = [ticker]
             else:
-                query = """
-                    SELECT id, tickers, sector, article_type, title, url, summary, content,
-                           source, published_at, fetched_at, relevance_score,
-                           (embedding IS NOT NULL) as has_embedding
-                    FROM research_articles
-                    WHERE %s = ANY(tickers)
-                """
-                params = [ticker]
+                # Old schema: use single ticker column
+                if etf_sector:
+                    query = """
+                        SELECT id, ticker, sector, article_type, title, url, summary, content,
+                               source, published_at, fetched_at, relevance_score,
+                               (embedding IS NOT NULL) as has_embedding
+                        FROM research_articles
+                        WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
+                    """
+                    params = [ticker, etf_sector]
+                else:
+                    query = """
+                        SELECT id, ticker, sector, article_type, title, url, summary, content,
+                               source, published_at, fetched_at, relevance_score,
+                               (embedding IS NOT NULL) as has_embedding
+                        FROM research_articles
+                        WHERE ticker = %s
+                    """
+                    params = [ticker]
             
             if article_type:
                 query += " AND article_type = %s"
@@ -228,17 +300,21 @@ class ResearchRepository:
             results = self.client.execute_query(query, tuple(params))
             
             # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
+            # Normalize ticker data to always use 'tickers' array format
+            normalized_results = []
             for article in results:
+                article = self._normalize_ticker_data(article)
                 if article.get('published_at') and isinstance(article['published_at'], datetime):
                     if article['published_at'].tzinfo is None:
                         article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
                 if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
                     if article['fetched_at'].tzinfo is None:
                         article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
+                normalized_results.append(article)
             
-            logger.debug(f"Retrieved {len(results)} articles for ticker {ticker}" + 
+            logger.debug(f"Retrieved {len(normalized_results)} articles for ticker {ticker}" + 
                         (f" (including {etf_sector} sector articles)" if etf_sector else ""))
-            return results
+            return normalized_results
             
         except Exception as e:
             logger.error(f"❌ Error getting articles by ticker: {e}")
@@ -265,8 +341,10 @@ class ResearchRepository:
         try:
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
             
-            query = """
-                SELECT id, tickers, sector, article_type, title, url, summary, content,
+            # Select appropriate ticker column based on schema version
+            ticker_column = "tickers" if self._has_tickers_column else "ticker"
+            query = f"""
+                SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -482,9 +560,11 @@ class ResearchRepository:
             # Build query with vector similarity search
             # <=> is cosine distance operator in pgvector
             # Similarity = 1 - distance
-            query = """
+            # Select appropriate ticker column based on schema version
+            ticker_column = "tickers" if self._has_tickers_column else "ticker"
+            query = f"""
                 SELECT 
-                    id, tickers, sector, article_type, title, url, summary, content,
+                    id, {ticker_column}, sector, article_type, title, url, summary, content,
                     source, published_at, fetched_at, relevance_score,
                     1 - (embedding <=> %s::vector) as similarity,
                     (embedding IS NOT NULL) as has_embedding
@@ -513,12 +593,22 @@ class ResearchRepository:
                     logger.debug(f"Could not check ETF status for {ticker}: {e}")
                 
                 # Include sector articles for ETFs
-                if etf_sector:
-                    query += " AND (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))"
-                    params.extend([ticker, etf_sector])
+                if self._has_tickers_column:
+                    # New schema: use array lookup
+                    if etf_sector:
+                        query += " AND (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))"
+                        params.extend([ticker, etf_sector])
+                    else:
+                        query += " AND %s = ANY(tickers)"
+                        params.append(ticker)
                 else:
-                    query += " AND %s = ANY(tickers)"
-                    params.append(ticker)
+                    # Old schema: use single ticker column
+                    if etf_sector:
+                        query += " AND (ticker = %s OR (ticker IS NULL AND sector = %s))"
+                        params.extend([ticker, etf_sector])
+                    else:
+                        query += " AND ticker = %s"
+                        params.append(ticker)
             
             if article_type:
                 query += " AND article_type = %s"
@@ -530,17 +620,20 @@ class ResearchRepository:
             
             results = self.client.execute_query(query, tuple(params))
             
-            # Process datetime fields
+            # Process datetime fields and normalize ticker data
+            normalized_results = []
             for article in results:
+                article = self._normalize_ticker_data(article)
                 if article.get('published_at') and isinstance(article['published_at'], datetime):
                     if article['published_at'].tzinfo is None:
                         article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
                 if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
                     if article['fetched_at'].tzinfo is None:
                         article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
+                normalized_results.append(article)
             
-            logger.info(f"✅ Found {len(results)} similar articles (min_similarity={min_similarity})")
-            return results
+            logger.info(f"✅ Found {len(normalized_results)} similar articles (min_similarity={min_similarity})")
+            return normalized_results
             
         except Exception as e:
             logger.error(f"❌ Error searching similar articles: {e}")
@@ -565,8 +658,10 @@ class ResearchRepository:
             List of article dictionaries
         """
         try:
-            search_query = """
-                SELECT id, tickers, sector, article_type, title, url, summary, content,
+            # Select appropriate ticker column based on schema version
+            ticker_column = "tickers" if self._has_tickers_column else "ticker"
+            search_query = f"""
+                SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -576,7 +671,10 @@ class ResearchRepository:
             params = [f"%{query_text}%", f"%{query_text}%", f"%{query_text}%", min_relevance]
             
             if ticker:
-                search_query += " AND %s = ANY(tickers)"
+                if self._has_tickers_column:
+                    search_query += " AND %s = ANY(tickers)"
+                else:
+                    search_query += " AND ticker = %s"
                 params.append(ticker)
             
             search_query += " ORDER BY relevance_score DESC, fetched_at DESC LIMIT %s"
@@ -730,8 +828,10 @@ class ResearchRepository:
             if end_date.tzinfo is None:
                 end_date = end_date.replace(tzinfo=timezone.utc)
             
-            query = """
-                SELECT id, tickers, sector, article_type, title, url, summary, content,
+            # Select appropriate ticker column based on schema version
+            ticker_column = "tickers" if self._has_tickers_column else "ticker"
+            query = f"""
+                SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
@@ -766,16 +866,20 @@ class ResearchRepository:
             
             # Note: RealDictCursor already returns TIMESTAMP columns as datetime objects
             # so no conversion is needed. Just ensure timezone awareness if needed.
+            # Normalize ticker data to always use 'tickers' array format
+            normalized_results = []
             for article in results:
+                article = self._normalize_ticker_data(article)
                 if article.get('published_at') and isinstance(article['published_at'], datetime):
                     if article['published_at'].tzinfo is None:
                         article['published_at'] = article['published_at'].replace(tzinfo=timezone.utc)
                 if article.get('fetched_at') and isinstance(article['fetched_at'], datetime):
                     if article['fetched_at'].tzinfo is None:
                         article['fetched_at'] = article['fetched_at'].replace(tzinfo=timezone.utc)
+                normalized_results.append(article)
             
-            logger.debug(f"Retrieved {len(results)} articles for date range")
-            return results
+            logger.debug(f"Retrieved {len(normalized_results)} articles for date range")
+            return normalized_results
             
         except Exception as e:
             logger.error(f"❌ Error getting articles by date range: {e}")
@@ -804,8 +908,10 @@ class ResearchRepository:
             List of article dictionaries
         """
         try:
-            query = """
-                SELECT id, tickers, sector, article_type, title, url, summary, content,
+            # Select appropriate ticker column based on schema version
+            ticker_column = "tickers" if self._has_tickers_column else "ticker"
+            query = f"""
+                SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles

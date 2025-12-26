@@ -157,7 +157,7 @@ class ChatContextManager:
         if not items:
             return user_query or "Please help me analyze my portfolio."
         
-        # Get item types for pattern matching
+        # Get unique item types (deduplicate)
         item_types = {item.item_type for item in items}
         
         # Pattern matching logic
@@ -166,53 +166,83 @@ class ChatContextManager:
         # Holdings + Thesis → Alignment analysis
         if ContextItemType.HOLDINGS in item_types and ContextItemType.THESIS in item_types:
             prompt_parts.append(
-                "Analyze how the current portfolio holdings align with the investment thesis. "
-                "Evaluate whether the positions support the stated investment strategy and pillars."
+                "Based on the portfolio holdings and investment thesis provided above, "
+                "analyze how well the current positions align with the stated investment strategy and pillars. "
+                "Evaluate whether the portfolio composition supports the investment goals."
             )
         
         # Trades + P&L → Trade performance
         elif ContextItemType.TRADES in item_types and ContextItemType.PNL_CHART in item_types:
             prompt_parts.append(
-                "Review the trade history and P&L patterns. "
+                "Using the trade history and P&L data provided above, "
+                "review the trading performance. "
                 "Identify successful trades, areas for improvement, and any patterns in trading behavior."
             )
         
         # Performance Chart + Metrics → Trend analysis
         elif ContextItemType.PERFORMANCE_CHART in item_types and ContextItemType.METRICS in item_types:
             prompt_parts.append(
-                "Analyze the performance trends over time along with key performance metrics. "
-                "Provide insights on portfolio performance, risk-adjusted returns, and areas of strength or concern."
+                "Based on the performance chart and metrics data provided above, "
+                "analyze portfolio performance over time. "
+                "Discuss trends, risk-adjusted returns, and areas of strength or concern."
             )
         
         # Holdings only → Portfolio analysis
         elif ContextItemType.HOLDINGS in item_types and len(item_types) == 1:
             prompt_parts.append(
-                "Provide a comprehensive analysis of the current portfolio holdings. "
+                "Using the portfolio holdings data provided above, "
+                "provide a comprehensive analysis of the current positions. "
                 "Include insights on diversification, concentration risk, sector allocation, and individual position performance."
             )
         
         # Trades only → Trade analysis
         elif ContextItemType.TRADES in item_types and len(item_types) == 1:
             prompt_parts.append(
-                "Analyze the recent trading activity. "
+                "Based on the trading activity data provided above, "
+                "analyze recent trades. "
                 "Review trade patterns, frequency, win rate, and identify any notable trends or concerns."
             )
         
-        # Multiple items → Comparison/relationship analysis
+        # Multiple items → General analysis
         elif len(item_types) > 1:
-            item_names = [item.item_type.value.replace("_", " ").title() for item in items]
+            # Build a descriptive list of what data is available
+            data_types = []
+            if ContextItemType.HOLDINGS in item_types:
+                data_types.append("current holdings")
+            if ContextItemType.METRICS in item_types:
+                data_types.append("performance metrics")
+            if ContextItemType.CASH_BALANCES in item_types:
+                data_types.append("cash balances")
+            if ContextItemType.SEARCH_RESULTS in item_types:
+                data_types.append("recent market news")
+            if ContextItemType.TRADES in item_types:
+                data_types.append("trade history")
+            if ContextItemType.INVESTOR_ALLOCATIONS in item_types:
+                data_types.append("investor allocations")
+            if ContextItemType.THESIS in item_types:
+                data_types.append("investment thesis")
+            
+            # Format the list nicely
+            if len(data_types) > 2:
+                data_desc = ", ".join(data_types[:-1]) + ", and " + data_types[-1]
+            elif len(data_types) == 2:
+                data_desc = " and ".join(data_types)
+            else:
+                data_desc = data_types[0] if data_types else "portfolio data"
+            
             prompt_parts.append(
-                f"Compare and analyze the relationship between {', '.join(item_names[:-1])} and {item_names[-1]}. "
-                "Provide insights on how these elements interact and what they reveal about portfolio performance."
+                f"Based on the {data_desc} provided above, "
+                "analyze the overall portfolio health and performance. "
+                "Discuss how these different aspects work together and what insights they reveal."
             )
         
         # Single item (other types)
         else:
             item = items[0]
-            item_name = item.item_type.value.replace("_", " ").title()
+            item_name = item.item_type.value.replace("_", " ")
             prompt_parts.append(
-                f"Analyze the {item_name}. "
-                "Provide insights and recommendations based on this data."
+                f"Using the {item_name} data provided above, "
+                "analyze this information and provide insights and recommendations."
             )
         
         # Add user query if provided

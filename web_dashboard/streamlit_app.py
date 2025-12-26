@@ -1137,7 +1137,7 @@ def main():
         from log_handler import log_message
         import time
         
-        log_message(f"[{session_id}] PERF: Starting dashboard data load for fund: {fund_filter}", level='INFO')
+        log_message(f"[{session_id}] PERF: Starting dashboard data load for fund: {fund_filter}", level='PERF')
         data_load_start = time.time()
         
         # Get user's display currency preference (needed for all calculations)
@@ -1146,33 +1146,33 @@ def main():
         with st.spinner("Loading portfolio data..."):
             t0 = time.time()
             positions_df = get_current_positions(fund_filter)
-            log_message(f"[{session_id}] PERF: get_current_positions took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: get_current_positions took {time.time() - t0:.2f}s", level='PERF')
             
             t0 = time.time()
             trades_df = get_trade_log(limit=1000, fund=fund_filter)
-            log_message(f"[{session_id}] PERF: get_trade_log took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: get_trade_log took {time.time() - t0:.2f}s", level='PERF')
             
             t0 = time.time()
             cash_balances = get_cash_balances(fund_filter)
-            log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: get_cash_balances took {time.time() - t0:.2f}s", level='PERF')
             
             t0 = time.time()
             portfolio_value_df = calculate_portfolio_value_over_time(fund_filter, days=days_filter, display_currency=display_currency)
-            log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='PERF')
         
-        log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='PERF')
         
         # Metrics row
         st.markdown("### Performance Metrics")
         
         metrics_start = time.time()
-        log_message(f"[{session_id}] PERF: Starting metrics calculations", level='INFO')
+        log_message(f"[{session_id}] PERF: Starting metrics calculations", level='PERF')
         
         with st.spinner("Calculating metrics..."):
             # Check investor count to determine layout (hide if only 1 investor)
             t0 = time.time()
             num_investors = get_investor_count(fund_filter)
-            log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: get_investor_count took {time.time() - t0:.2f}s", level='PERF')
             show_investors = num_investors > 1
             
             # Calculate total portfolio value from current positions (with currency conversion to display currency)
@@ -1202,14 +1202,14 @@ def main():
             # Use map for fast lookup
             rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
             portfolio_value_no_cash = (positions_df['market_value'].fillna(0) * rates).sum()
-        log_message(f"[{session_id}] PERF: market_value calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: market_value calculation (vectorized) took {time.time() - t0:.2f}s", level='PERF')
 
         # 2. Calculate Total P&L (Vectorized)
         t0 = time.time()
         if not positions_df.empty and 'unrealized_pnl' in positions_df.columns:
             rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
             total_pnl = (positions_df['unrealized_pnl'].fillna(0) * rates).sum()
-        log_message(f"[{session_id}] PERF: unrealized_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: unrealized_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='PERF')
         
         # 3. Calculate Cash (Fast Loop with Lookup)
         t0 = time.time()
@@ -1218,12 +1218,12 @@ def main():
             if amount > 0:
                 total_cash_display += amount * get_rate_safe(currency)
         total_value = portfolio_value_no_cash + total_cash_display
-        log_message(f"[{session_id}] PERF: cash calculation (lookup) took {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: cash calculation (lookup) took {time.time() - t0:.2f}s", level='PERF')
         
         # Get user's investment metrics (if they have contributions)
         t0 = time.time()
         user_investment = get_user_investment_metrics(fund_filter, portfolio_value_no_cash, include_cash=True, session_id=session_id, display_currency=display_currency)
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics took {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics took {time.time() - t0:.2f}s", level='PERF')
         
         # 4. Calculate Last Trading Day P&L (Vectorized)
         t0 = time.time()
@@ -1237,7 +1237,7 @@ def main():
             yesterday_value = total_value - last_day_pnl
             if yesterday_value > 0:
                 last_day_pnl_pct = (last_day_pnl / yesterday_value) * 100
-        log_message(f"[{session_id}] PERF: daily_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: daily_pnl calculation (vectorized) took {time.time() - t0:.2f}s", level='PERF')
 
         # Calculate "Unrealized P&L" (sum of open positions pnl)
         # We already calculated total_pnl above which is exactly this
@@ -1544,8 +1544,8 @@ def main():
         st.markdown("---")
         st.markdown("### Performance Charts")
         
-        log_message(f"[{session_id}] PERF: Metrics calculations complete, took {time.time() - metrics_start:.2f}s total", level='INFO')
-        log_message(f"[{session_id}] PERF: Starting chart section", level='INFO')
+        log_message(f"[{session_id}] PERF: Metrics calculations complete, took {time.time() - metrics_start:.2f}s total", level='PERF')
+        log_message(f"[{session_id}] PERF: Starting chart section", level='PERF')
         charts_start = time.time()
         
         # Portfolio value over time
@@ -1559,7 +1559,7 @@ def main():
             all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
             
             # Use normalized performance index (baseline 100) like the console app
-            log_message(f"[{session_id}] PERF: Creating portfolio value chart", level='INFO')
+            log_message(f"[{session_id}] PERF: Creating portfolio value chart", level='PERF')
             t0 = time.time()
             fig = create_portfolio_value_chart(
                 portfolio_value_df, 
@@ -1570,11 +1570,11 @@ def main():
                 use_solid_lines=use_solid,
                 display_currency=display_currency
             )
-            log_message(f"[{session_id}] PERF: create_portfolio_value_chart took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: create_portfolio_value_chart took {time.time() - t0:.2f}s", level='PERF')
             
             t0 = time.time()
             st.plotly_chart(fig, use_container_width=True, key="portfolio_performance_chart")
-            log_message(f"[{session_id}] PERF: st.plotly_chart (render) took {time.time() - t0:.2f}s", level='INFO')
+            log_message(f"[{session_id}] PERF: st.plotly_chart (render) took {time.time() - t0:.2f}s", level='PERF')
             
             # Individual holdings performance chart (lazy loading)
             st.markdown("---")
@@ -2140,7 +2140,7 @@ def main():
     # Log total execution time
     try:
         duration = time.time() - start_time
-        log_message(f"PERF: Streamlit script run finished in {duration:.3f}s", level='INFO' if duration > 1.0 else 'DEBUG')
+        log_message(f"PERF: Streamlit script run finished in {duration:.3f}s", level='PERF')
     except Exception:
         pass
 

@@ -1944,7 +1944,7 @@ with tab8:
         with col2:
             level_filter = st.selectbox(
                 "Level",
-                options=["All", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                options=["All", "DEBUG", "PERF", "INFO", "WARNING", "ERROR", "CRITICAL"],
                 index=0  # Default to "All"
             )
         

@@ -10,6 +10,18 @@ import threading
 from datetime import datetime
 from typing import List, Dict
 
+# Add custom PERF logging level (between DEBUG=10 and INFO=20)
+PERF_LEVEL = 15
+logging.addLevelName(PERF_LEVEL, 'PERF')
+
+def perf(self, message, *args, **kwargs):
+    """Log a message with PERF level."""
+    if self.isEnabledFor(PERF_LEVEL):
+        self._log(PERF_LEVEL, message, args, **kwargs)
+
+# Add perf method to Logger class
+logging.Logger.perf = perf
+
 
 class PacificTimeFormatter(logging.Formatter):
     """Custom formatter that displays timestamps in Pacific Time."""
@@ -156,7 +168,9 @@ def setup_logging(level=logging.INFO):
         '%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
-    file_handler.setLevel(level)
+    # Set handler to DEBUG to capture PERF (15) and all other levels
+    # Logger level will still control what gets logged
+    file_handler.setLevel(logging.DEBUG)
     
     # List of our application module names to capture logs from
     app_modules = [
@@ -186,7 +200,9 @@ def setup_logging(level=logging.INFO):
         
         # Add our file handler
         logger.addHandler(file_handler)
-        logger.setLevel(level)
+        # Set logger level to DEBUG to capture PERF (15) and all other levels
+        # Users can filter by level in the UI
+        logger.setLevel(logging.DEBUG)
         
         # Disable propagation to prevent Streamlit interference
         logger.propagate = False
@@ -262,8 +278,11 @@ def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
 def log_message(message: str, level: str = 'INFO', module: str = 'app'):
     """Convenience function to log a message."""
     logger = logging.getLogger(module)
-    if hasattr(logging, level.upper()):
-        log_level = getattr(logging, level.upper())
+    level_upper = level.upper()
+    if level_upper == 'PERF':
+        log_level = PERF_LEVEL
+    elif hasattr(logging, level_upper):
+        log_level = getattr(logging, level_upper)
     else:
         log_level = logging.INFO
     logger.log(log_level, message)
@@ -291,10 +310,9 @@ def log_execution_time(module_name=None):
                 # Determine module name
                 mod = module_name or func.__module__
                 
-                # Use INFO for slow ops (>1s), DEBUG for fast ones
-                level = 'INFO' if duration > 1.0 else 'DEBUG'
+                # Use PERF level for all performance logging
                 msg = f"PERF: {func.__name__} took {duration:.3f}s"
                 
-                log_message(msg, level=level, module=mod)
+                log_message(msg, level='PERF', module=mod)
         return wrapper
     return decorator

@@ -1795,7 +1795,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         import time
         from log_handler import log_message
         func_start = time.time()
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Starting", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Starting", level='PERF')
         
         # Get ALL contributions with timestamps (not just the summary view)
         # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
@@ -1827,10 +1827,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 print("Warning: Reached 50,000 row safety limit in get_user_investment_metrics pagination")
                 break
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Contributions query: {time.time() - t0:.2f}s ({len(all_contributions)} rows)", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Contributions query: {time.time() - t0:.2f}s ({len(all_contributions)} rows)", level='PERF')
         
         if not all_contributions:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - No contributions found, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - No contributions found, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
             return None
         
         # Get cash balances for total fund value
@@ -1845,10 +1845,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 total_cash_display += cash_display
         
         fund_total_value = total_portfolio_value + total_cash_display if include_cash else total_portfolio_value
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Cash/exchange rate: {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Cash/exchange rate: {time.time() - t0:.2f}s", level='PERF')
         
         if fund_total_value <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Fund value <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Fund value <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
             return None
         
         # Parse and sort contributions chronologically
@@ -1894,7 +1894,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             })
         
         contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Parse contributions: {time.time() - t0:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Parse contributions: {time.time() - t0:.2f}s", level='PERF')
         
         # Get all contribution dates AND previous dates (for NAV lookup)
         # We need previous day's value to calculate NAV *before* the new capital affects value
@@ -1922,7 +1922,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             historical_values = {}
             historical_cost_basis = {}
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='PERF')
         
         # Check if we have sufficient historical data
         use_historical = bool(historical_values)
@@ -2057,12 +2057,12 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 
                 # Log unit issuance for debugging
                 if nav_at_transaction != 10.0:
-                    log_message(f"[{session_id}] NAV DEBUG: {contributor} added ${amount} at NAV ${nav_at_transaction:.4f} ({nav_source}) -> {units_issued:.2f} units", level='INFO')
+                    log_message(f"[{session_id}] NAV: {contributor} added ${amount} at NAV ${nav_at_transaction:.4f} ({nav_source}) -> {units_issued:.2f} units", level='DEBUG')
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - NAV calculations: {time.time() - t0:.2f}s ({len(contributions)} contributions)", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - NAV calculations: {time.time() - t0:.2f}s ({len(contributions)} contributions)", level='PERF')
         
         if total_units <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Total units <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Total units <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
             return None
         
         # Find the current user's data
@@ -2078,14 +2078,14 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 break
         
         if user_contributor is None or user_units <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User not found or no units, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User not found or no units, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
             return None
         
         user_data = contributor_data[user_contributor]
         user_net_contribution = user_data['net_contribution']
         
         if user_net_contribution <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User net contribution <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User net contribution <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
             return None
         
         # Calculate current NAV and user's value
@@ -2095,7 +2095,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         gain_loss = current_value - user_net_contribution
         gain_loss_pct = (gain_loss / user_net_contribution) * 100 if user_net_contribution > 0 else 0.0
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - SUCCESS, total time: {time.time() - func_start:.2f}s", level='INFO')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - SUCCESS, total time: {time.time() - func_start:.2f}s", level='PERF')
         
         return {
             'net_contribution': user_net_contribution,

@@ -344,6 +344,66 @@ with st.sidebar:
         st.markdown("---")
         st.header("🔧 Admin Tools")
         
+        # Upload Report Section
+        with st.expander("📤 Upload Report", expanded=False):
+            uploaded_file = st.file_uploader("Upload PDF or DOCX", type=['pdf', 'docx'])
+            
+            if uploaded_file is not None:
+                if st.button("Process & Save", type="primary"):
+                    with st.spinner("Processing file..."):
+                        try:
+                            # Extract text
+                            text_content = extract_text_from_file(uploaded_file)
+                            
+                            if text_content and len(text_content.strip()) > 50:
+                                # Generate summary if AI is available
+                                client = get_ollama_client()
+                                summary_result = {}
+                                
+                                if client and check_ollama_health():
+                                    st.info("Generating AI summary...")
+                                    try:
+                                        summary_result = client.generate_summary(text_content, model=get_summarizing_model())
+                                    except Exception as e:
+                                        logger.error(f"AI summary failed: {e}")
+                                        st.warning("AI summary failed, saving without summary")
+                                
+                                # Prepare article data
+                                title = uploaded_file.name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
+                                
+                                # Use AI extracted companies/tickers if available
+                                companies = summary_result.get('companies', [])
+                                
+                                # Save to database
+                                article_id = repo.save_article(
+                                    tickers=companies if companies else None,
+                                    sector=None,
+                                    article_type="uploaded_report",
+                                    title=title,
+                                    url=f"upload://{uploaded_file.name}-{int(time.time())}",  # Unique URL
+                                    summary=summary_result.get('summary', "No summary available."),
+                                    content=text_content,
+                                    source="Uploaded File",
+                                    published_at=datetime.now(timezone.utc),
+                                    relevance_score=0.9,  # Assume uploaded reports are highly relevant
+                                    embedding=summary_result.get('embedding')
+                                )
+                                
+                                if article_id:
+                                    st.success(f"✅ Saved: {title}")
+                                    st.session_state.refresh_key += 1
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to save article to database")
+                            else:
+                                st.error("Could not extract text from file. It might be empty or scanned (images).")
+                        except Exception as e:
+                            st.error(f"Error processing file: {e}")
+                            logger.error(f"Upload error: {e}")
+        
+        st.markdown("---")
+        
         from ollama_client import list_available_models
         
         if check_ollama_health():

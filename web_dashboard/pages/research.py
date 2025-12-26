@@ -368,6 +368,43 @@ with st.sidebar:
                         key="admin_reanalysis_model"
                     )
                     st.session_state.reanalysis_model = selected_model
+                    
+                    # Re-Analyze Selected button
+                    if st.button("🔄 Re-Analyze Selected", key="sidebar_reanalyze", type="primary", use_container_width=True):
+                        selected_ids = list(st.session_state.get('selected_articles', set()))
+                        
+                        if not selected_ids:
+                            st.warning("No articles selected. Select articles using checkboxes.")
+                        else:
+                            # Need to get articles to show titles - use a simple query
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            success_count = 0
+                            error_count = 0
+                            
+                            for idx, article_id in enumerate(selected_ids):
+                                status_text.text(f"Re-analyzing article {idx + 1}/{len(selected_ids)}...")
+                                
+                                success, message = reanalyze_article(article_id, selected_model)
+                                
+                                if success:
+                                    success_count += 1
+                                else:
+                                    error_count += 1
+                                
+                                progress_bar.progress((idx + 1) / len(selected_ids))
+                            
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            if success_count > 0:
+                                st.success(f"✅ Re-analyzed {success_count} article(s)")
+                                st.session_state.refresh_key += 1
+                                st.session_state.selected_articles = set()
+                            
+                            if error_count > 0:
+                                st.error(f"❌ Failed to re-analyze {error_count} article(s)")
                 else:
                     st.warning("No models available. Pull a model first (e.g., `ollama pull llama3`)")
                     st.session_state.reanalysis_model = get_summarizing_model()
@@ -558,76 +595,14 @@ try:
         if 'selected_articles' not in st.session_state:
             st.session_state.selected_articles = set()
         
-        # Admin batch actions section
+        # Admin select all checkbox (minimal, no batch actions section)
         if is_admin():
-            st.markdown("### Batch Actions")
-            col_batch1, col_batch2, col_batch3 = st.columns([1, 1, 2])
-            
-            with col_batch1:
-                # Select All checkbox
-                select_all = st.checkbox("Select All", key="select_all_checkbox")
-                if select_all:
-                    # Select all articles on current page
-                    st.session_state.selected_articles.update([article['id'] for article in articles])
-                else:
-                    # Deselect all articles on current page
-                    current_page_ids = {article['id'] for article in articles}
-                    st.session_state.selected_articles = st.session_state.selected_articles - current_page_ids
-            
-            with col_batch2:
-                selected_count = len([aid for aid in st.session_state.selected_articles if any(a['id'] == aid for a in articles)])
-                st.caption(f"Selected: {selected_count} on this page")
-            
-            with col_batch3:
-                # Batch re-analyze button
-                if st.button("🔄 Re-Analyze Selected", key="batch_reanalyze", type="primary", use_container_width=True):
-                    # Get model from session state
-                    model = st.session_state.get('reanalysis_model', get_summarizing_model())
-                    
-                    # Get all selected article IDs that are in current articles
-                    selected_ids = [aid for aid in st.session_state.selected_articles if any(a['id'] == aid for a in articles)]
-                    
-                    if not selected_ids:
-                        st.warning("No articles selected. Please select articles using the checkboxes.")
-                    else:
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        success_count = 0
-                        error_count = 0
-                        
-                        for idx, article_id in enumerate(selected_ids):
-                            # Find article title for status
-                            article_title = next((a.get('title', 'Article') for a in articles if a['id'] == article_id), 'Article')
-                            status_text.text(f"Re-analyzing: {article_title[:50]}... ({idx + 1}/{len(selected_ids)})")
-                            
-                            success, message = reanalyze_article(article_id, model)
-                            
-                            if success:
-                                success_count += 1
-                            else:
-                                error_count += 1
-                                logger.error(f"Failed to re-analyze {article_id}: {message}")
-                            
-                            # Update progress
-                            progress_bar.progress((idx + 1) / len(selected_ids))
-                            time.sleep(0.1)  # Small delay to show progress
-                        
-                        # Clear progress and show results
-                        progress_bar.empty()
-                        status_text.empty()
-                        
-                        if success_count > 0:
-                            st.success(f"✅ Successfully re-analyzed {success_count} article(s)")
-                            # Increment refresh key to invalidate cache
-                            st.session_state.refresh_key += 1
-                            # Clear selection
-                            st.session_state.selected_articles = set()
-                        
-                        if error_count > 0:
-                            st.error(f"❌ Failed to re-analyze {error_count} article(s)")
-            
-            st.markdown("---")
+            select_all = st.checkbox("Select All", key="select_all_checkbox")
+            if select_all:
+                st.session_state.selected_articles.update([article['id'] for article in articles])
+            else:
+                current_page_ids = {article['id'] for article in articles}
+                st.session_state.selected_articles = st.session_state.selected_articles - current_page_ids
         
         # Pagination controls
         col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
@@ -695,26 +670,13 @@ try:
             @st.fragment
             def render_admin_actions(article_id: str, article_title: str):
                 """Fragment for admin actions - only this section re-renders on button click"""
-                col_admin1, col_admin2 = st.columns(2)
-                
-                with col_admin1:
-                    if st.button("🔄 Re-Analyze", key=f"reanalyze_{article_id}", type="primary", use_container_width=True):
-                        model = st.session_state.get('reanalysis_model', get_summarizing_model())
-                        with st.spinner(f"Re-analyzing with {model}..."):
-                            success, message = reanalyze_article(article_id, model)
-                            if success:
-                                st.success(f"✅ {message}")
-                                st.session_state.refresh_key += 1
-                            else:
-                                st.error(f"❌ {message}")
-                
-                with col_admin2:
-                    if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
-                        if repo.delete_article(article_id):
-                            st.success(f"✅ Deleted: {article_title}")
-                            st.session_state.refresh_key += 1
-                        else:
-                            st.error("❌ Failed to delete article")
+                # Only Delete button - Re-analyze moved to sidebar batch actions
+                if st.button("🗑️ Delete", key=f"del_{article_id}", type="secondary", use_container_width=True):
+                    if repo.delete_article(article_id):
+                        st.success(f"✅ Deleted: {article_title}")
+                        st.session_state.refresh_key += 1
+                    else:
+                        st.error("❌ Failed to delete article")
         
         # Helper to format article metadata (reduces duplication)
         def format_article_metadata(article: dict) -> str:

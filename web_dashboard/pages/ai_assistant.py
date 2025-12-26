@@ -1082,37 +1082,24 @@ if user_query:
         current_prompt=full_prompt
     )
     
-    # Get AI response
+    
     # Get AI response
     with st.chat_message("assistant"):
-        # Show visible status indicators (non-collapsible)
+        # Show visible status indicator during generation
         status_placeholder = st.empty()
-        status_placeholder.markdown("🤔 **Analyzing your request...**")
-        
-        # Emulate processing steps (since we can't context manager st.empty)
-        # We'll update the placeholder as we go
-        status_placeholder.markdown("📊 **Loading context data...**")
+        status_placeholder.info("🧠 **Generating response...**")
         
         message_placeholder = st.empty()
         full_response = ""
         
         try:
-            status_placeholder.markdown("🔍 **Processing search results...**")
-            
             client = get_ollama_client()
             if not client:
+                status_placeholder.empty()
                 st.error("AI client not available")
                 st.stop()
             
-            status_placeholder.markdown("🧠 **Generating response...**")
-            
-            # Clear status before showing response or keep it? 
-            # Usually better to clear it or replace with "Done" if it was taking space.
-            # But the user wants "visible right away".
-            # We'll clear it just before streaming starts so it doesn't clutter.
-            status_placeholder.empty()
-            
-            # Stream response
+            # Stream response (status remains visible during streaming)
             # Pass None for temperature and max_tokens to let the client handle model-specific defaults
             # Model settings come from model_config.json and database overrides
             for chunk in client.query_ollama(
@@ -1126,6 +1113,8 @@ if user_query:
                 full_response += chunk
                 message_placeholder.markdown(full_response + "▌")
             
+            # Clear status and show final response
+            status_placeholder.empty()
             message_placeholder.markdown(full_response)
             
         except Exception as e:

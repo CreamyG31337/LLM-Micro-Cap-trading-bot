@@ -2206,3 +2206,19 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
+    
+    # Benchmark refresh job - daily after market close
+    if AVAILABLE_JOBS['benchmark_refresh']['enabled_by_default']:
+        cron_config = AVAILABLE_JOBS['benchmark_refresh']['cron_triggers'][0]
+        scheduler.add_job(
+            benchmark_refresh_job,
+            trigger=CronTrigger(
+                hour=cron_config['hour'],
+                minute=cron_config['minute'],
+                timezone=cron_config['timezone']
+            ),
+            id='benchmark_refresh',
+            name='Refresh Benchmark Data',
+            replace_existing=True
+        )
+        logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")

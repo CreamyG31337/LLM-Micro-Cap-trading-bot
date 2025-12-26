@@ -31,7 +31,7 @@ except ImportError as e:
     st.stop()
 
 if not is_authenticated():
-    st.warning("Please log in to access settings.")
+    st.switch_page("streamlit_app.py")
     st.stop()
 
 # Sidebar navigation
@@ -72,22 +72,25 @@ def render_timezone_settings():
     # Get current timezone
     current_tz = get_user_timezone()
     if not current_tz:
-        # Default to system timezone
+        # Default to PST (Pacific Time) when no preference is set
         try:
-            current_tz = str(datetime.now().astimezone().tzinfo)
+            # Try to detect system timezone first
+            system_tz = str(datetime.now().astimezone().tzinfo)
             # Try to map to a common timezone name
-            if "PST" in current_tz or "PDT" in current_tz:
+            if "PST" in system_tz or "PDT" in system_tz:
                 current_tz = "America/Los_Angeles"
-            elif "EST" in current_tz or "EDT" in current_tz:
+            elif "EST" in system_tz or "EDT" in system_tz:
                 current_tz = "America/New_York"
-            elif "CST" in current_tz or "CDT" in current_tz:
+            elif "CST" in system_tz or "CDT" in system_tz:
                 current_tz = "America/Chicago"
-            elif "MST" in current_tz or "MDT" in current_tz:
+            elif "MST" in system_tz or "MDT" in system_tz:
                 current_tz = "America/Denver"
             else:
-                current_tz = "UTC"
+                # Default to PST if system timezone can't be determined
+                current_tz = "America/Los_Angeles"
         except Exception:
-            current_tz = "UTC"
+            # Default to PST if detection fails
+            current_tz = "America/Los_Angeles"
 
     # Find current index
     tz_options = list(COMMON_TIMEZONES.keys())

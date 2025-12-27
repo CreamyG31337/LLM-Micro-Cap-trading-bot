@@ -281,3 +281,6 @@ supabase_credentials.txt
 # Debug and test output files
 debug_output.txt
 test_output.txt
+
+# Cache version file for Streamlit cache invalidation
+.cache_version

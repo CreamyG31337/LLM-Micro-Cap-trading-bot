@@ -28,12 +28,22 @@ except ImportError:
     st = None
 
 # ============================================================
-# CACHE VERSION - Auto-derived from BUILD_TIMESTAMP (set by Woodpecker CI)
-# Every deployment gets a new cache version, automatically invalidating stale data
-# Falls back to app startup time if BUILD_TIMESTAMP not set
+# CACHE VERSION - Dynamic version from shared file
+# Background jobs bump this version after updating portfolio data,
+# invalidating the cache immediately without waiting for TTL
+# Falls back to BUILD_TIMESTAMP (deployment time) if file not available
 # ============================================================
-_startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-CACHE_VERSION = os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
+def _get_cache_version():
+    """Get dynamic cache version - checked on every cached function call."""
+    try:
+        from cache_version import get_cache_version
+        return get_cache_version()
+    except Exception:
+        # Fallback to static version if module not available
+        _startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
+
+CACHE_VERSION = _get_cache_version()  # Will be called dynamically by cached functions
 
 # ============================================================
 # CURRENCY REGISTRY - Extensible currency support
@@ -397,11 +407,15 @@ def get_available_funds() -> List[str]:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> pd.DataFrame:
+def get_current_positions(fund: Optional[str] = None, _cache_version: str = None) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame.
     
-    CACHED: 5 min TTL. Bump CACHE_VERSION to force immediate invalidation.
+    CACHED: 5 min TTL. Cache version auto-updates when jobs modify data.
     """
+    # Dynamically get cache version if not provided
+    if _cache_version is None:
+        _cache_version = _get_cache_version()
+    
     import logging
     logger = logging.getLogger(__name__)
     if fund:
@@ -489,13 +503,13 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Dict[str, Any]:
+def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str] = None, _cache_version: str = None) -> Dict[str, Any]:
     """Calculate realized P&L from closed positions (SELL trades).
     
     Args:
         fund: Optional fund name to filter by
         display_currency: Optional display currency (defaults to user preference)
-        _cache_version: Cache version for invalidation
+        _cache_version: Cache version for invalidation (auto-fetched if None)
         
     Returns:
         Dictionary with (matching console app's get_realized_pnl_summary() structure):
@@ -508,6 +522,10 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
         - losing_trades: Number of losing trades (negative P&L)
         - trades_by_ticker: Dictionary with ticker breakdown (realized_pnl, shares_sold, proceeds)
     """
+    # Dynamically get cache version if not provided
+    if _cache_version is None:
+        _cache_version = _get_cache_version()
+    
     if display_currency is None:
         display_currency = get_user_display_currency()
     

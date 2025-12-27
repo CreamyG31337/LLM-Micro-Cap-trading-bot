@@ -2320,6 +2320,19 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         # Mark job as completed successfully
         mark_job_completed('update_portfolio_prices', target_date, None, funds_completed)
         
+        # Bump cache version to invalidate Streamlit cache immediately
+        try:
+            import sys
+            from pathlib import Path
+            web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+            if web_dashboard_path not in sys.path:
+                sys.path.insert(0, web_dashboard_path)
+            from cache_version import bump_cache_version
+            bump_cache_version()
+            logger.info("Cache version bumped - Streamlit will show fresh data")
+        except Exception as e:
+            logger.warning(f"Failed to bump cache version: {e}")
+        
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"

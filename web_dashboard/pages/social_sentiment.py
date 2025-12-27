@@ -385,9 +385,8 @@ try:
             'created_at': created_at
         })
     
-    # Prepare DataFrame with combined platform data
+    # Prepare DataFrame with separate platform columns
     df_data = []
-    platform_icons = {'stocktwits': '💬', 'reddit': '👽'}
     sentiment_icons = {
         'BULLISH': '🚀',
         'BEARISH': '📉',
@@ -398,61 +397,72 @@ try:
     for ticker, data in ticker_data.items():
         platforms = data['platforms']
         
-        # Combine platform sentiments with icons
-        sentiment_parts = []
-        volume_parts = []
-        scores = []
-        bull_bear_ratio = None
+        # Initialize platform data
+        stocktwits_data = None
+        reddit_data = None
         latest_timestamp = None
         
         for p in platforms:
             platform = p['platform']
-            platform_icon = platform_icons.get(platform, '❓')
             sentiment_label = p['sentiment_label'] if p['sentiment_label'] else 'N/A'
             sentiment_icon = sentiment_icons.get(sentiment_label.upper(), '')
             
             # Format sentiment with icon
             if sentiment_icon:
-                sentiment_parts.append(f"{platform_icon} {sentiment_icon} {sentiment_label}")
+                sentiment_display = f"{sentiment_icon} {sentiment_label}"
             else:
-                sentiment_parts.append(f"{platform_icon} {sentiment_label}")
+                sentiment_display = sentiment_label
             
-            # Volume
-            volume_parts.append(f"{platform_icon} {p['volume']}")
+            platform_info = {
+                'sentiment': sentiment_display,
+                'volume': p['volume'],
+                'score': f"{p['sentiment_score']:.1f}" if p['sentiment_score'] is not None else "N/A",
+                'bull_bear_ratio': p['bull_bear_ratio'],
+                'created_at': p['created_at']
+            }
             
-            # Scores
-            if p['sentiment_score'] is not None:
-                scores.append(p['sentiment_score'])
+            if platform == 'stocktwits':
+                stocktwits_data = platform_info
+            elif platform == 'reddit':
+                reddit_data = platform_info
             
-            # Bull/Bear ratio (Stocktwits only)
-            if p['bull_bear_ratio'] is not None and platform == 'stocktwits':
-                bull_bear_ratio = p['bull_bear_ratio']
-            
-            # Latest timestamp
+            # Track latest timestamp
             if p['created_at']:
                 if latest_timestamp is None or p['created_at'] > latest_timestamp:
                     latest_timestamp = p['created_at']
         
-        # Combine sentiments
-        combined_sentiment = ' | '.join(sentiment_parts) if sentiment_parts else 'N/A'
-        
-        # Combine volumes
-        combined_volume = ' | '.join(volume_parts) if volume_parts else 'N/A'
-        
-        # Average score
-        avg_score = sum(scores) / len(scores) if scores else None
-        score_display = f"{avg_score:.1f}" if avg_score is not None else "N/A"
-        
-        df_data.append({
+        # Build row data
+        row = {
             'Ticker': ticker,
             'Company': data['company'],
             'In Watchlist': '✅' if data['in_watchlist'] else '❌',
-            'Volume': combined_volume,
-            'Sentiment': combined_sentiment,
-            'Score': score_display,
-            'Bull/Bear Ratio': f"{bull_bear_ratio:.2f}" if bull_bear_ratio is not None else "N/A",
-            'Last Updated': format_datetime(latest_timestamp)
-        })
+        }
+        
+        # Stocktwits columns
+        if stocktwits_data:
+            row['💬 Stocktwits Sentiment'] = stocktwits_data['sentiment']
+            row['💬 Stocktwits Volume'] = stocktwits_data['volume']
+            row['💬 Stocktwits Score'] = stocktwits_data['score']
+            row['💬 Bull/Bear Ratio'] = f"{stocktwits_data['bull_bear_ratio']:.2f}" if stocktwits_data['bull_bear_ratio'] is not None else "N/A"
+        else:
+            row['💬 Stocktwits Sentiment'] = 'N/A'
+            row['💬 Stocktwits Volume'] = 'N/A'
+            row['💬 Stocktwits Score'] = 'N/A'
+            row['💬 Bull/Bear Ratio'] = 'N/A'
+        
+        # Reddit columns
+        if reddit_data:
+            row['👽 Reddit Sentiment'] = reddit_data['sentiment']
+            row['👽 Reddit Volume'] = reddit_data['volume']
+            row['👽 Reddit Score'] = reddit_data['score']
+        else:
+            row['👽 Reddit Sentiment'] = 'N/A'
+            row['👽 Reddit Volume'] = 'N/A'
+            row['👽 Reddit Score'] = 'N/A'
+        
+        row['Last Updated'] = format_datetime(latest_timestamp)
+        
+        df_data.append(row)
     
     df = pd.DataFrame(df_data)
     
@@ -466,33 +476,50 @@ try:
     # Sort by ticker
     df = df.sort_values(['Ticker'])
     
+    # Reorder columns for better readability
+    column_order = [
+        'Ticker',
+        'Company',
+        'In Watchlist',
+        '💬 Stocktwits Sentiment',
+        '💬 Stocktwits Volume',
+        '💬 Stocktwits Score',
+        '💬 Bull/Bear Ratio',
+        '👽 Reddit Sentiment',
+        '👽 Reddit Volume',
+        '👽 Reddit Score',
+        'Last Updated'
+    ]
+    # Only include columns that exist in the DataFrame
+    existing_columns = [col for col in column_order if col in df.columns]
+    df = df[existing_columns]
+    
     # Define sentiment color styling function
     def style_sentiment(val):
-        """Apply background color based on the most extreme sentiment in combined format"""
+        """Apply background color based on sentiment label"""
         if not val or val == 'N/A':
             return ''
         
-        # Extract sentiment labels from combined format (e.g., "💬 🚀 BULLISH | 👽 NEUTRAL")
-        sentiment_labels = []
+        # Extract sentiment label (handle format like "🚀 BULLISH" or just "BULLISH")
+        sentiment_label = None
         for label in ['EUPHORIC', 'BULLISH', 'NEUTRAL', 'BEARISH', 'FEARFUL']:
             if label in val.upper():
-                sentiment_labels.append(label)
+                sentiment_label = label
+                break
         
-        if not sentiment_labels:
+        if not sentiment_label:
             return ''
         
-        # Use the most extreme sentiment for styling
-        # Priority: EUPHORIC > BULLISH > NEUTRAL > BEARISH > FEARFUL
-        sentiment_priority = {'EUPHORIC': 4, 'BULLISH': 3, 'NEUTRAL': 2, 'BEARISH': 1, 'FEARFUL': 0}
-        most_extreme = max(sentiment_labels, key=lambda x: sentiment_priority.get(x, 2))
-        
-        color = get_sentiment_color(most_extreme)
+        color = get_sentiment_color(sentiment_label)
         # Use white text for better contrast
         return f'background-color: {color}; color: white; font-weight: bold;'
     
+    # Get sentiment column names
+    sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
+    
     # Display dataframe with styling
     st.dataframe(
-        df.style.applymap(style_sentiment, subset=['Sentiment']),
+        df.style.applymap(style_sentiment, subset=sentiment_columns),
         use_container_width=True,
         hide_index=True
     )
@@ -513,12 +540,20 @@ try:
     
     with col3:
         # Count tickers with EUPHORIC sentiment (in any platform)
-        euphoric_count = len(df[df['Sentiment'].str.contains('EUPHORIC', case=False, na=False)])
+        sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
+        euphoric_mask = pd.Series([False] * len(df))
+        for col in sentiment_columns:
+            euphoric_mask |= df[col].str.contains('EUPHORIC', case=False, na=False)
+        euphoric_count = euphoric_mask.sum()
         st.metric("Euphoric", euphoric_count)
     
     with col4:
         # Count tickers with FEARFUL sentiment (in any platform)
-        fearful_count = len(df[df['Sentiment'].str.contains('FEARFUL', case=False, na=False)])
+        sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
+        fearful_mask = pd.Series([False] * len(df))
+        for col in sentiment_columns:
+            fearful_mask |= df[col].str.contains('FEARFUL', case=False, na=False)
+        fearful_count = fearful_mask.sum()
         st.metric("Fearful", fearful_count)
 
 except Exception as e:

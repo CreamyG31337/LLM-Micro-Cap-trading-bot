@@ -81,6 +81,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 30,  # Every 30 minutes
         'enabled_by_default': True,
         'icon': '💬'
+    },
+    'social_metrics_cleanup': {
+        'name': 'Social Metrics Cleanup',
+        'description': 'Daily cleanup: remove raw_data JSON after 7 days, delete rows after 90 days',
+        'default_interval_minutes': 1440,  # Once per day
+        'enabled_by_default': True,
+        'icon': '🧹'
     }
 }
 
@@ -2833,6 +2840,57 @@ def fetch_social_sentiment_job() -> None:
         logger.error(f"❌ Social sentiment job failed: {e}", exc_info=True)
 
 
+def cleanup_social_metrics_job() -> None:
+    """Daily cleanup job for social metrics retention policy.
+    
+    Implements two-tier retention:
+    - Removes raw_data JSON from records older than 7 days
+    - Deletes entire rows older than 90 days
+    """
+    job_id = 'social_metrics_cleanup'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting social metrics cleanup job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('social_metrics_cleanup', target_date)
+        
+        # Import dependencies (lazy imports)
+        try:
+            from social_service import SocialSentimentService
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize service
+        service = SocialSentimentService()
+        
+        # Run cleanup
+        results = service.run_daily_cleanup()
+        
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Updated {results['rows_updated']} records, deleted {results['rows_deleted']} records"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('social_metrics_cleanup', target_date, None, [])
+        logger.info(f"✅ Social metrics cleanup job completed: {message} in {duration_ms/1000:.2f}s")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        mark_job_failed('social_metrics_cleanup', target_date, None, str(e))
+        logger.error(f"❌ Social metrics cleanup job failed: {e}", exc_info=True)
+
+
 def register_default_jobs(scheduler) -> None:
     """Register all default jobs with the scheduler.
     
@@ -3097,3 +3155,17 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: social_sentiment (every 30 minutes)")
+    
+    # Social metrics cleanup job - daily at 3:00 AM
+    scheduler.add_job(
+        cleanup_social_metrics_job,
+        trigger=CronTrigger(
+            hour=3,
+            minute=0,
+            timezone='America/New_York'
+        ),
+        id='social_metrics_cleanup',
+        name=f"{get_job_icon('social_metrics_cleanup')} Social Metrics Cleanup",
+        replace_existing=True
+    )
+    logger.info("Registered job: social_metrics_cleanup (daily at 3:00 AM EST)")

@@ -566,4 +566,47 @@ class SocialSentimentService:
         except Exception as e:
             logger.error(f"Error saving {platform} metrics for {ticker}: {e}", exc_info=True)
             raise
+    
+    def run_daily_cleanup(self) -> Dict[str, int]:
+        """Run daily cleanup to implement two-tier retention policy.
+        
+        Tier 1 (7 days): Remove raw_data JSON from old records (keep metrics)
+        Tier 2 (90 days): Delete entire rows older than 90 days
+        
+        Returns:
+            Dictionary with 'rows_updated' and 'rows_deleted' counts
+        """
+        try:
+            logger.info("🧹 Starting social metrics cleanup...")
+            
+            # Step 1: The Lobotomy (Remove heavy JSON, keep the metrics)
+            logger.info("  Step 1: Removing raw_data JSON from records older than 7 days...")
+            update_query = """
+                UPDATE social_metrics 
+                SET raw_data = NULL 
+                WHERE created_at < NOW() - INTERVAL '7 days' 
+                  AND raw_data IS NOT NULL
+            """
+            rows_updated = self.postgres.execute_update(update_query)
+            logger.info(f"  ✅ Removed raw_data from {rows_updated} records (7+ days old)")
+            
+            # Step 2: The Grim Reaper (Delete old rows)
+            logger.info("  Step 2: Deleting records older than 90 days...")
+            delete_query = """
+                DELETE FROM social_metrics 
+                WHERE created_at < NOW() - INTERVAL '90 days'
+            """
+            rows_deleted = self.postgres.execute_update(delete_query)
+            logger.info(f"  ✅ Deleted {rows_deleted} records (90+ days old)")
+            
+            logger.info(f"✅ Social metrics cleanup complete: {rows_updated} updated, {rows_deleted} deleted")
+            
+            return {
+                'rows_updated': rows_updated,
+                'rows_deleted': rows_deleted
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error during social metrics cleanup: {e}", exc_info=True)
+            raise
 

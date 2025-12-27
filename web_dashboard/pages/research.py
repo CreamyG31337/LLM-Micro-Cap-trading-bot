@@ -755,29 +755,52 @@ try:
             sel_col1, sel_col2, sel_col3 = st.columns(3)
             
             with sel_col1:
-                if st.button("☑️ Select All", key="select_page_btn", use_container_width=True, 
-                           help="Add all articles on this page to selection"):
+                # Select All Results (Global)
+                if st.button("🌍 Select All Results", key="select_global_btn", use_container_width=True, 
+                           help="Select ALL articles matching current filters (across all pages)"):
+                    with st.spinner("Selecting all..."):
+                        # Re-run query to get ALL matching IDs
+                        if use_date_filter:
+                            all_matching = repo.get_articles_by_date_range(
+                                start_date=start_datetime,
+                                end_date=end_datetime,
+                                article_type=article_type_filter,
+                                source=source_filter,
+                                search_text=search_filter,
+                                embedding_filter=embedding_filter,
+                                limit=10000,
+                                offset=0
+                            )
+                        else:
+                            all_matching = repo.get_all_articles(
+                                article_type=article_type_filter,
+                                source=source_filter,
+                                search_text=search_filter,
+                                embedding_filter=embedding_filter,
+                                limit=10000,
+                                offset=0
+                            )
+                        
+                        all_ids = {a['id'] for a in all_matching}
+                        st.session_state.selected_articles.update(all_ids)
+                        
+                        # Sync visible checkboxes
+                        for article_id in current_page_ids:
+                            st.session_state[f"select_{article_id}"] = True
+                    st.rerun()
+            
+            with sel_col2:
+                # Add Page (Current Page)
+                if st.button("☑️ Add Page", key="select_page_btn", use_container_width=True,
+                           help="Add all articles on this page to current selection"):
                     st.session_state.selected_articles.update(current_page_ids)
                     # Sync checkbox widget states
                     for article_id in current_page_ids:
                         st.session_state[f"select_{article_id}"] = True
                     st.rerun()
             
-            with sel_col2:
-                if st.button("🎯 Only This Page", key="select_only_page_btn", use_container_width=True,
-                           help="Clear previous selections and select only this page"):
-                    # Clear all checkbox states first
-                    old_selected = st.session_state.selected_articles.copy()
-                    for article_id in old_selected:
-                        if f"select_{article_id}" in st.session_state:
-                            st.session_state[f"select_{article_id}"] = False
-                    # Now select only current page
-                    st.session_state.selected_articles = current_page_ids.copy()
-                    for article_id in current_page_ids:
-                        st.session_state[f"select_{article_id}"] = True
-                    st.rerun()
-            
             with sel_col3:
+                # Clear All
                 if st.button("✖️ Clear All", key="clear_selection_btn", use_container_width=True,
                            help="Clear all selections"):
                     # Clear all checkbox states

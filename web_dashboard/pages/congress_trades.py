@@ -243,6 +243,34 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Basic filters - make these prominent
+    st.subheader("Basic Filters")
+    
+    # Chamber filter (House/Senate)
+    chamber_options = ["All", "House", "Senate"]
+    selected_chamber = st.radio(
+        "🏛️ Chamber",
+        chamber_options,
+        index=0,
+        help="Filter by congressional chamber"
+    )
+    chamber_filter = None if selected_chamber == "All" else selected_chamber
+    
+    # Transaction type filter (Purchase/Sale)
+    type_options = ["All", "Purchase", "Sale"]
+    selected_type = st.radio(
+        "📊 Transaction Type",
+        type_options,
+        index=0,
+        help="Filter by transaction type (Purchase = Bought, Sale = Sold)"
+    )
+    type_filter = None if selected_type == "All" else selected_type
+    
+    st.markdown("---")
+    
+    # Advanced filters
+    st.subheader("Advanced Filters")
+    
     # Get unique values for filters
     with st.spinner("Loading filter options..."):
         unique_tickers = get_unique_tickers(supabase_client, st.session_state.refresh_key)
@@ -267,26 +295,6 @@ with st.sidebar:
         help="Filter by politician name"
     )
     politician_filter = None if selected_politician == "All" else selected_politician
-    
-    # Chamber filter
-    chamber_options = ["All", "House", "Senate"]
-    selected_chamber = st.selectbox(
-        "🏛️ Chamber",
-        chamber_options,
-        index=0,
-        help="Filter by congressional chamber"
-    )
-    chamber_filter = None if selected_chamber == "All" else selected_chamber
-    
-    # Transaction type filter
-    type_options = ["All", "Purchase", "Sale"]
-    selected_type = st.selectbox(
-        "📊 Transaction Type",
-        type_options,
-        index=0,
-        help="Filter by transaction type"
-    )
-    type_filter = None if selected_type == "All" else selected_type
     
     st.markdown("---")
     
@@ -357,12 +365,41 @@ try:
         # Display data table
         st.header("📋 Congress Trades")
         
+        # Batch fetch company names for all unique tickers
+        unique_tickers = list(set([t.get('ticker') for t in trades if t.get('ticker')]))
+        company_names_map = {}
+        
+        if supabase_client and unique_tickers:
+            try:
+                # Batch query company names from securities table
+                # Query in chunks of 50 (Supabase limit)
+                for i in range(0, len(unique_tickers), 50):
+                    ticker_batch = unique_tickers[i:i+50]
+                    result = supabase_client.supabase.table("securities")\
+                        .select("ticker, company_name")\
+                        .in_("ticker", ticker_batch)\
+                        .execute()
+                    
+                    if result.data:
+                        for item in result.data:
+                            ticker = item.get('ticker', '').upper()
+                            company_name = item.get('company_name', '')
+                            if company_name and company_name.strip() and company_name != 'Unknown':
+                                company_names_map[ticker] = company_name.strip()
+            except Exception as e:
+                logger.warning(f"Error fetching company names: {e}")
+        
         # Prepare DataFrame
         df_data = []
         for trade in trades:
+            ticker = trade.get('ticker', 'N/A')
+            ticker_upper = ticker.upper() if ticker != 'N/A' else 'N/A'
+            company_name = company_names_map.get(ticker_upper, 'N/A')
+            
             df_data.append({
                 'ID': trade.get('id'),
-                'Ticker': trade.get('ticker', 'N/A'),
+                'Ticker': ticker,
+                'Company': company_name,
                 'Politician': trade.get('politician', 'N/A'),
                 'Chamber': trade.get('chamber', 'N/A'),
                 'Transaction Date': format_date(trade.get('transaction_date')),

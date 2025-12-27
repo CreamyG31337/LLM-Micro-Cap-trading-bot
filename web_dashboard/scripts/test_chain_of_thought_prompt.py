@@ -17,6 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from web_dashboard.postgres_client import PostgresClient
 from web_dashboard.ollama_client import OllamaClient, get_ollama_client, check_ollama_health
+from web_dashboard.research_repository import ResearchRepository
 from dotenv import load_dotenv
 
 load_dotenv("web_dashboard/.env")
@@ -212,6 +213,67 @@ def get_sentiment_score(label: str) -> float:
     return mapping.get(label, 0.0)
 
 
+def find_articles(
+    repo: ResearchRepository,
+    search_text: str = None,
+    ticker: str = None,
+    limit: int = 20
+) -> List[Dict]:
+    """Find articles by search text or ticker.
+    
+    Returns list of articles with id, title, tickers, etc.
+    """
+    try:
+        if ticker:
+            # Search by ticker
+            articles = repo.get_articles_by_ticker(ticker, limit=limit)
+        elif search_text:
+            # Search by text
+            articles = repo.search_articles(search_text, limit=limit)
+        else:
+            # Get recent articles
+            query = """
+                SELECT id, title, tickers, sector, article_type, source, 
+                       published_at, fetched_at, sentiment
+                FROM research_articles
+                WHERE content IS NOT NULL
+                  AND LENGTH(content) > 200
+                ORDER BY fetched_at DESC
+                LIMIT %s
+            """
+            articles = repo.client.execute_query(query, (limit,))
+        
+        return articles or []
+    except Exception as e:
+        print(f"[ERROR] Error finding articles: {e}")
+        return []
+
+
+def display_article_list(articles: List[Dict], show_ids: bool = True) -> None:
+    """Display a list of articles for selection."""
+    if not articles:
+        print("[INFO] No articles found")
+        return
+    
+    print(f"\nFound {len(articles)} articles:\n")
+    for i, article in enumerate(articles, 1):
+        article_id = str(article.get('id', 'N/A'))
+        title = article.get('title', 'Untitled')[:70]
+        tickers = article.get('tickers', [])
+        if isinstance(tickers, str):
+            tickers = [tickers] if tickers else []
+        ticker_str = ', '.join(tickers) if tickers else 'N/A'
+        sentiment = article.get('sentiment', 'N/A')
+        published = article.get('published_at', article.get('fetched_at', 'N/A'))
+        
+        id_display = f"ID: {article_id[:8]}..." if show_ids and len(article_id) > 8 else f"ID: {article_id}" if show_ids else ""
+        print(f"  {i}. {title}")
+        print(f"     Tickers: {ticker_str} | Sentiment: {sentiment} | {id_display}")
+        if show_ids:
+            print(f"     Full ID: {article_id}")
+        print()
+
+
 def main():
     """Main interactive testing loop."""
     print("=" * 80)
@@ -226,6 +288,7 @@ def main():
     # Initialize clients
     try:
         db_client = PostgresClient()
+        repo = ResearchRepository()
         ollama_client = get_ollama_client()
         if not ollama_client:
             print("[ERROR] Failed to initialize Ollama client")
@@ -234,25 +297,157 @@ def main():
         print(f"[ERROR] Error initializing clients: {e}")
         return
     
-    # Get test articles
-    print("\n[INFO] Fetching test articles...")
-    query = """
-        SELECT id, title, content 
-        FROM research_articles 
-        WHERE sentiment IS NULL 
-          AND content IS NOT NULL 
-          AND LENGTH(content) > 200
-        ORDER BY fetched_at DESC
-        LIMIT 5
-    """
+    # Article selection mode
+    print("\n" + "=" * 80)
+    print("Article Selection")
+    print("=" * 80)
+    print("1. Use random articles (default - 5 articles missing Chain of Thought)")
+    print("2. Search by text/keywords")
+    print("3. Search by ticker")
+    print("4. Enter specific article IDs (comma-separated)")
+    print("5. Show recent articles and pick manually")
     
-    articles = db_client.execute_query(query)
+    is_interactive = sys.stdin.isatty()
+    
+    if is_interactive:
+        try:
+            selection_mode = input("\nSelection mode (1-5, default=1): ").strip() or "1"
+        except (EOFError, KeyboardInterrupt):
+            selection_mode = "1"
+            is_interactive = False
+    else:
+        selection_mode = "1"
+        print("\n[INFO] Non-interactive mode: using random articles")
+    
+    articles = []
+    
+    if selection_mode == "2":
+        # Search by text
+        if is_interactive:
+            search_text = input("Search text (e.g., 'Meta Platforms', 'bargain', 'bullish'): ").strip()
+        else:
+            search_text = "Meta Platforms"
+            print(f"[INFO] Using search: {search_text}")
+        
+        if search_text:
+            found = find_articles(repo, search_text=search_text, limit=20)
+            display_article_list(found)
+            
+            if is_interactive and found:
+                selection = input("\nEnter article numbers (comma-separated, e.g., 1,3,5) or 'all': ").strip()
+                if selection.lower() == 'all':
+                    articles = found
+                else:
+                    try:
+                        indices = [int(x.strip()) - 1 for x in selection.split(',')]
+                        articles = [found[i] for i in indices if 0 <= i < len(found)]
+                    except ValueError:
+                        print("[ERROR] Invalid selection")
+                        return
+            else:
+                articles = found[:5]  # Take first 5 in non-interactive mode
+    
+    elif selection_mode == "3":
+        # Search by ticker
+        if is_interactive:
+            ticker = input("Ticker symbol (e.g., META, NVDA): ").strip().upper()
+        else:
+            ticker = "META"
+            print(f"[INFO] Using ticker: {ticker}")
+        
+        if ticker:
+            found = find_articles(repo, ticker=ticker, limit=20)
+            display_article_list(found)
+            
+            if is_interactive and found:
+                selection = input("\nEnter article numbers (comma-separated) or 'all': ").strip()
+                if selection.lower() == 'all':
+                    articles = found
+                else:
+                    try:
+                        indices = [int(x.strip()) - 1 for x in selection.split(',')]
+                        articles = [found[i] for i in indices if 0 <= i < len(found)]
+                    except ValueError:
+                        print("[ERROR] Invalid selection")
+                        return
+            else:
+                articles = found[:5]
+    
+    elif selection_mode == "4":
+        # Specific IDs
+        if is_interactive:
+            ids_input = input("Article IDs (comma-separated UUIDs): ").strip()
+        else:
+            ids_input = ""
+            print("[INFO] No IDs provided in non-interactive mode")
+        
+        if ids_input:
+            ids = [x.strip() for x in ids_input.split(',')]
+            placeholders = ','.join(['%s'] * len(ids))
+            query = f"""
+                SELECT id, title, content, tickers, sentiment
+                FROM research_articles
+                WHERE id IN ({placeholders})
+                  AND content IS NOT NULL
+            """
+            articles = db_client.execute_query(query, tuple(ids))
+    
+    elif selection_mode == "5":
+        # Show recent and pick
+        found = find_articles(repo, limit=20)
+        display_article_list(found)
+        
+        if is_interactive and found:
+            selection = input("\nEnter article numbers (comma-separated): ").strip()
+            try:
+                indices = [int(x.strip()) - 1 for x in selection.split(',')]
+                articles = [found[i] for i in indices if 0 <= i < len(found)]
+            except ValueError:
+                print("[ERROR] Invalid selection")
+                return
+        else:
+            articles = found[:5]
+    
+    else:
+        # Default: random articles missing Chain of Thought
+        print("\n[INFO] Fetching articles missing Chain of Thought analysis...")
+        query = """
+            SELECT id, title, content, tickers, sentiment
+            FROM research_articles 
+            WHERE sentiment IS NULL 
+              AND content IS NOT NULL 
+              AND LENGTH(content) > 200
+            ORDER BY fetched_at DESC
+            LIMIT 5
+        """
+        articles = db_client.execute_query(query)
     
     if not articles:
-        print("[ERROR] No articles found to test. Try re-analyzing some articles first.")
+        print("[ERROR] No articles found to test.")
         return
     
-    print(f"[OK] Found {len(articles)} articles to test")
+    # Ensure we have content for all articles
+    articles_with_content = []
+    for article in articles:
+        if not article.get('content'):
+            # Fetch full content if missing
+            article_id = article.get('id')
+            if article_id:
+                content_query = "SELECT content FROM research_articles WHERE id = %s"
+                content_result = db_client.execute_query(content_query, (article_id,))
+                if content_result and content_result[0].get('content'):
+                    article['content'] = content_result[0]['content']
+        
+        if article.get('content') and len(article.get('content', '')) > 200:
+            articles_with_content.append(article)
+    
+    articles = articles_with_content
+    
+    if not articles:
+        print("[ERROR] No articles with content found to test.")
+        return
+    
+    print(f"\n[OK] Selected {len(articles)} articles to test")
     
     # Prompt selection
     print("\n" + "=" * 80)
@@ -260,9 +455,6 @@ def main():
     print("1. Use current prompt from ollama_client.py (default)")
     print("2. Use custom prompt (paste or type)")
     print("3. Use simplified test prompt")
-    
-    # Check if running interactively (has TTY)
-    is_interactive = sys.stdin.isatty()
     
     if is_interactive:
         try:
@@ -515,13 +707,16 @@ Return ONLY valid JSON:
         avg2 = stats2["total_time"] / total2 if total2 > 0 else 0
         
         if avg1 > 0 and avg2 > 0:
-            speedup = avg1 / avg2 if avg2 > 0 else 0
-            print(f"  {model1}: {avg1:.2f}s avg")
-            print(f"  {model2}: {avg2:.2f}s avg")
-            if speedup > 1:
+            if avg1 < avg2:
+                speedup = avg2 / avg1
+                print(f"  {model1}: {avg1:.2f}s avg")
+                print(f"  {model2}: {avg2:.2f}s avg")
                 print(f"  {model1} is {speedup:.2f}x faster")
             else:
-                print(f"  {model2} is {1/speedup:.2f}x faster")
+                speedup = avg1 / avg2
+                print(f"  {model1}: {avg1:.2f}s avg")
+                print(f"  {model2}: {avg2:.2f}s avg")
+                print(f"  {model2} is {speedup:.2f}x faster")
         
         print(f"\nQuality Comparison:")
         claims1 = sum(stats1["claims_count"]) / len(stats1["claims_count"]) if stats1["claims_count"] else 0

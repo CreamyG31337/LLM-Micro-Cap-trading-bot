@@ -2102,9 +2102,10 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.error(f"❌ Portfolio price update job failed: {e}", exc_info=True)
         
-        # Mark job as failed
-        if 'target_date' in locals():
-            mark_job_failed('update_portfolio_prices', target_date, None, str(e))
+        # Mark job as failed in database
+        # If target_date not defined (early crash), use today as fallback
+        fallback_date = date.today() if 'target_date' not in locals() else target_date
+        mark_job_failed('update_portfolio_prices', fallback_date, None, str(e))
     finally:
         # Always release the lock, even if job fails
         _update_prices_lock.release()

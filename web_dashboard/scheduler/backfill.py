@@ -10,7 +10,7 @@ to detect incomplete runs where Docker was stopped mid-job.
 """
 
 import logging
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time as dt_time
 from typing import Optional
 import pandas as pd
 

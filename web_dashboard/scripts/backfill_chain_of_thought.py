@@ -88,7 +88,7 @@ def backfill_articles(
     
     # Check Ollama
     if not check_ollama_health():
-        print("❌ Ollama is not available. Please start Ollama first.")
+        print("[ERROR] Ollama is not available. Please start Ollama first.")
         return
     
     # Initialize clients
@@ -96,10 +96,10 @@ def backfill_articles(
         repo = ResearchRepository()
         ollama_client = get_ollama_client()
         if not ollama_client:
-            print("❌ Failed to initialize Ollama client")
+            print("[ERROR] Failed to initialize Ollama client")
             return
     except Exception as e:
-        print(f"❌ Error initializing clients: {e}")
+        print(f"[ERROR] Error initializing clients: {e}")
         return
     
     # Get model
@@ -110,10 +110,10 @@ def backfill_articles(
         except Exception:
             model = "llama3.2:3b"
     
-    print(f"📊 Using model: {model}")
+    print(f"[INFO] Using model: {model}")
     
     # Get articles needing analysis
-    print("\n🔍 Finding articles needing Chain of Thought analysis...")
+    print("\n[INFO] Finding articles needing Chain of Thought analysis...")
     query = """
         SELECT id, title, content 
         FROM research_articles 
@@ -129,11 +129,11 @@ def backfill_articles(
     articles = repo.client.execute_query(query)
     
     if not articles:
-        print("✅ No articles need backfilling. All articles already have Chain of Thought analysis.")
+        print("[OK] No articles need backfilling. All articles already have Chain of Thought analysis.")
         return
     
-    print(f"📚 Found {len(articles)} articles to process")
-    print(f"⚙️  Settings: stop after {stop_on_failures} failures, min success rate: {min_success_rate*100:.0f}%")
+    print(f"[INFO] Found {len(articles)} articles to process")
+    print(f"[INFO] Settings: stop after {stop_on_failures} failures, min success rate: {min_success_rate*100:.0f}%")
     
     # Process articles
     success_count = 0
@@ -152,23 +152,23 @@ def backfill_articles(
             summary_data = ollama_client.generate_summary(content, model=model)
             
             if not summary_data or not isinstance(summary_data, dict):
-                print(f"   ❌ Invalid response format")
+                print(f"   [ERROR] Invalid response format")
                 fail_count += 1
                 consecutive_failures += 1
                 if consecutive_failures >= stop_on_failures:
-                    print(f"\n⚠️  Stopping: {consecutive_failures} consecutive failures")
+                    print(f"\n[WARN] Stopping: {consecutive_failures} consecutive failures")
                     break
                 continue
             
             # Validate result
             is_valid, error_msg = validate_result(summary_data)
             if not is_valid:
-                print(f"   ❌ Validation failed: {error_msg}")
-                print(f"   📋 Result keys: {list(summary_data.keys())}")
+                print(f"   [ERROR] Validation failed: {error_msg}")
+                print(f"   [INFO] Result keys: {list(summary_data.keys())}")
                 fail_count += 1
                 consecutive_failures += 1
                 if consecutive_failures >= stop_on_failures:
-                    print(f"\n⚠️  Stopping: {consecutive_failures} consecutive failures")
+                    print(f"\n[WARN] Stopping: {consecutive_failures} consecutive failures")
                     break
                 continue
             
@@ -186,15 +186,15 @@ def backfill_articles(
             if success:
                 sentiment = summary_data.get("sentiment", "N/A")
                 score = summary_data.get("sentiment_score", 0.0)
-                print(f"   ✅ Updated (Sentiment: {sentiment}, Score: {score})")
+                print(f"   [OK] Updated (Sentiment: {sentiment}, Score: {score})")
                 success_count += 1
                 consecutive_failures = 0  # Reset failure counter
             else:
-                print(f"   ❌ Database update failed")
+                print(f"   [ERROR] Database update failed")
                 fail_count += 1
                 consecutive_failures += 1
                 if consecutive_failures >= stop_on_failures:
-                    print(f"\n⚠️  Stopping: {consecutive_failures} consecutive failures")
+                    print(f"\n[WARN] Stopping: {consecutive_failures} consecutive failures")
                     break
             
             # Check success rate
@@ -202,15 +202,15 @@ def backfill_articles(
             if total_processed > 0:
                 current_success_rate = success_count / total_processed
                 if current_success_rate < min_success_rate and total_processed >= 5:
-                    print(f"\n⚠️  Stopping: Success rate {current_success_rate*100:.1f}% below threshold {min_success_rate*100:.0f}%")
+                    print(f"\n[WARN] Stopping: Success rate {current_success_rate*100:.1f}% below threshold {min_success_rate*100:.0f}%")
                     break
                     
         except Exception as e:
-            print(f"   ❌ Error: {e}")
+            print(f"   [ERROR] Error: {e}")
             fail_count += 1
             consecutive_failures += 1
             if consecutive_failures >= stop_on_failures:
-                print(f"\n⚠️  Stopping: {consecutive_failures} consecutive failures")
+                print(f"\n[WARN] Stopping: {consecutive_failures} consecutive failures")
                 break
     
     # Summary
@@ -218,11 +218,11 @@ def backfill_articles(
     print("\n" + "=" * 80)
     print("Backfill Summary")
     print("=" * 80)
-    print(f"✅ Successful: {success_count}")
-    print(f"❌ Failed: {fail_count}")
+    print(f"[OK] Successful: {success_count}")
+    print(f"[FAIL] Failed: {fail_count}")
     if total_processed > 0:
-        print(f"📊 Success rate: {success_count / total_processed * 100:.1f}%")
-    print(f"📝 Total processed: {total_processed} / {len(articles)}")
+        print(f"[STATS] Success rate: {success_count / total_processed * 100:.1f}%")
+    print(f"[INFO] Total processed: {total_processed} / {len(articles)}")
     print("=" * 80)
 
 

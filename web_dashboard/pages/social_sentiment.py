@@ -66,10 +66,7 @@ render_navigation(show_ai_assistant=True, show_settings=True)
 def get_postgres_client():
     """Get Postgres client instance, handling errors gracefully"""
     try:
-        client = PostgresClient()
-        if client.test_connection():
-            return client
-        return None
+        return PostgresClient()
     except Exception as e:
         logger.error(f"Failed to initialize PostgresClient: {e}")
         return None
@@ -110,7 +107,7 @@ if 'refresh_key' not in st.session_state:
 
 # Query functions
 @st.cache_data(ttl=60, show_spinner=False)
-def get_watchlist_tickers(_supabase_client, refresh_key: int) -> List[Dict[str, Any]]:
+def get_watchlist_tickers(_supabase_client, _refresh_key: int) -> List[Dict[str, Any]]:
     """Get all active tickers from watched_tickers table
     
     Returns:
@@ -130,7 +127,7 @@ def get_watchlist_tickers(_supabase_client, refresh_key: int) -> List[Dict[str, 
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_latest_sentiment_per_ticker(_client, refresh_key: int) -> List[Dict[str, Any]]:
+def get_latest_sentiment_per_ticker(_client, _refresh_key: int) -> List[Dict[str, Any]]:
     """Get the most recent sentiment metric for each ticker/platform combination
     
     Returns:
@@ -151,7 +148,7 @@ def get_latest_sentiment_per_ticker(_client, refresh_key: int) -> List[Dict[str,
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_extreme_sentiment_alerts(_client, refresh_key: int) -> List[Dict[str, Any]]:
+def get_extreme_sentiment_alerts(_client, _refresh_key: int) -> List[Dict[str, Any]]:
     """Get EUPHORIC or FEARFUL sentiment alerts from last 24 hours
     
     Returns:
@@ -180,7 +177,7 @@ def format_datetime(dt) -> str:
     if isinstance(dt, str):
         try:
             dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
-        except:
+        except (ValueError, AttributeError, TypeError):
             return dt
     
     if not isinstance(dt, datetime):
@@ -194,7 +191,7 @@ def format_datetime(dt) -> str:
                 dt = dt.replace(tzinfo=timezone.utc)
             local_dt = dt.astimezone(local_tz)
             return local_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
-        except:
+        except (ValueError, AttributeError, TypeError):
             pass
     
     return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -303,6 +300,12 @@ try:
     # Display Latest Sentiment Table
     st.header("📊 Latest Sentiment by Ticker")
     
+    # Show last refresh timestamp
+    if latest_sentiment:
+        newest_timestamp = max((row.get('created_at') for row in latest_sentiment), default=None)
+        if newest_timestamp:
+            st.caption(f"📅 Data last updated: {format_datetime(newest_timestamp)}")
+    
     if not latest_sentiment:
         st.info("""
         📭 No social sentiment data available yet.
@@ -336,10 +339,14 @@ try:
         if show_only_watchlist and not in_watchlist:
             continue
         
+        # Platform icons
+        platform_icons = {'stocktwits': '📊', 'reddit': '🤖'}
+        platform_display = f"{platform_icons.get(platform, '❓')} {platform.upper()}"
+        
         df_data.append({
             'Ticker': ticker,
             'In Watchlist': '✅' if in_watchlist else '❌',
-            'Platform': platform.upper(),
+            'Platform': platform_display,
             'Volume': volume,
             'Sentiment': sentiment_label if sentiment_label else 'N/A',
             'Score': f"{sentiment_score:.1f}" if sentiment_score is not None else "N/A",
@@ -359,9 +366,18 @@ try:
     # Sort by ticker and platform
     df = df.sort_values(['Ticker', 'Platform'])
     
+    # Define sentiment color styling function
+    def style_sentiment(val):
+        """Apply background color based on sentiment"""
+        if val in ['EUPHORIC', 'BULLISH', 'NEUTRAL', 'BEARISH', 'FEARFUL']:
+            color = get_sentiment_color(val)
+            # Use white text for better contrast
+            return f'background-color: {color}; color: white; font-weight: bold;'
+        return ''
+    
     # Display dataframe with styling
     st.dataframe(
-        df,
+        df.style.applymap(style_sentiment, subset=['Sentiment']),
         use_container_width=True,
         hide_index=True
     )

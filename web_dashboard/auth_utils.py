@@ -112,6 +112,8 @@ def register_user(email: str, password: str) -> Optional[Dict]:
 
 def get_user_token() -> Optional[str]:
     """Get current user's access token from session state"""
+    if st is None:
+        return None  # Not in Streamlit context
     if "user_token" in st.session_state:
         return st.session_state.user_token
     return None

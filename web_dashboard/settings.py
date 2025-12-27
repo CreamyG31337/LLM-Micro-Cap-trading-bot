@@ -25,9 +25,18 @@ def get_system_setting(key: str, default: Any = None) -> Any:
         Setting value (parsed from JSONB) or default
     """
     try:
-        from streamlit_utils import get_supabase_client
+        # Try to use service role client when outside Streamlit context
+        try:
+            import streamlit as st
+            if st is None:
+                raise AttributeError("st is None")
+            from streamlit_utils import get_supabase_client
+            client = get_supabase_client()
+        except (ImportError, AttributeError):
+            # Fallback to service role client when not in Streamlit
+            from supabase_client import SupabaseClient
+            client = SupabaseClient(use_service_role=True)
         
-        client = get_supabase_client()
         if not client:
             logger.warning("Could not connect to database for system settings")
             return default

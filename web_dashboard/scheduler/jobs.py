@@ -2738,6 +2738,19 @@ def fetch_social_sentiment_job() -> None:
         service = SocialSentimentService()
         supabase_client = SupabaseClient(use_service_role=True)
         
+        # Check FlareSolverr availability
+        try:
+            import requests
+            flaresolverr_url = os.getenv("FLARESOLVERR_URL", "http://host.docker.internal:8191")
+            requests.get(f"{flaresolverr_url}/health", timeout=5)
+            logger.info("✅ FlareSolverr is available")
+        except Exception:
+            logger.warning("⚠️  FlareSolverr unavailable - will fallback to direct requests")
+        
+        # Check Ollama availability
+        if not service.ollama:
+            logger.warning("⚠️  Ollama unavailable - Reddit sentiment will be NEUTRAL only")
+        
         # 1. Get tickers from watched_tickers table
         watched_tickers = service.get_watched_tickers()
         logger.info(f"Found {len(watched_tickers)} watched tickers")
@@ -2762,13 +2775,14 @@ def fetch_social_sentiment_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = "No tickers to process"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            mark_job_completed('social_sentiment', target_date)
+            mark_job_completed('social_sentiment', target_date, None, [])
             logger.info(f"ℹ️ {message}")
             return
         
         # 4. Process each ticker
         success_count = 0
         error_count = 0
+        failed_tickers = []
         
         for ticker in all_tickers:
             try:
@@ -2778,11 +2792,7 @@ def fetch_social_sentiment_job() -> None:
                     service.save_metrics(
                         ticker=ticker,
                         platform='stocktwits',
-                        volume=stocktwits_data.get('volume', 0),
-                        bull_bear_ratio=stocktwits_data.get('bull_bear_ratio', 0.0),
-                        sentiment_label=None,  # StockTwits doesn't provide AI sentiment
-                        sentiment_score=None,
-                        raw_data=stocktwits_data.get('raw_data')
+                        metrics=stocktwits_data  # Pass the entire dict
                     )
                     logger.debug(f"✅ Saved StockTwits data for {ticker}")
                 
@@ -2792,11 +2802,7 @@ def fetch_social_sentiment_job() -> None:
                     service.save_metrics(
                         ticker=ticker,
                         platform='reddit',
-                        volume=reddit_data.get('volume', 0),
-                        bull_bear_ratio=0.0,  # Reddit doesn't have bull/bear ratio
-                        sentiment_label=reddit_data.get('sentiment_label'),
-                        sentiment_score=reddit_data.get('sentiment_score'),
-                        raw_data=reddit_data.get('raw_data')
+                        metrics=reddit_data  # Pass the entire dict
                     )
                     logger.debug(f"✅ Saved Reddit data for {ticker}")
                 
@@ -2804,6 +2810,7 @@ def fetch_social_sentiment_job() -> None:
                 
             except Exception as e:
                 error_count += 1
+                failed_tickers.append(ticker)
                 logger.warning(f"Failed to process {ticker}: {e}")
                 continue
         
@@ -2811,14 +2818,18 @@ def fetch_social_sentiment_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {len(all_tickers)} tickers: {success_count} successful, {error_count} errors"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('social_sentiment', target_date)
+        mark_job_completed('social_sentiment', target_date, None, [])
         logger.info(f"✅ Social sentiment job completed: {message} in {duration_ms/1000:.2f}s")
+        
+        # Log failed tickers if any
+        if failed_tickers:
+            logger.warning(f"Failed tickers ({len(failed_tickers)}): {', '.join(failed_tickers)}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        mark_job_failed('social_sentiment', target_date)
+        mark_job_failed('social_sentiment', target_date, None, str(e))
         logger.error(f"❌ Social sentiment job failed: {e}", exc_info=True)
 
 

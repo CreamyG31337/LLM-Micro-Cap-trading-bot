@@ -1730,7 +1730,7 @@ def populate_performance_metrics_job() -> None:
             # Convert USD to CAD if needed
             if currency == 'USD':
                 rate = get_exchange_rate_for_date_from_db(
-                    datetime.combine(yesterday, datetime.min.time()),
+                    datetime.combine(yesterday, dt_time(0, 0, 0)),
                     'USD',
                     'CAD'
                 )
@@ -2056,7 +2056,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                 exchange_rate = Decimal('1.0')  # Default for same currency or no conversion needed
                 if base_currency != 'USD':  # Only fetch rate if converting TO non-USD currency
                     rate = get_exchange_rate_for_date_from_db(
-                        datetime.combine(target_date, datetime.min.time()),
+                        datetime.combine(target_date, dt_time(0, 0, 0)),
                         'USD',
                         base_currency
                     )
@@ -2539,7 +2539,7 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                     exchange_rate = Decimal('1.0')
                     if base_currency != 'USD':
                         rate = get_exchange_rate_for_date_from_db(
-                            datetime.combine(target_date, datetime.min.time()),
+                            datetime.combine(target_date, dt_time(0, 0, 0)),
                             'USD',
                             base_currency
                         )

@@ -131,7 +131,7 @@ def get_latest_sentiment_per_ticker(_client, _refresh_key: int) -> List[Dict[str
     """Get the most recent sentiment metric for each ticker/platform combination
     
     Returns:
-        List of dictionaries with sentiment data
+        List of dictionaries with sentiment data (one per ticker-platform)
     """
     try:
         query = """
@@ -345,16 +345,12 @@ try:
         except Exception as e:
             logger.warning(f"Error fetching company names: {e}")
     
-    # Prepare DataFrame
-    df_data = []
+    # Group data by ticker
+    ticker_data = {}
     for row in latest_sentiment:
         ticker = row.get('ticker', 'N/A')
-        platform = row.get('platform', 'N/A')
-        volume = row.get('volume', 0)
-        sentiment_label = row.get('sentiment_label', 'N/A')
-        sentiment_score = row.get('sentiment_score')
-        bull_bear_ratio = row.get('bull_bear_ratio')
-        created_at = row.get('created_at')
+        if ticker == 'N/A':
+            continue
         
         # Check if ticker is in watchlist
         in_watchlist = ticker in watchlist_ticker_set
@@ -363,24 +359,99 @@ try:
         if show_only_watchlist and not in_watchlist:
             continue
         
-        # Get company name
-        ticker_upper = ticker.upper()
-        company_name = company_names_map.get(ticker_upper, 'N/A')
+        if ticker not in ticker_data:
+            ticker_upper = ticker.upper()
+            company_name = company_names_map.get(ticker_upper, 'N/A')
+            ticker_data[ticker] = {
+                'ticker': ticker,
+                'company': company_name,
+                'in_watchlist': in_watchlist,
+                'platforms': []
+            }
         
-        # Platform icons
-        platform_icons = {'stocktwits': '📊', 'reddit': '🤖'}
-        platform_display = f"{platform_icons.get(platform, '❓')} {platform.upper()}"
+        platform = row.get('platform', 'N/A')
+        volume = row.get('volume', 0)
+        sentiment_label = row.get('sentiment_label', 'N/A')
+        sentiment_score = row.get('sentiment_score')
+        bull_bear_ratio = row.get('bull_bear_ratio')
+        created_at = row.get('created_at')
+        
+        ticker_data[ticker]['platforms'].append({
+            'platform': platform,
+            'volume': volume,
+            'sentiment_label': sentiment_label,
+            'sentiment_score': sentiment_score,
+            'bull_bear_ratio': bull_bear_ratio,
+            'created_at': created_at
+        })
+    
+    # Prepare DataFrame with combined platform data
+    df_data = []
+    platform_icons = {'stocktwits': '💬', 'reddit': '👽'}
+    sentiment_icons = {
+        'BULLISH': '🚀',
+        'BEARISH': '📉',
+        'EUPHORIC': '🚀',
+        'FEARFUL': '📉'
+    }
+    
+    for ticker, data in ticker_data.items():
+        platforms = data['platforms']
+        
+        # Combine platform sentiments with icons
+        sentiment_parts = []
+        volume_parts = []
+        scores = []
+        bull_bear_ratio = None
+        latest_timestamp = None
+        
+        for p in platforms:
+            platform = p['platform']
+            platform_icon = platform_icons.get(platform, '❓')
+            sentiment_label = p['sentiment_label'] if p['sentiment_label'] else 'N/A'
+            sentiment_icon = sentiment_icons.get(sentiment_label.upper(), '')
+            
+            # Format sentiment with icon
+            if sentiment_icon:
+                sentiment_parts.append(f"{platform_icon} {sentiment_icon} {sentiment_label}")
+            else:
+                sentiment_parts.append(f"{platform_icon} {sentiment_label}")
+            
+            # Volume
+            volume_parts.append(f"{platform_icon} {p['volume']}")
+            
+            # Scores
+            if p['sentiment_score'] is not None:
+                scores.append(p['sentiment_score'])
+            
+            # Bull/Bear ratio (Stocktwits only)
+            if p['bull_bear_ratio'] is not None and platform == 'stocktwits':
+                bull_bear_ratio = p['bull_bear_ratio']
+            
+            # Latest timestamp
+            if p['created_at']:
+                if latest_timestamp is None or p['created_at'] > latest_timestamp:
+                    latest_timestamp = p['created_at']
+        
+        # Combine sentiments
+        combined_sentiment = ' | '.join(sentiment_parts) if sentiment_parts else 'N/A'
+        
+        # Combine volumes
+        combined_volume = ' | '.join(volume_parts) if volume_parts else 'N/A'
+        
+        # Average score
+        avg_score = sum(scores) / len(scores) if scores else None
+        score_display = f"{avg_score:.1f}" if avg_score is not None else "N/A"
         
         df_data.append({
             'Ticker': ticker,
-            'Company': company_name,
-            'In Watchlist': '✅' if in_watchlist else '❌',
-            'Platform': platform_display,
-            'Volume': volume,
-            'Sentiment': sentiment_label if sentiment_label else 'N/A',
-            'Score': f"{sentiment_score:.1f}" if sentiment_score is not None else "N/A",
-            'Bull/Bear Ratio': f"{bull_bear_ratio:.2f}" if bull_bear_ratio is not None and platform == 'stocktwits' else "N/A",
-            'Last Updated': format_datetime(created_at)
+            'Company': data['company'],
+            'In Watchlist': '✅' if data['in_watchlist'] else '❌',
+            'Volume': combined_volume,
+            'Sentiment': combined_sentiment,
+            'Score': score_display,
+            'Bull/Bear Ratio': f"{bull_bear_ratio:.2f}" if bull_bear_ratio is not None else "N/A",
+            'Last Updated': format_datetime(latest_timestamp)
         })
     
     df = pd.DataFrame(df_data)
@@ -392,17 +463,32 @@ try:
             st.info("📭 No sentiment data available.")
         st.stop()
     
-    # Sort by ticker and platform
-    df = df.sort_values(['Ticker', 'Platform'])
+    # Sort by ticker
+    df = df.sort_values(['Ticker'])
     
     # Define sentiment color styling function
     def style_sentiment(val):
-        """Apply background color based on sentiment"""
-        if val in ['EUPHORIC', 'BULLISH', 'NEUTRAL', 'BEARISH', 'FEARFUL']:
-            color = get_sentiment_color(val)
-            # Use white text for better contrast
-            return f'background-color: {color}; color: white; font-weight: bold;'
-        return ''
+        """Apply background color based on the most extreme sentiment in combined format"""
+        if not val or val == 'N/A':
+            return ''
+        
+        # Extract sentiment labels from combined format (e.g., "💬 🚀 BULLISH | 👽 NEUTRAL")
+        sentiment_labels = []
+        for label in ['EUPHORIC', 'BULLISH', 'NEUTRAL', 'BEARISH', 'FEARFUL']:
+            if label in val.upper():
+                sentiment_labels.append(label)
+        
+        if not sentiment_labels:
+            return ''
+        
+        # Use the most extreme sentiment for styling
+        # Priority: EUPHORIC > BULLISH > NEUTRAL > BEARISH > FEARFUL
+        sentiment_priority = {'EUPHORIC': 4, 'BULLISH': 3, 'NEUTRAL': 2, 'BEARISH': 1, 'FEARFUL': 0}
+        most_extreme = max(sentiment_labels, key=lambda x: sentiment_priority.get(x, 2))
+        
+        color = get_sentiment_color(most_extreme)
+        # Use white text for better contrast
+        return f'background-color: {color}; color: white; font-weight: bold;'
     
     # Display dataframe with styling
     st.dataframe(
@@ -426,11 +512,13 @@ try:
         st.metric("Total Metrics", total_metrics)
     
     with col3:
-        euphoric_count = len(df[df['Sentiment'] == 'EUPHORIC'])
+        # Count tickers with EUPHORIC sentiment (in any platform)
+        euphoric_count = len(df[df['Sentiment'].str.contains('EUPHORIC', case=False, na=False)])
         st.metric("Euphoric", euphoric_count)
     
     with col4:
-        fearful_count = len(df[df['Sentiment'] == 'FEARFUL'])
+        # Count tickers with FEARFUL sentiment (in any platform)
+        fearful_count = len(df[df['Sentiment'].str.contains('FEARFUL', case=False, na=False)])
         st.metric("Fearful", fearful_count)
 
 except Exception as e:

@@ -744,18 +744,36 @@ try:
         # Admin select all checkbox (minimal, no batch actions section)
         if is_admin():
             current_page_ids = {article['id'] for article in articles}
-            all_selected = current_page_ids.issubset(st.session_state.selected_articles)
+            all_selected = current_page_ids.issubset(st.session_state.selected_articles) and len(current_page_ids) > 0
             
-            select_all = st.checkbox("Select All", value=all_selected, key="select_all_checkbox")
+            # Initialize checkbox state in session if not present
+            if 'select_all_state' not in st.session_state:
+                st.session_state.select_all_state = all_selected
             
-            if select_all and not all_selected:
-                # Select all articles on current page
-                st.session_state.selected_articles.update(current_page_ids)
-                st.rerun()
-            elif not select_all and all_selected:
-                # Deselect all articles on current page
-                st.session_state.selected_articles = st.session_state.selected_articles - current_page_ids
-                st.rerun()
+            # Sync checkbox state with actual selection state (handles external changes like individual unchecks)
+            if st.session_state.select_all_state != all_selected:
+                st.session_state.select_all_state = all_selected
+            
+            def on_select_all_change():
+                """Handle Select All checkbox toggle via callback."""
+                new_state = st.session_state.select_all_checkbox
+                current_ids = {article['id'] for article in articles}
+                
+                if new_state:
+                    # Select all articles on current page
+                    st.session_state.selected_articles.update(current_ids)
+                else:
+                    # Deselect all articles on current page
+                    st.session_state.selected_articles = st.session_state.selected_articles - current_ids
+                
+                st.session_state.select_all_state = new_state
+            
+            st.checkbox(
+                "Select All", 
+                value=st.session_state.select_all_state, 
+                key="select_all_checkbox",
+                on_change=on_select_all_change
+            )
         
         # Pagination controls
         col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])

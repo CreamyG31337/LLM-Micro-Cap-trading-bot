@@ -52,6 +52,14 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     except Exception:
         pass  # Silently fail if Postgres not available
     
+    # Congress Trades link (if Supabase is available)
+    try:
+        client = get_supabase_client()
+        if client and client.test_connection():
+            st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
+    except Exception:
+        pass  # Silently fail if Supabase not available
+    
     # AI Assistant link (if available and requested)
     if show_ai_assistant:
         try:

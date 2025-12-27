@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS congress_trades (
     disclosure_date DATE NOT NULL,
     type VARCHAR(20) NOT NULL CHECK (type IN ('Purchase', 'Sale')),
     amount VARCHAR(100),                    -- Store as string range like "$1,001 - $15,000"
+    price NUMERIC(10, 2) DEFAULT NULL,      -- Asset price at time of trade
     asset_type VARCHAR(50) CHECK (asset_type IN ('Stock', 'Crypto')),
     conflict_score FLOAT,                   -- 0.0 to 1.0 from AI analysis
     notes TEXT,                             -- AI reasoning/analysis

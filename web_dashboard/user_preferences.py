@@ -276,7 +276,7 @@ def get_user_ai_model() -> Optional[str]:
         return env_model
     
     # Final fallback
-    return "llama3"
+    return "granite3.3:8b"
 
 
 def set_user_ai_model(model: str) -> bool:
@@ -292,6 +292,138 @@ def set_user_ai_model(model: str) -> bool:
         logger.warning(f"Invalid AI model: {model}")
         return False
     return set_user_preference('ai_model', model)
+
+
+# Theme options
+THEME_OPTIONS = {
+    'system': 'System Default',
+    'dark': 'Dark Mode',
+    'light': 'Light Mode'
+}
+
+
+def get_user_theme() -> str:
+    """Get user's preferred theme.
+    
+    Returns:
+        Theme preference: 'system', 'dark', or 'light'
+    """
+    theme = get_user_preference('theme', default=None)
+    if theme and theme in THEME_OPTIONS:
+        return theme
+    return 'system'  # Default to system
+
+
+def set_user_theme(theme: str) -> bool:
+    """Set user's preferred theme.
+    
+    Args:
+        theme: Theme preference ('system', 'dark', 'light')
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if theme not in THEME_OPTIONS:
+        logger.warning(f"Invalid theme: {theme}")
+        return False
+    return set_user_preference('theme', theme)
+
+
+def apply_user_theme() -> None:
+    """Apply user's theme preference using CSS injection.
+    
+    Call this early in each page to override browser dark mode detection.
+    Uses CSS color-scheme property and custom CSS variables.
+    """
+    theme = get_user_theme()
+    
+    if theme == 'system':
+        # Let the system handle it - no override needed
+        return
+    
+    if theme == 'dark':
+        # Force dark mode
+        st.markdown("""
+        <style>
+            /* Force dark mode */
+            :root {
+                color-scheme: dark;
+            }
+            
+            /* Override Streamlit's theme detection */
+            [data-testid="stAppViewContainer"],
+            [data-testid="stSidebar"],
+            [data-testid="stHeader"],
+            .main,
+            .stApp {
+                background-color: #0e1117 !important;
+                color: #fafafa !important;
+            }
+            
+            /* Inputs and widgets */
+            [data-testid="stTextInput"] input,
+            [data-testid="stTextArea"] textarea,
+            [data-testid="stSelectbox"] > div,
+            .stSelectbox > div > div {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+            }
+            
+            /* Cards and containers */
+            [data-testid="stExpander"],
+            .stAlert,
+            .element-container {
+                background-color: #262730 !important;
+            }
+            
+            /* Ensure text is readable */
+            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th {
+                color: #fafafa !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    
+    elif theme == 'light':
+        # Force light mode
+        st.markdown("""
+        <style>
+            /* Force light mode */
+            :root {
+                color-scheme: light;
+            }
+            
+            /* Override Streamlit's theme detection */
+            [data-testid="stAppViewContainer"],
+            [data-testid="stSidebar"],
+            [data-testid="stHeader"],
+            .main,
+            .stApp {
+                background-color: #ffffff !important;
+                color: #31333F !important;
+            }
+            
+            /* Inputs and widgets */
+            [data-testid="stTextInput"] input,
+            [data-testid="stTextArea"] textarea,
+            [data-testid="stSelectbox"] > div,
+            .stSelectbox > div > div {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+            }
+            
+            /* Cards and containers */
+            [data-testid="stExpander"],
+            .stAlert,
+            .element-container {
+                background-color: #f0f2f6 !important;
+            }
+            
+            /* Ensure text is readable */
+            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th {
+                color: #31333F !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
 
 
 def format_timestamp_in_user_timezone(

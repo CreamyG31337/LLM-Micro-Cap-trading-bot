@@ -743,12 +743,19 @@ try:
         
         # Admin select all checkbox (minimal, no batch actions section)
         if is_admin():
-            select_all = st.checkbox("Select All", key="select_all_checkbox")
-            if select_all:
-                st.session_state.selected_articles.update([article['id'] for article in articles])
-            else:
-                current_page_ids = {article['id'] for article in articles}
+            current_page_ids = {article['id'] for article in articles}
+            all_selected = current_page_ids.issubset(st.session_state.selected_articles)
+            
+            select_all = st.checkbox("Select All", value=all_selected, key="select_all_checkbox")
+            
+            if select_all and not all_selected:
+                # Select all articles on current page
+                st.session_state.selected_articles.update(current_page_ids)
+                st.rerun()
+            elif not select_all and all_selected:
+                # Deselect all articles on current page
                 st.session_state.selected_articles = st.session_state.selected_articles - current_page_ids
+                st.rerun()
         
         # Pagination controls
         col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])

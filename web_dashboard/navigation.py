@@ -18,6 +18,13 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         show_ai_assistant: Whether to show AI Assistant link (default: True)
         show_settings: Whether to show Settings link (default: True)
     """
+    # Apply user's theme preference (dark/light mode override)
+    try:
+        from user_preferences import apply_user_theme
+        apply_user_theme()
+    except Exception:
+        pass  # Silently fail if theme can't be applied
+    
     try:
         from auth_utils import is_admin, get_user_email, get_user_id
         from streamlit_utils import get_supabase_client

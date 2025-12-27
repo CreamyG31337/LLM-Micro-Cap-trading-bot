@@ -24,6 +24,9 @@ try:
         set_user_timezone,
         get_user_currency,
         set_user_currency,
+        get_user_theme,
+        set_user_theme,
+        THEME_OPTIONS,
         get_all_user_preferences
     )
 except ImportError as e:
@@ -187,6 +190,55 @@ def render_currency_settings():
             st.error("❌ Failed to save currency. Please try again.")
 
 render_currency_settings()
+
+st.divider()
+
+# Theme Settings
+st.subheader("🎨 Theme")
+
+@st.fragment
+def render_theme_settings():
+    """Theme selection fragment - prevents full page reload on save"""
+    # Get current theme
+    current_theme = get_user_theme()
+    
+    # Build theme options
+    theme_options = list(THEME_OPTIONS.keys())
+    theme_labels = [f"{THEME_OPTIONS[key]}" for key in theme_options]
+    
+    # Find current index
+    try:
+        current_index = theme_options.index(current_theme) if current_theme in theme_options else 0
+    except ValueError:
+        current_index = 0
+    
+    # Theme selector
+    selected_theme_label = st.selectbox(
+        "Select your theme:",
+        options=theme_labels,
+        index=current_index,
+        help="Override your browser/system theme preference. 'System Default' follows your OS setting."
+    )
+    
+    selected_theme = theme_options[theme_labels.index(selected_theme_label)]
+    
+    # Show current setting info
+    if selected_theme == 'system':
+        st.caption("ℹ️ Theme will follow your browser/OS dark mode setting")
+    elif selected_theme == 'dark':
+        st.caption("🌙 Dark mode is forced on")
+    else:
+        st.caption("☀️ Light mode is forced on")
+    
+    # Save button
+    if st.button("💾 Save Theme", type="primary", key="save_theme"):
+        if set_user_theme(selected_theme):
+            st.success(f"✅ Theme saved as {THEME_OPTIONS[selected_theme]}")
+            st.info("🔄 Refresh the page to apply the theme change")
+        else:
+            st.error("❌ Failed to save theme. Please try again.")
+
+render_theme_settings()
 
 st.divider()
 

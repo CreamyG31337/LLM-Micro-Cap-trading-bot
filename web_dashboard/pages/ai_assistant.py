@@ -429,7 +429,18 @@ with st.sidebar:
     st.header("📊 Data Source")
     funds = get_available_funds()
     if funds:
-        selected_fund = st.selectbox("Fund", options=funds, help="Select fund for AI analysis", key="fund_selector")
+        # Get the current fund from session state, or default to first fund
+        current_fund = st.session_state.get('previous_fund', funds[0])
+        # Ensure current_fund is in the list (handles case where fund was removed)
+        fund_index = funds.index(current_fund) if current_fund in funds else 0
+        
+        selected_fund = st.selectbox(
+            "Fund", 
+            options=funds, 
+            index=fund_index,
+            help="Select fund for AI analysis", 
+            key="fund_selector"
+        )
         
         # Clear chat when fund changes
         if 'previous_fund' not in st.session_state:

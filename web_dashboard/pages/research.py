@@ -758,17 +758,32 @@ try:
                 if st.button("☑️ Select Page", key="select_page_btn", use_container_width=True, 
                            help="Add all articles on this page to selection"):
                     st.session_state.selected_articles.update(current_page_ids)
+                    # Sync checkbox widget states
+                    for article_id in current_page_ids:
+                        st.session_state[f"select_{article_id}"] = True
                     st.rerun()
             
             with sel_col2:
                 if st.button("🎯 Only This Page", key="select_only_page_btn", use_container_width=True,
                            help="Clear previous selections and select only this page"):
+                    # Clear all checkbox states first
+                    old_selected = st.session_state.selected_articles.copy()
+                    for article_id in old_selected:
+                        if f"select_{article_id}" in st.session_state:
+                            st.session_state[f"select_{article_id}"] = False
+                    # Now select only current page
                     st.session_state.selected_articles = current_page_ids.copy()
+                    for article_id in current_page_ids:
+                        st.session_state[f"select_{article_id}"] = True
                     st.rerun()
             
             with sel_col3:
                 if st.button("✖️ Clear All", key="clear_selection_btn", use_container_width=True,
                            help="Clear all selections"):
+                    # Clear all checkbox states
+                    for article_id in st.session_state.selected_articles:
+                        if f"select_{article_id}" in st.session_state:
+                            st.session_state[f"select_{article_id}"] = False
                     st.session_state.selected_articles = set()
                     st.rerun()
         

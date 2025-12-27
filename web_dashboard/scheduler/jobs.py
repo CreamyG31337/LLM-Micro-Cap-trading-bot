@@ -1891,8 +1891,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
             
             # Determine time of day status
             current_time = now_et.time()
-            is_before_open = current_time < time(market_open_hour, market_open_minute)
-            is_after_close = current_time >= time(market_close_hour, 0)
+            is_before_open = current_time < dt_time(market_open_hour, market_open_minute)
+            is_after_close = current_time >= dt_time(market_close_hour, 0)
             
             use_today = False
             if market_holidays.is_trading_day(today, market="any"):

@@ -741,39 +741,36 @@ try:
         if 'selected_articles' not in st.session_state:
             st.session_state.selected_articles = set()
         
-        # Admin select all checkbox (minimal, no batch actions section)
+        # Admin selection controls (minimal, no batch actions section)
         if is_admin():
             current_page_ids = {article['id'] for article in articles}
-            all_selected = current_page_ids.issubset(st.session_state.selected_articles) and len(current_page_ids) > 0
+            selected_count = len(st.session_state.selected_articles)
+            page_selected_count = len(current_page_ids & st.session_state.selected_articles)
             
-            # Initialize checkbox state in session if not present
-            if 'select_all_state' not in st.session_state:
-                st.session_state.select_all_state = all_selected
+            # Show selection status
+            if selected_count > 0:
+                st.caption(f"📌 {selected_count} selected ({page_selected_count} on this page)")
             
-            # Sync checkbox state with actual selection state (handles external changes like individual unchecks)
-            if st.session_state.select_all_state != all_selected:
-                st.session_state.select_all_state = all_selected
+            # Selection buttons in a row
+            sel_col1, sel_col2, sel_col3 = st.columns(3)
             
-            def on_select_all_change():
-                """Handle Select All checkbox toggle via callback."""
-                new_state = st.session_state.select_all_checkbox
-                current_ids = {article['id'] for article in articles}
-                
-                if new_state:
-                    # Select all articles on current page
-                    st.session_state.selected_articles.update(current_ids)
-                else:
-                    # Deselect all articles on current page
-                    st.session_state.selected_articles = st.session_state.selected_articles - current_ids
-                
-                st.session_state.select_all_state = new_state
+            with sel_col1:
+                if st.button("☑️ Select Page", key="select_page_btn", use_container_width=True, 
+                           help="Add all articles on this page to selection"):
+                    st.session_state.selected_articles.update(current_page_ids)
+                    st.rerun()
             
-            st.checkbox(
-                "Select All", 
-                value=st.session_state.select_all_state, 
-                key="select_all_checkbox",
-                on_change=on_select_all_change
-            )
+            with sel_col2:
+                if st.button("🎯 Only This Page", key="select_only_page_btn", use_container_width=True,
+                           help="Clear previous selections and select only this page"):
+                    st.session_state.selected_articles = current_page_ids.copy()
+                    st.rerun()
+            
+            with sel_col3:
+                if st.button("✖️ Clear All", key="clear_selection_btn", use_container_width=True,
+                           help="Clear all selections"):
+                    st.session_state.selected_articles = set()
+                    st.rerun()
         
         # Pagination controls
         col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])

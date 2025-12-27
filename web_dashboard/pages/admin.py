@@ -2157,7 +2157,7 @@ with tab9:
                     "Summarizing Model",
                     options=summarizing_options,
                     index=summarizing_index,
-                    help="Model used for generating article summaries (default: llama3.2:3b)"
+                    help="Model used for generating article summaries (default: granite3.3:8b)"
                 )
                 
                 # Save button for summarizing model selection

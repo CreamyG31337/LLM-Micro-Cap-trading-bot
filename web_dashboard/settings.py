@@ -123,7 +123,7 @@ def get_summarizing_model() -> str:
     """Get the summarizing model setting.
     
     Returns:
-        Model name for summarization (defaults to llama3.2:3b)
+        Model name for summarization (defaults to granite3.3:8b)
     """
     import os
     # Check system setting first
@@ -137,7 +137,7 @@ def get_summarizing_model() -> str:
         return env_model
     
     # Final fallback
-    return "llama3.2:3b"
+    return "granite3.3:8b"
 
 
 def get_research_domain_blacklist() -> list[str]:

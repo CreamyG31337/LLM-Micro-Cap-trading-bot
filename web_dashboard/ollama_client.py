@@ -359,7 +359,7 @@ class OllamaClient:
                 model = get_summarizing_model()
             except Exception as e:
                 logger.warning(f"Could not load summarizing model from settings: {e}, using fallback")
-                model = "llama3.2:3b"
+                model = "granite3.3:8b"
         
         # Truncate text to ~6000 characters
         max_chars = 6000

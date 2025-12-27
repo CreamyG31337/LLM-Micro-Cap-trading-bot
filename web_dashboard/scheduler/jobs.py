@@ -2688,6 +2688,127 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         logger.error(f"❌ Batch backfill failed: {e}", exc_info=True)
 
 
+def fetch_social_sentiment_job() -> None:
+    """Fetch social sentiment data from StockTwits and Reddit for watched tickers.
+    
+    This job:
+    1. Fetches tickers from both watched_tickers (Supabase) and latest_positions (Supabase)
+    2. Combines and deduplicates the ticker lists
+    3. For each ticker, fetches sentiment from StockTwits and Reddit
+    4. Saves metrics to the social_metrics table (Postgres)
+    """
+    job_id = 'social_sentiment'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting social sentiment job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('social_sentiment', target_date)
+        
+        # Import dependencies (lazy imports)
+        try:
+            from social_service import SocialSentimentService
+            from supabase_client import SupabaseClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize service
+        service = SocialSentimentService()
+        supabase_client = SupabaseClient(use_service_role=True)
+        
+        # 1. Get tickers from watched_tickers table
+        watched_tickers = service.get_watched_tickers()
+        logger.info(f"Found {len(watched_tickers)} watched tickers")
+        
+        # 2. Get tickers from latest_positions (owned positions)
+        try:
+            positions_result = supabase_client.supabase.table("latest_positions")\
+                .select("ticker")\
+                .execute()
+            
+            owned_tickers = list(set([row['ticker'] for row in positions_result.data if row.get('ticker')]))
+            logger.info(f"Found {len(owned_tickers)} tickers from latest positions")
+        except Exception as e:
+            logger.warning(f"Failed to fetch tickers from latest_positions: {e}")
+            owned_tickers = []
+        
+        # 3. Combine and deduplicate
+        all_tickers = list(set(watched_tickers + owned_tickers))
+        logger.info(f"Processing {len(all_tickers)} unique tickers for social sentiment")
+        
+        if not all_tickers:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No tickers to process"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed('social_sentiment', target_date)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        # 4. Process each ticker
+        success_count = 0
+        error_count = 0
+        
+        for ticker in all_tickers:
+            try:
+                # Fetch StockTwits sentiment
+                stocktwits_data = service.fetch_stocktwits_sentiment(ticker)
+                if stocktwits_data:
+                    service.save_metrics(
+                        ticker=ticker,
+                        platform='stocktwits',
+                        volume=stocktwits_data.get('volume', 0),
+                        bull_bear_ratio=stocktwits_data.get('bull_bear_ratio', 0.0),
+                        sentiment_label=None,  # StockTwits doesn't provide AI sentiment
+                        sentiment_score=None,
+                        raw_data=stocktwits_data.get('raw_data')
+                    )
+                    logger.debug(f"✅ Saved StockTwits data for {ticker}")
+                
+                # Fetch Reddit sentiment
+                reddit_data = service.fetch_reddit_sentiment(ticker)
+                if reddit_data:
+                    service.save_metrics(
+                        ticker=ticker,
+                        platform='reddit',
+                        volume=reddit_data.get('volume', 0),
+                        bull_bear_ratio=0.0,  # Reddit doesn't have bull/bear ratio
+                        sentiment_label=reddit_data.get('sentiment_label'),
+                        sentiment_score=reddit_data.get('sentiment_score'),
+                        raw_data=reddit_data.get('raw_data')
+                    )
+                    logger.debug(f"✅ Saved Reddit data for {ticker}")
+                
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                logger.warning(f"Failed to process {ticker}: {e}")
+                continue
+        
+        # 5. Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Processed {len(all_tickers)} tickers: {success_count} successful, {error_count} errors"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('social_sentiment', target_date)
+        logger.info(f"✅ Social sentiment job completed: {message} in {duration_ms/1000:.2f}s")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        mark_job_failed('social_sentiment', target_date)
+        logger.error(f"❌ Social sentiment job failed: {e}", exc_info=True)
+
+
 def register_default_jobs(scheduler) -> None:
     """Register all default jobs with the scheduler.
     
@@ -2941,17 +3062,6 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")
-    
-    # Social sentiment job - every 30 minutes
-    if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:
-        scheduler.add_job(
-            fetch_social_sentiment_job,
-            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment']['default_interval_minutes']),
-            id='social_sentiment',
-            name=f"{get_job_icon('social_sentiment')} Social Sentiment Tracking",
-            replace_existing=True
-        )
-        logger.info("Registered job: social_sentiment (every 30 minutes)")
     
     # Social sentiment job - every 30 minutes
     if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:

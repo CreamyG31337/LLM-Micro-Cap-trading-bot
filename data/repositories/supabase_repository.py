@@ -346,8 +346,14 @@ class SupabaseRepository(BaseRepository):
                 .lt("date", f"{snapshot_date_str}T23:59:59.999999")\
                 .execute()
             
-            # Insert new positions
-            result = self.supabase.table("portfolio_positions").insert(positions_data).execute()
+            # Upsert new positions (insert or update on conflict)
+            # Using upsert instead of insert to handle race conditions gracefully
+            # The unique constraint is on (fund, ticker, date_only) - date_only is auto-populated by trigger
+            # If delete+insert pattern fails due to race condition, upsert will handle it
+            result = self.supabase.table("portfolio_positions").upsert(
+                positions_data,
+                on_conflict="fund,ticker,date_only"
+            ).execute()
             
             logger.info(f"Saved {len(positions_data)} portfolio positions to Supabase")
             

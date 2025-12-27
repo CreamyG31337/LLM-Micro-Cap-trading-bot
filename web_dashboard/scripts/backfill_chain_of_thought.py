@@ -112,12 +112,12 @@ def backfill_articles(
     
     print(f"[INFO] Using model: {model}")
     
-    # Get articles needing analysis
+    # Get articles needing analysis (either missing sentiment OR missing logic_check)
     print("\n[INFO] Finding articles needing Chain of Thought analysis...")
     query = """
         SELECT id, title, content 
         FROM research_articles 
-        WHERE sentiment IS NULL 
+        WHERE (sentiment IS NULL OR logic_check IS NULL)
           AND content IS NOT NULL 
           AND LENGTH(content) > 200
         ORDER BY fetched_at DESC
@@ -145,7 +145,18 @@ def backfill_articles(
         title = article.get('title', 'Untitled')[:60]
         content = article.get('content', '')
         
-        print(f"\n[{i}/{len(articles)}] Processing: {title}...")
+        # Handle Unicode encoding issues
+        try:
+            title_display = title
+        except UnicodeEncodeError:
+            title_display = title.encode('ascii', 'ignore').decode('ascii')
+        
+        try:
+            print(f"\n[{i}/{len(articles)}] Processing: {title_display}...")
+        except UnicodeEncodeError:
+            # Fallback: encode to ASCII
+            title_safe = title_display.encode('ascii', 'ignore').decode('ascii')
+            print(f"\n[{i}/{len(articles)}] Processing: {title_safe}...")
         
         # Generate analysis
         try:
@@ -180,15 +191,55 @@ def backfill_articles(
                 fact_check=summary_data.get("fact_check"),
                 conclusion=summary_data.get("conclusion"),
                 sentiment=summary_data.get("sentiment"),
-                sentiment_score=summary_data.get("sentiment_score")
+                sentiment_score=summary_data.get("sentiment_score"),
+                logic_check=summary_data.get("logic_check")
             )
             
             if success:
                 sentiment = summary_data.get("sentiment", "N/A")
                 score = summary_data.get("sentiment_score", 0.0)
-                print(f"   [OK] Updated (Sentiment: {sentiment}, Score: {score})")
+                logic_check = summary_data.get("logic_check", "N/A")
+                print(f"   [OK] Updated (Sentiment: {sentiment}, Score: {score}, Logic: {logic_check})")
                 success_count += 1
                 consecutive_failures = 0  # Reset failure counter
+                
+                # Extract and save relationships (GraphRAG edges) if not HYPE_DETECTED
+                logic_check_val = summary_data.get("logic_check")
+                if logic_check_val and logic_check_val != "HYPE_DETECTED":
+                    relationships = summary_data.get("relationships", [])
+                    if relationships and isinstance(relationships, list):
+                        # Calculate initial confidence based on logic_check
+                        if logic_check_val == "DATA_BACKED":
+                            initial_confidence = 0.8
+                        else:  # NEUTRAL
+                            initial_confidence = 0.4
+                        
+                        # Normalize and save each relationship
+                        from web_dashboard.research_utils import normalize_relationship
+                        relationships_saved = 0
+                        for rel in relationships:
+                            if isinstance(rel, dict):
+                                source = rel.get("source", "").strip()
+                                target = rel.get("target", "").strip()
+                                rel_type = rel.get("type", "").strip()
+                                
+                                if source and target and rel_type:
+                                    # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                    norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                    
+                                    # Save relationship
+                                    rel_id = repo.save_relationship(
+                                        source_ticker=norm_source,
+                                        target_ticker=norm_target,
+                                        relationship_type=norm_type,
+                                        initial_confidence=initial_confidence,
+                                        source_article_id=article_id
+                                    )
+                                    if rel_id:
+                                        relationships_saved += 1
+                        
+                        if relationships_saved > 0:
+                            print(f"   [OK] Saved {relationships_saved} relationship(s)")
             else:
                 print(f"   [ERROR] Database update failed")
                 fail_count += 1

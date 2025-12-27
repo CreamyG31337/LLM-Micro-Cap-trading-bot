@@ -449,6 +449,9 @@ with st.sidebar:
                                 # Use AI extracted companies/tickers if available
                                 companies = summary_result.get('companies', [])
                                 
+                                # Extract logic_check for relationship confidence scoring
+                                logic_check = summary_result.get("logic_check") if isinstance(summary_result, dict) else None
+                                
                                 # Save to database with fund (if selected)
                                 article_id = repo.save_article(
                                     tickers=companies if companies else None,
@@ -467,7 +470,8 @@ with st.sidebar:
                                     fact_check=summary_result.get("fact_check") if isinstance(summary_result, dict) else None,
                                     conclusion=summary_result.get("conclusion") if isinstance(summary_result, dict) else None,
                                     sentiment=summary_result.get("sentiment") if isinstance(summary_result, dict) else None,
-                                    sentiment_score=summary_result.get("sentiment_score") if isinstance(summary_result, dict) else None
+                                    sentiment_score=summary_result.get("sentiment_score") if isinstance(summary_result, dict) else None,
+                                    logic_check=logic_check
                                 )
                                 
                                 if article_id:

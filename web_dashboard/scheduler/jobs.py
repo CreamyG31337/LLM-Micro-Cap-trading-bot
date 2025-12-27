@@ -74,6 +74,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'cron_triggers': [
             {'hour': 15, 'minute': 15, 'timezone': 'America/Los_Angeles'}  # 15:15 PST / 18:15 EST - after market close
         ]
+    },
+    'social_sentiment': {
+        'name': 'Social Sentiment Tracking',
+        'description': 'Fetch retail hype and sentiment from StockTwits and Reddit',
+        'default_interval_minutes': 30,  # Every 30 minutes
+        'enabled_by_default': True,
+        'icon': '💬'
     }
 }
 
@@ -460,6 +467,9 @@ def market_research_job() -> None:
                 # Calculate relevance score (market_research_job doesn't check owned tickers - always 0.5 for general market news)
                 relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=None)
                 
+                # Extract logic_check for relationship confidence scoring
+                logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                
                 # Save article to database
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,  # Use extracted tickers if available
@@ -477,12 +487,50 @@ def market_research_job() -> None:
                     fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                     conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
                     sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
-                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                    logic_check=logic_check
                 )
                 
                 if article_id:
                     articles_saved += 1
                     logger.info(f"✅ Saved article: {title[:50]}...")
+                    
+                    # Extract and save relationships (GraphRAG edges)
+                    if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                        relationships = summary_data.get("relationships", [])
+                        if relationships and isinstance(relationships, list):
+                            # Calculate initial confidence based on logic_check
+                            if logic_check == "DATA_BACKED":
+                                initial_confidence = 0.8
+                            else:  # NEUTRAL
+                                initial_confidence = 0.4
+                            
+                            # Normalize and save each relationship
+                            from research_utils import normalize_relationship
+                            relationships_saved = 0
+                            for rel in relationships:
+                                if isinstance(rel, dict):
+                                    source = rel.get("source", "").strip()
+                                    target = rel.get("target", "").strip()
+                                    rel_type = rel.get("type", "").strip()
+                                    
+                                    if source and target and rel_type:
+                                        # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                        norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                        
+                                        # Save relationship
+                                        rel_id = research_repo.save_relationship(
+                                            source_ticker=norm_source,
+                                            target_ticker=norm_target,
+                                            relationship_type=norm_type,
+                                            initial_confidence=initial_confidence,
+                                            source_article_id=article_id
+                                        )
+                                        if rel_id:
+                                            relationships_saved += 1
+                            
+                            if relationships_saved > 0:
+                                logger.info(f"✅ Saved {relationships_saved} relationship(s) from article: {title[:50]}...")
                 else:
                     logger.warning(f"Failed to save article: {title[:50]}...")
                 
@@ -726,6 +774,9 @@ def ticker_research_job() -> None:
                             if not embedding:
                                 logger.warning(f"Failed to generate embedding for sector {sector}")
                         
+                        # Extract logic_check for relationship confidence scoring
+                        logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                        
                         # Save with sector but no specific ticker (since it's ETF sector research)
                         article_id = research_repo.save_article(
                             tickers=None,  # No specific ticker for ETF sector research
@@ -742,12 +793,51 @@ def ticker_research_job() -> None:
                             claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
                             fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                             conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
-                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None
+                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                            sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                            logic_check=logic_check
                         )
                         
                         if article_id:
                             articles_saved += 1
                             logger.info(f"  ✅ Saved sector news: {title[:30]}")
+                            
+                            # Extract and save relationships (GraphRAG edges)
+                            if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                                relationships = summary_data.get("relationships", [])
+                                if relationships and isinstance(relationships, list):
+                                    # Calculate initial confidence based on logic_check
+                                    if logic_check == "DATA_BACKED":
+                                        initial_confidence = 0.8
+                                    else:  # NEUTRAL
+                                        initial_confidence = 0.4
+                                    
+                                    # Normalize and save each relationship
+                                    from research_utils import normalize_relationship
+                                    relationships_saved = 0
+                                    for rel in relationships:
+                                        if isinstance(rel, dict):
+                                            source = rel.get("source", "").strip()
+                                            target = rel.get("target", "").strip()
+                                            rel_type = rel.get("type", "").strip()
+                                            
+                                            if source and target and rel_type:
+                                                # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                                norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                                
+                                                # Save relationship
+                                                rel_id = research_repo.save_relationship(
+                                                    source_ticker=norm_source,
+                                                    target_ticker=norm_target,
+                                                    relationship_type=norm_type,
+                                                    initial_confidence=initial_confidence,
+                                                    source_article_id=article_id
+                                                )
+                                                if rel_id:
+                                                    relationships_saved += 1
+                                    
+                                    if relationships_saved > 0:
+                                        logger.info(f"  ✅ Saved {relationships_saved} relationship(s) from sector article: {title[:30]}")
                         
                         # Small delay between articles
                         time.sleep(1)
@@ -870,6 +960,9 @@ def ticker_research_job() -> None:
                         # Calculate relevance score (check if any tickers are owned)
                         relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
                         
+                        # Extract logic_check for relationship confidence scoring
+                        logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                        
                         # Save article
                         article_id = research_repo.save_article(
                             tickers=extracted_tickers,
@@ -886,12 +979,51 @@ def ticker_research_job() -> None:
                             claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
                             fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                             conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
-                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None
+                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                            sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                            logic_check=logic_check
                         )
                         
                         if article_id:
                             articles_saved += 1
                             logger.info(f"  ✅ Saved: {title[:30]}")
+                            
+                            # Extract and save relationships (GraphRAG edges)
+                            if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                                relationships = summary_data.get("relationships", [])
+                                if relationships and isinstance(relationships, list):
+                                    # Calculate initial confidence based on logic_check
+                                    if logic_check == "DATA_BACKED":
+                                        initial_confidence = 0.8
+                                    else:  # NEUTRAL
+                                        initial_confidence = 0.4
+                                    
+                                    # Normalize and save each relationship
+                                    from research_utils import normalize_relationship
+                                    relationships_saved = 0
+                                    for rel in relationships:
+                                        if isinstance(rel, dict):
+                                            source = rel.get("source", "").strip()
+                                            target = rel.get("target", "").strip()
+                                            rel_type = rel.get("type", "").strip()
+                                            
+                                            if source and target and rel_type:
+                                                # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                                norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                                
+                                                # Save relationship
+                                                rel_id = research_repo.save_relationship(
+                                                    source_ticker=norm_source,
+                                                    target_ticker=norm_target,
+                                                    relationship_type=norm_type,
+                                                    initial_confidence=initial_confidence,
+                                                    source_article_id=article_id
+                                                )
+                                                if rel_id:
+                                                    relationships_saved += 1
+                                    
+                                    if relationships_saved > 0:
+                                        logger.info(f"  ✅ Saved {relationships_saved} relationship(s) from article: {title[:30]}")
                         
                         # Small delay between articles to be nice
                         time.sleep(1)
@@ -1110,6 +1242,9 @@ def opportunity_discovery_job() -> None:
                 # Calculate relevance score (check if any tickers are owned)
                 relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
                 
+                # Extract logic_check for relationship confidence scoring
+                logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,
@@ -1127,12 +1262,50 @@ def opportunity_discovery_job() -> None:
                     fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                     conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
                     sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
-                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                    logic_check=logic_check
                 )
                 
                 if article_id:
                     articles_saved += 1
                     logger.info(f"  ✅ Saved opportunity: {title[:30]}")
+                    
+                    # Extract and save relationships (GraphRAG edges)
+                    if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                        relationships = summary_data.get("relationships", [])
+                        if relationships and isinstance(relationships, list):
+                            # Calculate initial confidence based on logic_check
+                            if logic_check == "DATA_BACKED":
+                                initial_confidence = 0.8
+                            else:  # NEUTRAL
+                                initial_confidence = 0.4
+                            
+                            # Normalize and save each relationship
+                            from research_utils import normalize_relationship
+                            relationships_saved = 0
+                            for rel in relationships:
+                                if isinstance(rel, dict):
+                                    source = rel.get("source", "").strip()
+                                    target = rel.get("target", "").strip()
+                                    rel_type = rel.get("type", "").strip()
+                                    
+                                    if source and target and rel_type:
+                                        # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                        norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                        
+                                        # Save relationship
+                                        rel_id = research_repo.save_relationship(
+                                            source_ticker=norm_source,
+                                            target_ticker=norm_target,
+                                            relationship_type=norm_type,
+                                            initial_confidence=initial_confidence,
+                                            source_article_id=article_id
+                                        )
+                                        if rel_id:
+                                            relationships_saved += 1
+                            
+                            if relationships_saved > 0:
+                                logger.info(f"  ✅ Saved {relationships_saved} relationship(s) from opportunity article: {title[:30]}")
                 
                 articles_processed += 1
                 
@@ -1336,6 +1509,9 @@ def opportunity_discovery_job() -> None:
                 # Calculate relevance score (check if any tickers are owned)
                 relevance_score = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
                 
+                # Extract logic_check for relationship confidence scoring
+                logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,
@@ -1353,12 +1529,50 @@ def opportunity_discovery_job() -> None:
                     fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                     conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
                     sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
-                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                    logic_check=logic_check
                 )
                 
                 if article_id:
                     articles_saved += 1
                     logger.info(f"  ✅ Saved opportunity: {title[:30]}")
+                    
+                    # Extract and save relationships (GraphRAG edges)
+                    if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                        relationships = summary_data.get("relationships", [])
+                        if relationships and isinstance(relationships, list):
+                            # Calculate initial confidence based on logic_check
+                            if logic_check == "DATA_BACKED":
+                                initial_confidence = 0.8
+                            else:  # NEUTRAL
+                                initial_confidence = 0.4
+                            
+                            # Normalize and save each relationship
+                            from research_utils import normalize_relationship
+                            relationships_saved = 0
+                            for rel in relationships:
+                                if isinstance(rel, dict):
+                                    source = rel.get("source", "").strip()
+                                    target = rel.get("target", "").strip()
+                                    rel_type = rel.get("type", "").strip()
+                                    
+                                    if source and target and rel_type:
+                                        # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                        norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                        
+                                        # Save relationship
+                                        rel_id = research_repo.save_relationship(
+                                            source_ticker=norm_source,
+                                            target_ticker=norm_target,
+                                            relationship_type=norm_type,
+                                            initial_confidence=initial_confidence,
+                                            source_article_id=article_id
+                                        )
+                                        if rel_id:
+                                            relationships_saved += 1
+                            
+                            if relationships_saved > 0:
+                                logger.info(f"  ✅ Saved {relationships_saved} relationship(s) from opportunity article: {title[:30]}")
                 
                 articles_processed += 1
                 
@@ -1991,6 +2205,8 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                     et_datetime = et_tz.localize(dt.combine(target_date, dt_time(16, 0)))
                     # Convert to UTC for storage (Supabase stores timestamps in UTC)
                     utc_datetime = et_datetime.astimezone(pytz.UTC)
+                    # Calculate date_only for unique constraint (fund, ticker, date_only)
+                    date_only = utc_datetime.date()
                     
                     updated_positions.append({
                         'fund': fund_name,
@@ -2001,6 +2217,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                         'pnl': float(unrealized_pnl),
                         'currency': holding['currency'],
                         'date': utc_datetime.isoformat(),
+                        'date_only': date_only.isoformat(),  # Include for unique constraint upsert
                         # New: Pre-converted values in base currency
                         'base_currency': base_currency,
                         'total_value_base': float(market_value_base),
@@ -2055,32 +2272,39 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                 if deleted_total > 0:
                     logger.info(f"  Deleted {deleted_total} existing positions for {target_date} (preventing duplicates)")
                 
-                # ATOMIC UPDATE: Insert updated positions
-                # If insert fails, we've already deleted old data, but that's OK - next run will fix it
-                # For better safety, we could use a transaction, but Supabase doesn't support multi-table transactions easily
-                # Instead, we ensure delete+insert happens atomically per fund
+                # ATOMIC UPDATE: Upsert updated positions (insert or update on conflict)
+                # Using upsert instead of insert to handle race conditions gracefully
+                # The unique constraint on (fund, date, ticker) prevents duplicates
+                # If delete+insert pattern fails due to race condition, upsert will handle it
                 if updated_positions:
                     try:
-                        insert_result = client.supabase.table("portfolio_positions")\
-                            .insert(updated_positions)\
+                        # Use upsert with on_conflict to handle duplicates from race conditions
+                        # This is safer than insert alone - if the job runs twice concurrently,
+                        # or if delete+insert fails, upsert will update existing records instead of erroring
+                        # The unique constraint is on (fund, ticker, date_only) - date_only is auto-populated by trigger
+                        upsert_result = client.supabase.table("portfolio_positions")\
+                            .upsert(
+                                updated_positions,
+                                on_conflict="fund,ticker,date_only"
+                            )\
                             .execute()
                         
-                        inserted_count = len(insert_result.data) if insert_result.data else len(updated_positions)
-                        total_positions_updated += inserted_count
+                        upserted_count = len(upsert_result.data) if upsert_result.data else len(updated_positions)
+                        total_positions_updated += upserted_count
                         total_funds_processed += 1
                         funds_completed.append(fund_name)  # Track successful completion
                         
-                        logger.info(f"  ✅ Updated {inserted_count} positions for {fund_name}")
-                    except Exception as insert_error:
-                        # Insert failed - log error but don't fail entire job
-                        # The delete already happened, so we'll have missing data until next run
+                        logger.info(f"  ✅ Upserted {upserted_count} positions for {fund_name}")
+                    except Exception as upsert_error:
+                        # Upsert failed - log error but don't fail entire job
+                        # The delete already happened, but upsert failure is less likely than insert failure
                         # This is acceptable because:
                         # 1. Next run (15 min) will fix it
                         # 2. Historical data is preserved
                         # 3. We continue processing other funds
-                        logger.error(f"  ❌ Failed to insert positions for {fund_name}: {insert_error}")
+                        logger.error(f"  ❌ Failed to upsert positions for {fund_name}: {upsert_error}")
                         logger.warning(f"  ⚠️  {fund_name} has no positions for {target_date} until next run")
-                        # Don't increment counters for failed insert
+                        # Don't increment counters for failed upsert
                 else:
                     logger.warning(f"  No positions to insert for {fund_name} (all tickers failed price fetch)")
                 
@@ -2717,3 +2941,25 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")
+    
+    # Social sentiment job - every 30 minutes
+    if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:
+        scheduler.add_job(
+            fetch_social_sentiment_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment']['default_interval_minutes']),
+            id='social_sentiment',
+            name=f"{get_job_icon('social_sentiment')} Social Sentiment Tracking",
+            replace_existing=True
+        )
+        logger.info("Registered job: social_sentiment (every 30 minutes)")
+    
+    # Social sentiment job - every 30 minutes
+    if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:
+        scheduler.add_job(
+            fetch_social_sentiment_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment']['default_interval_minutes']),
+            id='social_sentiment',
+            name=f"{get_job_icon('social_sentiment')} Social Sentiment Tracking",
+            replace_existing=True
+        )
+        logger.info("Registered job: social_sentiment (every 30 minutes)")

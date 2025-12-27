@@ -158,6 +158,9 @@ def opportunity_discovery_job() -> None:
                     # Generate embedding
                     embedding = ollama_client.generate_embedding(content[:6000])
                 
+                # Extract logic_check for relationship confidence scoring
+                logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
                     tickers=[extracted_ticker] if extracted_ticker else None,
@@ -175,12 +178,50 @@ def opportunity_discovery_job() -> None:
                     fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
                     conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
                     sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
-                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                    logic_check=logic_check
                 )
                 
                 if article_id:
                     articles_saved += 1
                     logger.info(f"  ✅ Saved opportunity: {title[:30]}")
+                    
+                    # Extract and save relationships (GraphRAG edges)
+                    if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                        relationships = summary_data.get("relationships", [])
+                        if relationships and isinstance(relationships, list):
+                            # Calculate initial confidence based on logic_check
+                            if logic_check == "DATA_BACKED":
+                                initial_confidence = 0.8
+                            else:  # NEUTRAL
+                                initial_confidence = 0.4
+                            
+                            # Normalize and save each relationship
+                            from research_utils import normalize_relationship
+                            relationships_saved = 0
+                            for rel in relationships:
+                                if isinstance(rel, dict):
+                                    source = rel.get("source", "").strip()
+                                    target = rel.get("target", "").strip()
+                                    rel_type = rel.get("type", "").strip()
+                                    
+                                    if source and target and rel_type:
+                                        # Normalize relationship direction (Option A: Supplier -> Buyer)
+                                        norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                        
+                                        # Save relationship
+                                        rel_id = research_repo.save_relationship(
+                                            source_ticker=norm_source,
+                                            target_ticker=norm_target,
+                                            relationship_type=norm_type,
+                                            initial_confidence=initial_confidence,
+                                            source_article_id=article_id
+                                        )
+                                        if rel_id:
+                                            relationships_saved += 1
+                            
+                            if relationships_saved > 0:
+                                logger.info(f"  ✅ Saved {relationships_saved} relationship(s) from opportunity article: {title[:30]}")
                 
                 articles_processed += 1
                 

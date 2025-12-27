@@ -99,7 +99,8 @@ class ResearchRepository:
         fact_check: Optional[str] = None,
         conclusion: Optional[str] = None,
         sentiment: Optional[str] = None,
-        sentiment_score: Optional[float] = None
+        sentiment_score: Optional[float] = None,
+        logic_check: Optional[str] = None
     ) -> Optional[str]:
         """Save a research article to the database
         
@@ -123,6 +124,7 @@ class ResearchRepository:
             conclusion: Net impact on ticker(s) (Chain of Thought Step 3)
             sentiment: Sentiment category (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH)
             sentiment_score: Numeric sentiment score for calculations (VERY_BULLISH=2.0, BULLISH=1.0, NEUTRAL=0.0, BEARISH=-1.0, VERY_BEARISH=-2.0)
+            logic_check: Categorical classification (DATA_BACKED, HYPE_DETECTED, NEUTRAL) for relationship confidence scoring
             
         Returns:
             Article ID (UUID as string) if successful, None otherwise
@@ -157,10 +159,10 @@ class ResearchRepository:
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
                         source, published_at, relevance_score, embedding, fund,
-                        claims, fact_check, conclusion, sentiment, sentiment_score
+                        claims, fact_check, conclusion, sentiment, sentiment_score, logic_check
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s,
-                        %s::jsonb, %s, %s, %s, %s
+                        %s::jsonb, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -182,17 +184,18 @@ class ResearchRepository:
                     fact_check,
                     conclusion,
                     sentiment,
-                    sentiment_score
+                    sentiment_score,
+                    logic_check
                 )
             else:
                 query = """
                     INSERT INTO research_articles (
                         tickers, sector, article_type, title, url, summary, content,
                         source, published_at, relevance_score, fund,
-                        claims, fact_check, conclusion, sentiment, sentiment_score
+                        claims, fact_check, conclusion, sentiment, sentiment_score, logic_check
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::jsonb, %s, %s, %s, %s
+                        %s::jsonb, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (url) DO NOTHING
                     RETURNING id
@@ -213,7 +216,8 @@ class ResearchRepository:
                     fact_check,
                     conclusion,
                     sentiment,
-                    sentiment_score
+                    sentiment_score,
+                    logic_check
                 )
             
             with self.client.get_connection() as conn:
@@ -232,6 +236,71 @@ class ResearchRepository:
                     
         except Exception as e:
             logger.error(f"❌ Error saving article: {e}")
+            return None
+    
+    def save_relationship(
+        self,
+        source_ticker: str,
+        target_ticker: str,
+        relationship_type: str,
+        initial_confidence: float,
+        source_article_id: Optional[str] = None
+    ) -> Optional[int]:
+        """Save a market relationship to the database.
+        
+        Uses ON CONFLICT to increment confidence on duplicate relationships.
+        If relationship already exists, confidence is incremented by 0.1 (capped at 1.0).
+        
+        Args:
+            source_ticker: Source company ticker (e.g., "TSM")
+            target_ticker: Target company ticker (e.g., "AAPL")
+            relationship_type: Type of relationship (e.g., "SUPPLIER", "COMPETITOR")
+            initial_confidence: Initial confidence score (0.0 to 1.0)
+            source_article_id: UUID of the article that discovered this relationship (optional)
+            
+        Returns:
+            Relationship ID if successful, None otherwise
+        """
+        if not source_ticker or not target_ticker or not relationship_type:
+            logger.error("Source ticker, target ticker, and relationship type are required")
+            return None
+        
+        try:
+            query = """
+                INSERT INTO market_relationships (
+                    source_ticker, target_ticker, relationship_type,
+                    confidence_score, source_article_id
+                ) VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (source_ticker, target_ticker, relationship_type)
+                DO UPDATE SET
+                    confidence_score = LEAST(market_relationships.confidence_score + 0.1, 1.0),
+                    detected_at = NOW()
+                RETURNING id
+            """
+            params = (
+                source_ticker.upper().strip(),
+                target_ticker.upper().strip(),
+                relationship_type.upper().strip(),
+                initial_confidence,
+                source_article_id
+            )
+            
+            with self.client.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                result = cursor.fetchone()
+                conn.commit()
+                
+                if result:
+                    relationship_id = result[0]
+                    logger.debug(f"✅ Saved relationship: {source_ticker} -> {relationship_type} -> {target_ticker} (ID: {relationship_id}, confidence: {initial_confidence})")
+                    return relationship_id
+                else:
+                    logger.warning("Relationship saved but no ID returned")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"❌ Error saving relationship: {e}")
             return None
     
     def get_articles_by_ticker(
@@ -497,7 +566,8 @@ class ResearchRepository:
         fact_check: Optional[str] = None,
         conclusion: Optional[str] = None,
         sentiment: Optional[str] = None,
-        sentiment_score: Optional[float] = None
+        sentiment_score: Optional[float] = None,
+        logic_check: Optional[str] = None
     ) -> bool:
         """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score, Chain of Thought fields).
         
@@ -515,6 +585,7 @@ class ResearchRepository:
             conclusion: Net impact on ticker(s) (Chain of Thought Step 3)
             sentiment: Sentiment category (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH)
             sentiment_score: Numeric sentiment score for calculations
+            logic_check: Categorical classification (DATA_BACKED, HYPE_DETECTED, NEUTRAL) for relationship confidence scoring
             
         Returns:
             True if updated successfully, False otherwise
@@ -578,6 +649,10 @@ class ResearchRepository:
             if sentiment_score is not None:
                 updates.append("sentiment_score = %s")
                 params.append(float(sentiment_score))
+            
+            if logic_check is not None:
+                updates.append("logic_check = %s")
+                params.append(logic_check)
             
             if not updates:
                 logger.warning(f"No fields to update for article {article_id}")

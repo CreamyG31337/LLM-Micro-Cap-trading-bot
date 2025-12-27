@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Any, Optional
 import logging
@@ -81,6 +81,15 @@ class PositionMapper:
         else:
             market_value = shares * price if price > 0 else 0.0
         
+        # Calculate date_only for unique constraint (fund, ticker, date_only)
+        # The trigger will also set this, but including it allows PostgREST upsert to work properly
+        if timestamp.tzinfo is None:
+            # If no timezone, assume UTC
+            date_only = timestamp.date()
+        else:
+            # Convert to UTC and get date
+            date_only = timestamp.astimezone(timezone.utc).date()
+        
         # Build base dictionary
         db_data = {
             'ticker': position.ticker,
@@ -92,6 +101,7 @@ class PositionMapper:
             'currency': position.currency,
             'fund': fund,
             'date': timestamp.isoformat(),
+            'date_only': date_only.isoformat(),  # Include for unique constraint upsert
             'created_at': datetime.now().isoformat()
         }
         

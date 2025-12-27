@@ -231,7 +231,14 @@ class SupabaseClient:
                 })
             
             # Upsert positions (insert or update on conflict)
-            result = self.supabase.table("portfolio_positions").upsert(positions).execute()
+            # Use on_conflict to handle duplicates based on unique constraint (fund, ticker, date_only)
+            # Note: This requires fund and date_only to be included in positions
+            # The unique constraint is portfolio_positions_unique_fund_ticker_date
+            # The date_only column is automatically populated by trigger, but we include it for upsert
+            result = self.supabase.table("portfolio_positions").upsert(
+                positions,
+                on_conflict="fund,ticker,date_only"
+            ).execute()
             logger.info(f"✅ Upserted {len(positions)} portfolio positions")
             return True
             

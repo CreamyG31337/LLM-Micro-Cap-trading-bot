@@ -8,7 +8,7 @@ Helper functions for extracting and processing research articles.
 
 import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -230,3 +230,40 @@ def validate_ticker_in_content(ticker: Optional[str], content: str) -> bool:
     
     # Case-insensitive search for ticker in content
     return ticker.upper() in content.upper()
+
+
+def normalize_relationship(source: str, target: str, rel_type: str) -> Tuple[str, str, str]:
+    """Normalize relationship direction using Option A (Industry Standard).
+    
+    Option A: Supplier → Buyer direction
+    - SUPPLIER: [Supplier] -> SUPPLIER -> [Buyer] (e.g., TSM -> SUPPLIER -> AAPL)
+    - CUSTOMER relationships are converted to SUPPLIER with supplier as source, buyer as target
+    
+    Args:
+        source: Source ticker or company name
+        target: Target ticker or company name
+        rel_type: Relationship type (SUPPLIER, CUSTOMER, COMPETITOR, PARTNER, PARENT, SUBSIDIARY, LITIGATION)
+        
+    Returns:
+        Tuple of (normalized_source, normalized_target, normalized_type)
+        
+    Examples:
+        >>> normalize_relationship("TSM", "AAPL", "SUPPLIER")
+        ("TSM", "AAPL", "SUPPLIER")
+        >>> normalize_relationship("AAPL", "TSM", "CUSTOMER")
+        ("TSM", "AAPL", "SUPPLIER")
+        >>> normalize_relationship("AAPL", "MSFT", "COMPETITOR")
+        ("AAPL", "MSFT", "COMPETITOR")
+    """
+    rel_type_upper = rel_type.upper().strip()
+    source_upper = source.upper().strip()
+    target_upper = target.upper().strip()
+    
+    # Handle CUSTOMER relationships: flip to SUPPLIER with supplier as source
+    if rel_type_upper == "CUSTOMER":
+        # "Apple is a customer of TSMC" → TSM -> SUPPLIER -> AAPL
+        return (target_upper, source_upper, "SUPPLIER")
+    
+    # SUPPLIER relationships: already in correct direction (Supplier -> Buyer)
+    # Other types (COMPETITOR, PARTNER, LITIGATION, PARENT, SUBSIDIARY): keep as-is
+    return (source_upper, target_upper, rel_type_upper)

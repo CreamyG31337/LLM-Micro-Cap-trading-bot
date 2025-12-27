@@ -321,6 +321,30 @@ try:
     # Filter option
     show_only_watchlist = st.checkbox("Show only watchlist tickers", value=True)
     
+    # Batch fetch company names for all unique tickers
+    unique_tickers = list(set([row.get('ticker') for row in latest_sentiment if row.get('ticker')]))
+    company_names_map = {}
+    
+    if supabase_client and unique_tickers:
+        try:
+            # Batch query company names from securities table
+            # Query in chunks of 50 (Supabase limit)
+            for i in range(0, len(unique_tickers), 50):
+                ticker_batch = unique_tickers[i:i+50]
+                result = supabase_client.supabase.table("securities")\
+                    .select("ticker, company_name")\
+                    .in_("ticker", ticker_batch)\
+                    .execute()
+                
+                if result.data:
+                    for item in result.data:
+                        ticker = item.get('ticker', '').upper()
+                        company_name = item.get('company_name', '')
+                        if company_name and company_name.strip() and company_name != 'Unknown':
+                            company_names_map[ticker] = company_name.strip()
+        except Exception as e:
+            logger.warning(f"Error fetching company names: {e}")
+    
     # Prepare DataFrame
     df_data = []
     for row in latest_sentiment:
@@ -339,12 +363,17 @@ try:
         if show_only_watchlist and not in_watchlist:
             continue
         
+        # Get company name
+        ticker_upper = ticker.upper()
+        company_name = company_names_map.get(ticker_upper, 'N/A')
+        
         # Platform icons
         platform_icons = {'stocktwits': '📊', 'reddit': '🤖'}
         platform_display = f"{platform_icons.get(platform, '❓')} {platform.upper()}"
         
         df_data.append({
             'Ticker': ticker,
+            'Company': company_name,
             'In Watchlist': '✅' if in_watchlist else '❌',
             'Platform': platform_display,
             'Volume': volume,

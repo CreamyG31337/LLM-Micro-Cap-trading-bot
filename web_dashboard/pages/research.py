@@ -755,7 +755,7 @@ try:
             sel_col1, sel_col2, sel_col3 = st.columns(3)
             
             with sel_col1:
-                if st.button("☑️ Select Page", key="select_page_btn", use_container_width=True, 
+                if st.button("☑️ Select All", key="select_page_btn", use_container_width=True, 
                            help="Add all articles on this page to selection"):
                     st.session_state.selected_articles.update(current_page_ids)
                     # Sync checkbox widget states
@@ -1087,17 +1087,27 @@ try:
                 col_check, col_expander = st.columns([0.05, 0.95])
                 with col_check:
                     article_id = article['id']
+                    checkbox_key = f"select_{article_id}"
                     is_selected = article_id in st.session_state.selected_articles
-                    selected = st.checkbox(
+                    
+                    # Initialize checkbox state if not present (avoids value/session state conflict)
+                    if checkbox_key not in st.session_state:
+                        st.session_state[checkbox_key] = is_selected
+                    
+                    def make_checkbox_callback(aid):
+                        def callback():
+                            if st.session_state[f"select_{aid}"]:
+                                st.session_state.selected_articles.add(aid)
+                            else:
+                                st.session_state.selected_articles.discard(aid)
+                        return callback
+                    
+                    st.checkbox(
                         "",
-                        value=is_selected,
-                        key=f"select_{article_id}",
-                        label_visibility="collapsed"
+                        key=checkbox_key,
+                        label_visibility="collapsed",
+                        on_change=make_checkbox_callback(article_id)
                     )
-                    if selected and not is_selected:
-                        st.session_state.selected_articles.add(article_id)
-                    elif not selected and is_selected:
-                        st.session_state.selected_articles.discard(article_id)
                 
                 with col_expander:
                     with st.expander(expander_title, expanded=False):

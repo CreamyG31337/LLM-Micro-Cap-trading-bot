@@ -88,6 +88,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 1440,  # Once per day
         'enabled_by_default': True,
         'icon': '🧹'
+    },
+    'congress_trades': {
+        'name': 'Fetch Congress Trades',
+        'description': 'Fetch and analyze congressional stock trades from FMP API',
+        'default_interval_minutes': 360,  # 6 hours (but uses cron triggers)
+        'enabled_by_default': True,
+        'icon': '🏛️'
     }
 }
 
@@ -2891,6 +2898,387 @@ def cleanup_social_metrics_job() -> None:
         logger.error(f"❌ Social metrics cleanup job failed: {e}", exc_info=True)
 
 
+def fetch_congress_trades_job() -> None:
+    """Fetch and analyze congressional stock trades from Financial Modeling Prep API.
+    
+    This job:
+    1. Fetches House and Senate trading disclosures from FMP API
+    2. Processes up to 10 records per chamber per run (API docs claim 0-25 but actual limit is 10)
+    3. Cleans and normalizes the data
+    4. Checks for duplicates before processing
+    5. Analyzes each new trade with AI (Ollama Granite 3.3) for conflict of interest
+    6. Saves trades to Supabase congress_trades table
+    
+    Note: FMP API documentation lies - they claim limit can be 0-25, but only 10 actually works.
+    """
+    import os
+    import requests
+    import json
+    import re
+    
+    job_id = 'congress_trades'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting congress trades job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('congress_trades', target_date)
+        
+        # Import dependencies (lazy imports)
+        try:
+            from supabase_client import SupabaseClient
+            from ollama_client import get_ollama_client
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Get FMP API key
+        fmp_api_key = os.getenv("FMP_API_KEY")
+        if not fmp_api_key:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "FMP_API_KEY not found in environment"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize clients
+        supabase_client = SupabaseClient(use_service_role=True)
+        ollama_client = get_ollama_client()
+        
+        if not ollama_client:
+            logger.warning("⚠️  Ollama unavailable - trades will be saved without conflict analysis")
+        
+        # Calculate cutoff date (7 days ago)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        # Base URL for FMP API (use /stable endpoints, not v3/v4 which are legacy)
+        base_url = "https://financialmodelingprep.com/stable"
+        
+        # Track statistics
+        total_trades_found = 0
+        new_trades = 0
+        skipped_duplicates = 0
+        skipped_no_ticker = 0
+        ai_analyzed = 0
+        errors = 0
+        
+        # Process both House and Senate
+        for chamber in ['House', 'Senate']:
+            logger.info(f"Fetching {chamber} trades...")
+            
+            # Use stable API endpoints
+            if chamber == 'House':
+                endpoint = f"{base_url}/house-latest"
+            else:  # Senate
+                endpoint = f"{base_url}/senate-latest"
+            
+            # Note: FMP API is locked to page 0 only
+            # API docs claim limit can be 0-25, but they're liars - only 10 actually works (as of 2025-12-27)
+            page = 0
+            limit = 10  # Actual API limit: 10 responses per call (docs falsely claim 0-25)
+            
+            try:
+                # Fetch page 0 only (other pages are locked)
+                params = {
+                    'page': page,
+                    'limit': limit,
+                    'apikey': fmp_api_key
+                }
+                
+                logger.info(f"Fetching {chamber} page {page} (limit {limit} records)...")
+                response = requests.get(endpoint, params=params, timeout=30)
+                response.raise_for_status()
+                
+                # Parse JSON response
+                try:
+                    data = response.json()
+                    # Response is a list of trades
+                    trades = data if isinstance(data, list) else []
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"Failed to parse {chamber} response as JSON: {json_error}")
+                    logger.debug(f"Response content: {response.text[:500]}")
+                    continue  # Skip this chamber, try next
+                
+                if not trades:
+                    logger.info(f"No trades found for {chamber}")
+                    continue  # Skip this chamber, try next
+                
+                logger.info(f"Found {len(trades)} trades for {chamber}")
+                
+                # Process each trade
+                for trade_data in trades:
+                        total_trades_found += 1
+                        
+                        try:
+                            # Extract and clean data
+                            # FMP API uses 'symbol' for ticker
+                            ticker = trade_data.get('symbol') or trade_data.get('ticker') or ''
+                            if not ticker or ticker.strip() == '':
+                                skipped_no_ticker += 1
+                                continue
+                            
+                            ticker = ticker.strip().upper()
+                            
+                            # Get politician name (FMP uses firstName and lastName)
+                            first_name = trade_data.get('firstName') or trade_data.get('first_name') or ''
+                            last_name = trade_data.get('lastName') or trade_data.get('last_name') or ''
+                            politician = f"{first_name} {last_name}".strip()
+                            
+                            # Fallback to other fields if firstName/lastName not available
+                            if not politician:
+                                politician = trade_data.get('politician') or trade_data.get('name') or trade_data.get('representative') or ''
+                            
+                            if not politician:
+                                logger.warning(f"Missing politician name for trade: {trade_data}")
+                                continue
+                            
+                            politician = politician.strip()
+                            
+                            # Parse dates (FMP uses disclosureDate and transactionDate)
+                            disclosure_date_str = trade_data.get('disclosureDate') or trade_data.get('disclosure_date') or trade_data.get('date')
+                            transaction_date_str = trade_data.get('transactionDate') or trade_data.get('transaction_date') or trade_data.get('trade_date')
+                            
+                            if not disclosure_date_str:
+                                logger.warning(f"Missing disclosure date for trade: {trade_data}")
+                                continue
+                            
+                            try:
+                                # Parse dates (FMP may return in various formats)
+                                # Try common date formats
+                                date_formats = [
+                                    '%Y-%m-%d',
+                                    '%Y-%m-%dT%H:%M:%S',
+                                    '%Y-%m-%dT%H:%M:%SZ',
+                                    '%m/%d/%Y',
+                                    '%d/%m/%Y',
+                                    '%Y/%m/%d'
+                                ]
+                                
+                                disclosure_date = None
+                                for fmt in date_formats:
+                                    try:
+                                        disclosure_date = datetime.strptime(disclosure_date_str.split('T')[0], fmt).date()
+                                        break
+                                    except (ValueError, AttributeError):
+                                        continue
+                                
+                                if not disclosure_date:
+                                    # Try ISO format
+                                    try:
+                                        disclosure_date = datetime.fromisoformat(disclosure_date_str.replace('Z', '+00:00')).date()
+                                    except (ValueError, AttributeError):
+                                        logger.warning(f"Failed to parse disclosure date: {disclosure_date_str}")
+                                        continue
+                                
+                                if transaction_date_str:
+                                    transaction_date = None
+                                    for fmt in date_formats:
+                                        try:
+                                            transaction_date = datetime.strptime(transaction_date_str.split('T')[0], fmt).date()
+                                            break
+                                        except (ValueError, AttributeError):
+                                            continue
+                                    
+                                    if not transaction_date:
+                                        try:
+                                            transaction_date = datetime.fromisoformat(transaction_date_str.replace('Z', '+00:00')).date()
+                                        except (ValueError, AttributeError):
+                                            transaction_date = disclosure_date  # Fallback to disclosure date
+                                else:
+                                    transaction_date = disclosure_date  # Fallback to disclosure date
+                            except Exception as date_error:
+                                logger.warning(f"Failed to parse dates: {date_error}, data: {trade_data}")
+                                continue
+                            
+                            # Check if disclosure date is too old
+                            # Note: Since we only get 10 records per chamber, we'll process all of them
+                            # and let the 7-day cutoff be handled by the duplicate check
+                            if disclosure_date < cutoff_date.date():
+                                # Skip old trades (older than 7 days)
+                                # But continue processing other trades since we only get 10 total per chamber
+                                continue
+                            
+                            # Get transaction type (FMP may use 'type' or 'transactionType')
+                            trade_type = trade_data.get('type') or trade_data.get('transactionType') or trade_data.get('transaction_type') or ''
+                            if not trade_type:
+                                # Try to infer from other fields
+                                description = str(trade_data.get('description', '') or trade_data.get('transaction', '') or '').lower()
+                                if 'purchase' in description or 'buy' in description:
+                                    trade_type = 'Purchase'
+                                elif 'sale' in description or 'sell' in description:
+                                    trade_type = 'Sale'
+                                else:
+                                    trade_type = 'Purchase'  # Default
+                            
+                            # Normalize to Purchase or Sale
+                            trade_type_lower = trade_type.lower()
+                            if 'purchase' in trade_type_lower or 'buy' in trade_type_lower:
+                                trade_type = 'Purchase'
+                            else:
+                                trade_type = 'Sale'
+                            
+                            # Get amount (keep as string - FMP may use 'amount' or 'value')
+                            amount = trade_data.get('amount') or trade_data.get('value') or trade_data.get('range') or ''
+                            if amount:
+                                amount = str(amount).strip()
+                            
+                            # Get asset type (default to Stock)
+                            asset_type = trade_data.get('assetType') or trade_data.get('asset_type') or 'Stock'
+                            asset_type_lower = str(asset_type).lower()
+                            if 'crypto' in asset_type_lower:
+                                asset_type = 'Crypto'
+                            else:
+                                asset_type = 'Stock'
+                            
+                            # Check for duplicate before processing
+                            # Note: We use upsert with on_conflict, so duplicate check is optional
+                            # Skip duplicate check if amount has special characters that cause URL encoding issues
+                            try:
+                                # Only check if amount is simple (no special chars that cause encoding issues)
+                                if amount and not any(char in amount for char in ['$', ',', '-', ' ']):
+                                    existing = supabase_client.supabase.table("congress_trades")\
+                                        .select("id")\
+                                        .eq("politician", politician)\
+                                        .eq("ticker", ticker)\
+                                        .eq("transaction_date", transaction_date.isoformat())\
+                                        .eq("amount", amount)\
+                                        .maybe_single()\
+                                        .execute()
+                                    
+                                    if existing and existing.data:
+                                        skipped_duplicates += 1
+                                        continue
+                            except Exception as dup_check_error:
+                                # Skip duplicate check if it fails - upsert will handle duplicates anyway
+                                logger.debug(f"Duplicate check skipped (will use upsert): {dup_check_error}")
+                                pass
+                            
+                            # This is a new trade - analyze with AI
+                            conflict_score = None
+                            notes = None
+                            
+                            if ollama_client:
+                                try:
+                                    # Build prompt for AI analysis
+                                    prompt = f"Analyze this trade: {politician} {'bought' if trade_type == 'Purchase' else 'sold'} {ticker} on {transaction_date}. Asset: {asset_type}. Amount: {amount}. Is this suspicious given current events? Return JSON: {{'conflict_score': 0.0-1.0, 'reasoning': '...'}}"
+                                    
+                                    # Query Ollama (non-streaming for structured response)
+                                    full_response = ""
+                                    for chunk in ollama_client.query_ollama(
+                                        prompt=prompt,
+                                        model="granite3.3",
+                                        stream=True,
+                                        temperature=0.3  # Lower temperature for more consistent analysis
+                                    ):
+                                        full_response += chunk
+                                    
+                                    # Parse JSON response
+                                    json_match = re.search(r'\{[^{}]*"conflict_score"[^{}]*\}', full_response, re.DOTALL)
+                                    if json_match:
+                                        json_str = json_match.group(0)
+                                    else:
+                                        json_str = full_response.strip()
+                                    
+                                    # Remove markdown code blocks if present
+                                    json_str = re.sub(r'```json\s*', '', json_str)
+                                    json_str = re.sub(r'```\s*', '', json_str)
+                                    json_str = json_str.strip()
+                                    
+                                    parsed = json.loads(json_str)
+                                    
+                                    conflict_score = float(parsed.get("conflict_score", 0.0))
+                                    # Clamp to 0.0-1.0 range
+                                    conflict_score = max(0.0, min(1.0, conflict_score))
+                                    notes = parsed.get("reasoning", "AI analysis completed")
+                                    
+                                    ai_analyzed += 1
+                                    
+                                except json.JSONDecodeError as e:
+                                    logger.warning(f"Failed to parse AI response for {politician} {ticker}: {e}")
+                                    logger.debug(f"Response was: {full_response[:500]}")
+                                    conflict_score = 0.0
+                                    notes = "Failed to parse AI response"
+                                except Exception as ai_error:
+                                    logger.warning(f"AI analysis failed for {politician} {ticker}: {ai_error}")
+                                    conflict_score = 0.0
+                                    notes = "AI analysis error"
+                            
+                            # Prepare trade record
+                            trade_record = {
+                                'ticker': ticker,
+                                'politician': politician,
+                                'chamber': chamber,
+                                'transaction_date': transaction_date.isoformat(),
+                                'disclosure_date': disclosure_date.isoformat(),
+                                'type': trade_type,
+                                'amount': amount,
+                                'asset_type': asset_type,
+                                'conflict_score': conflict_score,
+                                'notes': notes
+                            }
+                            
+                            # Insert to Supabase (use upsert to handle any race conditions)
+                            try:
+                                result = supabase_client.supabase.table("congress_trades")\
+                                    .upsert(
+                                        trade_record,
+                                        on_conflict="politician,ticker,transaction_date,amount"
+                                    )\
+                                    .execute()
+                                
+                                if result.data:
+                                    new_trades += 1
+                                    logger.debug(f"✅ Saved trade: {politician} {trade_type} {ticker} on {transaction_date}")
+                                else:
+                                    skipped_duplicates += 1
+                                    
+                            except Exception as insert_error:
+                                errors += 1
+                                logger.error(f"Failed to insert trade for {politician} {ticker}: {insert_error}")
+                                continue
+                        
+                        except Exception as trade_error:
+                            errors += 1
+                            logger.warning(f"Error processing trade: {trade_error}, data: {trade_data}")
+                            continue
+                    
+                # Note: API is locked to page 0 only, so we don't paginate
+                # We only get the 10 most recent trades per chamber per run
+                # API docs claim 0-25 limit, but they're liars - only 10 works (as of 2025-12-27)
+                
+            except requests.exceptions.HTTPError as http_error:
+                logger.error(f"HTTP error for {chamber}: {http_error}")
+            except requests.exceptions.RequestException as req_error:
+                logger.error(f"Request error for {chamber}: {req_error}")
+            except Exception as e:
+                logger.error(f"Unexpected error processing {chamber}: {e}", exc_info=True)
+        
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Found {total_trades_found} trades: {new_trades} new, {skipped_duplicates} duplicates, {skipped_no_ticker} no ticker, {ai_analyzed} AI analyzed, {errors} errors"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('congress_trades', target_date, None, [])
+        logger.info(f"✅ Congress trades job completed: {message} in {duration_ms/1000:.2f}s")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('congress_trades', target_date, None, str(e))
+        except Exception:
+            pass
+        logger.error(f"❌ Congress trades job failed: {e}", exc_info=True)
+
+
 def register_default_jobs(scheduler) -> None:
     """Register all default jobs with the scheduler.
     
@@ -3169,3 +3557,14 @@ def register_default_jobs(scheduler) -> None:
         replace_existing=True
     )
     logger.info("Registered job: social_metrics_cleanup (daily at 3:00 AM EST)")
+    
+    # Congress trades job - every 12 minutes (120 runs/day × 2 API calls = 240 total, stays under 250 limit)
+    if AVAILABLE_JOBS['congress_trades']['enabled_by_default']:
+        scheduler.add_job(
+            fetch_congress_trades_job,
+            trigger=IntervalTrigger(minutes=12),
+            id='congress_trades',
+            name=f"{get_job_icon('congress_trades')} Fetch Congress Trades",
+            replace_existing=True
+        )
+        logger.info("Registered job: congress_trades (every 12 minutes - 120 runs/day, 240 API calls/day)")

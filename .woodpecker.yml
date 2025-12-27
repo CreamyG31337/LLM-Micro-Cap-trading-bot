@@ -17,6 +17,9 @@
 #                          Format: postgresql://user:password@host:port/database
 #                          For Docker container connecting to host Postgres: use host.docker.internal
 #                          Example: postgresql://postgres:password@host.docker.internal:5432/trading_db
+# - fmp_api_key: (optional) Financial Modeling Prep API key for congress trading module
+#                Get from: https://site.financialmodelingprep.com/developer/docs/
+#                Required for congress_trades scheduled job
 # - ollama_base_url: (optional) Ollama API URL (default: http://host.docker.internal:11434)
 # - ollama_model: (optional) Default AI model (default: mistral-nemo:12b)
 # - ollama_enabled: (optional) Enable AI assistant (default: true)
@@ -40,6 +43,8 @@ steps:
         from_secret: supabase_secret_key
       RESEARCH_DATABASE_URL:
         from_secret: research_database_url
+      FMP_API_KEY:
+        from_secret: fmp_api_key
     commands:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -74,12 +79,29 @@ steps:
       # NOTE: On Windows/Mac, host.docker.internal works natively. On Linux, you MUST add "--add-host=host.docker.internal:host-gateway"
       # Ollama settings can be overridden via Woodpecker secrets or environment variables
       # RESEARCH_DATABASE_URL is optional - only set if research articles storage is needed
+      # FMP_API_KEY is optional - only set if congress trading module is needed
       - |
-        if [ -n "$RESEARCH_DATABASE_URL" ]; then
-          docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e RESEARCH_DATABASE_URL="$RESEARCH_DATABASE_URL" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
-        else
-          docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" -e SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" -e BUILD_TIMESTAMP="$BUILD_TIMESTAMP" -e OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://host.docker.internal:11434}" -e OLLAMA_MODEL="${OLLAMA_MODEL:-mistral-nemo:12b}" -e OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}" -e STREAMLIT_SERVER_HEADLESS=true -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false trading-dashboard:latest
-        fi
+        # Build base docker run command
+        DOCKER_CMD="docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway"
+        DOCKER_CMD="$DOCKER_CMD -e SUPABASE_URL=\"$SUPABASE_URL\""
+        DOCKER_CMD="$DOCKER_CMD -e SUPABASE_PUBLISHABLE_KEY=\"$SUPABASE_PUBLISHABLE_KEY\""
+        DOCKER_CMD="$DOCKER_CMD -e SUPABASE_SECRET_KEY=\"$SUPABASE_SECRET_KEY\""
+        DOCKER_CMD="$DOCKER_CMD -e BUILD_TIMESTAMP=\"$BUILD_TIMESTAMP\""
+        
+        # Add optional environment variables if set
+        [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
+        [ -n "$FMP_API_KEY" ] && DOCKER_CMD="$DOCKER_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
+        
+        # Add Ollama and Streamlit settings
+        DOCKER_CMD="$DOCKER_CMD -e OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-http://host.docker.internal:11434}\""
+        DOCKER_CMD="$DOCKER_CMD -e OLLAMA_MODEL=\"${OLLAMA_MODEL:-mistral-nemo:12b}\""
+        DOCKER_CMD="$DOCKER_CMD -e OLLAMA_ENABLED=\"${OLLAMA_ENABLED:-true}\""
+        DOCKER_CMD="$DOCKER_CMD -e STREAMLIT_SERVER_HEADLESS=true"
+        DOCKER_CMD="$DOCKER_CMD -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false"
+        DOCKER_CMD="$DOCKER_CMD trading-dashboard:latest"
+        
+        # Execute the command
+        eval $DOCKER_CMD
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

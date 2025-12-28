@@ -309,17 +309,40 @@ def get_unique_tickers(_supabase_client, _refresh_key: int) -> List[str]:
     try:
         if _supabase_client is None:
             return []
-        # Use a simple query to get distinct tickers
-        # Supabase doesn't support DISTINCT directly, so we'll fetch all and deduplicate
-        result = _supabase_client.supabase.table("congress_trades")\
-            .select("ticker")\
-            .limit(10000)\
-            .execute()
         
-        if result.data:
-            tickers = sorted(set([t.get('ticker') for t in result.data if t.get('ticker')]))
-            return tickers
-        return []
+        # Paginate through all results to get all unique tickers
+        all_tickers = set()
+        batch_size = 1000  # Supabase default limit
+        offset = 0
+        
+        while True:
+            result = _supabase_client.supabase.table("congress_trades")\
+                .select("ticker")\
+                .range(offset, offset + batch_size - 1)\
+                .execute()
+            
+            if not result.data:
+                break
+            
+            # Add tickers to set (automatically deduplicates)
+            for trade in result.data:
+                ticker = trade.get('ticker')
+                if ticker:
+                    all_tickers.add(ticker)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops (max 100k rows = 100 batches)
+            if offset > 100000:
+                logger.warning("Reached 100,000 row safety limit in get_unique_tickers pagination")
+                break
+        
+        # Return sorted list
+        return sorted(list(all_tickers))
     except Exception as e:
         logger.error(f"Error fetching unique tickers: {e}", exc_info=True)
         return []
@@ -330,15 +353,40 @@ def get_unique_politicians(_supabase_client, _refresh_key: int) -> List[str]:
     try:
         if _supabase_client is None:
             return []
-        result = _supabase_client.supabase.table("congress_trades")\
-            .select("politician")\
-            .limit(10000)\
-            .execute()
         
-        if result.data:
-            politicians = sorted(set([p.get('politician') for p in result.data if p.get('politician')]))
-            return politicians
-        return []
+        # Paginate through all results to get all unique politicians
+        all_politicians = set()
+        batch_size = 1000  # Supabase default limit
+        offset = 0
+        
+        while True:
+            result = _supabase_client.supabase.table("congress_trades")\
+                .select("politician")\
+                .range(offset, offset + batch_size - 1)\
+                .execute()
+            
+            if not result.data:
+                break
+            
+            # Add politicians to set (automatically deduplicates)
+            for trade in result.data:
+                politician = trade.get('politician')
+                if politician:
+                    all_politicians.add(politician)
+            
+            # If we got fewer rows than batch_size, we're done
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            # Safety break to prevent infinite loops (max 100k rows = 100 batches)
+            if offset > 100000:
+                logger.warning("Reached 100,000 row safety limit in get_unique_politicians pagination")
+                break
+        
+        # Return sorted list
+        return sorted(list(all_politicians))
     except Exception as e:
         logger.error(f"Error fetching unique politicians: {e}", exc_info=True)
         return []

@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from auth_utils import is_authenticated, get_user_email, is_admin
 from navigation import render_navigation
 from supabase_client import SupabaseClient
+from postgres_client import PostgresClient
 from user_preferences import get_user_timezone
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,18 @@ def get_supabase_client():
 
 supabase_client = get_supabase_client()
 
+# Initialize PostgreSQL client for AI analysis data
+@st.cache_resource
+def get_postgres_client():
+    """Get PostgreSQL client instance for analysis data"""
+    try:
+        return PostgresClient()
+    except Exception as e:
+        logger.warning(f"PostgreSQL not available (AI analysis disabled): {e}")
+        return None
+
+postgres_client = get_postgres_client()
+
 # Check if Supabase is available
 if supabase_client is None:
     st.error("⚠️ Congress Trades Database Unavailable")
@@ -90,9 +103,22 @@ if supabase_client is None:
 st.title("🏛️ Congress Trades")
 st.caption(f"Logged in as: {get_user_email()}")
 
+# Description
+st.info("""
+**Track the 'Smart Money'** by monitoring stock disclosures from US Congress members. Our proprietary **Conflict Score** highlights suspicious trades where politicians buy stocks regulated by their own committees—often a leading indicator for upcoming government contracts or legislation.
+
+*Note: Data is based on public disclosures which may be delayed by up to 45 days.*
+""")
+
 # Initialize session state for refresh
 if 'refresh_key' not in st.session_state:
     st.session_state.refresh_key = 0
+
+# Initialize pagination state
+if 'page_number' not in st.session_state:
+    st.session_state.page_number = 0
+if 'page_size' not in st.session_state:
+    st.session_state.page_size = 100
 
 # Query functions
 @st.cache_data(ttl=60, show_spinner=False)
@@ -136,6 +162,33 @@ def get_unique_politicians(_supabase_client, _refresh_key: int) -> List[str]:
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
+def get_analysis_data(_postgres_client, _refresh_key: int) -> Dict[int, Dict[str, Any]]:
+    """Get AI analysis data from PostgreSQL
+    
+    Returns:
+        Dict mapping trade_id to analysis data
+    """
+    if _postgres_client is None:
+        return {}
+    
+    try:
+        result = _postgres_client.execute_query(
+            "SELECT trade_id, conflict_score, reasoning, model_used, analyzed_at FROM congress_trades_analysis ORDER BY analyzed_at DESC"
+        )
+        
+        # Create dict mapping trade_id -> analysis (most recent per trade)
+        analysis_map = {}
+        for row in result:
+            trade_id = row['trade_id']
+            if trade_id not in analysis_map:  # Keep only most recent
+                analysis_map[trade_id] = row
+        
+        return analysis_map
+    except Exception as e:
+        logger.error(f"Error fetching analysis data: {e}")
+        return {}
+
+@st.cache_data(ttl=60, show_spinner=False)
 def get_congress_trades(
     _supabase_client,
     _refresh_key: int,
@@ -144,7 +197,9 @@ def get_congress_trades(
     chamber_filter: Optional[str] = None,
     type_filter: Optional[str] = None,
     start_date: Optional[date] = None,
-    end_date: Optional[date] = None
+    end_date: Optional[date] = None,
+    analyzed_only: bool = False,
+    min_score: Optional[float] = None
 ) -> List[Dict[str, Any]]:
     """Get congress trades with filters
     
@@ -175,6 +230,9 @@ def get_congress_trades(
         # Order by transaction_date DESC (most recent first)
         query = query.order("transaction_date", desc=True)
         
+        # Get analysis data for filtering
+        analysis_map = get_analysis_data(postgres_client, _refresh_key) if postgres_client else {}
+        
         # Paginate to handle large datasets (Supabase limit is 1000 per request)
         all_trades = []
         batch_size = 1000
@@ -198,6 +256,28 @@ def get_congress_trades(
             if offset > 50000:
                 logger.warning("Reached 50,000 row safety limit in get_congress_trades pagination")
                 break
+        
+        # Post-process: filter by analysis status and score
+        if analyzed_only or min_score is not None:
+            filtered_trades = []
+            for trade in all_trades:
+                trade_id = trade.get('id')
+                
+                # Check if analyzed
+                if analyzed_only and trade_id not in analysis_map:
+                    continue
+                
+                # Check min score
+                if min_score is not None:
+                    analysis = analysis_map.get(trade_id)
+                    if not analysis or analysis.get('conflict_score') is None:
+                        continue
+                    if float(analysis['conflict_score']) < min_score:
+                        continue
+                
+                filtered_trades.append(trade)
+            
+            return filtered_trades
         
         return all_trades
     except Exception as e:
@@ -268,6 +348,34 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # AI Analysis Filters
+    st.subheader("🤖 AI Analysis Filters")
+    
+    analyzed_only = st.checkbox(
+        "Only show analyzed trades",
+        value=False,
+        help="Show only trades that have been analyzed by AI"
+    )
+    
+    # Score filter
+    score_filter_options = ["All Scores", "High Risk (>0.7)", "Medium Risk (0.3-0.7)", "Low Risk (<0.3)"]
+    selected_score_filter = st.selectbox(
+        "Risk Level",
+        score_filter_options,
+        help="Filter by AI conflict score risk level"
+    )
+    
+    # Convert score filter to min_score
+    min_score = None
+    if selected_score_filter == "High Risk (>0.7)":
+        min_score = 0.7
+    elif selected_score_filter == "Medium Risk (0.3-0.7)":
+        min_score = 0.3
+    elif selected_score_filter == "Low Risk (<0.3)":
+        min_score = 0.0
+    
+    st.markdown("---")
+    
     # Advanced filters
     st.subheader("Advanced Filters")
     
@@ -319,12 +427,33 @@ with st.sidebar:
                 value=date.today(),
                 help="End date for transaction date filter"
             )
+    
+    st.markdown("---")
+    
+    # Pagination controls
+    st.subheader("📄 Pagination")
+    
+    page_size_options = [25, 50, 100, 250, 500]
+    page_size = st.selectbox(
+        "Items per page",
+        page_size_options,
+        index=page_size_options.index(st.session_state.page_size),
+        help="Number of trades to show per page"
+    )
+    
+    # Update page size in session state
+    if page_size != st.session_state.page_size:
+        st.session_state.page_size = page_size
+        st.session_state.page_number = 0  # Reset to first page when changing size
 
 # Main content area
 try:
+    # Get analysis data
+    analysis_map = get_analysis_data(postgres_client, st.session_state.refresh_key) if postgres_client else {}
+    
     # Get trades with filters (cached)
     with st.spinner("Loading congress trades..."):
-        trades = get_congress_trades(
+        all_trades = get_congress_trades(
             supabase_client,
             st.session_state.refresh_key,
             ticker_filter=ticker_filter,
@@ -332,33 +461,66 @@ try:
             chamber_filter=chamber_filter,
             type_filter=type_filter,
             start_date=start_date if use_date_filter else None,
-            end_date=end_date if use_date_filter else None
+            end_date=end_date if use_date_filter else None,
+            analyzed_only=analyzed_only,
+            min_score=min_score
         )
+    
+    # Calculate pagination
+    total_trades = len(all_trades)
+    total_pages = (total_trades + st.session_state.page_size - 1) // st.session_state.page_size if total_trades > 0 else 0
+    
+    # Apply pagination to trades
+    start_idx = st.session_state.page_number * st.session_state.page_size
+    end_idx = start_idx + st.session_state.page_size
+    trades = all_trades[start_idx:end_idx]
     
     # Summary statistics
     st.header("📊 Summary Statistics")
     
-    if trades:
+    if all_trades:  # Use all_trades for stats, not paginated trades
         col1, col2, col3, col4, col5 = st.columns(5)
         
+        # Count analyzed trades
+        analyzed_count = len([t for t in all_trades if t.get('id') in analysis_map])
+        
         with col1:
-            st.metric("Total Trades", len(trades))
+            st.metric("Total Trades", total_trades)
         
         with col2:
-            house_count = len([t for t in trades if t.get('chamber') == 'House'])
-            st.metric("House Trades", house_count)
+            st.metric("Analyzed", f"{analyzed_count}/{total_trades}")
         
         with col3:
-            senate_count = len([t for t in trades if t.get('chamber') == 'Senate'])
-            st.metric("Senate Trades", senate_count)
+            house_count = len([t for t in all_trades if t.get('chamber') == 'House'])
+            st.metric("House", house_count)
         
         with col4:
-            purchase_count = len([t for t in trades if t.get('type') == 'Purchase'])
-            st.metric("Purchases", purchase_count)
+            senate_count = len([t for t in all_trades if t.get('chamber') == 'Senate'])
+            st.metric("Senate", senate_count)
         
         with col5:
-            sale_count = len([t for t in trades if t.get('type') == 'Sale'])
-            st.metric("Sales", sale_count)
+            purchase_count = len([t for t in all_trades if t.get('type') == 'Purchase'])
+            sale_count = len([t for t in all_trades if t.get('type') == 'Sale'])
+            st.metric("Buy/Sell", f"{purchase_count}/{sale_count}")
+        
+        st.markdown("---")
+        
+        # Pagination controls at top
+        if total_pages > 1:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            
+            with col1:
+                if st.button("⬅️ Previous", disabled=(st.session_state.page_number == 0)):
+                    st.session_state.page_number -= 1
+                    st.rerun()
+            
+            with col2:
+                st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Page {st.session_state.page_number + 1} of {total_pages}</div>", unsafe_allow_html=True)
+            
+            with col3:
+                if st.button("Next ➡️", disabled=(st.session_state.page_number >= total_pages - 1)):
+                    st.session_state.page_number += 1
+                    st.rerun()
         
         st.markdown("---")
         
@@ -389,28 +551,47 @@ try:
             except Exception as e:
                 logger.warning(f"Error fetching company names: {e}")
         
-        # Prepare DataFrame
+        # Prepare DataFrame with analysis data
         df_data = []
         for trade in trades:
             ticker = trade.get('ticker', 'N/A')
             ticker_upper = ticker.upper() if ticker != 'N/A' else 'N/A'
             company_name = company_names_map.get(ticker_upper, 'N/A')
             
+            # Get analysis data
+            trade_id = trade.get('id')
+            analysis = analysis_map.get(trade_id, {})
+            conflict_score = analysis.get('conflict_score')
+            reasoning = analysis.get('reasoning', '')
+            
+            # Format conflict score with risk indicator
+            if conflict_score is not None:
+                score_val = float(conflict_score)
+                if score_val >= 0.7:
+                    score_display = f"🔴 {score_val:.2f}"
+                elif score_val >= 0.3:
+                    score_display = f"🟡 {score_val:.2f}"
+                else:
+                    score_display = f"🟢 {score_val:.2f}"
+            else:
+                score_display = "⚪ N/A"
+            
+            # Truncate reasoning for table
+            reasoning_short = reasoning[:80] + '...' if reasoning and len(reasoning) > 80 else reasoning
+            
             df_data.append({
-                'ID': trade.get('id'),
                 'Ticker': ticker,
                 'Company': company_name,
                 'Politician': trade.get('politician', 'N/A'),
                 'Chamber': trade.get('chamber', 'N/A'),
+                'Party': trade.get('party', 'N/A'),
+                'State': trade.get('state', 'N/A'),
                 'Transaction Date': format_date(trade.get('transaction_date')),
-                'Disclosure Date': format_date(trade.get('disclosure_date')),
                 'Type': trade.get('type', 'N/A'),
                 'Amount': trade.get('amount', 'N/A'),
-                'Price': format_price(trade.get('price')),
-                'Asset Type': trade.get('asset_type', 'N/A'),
-                'Conflict Score': trade.get('conflict_score') if trade.get('conflict_score') is not None else 'N/A',
-                'Notes': trade.get('notes', '')[:100] + '...' if trade.get('notes') and len(trade.get('notes', '')) > 100 else (trade.get('notes') or ''),
-                'Created At': format_date(trade.get('created_at'))
+                'Conflict Score': score_display,
+                'AI Reasoning': reasoning_short if reasoning else '',
+                'Owner': trade.get('owner', 'N/A')
             })
         
         df = pd.DataFrame(df_data)
@@ -422,8 +603,25 @@ try:
             hide_index=True
         )
         
-        # Show record count
-        st.caption(f"Showing {len(trades)} trade(s)")
+        # Pagination controls at bottom
+        if total_pages > 1:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            
+            with col1:
+                if st.button("⬅️ Prev", key="prev_bottom", disabled=(st.session_state.page_number == 0)):
+                    st.session_state.page_number -= 1
+                    st.rerun()
+            
+            with col2:
+                st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Page {st.session_state.page_number + 1} of {total_pages} | Showing {start_idx + 1}-{min(end_idx, total_trades)} of {total_trades}</div>", unsafe_allow_html=True)
+            
+            with col3:
+                if st.button("Next ➡️", key="next_bottom", disabled=(st.session_state.page_number >= total_pages - 1)):
+                    st.session_state.page_number += 1
+                    st.rerun()
+        else:
+            # Show record count
+            st.caption(f"Showing {len(trades)} trade(s)")
         
     else:
         st.info("""

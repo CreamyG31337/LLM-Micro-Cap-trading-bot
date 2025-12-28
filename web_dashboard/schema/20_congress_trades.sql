@@ -14,12 +14,16 @@ CREATE TABLE IF NOT EXISTS congress_trades (
     chamber VARCHAR(20) NOT NULL CHECK (chamber IN ('House', 'Senate')),
     transaction_date DATE NOT NULL,
     disclosure_date DATE NOT NULL,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('Purchase', 'Sale')),
+    type VARCHAR(20) NOT NULL CHECK (type IN ('Purchase', 'Sale', 'Exchange', 'Received')),
     amount VARCHAR(100),                    -- Store as string range like "$1,001 - $15,000"
     price NUMERIC(10, 2) DEFAULT NULL,      -- Asset price at time of trade
     asset_type VARCHAR(50) CHECK (asset_type IN ('Stock', 'Crypto')),
+    party VARCHAR(50) CHECK (party IN ('Republican', 'Democrat', 'Independent')),
+    state VARCHAR(2),                       -- Two-letter state code (CA, NY, TX, etc.)
+    owner VARCHAR(100),                     -- Who owns the asset (Self, Spouse, Dependent Child, Joint)
+    representative VARCHAR(200),            -- Full representative name (may differ from politician for spousal trades)
     conflict_score FLOAT,                   -- 0.0 to 1.0 from AI analysis
-    notes TEXT,                             -- AI reasoning/analysis
+    notes TEXT,                             -- AI reasoning/analysis or tooltip from source
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -43,7 +47,19 @@ COMMENT ON COLUMN congress_trades.disclosure_date IS
   'Date when the trade was disclosed to the public';
 
 COMMENT ON COLUMN congress_trades.type IS 
-  'Type of transaction: "Purchase" or "Sale"';
+  'Type of transaction: "Purchase", "Sale", "Exchange", or "Received"';
+
+COMMENT ON COLUMN congress_trades.party IS
+  'Political party affiliation: Republican, Democrat, or Independent';
+
+COMMENT ON COLUMN congress_trades.state IS
+  'Two-letter state code of the politician (e.g., CA, NY, TX)';
+
+COMMENT ON COLUMN congress_trades.owner IS
+  'Asset owner: Self, Spouse, Dependent Child, Joint, etc.';
+
+COMMENT ON COLUMN congress_trades.representative IS
+  'Full representative name (may differ from politician for spousal/dependent trades)';
 
 COMMENT ON COLUMN congress_trades.amount IS 
   'Transaction amount stored as string range (e.g., "$1,001 - $15,000")';
@@ -58,10 +74,10 @@ COMMENT ON COLUMN congress_trades.notes IS
   'AI-generated reasoning and analysis of the trade';
 
 -- Unique constraint to prevent duplicates
--- A politician can have multiple trades of the same ticker on the same date,
--- but only if the amount is different
+-- A politician can have multiple trades of the same ticker on the same date with the same amount,
+-- but only if the transaction type OR owner is different (e.g., Self Purchase vs Spouse Purchase)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_congress_trades_unique 
-ON congress_trades(politician, ticker, transaction_date, amount);
+ON congress_trades(politician, ticker, transaction_date, amount, type, COALESCE(owner, 'Unknown'));
 
 -- Also create a UNIQUE constraint (PostgREST/Supabase upsert works better with constraints)
 -- Use DO block to handle case where constraint already exists
@@ -69,11 +85,19 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint 
-        WHERE conname = 'congress_trades_unique_politician_ticker_date_amount'
+        WHERE conname = 'congress_trades_unique_politician_ticker_date_amount_type'
     ) THEN
+        -- Drop old constraint if it exists
+        BEGIN
+            ALTER TABLE congress_trades DROP CONSTRAINT IF EXISTS congress_trades_unique_politician_ticker_date_amount_type;
+        EXCEPTION
+            WHEN undefined_object THEN NULL;
+        END;
+        
+        -- Add new constraint with owner field
         ALTER TABLE congress_trades 
-        ADD CONSTRAINT congress_trades_unique_politician_ticker_date_amount 
-        UNIQUE (politician, ticker, transaction_date, amount);
+        ADD CONSTRAINT congress_trades_unique_politician_ticker_date_amount_type_owner 
+        UNIQUE (politician, ticker, transaction_date, amount, type, owner);
     END IF;
 END $$;
 
@@ -83,6 +107,9 @@ CREATE INDEX IF NOT EXISTS idx_congress_politician ON congress_trades(politician
 CREATE INDEX IF NOT EXISTS idx_congress_transaction_date ON congress_trades(transaction_date DESC);
 CREATE INDEX IF NOT EXISTS idx_congress_disclosure_date ON congress_trades(disclosure_date DESC);
 CREATE INDEX IF NOT EXISTS idx_congress_chamber ON congress_trades(chamber);
+CREATE INDEX IF NOT EXISTS idx_congress_party ON congress_trades(party);
+CREATE INDEX IF NOT EXISTS idx_congress_state ON congress_trades(state);
+CREATE INDEX IF NOT EXISTS idx_congress_owner ON congress_trades(owner);
 CREATE INDEX IF NOT EXISTS idx_congress_conflict_score ON congress_trades(conflict_score DESC NULLS LAST);
 
 -- =====================================================

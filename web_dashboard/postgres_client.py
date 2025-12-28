@@ -26,8 +26,8 @@ try:
     from psycopg2.extras import RealDictCursor
     from psycopg2 import OperationalError, Error
 except ImportError:
-    print("❌ ERROR: psycopg2 not available")
-    print("🔔 SOLUTION: Install with: pip install psycopg2-binary")
+    print("[ERROR] psycopg2 not available")
+    print("[SOLUTION] Install with: pip install psycopg2-binary")
     raise ImportError("psycopg2 not available. Install with: pip install psycopg2-binary")
 
 logger = logging.getLogger(__name__)

@@ -65,6 +65,9 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 
+# Module-level cache for politician state lookups (avoids repeated DB queries)
+_POLITICIAN_STATE_CACHE = {}
+
 
 def fetch_page_via_flaresolverr(url: str) -> Optional[str]:
     """Fetch a page using FlareSolverr to bypass Cloudflare protection."""
@@ -247,9 +250,35 @@ def extract_trades_from_table(soup: BeautifulSoup) -> List[Dict[str, Any]]:
             }
             
             if politician_link:
+                # Get the politician cell - it contains "Name Party Chamber State" format
+                politician_cell = politician_link.find_parent(['td', 'div'])
+                politician_cell_text = ''
+                if politician_cell:
+                    # Get all text from the cell (includes party, chamber, state)
+                    politician_cell_text = politician_cell.get_text(separator=' ', strip=True)
+                
+                # Extract just the name from the link
                 politician_name = politician_link.get_text(strip=True)
                 trade['politician']['firstName'] = politician_name.split()[0] if politician_name else ''
                 trade['politician']['lastName'] = ' '.join(politician_name.split()[1:]) if politician_name else ''
+                
+                # Extract party from the cell text (format: "Name Party Chamber State")
+                if politician_cell_text:
+                    party = extract_party_from_text(politician_cell_text)
+                    if party:
+                        trade['politician']['party'] = party
+                    
+                    # Also try to extract chamber and state from the cell text
+                    # Format is typically: "Name Party Chamber State"
+                    # Chamber is usually "House" or "Senate"
+                    chamber_match = re.search(r'\b(House|Senate)\b', politician_cell_text, re.IGNORECASE)
+                    if chamber_match:
+                        trade['politician']['chamber'] = chamber_match.group(1).title()
+                    
+                    # State is typically 2-letter code at the end
+                    state_match = re.search(r'\b([A-Z]{2})\b(?:\s|$)', politician_cell_text)
+                    if state_match:
+                        trade['politician']['state'] = state_match.group(1).upper()
             
             if issuer_link:
                 issuer_text = issuer_link.get_text(strip=True)
@@ -258,6 +287,15 @@ def extract_trades_from_table(soup: BeautifulSoup) -> List[Dict[str, Any]]:
                 if ticker_match:
                     trade['issuer']['issuerTicker'] = ticker_match.group(1) + ':US'
                 trade['issuer']['issuerName'] = re.sub(r'\s*\([A-Z]+\)\s*', '', issuer_text).strip()
+            
+            # Extract owner from the full row text (format: "... Owner Type Amount ...")
+            # Get the full row text to extract owner
+            if row:
+                row_text = row.get_text(separator=' ', strip=True)
+                if row_text:
+                    owner = extract_owner_from_text(row_text)
+                    if owner:
+                        trade['owner'] = owner
             
             trades.append(trade)
         
@@ -315,7 +353,7 @@ def normalize_chamber(chamber: Optional[str]) -> Optional[str]:
 
 
 def normalize_transaction_type(tx_type: Optional[str]) -> Optional[str]:
-    """Normalize 'buy'/'sell' to 'Purchase'/'Sale'"""
+    """Normalize transaction types to Purchase/Sale/Exchange/Received"""
     if not tx_type:
         return None
     
@@ -326,8 +364,87 @@ def normalize_transaction_type(tx_type: Optional[str]) -> Optional[str]:
         return 'Sale'
     elif 'exchange' in tx_lower:
         return 'Exchange'
+    elif 'receive' in tx_lower:
+        return 'Received'
     else:
         return 'Purchase'
+
+
+def extract_party_from_text(text: Optional[str]) -> Optional[str]:
+    """Extract party from text like 'Richard Blumenthal Democrat Senate CT' or 'Jefferson Shreve Republican House IN'.
+    
+    Returns normalized party name: 'Democrat', 'Republican', or 'Independent', or None if not found.
+    """
+    if not text:
+        return None
+    
+    text_lower = str(text).lower().strip()
+    
+    # Check for party names (check in order of specificity)
+    if 'democrat' in text_lower or 'democratic' in text_lower:
+        return 'Democrat'
+    elif 'republican' in text_lower:
+        return 'Republican'
+    elif 'independent' in text_lower:
+        return 'Independent'
+    
+    # Check for party codes in parentheses or as standalone: (D), (R), (I), D, R, I
+    party_code_match = re.search(r'\(([DIR])\)|^([DIR])$|\b([DIR])\b', text_lower)
+    if party_code_match:
+        code = party_code_match.group(1) or party_code_match.group(2) or party_code_match.group(3)
+        if code == 'd':
+            return 'Democrat'
+        elif code == 'r':
+            return 'Republican'
+        elif code == 'i':
+            return 'Independent'
+    
+    return None
+
+
+def extract_state_from_text(text: Optional[str]) -> Optional[str]:
+    """Extract 2-letter state code from text like 'Richard Blumenthal Democrat Senate CT'.
+    
+    Returns uppercase 2-letter state code (e.g., 'CT', 'CA', 'NY') or None if not found.
+    """
+    if not text:
+        return None
+    
+    # Look for 2-letter uppercase state codes (common US state abbreviations)
+    # Pattern: word boundary, 2 uppercase letters, word boundary or end of string
+    state_match = re.search(r'\b([A-Z]{2})\b(?:\s|$)', str(text))
+    if state_match:
+        state_code = state_match.group(1).upper()
+        # Validate it's a valid US state code (basic check - 2 letters)
+        if len(state_code) == 2 and state_code.isalpha():
+            return state_code
+    
+    return None
+
+
+def extract_owner_from_text(text: Optional[str]) -> Optional[str]:
+    """Extract owner from text like '... Spouse sell ...' or '... Joint buy ...'.
+    
+    Returns normalized owner name: 'Self', 'Spouse', 'Joint', 'Child', 'Undisclosed', or None if not found.
+    """
+    if not text:
+        return None
+    
+    text_lower = str(text).lower().strip()
+    
+    # Check for owner types (order matters - check more specific first)
+    if 'spouse' in text_lower:
+        return 'Spouse'
+    elif 'joint' in text_lower:
+        return 'Joint'
+    elif 'child' in text_lower or 'dependent' in text_lower:
+        return 'Child'  # Note: schema uses 'Child' but source might say 'Dependent'
+    elif 'undisclosed' in text_lower or 'not-disclosed' in text_lower or 'not disclosed' in text_lower:
+        return 'Undisclosed'
+    elif 'self' in text_lower:
+        return 'Self'
+    
+    return None
 
 
 def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -353,6 +470,154 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not chamber:
             # Try to infer from party info or default
             chamber = 'House'  # Default, will be updated if better info available
+        
+        # Extract party affiliation - try multiple sources
+        party = None
+        
+        # 1. Try JSON fields in politician object (primary method)
+        party = (politician.get('party') or 
+                politician.get('partyAffiliation') or 
+                politician.get('politicalParty') or
+                politician.get('partyName') or
+                politician.get('partyCode') or
+                politician.get('partyLabel'))
+        
+        # 2. Try top-level fields in trade_data
+        if not party:
+            party = (trade_data.get('party') or
+                    trade_data.get('partyAffiliation') or
+                    trade_data.get('politicalParty'))
+        
+        # 3. Try extracting from chamber/office field (may contain "(D-CA)" pattern)
+        if not party:
+            chamber_text = politician.get('chamber') or politician.get('office') or trade_data.get('chamber') or trade_data.get('office')
+            if chamber_text:
+                # Look for patterns like "(D-CA)", "(R-TX)", "(I-VT)"
+                party_code_match = re.search(r'\(([DIR])-', str(chamber_text), re.IGNORECASE)
+                if party_code_match:
+                    code = party_code_match.group(1).upper()
+                    if code == 'D':
+                        party = 'Democrat'
+                    elif code == 'R':
+                        party = 'Republican'
+                    elif code == 'I':
+                        party = 'Independent'
+        
+        # 4. Normalize party value if found in JSON
+        if party:
+            party = str(party).strip()
+            # Normalize to standard values
+            party_lower = party.lower()
+            if 'republican' in party_lower or party_lower == 'r':
+                party = 'Republican'
+            elif 'democrat' in party_lower or party_lower == 'd':
+                party = 'Democrat'
+            elif 'independent' in party_lower or party_lower == 'i':
+                party = 'Independent'
+            else:
+                party = None  # Don't store if not standard value
+        
+        # 5. Fallback: Try extracting from text fields (politician name, chamber, state combined)
+        if not party:
+            # Try extracting from politician name field (may contain full info)
+            politician_name_text = politician.get('name') or politician.get('fullName') or politician_name
+            if politician_name_text:
+                party = extract_party_from_text(politician_name_text)
+            
+            # Try extracting from chamber field (may contain "Democrat House" or "Republican Senate")
+            if not party:
+                chamber_text = politician.get('chamber') or trade_data.get('chamber')
+                if chamber_text:
+                    party = extract_party_from_text(str(chamber_text))
+            
+            # Try extracting from combined text (name + chamber + state)
+            # Note: state may not be extracted yet, so we'll get it from politician object
+            if not party:
+                # Build combined text from available fields
+                combined_text_parts = []
+                if politician_name:
+                    combined_text_parts.append(politician_name)
+                if chamber:
+                    combined_text_parts.append(chamber)
+                # Get state from politician object (before it's extracted below)
+                state_from_obj = politician.get('state') or politician.get('stateCode') or politician.get('stateAbbreviation')
+                if state_from_obj:
+                    combined_text_parts.append(str(state_from_obj).strip().upper()[:2])
+                
+                # Also check if there's a display field that might have the full string
+                display_text = (politician.get('displayName') or 
+                               politician.get('display') or
+                               trade_data.get('politicianDisplay'))
+                if display_text:
+                    combined_text_parts.insert(0, str(display_text))
+                
+                if combined_text_parts:
+                    combined_text = ' '.join(combined_text_parts)
+                    party = extract_party_from_text(combined_text)
+        
+        # Extract state code
+        state = politician.get('state') or politician.get('stateCode') or politician.get('stateAbbreviation')
+        if state:
+            state = str(state).strip().upper()[:2]  # Ensure 2-letter uppercase code
+            # Validate it looks like a state code (2 letters)
+            if not state or len(state) != 2 or not state.isalpha():
+                state = None
+        
+        # Try extracting state from text fields if not found in JSON
+        if not state:
+            # Try from politician name/display fields (may contain "Name Party Chamber State")
+            politician_name_text = politician.get('name') or politician.get('fullName') or politician_name
+            if politician_name_text:
+                state = extract_state_from_text(politician_name_text)
+            
+            # Try from chamber/display fields
+            if not state:
+                display_text = (politician.get('displayName') or 
+                               politician.get('display') or
+                               trade_data.get('politicianDisplay'))
+                if display_text:
+                    state = extract_state_from_text(str(display_text))
+            
+            # Try from combined text (name + chamber + state)
+            if not state:
+                combined_text_parts = []
+                if politician_name:
+                    combined_text_parts.append(politician_name)
+                if chamber:
+                    combined_text_parts.append(chamber)
+                if combined_text_parts:
+                    combined_text = ' '.join(combined_text_parts)
+                    state = extract_state_from_text(combined_text)
+        
+        # If state not in scraped data, try to look it up from politicians table
+        # (populated by seed_committees.py which has state from YAML data)
+        if not state:
+            # Check cache first
+            if politician_name in _POLITICIAN_STATE_CACHE:
+                state = _POLITICIAN_STATE_CACHE[politician_name]
+                logger.debug(f"Found state '{state}' for {politician_name} in cache")
+            else:
+                # Cache miss - query database
+                try:
+                    from supabase_client import SupabaseClient
+                    client = SupabaseClient()
+                    # Search for politician by name (case-insensitive partial match)
+                    result = client.supabase.table('politicians')\
+                        .select('state')\
+                        .ilike('name', f'%{politician_name}%')\
+                        .limit(1)\
+                        .execute()
+                    
+                    if result.data and result.data[0].get('state'):
+                        state = result.data[0]['state']
+                        _POLITICIAN_STATE_CACHE[politician_name] = state  # Cache it
+                        logger.debug(f"Found state '{state}' for {politician_name} via database lookup (cached)")
+                    else:
+                        _POLITICIAN_STATE_CACHE[politician_name] = None  # Cache negative result too
+                        state = None
+                except Exception as e:
+                    logger.debug(f"Could not lookup state for {politician_name}: {e}")
+                    state = None
         
         # Extract issuer/ticker
         issuer = trade_data.get('issuer', {})
@@ -441,12 +706,81 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # Asset type defaults to Stock
         asset_type = 'Stock'
         
+        # Extract tooltip/description for notes
+        # Capitol trades may have various description fields
+        tooltip = None
+        for field in ['tooltip', 'description', 'txDescription', 'comment']:
+            if field in trade_data and trade_data[field]:
+                tooltip = str(trade_data[field]).strip()
+                if tooltip:
+                    break
+        
+        # Build notes from available context
+        if tooltip:
+            notes = tooltip
+        else:
+            notes = f"Imported from public records (scraped)"
+        
+        # Extract owner (Self, Spouse, Dependent, Joint, Undisclosed)
+        owner = trade_data.get('owner') or trade_data.get('assetOwner') or trade_data.get('ownerType')
+        if owner:
+            owner = str(owner).strip().title()  # Capitalize properly: "Self", "Spouse", etc.
+        else:
+            owner = None
+        
+        # Try extracting owner from text fields if not found in JSON
+        if not owner:
+            # Check if there's a display/description field that might contain owner info
+            display_text = (trade_data.get('display') or 
+                           trade_data.get('description') or
+                           trade_data.get('tooltip') or
+                           trade_data.get('txDescription'))
+            if display_text:
+                owner = extract_owner_from_text(str(display_text))
+            
+            # Try from notes/tooltip fields
+            if not owner:
+                tooltip = trade_data.get('tooltip') or trade_data.get('comment')
+                if tooltip:
+                    owner = extract_owner_from_text(str(tooltip))
+        
+        # Extract representative (may differ from politician for spousal trades)
+        representative = trade_data.get('representative') or trade_data.get('repName') or trade_data.get('representativeName')
+        if representative:
+            representative = str(representative).strip()
+        else:
+            representative = None
+        
+        # Try extracting representative from text fields if not found in JSON
+        # Note: Representative might not always be visible in main table view
+        if not representative:
+            # Check display/description fields
+            display_text = (trade_data.get('display') or 
+                           trade_data.get('description') or
+                           trade_data.get('tooltip'))
+            if display_text:
+                # Representative name might be in format like "John Smith (Spouse of Jane Smith)"
+                # or "Representative: John Smith"
+                rep_match = re.search(r'(?:representative|rep)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)', 
+                                     str(display_text), re.IGNORECASE)
+                if rep_match:
+                    representative = rep_match.group(1).strip()
+                # Also check for pattern like "(Spouse of ...)" or "Spouse: ..."
+                spouse_match = re.search(r'(?:spouse\s+of|spouse:)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)', 
+                                        str(display_text), re.IGNORECASE)
+                if spouse_match:
+                    representative = spouse_match.group(1).strip()
+        
         # Build record for congress_trades table
         return {
             'ticker': ticker,
             'company_name': issuer_name,  # Added for securities table upsert
             'politician': politician_name,
             'chamber': chamber,
+            'party': party,
+            'state': state,
+            'owner': owner,
+            'representative': representative,
             'transaction_date': tx_date.isoformat(),
             'disclosure_date': disclosure_date.isoformat(),
             'type': tx_type,
@@ -454,7 +788,7 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             'price': price,
             'asset_type': asset_type,
             'conflict_score': None,
-            'notes': 'Imported from public records (scraped)'
+            'notes': notes
         }
     
     except Exception as e:
@@ -462,7 +796,7 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def seed_congress_trades(months_back: int = 3, page_size: int = 100) -> None:
+def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100, max_pages: Optional[int] = None, start_page: int = 1, skip_recent: bool = False) -> None:
     """Main seeder function - scrapes historical data from source"""
     print("=" * 70)
     print("CONGRESS TRADES HISTORY SEEDER")
@@ -489,13 +823,41 @@ def seed_congress_trades(months_back: int = 3, page_size: int = 100) -> None:
         print(f"❌ Failed to connect to Supabase: {e}")
         return
     
-    # Calculate cutoff date
-    cutoff_date = datetime.now() - timedelta(days=months_back * 30)
-    print(f"📉 Starting Data Scrape (Target: Trades after {cutoff_date.date()})...")
+    # Check for most recent trade in database (only if skip_recent is enabled)
+    most_recent_trade_date = None
+    if skip_recent:
+        try:
+            result = client.supabase.table("congress_trades")\
+                .select("transaction_date")\
+                .order("transaction_date", desc=True)\
+                .limit(1)\
+                .execute()
+            
+            if result.data and result.data[0].get('transaction_date'):
+                most_recent_trade_date = datetime.strptime(result.data[0]['transaction_date'], "%Y-%m-%d").date()
+                print(f"📊 Found existing trades in database. Most recent: {most_recent_trade_date}")
+                print(f"   ⚠️  SKIP RECENT MODE: Will skip trades on or after this date (importing older trades only).")
+        except Exception as e:
+            logger.debug(f"Could not check existing trades: {e}")
+            print(f"   (Could not check existing trades - will import all)")
+    else:
+        print(f"📊 Processing all trades (existing records will be updated via upsert if they match)")
+    
+    # Calculate cutoff date (only if months_back is specified)
+    cutoff_date = None
+    if months_back is not None:
+        cutoff_date = datetime.now() - timedelta(days=months_back * 30)
+        print(f"📉 Starting Data Scrape (Target: Trades after {cutoff_date.date()})...")
+    else:
+        print(f"📉 Starting Data Scrape (No date limit - importing all available trades)...")
     print(f"   Using page size: {page_size}")
+    if start_page > 1:
+        print(f"   ⚠️  Starting from page {start_page}")
+    if max_pages:
+        print(f"   ⚠️  TEST MODE: Limited to {max_pages} pages")
     print()
     
-    page = 1
+    page = start_page
     total_added = 0
     total_skipped = 0
     total_errors = 0
@@ -529,6 +891,7 @@ def seed_congress_trades(months_back: int = 3, page_size: int = 100) -> None:
             # Process the trades
             page_records = []
             oldest_on_page = None
+            newest_on_page = None
             
             for trade in trades:
                 try:
@@ -538,13 +901,21 @@ def seed_congress_trades(months_back: int = 3, page_size: int = 100) -> None:
                         total_skipped += 1
                         continue
                     
-                    # Check if transaction date is before cutoff
+                    # Check transaction date
                     tx_date = datetime.strptime(mapped_record['transaction_date'], "%Y-%m-%d").date()
                     if oldest_on_page is None or tx_date < oldest_on_page:
                         oldest_on_page = tx_date
+                    if newest_on_page is None or tx_date > newest_on_page:
+                        newest_on_page = tx_date
                     
-                    # Only add records that are after cutoff date
-                    if tx_date >= cutoff_date.date():
+                    # Skip if skip_recent is enabled and this trade is on or after the most recent trade
+                    # This allows continuing where we left off when importing historical data
+                    if skip_recent and most_recent_trade_date and tx_date >= most_recent_trade_date:
+                        total_skipped += 1
+                        continue
+                    
+                    # Only add records that are after cutoff date (if cutoff is specified)
+                    if cutoff_date is None or tx_date >= cutoff_date.date():
                         page_records.append(mapped_record)
                 
                 except Exception as e:
@@ -603,22 +974,38 @@ def seed_congress_trades(months_back: int = 3, page_size: int = 100) -> None:
                     result = client.supabase.table("congress_trades")\
                         .upsert(
                             page_records,
-                            on_conflict="politician,ticker,transaction_date,amount"
+                            on_conflict="politician,ticker,transaction_date,amount,type,owner"
                         )\
                         .execute()
                     
                     page_added = len(page_records)
                     total_added += page_added
                     
-                    print(f"   ✅ Saved {page_added} trades. (Oldest: {oldest_on_page})")
+                    date_range = f"(Oldest: {oldest_on_page}"
+                    if newest_on_page and newest_on_page != oldest_on_page:
+                        date_range += f", Newest: {newest_on_page}"
+                    date_range += ")"
+                    print(f"   ✅ Saved {page_added} trades. {date_range}")
                     
                 except Exception as e:
                     total_errors += len(page_records)
                     print(f"   ⚠️  Error inserting batch: {e}")
+            else:
+                # No new records on this page - might be all duplicates
+                if newest_on_page and most_recent_trade_date and newest_on_page >= most_recent_trade_date:
+                    print(f"   ⏭️  Page {page}: All trades already imported (newest: {newest_on_page} >= {most_recent_trade_date})")
             
-            # Check if we should stop (reached cutoff date)
-            if oldest_on_page and oldest_on_page < cutoff_date.date():
+            # Check if we should stop (reached cutoff date, if specified)
+            if cutoff_date and oldest_on_page and oldest_on_page < cutoff_date.date():
                 print(f"🛑 Reached cutoff date ({oldest_on_page}). Stopping.")
+                break
+            
+            # Note: We don't stop when we reach older trades - we want to import historical data
+            # The script will continue until it reaches the end of available data
+            
+            # Check if we've reached max pages (for testing)
+            if max_pages and page >= max_pages:
+                print(f"🛑 Reached max pages limit ({max_pages}). Stopping.")
                 break
             
             # Move to next page
@@ -650,8 +1037,8 @@ if __name__ == "__main__":
     parser.add_argument(
         '--months-back',
         type=int,
-        default=3,
-        help='Number of months back to import (default: 3)'
+        default=None,
+        help='Number of months back to import (default: None = import all available trades)'
     )
     parser.add_argument(
         '--page-size',
@@ -659,6 +1046,23 @@ if __name__ == "__main__":
         default=100,
         help='Number of trades per page (default: 100, max recommended: 200)'
     )
+    parser.add_argument(
+        '--max-pages',
+        type=int,
+        default=None,
+        help='Maximum number of pages to process (for testing, default: unlimited)'
+    )
+    parser.add_argument(
+        '--start-page',
+        type=int,
+        default=1,
+        help='Page number to start from (default: 1)'
+    )
+    parser.add_argument(
+        '--skip-recent',
+        action='store_true',
+        help='Skip trades on or after the most recent trade date (useful for continuing historical import where you left off)'
+    )
     
     args = parser.parse_args()
-    seed_congress_trades(months_back=args.months_back, page_size=args.page_size)
+    seed_congress_trades(months_back=args.months_back, page_size=args.page_size, max_pages=args.max_pages, start_page=args.start_page, skip_recent=args.skip_recent)

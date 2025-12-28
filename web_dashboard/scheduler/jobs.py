@@ -95,6 +95,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 360,  # 6 hours (but uses cron triggers)
         'enabled_by_default': True,
         'icon': '🏛️'
+    },
+    'analyze_congress_trades': {
+        'name': 'Analyze Congress Trades',
+        'description': 'Calculate conflict scores for unscored congress trades using committee data',
+        'default_interval_minutes': 30,  # Every 30 minutes
+        'enabled_by_default': True,
+        'icon': '🔍'
     }
 }
 
@@ -3138,6 +3145,58 @@ def fetch_congress_trades_job() -> None:
                             else:
                                 asset_type = 'Stock'
                             
+                            # Extract additional fields if available
+                            price_per_share = trade_data.get('pricePerShare') or trade_data.get('price_per_share') or trade_data.get('price')
+                            
+                            # Extract office (may contain party/state info)
+                            office = trade_data.get('office') or ''
+                            
+                            # Try to extract party from office field (e.g., "Nancy Pelosi" or "Senator (D-CA)")
+                            party = None
+                            state = None
+                            if office:
+                                # Look for patterns like (D-CA), (R-TX), (I-VT)
+                                import re
+                                match = re.search(r'\(([DIR])-([A-Z]{2})\)', office)
+                                if match:
+                                    party_code = match.group(1)
+                                    state = match.group(2)
+                                    if party_code == 'D':
+                                        party = 'Democratic'
+                                    elif party_code == 'R':
+                                        party = 'Republican'
+                                    elif party_code == 'I':
+                                        party = 'Independent'
+                            
+                            # Extract owner (Self/Spouse/Dependent)
+                            owner = trade_data.get('owner') or trade_data.get('assetOwner') or trade_data.get('ownerType')
+                            if owner:
+                                owner = str(owner).strip().title()
+                            
+                            # Extract disclosure link
+                            disclosure_link = trade_data.get('link') or trade_data.get('disclosureUrl') or trade_data.get('url')
+                            
+                            # Extract capital gains flag
+                            capital_gains = trade_data.get('capitalGains') or trade_data.get('capital_gains')
+                            
+                            # Extract any notes/description fields
+                            notes = None
+                            for field in ['description', 'comment', 'notes', 'memo']:
+                                if field in trade_data and trade_data[field]:
+                                    notes = str(trade_data[field]).strip()
+                                    break
+                            
+                            # Build notes from available info
+                            notes_parts = []
+                            if notes:
+                                notes_parts.append(notes)
+                            if capital_gains:
+                                notes_parts.append(f"Capital Gains: {capital_gains}")
+                            if disclosure_link:
+                                notes_parts.append(f"Disclosure: {disclosure_link}")
+                            
+                            final_notes = " | ".join(notes_parts) if notes_parts else None
+                            
                             # Check for duplicate before processing
                             # Note: We use upsert with on_conflict, so duplicate check is optional
                             # Skip duplicate check if amount has special characters that cause URL encoding issues
@@ -3204,25 +3263,29 @@ def fetch_congress_trades_job() -> None:
                                 except json.JSONDecodeError as e:
                                     logger.warning(f"Failed to parse AI response for {politician} {ticker}: {e}")
                                     logger.debug(f"Response was: {full_response[:500]}")
-                                    conflict_score = 0.0
+                                    conflict_score = None
                                     notes = "Failed to parse AI response"
                                 except Exception as ai_error:
                                     logger.warning(f"AI analysis failed for {politician} {ticker}: {ai_error}")
-                                    conflict_score = 0.0
+                                    conflict_score = None
                                     notes = "AI analysis error"
                             
-                            # Prepare trade record
+                            # Prepare trade record with ALL available fields
                             trade_record = {
                                 'ticker': ticker,
                                 'politician': politician,
                                 'chamber': chamber,
+                                'party': party,  # Extracted from office field if available
+                                'state': state,  # Extracted from office field if available
+                                'owner': owner,  # Self/Spouse/Dependent if available
                                 'transaction_date': transaction_date.isoformat(),
                                 'disclosure_date': disclosure_date.isoformat(),
                                 'type': trade_type,
                                 'amount': amount,
+                                'price': price_per_share,  # Price per share if available
                                 'asset_type': asset_type,
                                 'conflict_score': conflict_score,
-                                'notes': notes
+                                'notes': final_notes  # Includes description, capital gains, disclosure link
                             }
                             
                             # Insert to Supabase (use upsert to handle any race conditions)
@@ -3230,7 +3293,7 @@ def fetch_congress_trades_job() -> None:
                                 result = supabase_client.supabase.table("congress_trades")\
                                     .upsert(
                                         trade_record,
-                                        on_conflict="politician,ticker,transaction_date,amount"
+                                        on_conflict="politician,ticker,transaction_date,amount,type,owner"
                                     )\
                                     .execute()
                                 
@@ -3277,6 +3340,175 @@ def fetch_congress_trades_job() -> None:
         except Exception:
             pass
         logger.error(f"❌ Congress trades job failed: {e}", exc_info=True)
+
+
+def analyze_congress_trades_job() -> None:
+    """Analyze unscored congress trades using committee data to calculate conflict scores.
+    
+    This job:
+    1. Finds trades where conflict_score IS NULL
+    2. Enriches with committee assignments and sector data
+    3. Uses Granite AI to calculate conflict scores
+    4. Updates conflict_score and notes fields
+    
+    Note: This is a wrapper around analyze_congress_trades_batch.py logic.
+    Processes in batches to avoid overwhelming Ollama.
+    """
+    job_id = 'analyze_congress_trades'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting congress trades analysis job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('analyze_congress_trades', target_date)
+        
+        # Import dependencies (lazy imports)
+        try:
+            from supabase_client import SupabaseClient
+            from ollama_client import OllamaClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            mark_job_failed('analyze_congress_trades', target_date, None, message)
+            return
+        
+        # Import analysis functions from batch script
+        # We'll import the functions directly to reuse the logic
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        sys.path.insert(0, str(project_root))
+        sys.path.insert(0, str(project_root / 'web_dashboard'))
+        
+        # Import the analysis functions
+        # Note: fix_failed_scores is NOT imported - it should only be run manually via --fix-only flag
+        from scripts.analyze_congress_trades_batch import (
+            get_trade_context,
+            analyze_trade
+        )
+        
+        # Initialize clients
+        client = SupabaseClient(use_service_role=True)
+        ollama = OllamaClient()
+        
+        # Check Ollama health
+        if not ollama or not ollama.check_health():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "Ollama is not accessible - skipping analysis"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.warning(f"⚠️  {message}")
+            mark_job_completed('analyze_congress_trades', target_date, None, [])
+            return
+        
+        # Note: fix_failed_scores() is NOT called here automatically
+        # It should only be run manually via the batch script with --fix-only flag
+        # This is because 0.0 might be a legitimate score in the future
+        
+        # Process unscored trades in batches
+        batch_size = 10  # Process 10 trades per run to avoid overwhelming Ollama
+        total_processed = 0
+        total_errors = 0
+        
+        try:
+            # Fetch unscored trades (newest first)
+            response = client.supabase.table("congress_trades")\
+                .select("*")\
+                .is_("conflict_score", "null")\
+                .order("transaction_date", desc=True)\
+                .limit(batch_size)\
+                .execute()
+            
+            trades = response.data
+            
+            if not trades:
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = "No unscored trades found"
+                log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+                logger.info(f"✅ {message}")
+                mark_job_completed('analyze_congress_trades', target_date, None, [])
+                return
+            
+            logger.info(f"Processing {len(trades)} unscored trades...")
+            
+            # Process each trade
+            for trade in trades:
+                try:
+                    # Enrich with committee data and sector info
+                    context = get_trade_context(client, trade)
+                    
+                    # Analyze with AI
+                    analysis = analyze_trade(ollama, context, model='granite3.3:8b')
+                    
+                    if analysis and 'conflict_score' in analysis:
+                        score = float(analysis['conflict_score'])
+                        reasoning = analysis.get('reasoning', 'No reasoning provided')
+                        
+                        # Save to PostgreSQL (separate database to save Supabase costs)
+                        try:
+                            from postgres_client import PostgresClient
+                            postgres = PostgresClient()
+                            
+                            postgres.execute_update(
+                                """
+                                INSERT INTO congress_trades_analysis 
+                                    (trade_id, conflict_score, reasoning, model_used, analysis_version)
+                                VALUES (%s, %s, %s, %s, %s)
+                                ON CONFLICT (trade_id, model_used, analysis_version) 
+                                DO UPDATE SET 
+                                    conflict_score = EXCLUDED.conflict_score,
+                                    reasoning = EXCLUDED.reasoning,
+                                    analyzed_at = NOW()
+                                """,
+                                (trade['id'], score, reasoning, 'granite3.3:8b', 1)
+                            )
+                            
+                            logger.info(f"   [SCORED] {context['politician']} - {context['ticker']}: {score:.2f}")
+                            total_processed += 1
+                        except Exception as db_error:
+                            logger.error(f"   [ERROR] Failed to save analysis to Postgres: {db_error}")
+                            total_errors += 1
+                    else:
+                        logger.warning(f"   [WARN] Failed to parse AI response for trade ID {trade['id']}")
+                        total_errors += 1
+                        # Don't update - leave as NULL so it can be retried
+                        
+                except Exception as e:
+                    logger.error(f"Error processing trade {trade.get('id', 'unknown')}: {e}", exc_info=True)
+                    total_errors += 1
+                    # Continue processing other trades
+            
+            # Log completion
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Processed {total_processed} trades, {total_errors} errors"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"✅ Congress trades analysis job completed: {message} in {duration_ms/1000:.2f}s")
+            mark_job_completed('analyze_congress_trades', target_date, None, [])
+            
+        except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Error during analysis: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}", exc_info=True)
+            mark_job_failed('analyze_congress_trades', target_date, None, str(e))
+            
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Critical error: {e}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        logger.error(f"❌ Congress trades analysis job failed: {e}", exc_info=True)
+        try:
+            from utils.job_tracking import mark_job_failed
+            target_date = datetime.now(timezone.utc).date()
+            mark_job_failed('analyze_congress_trades', target_date, None, str(e))
+        except:
+            pass
 
 
 def register_default_jobs(scheduler) -> None:
@@ -3568,3 +3800,14 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: congress_trades (every 12 minutes - 120 runs/day, 240 API calls/day)")
+    
+    # Analyze congress trades job - every 30 minutes (processes unscored trades with committee data)
+    if AVAILABLE_JOBS['analyze_congress_trades']['enabled_by_default']:
+        scheduler.add_job(
+            analyze_congress_trades_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['analyze_congress_trades']['default_interval_minutes']),
+            id='analyze_congress_trades',
+            name=f"{get_job_icon('analyze_congress_trades')} Analyze Congress Trades",
+            replace_existing=True
+        )
+        logger.info("Registered job: analyze_congress_trades (every 30 minutes - processes unscored trades)")

@@ -11,11 +11,10 @@ import json
 try:
     import pandas as pd
 except ImportError:
-    print("❌ ERROR: pandas not available")
-    print("🔔 SOLUTION: Activate the virtual environment first!")
+    print("[ERROR] pandas not available - some features will be disabled")
+    print("[SOLUTION] Activate the virtual environment first!")
     print("   PowerShell: & '..\\venv\\Scripts\\Activate.ps1'")
-    print("   You should see (venv) in your prompt when activated.")
-    raise ImportError("pandas not available. Activate virtual environment.")
+    pd = None
 
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -199,7 +198,7 @@ class SupabaseClient:
             logger.error(f"❌ Error ensuring ticker {ticker} in securities table: {e}")
             return False
     
-    def upsert_portfolio_positions(self, positions_df: pd.DataFrame) -> bool:
+    def upsert_portfolio_positions(self, positions_df: Any) -> bool:
         """Insert or update portfolio positions"""
         try:
             if positions_df.empty:
@@ -246,7 +245,7 @@ class SupabaseClient:
             logger.error(f"❌ Error upserting portfolio positions: {e}")
             return False
     
-    def upsert_trade_log(self, trades_df: pd.DataFrame) -> bool:
+    def upsert_trade_log(self, trades_df: Any) -> bool:
         """Insert or update trade log"""
         try:
             if trades_df.empty:

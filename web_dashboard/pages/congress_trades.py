@@ -949,16 +949,17 @@ try:
                     setTimeout(function() {
                         positionTooltip(reasoningCell, tooltip);
                         // Also set up continuous repositioning for active tooltips
-                        if (!reasoningCell._repositionInterval) {
-                            reasoningCell._repositionInterval = setInterval(function() {
-                                if (window.getComputedStyle(tooltip).visibility === 'visible') {
-                                    positionTooltip(reasoningCell, tooltip);
-                                } else {
-                                    clearInterval(reasoningCell._repositionInterval);
-                                    reasoningCell._repositionInterval = null;
-                                }
-                            }, 100);
+                        if (reasoningCell._repositionInterval) {
+                            clearInterval(reasoningCell._repositionInterval);
                         }
+                        reasoningCell._repositionInterval = setInterval(function() {
+                            if (reasoningCell.classList.contains('active') && window.getComputedStyle(tooltip).visibility === 'visible') {
+                                positionTooltip(reasoningCell, tooltip);
+                            } else {
+                                clearInterval(reasoningCell._repositionInterval);
+                                reasoningCell._repositionInterval = null;
+                            }
+                        }, 50);
                     }, 10);
                 } else if (tooltip && reasoningCell._repositionInterval) {
                     // Clear interval when tooltip is closed
@@ -982,39 +983,80 @@ try:
                             requestAnimationFrame(function() {
                                 positionTooltip(cell, tooltip);
                             });
+                            
+                            // Set up continuous repositioning while hovering
+                            if (cell._hoverRepositionInterval) {
+                                clearInterval(cell._hoverRepositionInterval);
+                            }
+                            cell._hoverRepositionInterval = setInterval(function() {
+                                if (cell.matches(':hover') && window.getComputedStyle(tooltip).visibility === 'visible') {
+                                    positionTooltip(cell, tooltip);
+                                } else {
+                                    clearInterval(cell._hoverRepositionInterval);
+                                    cell._hoverRepositionInterval = null;
+                                }
+                            }, 50);
                         });
                         
-                        // Reposition on mouse move (in case of scrolling while hovering)
-                        cell.addEventListener('mousemove', function() {
-                            if (window.getComputedStyle(tooltip).visibility === 'visible') {
-                                positionTooltip(cell, tooltip);
+                        cell.addEventListener('mouseleave', function() {
+                            if (cell._hoverRepositionInterval) {
+                                clearInterval(cell._hoverRepositionInterval);
+                                cell._hoverRepositionInterval = null;
                             }
                         });
                     }
                 });
             }
             
-            // Reposition visible tooltips on scroll
-            function repositionVisibleTooltips() {
+            // Continuous repositioning using requestAnimationFrame for smooth updates
+            let repositionAnimationFrame = null;
+            let lastScrollY = window.scrollY;
+            let lastScrollX = window.scrollX;
+            
+            function continuousReposition() {
+                // Check if scroll position changed
+                const currentScrollY = window.scrollY;
+                const currentScrollX = window.scrollX;
+                const scrollChanged = currentScrollY !== lastScrollY || currentScrollX !== lastScrollX;
+                
+                if (scrollChanged) {
+                    lastScrollY = currentScrollY;
+                    lastScrollX = currentScrollX;
+                }
+                
+                // Reposition all visible tooltips
                 document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
                     const tooltip = cell.querySelector('.reasoning-tooltip');
-                    if (tooltip && window.getComputedStyle(tooltip).visibility === 'visible') {
-                        positionTooltip(cell, tooltip);
+                    if (tooltip) {
+                        const computedStyle = window.getComputedStyle(tooltip);
+                        if (computedStyle.visibility === 'visible' || cell.classList.contains('active') || cell.matches(':hover')) {
+                            positionTooltip(cell, tooltip);
+                        }
                     }
                 });
+                
+                // Continue animation loop
+                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
             }
             
-            // Add scroll and resize listeners
-            let scrollTimeout;
+            // Start continuous repositioning
+            repositionAnimationFrame = requestAnimationFrame(continuousReposition);
+            
+            // Also listen to scroll for immediate updates
             window.addEventListener('scroll', function() {
-                clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
+                // Trigger immediate reposition
+                if (repositionAnimationFrame) {
+                    cancelAnimationFrame(repositionAnimationFrame);
+                }
+                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
             }, { passive: true });
             
-            let resizeTimeout;
+            // Resize handler
             window.addEventListener('resize', function() {
-                clearTimeout(resizeTimeout);
-                resizeTimeout = setTimeout(repositionVisibleTooltips, 10);
+                if (repositionAnimationFrame) {
+                    cancelAnimationFrame(repositionAnimationFrame);
+                }
+                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
             }, { passive: true });
             
             function initTooltips() {

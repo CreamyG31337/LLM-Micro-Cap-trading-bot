@@ -948,7 +948,22 @@ try:
                     // Position tooltip, then CSS will show it via .active class
                     setTimeout(function() {
                         positionTooltip(reasoningCell, tooltip);
+                        // Also set up continuous repositioning for active tooltips
+                        if (!reasoningCell._repositionInterval) {
+                            reasoningCell._repositionInterval = setInterval(function() {
+                                if (window.getComputedStyle(tooltip).visibility === 'visible') {
+                                    positionTooltip(reasoningCell, tooltip);
+                                } else {
+                                    clearInterval(reasoningCell._repositionInterval);
+                                    reasoningCell._repositionInterval = null;
+                                }
+                            }, 100);
+                        }
                     }, 10);
+                } else if (tooltip && reasoningCell._repositionInterval) {
+                    // Clear interval when tooltip is closed
+                    clearInterval(reasoningCell._repositionInterval);
+                    reasoningCell._repositionInterval = null;
                 }
             }
             
@@ -959,15 +974,48 @@ try:
                     if (tooltip && !cell.hasAttribute('data-hover-setup')) {
                         cell.setAttribute('data-hover-setup', 'true');
                         
+                        // Store reference for scroll updates
+                        cell._tooltip = tooltip;
+                        
                         cell.addEventListener('mouseenter', function() {
                             // Position tooltip when hovering - use requestAnimationFrame to ensure CSS has applied
                             requestAnimationFrame(function() {
                                 positionTooltip(cell, tooltip);
                             });
                         });
+                        
+                        // Reposition on mouse move (in case of scrolling while hovering)
+                        cell.addEventListener('mousemove', function() {
+                            if (window.getComputedStyle(tooltip).visibility === 'visible') {
+                                positionTooltip(cell, tooltip);
+                            }
+                        });
                     }
                 });
             }
+            
+            // Reposition visible tooltips on scroll
+            function repositionVisibleTooltips() {
+                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
+                    const tooltip = cell.querySelector('.reasoning-tooltip');
+                    if (tooltip && window.getComputedStyle(tooltip).visibility === 'visible') {
+                        positionTooltip(cell, tooltip);
+                    }
+                });
+            }
+            
+            // Add scroll and resize listeners
+            let scrollTimeout;
+            window.addEventListener('scroll', function() {
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
+            }, { passive: true });
+            
+            let resizeTimeout;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(repositionVisibleTooltips, 10);
+            }, { passive: true });
             
             function initTooltips() {
                 // Handle touch events for mobile

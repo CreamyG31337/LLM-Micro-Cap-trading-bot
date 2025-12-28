@@ -247,10 +247,19 @@ st.markdown("""
     }
     
     /* Show tooltip on hover (desktop) - JavaScript will handle visibility */
-    /* CSS hover is disabled - JavaScript controls visibility for proper positioning */
+    /* Show tooltip on hover (desktop) - JavaScript will position it */
+    .reasoning-cell:hover .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+        display: block;
+    }
     
-    /* Show tooltip when active (mobile click) - JavaScript will handle visibility */
-    /* CSS active is disabled - JavaScript controls visibility for proper positioning */
+    /* Show tooltip when active (mobile click) */
+    .reasoning-cell.active .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+        display: block;
+    }
     
     /* Dark mode tooltip styling */
     @media (prefers-color-scheme: dark) {
@@ -844,7 +853,8 @@ try:
             let touchStartTarget = null;
             
             function positionTooltip(cell, tooltip) {
-                // Make tooltip visible and measure it
+                // Make tooltip temporarily visible to measure it (but keep it hidden from user)
+                const wasVisible = window.getComputedStyle(tooltip).visibility === 'visible';
                 tooltip.style.visibility = 'hidden';
                 tooltip.style.opacity = '1';
                 tooltip.style.display = 'block';
@@ -913,6 +923,11 @@ try:
                 } else {
                     tooltip.setAttribute('data-placement', 'below');
                 }
+                
+                // Restore visibility - let CSS handle it
+                tooltip.style.visibility = '';
+                tooltip.style.opacity = '';
+                tooltip.style.display = '';
             }
             
             function handleTooltipToggle(e, reasoningCell) {
@@ -930,17 +945,10 @@ try:
                 const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
                 
                 if (isActive && tooltip) {
-                    // Position tooltip first, then show it
-                    positionTooltip(reasoningCell, tooltip);
-                    requestAnimationFrame(function() {
-                        tooltip.style.visibility = 'visible';
-                        tooltip.style.opacity = '1';
-                        tooltip.style.display = 'block';
-                    });
-                } else if (tooltip) {
-                    // Hide tooltip
-                    tooltip.style.visibility = 'hidden';
-                    tooltip.style.opacity = '0';
+                    // Position tooltip, then CSS will show it via .active class
+                    setTimeout(function() {
+                        positionTooltip(reasoningCell, tooltip);
+                    }, 10);
                 }
             }
             
@@ -952,20 +960,10 @@ try:
                         cell.setAttribute('data-hover-setup', 'true');
                         
                         cell.addEventListener('mouseenter', function() {
-                            // Position tooltip before showing it
-                            positionTooltip(cell, tooltip);
-                            // Small delay to ensure positioning is complete
+                            // Position tooltip when hovering - use requestAnimationFrame to ensure CSS has applied
                             requestAnimationFrame(function() {
-                                tooltip.style.visibility = 'visible';
-                                tooltip.style.opacity = '1';
+                                positionTooltip(cell, tooltip);
                             });
-                        });
-                        
-                        cell.addEventListener('mouseleave', function() {
-                            // Hide tooltip
-                            tooltip.style.visibility = 'hidden';
-                            tooltip.style.opacity = '0';
-                            cell.classList.remove('active');
                         });
                     }
                 });

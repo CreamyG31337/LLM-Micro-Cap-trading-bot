@@ -1173,23 +1173,7 @@ with st.sidebar:
                 help="End date for transaction date filter"
             )
     
-    st.markdown("---")
-    
-    # Pagination controls
-    st.subheader("📄 Pagination")
-    
-    page_size_options = [100, 250, 500, 1000]
-    page_size = st.selectbox(
-        "Items per page",
-        page_size_options,
-        index=page_size_options.index(st.session_state.page_size) if st.session_state.page_size in page_size_options else 0,
-        help="Number of trades to show per page"
-    )
-    
-    # Update page size in session state
-    if page_size != st.session_state.page_size:
-        st.session_state.page_size = page_size
-        st.session_state.page_number = 0  # Reset to first page when changing size
+
 
 # Main content area
 try:
@@ -1372,12 +1356,15 @@ try:
             enableCellTextSelection=True,
             ensureDomOrder=True,
             domLayout='normal',
-            pagination=True,  # Enable pagination
-            paginationPageSize=st.session_state.page_size,  # Use page size from sidebar
-            paginationAutoPageSize=False
+            pagination=True,
+            paginationPageSize=100
         )
         
         gridOptions = gb.build()
+        
+        # Set page size selector options directly (not supported by configure_grid_options)
+        gridOptions['paginationPageSizeSelector'] = [100, 250, 500, 1000]
+
         
         # Display AgGrid
         grid_response = AgGrid(
@@ -1392,29 +1379,35 @@ try:
         )
         
         # Show full AI reasoning for selected row
-        selected_rows = grid_response.get('selected_rows', None)
-        if selected_rows is not None and len(selected_rows) > 0:
-            selected_row = selected_rows[0]  # Get first selected row
-            full_reasoning = selected_row.get('_tooltip', '')
-            
-            if full_reasoning:
-                st.markdown("---")
-                st.subheader("📋 Full AI Reasoning (Click to Copy)")
+        try:
+            selected_data = grid_response.get('selected_rows', pd.DataFrame())
+            if not selected_data.empty:
+                # Convert DataFrame to dict for first selected row
+                selected_row = selected_data.iloc[0].to_dict()
+                full_reasoning = selected_row.get('_tooltip', '')
                 
-                # Display trade details
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(f"**Ticker:** {selected_row.get('Ticker', 'N/A')}")
-                    st.markdown(f"**Company:** {selected_row.get('Company', 'N/A')}")
-                with col2:
-                    st.markdown(f"**Politician:** {selected_row.get('Politician', 'N/A')}")
-                    st.markdown(f"**Date:** {selected_row.get('Date', 'N/A')}")
-                with col3:
-                    st.markdown(f"**Type:** {selected_row.get('Type', 'N/A')}")
-                    st.markdown(f"**Score:** {selected_row.get('Score', 'N/A')}")
-                
-                # Display full reasoning in code block (easy to select and copy)
-                st.code(full_reasoning, language=None)
+                if full_reasoning:
+                    st.markdown("---")
+                    st.subheader("📋 Full AI Reasoning (Click to Copy)")
+                    
+                    # Display trade details
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"**Ticker:** {selected_row.get('Ticker', 'N/A')}")
+                        st.markdown(f"**Company:** {selected_row.get('Company', 'N/A')}")
+                    with col2:
+                        st.markdown(f"**Politician:** {selected_row.get('Politician', 'N/A')}")
+                        st.markdown(f"**Date:** {selected_row.get('Date', 'N/A')}")
+                    with col3:
+                        st.markdown(f"**Type:** {selected_row.get('Type', 'N/A')}")
+                        st.markdown(f"**Score:** {selected_row.get('Score', 'N/A')}")
+                    
+                    # Display full reasoning in code block (easy to select and copy)
+                    st.code(full_reasoning, language=None)
+        except Exception as e:
+            # Silently ignore selection errors - just don't show the section
+            pass
+
         
         st.markdown("---")
         

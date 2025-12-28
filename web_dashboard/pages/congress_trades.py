@@ -175,6 +175,16 @@ st.markdown("""
         touch-action: manipulation;
         user-select: none;
     }
+
+    /* Special styling for reasoning cells with copy functionality */
+    .reasoning-cell[data-full-reasoning] {
+        cursor: copy;
+    }
+
+    .reasoning-cell[data-full-reasoning]:hover {
+        background-color: rgba(16, 185, 129, 0.1);
+        border-radius: 4px;
+    }
     
     /* Make sure touch targets are large enough on mobile */
     @media (max-width: 768px) {
@@ -641,7 +651,7 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
                 if full_reasoning and len(full_reasoning) > len(value_str):
                     # Add tooltip - show full reasoning on hover/click
                     html_parts.append('<td>')
-                    html_parts.append('<div class="reasoning-cell">')
+                    html_parts.append(f'<div class="reasoning-cell" data-full-reasoning="{html.escape(full_reasoning).replace(chr(34), "&quot;")}">')
                     html_parts.append(f'<span class="reasoning-text">{html.escape(value_str)}</span>')
                     html_parts.append(f'<div class="reasoning-tooltip">{html.escape(full_reasoning)}</div>')
                     html_parts.append('</div>')
@@ -926,7 +936,7 @@ try:
                 score_display = "⚪ N/A"
             
             # Truncate reasoning for table
-            reasoning_short = reasoning[:80] + '...' if reasoning and len(reasoning) > 80 else reasoning
+            reasoning_short = reasoning[:160] + '...' if reasoning and len(reasoning) > 160 else reasoning
             
             df_data.append({
                 'Ticker': ticker,
@@ -1141,20 +1151,81 @@ try:
                 tooltip.style.display = '';
             }
             
+            // Copy AI reasoning text to clipboard
+            function copyReasoningToClipboard(reasoningCell) {
+                const fullReasoning = reasoningCell.getAttribute('data-full-reasoning');
+                if (!fullReasoning) return false;
+
+                // Try modern clipboard API first
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(fullReasoning).then(function() {
+                        showCopyFeedback(reasoningCell);
+                    }).catch(function(err) {
+                        console.warn('Failed to copy text: ', err);
+                        fallbackCopyTextToClipboard(fullReasoning);
+                        showCopyFeedback(reasoningCell);
+                    });
+                } else {
+                    // Fallback for older browsers or non-secure contexts
+                    fallbackCopyTextToClipboard(fullReasoning);
+                    showCopyFeedback(reasoningCell);
+                }
+                return true;
+            }
+
+            function fallbackCopyTextToClipboard(text) {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                } catch (err) {
+                    console.error('Fallback: Oops, unable to copy', err);
+                }
+                textArea.remove();
+            }
+
+            function showCopyFeedback(reasoningCell) {
+                // Add temporary visual feedback
+                const originalText = reasoningCell.querySelector('.reasoning-text');
+                if (originalText) {
+                    const originalContent = originalText.innerHTML;
+                    originalText.innerHTML = '<span style="color: #10b981; font-weight: bold;">✓ Copied!</span>';
+                    setTimeout(function() {
+                        originalText.innerHTML = originalContent;
+                    }, 1000);
+                }
+            }
+
             function handleTooltipToggle(e, reasoningCell) {
                 if (!reasoningCell) return;
-                
+
+                // If this is a reasoning cell and has full reasoning data, copy on click
+                const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
+                if (hasFullReasoning) {
+                    const copied = copyReasoningToClipboard(reasoningCell);
+                    if (copied) {
+                        // Don't show tooltip if we copied text (single click = copy)
+                        return;
+                    }
+                }
+
                 // Close other tooltips
                 document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
                     if (activeCell !== reasoningCell) {
                         activeCell.classList.remove('active');
                     }
                 });
-                
+
                 // Toggle this tooltip
                 const isActive = reasoningCell.classList.toggle('active');
                 const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
-                
+
                 if (isActive && tooltip) {
                     // Position tooltip, then CSS will show it via .active class
                     setTimeout(function() {
@@ -1271,7 +1342,14 @@ try:
                     if (reasoningCell && (Date.now() - touchStartTime) < 300) {
                         e.preventDefault();
                         e.stopPropagation();
-                        handleTooltipToggle(e, reasoningCell);
+
+                        // For reasoning cells, copy text instead of showing tooltip
+                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
+                        if (hasFullReasoning) {
+                            copyReasoningToClipboard(reasoningCell);
+                        } else {
+                            handleTooltipToggle(e, reasoningCell);
+                        }
                     }
                     touchStartTarget = null;
                 });
@@ -1279,10 +1357,17 @@ try:
                 // Handle click events (desktop and mobile fallback)
                 document.addEventListener('click', function(e) {
                     const reasoningCell = e.target.closest('.reasoning-cell');
-                    
+
                     if (reasoningCell) {
                         e.stopPropagation();
-                        handleTooltipToggle(e, reasoningCell);
+
+                        // For reasoning cells, copy text instead of showing tooltip
+                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
+                        if (hasFullReasoning) {
+                            copyReasoningToClipboard(reasoningCell);
+                        } else {
+                            handleTooltipToggle(e, reasoningCell);
+                        }
                     } else {
                         // Click outside - close all tooltips
                         document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {

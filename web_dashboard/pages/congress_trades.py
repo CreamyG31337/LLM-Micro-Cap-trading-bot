@@ -197,7 +197,7 @@ st.markdown("""
     .reasoning-tooltip {
         visibility: hidden;
         opacity: 0;
-        position: fixed;
+        position: absolute;
         z-index: 999999 !important;
         background-color: #1f1f1f;
         color: #ffffff;
@@ -853,13 +853,12 @@ try:
             let touchStartTarget = null;
             
             function positionTooltip(cell, tooltip) {
-                // Make tooltip temporarily visible to measure it (but keep it hidden from user)
-                const wasVisible = window.getComputedStyle(tooltip).visibility === 'visible';
+                // Make tooltip temporarily visible to measure it
                 tooltip.style.visibility = 'hidden';
                 tooltip.style.opacity = '1';
                 tooltip.style.display = 'block';
                 
-                const rect = cell.getBoundingClientRect();
+                const cellRect = cell.getBoundingClientRect();
                 const viewportHeight = window.innerHeight;
                 const viewportWidth = window.innerWidth;
                 
@@ -870,9 +869,9 @@ try:
                 const tooltipHeight = tooltipRect.height;
                 const tooltipWidth = tooltipRect.width;
                 
-                // Calculate space above and below
-                const spaceAbove = rect.top;
-                const spaceBelow = viewportHeight - rect.bottom;
+                // Calculate space above and below the cell in viewport
+                const spaceAbove = cellRect.top;
+                const spaceBelow = viewportHeight - cellRect.bottom;
                 const padding = 10;
                 
                 let top, left;
@@ -881,36 +880,41 @@ try:
                 // Decide whether to position above or below
                 if (spaceAbove >= tooltipHeight + padding) {
                     // Enough space above - position above
-                    top = rect.top - tooltipHeight - padding;
+                    top = -tooltipHeight - padding;
                     positionAbove = true;
                 } else if (spaceBelow >= tooltipHeight + padding) {
                     // Not enough space above, but enough below - position below
-                    top = rect.bottom + padding;
+                    top = cellRect.height + padding;
                     positionAbove = false;
                 } else {
                     // Not enough space either way - choose the side with more space
                     if (spaceAbove > spaceBelow) {
-                        // Position above, but adjust to fit
-                        top = padding;
+                        // Position above, but adjust to fit in viewport
+                        const maxTop = -(cellRect.top - padding);
+                        top = Math.max(-tooltipHeight - padding, maxTop);
                         positionAbove = true;
                     } else {
-                        // Position below, but adjust to fit
-                        top = viewportHeight - tooltipHeight - padding;
+                        // Position below, but adjust to fit in viewport
+                        const maxBottom = viewportHeight - cellRect.bottom - padding;
+                        top = Math.min(cellRect.height + padding, maxBottom);
                         positionAbove = false;
                     }
                 }
                 
                 // Center horizontally relative to cell
-                left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+                left = (cellRect.width / 2) - (tooltipWidth / 2);
                 
-                // Keep tooltip within viewport horizontally
-                if (left < padding) {
-                    left = padding;
-                } else if (left + tooltipWidth > viewportWidth - padding) {
-                    left = viewportWidth - tooltipWidth - padding;
+                // Adjust horizontal position to keep tooltip within viewport
+                const cellLeft = cellRect.left;
+                if (cellLeft + left < padding) {
+                    // Tooltip would go off left edge
+                    left = padding - cellLeft;
+                } else if (cellLeft + left + tooltipWidth > viewportWidth - padding) {
+                    // Tooltip would go off right edge
+                    left = viewportWidth - padding - cellLeft - tooltipWidth;
                 }
                 
-                // Apply positioning
+                // Apply positioning (relative to cell since cell has position: relative)
                 tooltip.style.top = top + 'px';
                 tooltip.style.left = left + 'px';
                 tooltip.style.bottom = 'auto';
@@ -1008,23 +1012,8 @@ try:
                 });
             }
             
-            // Continuous repositioning using requestAnimationFrame for smooth updates
-            let repositionAnimationFrame = null;
-            let lastScrollY = window.scrollY;
-            let lastScrollX = window.scrollX;
-            
-            function continuousReposition() {
-                // Check if scroll position changed
-                const currentScrollY = window.scrollY;
-                const currentScrollX = window.scrollX;
-                const scrollChanged = currentScrollY !== lastScrollY || currentScrollX !== lastScrollX;
-                
-                if (scrollChanged) {
-                    lastScrollY = currentScrollY;
-                    lastScrollX = currentScrollX;
-                }
-                
-                // Reposition all visible tooltips
+            // Reposition tooltips on scroll/resize (simpler now with absolute positioning)
+            function repositionVisibleTooltips() {
                 document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
                     const tooltip = cell.querySelector('.reasoning-tooltip');
                     if (tooltip) {
@@ -1034,29 +1023,18 @@ try:
                         }
                     }
                 });
-                
-                // Continue animation loop
-                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
             }
             
-            // Start continuous repositioning
-            repositionAnimationFrame = requestAnimationFrame(continuousReposition);
-            
-            // Also listen to scroll for immediate updates
+            // Listen to scroll and resize for repositioning
+            let scrollTimeout;
             window.addEventListener('scroll', function() {
-                // Trigger immediate reposition
-                if (repositionAnimationFrame) {
-                    cancelAnimationFrame(repositionAnimationFrame);
-                }
-                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
             }, { passive: true });
             
-            // Resize handler
             window.addEventListener('resize', function() {
-                if (repositionAnimationFrame) {
-                    cancelAnimationFrame(repositionAnimationFrame);
-                }
-                repositionAnimationFrame = requestAnimationFrame(continuousReposition);
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
             }, { passive: true });
             
             function initTooltips() {

@@ -1397,7 +1397,7 @@ try:
         gridOptions = gb.build()
         
         # Display AgGrid
-        AgGrid(
+        grid_response = AgGrid(
             df,
             gridOptions=gridOptions,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
@@ -1407,6 +1407,31 @@ try:
             allow_unsafe_jscode=False,
             enable_enterprise_modules=False
         )
+        
+        # Show full AI reasoning for selected row
+        selected_rows = grid_response.get('selected_rows', None)
+        if selected_rows is not None and len(selected_rows) > 0:
+            selected_row = selected_rows[0]  # Get first selected row
+            full_reasoning = selected_row.get('_tooltip', '')
+            
+            if full_reasoning:
+                st.markdown("---")
+                st.subheader("📋 Full AI Reasoning (Click to Copy)")
+                
+                # Display trade details
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"**Ticker:** {selected_row.get('Ticker', 'N/A')}")
+                    st.markdown(f"**Company:** {selected_row.get('Company', 'N/A')}")
+                with col2:
+                    st.markdown(f"**Politician:** {selected_row.get('Politician', 'N/A')}")
+                    st.markdown(f"**Date:** {selected_row.get('Date', 'N/A')}")
+                with col3:
+                    st.markdown(f"**Type:** {selected_row.get('Type', 'N/A')}")
+                    st.markdown(f"**Score:** {selected_row.get('Score', 'N/A')}")
+                
+                # Display full reasoning in code block (easy to select and copy)
+                st.code(full_reasoning, language=None)
         
         st.markdown("---")
         

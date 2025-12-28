@@ -15,6 +15,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone, date
 import pandas as pd
 import logging
+import base64
 
 # Try to import zoneinfo for timezone conversion (Python 3.9+)
 try:
@@ -177,10 +178,12 @@ st.markdown("""
     }
 
     /* Special styling for reasoning cells with copy functionality */
+    .reasoning-cell[data-full-reasoning-b64],
     .reasoning-cell[data-full-reasoning] {
         cursor: copy;
     }
 
+    .reasoning-cell[data-full-reasoning-b64]:hover,
     .reasoning-cell[data-full-reasoning]:hover {
         background-color: rgba(16, 185, 129, 0.1);
         border-radius: 4px;
@@ -644,20 +647,26 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
             
             # Special handling for AI Reasoning column
             if col == 'AI Reasoning':
-                # Get full reasoning text for tooltip
+                # Get full reasoning text for tooltip and copy
                 full_reasoning = row.get('_full_reasoning', '')
                 
-                # Check if we need a tooltip (show tooltip if we have full reasoning and it's longer than displayed)
-                if full_reasoning and len(full_reasoning) > len(value_str):
-                    # Add tooltip - show full reasoning on hover/click
+                # Always add reasoning-cell with copy functionality if we have full reasoning
+                if full_reasoning:
+                    # Use base64 encoding for data attribute to avoid HTML escaping issues
+                    full_reasoning_b64 = base64.b64encode(full_reasoning.encode('utf-8')).decode('utf-8')
+                    
+                    # Check if we need a tooltip (show tooltip if full reasoning is longer than displayed)
+                    needs_tooltip = len(full_reasoning) > len(value_str)
+                    
                     html_parts.append('<td>')
-                    html_parts.append(f'<div class="reasoning-cell" data-full-reasoning="{html.escape(full_reasoning).replace(chr(34), "&quot;")}">')
+                    html_parts.append(f'<div class="reasoning-cell" data-full-reasoning-b64="{full_reasoning_b64}">')
                     html_parts.append(f'<span class="reasoning-text">{html.escape(value_str)}</span>')
-                    html_parts.append(f'<div class="reasoning-tooltip">{html.escape(full_reasoning)}</div>')
+                    if needs_tooltip:
+                        html_parts.append(f'<div class="reasoning-tooltip">{html.escape(full_reasoning)}</div>')
                     html_parts.append('</div>')
                     html_parts.append('</td>')
                 else:
-                    # Not truncated or no tooltip needed
+                    # No reasoning available
                     html_parts.append(f'<td>{html.escape(value_str)}</td>')
             else:
                 # Regular column - escape HTML to prevent XSS
@@ -1153,21 +1162,43 @@ try:
             
             // Copy AI reasoning text to clipboard
             function copyReasoningToClipboard(reasoningCell) {
-                const fullReasoning = reasoningCell.getAttribute('data-full-reasoning');
-                if (!fullReasoning) return false;
+                // Try base64 encoded attribute first, then fallback to regular attribute
+                let fullReasoning = reasoningCell.getAttribute('data-full-reasoning-b64');
+                let decodedText;
+                
+                if (fullReasoning) {
+                    // Decode from base64
+                    try {
+                        decodedText = atob(fullReasoning);
+                    } catch (e) {
+                        console.error('Failed to decode base64 reasoning:', e);
+                        return false;
+                    }
+                } else {
+                    // Fallback to regular attribute (for backwards compatibility)
+                    fullReasoning = reasoningCell.getAttribute('data-full-reasoning');
+                    if (!fullReasoning) {
+                        console.warn('No data-full-reasoning attribute found');
+                        return false;
+                    }
+                    // Decode HTML entities
+                    const textarea = document.createElement('textarea');
+                    textarea.innerHTML = fullReasoning;
+                    decodedText = textarea.value || fullReasoning;
+                }
 
                 // Try modern clipboard API first
                 if (navigator.clipboard && window.isSecureContext) {
-                    navigator.clipboard.writeText(fullReasoning).then(function() {
+                    navigator.clipboard.writeText(decodedText).then(function() {
                         showCopyFeedback(reasoningCell);
                     }).catch(function(err) {
                         console.warn('Failed to copy text: ', err);
-                        fallbackCopyTextToClipboard(fullReasoning);
+                        fallbackCopyTextToClipboard(decodedText);
                         showCopyFeedback(reasoningCell);
                     });
                 } else {
                     // Fallback for older browsers or non-secure contexts
-                    fallbackCopyTextToClipboard(fullReasoning);
+                    fallbackCopyTextToClipboard(decodedText);
                     showCopyFeedback(reasoningCell);
                 }
                 return true;
@@ -1198,7 +1229,7 @@ try:
                     originalText.innerHTML = '<span style="color: #10b981; font-weight: bold;">✓ Copied!</span>';
                     setTimeout(function() {
                         originalText.innerHTML = originalContent;
-                    }, 1000);
+                    }, 1500);
                 }
             }
 
@@ -1344,7 +1375,8 @@ try:
                         e.stopPropagation();
 
                         // For reasoning cells, copy text instead of showing tooltip
-                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
+                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
+                                                 reasoningCell.hasAttribute('data-full-reasoning');
                         if (hasFullReasoning) {
                             copyReasoningToClipboard(reasoningCell);
                         } else {
@@ -1362,7 +1394,8 @@ try:
                         e.stopPropagation();
 
                         // For reasoning cells, copy text instead of showing tooltip
-                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
+                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
+                                                 reasoningCell.hasAttribute('data-full-reasoning');
                         if (hasFullReasoning) {
                             copyReasoningToClipboard(reasoningCell);
                         } else {

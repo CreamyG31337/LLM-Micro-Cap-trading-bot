@@ -280,14 +280,62 @@ st.markdown("""
         width: 100%;
         margin: 1rem 0;
     }
-    
+
     /* Ensure tooltip doesn't get cut off */
     .table-container {
         overflow: visible;
     }
-    
+
     .congress-trades-table {
         overflow: visible;
+    }
+
+    /* Column sorting styles */
+    .congress-trades-table th {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        transition: background-color 0.2s ease;
+    }
+
+    .congress-trades-table th:hover {
+        background-color: var(--secondary-background-color, #e6f3ff) !important;
+    }
+
+    .congress-trades-table th.sortable {
+        padding-right: 1.5rem; /* Space for sort indicator */
+    }
+
+    .sort-indicator {
+        position: absolute;
+        right: 0.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.75rem;
+        opacity: 0.6;
+        transition: opacity 0.2s ease;
+    }
+
+    .congress-trades-table th.sort-asc .sort-indicator::after {
+        content: "▲";
+        opacity: 1;
+    }
+
+    .congress-trades-table th.sort-desc .sort-indicator::after {
+        content: "▼";
+        opacity: 1;
+    }
+
+    .congress-trades-table th.sort-none .sort-indicator::after {
+        content: "⬍";
+        opacity: 0.3;
+    }
+
+    /* Dark mode sorting styles */
+    @media (prefers-color-scheme: dark) {
+        .congress-trades-table th:hover {
+            background-color: var(--secondary-background-color, #3d3d3d) !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -558,12 +606,20 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
     html_parts = ['<div class="table-container">']
     html_parts.append('<table class="congress-trades-table">')
     
-    # Table header
+    # Table header with sorting
     html_parts.append('<thead><tr>')
-    columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State', 
+    columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
                'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner']
+
+    # Define sortable columns (all except AI Reasoning for now due to tooltips)
+    sortable_columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
+                       'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'Owner']
+
     for col in columns:
-        html_parts.append(f'<th>{html.escape(col)}</th>')
+        if col in sortable_columns:
+            html_parts.append(f'<th class="sortable" data-column="{col}">{html.escape(col)}<span class="sort-indicator"></span></th>')
+        else:
+            html_parts.append(f'<th>{html.escape(col)}</th>')
     html_parts.append('</tr></thead>')
     
     # Table body
@@ -888,17 +944,120 @@ try:
                 '_full_reasoning': reasoning if reasoning else ''  # Store full reasoning for tooltip
             })
         
-        # Render custom HTML table with tooltips
+        # Render custom HTML table with tooltips and sorting
         html_table = render_congress_trades_table(df_data)
         st.markdown(html_table, unsafe_allow_html=True)
-        
-        # Add JavaScript for mobile tooltip support using components.html
+
+        # Add JavaScript for mobile tooltip support and column sorting using components.html
         # This ensures the script executes properly in Streamlit
         tooltip_script = """
         <script>
         (function() {
             let touchStartTime = 0;
             let touchStartTarget = null;
+
+            // Table sorting functionality
+            let currentSortColumn = null;
+            let currentSortDirection = 'asc'; // 'asc', 'desc', or null
+
+            function sortTable(columnName, direction) {
+                const table = document.querySelector('.congress-trades-table');
+                if (!table) return;
+
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                // Clear previous sort indicators
+                table.querySelectorAll('th').forEach(th => {
+                    th.classList.remove('sort-asc', 'sort-desc', 'sort-none');
+                });
+
+                if (direction === null) {
+                    // Reset to original order - for now, just clear indicators
+                    currentSortColumn = null;
+                    currentSortDirection = null;
+                    return;
+                }
+
+                // Sort rows
+                rows.sort((a, b) => {
+                    const aCell = getCellValue(a, columnName);
+                    const bCell = getCellValue(b, columnName);
+
+                    let result = 0;
+
+                    // Handle different data types
+                    if (columnName === 'Conflict Score') {
+                        // Extract numeric value from score (e.g., "🔴 0.85" -> 0.85, "⚪ N/A" -> -1)
+                        const aVal = extractScoreValue(aCell);
+                        const bVal = extractScoreValue(bCell);
+                        result = aVal - bVal;
+                    } else if (columnName === 'Transaction Date') {
+                        // Parse dates
+                        const aDate = parseDate(aCell);
+                        const bDate = parseDate(bCell);
+                        result = aDate - bDate;
+                    } else if (columnName === 'Amount') {
+                        // Parse amounts (remove $ and commas)
+                        const aVal = parseFloat(aCell.replace(/[$,]/g, '')) || 0;
+                        const bVal = parseFloat(bCell.replace(/[$,]/g, '')) || 0;
+                        result = aVal - bVal;
+                    } else {
+                        // String comparison (case-insensitive)
+                        result = aCell.toLowerCase().localeCompare(bCell.toLowerCase());
+                    }
+
+                    return direction === 'asc' ? result : -result;
+                });
+
+                // Re-append sorted rows
+                rows.forEach(row => tbody.appendChild(row));
+
+                // Update sort indicators
+                const headerCell = table.querySelector(`th[data-column="${columnName}"]`);
+                if (headerCell) {
+                    headerCell.classList.add(`sort-${direction}`);
+                }
+
+                currentSortColumn = columnName;
+                currentSortDirection = direction;
+            }
+
+            function getCellValue(row, columnName) {
+                const columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
+                               'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner'];
+                const colIndex = columns.indexOf(columnName);
+                const cell = row.cells[colIndex];
+                return cell ? cell.textContent.trim() : '';
+            }
+
+            function extractScoreValue(scoreText) {
+                // Extract numeric value from conflict score (e.g., "🔴 0.85" -> 0.85)
+                const match = scoreText.match(/(\d+\.\d+)/);
+                return match ? parseFloat(match[1]) : -1; // N/A scores get -1 (sort last)
+            }
+
+            function parseDate(dateText) {
+                // Parse date in YYYY-MM-DD format
+                if (!dateText || dateText === 'N/A') return new Date(0);
+                return new Date(dateText);
+            }
+
+            function cycleSort(columnName) {
+                if (currentSortColumn === columnName) {
+                    // Cycle through: asc -> desc -> none
+                    if (currentSortDirection === 'asc') {
+                        sortTable(columnName, 'desc');
+                    } else if (currentSortDirection === 'desc') {
+                        sortTable(columnName, null); // Reset to original order
+                    } else {
+                        sortTable(columnName, 'asc');
+                    }
+                } else {
+                    // New column - start with ascending
+                    sortTable(columnName, 'asc');
+                }
+            }
             
             function positionTooltip(cell, tooltip) {
                 // Make tooltip temporarily visible to measure it
@@ -1059,7 +1218,19 @@ try:
                     }
                 });
             }
-            
+
+            // Set up column sorting
+            function setupColumnSorting() {
+                document.querySelectorAll('th.sortable').forEach(function(header) {
+                    header.addEventListener('click', function() {
+                        const columnName = this.getAttribute('data-column');
+                        if (columnName) {
+                            cycleSort(columnName);
+                        }
+                    });
+                });
+            }
+
             // Reposition tooltips on scroll/resize (simpler now with absolute positioning)
             function repositionVisibleTooltips() {
                 document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
@@ -1119,8 +1290,9 @@ try:
                         });
                     }
                 });
-                
+
                 setupHoverHandlers();
+                setupColumnSorting();
             }
             
             // Initialize when DOM is ready
@@ -1151,6 +1323,7 @@ try:
                     setTimeout(function() {
                         initTooltips();
                         setupHoverHandlers();
+                        setupColumnSorting();
                     }, 100);
                 }
             });

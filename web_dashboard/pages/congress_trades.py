@@ -8,6 +8,7 @@ Displays trades with filtering, sorting, and summary statistics.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
@@ -110,7 +111,7 @@ st.info("""
 *Note: Data is based on public disclosures which may be delayed by up to 45 days.*
 """)
 
-# Add CSS and JavaScript for tooltips
+# Add CSS for tooltips
 st.markdown("""
 <style>
     /* Congress Trades Table Styling */
@@ -166,7 +167,14 @@ st.markdown("""
     /* Tooltip container for AI Reasoning column */
     .reasoning-cell {
         position: relative;
-        cursor: help;
+        cursor: pointer;
+        max-width: 300px;
+        overflow: visible !important;
+        display: inline-block;
+    }
+    
+    .reasoning-text {
+        display: inline-block;
         max-width: 300px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -176,25 +184,22 @@ st.markdown("""
     .reasoning-tooltip {
         visibility: hidden;
         opacity: 0;
-        position: absolute;
-        z-index: 1000;
-        background-color: var(--tooltip-bg, #1f1f1f);
-        color: var(--tooltip-text, #ffffff);
+        position: fixed;
+        z-index: 999999 !important;
+        background-color: #1f1f1f;
+        color: #ffffff;
         padding: 0.75rem 1rem;
         border-radius: 0.5rem;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         max-width: 400px;
+        min-width: 200px;
         width: max-content;
         font-size: 0.85rem;
         line-height: 1.5;
         word-wrap: break-word;
         white-space: normal;
         pointer-events: none;
-        transition: opacity 0.2s ease-in-out;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-bottom: 0.5rem;
+        transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
     }
     
     /* Tooltip arrow */
@@ -205,16 +210,16 @@ st.markdown("""
         left: 50%;
         transform: translateX(-50%);
         border: 6px solid transparent;
-        border-top-color: var(--tooltip-bg, #1f1f1f);
+        border-top-color: #1f1f1f;
     }
     
-    /* Show tooltip on hover (desktop) */
+    /* Show tooltip on hover (desktop) - position dynamically */
     .reasoning-cell:hover .reasoning-tooltip {
         visibility: visible;
         opacity: 1;
     }
     
-    /* Show tooltip when active (mobile click) */
+    /* Show tooltip when active (mobile click) - position dynamically */
     .reasoning-cell.active .reasoning-tooltip {
         visibility: visible;
         opacity: 1;
@@ -223,21 +228,13 @@ st.markdown("""
     /* Dark mode tooltip styling */
     @media (prefers-color-scheme: dark) {
         .reasoning-tooltip {
-            background-color: var(--tooltip-bg, #2d2d2d);
-            color: var(--tooltip-text, #fafafa);
+            background-color: #2d2d2d;
+            color: #fafafa;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         }
         
         .reasoning-tooltip::after {
-            border-top-color: var(--tooltip-bg, #2d2d2d);
-        }
-    }
-    
-    /* Light mode tooltip styling */
-    @media (prefers-color-scheme: light) {
-        .reasoning-tooltip {
-            background-color: var(--tooltip-bg, #1f1f1f);
-            color: var(--tooltip-text, #ffffff);
+            border-top-color: #2d2d2d;
         }
     }
     
@@ -247,42 +244,16 @@ st.markdown("""
         width: 100%;
         margin: 1rem 0;
     }
+    
+    /* Ensure tooltip doesn't get cut off */
+    .table-container {
+        overflow: visible;
+    }
+    
+    .congress-trades-table {
+        overflow: visible;
+    }
 </style>
-
-<script>
-    // Handle mobile click events for tooltips using event delegation
-    // This works with Streamlit's dynamic page updates
-    (function() {
-        // Detect if device supports touch
-        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        
-        if (isTouchDevice) {
-            // Use event delegation on document body for dynamic content
-            document.body.addEventListener('click', function(e) {
-                const reasoningCell = e.target.closest('.reasoning-cell');
-                
-                if (reasoningCell) {
-                    e.stopPropagation();
-                    
-                    // Close other tooltips
-                    document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
-                        if (activeCell !== reasoningCell) {
-                            activeCell.classList.remove('active');
-                        }
-                    });
-                    
-                    // Toggle this tooltip
-                    reasoningCell.classList.toggle('active');
-                } else {
-                    // Click outside - close all tooltips
-                    document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
-                        activeCell.classList.remove('active');
-                    });
-                }
-            });
-        }
-    })();
-</script>
 """, unsafe_allow_html=True)
 
 # Initialize session state for refresh
@@ -526,15 +497,12 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
                 # Get full reasoning text for tooltip
                 full_reasoning = row.get('_full_reasoning', '')
                 
-                # Check if we need a tooltip (text is truncated and different from full text)
-                if (full_reasoning and 
-                    len(full_reasoning) > 80 and 
-                    value_str != full_reasoning and
-                    (value_str.endswith('...') or len(value_str) < len(full_reasoning))):
-                    # Truncated text - add tooltip
+                # Check if we need a tooltip (show tooltip if we have full reasoning and it's longer than displayed)
+                if full_reasoning and len(full_reasoning) > len(value_str):
+                    # Add tooltip - show full reasoning on hover/click
                     html_parts.append('<td>')
                     html_parts.append('<div class="reasoning-cell">')
-                    html_parts.append(f'<span>{html.escape(value_str)}</span>')
+                    html_parts.append(f'<span class="reasoning-text">{html.escape(value_str)}</span>')
                     html_parts.append(f'<div class="reasoning-tooltip">{html.escape(full_reasoning)}</div>')
                     html_parts.append('</div>')
                     html_parts.append('</td>')
@@ -839,6 +807,103 @@ try:
         # Render custom HTML table with tooltips
         html_table = render_congress_trades_table(df_data)
         st.markdown(html_table, unsafe_allow_html=True)
+        
+        # Add JavaScript for mobile tooltip support using components.html
+        # This ensures the script executes properly in Streamlit
+        tooltip_script = """
+        <script>
+        (function() {
+            function positionTooltip(cell, tooltip) {
+                const rect = cell.getBoundingClientRect();
+                const tooltipRect = tooltip.getBoundingClientRect();
+                const viewportHeight = window.innerHeight;
+                const viewportWidth = window.innerWidth;
+                
+                // Try to position above first
+                let top = rect.top - tooltipRect.height - 10;
+                let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+                
+                // If not enough space above, position below
+                if (top < 10) {
+                    top = rect.bottom + 10;
+                    tooltip.style.bottom = 'auto';
+                    tooltip.style.top = top + 'px';
+                    // Change arrow direction
+                    tooltip.style.setProperty('--arrow-direction', 'down');
+                } else {
+                    tooltip.style.top = top + 'px';
+                    tooltip.style.bottom = 'auto';
+                    tooltip.style.setProperty('--arrow-direction', 'up');
+                }
+                
+                // Keep tooltip within viewport horizontally
+                if (left < 10) {
+                    left = 10;
+                } else if (left + tooltipRect.width > viewportWidth - 10) {
+                    left = viewportWidth - tooltipRect.width - 10;
+                }
+                
+                tooltip.style.left = left + 'px';
+                tooltip.style.transform = 'translateX(0)';
+            }
+            
+            function initTooltips() {
+                // Use event delegation for dynamic content
+                document.addEventListener('click', function(e) {
+                    const reasoningCell = e.target.closest('.reasoning-cell');
+                    
+                    if (reasoningCell) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        
+                        // Close other tooltips
+                        document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                            if (activeCell !== reasoningCell) {
+                                activeCell.classList.remove('active');
+                            }
+                        });
+                        
+                        // Toggle this tooltip
+                        const isActive = reasoningCell.classList.toggle('active');
+                        const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
+                        
+                        if (isActive && tooltip) {
+                            // Position tooltip
+                            positionTooltip(reasoningCell, tooltip);
+                        }
+                    } else {
+                        // Click outside - close all tooltips
+                        document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                            activeCell.classList.remove('active');
+                        });
+                    }
+                });
+                
+                // Also handle hover for desktop
+                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
+                    const tooltip = cell.querySelector('.reasoning-tooltip');
+                    if (tooltip) {
+                        cell.addEventListener('mouseenter', function() {
+                            positionTooltip(cell, tooltip);
+                        });
+                    }
+                });
+            }
+            
+            // Initialize when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initTooltips);
+            } else {
+                initTooltips();
+            }
+            
+            // Also try after a short delay to catch dynamically added content
+            setTimeout(initTooltips, 100);
+            setTimeout(initTooltips, 500);
+        })();
+        </script>
+        """
+        components.html(tooltip_script, height=0)
         
         # Pagination controls at bottom
         if total_pages > 1:

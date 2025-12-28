@@ -1178,11 +1178,11 @@ with st.sidebar:
     # Pagination controls
     st.subheader("📄 Pagination")
     
-    page_size_options = [25, 50, 100, 250, 500]
+    page_size_options = [100, 250, 500, 1000]
     page_size = st.selectbox(
         "Items per page",
         page_size_options,
-        index=page_size_options.index(st.session_state.page_size),
+        index=page_size_options.index(st.session_state.page_size) if st.session_state.page_size in page_size_options else 0,
         help="Number of trades to show per page"
     )
     
@@ -1211,14 +1211,9 @@ try:
             min_score=min_score
         )
     
-    # Calculate pagination
+    # Don't paginate here - let AgGrid handle it with all data
     total_trades = len(all_trades)
-    total_pages = (total_trades + st.session_state.page_size - 1) // st.session_state.page_size if total_trades > 0 else 0
-    
-    # Apply pagination to trades
-    start_idx = st.session_state.page_number * st.session_state.page_size
-    end_idx = start_idx + st.session_state.page_size
-    trades = all_trades[start_idx:end_idx]
+    trades = all_trades  # Pass all trades to AgGrid
     
     # Summary statistics
     st.header("📊 Summary Statistics")
@@ -1250,23 +1245,8 @@ try:
         
         st.markdown("---")
         
-        # Pagination controls at top
-        if total_pages > 1:
-            col1, col2, col3 = st.columns([1, 2, 1])
-            
-            with col1:
-                if st.button("⬅️ Previous", disabled=(st.session_state.page_number == 0)):
-                    st.session_state.page_number -= 1
-                    st.rerun()
-            
-            with col2:
-                st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Page {st.session_state.page_number + 1} of {total_pages}</div>", unsafe_allow_html=True)
-            
-            with col3:
-                if st.button("Next ➡️", disabled=(st.session_state.page_number >= total_pages - 1)):
-                    st.session_state.page_number += 1
-                    st.rerun()
-        
+        # Show total count
+        st.caption(f"Total: {total_trades:,} trades")
         st.markdown("---")
         
         # Display data table
@@ -1391,7 +1371,10 @@ try:
             enableRangeSelection=True,
             enableCellTextSelection=True,
             ensureDomOrder=True,
-            domLayout='normal'
+            domLayout='normal',
+            pagination=True,  # Enable pagination
+            paginationPageSize=st.session_state.page_size,  # Use page size from sidebar
+            paginationAutoPageSize=False
         )
         
         gridOptions = gb.build()
@@ -1402,7 +1385,7 @@ try:
             gridOptions=gridOptions,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             fit_columns_on_grid_load=False,
-            height=500,
+            height=600,  # Increased height since we removed pagination controls
             theme='streamlit',
             allow_unsafe_jscode=False,
             enable_enterprise_modules=False
@@ -1435,25 +1418,7 @@ try:
         
         st.markdown("---")
         
-        # Pagination controls at bottom
-        if total_pages > 1:
-            col1, col2, col3 = st.columns([1, 2, 1])
-            
-            with col1:
-                if st.button("⬅️ Prev", key="prev_bottom", disabled=(st.session_state.page_number == 0)):
-                    st.session_state.page_number -= 1
-                    st.rerun()
-            
-            with col2:
-                st.markdown(f"<div style='text-align: center; padding-top: 8px;'>Page {st.session_state.page_number + 1} of {total_pages} | Showing {start_idx + 1}-{min(end_idx, total_trades)} of {total_trades}</div>", unsafe_allow_html=True)
-            
-            with col3:
-                if st.button("Next ➡️", key="next_bottom", disabled=(st.session_state.page_number >= total_pages - 1)):
-                    st.session_state.page_number += 1
-                    st.rerun()
-        else:
-            # Show record count
-            st.caption(f"Showing {len(trades)} trade(s)")
+
         
     else:
         st.info("""

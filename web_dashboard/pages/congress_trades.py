@@ -1344,27 +1344,12 @@ try:
                 '_full_reasoning': reasoning if reasoning else ''
             })
         
-        # Create lookup for full reasoning
-        reasoning_lookup = {
-            row['_trade_label']: {
-                'ticker': row['Ticker'],
-                'company': row['Company'],
-                'politician': row['Politician'],
-                'date': row['Date'],
-                'type': row['Type'],
-                'amount': row['Amount'],
-                'score': row['Score'],
-                'reasoning': row['_full_reasoning']
-            }
-            for row in df_data if row['_full_reasoning']
-        }
-        
-        # Store full reasoning back in df_data for AgGrid tooltips
+        # Add full reasoning as hidden column for tooltips
         for row in df_data:
-            row['AI Reasoning'] = row['_full_reasoning'] if row['_full_reasoning'] else row['AI Reasoning']
+            row['_tooltip'] = row['_full_reasoning'] if row['_full_reasoning'] else row['AI Reasoning']
         
-        # Convert to pandas DataFrame (remove internal columns except tooltip data)
-        df = pd.DataFrame([{k: v for k, v in row.items() if not k.startswith('_')} for row in df_data])
+        # Convert to pandas DataFrame (keep _tooltip column for AgGrid)
+        df = pd.DataFrame([{k: v for k, v in row.items() if k != '_trade_label' and k != '_full_reasoning'} for row in df_data])
         
         # Configure AgGrid
         gb = GridOptionsBuilder.from_dataframe(df)
@@ -1382,14 +1367,21 @@ try:
         gb.configure_column("Score", width=100)
         gb.configure_column("Owner", width=100)
         
-        # Configure AI Reasoning column with tooltip and wrapping
+        # Hide the tooltip column
+        gb.configure_column("_tooltip", hide=True)
+        
+        # Configure AI Reasoning column - single line with tooltip
         gb.configure_column(
             "AI Reasoning",
             width=400,
-            wrapText=True,
-            autoHeight=True,
-            tooltipField="AI Reasoning",  # Show full text in tooltip
-            cellStyle={'white-space': 'normal'}  # Allow text wrapping
+            wrapText=False,  # No wrapping - single line only
+            autoHeight=False,  # Fixed height rows
+            tooltipField="_tooltip",  # Show full text from hidden column in tooltip
+            cellStyle={
+                'white-space': 'nowrap',  # Single line
+                'overflow': 'hidden',  # Hide overflow
+                'text-overflow': 'ellipsis'  # Show ... for truncated text
+            }
         )
         
         # Grid options

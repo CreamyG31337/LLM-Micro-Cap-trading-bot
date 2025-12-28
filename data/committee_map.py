@@ -177,6 +177,162 @@ COMMITTEE_MAP = {
         "Healthcare",
         "Biotechnology",
         "Education"
-    ]
+    ],
+    
+    # JOINT COMMITTEES: Cross-chamber committees with specific jurisdictions
+    # Note: Database may store as "Committee {CODE}" format, but full names are also mapped
+    "Joint Committee on Taxation": [
+        "Financial Services",
+        "Healthcare",
+        "Energy"
+    ],
+    "Committee JSTX": [  # Alias for database format
+        "Financial Services",
+        "Healthcare",
+        "Energy"
+    ],
+    "Joint Economic Committee": [
+        "Financial Services",
+        "Basic Materials"
+    ],
+    "Committee JSEC": [  # Alias for database format
+        "Financial Services",
+        "Basic Materials"
+    ],
+    "Helsinki Commission (Security & Cooperation in Europe)": [
+        "Defense",
+        "Energy"
+    ],
+    "Committee JCSE": [  # Alias for database format
+        "Defense",
+        "Energy"
+    ],
+    "Joint Committee on Printing": [],  # No sector impact - manages Government Publishing Office
+    "Committee JSPR": [],  # Alias for database format - No sector impact
+    "Joint Committee on the Library": [],  # No sector impact - oversees Library of Congress
+    "Committee JSLC": [],  # Alias for database format - No sector impact
+    
+    # HOUSE SELECT COMMITTEES: Special investigative committees
+    "Select Committee on the CCP (China Committee)": [
+        "Technology",
+        "Semiconductors",
+        "Defense"
+    ],
+    "Committee HSZS": [  # Alias for database format
+        "Technology",
+        "Semiconductors",
+        "Defense"
+    ],
+    "Select Subcommittee on Weaponization": [
+        "Communication Services",
+        "Social Media"
+    ],
+    "Committee HSQJ": [  # Alias for database format
+        "Communication Services",
+        "Social Media"
+    ],
+    "Select Subcommittee on the Coronavirus Pandemic": [
+        "Healthcare",
+        "Biotech",
+        "Pharmaceuticals"
+    ],
+    "Committee HSSO": [  # Alias for database format
+        "Healthcare",
+        "Biotech",
+        "Pharmaceuticals"
+    ],
+    
+    # ---------------------------------------------------------
+    # THE "POWER OF THE PURSE" (Appropriations & Budget)
+    # These control *how much* money companies get.
+    # ---------------------------------------------------------
+    "Senate Committee on Appropriations": [
+        "Industrials",
+        "Aerospace & Defense",
+        "Healthcare",
+        "Technology",
+        "Construction"
+    ],
+    "House Committee on Appropriations": [
+        "Industrials",
+        "Aerospace & Defense",
+        "Healthcare",
+        "Technology",
+        "Construction"
+    ],
+    "Senate Committee on the Budget": [
+        "Financial Services",
+        "Healthcare",
+        "Defense"
+    ],
+    "House Committee on the Budget": [
+        "Financial Services",
+        "Healthcare",
+        "Defense"
+    ],
+    
+    # ---------------------------------------------------------
+    # RULES & ADMIN (The Gatekeepers)
+    # House Rules determines IF a bill gets a vote. High corruption risk.
+    # ---------------------------------------------------------
+    "House Committee on Rules": [
+        "Financial Services",
+        "Healthcare",
+        "Energy",
+        "Technology"
+    ],
+    "Senate Committee on Rules and Administration": [
+        "Communication Services",
+        "Technology"
+    ],
+    "House Committee on House Administration": [
+        "Communication Services",
+        "Technology"
+    ],
+    
+    # ---------------------------------------------------------
+    # SMALL BUSINESS & WORKFORCE
+    # ---------------------------------------------------------
+    "House Committee on Education and the Workforce": [
+        "Consumer Defensive",
+        "Financial Services",
+        "Industrials"
+    ],
+    "Senate Committee on Small Business and Entrepreneurship": [
+        "Financial Services",
+        "Consumer Cyclical"
+    ],
+    "House Committee on Small Business": [
+        "Financial Services",
+        "Consumer Cyclical"
+    ],
+    
+    # ---------------------------------------------------------
+    # SPECIAL / OVERSIGHT (The Investigators)
+    # ---------------------------------------------------------
+    "House Committee on Oversight and Accountability": [
+        "Technology",
+        "Healthcare",
+        "Financial Services"
+    ],
+    "Senate Special Committee on Aging": [
+        "Healthcare",
+        "Pharmaceuticals",
+        "Financial Services"
+    ],
+    "Senate Committee on Indian Affairs": [
+        "Consumer Cyclical",
+        "Real Estate",
+        "Energy"
+    ],
+    "Senate Caucus on International Narcotics Control": [
+        "Pharmaceuticals",
+        "Defense"
+    ],
+    
+    # ---------------------------------------------------------
+    # ETHICS (Internal Police - Low Trading Signal)
+    # ---------------------------------------------------------
+    "Senate Select Committee on Ethics": []  # They police the Senators, not the market
 }
 

@@ -15,7 +15,7 @@
 - ✅ `party` - Democratic/Republican/Independent
 - ✅ `state` - 2-letter state code (looked up from database)
 - ✅ `owner` - Self/Spouse/Dependent/Joint
-- ✅ `representative` - Name (may differ for spousal trades)
+- ✅ `owner` - "Self", "Spouse", "Child"
 - ✅ `transaction_date` - Trade date
 - ✅ `disclosure_date` - Disclosure date
 - ✅ `type` - Purchase/Sale/Exchange/Transfer
@@ -61,7 +61,7 @@
 | **party** | ✅ | ✅ | Scraper: direct field, API: extracted from office |
 | **state** | ✅ | ✅ | Scraper: DB lookup, API: extracted from office |
 | **owner** | ✅ | ✅ | May be null in API |
-| representative | ✅ | ❌ | Scraper only |
+| owner | ✅ | ✅ | FMP via `owner` (fallback to Text) |
 | transaction_date | ✅ | ✅ | Both sources |
 | disclosure_date | ✅ | ✅ | Both sources |
 | type | ✅ | ✅ | Both sources |

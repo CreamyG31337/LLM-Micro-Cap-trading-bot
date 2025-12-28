@@ -110,6 +110,181 @@ st.info("""
 *Note: Data is based on public disclosures which may be delayed by up to 45 days.*
 """)
 
+# Add CSS and JavaScript for tooltips
+st.markdown("""
+<style>
+    /* Congress Trades Table Styling */
+    .congress-trades-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        background-color: var(--background-color, #ffffff);
+        color: var(--text-color, #262730);
+    }
+    
+    .congress-trades-table th {
+        background-color: var(--secondary-background-color, #f0f2f6);
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid var(--border-color, rgba(128, 128, 128, 0.2));
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .congress-trades-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.1));
+    }
+    
+    .congress-trades-table tr:hover {
+        background-color: var(--secondary-background-color, #f0f2f6);
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .congress-trades-table {
+            background-color: var(--background-color, #0e1117);
+            color: var(--text-color, #fafafa);
+        }
+        
+        .congress-trades-table th {
+            background-color: var(--secondary-background-color, #262730);
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .congress-trades-table td {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .congress-trades-table tr:hover {
+            background-color: var(--secondary-background-color, #262730);
+        }
+    }
+    
+    /* Tooltip container for AI Reasoning column */
+    .reasoning-cell {
+        position: relative;
+        cursor: help;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .reasoning-tooltip {
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        z-index: 1000;
+        background-color: var(--tooltip-bg, #1f1f1f);
+        color: var(--tooltip-text, #ffffff);
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        width: max-content;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        word-wrap: break-word;
+        white-space: normal;
+        pointer-events: none;
+        transition: opacity 0.2s ease-in-out;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Tooltip arrow */
+    .reasoning-tooltip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: var(--tooltip-bg, #1f1f1f);
+    }
+    
+    /* Show tooltip on hover (desktop) */
+    .reasoning-cell:hover .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    /* Show tooltip when active (mobile click) */
+    .reasoning-cell.active .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    /* Dark mode tooltip styling */
+    @media (prefers-color-scheme: dark) {
+        .reasoning-tooltip {
+            background-color: var(--tooltip-bg, #2d2d2d);
+            color: var(--tooltip-text, #fafafa);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+        
+        .reasoning-tooltip::after {
+            border-top-color: var(--tooltip-bg, #2d2d2d);
+        }
+    }
+    
+    /* Light mode tooltip styling */
+    @media (prefers-color-scheme: light) {
+        .reasoning-tooltip {
+            background-color: var(--tooltip-bg, #1f1f1f);
+            color: var(--tooltip-text, #ffffff);
+        }
+    }
+    
+    /* Table container for scrolling */
+    .table-container {
+        overflow-x: auto;
+        width: 100%;
+        margin: 1rem 0;
+    }
+</style>
+
+<script>
+    // Handle mobile click events for tooltips using event delegation
+    // This works with Streamlit's dynamic page updates
+    (function() {
+        // Detect if device supports touch
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        
+        if (isTouchDevice) {
+            // Use event delegation on document body for dynamic content
+            document.body.addEventListener('click', function(e) {
+                const reasoningCell = e.target.closest('.reasoning-cell');
+                
+                if (reasoningCell) {
+                    e.stopPropagation();
+                    
+                    // Close other tooltips
+                    document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                        if (activeCell !== reasoningCell) {
+                            activeCell.classList.remove('active');
+                        }
+                    });
+                    
+                    // Toggle this tooltip
+                    reasoningCell.classList.toggle('active');
+                } else {
+                    // Click outside - close all tooltips
+                    document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                        activeCell.classList.remove('active');
+                    });
+                }
+            });
+        }
+    })();
+</script>
+""", unsafe_allow_html=True)
+
 # Initialize session state for refresh
 if 'refresh_key' not in st.session_state:
     st.session_state.refresh_key = 0
@@ -311,6 +486,72 @@ def format_price(price) -> str:
         return f"${float(price):,.2f}"
     except (ValueError, TypeError):
         return str(price)
+
+# Function to render congress trades table with tooltips
+def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
+    """Render congress trades as HTML table with tooltip support for AI Reasoning column
+    
+    Args:
+        df_data: List of dictionaries with trade data (includes '_full_reasoning' for tooltips)
+        
+    Returns:
+        HTML string for the table
+    """
+    import html
+    
+    # Start building HTML table
+    html_parts = ['<div class="table-container">']
+    html_parts.append('<table class="congress-trades-table">')
+    
+    # Table header
+    html_parts.append('<thead><tr>')
+    columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State', 
+               'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner']
+    for col in columns:
+        html_parts.append(f'<th>{html.escape(col)}</th>')
+    html_parts.append('</tr></thead>')
+    
+    # Table body
+    html_parts.append('<tbody>')
+    
+    for row in df_data:
+        html_parts.append('<tr>')
+        
+        for col in columns:
+            value = row.get(col, 'N/A')
+            value_str = str(value) if value is not None else 'N/A'
+            
+            # Special handling for AI Reasoning column
+            if col == 'AI Reasoning':
+                # Get full reasoning text for tooltip
+                full_reasoning = row.get('_full_reasoning', '')
+                
+                # Check if we need a tooltip (text is truncated and different from full text)
+                if (full_reasoning and 
+                    len(full_reasoning) > 80 and 
+                    value_str != full_reasoning and
+                    (value_str.endswith('...') or len(value_str) < len(full_reasoning))):
+                    # Truncated text - add tooltip
+                    html_parts.append('<td>')
+                    html_parts.append('<div class="reasoning-cell">')
+                    html_parts.append(f'<span>{html.escape(value_str)}</span>')
+                    html_parts.append(f'<div class="reasoning-tooltip">{html.escape(full_reasoning)}</div>')
+                    html_parts.append('</div>')
+                    html_parts.append('</td>')
+                else:
+                    # Not truncated or no tooltip needed
+                    html_parts.append(f'<td>{html.escape(value_str)}</td>')
+            else:
+                # Regular column - escape HTML to prevent XSS
+                html_parts.append(f'<td>{html.escape(value_str)}</td>')
+        
+        html_parts.append('</tr>')
+    
+    html_parts.append('</tbody>')
+    html_parts.append('</table>')
+    html_parts.append('</div>')
+    
+    return ''.join(html_parts)
 
 # Sidebar filters
 with st.sidebar:
@@ -591,17 +832,13 @@ try:
                 'Amount': trade.get('amount', 'N/A'),
                 'Conflict Score': score_display,
                 'AI Reasoning': reasoning_short if reasoning else '',
-                'Owner': trade.get('owner', 'N/A')
+                'Owner': trade.get('owner', 'N/A'),
+                '_full_reasoning': reasoning if reasoning else ''  # Store full reasoning for tooltip
             })
         
-        df = pd.DataFrame(df_data)
-        
-        # Display dataframe with built-in sorting and pagination
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True
-        )
+        # Render custom HTML table with tooltips
+        html_table = render_congress_trades_table(df_data)
+        st.markdown(html_table, unsafe_allow_html=True)
         
         # Pagination controls at bottom
         if total_pages > 1:

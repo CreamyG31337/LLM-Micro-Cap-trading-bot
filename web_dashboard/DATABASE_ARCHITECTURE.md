@@ -44,8 +44,15 @@ This project uses **two separate databases** for different purposes:
 - `market_relationships` - Company relationship graph
 - `congress_trades_analysis` - **NEW** AI conflict-of-interest analysis results
   - `trade_id` → References `congress_trades.id` in Supabase
-  - `reasoning` - Long-form AI reasoning text (stored here to save Supabase costs)
+  - `session_id` → References `congress_trade_sessions.id` (groups related trades)
+  - `reasoning` - Long-form AI reasoning text
   - `conflict_score` - AI-generated score (0.0 to 1.0)
+  - `confidence_score` - Confidence level (0.0 to 1.0)
+- `congress_trade_sessions` - **NEW** "Living Sessions" of related trades
+  - Tracks groups of trades (7-day gap rule) that tell an evolving story
+  - `start_date`, `end_date`, `trade_count`
+  - `conflict_score` & `ai_summary` for the ENTIRE session
+  - `needs_reanalysis` flag triggers updates when new trades arrive
 
 **Schema Location**: 
 - Research articles: `web_dashboard/scripts/setup_postgres.py`
@@ -115,6 +122,23 @@ psql $RESEARCH_DATABASE_URL -f web_dashboard/schema/22_congress_trades_analysis.
   ```
 
 **Important**: Both the manual `analyze_congress_trades_batch.py` script AND the scheduler job `analyze_congress_trades_job()` now write to PostgreSQL, not Supabase's `notes` field.
+
+---
+
+---
+## Living Session Architecture
+
+We now group related trades into "Living Sessions" to provide better context for AI analysis:
+
+1. **Session Grouping**: Trades by the same politician within a **7-day window** are grouped together.
+2. **Living Updates**: When a new trade arrives:
+   - If within 7 days of an existing session → Extends the session & sets `needs_reanalysis = TRUE`.
+   - If gap > 7 days → Creates a new session & sets `needs_reanalysis = TRUE`.
+3. **Session Analysis**: The AI analyzes the *entire session* at once, looking for patterns (e.g., selling bonds to buy defense stocks).
+   - If ONE trade is suspicious, the WHOLE session is flagged.
+   - Low-risk sessions (only ETFs/Funds) are auto-filtered (Score: 0.0) but still tracked.
+
+This reduces API costs (fewer calls) and improves detection quality (better context).
 
 ---
 

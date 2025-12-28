@@ -207,6 +207,45 @@ def match_committee_code_to_name(code: str, chamber: str) -> Optional[str]:
     return None
 
 
+def find_target_sectors(committee_name: str) -> Optional[List[str]]:
+    """
+    Find target sectors for a committee name with fallback matching.
+    - Tries exact match first
+    - For subcommittees, strips "- Subcommittee" suffix and matches parent committee
+    - Uses case-insensitive matching as fallback
+    Returns None only if truly no match found.
+    """
+    # Try exact match first
+    if committee_name in COMMITTEE_MAP:
+        return COMMITTEE_MAP[committee_name]
+    
+    # For subcommittees, strip "- Subcommittee" suffix and try parent committee
+    if committee_name.endswith(" - Subcommittee"):
+        parent_name = committee_name.rsplit(" - Subcommittee", 1)[0]  # Remove " - Subcommittee" suffix
+        if parent_name in COMMITTEE_MAP:
+            logger.debug(f"Subcommittee match: {committee_name} -> {parent_name}")
+            return COMMITTEE_MAP[parent_name]
+    
+    # Try case-insensitive match as fallback
+    committee_name_lower = committee_name.lower()
+    for map_name, sectors in COMMITTEE_MAP.items():
+        if map_name.lower() == committee_name_lower:
+            logger.debug(f"Case-insensitive match: {committee_name} -> {map_name}")
+            return sectors
+    
+    # Try case-insensitive match for subcommittees
+    if committee_name_lower.endswith(" - subcommittee"):
+        parent_name_lower = committee_name_lower.rsplit(" - subcommittee", 1)[0]
+        for map_name, sectors in COMMITTEE_MAP.items():
+            if map_name.lower() == parent_name_lower:
+                logger.debug(f"Case-insensitive subcommittee match: {committee_name} -> {map_name}")
+                return sectors
+    
+    # No match found
+    logger.debug(f"No target_sectors match for: {committee_name}")
+    return None
+
+
 def load_legislators(file_path: Path) -> List[Dict[str, Any]]:
     """Load and parse legislators-current.yaml file."""
     logger.info(f"Loading legislators from {file_path}")
@@ -333,10 +372,11 @@ def insert_committees_and_assignments(
         
         key = (committee_name, chamber)
         if key not in seen_committees:
-            target_sectors = COMMITTEE_MAP.get(committee_name, [])
-            # Store None if empty instead of []
-            if not target_sectors:
-                target_sectors = None
+            # Use improved matching function that handles subcommittees
+            target_sectors = find_target_sectors(committee_name)
+            # Use empty array [] instead of None to match schema default
+            if target_sectors is None:
+                target_sectors = []
             seen_committees[key] = {
                 'name': committee_name,
                 'code': code,  # Use first code encountered

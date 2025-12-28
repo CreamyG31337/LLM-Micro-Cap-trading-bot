@@ -100,7 +100,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'name': 'Analyze Congress Trades',
         'description': 'Calculate conflict scores for unscored congress trades using committee data',
         'default_interval_minutes': 30,  # Every 30 minutes
-        'enabled_by_default': True,
+        'enabled_by_default': False,  # DISABLED during session backfill - re-enable after
         'icon': '🔍'
     }
 }
@@ -3041,7 +3041,7 @@ def fetch_congress_trades_job() -> None:
                             
                             # Fallback to other fields if firstName/lastName not available
                             if not politician:
-                                politician = trade_data.get('politician') or trade_data.get('name') or trade_data.get('representative') or ''
+                                politician = trade_data.get('politician') or trade_data.get('name') or ''
                             
                             if not politician:
                                 logger.warning(f"Missing politician name for trade: {trade_data}")
@@ -3391,7 +3391,8 @@ def analyze_congress_trades_job() -> None:
         # Note: fix_failed_scores is NOT imported - it should only be run manually via --fix-only flag
         from scripts.analyze_congress_trades_batch import (
             get_trade_context,
-            analyze_trade
+            analyze_trade,
+            is_low_risk_asset
         )
         
         # Initialize clients
@@ -3443,11 +3444,24 @@ def analyze_congress_trades_job() -> None:
                     # Enrich with committee data and sector info
                     context = get_trade_context(client, trade)
                     
-                    # Analyze with AI
-                    analysis = analyze_trade(ollama, context, model='granite3.3:8b')
+                    # Check if this is a low-risk asset that doesn't need AI analysis
+                    is_low_risk, filter_reason = is_low_risk_asset(context)
+                    
+                    if is_low_risk:
+                        # Automatically assign low conflict score without AI analysis
+                        analysis = {
+                            'conflict_score': 0.0,
+                            'confidence_score': 1.0,
+                            'reasoning': f"Auto-filtered: {filter_reason}"
+                        }
+                        logger.info(f"   [FILTERED] {context['politician']} - {context['ticker']}: {filter_reason}")
+                    else:
+                        # Analyze with AI
+                        analysis = analyze_trade(ollama, context, model='granite3.3:8b')
                     
                     if analysis and 'conflict_score' in analysis:
                         score = float(analysis['conflict_score'])
+                        confidence = float(analysis.get('confidence_score', 0.75))  # Default to 0.75 if missing
                         reasoning = analysis.get('reasoning', 'No reasoning provided')
                         
                         # Save to PostgreSQL (separate database to save Supabase costs)
@@ -3458,18 +3472,19 @@ def analyze_congress_trades_job() -> None:
                             postgres.execute_update(
                                 """
                                 INSERT INTO congress_trades_analysis 
-                                    (trade_id, conflict_score, reasoning, model_used, analysis_version)
-                                VALUES (%s, %s, %s, %s, %s)
+                                    (trade_id, conflict_score, confidence_score, reasoning, model_used, analysis_version)
+                                VALUES (%s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (trade_id, model_used, analysis_version) 
                                 DO UPDATE SET 
                                     conflict_score = EXCLUDED.conflict_score,
+                                    confidence_score = EXCLUDED.confidence_score,
                                     reasoning = EXCLUDED.reasoning,
                                     analyzed_at = NOW()
                                 """,
-                                (trade['id'], score, reasoning, 'granite3.3:8b', 1)
+                                (trade['id'], score, confidence, reasoning, 'granite3.3:8b', 1)
                             )
                             
-                            logger.info(f"   [SCORED] {context['politician']} - {context['ticker']}: {score:.2f}")
+                            logger.info(f"   [SCORED] {context['politician']} - {context['ticker']}: conflict={score:.2f}, confidence={confidence:.2f}")
                             total_processed += 1
                         except Exception as db_error:
                             logger.error(f"   [ERROR] Failed to save analysis to Postgres: {db_error}")

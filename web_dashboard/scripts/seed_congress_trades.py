@@ -68,6 +68,58 @@ HEADERS = {
 # Module-level cache for politician state lookups (avoids repeated DB queries)
 _POLITICIAN_STATE_CACHE = {}
 
+# Pre-loaded flag to avoid repeated bulk queries
+_POLITICIAN_CACHE_LOADED = False
+
+# Reusable Supabase client (initialized once)
+_SUPABASE_CLIENT = None
+
+def get_supabase_client():
+    """Get or create a reusable Supabase client for state lookups."""
+    global _SUPABASE_CLIENT
+    if _SUPABASE_CLIENT is None:
+        try:
+            from supabase_client import SupabaseClient
+            _SUPABASE_CLIENT = SupabaseClient(use_service_role=True)
+        except Exception:
+            pass
+    return _SUPABASE_CLIENT
+
+def preload_politician_states():
+    """Pre-load all politician states from database to avoid per-trade queries."""
+    global _POLITICIAN_STATE_CACHE, _POLITICIAN_CACHE_LOADED
+    
+    if _POLITICIAN_CACHE_LOADED:
+        return  # Already loaded
+    
+    client = get_supabase_client()
+    if not client:
+        _POLITICIAN_CACHE_LOADED = True
+        return
+    
+    try:
+        result = client.supabase.table('politicians')\
+            .select('name, state')\
+            .execute()
+        
+        if result.data:
+            for pol in result.data:
+                name = pol.get('name', '').strip()
+                state = pol.get('state')
+                if name and state:
+                    _POLITICIAN_STATE_CACHE[name] = state
+                    # Also cache by first + last name variations
+                    parts = name.split()
+                    if len(parts) >= 2:
+                        # "John Smith" -> cache as "John Smith"
+                        _POLITICIAN_STATE_CACHE[f"{parts[0]} {parts[-1]}"] = state
+            
+            logger.info(f"Pre-loaded {len(_POLITICIAN_STATE_CACHE)} politician state mappings")
+    except Exception as e:
+        logger.debug(f"Could not pre-load politician states: {e}")
+    
+    _POLITICIAN_CACHE_LOADED = True
+
 
 def fetch_page_via_flaresolverr(url: str) -> Optional[str]:
     """Fetch a page using FlareSolverr to bypass Cloudflare protection."""
@@ -453,7 +505,9 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # Extract politician info
         politician = trade_data.get('politician', {})
         if not politician:
-            return None
+            # Fallback: Treat trade_data as politician object (sometimes keys are at top level)
+            politician = trade_data
+            logger.debug(f"Politician object empty, falling back to top-level trade data. Keys: {list(trade_data.keys())}")
         
         # Build politician name
         first_name = politician.get('firstName', '').strip()
@@ -556,7 +610,10 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     party = extract_party_from_text(combined_text)
         
         # Extract state code
-        state = politician.get('state') or politician.get('stateCode') or politician.get('stateAbbreviation')
+        state = (politician.get('_stateId') or              # ← FIX 1: Add _stateId (actual field name from Capitol Trades)
+                 politician.get('state') or 
+                 politician.get('stateCode') or 
+                 politician.get('stateAbbreviation'))
         if state:
             state = str(state).strip().upper()[:2]  # Ensure 2-letter uppercase code
             # Validate it looks like a state code (2 letters)
@@ -592,31 +649,35 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # If state not in scraped data, try to look it up from politicians table
         # (populated by seed_committees.py which has state from YAML data)
         if not state:
-            # Check cache first
+            # Ensure cache is pre-loaded (one-time bulk query)
+            preload_politician_states()
+            
+            # Check cache
             if politician_name in _POLITICIAN_STATE_CACHE:
                 state = _POLITICIAN_STATE_CACHE[politician_name]
                 logger.debug(f"Found state '{state}' for {politician_name} in cache")
             else:
-                # Cache miss - query database
+                # Cache miss - politician not in database
                 try:
-                    from supabase_client import SupabaseClient
-                    client = SupabaseClient()
-                    # Search for politician by name (case-insensitive partial match)
-                    result = client.supabase.table('politicians')\
-                        .select('state')\
-                        .ilike('name', f'%{politician_name}%')\
-                        .limit(1)\
-                        .execute()
-                    
-                    if result.data and result.data[0].get('state'):
-                        state = result.data[0]['state']
-                        _POLITICIAN_STATE_CACHE[politician_name] = state  # Cache it
-                        logger.debug(f"Found state '{state}' for {politician_name} via database lookup (cached)")
-                    else:
-                        _POLITICIAN_STATE_CACHE[politician_name] = None  # Cache negative result too
-                        state = None
+                    _POLITICIAN_STATE_CACHE[politician_name] = None  # Cache negative result
+                    state = None
                 except Exception as e:
                     logger.debug(f"Could not lookup state for {politician_name}: {e}")
+                    state = None
+        
+        if not state:
+            # logger.debug(f"STATE MISSING for {politician_name}. Politician keys: {list(politician.keys())}")
+            if '_stateId' in politician:
+                # logger.debug(f"   _stateId value: {politician.get('_stateId')}")
+                pass # suppress debug
+
+        # FIX 2: Also check top level for _stateId (sometimes not nested)
+        if not state:
+            state = trade_data.get('_stateId') or trade_data.get('state')
+            if state:
+                state = str(state).strip().upper()[:2]
+                # Validate it looks like a state code (2 letters)
+                if not state or len(state) != 2 or not state.isalpha():
                     state = None
         
         # Extract issuer/ticker
@@ -780,7 +841,6 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             'party': party,
             'state': state,
             'owner': owner,
-            'representative': representative,
             'transaction_date': tx_date.isoformat(),
             'disclosure_date': disclosure_date.isoformat(),
             'type': tx_type,

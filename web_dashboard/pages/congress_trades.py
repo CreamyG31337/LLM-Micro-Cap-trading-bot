@@ -112,246 +112,7 @@ st.info("""
 *Note: Data is based on public disclosures which may be delayed by up to 45 days.*
 """)
 
-# Add CSS for tooltips
-st.markdown("""
-<style>
-    /* Congress Trades Table Styling */
-    .congress-trades-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.9rem;
-        background-color: var(--background-color, #ffffff);
-        color: var(--text-color, #262730);
-    }
-    
-    .congress-trades-table th {
-        background-color: var(--secondary-background-color, #f0f2f6);
-        padding: 0.75rem;
-        text-align: left;
-        font-weight: 600;
-        border-bottom: 2px solid var(--border-color, rgba(128, 128, 128, 0.2));
-        position: sticky;
-        top: 0;
-        z-index: 10;
-    }
-    
-    .congress-trades-table td {
-        padding: 0.75rem;
-        border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.1));
-    }
-    
-    .congress-trades-table tr:hover {
-        background-color: var(--secondary-background-color, #f0f2f6);
-    }
-    
-    /* Dark mode support */
-    @media (prefers-color-scheme: dark) {
-        .congress-trades-table {
-            background-color: var(--background-color, #0e1117);
-            color: var(--text-color, #fafafa);
-        }
-        
-        .congress-trades-table th {
-            background-color: var(--secondary-background-color, #262730);
-            border-bottom-color: rgba(255, 255, 255, 0.1);
-        }
-        
-        .congress-trades-table td {
-            border-bottom-color: rgba(255, 255, 255, 0.1);
-        }
-        
-        .congress-trades-table tr:hover {
-            background-color: var(--secondary-background-color, #262730);
-        }
-    }
-    
-    /* Tooltip container for AI Reasoning column */
-    .reasoning-cell {
-        position: relative;
-        cursor: pointer;
-        max-width: 300px;
-        overflow: visible !important;
-        display: inline-block;
-        -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
-        touch-action: manipulation;
-        user-select: none;
-    }
 
-    /* Special styling for reasoning cells with copy functionality */
-    .reasoning-cell[data-full-reasoning-b64],
-    .reasoning-cell[data-full-reasoning] {
-        cursor: copy;
-    }
-
-    .reasoning-cell[data-full-reasoning-b64]:hover,
-    .reasoning-cell[data-full-reasoning]:hover {
-        background-color: rgba(16, 185, 129, 0.1);
-        border-radius: 4px;
-    }
-    
-    /* Make sure touch targets are large enough on mobile */
-    @media (max-width: 768px) {
-        .reasoning-cell {
-            min-height: 44px;
-            display: flex;
-            align-items: center;
-            padding: 0.25rem 0;
-        }
-    }
-    
-    .reasoning-text {
-        display: inline-block;
-        max-width: 300px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    
-    .reasoning-tooltip {
-        visibility: hidden;
-        opacity: 0;
-        position: absolute;
-        z-index: 999999 !important;
-        background-color: #1f1f1f;
-        color: #ffffff;
-        padding: 0.75rem 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        max-width: 400px;
-        min-width: 200px;
-        width: max-content;
-        font-size: 0.85rem;
-        line-height: 1.5;
-        word-wrap: break-word;
-        white-space: normal;
-        pointer-events: none;
-        transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
-    }
-    
-    /* Tooltip arrow - positioned above by default */
-    .reasoning-tooltip::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        border: 6px solid transparent;
-        border-top-color: #1f1f1f;
-    }
-    
-    /* Tooltip arrow when positioned below */
-    .reasoning-tooltip[data-placement="below"]::after {
-        top: auto;
-        bottom: 100%;
-        border-top-color: transparent;
-        border-bottom-color: #1f1f1f;
-    }
-    
-    /* Dark mode arrow adjustments */
-    @media (prefers-color-scheme: dark) {
-        .reasoning-tooltip::after {
-            border-top-color: #2d2d2d;
-        }
-        
-        .reasoning-tooltip[data-placement="below"]::after {
-            border-top-color: transparent;
-            border-bottom-color: #2d2d2d;
-        }
-    }
-    
-    /* Show tooltip on hover (desktop) - JavaScript will handle visibility */
-    /* Show tooltip on hover (desktop) - JavaScript will position it */
-    .reasoning-cell:hover .reasoning-tooltip {
-        visibility: visible;
-        opacity: 1;
-        display: block;
-    }
-    
-    /* Show tooltip when active (mobile click) */
-    .reasoning-cell.active .reasoning-tooltip {
-        visibility: visible;
-        opacity: 1;
-        display: block;
-    }
-    
-    /* Dark mode tooltip styling */
-    @media (prefers-color-scheme: dark) {
-        .reasoning-tooltip {
-            background-color: #2d2d2d;
-            color: #fafafa;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-        
-        .reasoning-tooltip::after {
-            border-top-color: #2d2d2d;
-        }
-    }
-    
-    /* Table container for scrolling */
-    .table-container {
-        overflow-x: auto;
-        width: 100%;
-        margin: 1rem 0;
-    }
-
-    /* Ensure tooltip doesn't get cut off */
-    .table-container {
-        overflow: visible;
-    }
-
-    .congress-trades-table {
-        overflow: visible;
-    }
-
-    /* Column sorting styles */
-    .congress-trades-table th {
-        cursor: pointer;
-        user-select: none;
-        position: relative;
-        transition: background-color 0.2s ease;
-    }
-
-    .congress-trades-table th:hover {
-        background-color: var(--secondary-background-color, #e6f3ff) !important;
-    }
-
-    .congress-trades-table th.sortable {
-        padding-right: 1.5rem; /* Space for sort indicator */
-    }
-
-    .sort-indicator {
-        position: absolute;
-        right: 0.25rem;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 0.75rem;
-        opacity: 0.6;
-        transition: opacity 0.2s ease;
-    }
-
-    .congress-trades-table th.sort-asc .sort-indicator::after {
-        content: "▲";
-        opacity: 1;
-    }
-
-    .congress-trades-table th.sort-desc .sort-indicator::after {
-        content: "▼";
-        opacity: 1;
-    }
-
-    .congress-trades-table th.sort-none .sort-indicator::after {
-        content: "⬍";
-        opacity: 0.3;
-    }
-
-    /* Dark mode sorting styles */
-    @media (prefers-color-scheme: dark) {
-        .congress-trades-table th:hover {
-            background-color: var(--secondary-background-color, #3d3d3d) !important;
-        }
-    }
-</style>
-""", unsafe_allow_html=True)
 
 # Initialize session state for refresh
 if 'refresh_key' not in st.session_state:
@@ -605,18 +366,264 @@ def format_price(price) -> str:
 
 # Function to render congress trades table with tooltips
 def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
-    """Render congress trades as HTML table with tooltip support for AI Reasoning column
+    """Render congress trades as complete HTML document with tooltip support and sorting
     
     Args:
         df_data: List of dictionaries with trade data (includes '_full_reasoning' for tooltips)
         
     Returns:
-        HTML string for the table
+        Complete HTML document string for rendering in iframe
     """
     import html
     
-    # Start building HTML table
-    html_parts = ['<div class="table-container">']
+    # Start building complete HTML document
+    html_parts = ['<!DOCTYPE html>']
+    html_parts.append('<html>')
+    html_parts.append('<head>')
+    html_parts.append('<meta charset="UTF-8">')
+    html_parts.append('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
+    html_parts.append('<style>')
+    
+    # Embedded CSS
+    html_parts.append("""
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background-color: transparent;
+    }
+    
+    /* Congress Trades Table Styling */
+    .congress-trades-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        background-color: #ffffff;
+        color: #262730;
+    }
+    
+    .congress-trades-table th {
+        background-color: #f0f2f6;
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .congress-trades-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+    }
+    
+    .congress-trades-table tr:hover {
+        background-color: #f0f2f6;
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .congress-trades-table {
+            background-color: #0e1117;
+            color: #fafafa;
+        }
+        
+        .congress-trades-table th {
+            background-color: #262730;
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .congress-trades-table td {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .congress-trades-table tr:hover {
+            background-color: #262730;
+        }
+    }
+    
+    /* Tooltip container for AI Reasoning column */
+    .reasoning-cell {
+        position: relative;
+        cursor: pointer;
+        max-width: 300px;
+        overflow: visible !important;
+        display: inline-block;
+        -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+        touch-action: manipulation;
+        user-select: none;
+    }
+
+    /* Special styling for reasoning cells with copy functionality */
+    .reasoning-cell[data-full-reasoning-b64],
+    .reasoning-cell[data-full-reasoning] {
+        cursor: copy;
+    }
+
+    .reasoning-cell[data-full-reasoning-b64]:hover,
+    .reasoning-cell[data-full-reasoning]:hover {
+        background-color: rgba(16, 185, 129, 0.1);
+        border-radius: 4px;
+    }
+    
+    /* Make sure touch targets are large enough on mobile */
+    @media (max-width: 768px) {
+        .reasoning-cell {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0.25rem 0;
+        }
+    }
+    
+    .reasoning-text {
+        display: inline-block;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .reasoning-tooltip {
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        z-index: 999999 !important;
+        background-color: #1f1f1f;
+        color: #ffffff;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        min-width: 200px;
+        width: max-content;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        word-wrap: break-word;
+        white-space: normal;
+        pointer-events: none;
+        transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+    }
+    
+    /* Tooltip arrow - positioned above by default */
+    .reasoning-tooltip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: #1f1f1f;
+    }
+    
+    /* Tooltip arrow when positioned below */
+    .reasoning-tooltip[data-placement="below"]::after {
+        top: auto;
+        bottom: 100%;
+        border-top-color: transparent;
+        border-bottom-color: #1f1f1f;
+    }
+    
+    /* Dark mode arrow adjustments */
+    @media (prefers-color-scheme: dark) {
+        .reasoning-tooltip::after {
+            border-top-color: #2d2d2d;
+        }
+        
+        .reasoning-tooltip[data-placement="below"]::after {
+            border-top-color: transparent;
+            border-bottom-color: #2d2d2d;
+        }
+    }
+    
+    /* Show tooltip on hover (desktop) */
+    .reasoning-cell:hover .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+        display: block;
+    }
+    
+    /* Show tooltip when active (mobile click) */
+    .reasoning-cell.active .reasoning-tooltip {
+        visibility: visible;
+        opacity: 1;
+        display: block;
+    }
+    
+    /* Dark mode tooltip styling */
+    @media (prefers-color-scheme: dark) {
+        .reasoning-tooltip {
+            background-color: #2d2d2d;
+            color: #fafafa;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+        
+        .reasoning-tooltip::after {
+            border-top-color: #2d2d2d;
+        }
+    }
+    
+    /* Table container for scrolling */
+    .table-container {
+        overflow-x: auto;
+        width: 100%;
+        margin: 0;
+    }
+
+    /* Column sorting styles */
+    .congress-trades-table th {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        transition: background-color 0.2s ease;
+    }
+
+    .congress-trades-table th:hover {
+        background-color: #e6f3ff !important;
+    }
+
+    .congress-trades-table th.sortable {
+        padding-right: 1.5rem;
+    }
+
+    .sort-indicator {
+        position: absolute;
+        right: 0.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 0.75rem;
+        opacity: 0.6;
+        transition: opacity 0.2s ease;
+    }
+
+    .congress-trades-table th.sort-asc .sort-indicator::after {
+        content: "▲";
+        opacity: 1;
+    }
+
+    .congress-trades-table th.sort-desc .sort-indicator::after {
+        content: "▼";
+        opacity: 1;
+    }
+
+    .congress-trades-table th.sort-none .sort-indicator::after {
+        content: "⬍";
+        opacity: 0.3;
+    }
+
+    /* Dark mode sorting styles */
+    @media (prefers-color-scheme: dark) {
+        .congress-trades-table th:hover {
+            background-color: #3d3d3d !important;
+        }
+    }
+    """)
+    
+    html_parts.append('</style>')
+    html_parts.append('</head>')
+    html_parts.append('<body>')
+    html_parts.append('<div class="table-container">')
     html_parts.append('<table class="congress-trades-table">')
     
     # Table header with sorting
@@ -624,13 +631,13 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
     columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
                'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner']
 
-    # Define sortable columns (all except AI Reasoning for now due to tooltips)
+    # Define sortable columns
     sortable_columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
                        'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'Owner']
 
     for col in columns:
         if col in sortable_columns:
-            html_parts.append(f'<th class="sortable" data-column="{col}">{html.escape(col)}<span class="sort-indicator"></span></th>')
+            html_parts.append(f'<th class="sortable" data-column="{html.escape(col)}">{html.escape(col)}<span class="sort-indicator"></span></th>')
         else:
             html_parts.append(f'<th>{html.escape(col)}</th>')
     html_parts.append('</tr></thead>')
@@ -678,7 +685,377 @@ def render_congress_trades_table(df_data: List[Dict[str, Any]]) -> str:
     html_parts.append('</table>')
     html_parts.append('</div>')
     
+    # Embedded JavaScript
+    html_parts.append('<script>')
+    html_parts.append("""
+    (function() {
+        let touchStartTime = 0;
+        let touchStartTarget = null;
+
+        // Table sorting functionality
+        let currentSortColumn = null;
+        let currentSortDirection = 'asc';
+
+        function sortTable(columnName, direction) {
+            const table = document.querySelector('.congress-trades-table');
+            if (!table) return;
+
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Clear previous sort indicators
+            table.querySelectorAll('th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc', 'sort-none');
+            });
+
+            if (direction === null) {
+                currentSortColumn = null;
+                currentSortDirection = null;
+                return;
+            }
+
+            // Sort rows
+            rows.sort((a, b) => {
+                const aCell = getCellValue(a, columnName);
+                const bCell = getCellValue(b, columnName);
+
+                let result = 0;
+
+                if (columnName === 'Conflict Score') {
+                    const aVal = extractScoreValue(aCell);
+                    const bVal = extractScoreValue(bCell);
+                    result = aVal - bVal;
+                } else if (columnName === 'Transaction Date') {
+                    const aDate = parseDate(aCell);
+                    const bDate = parseDate(bCell);
+                    result = aDate - bDate;
+                } else if (columnName === 'Amount') {
+                    const aVal = parseFloat(aCell.replace(/[$,]/g, '')) || 0;
+                    const bVal = parseFloat(bCell.replace(/[$,]/g, '')) || 0;
+                    result = aVal - bVal;
+                } else {
+                    result = aCell.toLowerCase().localeCompare(bCell.toLowerCase());
+                }
+
+                return direction === 'asc' ? result : -result;
+            });
+
+            // Re-append sorted rows
+            rows.forEach(row => tbody.appendChild(row));
+
+            // Update sort indicators
+            const headerCell = table.querySelector(`th[data-column="${columnName}"]`);
+            if (headerCell) {
+                headerCell.classList.add(`sort-${direction}`);
+            }
+
+            currentSortColumn = columnName;
+            currentSortDirection = direction;
+        }
+
+        function getCellValue(row, columnName) {
+            const columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
+                           'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner'];
+            const colIndex = columns.indexOf(columnName);
+            const cell = row.cells[colIndex];
+            return cell ? cell.textContent.trim() : '';
+        }
+
+        function extractScoreValue(scoreText) {
+            const match = scoreText.match(/(\\d+\\.\\d+)/);
+            return match ? parseFloat(match[1]) : -1;
+        }
+
+        function parseDate(dateText) {
+            if (!dateText || dateText === 'N/A') return new Date(0);
+            return new Date(dateText);
+        }
+
+        function cycleSort(columnName) {
+            if (currentSortColumn === columnName) {
+                if (currentSortDirection === 'asc') {
+                    sortTable(columnName, 'desc');
+                } else if (currentSortDirection === 'desc') {
+                    sortTable(columnName, null);
+                } else {
+                    sortTable(columnName, 'asc');
+                }
+            } else {
+                sortTable(columnName, 'asc');
+            }
+        }
+        
+        function positionTooltip(cell, tooltip) {
+            tooltip.style.visibility = 'hidden';
+            tooltip.style.opacity = '1';
+            tooltip.style.display = 'block';
+            
+            const cellRect = cell.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            const viewportWidth = window.innerWidth;
+            
+            void tooltip.offsetWidth;
+            
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const tooltipHeight = tooltipRect.height;
+            const tooltipWidth = tooltipRect.width;
+            
+            const spaceAbove = cellRect.top;
+            const spaceBelow = viewportHeight - cellRect.bottom;
+            const padding = 10;
+            
+            let top, left;
+            let positionAbove = true;
+            
+            if (spaceAbove >= tooltipHeight + padding) {
+                top = -tooltipHeight - padding;
+                positionAbove = true;
+            } else if (spaceBelow >= tooltipHeight + padding) {
+                top = cellRect.height + padding;
+                positionAbove = false;
+            } else {
+                if (spaceAbove > spaceBelow) {
+                    const maxTop = -(cellRect.top - padding);
+                    top = Math.max(-tooltipHeight - padding, maxTop);
+                    positionAbove = true;
+                } else {
+                    const maxBottom = viewportHeight - cellRect.bottom - padding;
+                    top = Math.min(cellRect.height + padding, maxBottom);
+                    positionAbove = false;
+                }
+            }
+            
+            left = (cellRect.width / 2) - (tooltipWidth / 2);
+            
+            const cellLeft = cellRect.left;
+            if (cellLeft + left < padding) {
+                left = padding - cellLeft;
+            } else if (cellLeft + left + tooltipWidth > viewportWidth - padding) {
+                left = viewportWidth - padding - cellLeft - tooltipWidth;
+            }
+            
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+            tooltip.style.bottom = 'auto';
+            tooltip.style.right = 'auto';
+            tooltip.style.transform = 'none';
+            
+            if (positionAbove) {
+                tooltip.setAttribute('data-placement', 'above');
+            } else {
+                tooltip.setAttribute('data-placement', 'below');
+            }
+            
+            tooltip.style.visibility = '';
+            tooltip.style.opacity = '';
+            tooltip.style.display = '';
+        }
+        
+        function copyReasoningToClipboard(reasoningCell) {
+            let fullReasoning = reasoningCell.getAttribute('data-full-reasoning-b64');
+            let decodedText;
+            
+            if (fullReasoning) {
+                try {
+                    decodedText = atob(fullReasoning);
+                } catch (e) {
+                    console.error('Failed to decode base64 reasoning:', e);
+                    return false;
+                }
+            } else {
+                fullReasoning = reasoningCell.getAttribute('data-full-reasoning');
+                if (!fullReasoning) {
+                    console.warn('No data-full-reasoning attribute found');
+                    return false;
+                }
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = fullReasoning;
+                decodedText = textarea.value || fullReasoning;
+            }
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(decodedText).then(function() {
+                    showCopyFeedback(reasoningCell);
+                }).catch(function(err) {
+                    console.warn('Failed to copy text: ', err);
+                    fallbackCopyTextToClipboard(decodedText);
+                    showCopyFeedback(reasoningCell);
+                });
+            } else {
+                fallbackCopyTextToClipboard(decodedText);
+                showCopyFeedback(reasoningCell);
+            }
+            return true;
+        }
+
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            textArea.style.top = "-999999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+            textArea.remove();
+        }
+
+        function showCopyFeedback(reasoningCell) {
+            const originalText = reasoningCell.querySelector('.reasoning-text');
+            if (originalText) {
+                const originalContent = originalText.innerHTML;
+                originalText.innerHTML = '<span style="color: #10b981; font-weight: bold;">✓ Copied!</span>';
+                setTimeout(function() {
+                    originalText.innerHTML = originalContent;
+                }, 1500);
+            }
+        }
+
+        function handleTooltipToggle(e, reasoningCell) {
+            if (!reasoningCell) return;
+
+            const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
+                                     reasoningCell.hasAttribute('data-full-reasoning');
+            if (hasFullReasoning) {
+                const copied = copyReasoningToClipboard(reasoningCell);
+                if (copied) {
+                    return;
+                }
+            }
+
+            document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                if (activeCell !== reasoningCell) {
+                    activeCell.classList.remove('active');
+                }
+            });
+
+            const isActive = reasoningCell.classList.toggle('active');
+            const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
+
+            if (isActive && tooltip) {
+                setTimeout(function() {
+                    positionTooltip(reasoningCell, tooltip);
+                }, 10);
+            }
+        }
+        
+        function setupHoverHandlers() {
+            document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
+                const tooltip = cell.querySelector('.reasoning-tooltip');
+                if (tooltip && !cell.hasAttribute('data-hover-setup')) {
+                    cell.setAttribute('data-hover-setup', 'true');
+                    
+                    cell.addEventListener('mouseenter', function() {
+                        requestAnimationFrame(function() {
+                            positionTooltip(cell, tooltip);
+                        });
+                    });
+                }
+            });
+        }
+
+        function setupColumnSorting() {
+            document.querySelectorAll('th.sortable').forEach(function(header) {
+                header.addEventListener('click', function() {
+                    const columnName = this.getAttribute('data-column');
+                    if (columnName) {
+                        cycleSort(columnName);
+                    }
+                });
+            });
+        }
+
+        function repositionVisibleTooltips() {
+            document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
+                const tooltip = cell.querySelector('.reasoning-tooltip');
+                if (tooltip) {
+                    const computedStyle = window.getComputedStyle(tooltip);
+                    if (computedStyle.visibility === 'visible' || cell.classList.contains('active') || cell.matches(':hover')) {
+                        positionTooltip(cell, tooltip);
+                    }
+                }
+            });
+        }
+        
+        let scrollTimeout;
+        window.addEventListener('scroll', function() {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
+        }, { passive: true });
+        
+        window.addEventListener('resize', function() {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
+        }, { passive: true });
+        
+        function initTooltips() {
+            document.addEventListener('touchstart', function(e) {
+                const reasoningCell = e.target.closest('.reasoning-cell');
+                if (reasoningCell) {
+                    touchStartTime = Date.now();
+                    touchStartTarget = reasoningCell;
+                }
+            }, { passive: true });
+            
+            document.addEventListener('touchend', function(e) {
+                const reasoningCell = e.target.closest('.reasoning-cell') || touchStartTarget;
+                if (reasoningCell && (Date.now() - touchStartTime) < 300) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
+                                             reasoningCell.hasAttribute('data-full-reasoning');
+                    if (hasFullReasoning) {
+                        copyReasoningToClipboard(reasoningCell);
+                    } else {
+                        handleTooltipToggle(e, reasoningCell);
+                    }
+                }
+                touchStartTarget = null;
+            });
+            
+            document.addEventListener('click', function(e) {
+                const reasoningCell = e.target.closest('.reasoning-cell');
+
+                if (reasoningCell) {
+                    e.stopPropagation();
+
+                    const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
+                                             reasoningCell.hasAttribute('data-full-reasoning');
+                    if (hasFullReasoning) {
+                        copyReasoningToClipboard(reasoningCell);
+                    } else {
+                        handleTooltipToggle(e, reasoningCell);
+                    }
+                } else {
+                    document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                        activeCell.classList.remove('active');
+                    });
+                }
+            });
+
+            setupHoverHandlers();
+            setupColumnSorting();
+        }
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTooltips);
+        } else {
+            initTooltips();
+        }
+    })();
+    """)
+    html_parts.append('</script>')
+    html_parts.append('</body>')
+    html_parts.append('</html>')
+    
     return ''.join(html_parts)
+
 
 # Sidebar filters
 with st.sidebar:
@@ -963,497 +1340,14 @@ try:
                 '_full_reasoning': reasoning if reasoning else ''  # Store full reasoning for tooltip
             })
         
-        # Render custom HTML table with tooltips and sorting
-        html_table = render_congress_trades_table(df_data)
-        st.markdown(html_table, unsafe_allow_html=True)
+        # Render complete HTML table with embedded CSS and JavaScript in iframe
+        html_document = render_congress_trades_table(df_data)
+        
+        # Calculate appropriate height for iframe (roughly 50px per row + header + padding)
+        iframe_height = min(50 + (len(df_data) * 50), 800)  # Cap at 800px to avoid excessive height
+        
+        components.html(html_document, height=iframe_height, scrolling=True)
 
-        # Add JavaScript for mobile tooltip support and column sorting using components.html
-        # This ensures the script executes properly in Streamlit
-        tooltip_script = """
-        <script>
-        (function() {
-            let touchStartTime = 0;
-            let touchStartTarget = null;
-
-            // Table sorting functionality
-            let currentSortColumn = null;
-            let currentSortDirection = 'asc'; // 'asc', 'desc', or null
-
-            function sortTable(columnName, direction) {
-                const table = document.querySelector('.congress-trades-table');
-                if (!table) return;
-
-                const tbody = table.querySelector('tbody');
-                const rows = Array.from(tbody.querySelectorAll('tr'));
-
-                // Clear previous sort indicators
-                table.querySelectorAll('th').forEach(th => {
-                    th.classList.remove('sort-asc', 'sort-desc', 'sort-none');
-                });
-
-                if (direction === null) {
-                    // Reset to original order - for now, just clear indicators
-                    currentSortColumn = null;
-                    currentSortDirection = null;
-                    return;
-                }
-
-                // Sort rows
-                rows.sort((a, b) => {
-                    const aCell = getCellValue(a, columnName);
-                    const bCell = getCellValue(b, columnName);
-
-                    let result = 0;
-
-                    // Handle different data types
-                    if (columnName === 'Conflict Score') {
-                        // Extract numeric value from score (e.g., "🔴 0.85" -> 0.85, "⚪ N/A" -> -1)
-                        const aVal = extractScoreValue(aCell);
-                        const bVal = extractScoreValue(bCell);
-                        result = aVal - bVal;
-                    } else if (columnName === 'Transaction Date') {
-                        // Parse dates
-                        const aDate = parseDate(aCell);
-                        const bDate = parseDate(bCell);
-                        result = aDate - bDate;
-                    } else if (columnName === 'Amount') {
-                        // Parse amounts (remove $ and commas)
-                        const aVal = parseFloat(aCell.replace(/[$,]/g, '')) || 0;
-                        const bVal = parseFloat(bCell.replace(/[$,]/g, '')) || 0;
-                        result = aVal - bVal;
-                    } else {
-                        // String comparison (case-insensitive)
-                        result = aCell.toLowerCase().localeCompare(bCell.toLowerCase());
-                    }
-
-                    return direction === 'asc' ? result : -result;
-                });
-
-                // Re-append sorted rows
-                rows.forEach(row => tbody.appendChild(row));
-
-                // Update sort indicators
-                const headerCell = table.querySelector(`th[data-column="${columnName}"]`);
-                if (headerCell) {
-                    headerCell.classList.add(`sort-${direction}`);
-                }
-
-                currentSortColumn = columnName;
-                currentSortDirection = direction;
-            }
-
-            function getCellValue(row, columnName) {
-                const columns = ['Ticker', 'Company', 'Politician', 'Chamber', 'Party', 'State',
-                               'Transaction Date', 'Type', 'Amount', 'Conflict Score', 'AI Reasoning', 'Owner'];
-                const colIndex = columns.indexOf(columnName);
-                const cell = row.cells[colIndex];
-                return cell ? cell.textContent.trim() : '';
-            }
-
-            function extractScoreValue(scoreText) {
-                // Extract numeric value from conflict score (e.g., "🔴 0.85" -> 0.85)
-                const match = scoreText.match(/(\d+\.\d+)/);
-                return match ? parseFloat(match[1]) : -1; // N/A scores get -1 (sort last)
-            }
-
-            function parseDate(dateText) {
-                // Parse date in YYYY-MM-DD format
-                if (!dateText || dateText === 'N/A') return new Date(0);
-                return new Date(dateText);
-            }
-
-            function cycleSort(columnName) {
-                if (currentSortColumn === columnName) {
-                    // Cycle through: asc -> desc -> none
-                    if (currentSortDirection === 'asc') {
-                        sortTable(columnName, 'desc');
-                    } else if (currentSortDirection === 'desc') {
-                        sortTable(columnName, null); // Reset to original order
-                    } else {
-                        sortTable(columnName, 'asc');
-                    }
-                } else {
-                    // New column - start with ascending
-                    sortTable(columnName, 'asc');
-                }
-            }
-            
-            function positionTooltip(cell, tooltip) {
-                // Make tooltip temporarily visible to measure it
-                tooltip.style.visibility = 'hidden';
-                tooltip.style.opacity = '1';
-                tooltip.style.display = 'block';
-                
-                const cellRect = cell.getBoundingClientRect();
-                const viewportHeight = window.innerHeight;
-                const viewportWidth = window.innerWidth;
-                
-                // Force a reflow to get accurate measurements
-                void tooltip.offsetWidth;
-                
-                const tooltipRect = tooltip.getBoundingClientRect();
-                const tooltipHeight = tooltipRect.height;
-                const tooltipWidth = tooltipRect.width;
-                
-                // Calculate space above and below the cell in viewport
-                const spaceAbove = cellRect.top;
-                const spaceBelow = viewportHeight - cellRect.bottom;
-                const padding = 10;
-                
-                let top, left;
-                let positionAbove = true;
-                
-                // Decide whether to position above or below
-                if (spaceAbove >= tooltipHeight + padding) {
-                    // Enough space above - position above
-                    top = -tooltipHeight - padding;
-                    positionAbove = true;
-                } else if (spaceBelow >= tooltipHeight + padding) {
-                    // Not enough space above, but enough below - position below
-                    top = cellRect.height + padding;
-                    positionAbove = false;
-                } else {
-                    // Not enough space either way - choose the side with more space
-                    if (spaceAbove > spaceBelow) {
-                        // Position above, but adjust to fit in viewport
-                        const maxTop = -(cellRect.top - padding);
-                        top = Math.max(-tooltipHeight - padding, maxTop);
-                        positionAbove = true;
-                    } else {
-                        // Position below, but adjust to fit in viewport
-                        const maxBottom = viewportHeight - cellRect.bottom - padding;
-                        top = Math.min(cellRect.height + padding, maxBottom);
-                        positionAbove = false;
-                    }
-                }
-                
-                // Center horizontally relative to cell
-                left = (cellRect.width / 2) - (tooltipWidth / 2);
-                
-                // Adjust horizontal position to keep tooltip within viewport
-                const cellLeft = cellRect.left;
-                if (cellLeft + left < padding) {
-                    // Tooltip would go off left edge
-                    left = padding - cellLeft;
-                } else if (cellLeft + left + tooltipWidth > viewportWidth - padding) {
-                    // Tooltip would go off right edge
-                    left = viewportWidth - padding - cellLeft - tooltipWidth;
-                }
-                
-                // Apply positioning (relative to cell since cell has position: relative)
-                tooltip.style.top = top + 'px';
-                tooltip.style.left = left + 'px';
-                tooltip.style.bottom = 'auto';
-                tooltip.style.right = 'auto';
-                tooltip.style.transform = 'none';
-                
-                // Update arrow position based on placement
-                if (positionAbove) {
-                    tooltip.setAttribute('data-placement', 'above');
-                } else {
-                    tooltip.setAttribute('data-placement', 'below');
-                }
-                
-                // Restore visibility - let CSS handle it
-                tooltip.style.visibility = '';
-                tooltip.style.opacity = '';
-                tooltip.style.display = '';
-            }
-            
-            // Copy AI reasoning text to clipboard
-            function copyReasoningToClipboard(reasoningCell) {
-                // Try base64 encoded attribute first, then fallback to regular attribute
-                let fullReasoning = reasoningCell.getAttribute('data-full-reasoning-b64');
-                let decodedText;
-                
-                if (fullReasoning) {
-                    // Decode from base64
-                    try {
-                        decodedText = atob(fullReasoning);
-                    } catch (e) {
-                        console.error('Failed to decode base64 reasoning:', e);
-                        return false;
-                    }
-                } else {
-                    // Fallback to regular attribute (for backwards compatibility)
-                    fullReasoning = reasoningCell.getAttribute('data-full-reasoning');
-                    if (!fullReasoning) {
-                        console.warn('No data-full-reasoning attribute found');
-                        return false;
-                    }
-                    // Decode HTML entities
-                    const textarea = document.createElement('textarea');
-                    textarea.innerHTML = fullReasoning;
-                    decodedText = textarea.value || fullReasoning;
-                }
-
-                // Try modern clipboard API first
-                if (navigator.clipboard && window.isSecureContext) {
-                    navigator.clipboard.writeText(decodedText).then(function() {
-                        showCopyFeedback(reasoningCell);
-                    }).catch(function(err) {
-                        console.warn('Failed to copy text: ', err);
-                        fallbackCopyTextToClipboard(decodedText);
-                        showCopyFeedback(reasoningCell);
-                    });
-                } else {
-                    // Fallback for older browsers or non-secure contexts
-                    fallbackCopyTextToClipboard(decodedText);
-                    showCopyFeedback(reasoningCell);
-                }
-                return true;
-            }
-
-            function fallbackCopyTextToClipboard(text) {
-                const textArea = document.createElement("textarea");
-                textArea.value = text;
-                textArea.style.position = "fixed";
-                textArea.style.left = "-999999px";
-                textArea.style.top = "-999999px";
-                document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-                try {
-                    document.execCommand('copy');
-                } catch (err) {
-                    console.error('Fallback: Oops, unable to copy', err);
-                }
-                textArea.remove();
-            }
-
-            function showCopyFeedback(reasoningCell) {
-                // Add temporary visual feedback
-                const originalText = reasoningCell.querySelector('.reasoning-text');
-                if (originalText) {
-                    const originalContent = originalText.innerHTML;
-                    originalText.innerHTML = '<span style="color: #10b981; font-weight: bold;">✓ Copied!</span>';
-                    setTimeout(function() {
-                        originalText.innerHTML = originalContent;
-                    }, 1500);
-                }
-            }
-
-            function handleTooltipToggle(e, reasoningCell) {
-                if (!reasoningCell) return;
-
-                // If this is a reasoning cell and has full reasoning data, copy on click
-                const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning');
-                if (hasFullReasoning) {
-                    const copied = copyReasoningToClipboard(reasoningCell);
-                    if (copied) {
-                        // Don't show tooltip if we copied text (single click = copy)
-                        return;
-                    }
-                }
-
-                // Close other tooltips
-                document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
-                    if (activeCell !== reasoningCell) {
-                        activeCell.classList.remove('active');
-                    }
-                });
-
-                // Toggle this tooltip
-                const isActive = reasoningCell.classList.toggle('active');
-                const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
-
-                if (isActive && tooltip) {
-                    // Position tooltip, then CSS will show it via .active class
-                    setTimeout(function() {
-                        positionTooltip(reasoningCell, tooltip);
-                        // Also set up continuous repositioning for active tooltips
-                        if (reasoningCell._repositionInterval) {
-                            clearInterval(reasoningCell._repositionInterval);
-                        }
-                        reasoningCell._repositionInterval = setInterval(function() {
-                            if (reasoningCell.classList.contains('active') && window.getComputedStyle(tooltip).visibility === 'visible') {
-                                positionTooltip(reasoningCell, tooltip);
-                            } else {
-                                clearInterval(reasoningCell._repositionInterval);
-                                reasoningCell._repositionInterval = null;
-                            }
-                        }, 50);
-                    }, 10);
-                } else if (tooltip && reasoningCell._repositionInterval) {
-                    // Clear interval when tooltip is closed
-                    clearInterval(reasoningCell._repositionInterval);
-                    reasoningCell._repositionInterval = null;
-                }
-            }
-            
-            // Handle hover for desktop - position tooltip on hover
-            function setupHoverHandlers() {
-                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
-                    const tooltip = cell.querySelector('.reasoning-tooltip');
-                    if (tooltip && !cell.hasAttribute('data-hover-setup')) {
-                        cell.setAttribute('data-hover-setup', 'true');
-                        
-                        // Store reference for scroll updates
-                        cell._tooltip = tooltip;
-                        
-                        cell.addEventListener('mouseenter', function() {
-                            // Position tooltip when hovering - use requestAnimationFrame to ensure CSS has applied
-                            requestAnimationFrame(function() {
-                                positionTooltip(cell, tooltip);
-                            });
-                            
-                            // Set up continuous repositioning while hovering
-                            if (cell._hoverRepositionInterval) {
-                                clearInterval(cell._hoverRepositionInterval);
-                            }
-                            cell._hoverRepositionInterval = setInterval(function() {
-                                if (cell.matches(':hover') && window.getComputedStyle(tooltip).visibility === 'visible') {
-                                    positionTooltip(cell, tooltip);
-                                } else {
-                                    clearInterval(cell._hoverRepositionInterval);
-                                    cell._hoverRepositionInterval = null;
-                                }
-                            }, 50);
-                        });
-                        
-                        cell.addEventListener('mouseleave', function() {
-                            if (cell._hoverRepositionInterval) {
-                                clearInterval(cell._hoverRepositionInterval);
-                                cell._hoverRepositionInterval = null;
-                            }
-                        });
-                    }
-                });
-            }
-
-            // Set up column sorting
-            function setupColumnSorting() {
-                document.querySelectorAll('th.sortable').forEach(function(header) {
-                    header.addEventListener('click', function() {
-                        const columnName = this.getAttribute('data-column');
-                        if (columnName) {
-                            cycleSort(columnName);
-                        }
-                    });
-                });
-            }
-
-            // Reposition tooltips on scroll/resize (simpler now with absolute positioning)
-            function repositionVisibleTooltips() {
-                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
-                    const tooltip = cell.querySelector('.reasoning-tooltip');
-                    if (tooltip) {
-                        const computedStyle = window.getComputedStyle(tooltip);
-                        if (computedStyle.visibility === 'visible' || cell.classList.contains('active') || cell.matches(':hover')) {
-                            positionTooltip(cell, tooltip);
-                        }
-                    }
-                });
-            }
-            
-            // Listen to scroll and resize for repositioning
-            let scrollTimeout;
-            window.addEventListener('scroll', function() {
-                clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
-            }, { passive: true });
-            
-            window.addEventListener('resize', function() {
-                clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(repositionVisibleTooltips, 10);
-            }, { passive: true });
-            
-            function initTooltips() {
-                // Handle touch events for mobile
-                document.addEventListener('touchstart', function(e) {
-                    const reasoningCell = e.target.closest('.reasoning-cell');
-                    if (reasoningCell) {
-                        touchStartTime = Date.now();
-                        touchStartTarget = reasoningCell;
-                    }
-                }, { passive: true });
-                
-                document.addEventListener('touchend', function(e) {
-                    const reasoningCell = e.target.closest('.reasoning-cell') || touchStartTarget;
-                    if (reasoningCell && (Date.now() - touchStartTime) < 300) {
-                        e.preventDefault();
-                        e.stopPropagation();
-
-                        // For reasoning cells, copy text instead of showing tooltip
-                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
-                                                 reasoningCell.hasAttribute('data-full-reasoning');
-                        if (hasFullReasoning) {
-                            copyReasoningToClipboard(reasoningCell);
-                        } else {
-                            handleTooltipToggle(e, reasoningCell);
-                        }
-                    }
-                    touchStartTarget = null;
-                });
-                
-                // Handle click events (desktop and mobile fallback)
-                document.addEventListener('click', function(e) {
-                    const reasoningCell = e.target.closest('.reasoning-cell');
-
-                    if (reasoningCell) {
-                        e.stopPropagation();
-
-                        // For reasoning cells, copy text instead of showing tooltip
-                        const hasFullReasoning = reasoningCell.hasAttribute('data-full-reasoning-b64') || 
-                                                 reasoningCell.hasAttribute('data-full-reasoning');
-                        if (hasFullReasoning) {
-                            copyReasoningToClipboard(reasoningCell);
-                        } else {
-                            handleTooltipToggle(e, reasoningCell);
-                        }
-                    } else {
-                        // Click outside - close all tooltips
-                        document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
-                            activeCell.classList.remove('active');
-                        });
-                    }
-                });
-
-                setupHoverHandlers();
-                setupColumnSorting();
-            }
-            
-            // Initialize when DOM is ready
-            function startInit() {
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', initTooltips);
-                } else {
-                    initTooltips();
-                }
-            }
-            
-            startInit();
-            
-            // Also try after delays to catch dynamically added content
-            setTimeout(initTooltips, 100);
-            setTimeout(initTooltips, 500);
-            setTimeout(initTooltips, 1000);
-            
-            // Re-initialize when new content is added (for Streamlit's dynamic updates)
-            const observer = new MutationObserver(function(mutations) {
-                let shouldReinit = false;
-                mutations.forEach(function(mutation) {
-                    if (mutation.addedNodes.length > 0) {
-                        shouldReinit = true;
-                    }
-                });
-                if (shouldReinit) {
-                    setTimeout(function() {
-                        initTooltips();
-                        setupHoverHandlers();
-                        setupColumnSorting();
-                    }, 100);
-                }
-            });
-            
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-        })();
-        </script>
-        """
-        components.html(tooltip_script, height=0)
         
         # Pagination controls at bottom
         if total_pages > 1:

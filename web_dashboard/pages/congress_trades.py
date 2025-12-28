@@ -8,14 +8,13 @@ Displays trades with filtering, sorting, and summary statistics.
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone, date
 import pandas as pd
 import logging
-import base64
+
 
 # Try to import zoneinfo for timezone conversion (Python 3.9+)
 try:
@@ -1322,7 +1321,10 @@ try:
                 score_display = "⚪ N/A"
             
             # Truncate reasoning for table
-            reasoning_short = reasoning[:160] + '...' if reasoning and len(reasoning) > 160 else reasoning
+            reasoning_short = reasoning[:80] + '...' if reasoning and len(reasoning) > 80 else (reasoning or '')
+            
+            # Create unique identifier for this trade
+            trade_label = f"{ticker} | {trade.get('politician', 'Unknown')} | {format_date(trade.get('transaction_date'))}"
             
             df_data.append({
                 'Ticker': ticker,
@@ -1331,23 +1333,89 @@ try:
                 'Chamber': trade.get('chamber', 'N/A'),
                 'Party': trade.get('party', 'N/A'),
                 'State': trade.get('state', 'N/A'),
-                'Transaction Date': format_date(trade.get('transaction_date')),
+                'Date': format_date(trade.get('transaction_date')),
                 'Type': trade.get('type', 'N/A'),
                 'Amount': trade.get('amount', 'N/A'),
-                'Conflict Score': score_display,
-                'AI Reasoning': reasoning_short if reasoning else '',
+                'Score': score_display,
+                'AI Reasoning': reasoning_short,
                 'Owner': trade.get('owner', 'N/A'),
-                '_full_reasoning': reasoning if reasoning else ''  # Store full reasoning for tooltip
+                '_trade_label': trade_label,
+                '_full_reasoning': reasoning if reasoning else ''
             })
         
-        # Render complete HTML table with embedded CSS and JavaScript in iframe
-        html_document = render_congress_trades_table(df_data)
+        # Create lookup for full reasoning
+        reasoning_lookup = {
+            row['_trade_label']: {
+                'ticker': row['Ticker'],
+                'company': row['Company'],
+                'politician': row['Politician'],
+                'date': row['Date'],
+                'type': row['Type'],
+                'amount': row['Amount'],
+                'score': row['Score'],
+                'reasoning': row['_full_reasoning']
+            }
+            for row in df_data if row['_full_reasoning']
+        }
         
-        # Calculate appropriate height for iframe (roughly 50px per row + header + padding)
-        iframe_height = min(50 + (len(df_data) * 50), 800)  # Cap at 800px to avoid excessive height
+        # Convert to pandas DataFrame (remove internal columns)
+        df = pd.DataFrame([{k: v for k, v in row.items() if not k.startswith('_')} for row in df_data])
         
-        components.html(html_document, height=iframe_height, scrolling=True)
-
+        # Display native Streamlit dataframe with built-in search/sort
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            height=500,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                "Company": st.column_config.TextColumn("Company", width="medium"),
+                "Politician": st.column_config.TextColumn("Politician", width="medium"),
+                "Chamber": st.column_config.TextColumn("Chamber", width="small"),
+                "Party": st.column_config.TextColumn("Party", width="small"),
+                "State": st.column_config.TextColumn("State", width="small"),
+                "Date": st.column_config.TextColumn("Date", width="small"),
+                "Type": st.column_config.TextColumn("Type", width="small"),
+                "Amount": st.column_config.TextColumn("Amount", width="medium"),
+                "Score": st.column_config.TextColumn("Score", width="small"),
+                "AI Reasoning": st.column_config.TextColumn("AI Reasoning", width="large"),
+                "Owner": st.column_config.TextColumn("Owner", width="small"),
+            }
+        )
+        
+        # Expandable section for viewing full AI reasoning
+        if reasoning_lookup:
+            st.markdown("---")
+            st.subheader("🔍 View Full AI Reasoning")
+            
+            # Create selectbox for choosing a trade
+            trade_options = list(reasoning_lookup.keys())
+            selected_trade = st.selectbox(
+                "Select a trade to view full AI analysis:",
+                options=trade_options,
+                help="Choose a trade to see the complete AI reasoning"
+            )
+            
+            if selected_trade and selected_trade in reasoning_lookup:
+                trade_info = reasoning_lookup[selected_trade]
+                
+                # Display trade details in columns
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"**Ticker:** {trade_info['ticker']}")
+                    st.markdown(f"**Company:** {trade_info['company']}")
+                with col2:
+                    st.markdown(f"**Politician:** {trade_info['politician']}")
+                    st.markdown(f"**Date:** {trade_info['date']}")
+                with col3:
+                    st.markdown(f"**Type:** {trade_info['type']}")
+                    st.markdown(f"**Score:** {trade_info['score']}")
+                
+                # Display full reasoning in a code block (allows easy copy)
+                st.markdown("**Full AI Reasoning:**")
+                st.code(trade_info['reasoning'], language=None)
+        
+        st.markdown("---")
         
         # Pagination controls at bottom
         if total_pages > 1:

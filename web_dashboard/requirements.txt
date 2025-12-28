@@ -17,3 +17,4 @@ python-dateutil>=2.8.0
 trafilatura>=1.6.0
 pypdf>=3.0.0
 python-docx>=0.8.11
+streamlit-aggrid>=0.3.4

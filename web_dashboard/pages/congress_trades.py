@@ -14,6 +14,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone, date
 import pandas as pd
 import logging
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 
 # Try to import zoneinfo for timezone conversion (Python 3.9+)
@@ -1358,62 +1359,62 @@ try:
             for row in df_data if row['_full_reasoning']
         }
         
-        # Convert to pandas DataFrame (remove internal columns)
+        # Store full reasoning back in df_data for AgGrid tooltips
+        for row in df_data:
+            row['AI Reasoning'] = row['_full_reasoning'] if row['_full_reasoning'] else row['AI Reasoning']
+        
+        # Convert to pandas DataFrame (remove internal columns except tooltip data)
         df = pd.DataFrame([{k: v for k, v in row.items() if not k.startswith('_')} for row in df_data])
         
-        # Display native Streamlit dataframe with built-in search/sort
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            height=500,
-            column_config={
-                "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-                "Company": st.column_config.TextColumn("Company", width="medium"),
-                "Politician": st.column_config.TextColumn("Politician", width="medium"),
-                "Chamber": st.column_config.TextColumn("Chamber", width="small"),
-                "Party": st.column_config.TextColumn("Party", width="small"),
-                "State": st.column_config.TextColumn("State", width="small"),
-                "Date": st.column_config.TextColumn("Date", width="small"),
-                "Type": st.column_config.TextColumn("Type", width="small"),
-                "Amount": st.column_config.TextColumn("Amount", width="medium"),
-                "Score": st.column_config.TextColumn("Score", width="small"),
-                "AI Reasoning": st.column_config.TextColumn("AI Reasoning", width="large"),
-                "Owner": st.column_config.TextColumn("Owner", width="small"),
-            }
+        # Configure AgGrid
+        gb = GridOptionsBuilder.from_dataframe(df)
+        
+        # Configure columns
+        gb.configure_column("Ticker", width=80, pinned='left')
+        gb.configure_column("Company", width=200)
+        gb.configure_column("Politician", width=180)
+        gb.configure_column("Chamber", width=90)
+        gb.configure_column("Party", width=80)
+        gb.configure_column("State", width=70)
+        gb.configure_column("Date", width=110)
+        gb.configure_column("Type", width=90)
+        gb.configure_column("Amount", width=120)
+        gb.configure_column("Score", width=100)
+        gb.configure_column("Owner", width=100)
+        
+        # Configure AI Reasoning column with tooltip and wrapping
+        gb.configure_column(
+            "AI Reasoning",
+            width=400,
+            wrapText=True,
+            autoHeight=True,
+            tooltipField="AI Reasoning",  # Show full text in tooltip
+            cellStyle={'white-space': 'normal'}  # Allow text wrapping
         )
         
-        # Expandable section for viewing full AI reasoning
-        if reasoning_lookup:
-            st.markdown("---")
-            st.subheader("🔍 View Full AI Reasoning")
-            
-            # Create selectbox for choosing a trade
-            trade_options = list(reasoning_lookup.keys())
-            selected_trade = st.selectbox(
-                "Select a trade to view full AI analysis:",
-                options=trade_options,
-                help="Choose a trade to see the complete AI reasoning"
-            )
-            
-            if selected_trade and selected_trade in reasoning_lookup:
-                trade_info = reasoning_lookup[selected_trade]
-                
-                # Display trade details in columns
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(f"**Ticker:** {trade_info['ticker']}")
-                    st.markdown(f"**Company:** {trade_info['company']}")
-                with col2:
-                    st.markdown(f"**Politician:** {trade_info['politician']}")
-                    st.markdown(f"**Date:** {trade_info['date']}")
-                with col3:
-                    st.markdown(f"**Type:** {trade_info['type']}")
-                    st.markdown(f"**Score:** {trade_info['score']}")
-                
-                # Display full reasoning in a code block (allows easy copy)
-                st.markdown("**Full AI Reasoning:**")
-                st.code(trade_info['reasoning'], language=None)
+        # Grid options
+        gb.configure_default_column(editable=False, groupable=False)
+        gb.configure_selection(selection_mode="multiple", use_checkbox=False)
+        gb.configure_grid_options(
+            enableRangeSelection=True,
+            enableCellTextSelection=True,
+            ensureDomOrder=True,
+            domLayout='normal'
+        )
+        
+        gridOptions = gb.build()
+        
+        # Display AgGrid
+        AgGrid(
+            df,
+            gridOptions=gridOptions,
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            fit_columns_on_grid_load=False,
+            height=500,
+            theme='streamlit',
+            allow_unsafe_jscode=False,
+            enable_enterprise_modules=False
+        )
         
         st.markdown("---")
         

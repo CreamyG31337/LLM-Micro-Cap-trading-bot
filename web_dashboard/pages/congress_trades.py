@@ -171,6 +171,19 @@ st.markdown("""
         max-width: 300px;
         overflow: visible !important;
         display: inline-block;
+        -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+        touch-action: manipulation;
+        user-select: none;
+    }
+    
+    /* Make sure touch targets are large enough on mobile */
+    @media (max-width: 768px) {
+        .reasoning-cell {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            padding: 0.25rem 0;
+        }
     }
     
     .reasoning-text {
@@ -202,7 +215,7 @@ st.markdown("""
         transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
     }
     
-    /* Tooltip arrow */
+    /* Tooltip arrow - positioned above by default */
     .reasoning-tooltip::after {
         content: "";
         position: absolute;
@@ -213,17 +226,31 @@ st.markdown("""
         border-top-color: #1f1f1f;
     }
     
-    /* Show tooltip on hover (desktop) - position dynamically */
-    .reasoning-cell:hover .reasoning-tooltip {
-        visibility: visible;
-        opacity: 1;
+    /* Tooltip arrow when positioned below */
+    .reasoning-tooltip[data-placement="below"]::after {
+        top: auto;
+        bottom: 100%;
+        border-top-color: transparent;
+        border-bottom-color: #1f1f1f;
     }
     
-    /* Show tooltip when active (mobile click) - position dynamically */
-    .reasoning-cell.active .reasoning-tooltip {
-        visibility: visible;
-        opacity: 1;
+    /* Dark mode arrow adjustments */
+    @media (prefers-color-scheme: dark) {
+        .reasoning-tooltip::after {
+            border-top-color: #2d2d2d;
+        }
+        
+        .reasoning-tooltip[data-placement="below"]::after {
+            border-top-color: transparent;
+            border-bottom-color: #2d2d2d;
+        }
     }
+    
+    /* Show tooltip on hover (desktop) - JavaScript will handle visibility */
+    /* CSS hover is disabled - JavaScript controls visibility for proper positioning */
+    
+    /* Show tooltip when active (mobile click) - JavaScript will handle visibility */
+    /* CSS active is disabled - JavaScript controls visibility for proper positioning */
     
     /* Dark mode tooltip styling */
     @media (prefers-color-scheme: dark) {
@@ -813,64 +840,164 @@ try:
         tooltip_script = """
         <script>
         (function() {
+            let touchStartTime = 0;
+            let touchStartTarget = null;
+            
             function positionTooltip(cell, tooltip) {
+                // Make tooltip visible and measure it
+                tooltip.style.visibility = 'hidden';
+                tooltip.style.opacity = '1';
+                tooltip.style.display = 'block';
+                
                 const rect = cell.getBoundingClientRect();
-                const tooltipRect = tooltip.getBoundingClientRect();
                 const viewportHeight = window.innerHeight;
                 const viewportWidth = window.innerWidth;
                 
-                // Try to position above first
-                let top = rect.top - tooltipRect.height - 10;
-                let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+                // Force a reflow to get accurate measurements
+                void tooltip.offsetWidth;
                 
-                // If not enough space above, position below
-                if (top < 10) {
-                    top = rect.bottom + 10;
-                    tooltip.style.bottom = 'auto';
-                    tooltip.style.top = top + 'px';
-                    // Change arrow direction
-                    tooltip.style.setProperty('--arrow-direction', 'down');
+                const tooltipRect = tooltip.getBoundingClientRect();
+                const tooltipHeight = tooltipRect.height;
+                const tooltipWidth = tooltipRect.width;
+                
+                // Calculate space above and below
+                const spaceAbove = rect.top;
+                const spaceBelow = viewportHeight - rect.bottom;
+                const padding = 10;
+                
+                let top, left;
+                let positionAbove = true;
+                
+                // Decide whether to position above or below
+                if (spaceAbove >= tooltipHeight + padding) {
+                    // Enough space above - position above
+                    top = rect.top - tooltipHeight - padding;
+                    positionAbove = true;
+                } else if (spaceBelow >= tooltipHeight + padding) {
+                    // Not enough space above, but enough below - position below
+                    top = rect.bottom + padding;
+                    positionAbove = false;
                 } else {
-                    tooltip.style.top = top + 'px';
-                    tooltip.style.bottom = 'auto';
-                    tooltip.style.setProperty('--arrow-direction', 'up');
+                    // Not enough space either way - choose the side with more space
+                    if (spaceAbove > spaceBelow) {
+                        // Position above, but adjust to fit
+                        top = padding;
+                        positionAbove = true;
+                    } else {
+                        // Position below, but adjust to fit
+                        top = viewportHeight - tooltipHeight - padding;
+                        positionAbove = false;
+                    }
                 }
+                
+                // Center horizontally relative to cell
+                left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
                 
                 // Keep tooltip within viewport horizontally
-                if (left < 10) {
-                    left = 10;
-                } else if (left + tooltipRect.width > viewportWidth - 10) {
-                    left = viewportWidth - tooltipRect.width - 10;
+                if (left < padding) {
+                    left = padding;
+                } else if (left + tooltipWidth > viewportWidth - padding) {
+                    left = viewportWidth - tooltipWidth - padding;
                 }
                 
+                // Apply positioning
+                tooltip.style.top = top + 'px';
                 tooltip.style.left = left + 'px';
-                tooltip.style.transform = 'translateX(0)';
+                tooltip.style.bottom = 'auto';
+                tooltip.style.right = 'auto';
+                tooltip.style.transform = 'none';
+                
+                // Update arrow position based on placement
+                if (positionAbove) {
+                    tooltip.setAttribute('data-placement', 'above');
+                } else {
+                    tooltip.setAttribute('data-placement', 'below');
+                }
+            }
+            
+            function handleTooltipToggle(e, reasoningCell) {
+                if (!reasoningCell) return;
+                
+                // Close other tooltips
+                document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
+                    if (activeCell !== reasoningCell) {
+                        activeCell.classList.remove('active');
+                    }
+                });
+                
+                // Toggle this tooltip
+                const isActive = reasoningCell.classList.toggle('active');
+                const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
+                
+                if (isActive && tooltip) {
+                    // Position tooltip first, then show it
+                    positionTooltip(reasoningCell, tooltip);
+                    requestAnimationFrame(function() {
+                        tooltip.style.visibility = 'visible';
+                        tooltip.style.opacity = '1';
+                        tooltip.style.display = 'block';
+                    });
+                } else if (tooltip) {
+                    // Hide tooltip
+                    tooltip.style.visibility = 'hidden';
+                    tooltip.style.opacity = '0';
+                }
+            }
+            
+            // Handle hover for desktop - position tooltip on hover
+            function setupHoverHandlers() {
+                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
+                    const tooltip = cell.querySelector('.reasoning-tooltip');
+                    if (tooltip && !cell.hasAttribute('data-hover-setup')) {
+                        cell.setAttribute('data-hover-setup', 'true');
+                        
+                        cell.addEventListener('mouseenter', function() {
+                            // Position tooltip before showing it
+                            positionTooltip(cell, tooltip);
+                            // Small delay to ensure positioning is complete
+                            requestAnimationFrame(function() {
+                                tooltip.style.visibility = 'visible';
+                                tooltip.style.opacity = '1';
+                            });
+                        });
+                        
+                        cell.addEventListener('mouseleave', function() {
+                            // Hide tooltip
+                            tooltip.style.visibility = 'hidden';
+                            tooltip.style.opacity = '0';
+                            cell.classList.remove('active');
+                        });
+                    }
+                });
             }
             
             function initTooltips() {
-                // Use event delegation for dynamic content
+                // Handle touch events for mobile
+                document.addEventListener('touchstart', function(e) {
+                    const reasoningCell = e.target.closest('.reasoning-cell');
+                    if (reasoningCell) {
+                        touchStartTime = Date.now();
+                        touchStartTarget = reasoningCell;
+                    }
+                }, { passive: true });
+                
+                document.addEventListener('touchend', function(e) {
+                    const reasoningCell = e.target.closest('.reasoning-cell') || touchStartTarget;
+                    if (reasoningCell && (Date.now() - touchStartTime) < 300) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleTooltipToggle(e, reasoningCell);
+                    }
+                    touchStartTarget = null;
+                });
+                
+                // Handle click events (desktop and mobile fallback)
                 document.addEventListener('click', function(e) {
                     const reasoningCell = e.target.closest('.reasoning-cell');
                     
                     if (reasoningCell) {
                         e.stopPropagation();
-                        e.preventDefault();
-                        
-                        // Close other tooltips
-                        document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
-                            if (activeCell !== reasoningCell) {
-                                activeCell.classList.remove('active');
-                            }
-                        });
-                        
-                        // Toggle this tooltip
-                        const isActive = reasoningCell.classList.toggle('active');
-                        const tooltip = reasoningCell.querySelector('.reasoning-tooltip');
-                        
-                        if (isActive && tooltip) {
-                            // Position tooltip
-                            positionTooltip(reasoningCell, tooltip);
-                        }
+                        handleTooltipToggle(e, reasoningCell);
                     } else {
                         // Click outside - close all tooltips
                         document.querySelectorAll('.reasoning-cell.active').forEach(function(activeCell) {
@@ -879,27 +1006,45 @@ try:
                     }
                 });
                 
-                // Also handle hover for desktop
-                document.querySelectorAll('.reasoning-cell').forEach(function(cell) {
-                    const tooltip = cell.querySelector('.reasoning-tooltip');
-                    if (tooltip) {
-                        cell.addEventListener('mouseenter', function() {
-                            positionTooltip(cell, tooltip);
-                        });
-                    }
-                });
+                setupHoverHandlers();
             }
             
             // Initialize when DOM is ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initTooltips);
-            } else {
-                initTooltips();
+            function startInit() {
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', initTooltips);
+                } else {
+                    initTooltips();
+                }
             }
             
-            // Also try after a short delay to catch dynamically added content
+            startInit();
+            
+            // Also try after delays to catch dynamically added content
             setTimeout(initTooltips, 100);
             setTimeout(initTooltips, 500);
+            setTimeout(initTooltips, 1000);
+            
+            // Re-initialize when new content is added (for Streamlit's dynamic updates)
+            const observer = new MutationObserver(function(mutations) {
+                let shouldReinit = false;
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes.length > 0) {
+                        shouldReinit = true;
+                    }
+                });
+                if (shouldReinit) {
+                    setTimeout(function() {
+                        initTooltips();
+                        setupHoverHandlers();
+                    }, 100);
+                }
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
         })();
         </script>
         """

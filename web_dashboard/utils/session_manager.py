@@ -129,7 +129,8 @@ def get_sessions_needing_analysis(
     """
     try:
         # Common WHERE clause to ensure session has trades
-        has_trades_filter = "EXISTS (SELECT 1 FROM congress_trades_analysis WHERE session_id = congress_trade_sessions.id)"
+        # Use trade_count column instead of JOIN for performance and reliability
+        has_trades_filter = "trade_count > 0"
         
         if rescore:
             # Rescore mode: just get most recent sessions regardless of flag

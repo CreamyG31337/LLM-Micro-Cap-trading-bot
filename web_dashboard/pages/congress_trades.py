@@ -1226,9 +1226,13 @@ try:
                 except (ValueError, TypeError):
                     pass
         
-        # Calculate Most Active Politician
+        # Calculate Most Active Politician (excluding child and spouse owners)
         politician_counts = {}
         for trade in all_trades:
+            owner = trade.get('owner')
+            # Skip trades where owner is Child or Spouse
+            if owner and owner.lower() in ('child', 'spouse'):
+                continue
             politician = trade.get('politician')
             if politician:
                 politician_counts[politician] = politician_counts.get(politician, 0) + 1

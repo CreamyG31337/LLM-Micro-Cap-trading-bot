@@ -9,6 +9,7 @@ Displays trades with filtering, sorting, and summary statistics.
 
 import streamlit as st
 import sys
+import base64
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone, date
@@ -225,7 +226,7 @@ def get_analysis_data(_postgres_client, _refresh_key: int) -> Dict[int, Dict[str
     
     try:
         result = _postgres_client.execute_query(
-            "SELECT trade_id, conflict_score, reasoning, model_used, analyzed_at FROM congress_trades_analysis ORDER BY analyzed_at DESC"
+            "SELECT trade_id, conflict_score, reasoning, model_used, analyzed_at FROM congress_trades_analysis WHERE conflict_score IS NOT NULL ORDER BY analyzed_at DESC"
         )
         
         # Create dict mapping trade_id -> analysis (most recent per trade)
@@ -1227,10 +1228,6 @@ try:
             sale_count = len([t for t in all_trades if t.get('type') == 'Sale'])
             st.metric("Buy/Sell", f"{purchase_count}/{sale_count}")
         
-        st.markdown("---")
-        
-        # Show total count
-        st.caption(f"Total: {total_trades:,} trades")
         st.markdown("---")
         
         # Display data table

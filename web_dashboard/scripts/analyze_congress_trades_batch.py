@@ -109,41 +109,50 @@ def is_low_risk_asset(context: Dict[str, Any]) -> tuple[bool, str]:
 
 # Prompt template for SESSION-BASED analysis
 SESSION_PROMPT_TEMPLATE = """
-Analyze this GROUP of {trade_count} related trades for potential Insider Trading/Conflict of Interest.
+Role: Senior Forensic Financial Analyst
+Mission: Detect **specific and actionable** conflicts of interest in Congress trading.
 
-POLITICIAN CONTEXT:
-- Name: {politician} ({party} - {state})
-- Chamber: {chamber}
-- Committee Assignments: {committees}
+--- CASE FILE ---
+**Subject:** {politician} ({party} - {state})
+**Chamber:** {chamber}
+**Key Committees:** {committees} (CRITICAL: Only flag DIRECT regulatory power)
 
-TRADING SESSION ({start_date} to {end_date}):
+**Session Activity ({trade_count} trades):**
 {trades_table}
 
-TASK:
-Analyze this entire trading session as one story. If you find ONE suspicious trade, mark the WHOLE session as suspicious.
+--- ANALYSIS PROTOCOL ---
+You must calculate the "Regulatory Distance" between the Committee and the Stock.
 
-RULES:
-1. HIGH SCORE (0.8-1.0): ANY trade shows direct committee-sector overlap, suspicious timing, or concerning patterns
-2. MEDIUM SCORE (0.4-0.7): Some trades show sector overlap or potential conflicts
-3. LOW SCORE (0.0-0.3): All trades are routine (broad funds, unrelated sectors, normal rebalancing)
+1. **Tier 1: DIRECT CONFLICT (Score 0.8 - 1.0)**
+   - The Committee writes laws specifically for this industry.
+   - *Example:* Armed Services Buying Lockheed Martin.
+   - *Example:* Banking Committee Buying JP Morgan.
+   - *Example:* Energy Committee Buying Exxon.
 
-CRITICAL: If you find ONE suspicious trade in this session, mark the WHOLE session as suspicious.
-In your reasoning, EXPLICITLY name the ticker(s) that triggered the flag.
+2. **Tier 2: INDIRECT/MACRO (Score 0.4 - 0.7)**
+   - The Committee affects the whole economy, or the link is secondary.
+   - *Example:* Ways & Means (Tax) buying Apple (Generic tax impact).
+   - *Example:* Financial Services buying a Restaurant (They use banks, but aren't banks).
 
-CONSIDER:
-- Pattern of trades (escalation, portfolio pivot, sector concentration)
-- Committee jurisdiction vs companies traded
-- Asset owners (Self vs Spouse/Dependent)
-- Timing (pre-vote, post-meeting, market events)
+3. **Tier 3: NO CONFLICT (Score 0.0 - 0.3)**
+   - No logical regulatory connection.
+   - *Example:* Agriculture Committee buying Microsoft.
+   - *Example:* Routine index fund (SPY) purchases.
 
-Return JSON with THREE fields:
+--- ANTI-HALLUCINATION RULES ---
+- Do NOT flag "Financial Services" members for buying non-financial companies just because those companies "use banks."
+- Do NOT flag "Commerce" members for buying random retail stocks unless there is a specific antitrust investigation.
+- **The burden of proof is on you.** If the link is weak, score it LOW.
+
+--- OUTPUT REQUIREMENT ---
+Return valid JSON only.
+
 {{
-  "conflict_score": 0.85,
+  "conflict_score": 0.15,
   "confidence_score": 0.9,
-  "reasoning": "Generally routine rebalancing (SPY, QQQ), BUT includes suspicious $50k purchase of LMT (Lockheed Martin) by Armed Services member. Committee has direct oversight of defense contractors."
+  "risk_pattern": "Routine", 
+  "reasoning": "Subject is on Financial Services, but Cracker Barrel (Restaurant) is not under the committee's direct jurisdiction. No specific regulatory conflict found."
 }}
-
-The confidence_score (0.0-1.0) indicates how certain you are about the conflict_score.
 """
 
 # Legacy prompt for single-trade analysis (kept for backward compatibility if needed)
@@ -650,6 +659,10 @@ def analyze_session(
         conflict_score = float(result['conflict_score'])
         confidence_score = float(result.get('confidence_score', 0.75))
         reasoning = result.get('reasoning', 'No reasoning provided')
+        risk_pattern = result.get('risk_pattern', '')
+        
+        if risk_pattern:
+            reasoning = f"Risk Pattern: {risk_pattern} | {reasoning}"
         
         # Save to session table
         mark_session_analyzed(

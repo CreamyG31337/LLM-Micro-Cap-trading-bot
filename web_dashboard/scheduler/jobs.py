@@ -2940,6 +2940,7 @@ def fetch_congress_trades_job() -> None:
         try:
             from supabase_client import SupabaseClient
             from ollama_client import get_ollama_client
+            from utils.politician_mapping import lookup_politician_metadata, resolve_politician_name
         except ImportError as e:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Missing dependency: {e}"
@@ -3049,6 +3050,27 @@ def fetch_congress_trades_job() -> None:
                             
                             politician = politician.strip()
                             
+                            # Look up politician in database for canonical name + metadata
+                            politician_meta = lookup_politician_metadata(supabase_client, politician)
+                            politician_id = None
+                            
+                            if politician_meta:
+                                # Use canonical name and metadata from database
+                                politician = politician_meta['name']
+                                politician_id = politician_meta['politician_id']
+                                party = politician_meta['party']
+                                state = politician_meta['state']
+                                # Override chamber if DB has it
+                                if politician_meta['chamber']:
+                                    chamber = politician_meta['chamber']
+                            else:
+                                # Politician not in database - resolve name but mark for manual review
+                                canonical_name, _ = resolve_politician_name(politician)
+                                politician = canonical_name
+                                party = None
+                                state = None
+                                logger.warning(f"Politician not in database: {politician}")
+                            
                             # Parse dates (FMP uses disclosureDate and transactionDate)
                             disclosure_date_str = trade_data.get('disclosureDate') or trade_data.get('disclosure_date') or trade_data.get('date')
                             transaction_date_str = trade_data.get('transactionDate') or trade_data.get('transaction_date') or trade_data.get('trade_date')
@@ -3148,30 +3170,32 @@ def fetch_congress_trades_job() -> None:
                             # Extract additional fields if available
                             price_per_share = trade_data.get('pricePerShare') or trade_data.get('price_per_share') or trade_data.get('price')
                             
-                            # Extract office (may contain party/state info)
+                            # Extract office field (may contain party/state as fallback)
                             office = trade_data.get('office') or ''
                             
-                            # Try to extract party from office field (e.g., "Nancy Pelosi" or "Senator (D-CA)")
-                            party = None
-                            state = None
-                            if office:
-                                # Look for patterns like (D-CA), (R-TX), (I-VT)
-                                import re
-                                match = re.search(r'\(([DIR])-([A-Z]{2})\)', office)
-                                if match:
-                                    party_code = match.group(1)
-                                    state = match.group(2)
-                                    if party_code == 'D':
-                                        party = 'Democratic'
-                                    elif party_code == 'R':
-                                        party = 'Republican'
-                                    elif party_code == 'I':
-                                        party = 'Independent'
+                            # party and state already set from politician lookup above
+                            # Only extract from office field if not found in database
+                            if not party and not state:
+                                if office:
+                                    # Look for patterns like (D-CA), (R-TX), (I-VT)
+                                    import re
+                                    match = re.search(r'\(([DIR])-([A-Z]{2})\)', office)
+                                    if match:
+                                        party_code = match.group(1)
+                                        state = match.group(2)
+                                        if party_code == 'D':
+                                            party = 'Democratic'
+                                        elif party_code == 'R':
+                                            party = 'Republican'
+                                        elif party_code == 'I':
+                                            party = 'Independent'
                             
                             # Extract owner (Self/Spouse/Dependent)
                             owner = trade_data.get('owner') or trade_data.get('assetOwner') or trade_data.get('ownerType')
                             if owner:
                                 owner = str(owner).strip().title()
+                            else:
+                                owner = 'Not-Disclosed'
                             
                             # Extract disclosure link
                             disclosure_link = trade_data.get('link') or trade_data.get('disclosureUrl') or trade_data.get('url')
@@ -3202,10 +3226,10 @@ def fetch_congress_trades_job() -> None:
                             # Skip duplicate check if amount has special characters that cause URL encoding issues
                             try:
                                 # Only check if amount is simple (no special chars that cause encoding issues)
-                                if amount and not any(char in amount for char in ['$', ',', '-', ' ']):
-                                    existing = supabase_client.supabase.table("congress_trades_enriched")\
+                                if amount and politician_id and not any(char in amount for char in ['$', ',', '-', ' ']):
+                                    existing = supabase_client.supabase.table("congress_trades")\
                                         .select("id")\
-                                        .eq("politician", politician)\
+                                        .eq("politician_id", politician_id)\
                                         .eq("ticker", ticker)\
                                         .eq("transaction_date", transaction_date.isoformat())\
                                         .eq("amount", amount)\
@@ -3273,10 +3297,10 @@ def fetch_congress_trades_job() -> None:
                             # Prepare trade record with ALL available fields
                             trade_record = {
                                 'ticker': ticker,
-                                'politician': politician,
+                                'politician_id': politician_id,  # FK to politicians table
                                 'chamber': chamber,
-                                'party': party,  # Extracted from office field if available
-                                'state': state,  # Extracted from office field if available
+                                'party': party,  # From politicians table lookup
+                                'state': state,  # From politicians table lookup
                                 'owner': owner,  # Self/Spouse/Dependent if available
                                 'transaction_date': transaction_date.isoformat(),
                                 'disclosure_date': disclosure_date.isoformat(),
@@ -3293,7 +3317,7 @@ def fetch_congress_trades_job() -> None:
                                 result = supabase_client.supabase.table("congress_trades")\
                                     .upsert(
                                         trade_record,
-                                        on_conflict="politician,ticker,transaction_date,amount,type,owner"
+                                        on_conflict="politician_id,ticker,transaction_date,amount,type,owner"
                                     )\
                                     .execute()
                                 

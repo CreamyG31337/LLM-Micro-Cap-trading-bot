@@ -44,6 +44,14 @@ POLITICIAN_ALIASES = {
     "David Taylor": ("David J. Taylor", "T000490"),
     "John McGuire": ("John McGuire III", "M001239"),
     
+    # Nickname mappings (FMP API uses short names)
+    "Tim Moore": ("Timothy Moore", "M001232"),
+    "Tim Burchett": ("Timothy Burchett", "B001309"),
+    "Tim Kaine": ("Timothy Kaine", "K000384"),
+    "Tim Scott": ("Timothy Scott", "S001184"),
+    "Tim Walberg": ("Timothy Walberg", "W000798"),
+    "Tim Sheehy": ("Timothy Sheehy", "S001234"),  # New senator (may need update)
+    
     # Self-mapping for consistency (canonical name -> itself)
     # These are already in correct form but included for lookup
     "Angus King": ("Angus King", "K000383"),
@@ -157,6 +165,65 @@ def get_or_create_politician(
     if insert_result.data:
         return insert_result.data[0]['id']
     
+    return None
+
+
+def lookup_politician_metadata(
+    client: SupabaseClient,
+    trade_name: str
+) -> Optional[dict]:
+    """
+    Look up politician metadata (party, state, canonical name) from the database.
+    
+    This is used by scrapers to enrich trade data with proper metadata.
+    
+    Args:
+        client: Supabase client instance
+        trade_name: Name as it appears in trade data
+        
+    Returns:
+        Dictionary with keys: name, party, state, chamber, politician_id
+        Or None if politician not found
+    """
+    # Resolve to canonical name first
+    canonical_name, bioguide_id = resolve_politician_name(trade_name)
+    
+    # Look up by canonical name
+    result = client.supabase.table('politicians')\
+        .select('id, name, party, state, chamber')\
+        .eq('name', canonical_name)\
+        .limit(1)\
+        .execute()
+    
+    if result.data:
+        politician = result.data[0]
+        return {
+            'politician_id': politician['id'],
+            'name': politician['name'],
+            'party': politician['party'],
+            'state': politician['state'],
+            'chamber': politician['chamber']
+        }
+    
+    # Try by bioguide ID if we have one
+    if bioguide_id:
+        result = client.supabase.table('politicians')\
+            .select('id, name, party, state, chamber')\
+            .eq('bioguide_id', bioguide_id)\
+            .limit(1)\
+            .execute()
+        
+        if result.data:
+            politician = result.data[0]
+            return {
+                'politician_id': politician['id'],
+                'name': politician['name'],
+                'party': politician['party'],
+                'state': politician['state'],
+                'chamber': politician['chamber']
+            }
+    
+    # Not found - return None (caller can decide to skip or create)
     return None
 
 

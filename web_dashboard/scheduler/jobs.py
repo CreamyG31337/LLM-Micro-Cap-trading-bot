@@ -122,7 +122,24 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'One-time backfill: Rescore 1000 sessions with new AI logic',
         'default_interval_minutes': 0,  # Manual only, no schedule
         'enabled_by_default': False,  # Manual execution only
-        'icon': '🔄'
+        'icon': '🔄',
+        'parameters': {
+            'limit': {
+                'type': 'number', 
+                'default': 1000, 
+                'description': 'Number of sessions to process'
+            },
+            'batch_size': {
+                'type': 'number', 
+                'default': 10, 
+                'description': 'Sessions to process per batch'
+            },
+            'model': {
+                'type': 'text', 
+                'default': 'granite3.3:8b', 
+                'description': 'Ollama model name'
+            }
+        }
     }
 }
 
@@ -3840,7 +3857,7 @@ def analyze_congress_trades_job() -> None:
             pass
 
 
-def rescore_congress_sessions_job() -> None:
+def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model: str = 'granite3.3:8b') -> None:
     """Manual job: Rescore congress trades sessions using updated AI logic.
     
     This is a ONE-TIME job for backfilling the entire database with the new:
@@ -3848,11 +3865,10 @@ def rescore_congress_sessions_job() -> None:
     - Leadership jurisdiction fix
     - Batch prefetching optimization
     
-    Parameters are hardcoded (intended to be run once manually from admin UI):
-    - Limit: 1000 sessions
-    - Mode: Rescore (overwrites existing analysis)
-    - Batch size: 10
-    - Model: granite3.3:8b
+    Args:
+        limit: Max sessions to process (default 1000)
+        batch_size: Number of sessions per batch (default 10)
+        model: Model to use (default granite3.3:8b)
     """
     job_id = 'rescore_congress_sessions'
     start_time = time.time()
@@ -3861,7 +3877,7 @@ def rescore_congress_sessions_job() -> None:
         # Import job tracking
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
-        logger.info("Starting congress sessions rescore job (1000 sessions)...")
+        logger.info(f"Starting congress sessions rescore job (Limit: {limit}, Batch: {batch_size}, Model: {model})...")
         
         # Mark job as started
         target_date = datetime.now(timezone.utc).date()
@@ -3892,15 +3908,15 @@ def rescore_congress_sessions_job() -> None:
             return
         
         # Run the batch analysis script with rescore parameters
-        logger.info("Executing batch analysis script with --rescore --limit 1000...")
+        logger.info(f"Executing batch analysis script with --rescore --limit {limit}...")
         result = subprocess.run(
             [
                 'python', '-u', str(script_path),
                 '--sessions',
                 '--rescore',
-                '--batch-size', '10',
-                '--model', 'granite3.3:8b',
-                '--limit', '1000'
+                '--batch-size', str(batch_size),
+                '--model', str(model),
+                '--limit', str(limit)
             ],
             cwd=str(project_root),
             capture_output=True,
@@ -3917,7 +3933,7 @@ def rescore_congress_sessions_job() -> None:
             if completed_line:
                 message = completed_line[-1].split('INFO -')[-1].strip()
             else:
-                message = "Rescore completed (1000 sessions)"
+                message = f"Rescore completed ({limit} sessions)"
             
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
             mark_job_completed('rescore_congress_sessions', target_date, None, [])

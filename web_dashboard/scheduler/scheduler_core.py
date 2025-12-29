@@ -278,11 +278,15 @@ def get_all_jobs_status() -> List[Dict[str, Any]]:
     return [get_job_status(job.id) for job in jobs if get_job_status(job.id)]
 
 
-def run_job_now(job_id: str) -> bool:
+def run_job_now(job_id: str, **kwargs) -> bool:
     """Trigger a job to run immediately in the background.
     
     This schedules the job to run asynchronously via the scheduler's thread pool
     instead of calling it synchronously in the main thread, which prevents UI freezing.
+    
+    Args:
+        job_id: The job identifier
+        **kwargs: Arguments to pass to the job function
     
     Returns True if job was scheduled, False if job not found.
     """
@@ -296,12 +300,13 @@ def run_job_now(job_id: str) -> bool:
     # Schedule the job to run ASYNCHRONOUSLY via the scheduler
     # This prevents blocking the main thread (and the UI)
     try:
-        logger.info(f"Scheduling job for immediate async execution: {job_id}")
+        logger.info(f"Scheduling job for immediate async execution: {job_id} (args: {kwargs})")
         
         # Use add_job with trigger='date' to run once, immediately, in background thread
         scheduler.add_job(
             job.func,
             trigger='date',  # Run once at a specific datetime (now)
+            kwargs=kwargs,   # Pass keyword arguments to function
             id=f"{job_id}_manual_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
             name=f"Manual: {job.name or job_id}",
             replace_existing=False  # Allow multiple manual runs

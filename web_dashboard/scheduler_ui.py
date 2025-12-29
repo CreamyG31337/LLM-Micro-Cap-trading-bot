@@ -81,6 +81,8 @@ def render_scheduler_admin():
         )
         from scheduler.scheduler_core import get_job_logs
         
+        from scheduler.jobs import AVAILABLE_JOBS
+        
         # Ensure scheduler is running
         scheduler = get_scheduler()
         if not scheduler.running:
@@ -112,10 +114,33 @@ def render_scheduler_admin():
                     st.write(f"🔄 **Schedule:** {job['trigger']}")
                 
                 with col2:
+                    # Capture parameters if defined
+                    job_params = {}
+                    if job['id'] in AVAILABLE_JOBS and 'parameters' in AVAILABLE_JOBS[job['id']]:
+                        with st.expander("⚙️ Parameters", expanded=True):
+                            params = AVAILABLE_JOBS[job['id']]['parameters']
+                            for param_name, param_info in params.items():
+                                label = param_name.replace('_', ' ').title()
+                                help_text = param_info.get('description', '')
+                                default_val = param_info.get('default')
+                                param_type = param_info.get('type', 'text')
+                                
+                                key = f"param_{job['id']}_{param_name}"
+                                
+                                if param_type == 'number':
+                                    if isinstance(default_val, int):
+                                        job_params[param_name] = st.number_input(label, value=default_val, step=1, help=help_text, key=key)
+                                    else:
+                                        job_params[param_name] = st.number_input(label, value=default_val, help=help_text, key=key)
+                                elif param_type == 'boolean':
+                                    job_params[param_name] = st.checkbox(label, value=default_val, help=help_text, key=key)
+                                else:
+                                    job_params[param_name] = st.text_input(label, value=str(default_val), help=help_text, key=key)
+
                     # Action buttons
                     if st.button("▶️ Run Now", key=f"run_{job['id']}"):
                         with st.spinner("Running..."):
-                            success = run_job_now(job['id'])
+                            success = run_job_now(job['id'], **job_params)
                             if success:
                                 st.success("Job executed!")
                             else:

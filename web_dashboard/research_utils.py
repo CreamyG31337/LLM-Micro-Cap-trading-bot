@@ -193,6 +193,13 @@ def validate_ticker_format(ticker: Optional[str], max_length: int = 20) -> bool:
     if not ticker:
         return False
     
+    # Strip trailing '?' (AI uses this to mark uncertain inferred tickers)
+    # e.g., "RKLB?" -> "RKLB" for validation
+    if ticker.endswith('?'):
+        ticker = ticker[:-1]
+        if not ticker:
+            return False
+    
     # Check length
     if len(ticker) > max_length:
         return False
@@ -213,6 +220,34 @@ def validate_ticker_format(ticker: Optional[str], max_length: int = 20) -> bool:
         return False
     
     return True
+
+
+def normalize_ticker(ticker: Optional[str]) -> Optional[str]:
+    """Normalize a ticker symbol for storage.
+    
+    - Strips whitespace
+    - Converts to uppercase
+    - Removes trailing '?' (AI uncertainty marker)
+    
+    Args:
+        ticker: Raw ticker from AI extraction
+        
+    Returns:
+        Normalized ticker string, or None if invalid
+    """
+    if not ticker or not isinstance(ticker, str):
+        return None
+    
+    ticker = ticker.strip().upper()
+    
+    # Strip trailing '?' (AI uses this to mark uncertain inferred tickers)
+    if ticker.endswith('?'):
+        ticker = ticker[:-1]
+    
+    if not ticker:
+        return None
+    
+    return ticker
 
 
 def validate_ticker_in_content(ticker: Optional[str], content: str) -> bool:

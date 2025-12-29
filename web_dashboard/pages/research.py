@@ -166,17 +166,15 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
             # Extract all validated tickers
             extracted_tickers = []
             if tickers:
-                from research_utils import validate_ticker_in_content, validate_ticker_format
+                from research_utils import validate_ticker_format, normalize_ticker
                 for ticker in tickers:
-                    # First validate format (reject company names, invalid formats)
+                    # Validate format only (trust AI inference for company name -> ticker conversion)
                     if not validate_ticker_format(ticker):
                         logger.warning(f"Rejected invalid ticker format: {ticker} - skipping")
                         continue
-                    # Then validate in content
-                    if validate_ticker_in_content(ticker, content):
-                        extracted_tickers.append(ticker)
-                    else:
-                        logger.warning(f"Ticker {ticker} not found in article content - skipping")
+                    normalized = normalize_ticker(ticker)
+                    if normalized:
+                        extracted_tickers.append(normalized)
             
             extracted_sector = sectors[0] if sectors else None
         else:

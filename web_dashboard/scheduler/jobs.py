@@ -102,6 +102,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 30,  # Every 30 minutes
         'enabled_by_default': False,  # DISABLED during session backfill - re-enable after
         'icon': '🔍'
+    },
+    'rss_feed_ingest': {
+        'name': 'RSS Feed Ingestion',
+        'description': 'Fetch articles from validated RSS feeds (Push strategy)',
+        'default_interval_minutes': 180,  # Every 3 hours
+        'enabled_by_default': True,
+        'icon': '📡'
     }
 }
 
@@ -449,18 +456,18 @@ def market_research_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content, validate_ticker_format
+                        from research_utils import validate_ticker_format, normalize_ticker
                         for ticker in tickers:
-                            # First validate format (reject company names, invalid formats)
+                            # Validate format only (reject company names, invalid formats)
+                            # NOTE: We no longer check if ticker appears in content, because AI infers tickers
+                            # from company names (e.g., "Apple" -> "AAPL"). The AI marks uncertain tickers with '?'
                             if not validate_ticker_format(ticker):
                                 logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
                                 continue
-                            # Then validate it appears in content
-                            if validate_ticker_in_content(ticker, content):
-                                extracted_tickers.append(ticker)
-                                logger.debug(f"Extracted ticker from article: {ticker} (validated in content)")
-                            else:
-                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
+                            normalized = normalize_ticker(ticker)
+                            if normalized:
+                                extracted_tickers.append(normalized)
+                                logger.debug(f"Extracted ticker from article: {normalized}")
                         
                         if extracted_tickers:
                             logger.info(f"Extracted {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
@@ -576,6 +583,279 @@ def market_research_job() -> None:
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Market research job failed: {e}", exc_info=True)
+
+
+def rss_feed_ingest_job() -> None:
+    """Ingest articles from validated RSS feeds (Push strategy).
+    
+    This job:
+    1. Fetches all enabled RSS feeds from database
+    2. Parses each feed for new articles
+    3. Applies junk filtering before AI processing
+    4. Saves high-quality articles to research database
+    """
+    job_id = 'rss_feed_ingest'
+    start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
+   
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting RSS feed ingestion job...")
+        
+        # Mark job as started in database
+        mark_job_started('rss_feed_ingest', target_date)
+        
+        # Import dependencies
+        try:
+            from rss_utils import get_rss_client
+            from research_utils import extract_article_content
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+            from postgres_client import PostgresClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Get clients
+        rss_client = get_rss_client()
+        ollama_client = get_ollama_client()
+        research_repo = ResearchRepository()
+        postgres_client = PostgresClient()
+        
+        # Fetch enabled RSS feeds from database
+        try:
+            feeds_result = postgres_client.execute_query(
+                "SELECT id, name, url FROM rss_feeds WHERE enabled = true"
+            )
+        except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Error fetching RSS feeds from database: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        if not feeds_result:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No enabled RSS feeds found"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        logger.info(f"Found {len(feeds_result)} enabled RSS feeds")
+        
+        total_articles_processed = 0
+        total_articles_saved = 0
+        total_articles_skipped = 0
+        total_junk_filtered = 0  # NEW: Track junk filtering
+        feeds_processed = 0
+        feeds_failed = 0
+        
+        # Get owned tickers for relevance scoring
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        funds_result = client.supabase.table("funds").select("name").eq("is_production", True).execute()
+        
+        owned_tickers = set()
+        if funds_result.data:
+            prod_funds = [f['name'] for f in funds_result.data]
+            positions_result = client.supabase.table("latest_positions").select("ticker").in_("fund", prod_funds).execute()
+            if positions_result.data:
+                owned_tickers = set(pos['ticker'] for pos in positions_result.data)
+        
+        # Process each feed
+        for feed in feeds_result:
+            feed_id = feed['id']
+            feed_name = feed['name']
+            feed_url = feed['url']
+            
+            try:
+                logger.info(f"📡 Fetching feed: {feed_name}")
+                
+                # Fetch and parse RSS feed
+                feed_data = rss_client.fetch_feed(feed_url)
+                
+                if not feed_data or not feed_data.get('items'):
+                    logger.warning(f"No items found in feed: {feed_name}")
+                    feeds_failed += 1
+                    continue
+                
+                items = feed_data['items']
+                junk_filtered = feed_data.get('junk_filtered', 0)
+                total_junk_filtered += junk_filtered
+                
+                logger.info(f"  Found {len(items)} items (filtered {junk_filtered} junk articles)")
+                
+                # Process each item
+                for item in items:
+                    try:
+                        url = item.get('url')
+                        title = item.get('title')
+                        content = item.get('content', '')
+                        
+                        if not url or not title:
+                            continue
+                        
+                        # Check if already exists
+                        if research_repo.article_exists(url):
+                            logger.debug(f"Article already exists: {title[:50]}...")
+                            total_articles_skipped += 1
+                            continue
+                        
+                        # Use RSS content if available, otherwise fetch from URL
+                        if not content or len(content) < 200:
+                            logger.info(f"  Extracting full content: {title[:40]}...")
+                            extracted = extract_article_content(url)
+                            content = extracted.get('content', '')
+                            if not content:
+                                logger.warning(f"Failed to extract content for {title[:40]}...")
+                                continue
+                        
+                        # Generate AI summary and embedding
+                        summary = None
+                        summary_data = {}
+                        extracted_tickers = item.get('tickers', []) or []  # May be from RSS metadata
+                        extracted_sector = None
+                        embedding = None
+                        
+                        if ollama_client:
+                            summary_data = ollama_client.generate_summary(content)
+                            
+                            if isinstance(summary_data, str):
+                                summary = summary_data
+                            elif isinstance(summary_data, dict) and summary_data:
+                                summary = summary_data.get("summary", "")
+                                
+                                # Extract tickers from AI if not already from RSS
+                                if not extracted_tickers:
+                                    ai_tickers = summary_data.get("tickers", [])
+                                    from research_utils import validate_ticker_format, normalize_ticker
+                                    for ticker in ai_tickers:
+                                        # Only validate format, trust AI inference (AI marks uncertain tickers with '?')
+                                        if validate_ticker_format(ticker):
+                                            normalized = normalize_ticker(ticker)
+                                            if normalized:
+                                                extracted_tickers.append(normalized)
+                                
+                                # Extract sector
+                                sectors = summary_data.get("sectors", [])
+                                if sectors:
+                                    extracted_sector = sectors[0]
+                            
+                            # Generate embedding
+                            embedding = ollama_client.generate_embedding(content[:6000])
+                        
+                        # Calculate relevance score
+                        relevance_score = calculate_relevance_score(
+                            extracted_tickers if extracted_tickers else [],
+                            extracted_sector,
+                            owned_tickers=list(owned_tickers) if owned_tickers else None
+                        )
+                        
+                        # Extract logic_check for relationship confidence
+                        logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
+                        
+                        # Save article
+                        article_id = research_repo.save_article(
+                            tickers=extracted_tickers if extracted_tickers else None,
+                            sector=extracted_sector,
+                            article_type="market_news",  # RSS feeds are general news
+                            title=title,
+                            url=url,
+                            summary=summary,
+                            content=content,
+                            source=item.get('source'),
+                            published_at=item.get('published_at'),
+                            relevance_score=relevance_score,
+                            embedding=embedding,
+                            claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                            fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                            conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                            sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None,
+                            logic_check=logic_check
+                        )
+                        
+                        if article_id:
+                            total_articles_saved += 1
+                            logger.info(f"  ✅ Saved: {title[:40]}...")
+                            
+                            # Extract and save relationships
+                            if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
+                                relationships = summary_data.get("relationships", [])
+                                if relationships and isinstance(relationships, list):
+                                    if logic_check == "DATA_BACKED":
+                                        initial_confidence = 0.8
+                                    else:
+                                        initial_confidence = 0.4
+                                    
+                                    from research_utils import normalize_relationship
+                                    relationships_saved = 0
+                                    for rel in relationships:
+                                        if isinstance(rel, dict):
+                                            source = rel.get("source", "").strip()
+                                            target = rel.get("target", "").strip()
+                                            rel_type = rel.get("type", "").strip()
+                                            
+                                            if source and target and rel_type:
+                                                norm_source, norm_target, norm_type = normalize_relationship(source, target, rel_type)
+                                                rel_id = research_repo.save_relationship(
+                                                    source_ticker=norm_source,
+                                                    target_ticker=norm_target,
+                                                    relationship_type=norm_type,
+                                                    initial_confidence=initial_confidence,
+                                                    source_article_id=article_id
+                                                )
+                                                if rel_id:
+                                                    relationships_saved += 1
+                                    
+                                    if relationships_saved > 0:
+                                        logger.info(f"  ✅ Saved {relationships_saved} relationship(s)")
+                        
+                        total_articles_processed += 1
+                        time.sleep(0.5)  # Small delay between articles
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing RSS item: {e}")
+                        continue
+                
+                # Update feed's last_fetched_at timestamp
+                try:
+                    postgres_client.execute_update(
+                        "UPDATE rss_feeds SET last_fetched_at = NOW() WHERE id = %s",
+                        (feed_id,)
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update last_fetched_at for {feed_name}: {e}")
+                
+                feeds_processed += 1
+                time.sleep(2)  # Delay between feeds
+                
+            except Exception as e:
+                logger.error(f"Error processing feed '{feed_name}': {e}")
+                feeds_failed += 1
+                continue
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Processed {feeds_processed} feeds: {total_articles_saved} saved, {total_articles_skipped} skipped, {total_junk_filtered} junk filtered"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('rss_feed_ingest', target_date, None, [])
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('rss_feed_ingest', target_date, None, message)
+        except Exception:
+            pass
+        logger.error(f"❌ RSS feed ingestion job failed: {e}", exc_info=True)
+
 
 
 def ticker_research_job() -> None:
@@ -1238,18 +1518,16 @@ def opportunity_discovery_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content, validate_ticker_format
+                        from research_utils import validate_ticker_format, normalize_ticker
                         for ticker in tickers:
-                            # First validate format (reject company names, invalid formats)
+                            # Validate format only (trust AI inference for company name -> ticker conversion)
                             if not validate_ticker_format(ticker):
                                 logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
                                 continue
-                            # Then validate it appears in content
-                            if validate_ticker_in_content(ticker, content):
-                                extracted_tickers.append(ticker)
-                                logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
-                            else:
-                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
+                            normalized = normalize_ticker(ticker)
+                            if normalized:
+                                extracted_tickers.append(normalized)
+                                logger.debug(f"  🎯 Discovered ticker: {normalized}")
                         
                         if extracted_tickers:
                             logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")
@@ -1505,18 +1783,16 @@ def opportunity_discovery_job() -> None:
                         sectors = summary_data.get("sectors", [])
                         
                         # Extract all validated tickers
-                        from research_utils import validate_ticker_in_content, validate_ticker_format
+                        from research_utils import validate_ticker_format, normalize_ticker
                         for ticker in tickers:
-                            # First validate format (reject company names, invalid formats)
+                            # Validate format only (trust AI inference)
                             if not validate_ticker_format(ticker):
                                 logger.warning(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
                                 continue
-                            # Then validate it appears in content
-                            if validate_ticker_in_content(ticker, content):
-                                extracted_tickers.append(ticker)
-                                logger.debug(f"  🎯 Discovered ticker: {ticker} (validated in content)")
-                            else:
-                                logger.warning(f"Ticker {ticker} not found in article content - skipping")
+                            normalized = normalize_ticker(ticker)
+                            if normalized:
+                                extracted_tickers.append(normalized)
+                                logger.debug(f"  🎯 Discovered ticker: {normalized}")
                         
                         if extracted_tickers:
                             logger.info(f"  🎯 Discovered {len(extracted_tickers)} validated ticker(s): {extracted_tickers}")

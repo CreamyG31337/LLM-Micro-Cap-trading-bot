@@ -566,8 +566,7 @@ class ResearchRepository:
         fact_check: Optional[str] = None,
         conclusion: Optional[str] = None,
         sentiment: Optional[str] = None,
-        sentiment_score: Optional[float] = None,
-        logic_check: Optional[str] = None
+        sentiment_score: Optional[float] = None
     ) -> bool:
         """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score, Chain of Thought fields).
         
@@ -585,7 +584,6 @@ class ResearchRepository:
             conclusion: Net impact on ticker(s) (Chain of Thought Step 3)
             sentiment: Sentiment category (VERY_BULLISH, BULLISH, NEUTRAL, BEARISH, VERY_BEARISH)
             sentiment_score: Numeric sentiment score for calculations
-            logic_check: Categorical classification (DATA_BACKED, HYPE_DETECTED, NEUTRAL) for relationship confidence scoring
             
         Returns:
             True if updated successfully, False otherwise
@@ -649,10 +647,6 @@ class ResearchRepository:
             if sentiment_score is not None:
                 updates.append("sentiment_score = %s")
                 params.append(float(sentiment_score))
-            
-            if logic_check is not None:
-                updates.append("logic_check = %s")
-                params.append(logic_check)
             
             if not updates:
                 logger.warning(f"No fields to update for article {article_id}")

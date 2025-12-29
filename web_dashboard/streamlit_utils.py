@@ -28,22 +28,12 @@ except ImportError:
     st = None
 
 # ============================================================
-# CACHE VERSION - Dynamic version from shared file
-# Background jobs bump this version after updating portfolio data,
-# invalidating the cache immediately without waiting for TTL
-# Falls back to BUILD_TIMESTAMP (deployment time) if file not available
+# CACHE VERSION - Auto-derived from BUILD_TIMESTAMP (set by Woodpecker CI)
+# Every deployment gets a new cache version, automatically invalidating stale data
+# Falls back to app startup time if BUILD_TIMESTAMP not set
 # ============================================================
-def _get_cache_version():
-    """Get dynamic cache version - checked on every cached function call."""
-    try:
-        from cache_version import get_cache_version
-        return get_cache_version()
-    except Exception:
-        # Fallback to static version if module not available
-        _startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
-
-CACHE_VERSION = _get_cache_version()  # Will be called dynamically by cached functions
+_startup_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+CACHE_VERSION = os.getenv("BUILD_TIMESTAMP", _startup_timestamp)
 
 # ============================================================
 # CURRENCY REGISTRY - Extensible currency support
@@ -309,10 +299,6 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
         # Get user token from session if not provided
         if user_token is None and get_user_token:
             user_token = get_user_token()
-            if user_token:
-                logger.debug("Using user token from session for Supabase client")
-            else:
-                logger.debug("No user token available, using publishable key fallback")
         
         # Use user token if available (respects RLS)
         client = SupabaseClient(user_token=user_token)
@@ -329,7 +315,6 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
             print("ERROR: SupabaseClient.supabase is None after initialization")
             return None
         
-        logger.debug("Supabase client initialized successfully")
         return client
         
     except Exception as e:
@@ -407,15 +392,11 @@ def get_available_funds() -> List[str]:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_current_positions(fund: Optional[str] = None, _cache_version: str = None) -> pd.DataFrame:
+def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> pd.DataFrame:
     """Get current portfolio positions as DataFrame.
     
-    CACHED: 5 min TTL. Cache version auto-updates when jobs modify data.
+    CACHED: 5 min TTL. Bump CACHE_VERSION to force immediate invalidation.
     """
-    # Dynamically get cache version if not provided
-    if _cache_version is None:
-        _cache_version = _get_cache_version()
-    
     import logging
     logger = logging.getLogger(__name__)
     if fund:
@@ -503,13 +484,13 @@ def get_trade_log(limit: int = 1000, fund: Optional[str] = None, _cache_version:
 
 @log_execution_time()
 @st.cache_data(ttl=300)
-def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str] = None, _cache_version: str = None) -> Dict[str, Any]:
+def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str] = None, _cache_version: str = CACHE_VERSION) -> Dict[str, Any]:
     """Calculate realized P&L from closed positions (SELL trades).
     
     Args:
         fund: Optional fund name to filter by
         display_currency: Optional display currency (defaults to user preference)
-        _cache_version: Cache version for invalidation (auto-fetched if None)
+        _cache_version: Cache version for invalidation
         
     Returns:
         Dictionary with (matching console app's get_realized_pnl_summary() structure):
@@ -522,10 +503,6 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
         - losing_trades: Number of losing trades (negative P&L)
         - trades_by_ticker: Dictionary with ticker breakdown (realized_pnl, shares_sold, proceeds)
     """
-    # Dynamically get cache version if not provided
-    if _cache_version is None:
-        _cache_version = _get_cache_version()
-    
     if display_currency is None:
         display_currency = get_user_display_currency()
     
@@ -1813,7 +1790,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         import time
         from log_handler import log_message
         func_start = time.time()
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Starting", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Starting", level='INFO')
         
         # Get ALL contributions with timestamps (not just the summary view)
         # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
@@ -1845,10 +1822,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 print("Warning: Reached 50,000 row safety limit in get_user_investment_metrics pagination")
                 break
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Contributions query: {time.time() - t0:.2f}s ({len(all_contributions)} rows)", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Contributions query: {time.time() - t0:.2f}s ({len(all_contributions)} rows)", level='INFO')
         
         if not all_contributions:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - No contributions found, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - No contributions found, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
             return None
         
         # Get cash balances for total fund value
@@ -1863,10 +1840,10 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 total_cash_display += cash_display
         
         fund_total_value = total_portfolio_value + total_cash_display if include_cash else total_portfolio_value
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Cash/exchange rate: {time.time() - t0:.2f}s", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Cash/exchange rate: {time.time() - t0:.2f}s", level='INFO')
         
         if fund_total_value <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Fund value <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Fund value <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
             return None
         
         # Parse and sort contributions chronologically
@@ -1912,7 +1889,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             })
         
         contributions.sort(key=lambda x: x['timestamp'] or datetime.min)
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Parse contributions: {time.time() - t0:.2f}s", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - Parse contributions: {time.time() - t0:.2f}s", level='INFO')
         
         # Get all contribution dates AND previous dates (for NAV lookup)
         # We need previous day's value to calculate NAV *before* the new capital affects value
@@ -1940,7 +1917,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
             historical_values = {}
             historical_cost_basis = {}
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - get_historical_fund_values: {time.time() - t0:.2f}s ({len(historical_values)} dates)", level='INFO')
         
         # Check if we have sufficient historical data
         use_historical = bool(historical_values)
@@ -2075,12 +2052,12 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 
                 # Log unit issuance for debugging
                 if nav_at_transaction != 10.0:
-                    log_message(f"[{session_id}] NAV: {contributor} added ${amount} at NAV ${nav_at_transaction:.4f} ({nav_source}) -> {units_issued:.2f} units", level='DEBUG')
+                    log_message(f"[{session_id}] NAV DEBUG: {contributor} added ${amount} at NAV ${nav_at_transaction:.4f} ({nav_source}) -> {units_issued:.2f} units", level='INFO')
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - NAV calculations: {time.time() - t0:.2f}s ({len(contributions)} contributions)", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - NAV calculations: {time.time() - t0:.2f}s ({len(contributions)} contributions)", level='INFO')
         
         if total_units <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Total units <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - Total units <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
             return None
         
         # Find the current user's data
@@ -2096,14 +2073,14 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
                 break
         
         if user_contributor is None or user_units <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User not found or no units, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User not found or no units, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
             return None
         
         user_data = contributor_data[user_contributor]
         user_net_contribution = user_data['net_contribution']
         
         if user_net_contribution <= 0:
-            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User net contribution <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='PERF')
+            log_message(f"[{session_id}] PERF: get_user_investment_metrics - User net contribution <= 0, returning None (total: {time.time() - func_start:.2f}s)", level='INFO')
             return None
         
         # Calculate current NAV and user's value
@@ -2113,7 +2090,7 @@ def get_user_investment_metrics(fund: str, total_portfolio_value: float, include
         gain_loss = current_value - user_net_contribution
         gain_loss_pct = (gain_loss / user_net_contribution) * 100 if user_net_contribution > 0 else 0.0
         
-        log_message(f"[{session_id}] PERF: get_user_investment_metrics - SUCCESS, total time: {time.time() - func_start:.2f}s", level='PERF')
+        log_message(f"[{session_id}] PERF: get_user_investment_metrics - SUCCESS, total time: {time.time() - func_start:.2f}s", level='INFO')
         
         return {
             'net_contribution': user_net_contribution,

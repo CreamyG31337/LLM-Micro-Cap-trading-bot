@@ -11,10 +11,11 @@ import json
 try:
     import pandas as pd
 except ImportError:
-    print("[ERROR] pandas not available - some features will be disabled")
-    print("[SOLUTION] Activate the virtual environment first!")
+    print("❌ ERROR: pandas not available")
+    print("🔔 SOLUTION: Activate the virtual environment first!")
     print("   PowerShell: & '..\\venv\\Scripts\\Activate.ps1'")
-    pd = None
+    print("   You should see (venv) in your prompt when activated.")
+    raise ImportError("pandas not available. Activate virtual environment.")
 
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -59,11 +60,6 @@ class SupabaseClient:
             if not self.key:
                 raise ValueError("SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY must be set")
         
-        # Debug logging for environment variables
-        logger.debug(f"SUPABASE_URL exists: {bool(self.url)}")
-        logger.debug(f"Using key type: {'service_role' if use_service_role else 'publishable'}")
-        logger.debug(f"User token provided: {bool(user_token)}")
-        
         if not self.url or not self.key:
             logger.error(f"Missing environment variables - URL: {bool(self.url)}, KEY: {bool(self.key)}")
             raise ValueError("SUPABASE_URL and appropriate key must be set")
@@ -84,7 +80,6 @@ class SupabaseClient:
                     access_token=user_token,
                     refresh_token=""  # Empty refresh token - may cause set_session to fail
                 )
-                logger.debug("User token set in Supabase auth session")
             except Exception as e:
                 logger.debug(f"set_session failed (expected if no refresh token): {e}")
                 # We'll use the stored token to set headers manually in queries
@@ -98,7 +93,6 @@ class SupabaseClient:
                     # Call the auth() method with the token to set Authorization header
                     # The postgrest client uses this for Authorization header in all queries
                     self.supabase.postgrest.auth(user_token)
-                    logger.debug("User token set on postgrest client via auth() method")
                 else:
                     # Fallback: try to access via table client
                     # Create a dummy table query to access the underlying client
@@ -106,7 +100,6 @@ class SupabaseClient:
                     if hasattr(dummy_table, '_client'):
                         # Call auth() method on the underlying postgrest client
                         dummy_table._client.auth(user_token)
-                        logger.debug("User token set on table client's postgrest client via auth() method")
             except Exception as header_error:
                 logger.warning(f"Could not set Authorization header: {header_error}")
                 # Token is stored in self._user_token as fallback
@@ -198,7 +191,7 @@ class SupabaseClient:
             logger.error(f"❌ Error ensuring ticker {ticker} in securities table: {e}")
             return False
     
-    def upsert_portfolio_positions(self, positions_df: Any) -> bool:
+    def upsert_portfolio_positions(self, positions_df: pd.DataFrame) -> bool:
         """Insert or update portfolio positions"""
         try:
             if positions_df.empty:
@@ -230,13 +223,14 @@ class SupabaseClient:
                 })
             
             # Upsert positions (insert or update on conflict)
-            # Use on_conflict to handle duplicates based on unique constraint (fund, ticker, date_only)
-            # Note: This requires fund and date_only to be included in positions
-            # The unique constraint is portfolio_positions_unique_fund_ticker_date
-            # The date_only column is automatically populated by trigger, but we include it for upsert
+            # Use on_conflict to handle duplicates based on unique constraint (fund, date, ticker)
+            # Note: This requires fund to be included in positions - if not provided, this will fail
+            # The unique constraint is on (fund, date::date, ticker) via idx_portfolio_positions_unique
+            # For functional indexes, we reference the index name or use column names
+            # PostgREST will use the unique index automatically if column names match
             result = self.supabase.table("portfolio_positions").upsert(
                 positions,
-                on_conflict="fund,ticker,date_only"
+                on_conflict="fund,date,ticker"
             ).execute()
             logger.info(f"✅ Upserted {len(positions)} portfolio positions")
             return True
@@ -245,7 +239,7 @@ class SupabaseClient:
             logger.error(f"❌ Error upserting portfolio positions: {e}")
             return False
     
-    def upsert_trade_log(self, trades_df: Any) -> bool:
+    def upsert_trade_log(self, trades_df: pd.DataFrame) -> bool:
         """Insert or update trade log"""
         try:
             if trades_df.empty:

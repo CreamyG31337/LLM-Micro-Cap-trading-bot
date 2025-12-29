@@ -972,6 +972,24 @@ def main():
         # This avoids disruptive redirects during active use
         del st.session_state._cookie_needs_update
     
+    # Helper to get current page path for return_to redirects
+    def get_current_page_path():
+        """Get the current page path to redirect back to after cookie operations."""
+        try:
+            # Try to get path from st.context.headers (Streamlit 1.37+)
+            # The 'Referer' or custom headers might have the path
+            headers = getattr(st.context, 'headers', {})
+            referer = headers.get('Referer', '')
+            if referer:
+                from urllib.parse import urlparse
+                parsed = urlparse(referer)
+                if parsed.path:
+                    return parsed.path
+        except Exception:
+            pass
+        # Default to root if we can't determine the path
+        return '/'
+    
     # ===== SESSION PERSISTENCE VIA COOKIES =====
     # Cookies are set in auth_callback.html and set_cookie.html (regular HTML pages, not iframe)
     # Cookies are read here using st.context.cookies (server-side, Streamlit 1.37+)
@@ -1024,7 +1042,8 @@ def main():
                                         # New token is different, update cookies
                                         import urllib.parse
                                         encoded_token = urllib.parse.quote(new_token, safe='')
-                                        redirect_url = f'/set_cookie.html?token={encoded_token}'
+                                        return_to = urllib.parse.quote(get_current_page_path(), safe='')
+                                        redirect_url = f'/set_cookie.html?token={encoded_token}&return_to={return_to}'
                                         if new_refresh:
                                             encoded_refresh = urllib.parse.quote(new_refresh, safe='')
                                             redirect_url += f'&refresh_token={encoded_refresh}'
@@ -1079,7 +1098,8 @@ def main():
                                         # Update cookies with new tokens via redirect
                                         import urllib.parse
                                         encoded_token = urllib.parse.quote(new_access_token, safe='')
-                                        redirect_url = f'/set_cookie.html?token={encoded_token}'
+                                        return_to = urllib.parse.quote(get_current_page_path(), safe='')
+                                        redirect_url = f'/set_cookie.html?token={encoded_token}&return_to={return_to}'
                                         if new_refresh_token:
                                             encoded_refresh = urllib.parse.quote(new_refresh_token, safe='')
                                             redirect_url += f'&refresh_token={encoded_refresh}'

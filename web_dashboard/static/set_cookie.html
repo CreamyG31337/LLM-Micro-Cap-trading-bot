@@ -59,9 +59,15 @@
             var action = params.get('action');
             var token = params.get('token');
             var refreshToken = params.get('refresh_token');
+            var returnTo = params.get('return_to') || '/';  // Default to root if not specified
+            
+            // Ensure returnTo starts with / to prevent open redirects
+            if (!returnTo.startsWith('/')) {
+                returnTo = '/';
+            }
 
             if (action === 'clear') {
-                // Clear both cookies (logout)
+                // Clear both cookies (logout) - always go to root on logout
                 clearCookie('auth_token');
                 clearCookie('refresh_token');
                 window.location.replace(window.location.origin + '/');
@@ -71,7 +77,8 @@
                 if (refreshToken) {
                     setCookie('refresh_token', refreshToken, 30); // 30 days for refresh token
                 }
-                window.location.replace(window.location.origin + '/');
+                // Redirect back to where user was
+                window.location.replace(window.location.origin + returnTo);
             } else {
                 document.getElementById('status').textContent = 'No action specified.';
                 setTimeout(function () {

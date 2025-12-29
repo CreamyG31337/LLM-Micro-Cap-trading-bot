@@ -1204,10 +1204,42 @@ try:
     st.header("📊 Summary Statistics")
     
     if all_trades:  # Use all_trades for stats, not paginated trades
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
         
         # Count analyzed trades
         analyzed_count = len([t for t in all_trades if t.get('id') in analysis_map])
+        
+        # Count unique tickers
+        unique_tickers = len(set([t.get('ticker') for t in all_trades if t.get('ticker')]))
+        
+        # Calculate High Risk Trades (conflict_score >= 0.7)
+        high_risk_count = 0
+        for trade in all_trades:
+            trade_id = trade.get('id')
+            analysis = analysis_map.get(trade_id, {})
+            conflict_score = analysis.get('conflict_score')
+            if conflict_score is not None:
+                try:
+                    score_val = float(conflict_score)
+                    if score_val >= 0.7:
+                        high_risk_count += 1
+                except (ValueError, TypeError):
+                    pass
+        
+        # Calculate Most Active Politician
+        politician_counts = {}
+        for trade in all_trades:
+            politician = trade.get('politician')
+            if politician:
+                politician_counts[politician] = politician_counts.get(politician, 0) + 1
+        
+        if politician_counts:
+            most_active_politician = max(politician_counts.items(), key=lambda x: x[1])
+            most_active_name = most_active_politician[0]
+            most_active_count = most_active_politician[1]
+            most_active_display = f"{most_active_name} ({most_active_count})"
+        else:
+            most_active_display = "N/A"
         
         with col1:
             st.metric("Total Trades", total_trades)
@@ -1227,6 +1259,15 @@ try:
             purchase_count = len([t for t in all_trades if t.get('type') == 'Purchase'])
             sale_count = len([t for t in all_trades if t.get('type') == 'Sale'])
             st.metric("Buy/Sell", f"{purchase_count}/{sale_count}")
+        
+        with col6:
+            st.metric("Unique Tickers", unique_tickers)
+        
+        with col7:
+            st.metric("High Risk Trades", high_risk_count)
+        
+        with col8:
+            st.metric("Most Active Politician", most_active_display)
         
         st.markdown("---")
         

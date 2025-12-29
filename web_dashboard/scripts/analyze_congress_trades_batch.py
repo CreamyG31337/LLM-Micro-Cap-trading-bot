@@ -265,6 +265,116 @@ def fix_failed_scores(client: SupabaseClient):
     except Exception as e:
         logger.error(f"Error fixing failed scores: {e}")
 
+# ===== BATCH PREFETCH FUNCTIONS (Optimization) =====
+
+def prefetch_securities_batch(client: SupabaseClient, tickers: List[str]) -> None:
+    """Prefetch securities data for multiple tickers in a single query.
+    
+    This populates the module-level _sector_cache to avoid per-trade queries.
+    """
+    # Filter out already cached tickers
+    uncached_tickers = [t for t in tickers if t not in _sector_cache]
+    
+    if not uncached_tickers:
+        return
+    
+    try:
+        response = client.supabase.table("securities")\
+            .select("ticker, company_name, sector")\
+            .in_("ticker", uncached_tickers)\
+            .execute()
+        
+        for sec in response.data:
+            ticker = sec.get('ticker')
+            if ticker:
+                _sector_cache[ticker] = {
+                    'company_name': sec.get('company_name', 'Unknown'),
+                    'sector': sec.get('sector', 'Unknown')
+                }
+        
+        logger.debug(f"Prefetched {len(response.data)} securities for {len(uncached_tickers)} tickers")
+        
+    except Exception as e:
+        logger.warning(f"Failed to prefetch securities batch: {e}")
+
+
+def prefetch_politician_committees(client: SupabaseClient, politician_name: str) -> None:
+    """Prefetch politician and committee data for a single politician in optimized queries.
+    
+    This populates the module-level _politician_cache.
+    """
+    if politician_name in _politician_cache:
+        return
+    
+    try:
+        # Find the politician
+        politician_result = client.supabase.table("politicians")\
+            .select("id, name")\
+            .ilike("name", f"%{politician_name}%")\
+            .limit(1)\
+            .execute()
+        
+        if not politician_result.data:
+            _politician_cache[politician_name] = {
+                'id': None,
+                'committees_str': f'Unknown (politician "{politician_name}" not found in database)'
+            }
+            return
+        
+        politician_id = politician_result.data[0]['id']
+        
+        # Get all committee assignments
+        assignments_result = client.supabase.table("committee_assignments")\
+            .select("""
+                committee_id,
+                rank,
+                title,
+                committees (
+                    name,
+                    target_sectors
+                )
+            """)\
+            .eq("politician_id", politician_id)\
+            .execute()
+        
+        if assignments_result.data:
+            committees_list = []
+            for assignment in assignments_result.data:
+                committee = assignment.get('committees', {})
+                committee_name = committee.get('name', 'Unknown')
+                target_sectors = committee.get('target_sectors', [])
+                title = assignment.get('title', 'Member')
+                
+                sectors_str = ', '.join(target_sectors) if target_sectors else 'None'
+                title_str = f" ({title})" if title else ""
+                committees_list.append(f"{committee_name}{title_str} - Sectors: {sectors_str}")
+            
+            committees_str = '; '.join(committees_list)
+        else:
+            committees_str = 'None'
+        
+        # Leadership Fix
+        leadership_names = ["Pelosi", "Mike Johnson", "Speaker Johnson"]
+        if any(ln.lower() in politician_name.lower() for ln in leadership_names):
+            if committees_str == 'None':
+                committees_str = "Leadership"
+            else:
+                committees_str = f"Leadership; {committees_str}"
+        
+        _politician_cache[politician_name] = {
+            'id': politician_id,
+            'committees_str': committees_str
+        }
+        
+        logger.debug(f"Prefetched committees for {politician_name}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to prefetch politician data for {politician_name}: {e}")
+        _politician_cache[politician_name] = {
+            'id': None,
+            'committees_str': 'Error fetching committee data'
+        }
+
 def get_trade_context(client: SupabaseClient, trade: Dict[str, Any], use_cache: bool = True) -> Dict[str, Any]:
     """Enrich trade data with sector, company info, and committee assignments.
     
@@ -591,7 +701,15 @@ def analyze_session(
             logger.warning(f"No trade data found in Supabase for session {session_id}")
             return False
         
-        # Enrich each trade with context
+        # === BATCH PREFETCH (Optimization) ===
+        # Prefetch all securities data in one query
+        tickers = list(set(t.get('ticker') for t in trades if t.get('ticker')))
+        prefetch_securities_batch(supabase, tickers)
+        
+        # Prefetch politician committee data (one call for the session's politician)
+        prefetch_politician_committees(supabase, politician_name)
+        
+        # Enrich each trade with context (now uses cache, no Supabase calls)
         enriched_trades = []
         for trade in trades:
             context = get_trade_context(supabase, trade)

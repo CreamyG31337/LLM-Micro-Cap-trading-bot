@@ -196,3 +196,97 @@ def get_discovery_search_queries() -> list[str]:
         return custom_queries
     
     return default_queries
+
+
+def get_alpha_research_domains() -> list[str]:
+    """Get the list of high-value 'alpha' domains for targeted research.
+    
+    Returns:
+        List of domain strings (e.g., ['seekingalpha.com', 'thefly.com'])
+    """
+    default_domains = [
+        # Original high-quality sources
+        'seekingalpha.com',
+        'thefly.com',
+        'benzinga.com',
+        'tipranks.com',
+        'insidermonkey.com',
+        'marketbeat.com',
+        'zacks.com',
+        'fool.com',
+        'investorplace.com',
+        
+        # Micro-cap specialists (high value)
+        'geoinvesting.com',          # Dedicated micro-cap research
+        'microcapdaily.com',         # Micro-cap focused
+        'smallcappower.com',         # Small-cap specialist
+        
+        # Deep financial data platforms
+        'tikr.com',                  # 100k+ stocks, deep financials
+        'gurufocus.com',             # Value investor focused
+        'stockanalysis.com',         # Comprehensive free data
+        
+        # Screeners & tools
+        'finviz.com',                # Popular screener
+        'stockstotrade.com',         # Penny stock specialist
+        
+        # Premium financial journalism
+        'barrons.com',               # Barron's
+        'investors.com',             # Investor's Business Daily
+        'marketwatch.com',           # MarketWatch
+        
+        # Research & analysis
+        'cabotwealth.com',           # Small-cap research
+        'smallcapvoice.com',         # Small-cap coverage
+        'pennystocks.com'            # Penny stock news
+    ]
+    
+    custom_domains = get_system_setting("alpha_research_domains", default=None)
+    
+    if custom_domains and isinstance(custom_domains, list):
+        return custom_domains
+    
+    return default_domains
+
+
+def get_alpha_search_queries() -> list[str]:
+    """Get the list of search queries for Alpha Research job.
+    
+    Returns:
+        List of query strings (e.g., ['undervalued microcap', 'analyst upgrades'])
+    """
+    default_queries = [
+        # Value & fundamentals
+        "undervalued microcap stocks",
+        "microcap stocks trading below book value",
+        "small cap stocks with strong balance sheets",
+        "microcap net cash bargains",
+        
+        # Catalysts & events
+        "upcoming fda approval small cap",
+        "small cap merger arbitrage opportunities",
+        "small cap spinoffs 2025",
+        "microcap earnings surprises",
+        
+        # Insider & institutional activity
+        "penny stocks high insider buying",
+        "small cap institutional accumulation",
+        "microcap insider purchases",
+        
+        # Technical & momentum
+        "small cap breakout stocks",
+        "microcap short squeeze candidates",
+        "penny stocks unusual volume",
+        
+        # Analyst coverage
+        "analyst upgrades small cap",
+        "strong buy ratings microcap",
+        "small cap price target increases"
+    ]
+    
+    custom_queries = get_system_setting("alpha_search_queries", default=None)
+    
+    if custom_queries and isinstance(custom_queries, list):
+        return custom_queries
+    
+    return default_queries

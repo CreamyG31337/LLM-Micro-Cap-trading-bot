@@ -109,6 +109,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 180,  # Every 3 hours
         'enabled_by_default': True,
         'icon': '📡'
+    },
+    'alpha_research': {
+        'name': 'Alpha Hunter',
+        'description': 'Targeted research on high-value alpha domains',
+        'default_interval_minutes': 360,  # Every 6 hours
+        'enabled_by_default': True,
+        'icon': '🦊'
     }
 }
 
@@ -4050,19 +4057,21 @@ def register_default_jobs(scheduler) -> None:
         )
         logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
 
-        # Opportunity Discovery: Every 12 hours
+    # Alpha Research Job: Every 6 hours (offset)
+    if AVAILABLE_JOBS.get('alpha_research', {}).get('enabled_by_default'):
+        from scheduler.jobs_alpha import alpha_research_job
         scheduler.add_job(
-            opportunity_discovery_job,
+            alpha_research_job,
             trigger=CronTrigger(
-                hour='*/12',
-                minute=30,
+                hour='*/6',
+                minute=45, # Offset from others
                 timezone='America/New_York'
             ),
-            id='opportunity_discovery_job',
-            name=f"{get_job_icon('opportunity_discovery_job')} Opportunity Discovery",
+            id='alpha_research',
+            name=f"{get_job_icon('alpha_research')} Alpha Hunter",
             replace_existing=True
         )
-        logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
+        logger.info("Registered job: alpha_research (every 6 hours)")
     
     # Benchmark refresh job - daily after market close
     if AVAILABLE_JOBS['benchmark_refresh']['enabled_by_default']:

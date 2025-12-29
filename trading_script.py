@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 from datetime import datetime, timedelta
@@ -111,11 +112,20 @@ def setup_logging(settings: Settings) -> None:
     # Create a UTF-8 encoded stdout wrapper for Windows emoji support
     utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     
+    log_file = log_config.get('file', LOG_FILE)
+    max_bytes = log_config.get('max_size_mb', 10) * 1024 * 1024  # Default 10MB
+    backup_count = log_config.get('backup_count', 5)  # Default 5 backups
+    
     logging.basicConfig(
         level=getattr(logging, log_config.get('level', 'INFO')),
         format=log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s'),
         handlers=[
-            logging.FileHandler(log_config.get('file', LOG_FILE), encoding='utf-8'),
+            RotatingFileHandler(
+                log_file,
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding='utf-8'
+            ),
             logging.StreamHandler(utf8_stdout)
         ]
     )

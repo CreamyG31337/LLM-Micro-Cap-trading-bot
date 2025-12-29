@@ -566,7 +566,8 @@ class ResearchRepository:
         fact_check: Optional[str] = None,
         conclusion: Optional[str] = None,
         sentiment: Optional[str] = None,
-        sentiment_score: Optional[float] = None
+        sentiment_score: Optional[float] = None,
+        logic_check: Optional[str] = None
     ) -> bool:
         """Update AI-generated fields of an article (summary, tickers, sector, embedding, relevance_score, Chain of Thought fields).
         
@@ -647,6 +648,10 @@ class ResearchRepository:
             if sentiment_score is not None:
                 updates.append("sentiment_score = %s")
                 params.append(float(sentiment_score))
+            
+            if logic_check is not None:
+                updates.append("logic_check = %s")
+                params.append(logic_check)
             
             if not updates:
                 logger.warning(f"No fields to update for article {article_id}")

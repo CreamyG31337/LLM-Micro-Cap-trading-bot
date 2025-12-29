@@ -5,6 +5,7 @@ Provides a thread-safe circular buffer for recent log messages.
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 from collections import deque
 import threading
 from datetime import datetime
@@ -147,9 +148,10 @@ def get_log_handler() -> InMemoryLogHandler:
 
 
 def setup_logging(level=logging.INFO):
-    """Setup logging with file handler for app modules.
+    """Setup logging with rotating file handler for app modules.
     
-    Uses FileHandler to write to logs/app.log to avoid deadlocks.
+    Uses RotatingFileHandler to write to logs/app.log with automatic rotation.
+    Logs rotate when they reach 10MB, keeping 5 backup files (50MB total).
     Attached only to app-specific loggers, not root logger.
     
     Args:
@@ -162,8 +164,14 @@ def setup_logging(level=logging.INFO):
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, 'app.log')
     
-    # Create file handler
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    # Create rotating file handler
+    # Max 10MB per file, keep 5 backups = 50MB total log storage
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=5,  # Keep 5 rotated files
+        encoding='utf-8'
+    )
     file_handler.setFormatter(PacificTimeFormatter(
         '%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'

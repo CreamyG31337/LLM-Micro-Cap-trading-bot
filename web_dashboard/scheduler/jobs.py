@@ -3908,6 +3908,10 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             return
         
         # Run the batch analysis script with rescore parameters
+        # Cast to int to handle float values from Streamlit number_input
+        limit = int(limit)
+        batch_size = int(batch_size)
+        
         cmd = [
             'python', '-u', str(script_path),
             '--sessions',
@@ -3918,6 +3922,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
         ]
         logger.info(f"Executing command: {' '.join(cmd)}")
         logger.info(f"Working Directory: {str(project_root)}")
+
         
         # Use Popen to stream output line-by-line
         process = subprocess.Popen(

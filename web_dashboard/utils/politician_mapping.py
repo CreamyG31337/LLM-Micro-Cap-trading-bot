@@ -37,6 +37,9 @@ POLITICIAN_ALIASES = {
     "Robert Latta": ("Bob Latta", "L000566"),
     "Jacob Auchincloss": ("Jake Auchincloss", "A000370"),
     
+    # Middle initial variations
+    "Deborah Ross": ("Deborah K. Ross", "R000305"),
+    
     # New members (as of late 2024)
     "Anthony Wied": ("Tony Wied", "W000829"),
     "Rob Bresnahan": ("Robert P. Bresnahan Jr.", "B001327"),

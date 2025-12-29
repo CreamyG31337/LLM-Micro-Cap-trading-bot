@@ -973,8 +973,9 @@ def main():
         del st.session_state._cookie_needs_update
     
     # ===== SESSION PERSISTENCE VIA COOKIES =====
-    # Cookie is set in auth_callback.html (regular HTML page, not iframe)
-    # Cookie is read here using st.context.cookies (server-side, Streamlit 1.37+)
+    # Cookies are set in auth_callback.html and set_cookie.html (regular HTML pages, not iframe)
+    # Cookies are read here using st.context.cookies (server-side, Streamlit 1.37+)
+    # Both access_token and refresh_token are now stored in cookies for full session recovery
     
     # Try to restore session from cookie if not already authenticated
     if not is_authenticated():
@@ -983,6 +984,7 @@ def main():
             # It's a read-only dict of cookies sent in the initial HTTP request
             cookies = st.context.cookies
             auth_token = cookies.get("auth_token")
+            cookie_refresh_token = cookies.get("refresh_token")
             
             if auth_token:
                 # Validate token
@@ -1001,9 +1003,9 @@ def main():
                     
                     if exp > current_time:
                         # Token valid, restore session (skip redirect since we're restoring from cookie)
-                        # Note: refresh_token is not stored in cookie for security, so refresh won't work
-                        # after page reload, but token refresh will work during active sessions
-                        set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp)
+                        # Also restore refresh_token from cookie so we can refresh later
+                        set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp,
+                                        refresh_token=cookie_refresh_token)
                         
                         # Update cookie proactively on page load to keep it fresh
                         # Refresh if cookie has <= 30 minutes left (keeps it fresh)
@@ -1017,11 +1019,15 @@ def main():
                                     # Token was refreshed, update cookie with new token
                                     # This happens on page load, so redirect is acceptable
                                     new_token = st.session_state.get("user_token")
+                                    new_refresh = st.session_state.get("refresh_token")
                                     if new_token and new_token != auth_token:
-                                        # New token is different, update cookie
+                                        # New token is different, update cookies
                                         import urllib.parse
                                         encoded_token = urllib.parse.quote(new_token, safe='')
                                         redirect_url = f'/set_cookie.html?token={encoded_token}'
+                                        if new_refresh:
+                                            encoded_refresh = urllib.parse.quote(new_refresh, safe='')
+                                            redirect_url += f'&refresh_token={encoded_refresh}'
                                         st.markdown(
                                             f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
                                             unsafe_allow_html=True
@@ -1038,8 +1044,55 @@ def main():
                             # Session restoration mismatch - silently continue
                             pass
                         # No rerun needed - we're already in the right state
-                    # If expired, we could clear the cookie but since st.context.cookies is read-only,
-                    # we'd need JavaScript for that. For now, just don't restore expired tokens.
+                    elif cookie_refresh_token:
+                        # Access token expired, but we have refresh_token - try to refresh!
+                        # This is the key improvement: recover session after Docker restart
+                        try:
+                            import requests
+                            import os
+                            SUPABASE_URL = os.getenv("SUPABASE_URL")
+                            SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                            
+                            if SUPABASE_URL and SUPABASE_KEY:
+                                response = requests.post(
+                                    f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
+                                    headers={
+                                        "apikey": SUPABASE_KEY,
+                                        "Content-Type": "application/json"
+                                    },
+                                    json={"refresh_token": cookie_refresh_token},
+                                    timeout=10
+                                )
+                                
+                                if response.status_code == 200:
+                                    auth_data = response.json()
+                                    new_access_token = auth_data.get("access_token")
+                                    new_refresh_token = auth_data.get("refresh_token")
+                                    new_expires_at = auth_data.get("expires_at")
+                                    
+                                    if new_access_token:
+                                        # Success! Restore session and update cookies with fresh tokens
+                                        set_user_session(new_access_token, skip_cookie_redirect=True,
+                                                        refresh_token=new_refresh_token,
+                                                        expires_at=new_expires_at)
+                                        
+                                        # Update cookies with new tokens via redirect
+                                        import urllib.parse
+                                        encoded_token = urllib.parse.quote(new_access_token, safe='')
+                                        redirect_url = f'/set_cookie.html?token={encoded_token}'
+                                        if new_refresh_token:
+                                            encoded_refresh = urllib.parse.quote(new_refresh_token, safe='')
+                                            redirect_url += f'&refresh_token={encoded_refresh}'
+                                        st.markdown(
+                                            f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
+                                            unsafe_allow_html=True
+                                        )
+                                        st.write("Session recovered, updating cookies...")
+                                        st.stop()
+                        except Exception:
+                            # Refresh failed, user will need to log in again
+                            pass
+                    # If token expired and no refresh_token, user will need to log in again
         except (AttributeError, Exception):
             # Cookie restoration failed - silently continue
             pass

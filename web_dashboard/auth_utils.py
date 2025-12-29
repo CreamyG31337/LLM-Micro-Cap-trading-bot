@@ -231,9 +231,14 @@ def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie
         # Store token temporarily in session state (will be cleared after redirect)
         st.session_state._pending_cookie_token = access_token
         
+        # Build redirect URL with both access_token and refresh_token
+        redirect_url = f'/set_cookie.html?token={encoded_token}'
+        if refresh_token:
+            encoded_refresh = urllib.parse.quote(refresh_token, safe='')
+            redirect_url += f'&refresh_token={encoded_refresh}'
+        
         # Use JavaScript via st.markdown with meta refresh (not stripped like script tags)
         # This will redirect the ENTIRE page, not just an iframe
-        redirect_url = f'/set_cookie.html?token={encoded_token}'
         st.markdown(
             f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
             unsafe_allow_html=True

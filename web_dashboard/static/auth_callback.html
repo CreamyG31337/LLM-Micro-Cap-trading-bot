@@ -68,10 +68,14 @@
                 // Check for access_token (magic link or password reset success)
                 else if (params.get('access_token')) {
                     const token = params.get('access_token');
+                    const refreshToken = params.get('refresh_token');
                     
-                    // SET THE AUTH COOKIE HERE - this page is NOT in an iframe!
-                    // Cookie will persist across page refreshes
+                    // SET THE AUTH COOKIES HERE - this page is NOT in an iframe!
+                    // Cookies will persist across page refreshes and Docker restarts
                     setCookie('auth_token', token, 7); // 7 days expiration
+                    if (refreshToken) {
+                        setCookie('refresh_token', refreshToken, 30); // 30 days for refresh token
+                    }
                     
                     streamlitUrl.searchParams.set('magic_token', token);
                     // Pass type to distinguish between magic link and password reset

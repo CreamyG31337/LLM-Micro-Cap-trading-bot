@@ -147,10 +147,16 @@ You must calculate the "Regulatory Distance" between the Committee and the Stock
 --- OUTPUT REQUIREMENT ---
 Return valid JSON only.
 
+"risk_pattern" MUST be exactly one of these four strings:
+1. "DIRECT_CONFLICT" (Tier 1: Direct committee power over stock)
+2. "PIVOT"           (Tier 1: Dumping one sector to buy another)
+3. "MACRO_RISK"      (Tier 2: Indirect/Sector overlap)
+4. "ROUTINE"         (Tier 3: No conflict found)
+
 {{
   "conflict_score": 0.15,
   "confidence_score": 0.9,
-  "risk_pattern": "Routine", 
+  "risk_pattern": "ROUTINE", 
   "reasoning": "Subject is on Financial Services, but Cracker Barrel (Restaurant) is not under the committee's direct jurisdiction. No specific regulatory conflict found."
 }}
 """
@@ -563,6 +569,7 @@ def analyze_session(
                 conflict_score=0.0,
                 confidence_score=1.0,
                 ai_summary=f"Auto-filtered: {skip_reason}",
+                risk_pattern="ROUTINE",  # Auto-filtered are always routine
                 model_used=model
             )
             
@@ -572,17 +579,18 @@ def analyze_session(
                     postgres.execute_update(
                         """
                         INSERT INTO congress_trades_analysis 
-                            (trade_id, session_id, conflict_score, confidence_score, reasoning, model_used, analysis_version)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            (trade_id, session_id, conflict_score, confidence_score, reasoning, risk_pattern, model_used, analysis_version)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (trade_id, model_used, analysis_version) 
                         DO UPDATE SET 
                             session_id = EXCLUDED.session_id,
                             conflict_score = EXCLUDED.conflict_score,
                             confidence_score = EXCLUDED.confidence_score,
                             reasoning = EXCLUDED.reasoning,
+                            risk_pattern = EXCLUDED.risk_pattern,
                             analyzed_at = NOW()
                         """,
-                        (trade['id'], session_id, 0.0, 1.0, f"Auto-filtered: {skip_reason}", model, 1)
+                        (trade['id'], session_id, 0.0, 1.0, f"Auto-filtered: {skip_reason}", "ROUTINE", model, 1)
                     )
                 except Exception as e:
                     logger.error(f"Failed to save filtered analysis for trade {trade['id']}: {e}")
@@ -659,10 +667,7 @@ def analyze_session(
         conflict_score = float(result['conflict_score'])
         confidence_score = float(result.get('confidence_score', 0.75))
         reasoning = result.get('reasoning', 'No reasoning provided')
-        risk_pattern = result.get('risk_pattern', '')
-        
-        if risk_pattern:
-            reasoning = f"Risk Pattern: {risk_pattern} | {reasoning}"
+        risk_pattern = result.get('risk_pattern', 'ROUTINE')  # Default to ROUTINE if not provided
         
         # Save to session table
         mark_session_analyzed(
@@ -671,6 +676,7 @@ def analyze_session(
             conflict_score=conflict_score,
             confidence_score=confidence_score,
             ai_summary=reasoning,
+            risk_pattern=risk_pattern,
             model_used=model
         )
         
@@ -680,17 +686,18 @@ def analyze_session(
                 postgres.execute_update(
                     """
                     INSERT INTO congress_trades_analysis 
-                        (trade_id, session_id, conflict_score, confidence_score, reasoning, model_used, analysis_version)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (trade_id, session_id, conflict_score, confidence_score, reasoning, risk_pattern, model_used, analysis_version)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (trade_id, model_used, analysis_version) 
                     DO UPDATE SET 
                         session_id = EXCLUDED.session_id,
                         conflict_score = EXCLUDED.conflict_score,
                         confidence_score = EXCLUDED.confidence_score,
                         reasoning = EXCLUDED.reasoning,
+                        risk_pattern = EXCLUDED.risk_pattern,
                         analyzed_at = NOW()
                     """,
-                    (trade['id'], session_id, conflict_score, confidence_score, reasoning, model, 1)
+                    (trade['id'], session_id, conflict_score, confidence_score, reasoning, risk_pattern, model, 1)
                 )
             except Exception as e:
                 logger.error(f"Failed to save analysis for trade {trade['id']}: {e}")

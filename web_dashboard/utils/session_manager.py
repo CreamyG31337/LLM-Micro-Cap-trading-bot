@@ -224,6 +224,7 @@ def mark_session_analyzed(
     conflict_score: float,
     confidence_score: float,
     ai_summary: str,
+    risk_pattern: str,
     model_used: str
 ):
     """Mark session as analyzed and save results.
@@ -234,6 +235,7 @@ def mark_session_analyzed(
         conflict_score: AI conflict score (0.0-1.0)
         confidence_score: AI confidence score (0.0-1.0)
         ai_summary: AI-generated summary/reasoning
+        risk_pattern: Enumerated risk pattern (DIRECT_CONFLICT, PIVOT, MACRO_RISK, ROUTINE)
         model_used: Name of AI model used
     """
     try:
@@ -243,15 +245,16 @@ def mark_session_analyzed(
             SET conflict_score = %s,
                 confidence_score = %s,
                 ai_summary = %s,
+                risk_pattern = %s,
                 model_used = %s,
                 last_analyzed_at = NOW(),
                 needs_reanalysis = FALSE,
                 updated_at = NOW()
             WHERE id = %s
             """,
-            (conflict_score, confidence_score, ai_summary, model_used, session_id)
+            (conflict_score, confidence_score, ai_summary, risk_pattern, model_used, session_id)
         )
-        logger.info(f"Marked session {session_id} as analyzed (score: {conflict_score})")
+        logger.info(f"Marked session {session_id} as analyzed (score: {conflict_score}, pattern: {risk_pattern})")
         
     except Exception as e:
         logger.error(f"Error marking session as analyzed: {e}")

@@ -14,7 +14,7 @@ def print_error(msg): print(f"❌ {msg}")
 def print_warning(msg): print(f"⚠️ {msg}")
 
 def test_alpha_search():
-    print_status("Testing Alpha Research Query Construction...")
+    print_status("Alpha Research Configuration Review")
     
     # 1. Test Settings
     try:
@@ -31,40 +31,36 @@ def test_alpha_search():
         print_error("No alpha queries found!")
         return
         
-    print_success(f"Found {len(domains)} domains and {len(queries)} queries.")
-    print(f"Domains: {domains[:3]}...")
-    print(f"Queries: {queries[:3]}...")
+    print_success(f"Total Alpha Domains: {len(domains)}")
+    print(f"Sites: {', '.join(domains[:10])}...")
+    
+    print_success(f"Total Alpha Queries: {len(queries)}")
+    print(f"Sample Queries: {queries[:3]}...")
     
     # 2. Test Query Construction
     site_dork = " OR ".join([f"site:{d}" for d in domains])
-    base_query = queries[0]
+    # Pick a random query to show
+    import random
+    base_query = random.choice(queries)
     final_query = f'{base_query} ({site_dork})'
     
-    print_status(" Constructed Query:")
-    print(f" > {final_query}")
-    
-    # 3. Test Search (Dry Run)
-    try:
-        from searxng_client import get_searxng_client
-        client = get_searxng_client()
-        
-        if not client:
-            print_warning("SearXNG client not available - skipping live search test.")
-            return
+    print_status(f"Example Constructed Query (Query: '{base_query}'):")
+    print("-" * 50)
+    print(final_query)
+    print("-" * 50)
+    print(f"Query Length: {len(final_query)} characters")
 
-        print_status("🚀 Running live test search (limit 3)...")
-        results = client.search_news(query=final_query, max_results=3)
-        
-        if results and results.get('results'):
-            count = len(results['results'])
-            print_success(f"✅ Search successful! Found {count} results.")
-            for i, res in enumerate(results['results']):
-                print(f"  {i+1}. [{res.get('source', 'Unknown')}] {res.get('title', 'No Title')} ({res.get('url')})")
-        else:
-            print_warning("⚠️ No results found. This might be due to strict dorks or no matches right now.")
-            
-    except Exception as e:
-        print_error(f"Search failed: {e}")
+    if len(final_query) > 2000:
+        print_warning("Note: Query is very long. Some search engines may truncate queries over 2048 characters.")
+    
+    # 3. Connectivity Check (Simple)
+    print_status("Environment Connectivity Check:")
+    import os
+    base_url = os.getenv("SEARXNG_BASE_URL", "default")
+    print(f"SEARXNG_BASE_URL: {base_url}")
+    if "host.docker.internal" in base_url:
+        print_info = "Running from host? 'host.docker.internal' only works inside containers. This is likely why live search fails here."
+        print(f"ℹ️ {print_info}")
 
 if __name__ == "__main__":
     test_alpha_search()

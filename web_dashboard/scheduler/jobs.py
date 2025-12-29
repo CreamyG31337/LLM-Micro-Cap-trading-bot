@@ -116,6 +116,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'default_interval_minutes': 360,  # Every 6 hours
         'enabled_by_default': True,
         'icon': '🦊'
+    },
+    'rescore_congress_sessions': {
+        'name': 'Rescore Congress Sessions (Manual)',
+        'description': 'One-time backfill: Rescore 1000 sessions with new AI logic',
+        'default_interval_minutes': 0,  # Manual only, no schedule
+        'enabled_by_default': False,  # Manual execution only
+        'icon': '🔄'
     }
 }
 
@@ -3831,6 +3838,117 @@ def analyze_congress_trades_job() -> None:
             mark_job_failed('analyze_congress_trades', target_date, None, str(e))
         except:
             pass
+
+
+def rescore_congress_sessions_job() -> None:
+    """Manual job: Rescore congress trades sessions using updated AI logic.
+    
+    This is a ONE-TIME job for backfilling the entire database with the new:
+    - Intent Classification logic
+    - Leadership jurisdiction fix
+    - Batch prefetching optimization
+    
+    Parameters are hardcoded (intended to be run once manually from admin UI):
+    - Limit: 1000 sessions
+    - Mode: Rescore (overwrites existing analysis)
+    - Batch size: 10
+    - Model: granite3.3:8b
+    """
+    job_id = 'rescore_congress_sessions'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting congress sessions rescore job (1000 sessions)...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('rescore_congress_sessions', target_date)
+        
+        # Import dependencies
+        try:
+            import subprocess
+            from pathlib import Path
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            return
+        
+        # Build script path
+        project_root = Path(__file__).parent.parent.parent
+        script_path = project_root / 'web_dashboard' / 'scripts' / 'analyze_congress_trades_batch.py'
+        
+        if not script_path.exists():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Analysis script not found: {script_path}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            return
+        
+        # Run the batch analysis script with rescore parameters
+        logger.info("Executing batch analysis script with --rescore --limit 1000...")
+        result = subprocess.run(
+            [
+                'python', '-u', str(script_path),
+                '--sessions',
+                '--rescore',
+                '--batch-size', '10',
+                '--model', 'granite3.3:8b',
+                '--limit', '1000'
+            ],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=7200  # 2 hour timeout
+        )
+        
+        if result.returncode == 0:
+            duration_ms = int((time.time() - start_time) * 1000)
+            # Extract session count from output
+            output_lines = result.stdout.split('\n')
+            completed_line = [line for line in output_lines if 'Completed processing' in line]
+            
+            if completed_line:
+                message = completed_line[-1].split('INFO -')[-1].strip()
+            else:
+                message = "Rescore completed (1000 sessions)"
+            
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed('rescore_congress_sessions', target_date, None, [])
+            logger.info(f"✅ {message}")
+        else:
+            duration_ms = int((time.time() - start_time) * 1000)
+            error_output = result.stderr[-500:] if result.stderr else "No error output"
+            message = f"Script failed with exit code {result.returncode}: {error_output}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            logger.error(f"❌ {message}")
+        
+    except subprocess.TimeoutExpired:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = "Job timed out after 2 hours"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+        except Exception:
+            pass
+        logger.error(f"❌ {message}")
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+        except Exception:
+            pass
+        logger.error(f"❌ Congress sessions rescore job failed: {e}", exc_info=True)
+
 
 
 def register_default_jobs(scheduler) -> None:

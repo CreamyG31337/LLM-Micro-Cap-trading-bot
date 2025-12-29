@@ -3203,7 +3203,7 @@ def fetch_congress_trades_job() -> None:
                             try:
                                 # Only check if amount is simple (no special chars that cause encoding issues)
                                 if amount and not any(char in amount for char in ['$', ',', '-', ' ']):
-                                    existing = supabase_client.supabase.table("congress_trades")\
+                                    existing = supabase_client.supabase.table("congress_trades_enriched")\
                                         .select("id")\
                                         .eq("politician", politician)\
                                         .eq("ticker", ticker)\
@@ -3419,7 +3419,7 @@ def analyze_congress_trades_job() -> None:
         
         try:
             # Fetch unscored trades (newest first)
-            response = client.supabase.table("congress_trades")\
+            response = client.supabase.table("congress_trades_enriched")\
                 .select("*")\
                 .is_("conflict_score", "null")\
                 .order("transaction_date", desc=True)\

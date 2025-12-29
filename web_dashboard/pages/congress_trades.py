@@ -138,7 +138,7 @@ def get_unique_tickers(_supabase_client, _refresh_key: int) -> List[str]:
         offset = 0
         
         while True:
-            result = _supabase_client.supabase.table("congress_trades")\
+            result = _supabase_client.supabase.table("congress_trades_enriched")\
                 .select("ticker")\
                 .range(offset, offset + batch_size - 1)\
                 .execute()
@@ -182,7 +182,7 @@ def get_unique_politicians(_supabase_client, _refresh_key: int) -> List[str]:
         offset = 0
         
         while True:
-            result = _supabase_client.supabase.table("congress_trades")\
+            result = _supabase_client.supabase.table("congress_trades_enriched")\
                 .select("politician")\
                 .range(offset, offset + batch_size - 1)\
                 .execute()
@@ -263,7 +263,7 @@ def get_congress_trades(
             return []
         
         # Build query with filters
-        query = _supabase_client.supabase.table("congress_trades").select("*")
+        query = _supabase_client.supabase.table("congress_trades_enriched").select("*")
         
         # Apply filters
         if ticker_filter:

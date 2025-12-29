@@ -890,7 +890,7 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
     most_recent_trade_date = None
     if skip_recent:
         try:
-            result = client.supabase.table("congress_trades")\
+            result = client.supabase.table("congress_trades_enriched")\
                 .select("transaction_date")\
                 .order("transaction_date", desc=True)\
                 .limit(1)\

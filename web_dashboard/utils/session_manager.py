@@ -206,7 +206,7 @@ def get_session_trades(
         trade_ids = [row['trade_id'] for row in result]
         
         # Fetch full trade data from Supabase
-        response = supabase.supabase.table("congress_trades")\
+        response = supabase.supabase.table("congress_trades_enriched")\
             .select("*")\
             .in_("id", trade_ids)\
             .execute()

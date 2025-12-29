@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
+⚠️  DEPRECATED - USE safe_migrate_staging_to_production.py INSTEAD ⚠️
+
 Full Migration: Replace Production with Staging Data (Supabase only)
 ====================================================================
 
-Replaces ALL production data with clean staging data.
-AI analysis update will need to be done separately via PostgreSQL.
+⚠️  WARNING: This script DELETES all production data and reloads from staging.
+⚠️  This BREAKS AI analysis foreign key references (they point to old IDs).
+⚠️  You will LOSE all AI analysis data (hours of GPU time).
+
+❌ DO NOT USE THIS SCRIPT unless you understand the consequences.
+✅ Use safe_migrate_staging_to_production.py instead - it preserves AI analysis.
 
 Usage:
     python full_migration_supabase_only.py --batch-id <uuid>

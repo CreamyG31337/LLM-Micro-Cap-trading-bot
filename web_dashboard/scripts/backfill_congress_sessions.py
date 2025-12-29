@@ -62,7 +62,7 @@ def backfill_sessions(gap_days: int = 7, limit: int = 0):
     start = 0
     
     while True:
-        query = supabase.supabase.table("congress_trades")\
+        query = supabase.supabase.table("congress_trades_enriched")\
             .select("id, politician, transaction_date, ticker, party, state, chamber")\
             .order("transaction_date", desc=False)\
             .range(start, start + page_size - 1)

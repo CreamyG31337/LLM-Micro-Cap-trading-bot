@@ -377,15 +377,14 @@ def analyze_trade(ollama: OllamaClient, context: Dict[str, Any], model: str, ver
     
     for attempt in range(max_retries + 1):
         try:
-            # Use structured JSON output mode for guaranteed valid JSON
+            # Use structured system prompt to encourage JSON output
             full_response = ""
             for chunk in ollama.query_ollama(
                 prompt=prompt,
                 model=model,
                 stream=True,
                 system_prompt=system_prompt,
-                temperature=0.1,  # Low temp for consistent JSON
-                format="json"  # Enforce JSON structure
+                temperature=0.1  # Low temp for consistent JSON
             ):
                 full_response += chunk
                 if verbose:
@@ -526,7 +525,7 @@ def analyze_session(
         trade_ids = [row['trade_id'] for row in trades_result]
         
         # Fetch full trade data from Supabase
-        response = supabase.supabase.table("congress_trades")\
+        response = supabase.supabase.table("congress_trades_enriched")\
             .select("*")\
             .in_("id", trade_ids)\
             .execute()
@@ -777,7 +776,7 @@ def main():
             # Fetch trades based on mode
             if args.rescore:
                 # Rescore mode: analyze ALL trades (allows multiple analyses)
-                query = client.supabase.table("congress_trades").select("*")
+                query = client.supabase.table("congress_trades_enriched").select("*")
             else:
                 # Normal mode: only analyze trades not yet analyzed with this version
                 # Get trade IDs that have been analyzed (from Postgres)
@@ -789,7 +788,7 @@ def main():
                 analyzed_ids = [row['trade_id'] for row in analyzed_result] if analyzed_result else []
                 
                 # Fetch trades NOT in the analyzed list
-                query = client.supabase.table("congress_trades").select("*")
+                query = client.supabase.table("congress_trades_enriched").select("*")
                 if analyzed_ids:
                     query = query.not_.in_("id", analyzed_ids)
             

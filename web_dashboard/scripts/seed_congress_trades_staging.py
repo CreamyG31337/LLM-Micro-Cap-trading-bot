@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Congress Trading History Seeder
-===============================
+Congress Trading History Seeder (STAGING)
+==========================================
 
 Scrapes historical congressional trading data from an external source
-into the congress_trades table.
+into the congress_trades_STAGING table for validation before production.
 
 Uses FlareSolverr to bypass Cloudflare protection and extracts data from
 the embedded Next.js data chunks.
@@ -23,6 +23,7 @@ import base64
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
+import uuid
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -379,8 +380,9 @@ def clean_ticker(issuer_data: Optional[Dict[str, Any]]) -> Optional[str]:
     if not ticker or ticker == '--' or ticker == 'N/A':
         return None
     
-    # Validation: Must be 1-5 alphabetic chars (US stocks)
-    if not re.match(r'^[A-Z]{1,5}$', ticker):
+    # Validation: Allow 1-10 chars, letters, numbers, and dots (for share classes like BRK.B)
+    # This captures stocks, bonds (US10Y), share classes (BRK.B), and numbered tickers
+    if not re.match(r'^[A-Z0-9\.]{1,10}$', ticker):
         return None
         
     return ticker
@@ -859,11 +861,19 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100, max_pages: Optional[int] = None, start_page: int = 1, skip_recent: bool = False) -> None:
-    """Main seeder function - scrapes historical data from source"""
+def seed_congress_trades_staging(months_back: Optional[int] = None, page_size: int = 100, max_pages: Optional[int] = None, start_page: int = 1, skip_recent: bool = False) -> str:
+    """Main seeder function - scrapes historical data into STAGING table
+    
+    Returns:
+        batch_id: UUID of the import batch
+    """
+    # Generate batch ID for this import
+    batch_id = str(uuid.uuid4())
+    
     print("=" * 70)
-    print("CONGRESS TRADES HISTORY SEEDER")
+    print("CONGRESS TRADES HISTORY SEEDER (STAGING)")
     print("=" * 70)
+    print(f"📦 Batch ID: {batch_id}")
     print()
     
     # Check FlareSolverr availability
@@ -890,7 +900,7 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
     most_recent_trade_date = None
     if skip_recent:
         try:
-            result = client.supabase.table("congress_trades")\
+            result = client.supabase.table("congress_trades_staging")\
                 .select("transaction_date")\
                 .order("transaction_date", desc=True)\
                 .limit(1)\
@@ -953,6 +963,7 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
             
             # Process the trades
             page_records = []
+            skipped_details = []  # Track what we skip for logging
             oldest_on_page = None
             newest_on_page = None
             
@@ -962,7 +973,30 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
                     mapped_record = map_trade_to_schema(trade)
                     if not mapped_record:
                         total_skipped += 1
+                        # Log why it was skipped
+                        politician_name = trade.get('politician', {})
+                        if isinstance(politician_name, dict):
+                            pol = f"{politician_name.get('firstName', '')} {politician_name.get('lastName', '')}".strip()
+                        else:
+                            pol = str(politician_name)
+                        
+                        issuer = trade.get('issuer', {})
+                        ticker_raw = issuer.get('issuerTicker', '') or issuer.get('ticker', '')
+                        company = issuer.get('issuerName', 'Unknown')
+                        
+                        skip_reason = "No ticker" if not ticker_raw else "Failed validation"
+                        skipped_details.append({
+                            'politician': pol or 'Unknown',
+                            'company': company,
+                            'ticker_raw': ticker_raw,
+                            'reason': skip_reason,
+                            'tx_date': trade.get('txDate', 'Unknown')
+                        })
                         continue
+                    
+                    # Add staging-specific fields
+                    mapped_record['import_batch_id'] = batch_id
+                    mapped_record['raw_data'] = trade  # Store original for debugging
                     
                     # Check transaction date
                     tx_date = datetime.strptime(mapped_record['transaction_date'], "%Y-%m-%d").date()
@@ -977,9 +1011,8 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
                         total_skipped += 1
                         continue
                     
-                    # Only add records that are after cutoff date (if cutoff is specified)
-                    if cutoff_date is None or tx_date >= cutoff_date.date():
-                        page_records.append(mapped_record)
+                    # Add ALL records regardless of date (no cutoff filter)
+                    page_records.append(mapped_record)
                 
                 except Exception as e:
                     total_errors += 1
@@ -1031,14 +1064,11 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
                 if 'company_name' in record:
                     del record['company_name']
 
-            # Insert records in batch
+            # Insert records in batch to STAGING table
             if page_records:
                 try:
-                    result = client.supabase.table("congress_trades")\
-                        .upsert(
-                            page_records,
-                            on_conflict="politician,ticker,transaction_date,amount,type,owner"
-                        )\
+                    result = client.supabase.table("congress_trades_staging")\
+                        .insert(page_records)\
                         .execute()
                     
                     page_added = len(page_records)
@@ -1086,13 +1116,22 @@ def seed_congress_trades(months_back: Optional[int] = None, page_size: int = 100
             break
     
     print()
+    print("\n" + "=" * 70)
+    print("✅ IMPORT TO STAGING COMPLETE")
     print("=" * 70)
-    print("✅ SEEDING COMPLETE")
-    print("=" * 70)
-    print(f"Total trades imported: {total_added:,}")
-    print(f"Total skipped: {total_skipped:,}")
-    print(f"Total errors: {total_errors:,}")
+    print(f"   Batch ID: {batch_id}")
+    print(f"   Total Added To Staging: {total_added}")
+    print(f"   Total Skipped (no ticker): {total_skipped}")
+    if total_errors > 0:
+        print(f"   Total Errors: {total_errors}")
     print()
+    print(f"   Next steps:")
+    print(f"   1. Review data in staging table")
+    print(f"   2. Run validation: python validate_congress_staging.py --batch-id {batch_id}")
+    print(f"   3. Promote to production: python promote_congress_trades.py --batch-id {batch_id}")
+    print()
+    
+    return batch_id
 
 
 if __name__ == "__main__":
@@ -1128,4 +1167,5 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
-    seed_congress_trades(months_back=args.months_back, page_size=args.page_size, max_pages=args.max_pages, start_page=args.start_page, skip_recent=args.skip_recent)
+    batch_id = seed_congress_trades_staging(months_back=args.months_back, page_size=args.page_size, max_pages=args.max_pages, start_page=args.start_page, skip_recent=args.skip_recent)
+    print(f"\nBatch ID: {batch_id}")

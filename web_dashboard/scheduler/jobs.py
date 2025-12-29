@@ -4248,6 +4248,20 @@ def register_default_jobs(scheduler) -> None:
     )
     logger.info("Registered job: social_metrics_cleanup (daily at 3:00 AM EST)")
     
+    # Rescore Congress Sessions (Manual Only)
+    # Always register this so it appears in UI, but it has no schedule
+    # We use a dummy date trigger far in the future
+    scheduler.add_job(
+        rescore_congress_sessions_job,
+        trigger='date', 
+        run_date=datetime(9999, 12, 31, tzinfo=timezone.utc), # Effectively never
+        id='rescore_congress_sessions',
+        name=f"{get_job_icon('rescore_congress_sessions')} Rescore Congress Sessions (Manual)",
+        replace_existing=True
+    )
+    scheduler.pause_job('rescore_congress_sessions') # Ensure it's paused/manual only
+    logger.info("Registered job: rescore_congress_sessions (Manual only)")
+    
     # Congress trades job - every 12 minutes (120 runs/day × 2 API calls = 240 total, stays under 250 limit)
     if AVAILABLE_JOBS['congress_trades']['enabled_by_default']:
         scheduler.add_job(

@@ -3908,30 +3908,62 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             return
         
         # Run the batch analysis script with rescore parameters
-        logger.info(f"Executing batch analysis script with --rescore --limit {limit}...")
-        result = subprocess.run(
-            [
-                'python', '-u', str(script_path),
-                '--sessions',
-                '--rescore',
-                '--batch-size', str(batch_size),
-                '--model', str(model),
-                '--limit', str(limit)
-            ],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-            timeout=7200  # 2 hour timeout
-        )
+        cmd = [
+            'python', '-u', str(script_path),
+            '--sessions',
+            '--rescore',
+            '--batch-size', str(batch_size),
+            '--model', str(model),
+            '--limit', str(limit)
+        ]
+        logger.info(f"Executing command: {' '.join(cmd)}")
+        logger.info(f"Working Directory: {str(project_root)}")
         
-        if result.returncode == 0:
-            duration_ms = int((time.time() - start_time) * 1000)
-            # Extract session count from output
-            output_lines = result.stdout.split('\n')
-            completed_line = [line for line in output_lines if 'Completed processing' in line]
+        # Use Popen to stream output line-by-line
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(project_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
+            text=True,
+            bufsize=1,  # Line buffered
+            encoding='utf-8'
+        )
+
+        # Stream output
+        full_output = []
+        last_log_time = time.time()
+        
+        # Read stdout line by line
+        for line in iter(process.stdout.readline, ''):
+            clean_line = line.strip()
+            full_output.append(clean_line)
             
-            if completed_line:
-                message = completed_line[-1].split('INFO -')[-1].strip()
+            # Log significant lines to main logger immediately
+            # This makes them visible in the console/logs in real-time
+            if clean_line:
+                if any(x in clean_line for x in ["SESSION ANALYZED", "Completed processing", "Starting AI Analysis", "Traceback", "Error"]):
+                    logger.info(f"   [Script] {clean_line}")
+                # Log progress every 60 seconds regardless of content
+                elif time.time() - last_log_time > 60:
+                    logger.info(f"   [Script] {clean_line}")
+                    last_log_time = time.time()
+        
+        process.stdout.close()
+        return_code = process.wait()
+        
+        if return_code == 0:
+            duration_ms = int((time.time() - start_time) * 1000)
+            # Find completion message
+            completed_lines = [line for line in full_output if 'Completed processing' in line]
+            
+            if completed_lines:
+                # Remove timestamp/level prefix if present to keep it clean
+                msg_text = completed_lines[-1]
+                if "INFO -" in msg_text:
+                    message = msg_text.split('INFO -')[-1].strip()
+                else:
+                    message = msg_text
             else:
                 message = f"Rescore completed ({limit} sessions)"
             
@@ -3940,11 +3972,12 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             logger.info(f"✅ {message}")
         else:
             duration_ms = int((time.time() - start_time) * 1000)
-            error_output = result.stderr[-500:] if result.stderr else "No error output"
-            message = f"Script failed with exit code {result.returncode}: {error_output}"
+            # Use last 10 lines as error snippet
+            error_snippet = "\n".join(full_output[-10:])
+            message = f"Script failed with exit code {return_code}. Last output:\n{error_snippet}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             mark_job_failed('rescore_congress_sessions', target_date, None, message)
-            logger.error(f"❌ {message}")
+            logger.error(f"❌ Script failed: {message}")
         
     except subprocess.TimeoutExpired:
         duration_ms = int((time.time() - start_time) * 1000)

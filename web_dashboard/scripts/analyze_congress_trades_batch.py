@@ -16,6 +16,7 @@ Usage:
     python scripts/analyze_congress_trades_batch.py [--batch-size 10] [--model granite3.3:8b]
 """
 
+import re
 import sys
 import os
 import json
@@ -23,7 +24,9 @@ import time
 import argparse
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import List, Dict, Optional, Any, Tuple
+from datetime import datetime, timedelta
+import pandas as pd
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -46,6 +49,7 @@ else:
 from supabase_client import SupabaseClient
 from ollama_client import OllamaClient
 from postgres_client import PostgresClient
+from data.committee_jurisdictions import get_committee_context
 
 # Setup logging
 logging.basicConfig(
@@ -68,7 +72,23 @@ KNOWN_ETF_TICKERS = {
     'AGG', 'BND', 'GLD', 'SLV', 'VNQ', 'XLF', 'XLE', 'XLK', 'XLV'
 }
 
-def is_low_risk_asset(context: Dict[str, Any]) -> tuple[bool, str]:
+# Helper to extract JSON from text (handles models that return extra text)
+def extract_json(text: str) -> Optional[Dict[str, Any]]:
+    """Extract first JSON block found in text using regex."""
+    try:
+        # First, try direct parse
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        try:
+            # Find the first { and last }
+            match = re.search(r'\{.*\}', text, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+        except:
+            pass
+    return None
+
+def is_low_risk_asset(context: Dict[str, Any]) -> Tuple[bool, str]:
     """Check if an asset is low-risk and doesn't require AI analysis.
     
     Low-risk assets include:
@@ -107,58 +127,60 @@ def is_low_risk_asset(context: Dict[str, Any]) -> tuple[bool, str]:
     # Not a low-risk asset - requires AI analysis
     return False, ""
 
-# Prompt template for SESSION-BASED analysis
+# Prompt template for SESSION-BASED analysis with Intent Classification
 SESSION_PROMPT_TEMPLATE = """
-Role: Senior Forensic Financial Analyst
-Mission: Detect **specific and actionable** conflicts of interest in Congress trading.
+Role: Forensic Financial Analyst
+Mission: Classify the **INTENT** behind Congressional trading sessions.
 
---- CASE FILE ---
+--- INPUT DATA ---
 **Subject:** {politician} ({party} - {state})
 **Chamber:** {chamber}
-**Key Committees:** {committees} (CRITICAL: Only flag DIRECT regulatory power)
+
+**Committee Powers & Jurisdictions:**
+{committee_descriptions}
+*(Use these definitions to determine regulatory reach.)*
 
 **Session Activity ({trade_count} trades):**
 {trades_table}
 
---- ANALYSIS PROTOCOL ---
-You must calculate the "Regulatory Distance" between the Committee and the Stock.
+--- ANALYSIS LOGIC (Follow Step-by-Step) ---
 
-1. **Tier 1: DIRECT CONFLICT (Score 0.8 - 1.0)**
-   - The Committee writes laws specifically for this industry.
-   - *Example:* Armed Services Buying Lockheed Martin.
-   - *Example:* Banking Committee Buying JP Morgan.
-   - *Example:* Energy Committee Buying Exxon.
+STEP 1: REGULATORY LINK?
+- Does the Committee Definition above explicitly cover the stock's industry?
+  - *YES:* Proceed to Step 2.
+  - *NO:* Mark as "NO_RELATIONSHIP" (Score 0.0).
 
-2. **Tier 2: INDIRECT/MACRO (Score 0.4 - 0.7)**
-   - The Committee affects the whole economy, or the link is secondary.
-   - *Example:* Ways & Means (Tax) buying Apple (Generic tax impact).
-   - *Example:* Financial Services buying a Restaurant (They use banks, but aren't banks).
+STEP 2: DIRECTION OF TRADE?
+- **BUYING:** This is an active bet on the sector.
+  - *Verdict:* If Link is YES -> "CONFLICT_BUY" (Score 0.9).
+- **SELLING:** This is ambiguous. Proceed to Step 3.
 
-3. **Tier 3: NO CONFLICT (Score 0.0 - 0.3)**
-   - No logical regulatory connection.
-   - *Example:* Agriculture Committee buying Microsoft.
-   - *Example:* Routine index fund (SPY) purchases.
-
---- ANTI-HALLUCINATION RULES ---
-- Do NOT flag "Financial Services" members for buying non-financial companies just because those companies "use banks."
-- Do NOT flag "Commerce" members for buying random retail stocks unless there is a specific antitrust investigation.
-- **The burden of proof is on you.** If the link is weak, score it LOW.
+STEP 3: SELLING CONTEXT (The "Deborah Ross" Rule)
+- **Small Sell ($1k - $15k):** This is likely "Divestment" or "Housekeeping."
+  - *Verdict:* "ROUTINE_DIVESTMENT" (Score 0.1 - Safe).
+- **Large Sell ($50k+) or Full Exit:** This is "Dumping."
+  - *Verdict:* If Link is YES -> "SUSPICIOUS_SELL" (Score 0.8 - Danger).
+- **Options/Shorts:** Betting against the market.
+  - *Verdict:* "AGGRESSIVE_BET" (Score 1.0 - Critical).
 
 --- OUTPUT REQUIREMENT ---
-Return valid JSON only.
+Return valid JSON only. "risk_pattern" MUST be one of the enums below.
 
-"risk_pattern" MUST be exactly one of these four strings:
-1. "DIRECT_CONFLICT" (Tier 1: Direct committee power over stock)
-2. "PIVOT"           (Tier 1: Dumping one sector to buy another)
-3. "MACRO_RISK"      (Tier 2: Indirect/Sector overlap)
-4. "ROUTINE"         (Tier 3: No conflict found)
+Enums for "risk_pattern":
+- "CONFLICT_BUY" (Buying regulated stock)
+- "SUSPICIOUS_SELL" (Large dump of regulated stock)
+- "AGGRESSIVE_BET" (Options/Shorts)
+- "ROUTINE_DIVESTMENT" (Small sales of regulated stock)
+- "NO_RELATIONSHIP" (No committee link)
 
 {{
-  "conflict_score": 0.15,
-  "confidence_score": 0.9,
-  "risk_pattern": "ROUTINE", 
-  "reasoning": "Subject is on Financial Services, but Cracker Barrel (Restaurant) is not under the committee's direct jurisdiction. No specific regulatory conflict found."
+  "conflict_score": 0.1,
+  "confidence_score": 0.95,
+  "risk_pattern": "ROUTINE_DIVESTMENT",
+  "reasoning": "Subject sits on Science Committee (Nuclear AI Regulation), which links to Microsoft. HOWEVER, the trade is a small sale (<$15k). This fits the pattern of ethical divestment rather than insider profit-taking."
 }}
+
+The confidence_score (0.0-1.0) indicates how certain you are.
 """
 
 # Legacy prompt for single-trade analysis (kept for backward compatibility if needed)
@@ -345,15 +367,27 @@ def get_trade_context(client: SupabaseClient, trade: Dict[str, Any], use_cache: 
                         title_str = f" ({title})" if title else ""
                         committees_list.append(f"{committee_name}{title_str} - Sectors: {sectors_str}")
                     
-                    committees_str = '; '.join(committees_list) if committees_list else 'None'
-                    context['committees'] = committees_str
+                    committees_str = '; '.join(committees_list)
+                else:
+                    committees_str = 'None'
+                
+                # Leadership Fix: Explicitly add Leadership context for known high-profile members
+                # (Nancy Pelosi, Mike Johnson often show up with no committees)
+                leadership_names = ["Pelosi", "Mike Johnson", "Speaker Johnson"]
+                if any(ln.lower() in politician_name.lower() for ln in leadership_names):
+                    if committees_str == 'None':
+                        committees_str = "Leadership"
+                    else:
+                        committees_str = f"Leadership; {committees_str}"
                     
-                    # Cache for future use
-                    if use_cache:
-                        _politician_cache[politician_name] = {
-                            'id': politician_id,
-                            'committees_str': committees_str
-                        }
+                context['committees'] = committees_str
+                
+                # Cache for future use
+                if use_cache:
+                    _politician_cache[politician_name] = {
+                        'id': politician_id,
+                        'committees_str': committees_str
+                    }
                 else:
                     context['committees'] = 'None (no committee assignments found)'
             else:
@@ -409,11 +443,17 @@ def analyze_trade(ollama: OllamaClient, context: Dict[str, Any], model: str, ver
                 print(f"\n{'='*80}\n")
             
             # Parse JSON directly (no regex needed with format="json")
-            result = json.loads(full_response.strip())
+            result = extract_json(full_response)
             
-            # Validate required fields
+            if not result:
+                raise ValueError("Could not extract JSON from response")
+            
+            # Validate required fields with fallbacks
             if 'conflict_score' not in result:
-                raise ValueError("Response missing 'conflict_score' field")
+                if 'score' in result:
+                    result['conflict_score'] = result['score']
+                else:
+                    raise ValueError("Response missing 'conflict_score' or 'score' field")
             
             # confidence_score is optional for backward compatibility
             if 'confidence_score' not in result:
@@ -611,14 +651,17 @@ def analyze_session(
         # Format trades table
         trades_table = format_trades_table(enriched_trades)
         
-        # Build prompt
+        # Generate committee context descriptions for injection
+        committee_descriptions = get_committee_context(politician_context['committees'])
+        
+        # Build prompt with injected context
         prompt = SESSION_PROMPT_TEMPLATE.format(
             trade_count=trade_count,
             politician=politician_context['politician'],
             party=politician_context['party'],
             state=politician_context['state'],
             chamber=politician_context['chamber'],
-            committees=politician_context['committees'],
+            committee_descriptions=committee_descriptions,
             start_date=start_date,
             end_date=end_date,
             trades_table=trades_table
@@ -659,10 +702,18 @@ def analyze_session(
 
         
         # Parse response
-        result = json.loads(full_response.strip())
+        result = extract_json(full_response)
         
+        if not result:
+            logger.error(f"AI Response was not valid JSON for session {session_id}")
+            logger.debug(f"Full response: {full_response}")
+            return False
+            
         if 'conflict_score' not in result:
-            raise ValueError("Response missing 'conflict_score' field")
+            if 'score' in result:
+                result['conflict_score'] = result['score']
+            else:
+                raise ValueError("Response missing 'conflict_score' or 'score' field")
         
         conflict_score = float(result['conflict_score'])
         confidence_score = float(result.get('confidence_score', 0.75))
@@ -750,24 +801,31 @@ def main():
             logger.info("SESSION MODE: Analyzing trade sessions (groups of related trades)")
             
             while True:
-                sessions = get_sessions_needing_analysis(postgres, limit=args.batch_size)
+                # Use current total_processed as offset when rescoring to paginate through database
+                offset = total_processed if args.rescore else 0
+                sessions = get_sessions_needing_analysis(
+                    postgres, 
+                    limit=args.batch_size,
+                    rescore=args.rescore,
+                    offset=offset
+                )
                 
                 if not sessions:
-                    logger.info("   [DONE] No more sessions needing analysis.")
+                    logger.info("   [DONE] No more sessions to analyze.")
                     break
                 
                 logger.info(f"Processing {len(sessions)} sessions...")
                 
                 for session in sessions:
+                    # Increment before processing to ensure offset advances even on failure
+                    total_processed += 1
+                    
                     success = analyze_session(
                         ollama, postgres, client, 
                         session['id'], 
                         args.model,
                         verbose=args.verbose
                     )
-                    
-                    if success:
-                        total_processed += 1
                     
                     # Check limit
                     if args.limit > 0 and total_processed >= args.limit:
@@ -778,7 +836,7 @@ def main():
                 if args.limit > 0 and total_processed >= args.limit:
                     break
             
-            logger.info(f"Completed analyzing {total_processed} sessions.")
+            logger.info(f"Completed processing {total_processed} sessions.")
             return
         
         # Individual trade analysis mode (legacy)

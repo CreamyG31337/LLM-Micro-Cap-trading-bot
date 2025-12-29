@@ -112,39 +112,63 @@ def find_or_create_session(
 
 def get_sessions_needing_analysis(
     postgres,
-    limit: int = 10
+    limit: int = 10,
+    rescore: bool = False,
+    offset: int = 0
 ) -> List[Dict[str, Any]]:
-    """Get sessions that need re-analysis.
+    """Get sessions for analysis.
     
     Args:
         postgres: PostgresClient instance
         limit: Maximum number of sessions to return
+        rescore: Whether to ignore needs_reanalysis flag and return already-analyzed sessions
+        offset: Offset for pagination
     
     Returns:
         List of session dicts with id, politician_name, trade_count, dates
     """
     try:
-        result = postgres.execute_query(
-            """
-            SELECT 
-                id,
-                politician_name,
-                start_date,
-                end_date,
-                trade_count,
-                last_analyzed_at
-            FROM congress_trade_sessions
-            WHERE needs_reanalysis = TRUE
-            ORDER BY updated_at DESC
-            LIMIT %s
-            """,
-            (limit,)
-        )
+        # Common WHERE clause to ensure session has trades
+        has_trades_filter = "EXISTS (SELECT 1 FROM congress_trades_analysis WHERE session_id = congress_trade_sessions.id)"
         
+        if rescore:
+            # Rescore mode: just get most recent sessions regardless of flag
+            query = f"""
+                SELECT 
+                    id,
+                    politician_name,
+                    start_date,
+                    end_date,
+                    trade_count,
+                    last_analyzed_at
+                FROM congress_trade_sessions
+                WHERE {has_trades_filter}
+                ORDER BY end_date DESC, id DESC
+                LIMIT %s OFFSET %s
+            """
+            params = (limit, offset)
+        else:
+            # Normal mode: only get sessions flagged for reanalysis
+            query = f"""
+                SELECT 
+                    id,
+                    politician_name,
+                    start_date,
+                    end_date,
+                    trade_count,
+                    last_analyzed_at
+                FROM congress_trade_sessions
+                WHERE needs_reanalysis = TRUE AND {has_trades_filter}
+                ORDER BY updated_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params = (limit, offset)
+            
+        result = postgres.execute_query(query, params)
         return result or []
         
     except Exception as e:
-        logger.error(f"Error getting sessions needing analysis: {e}")
+        logger.error(f"Error getting sessions for analysis: {e}")
         return []
 
 

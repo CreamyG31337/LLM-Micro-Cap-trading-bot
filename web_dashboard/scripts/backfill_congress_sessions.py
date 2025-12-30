@@ -19,8 +19,11 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Add project root to path
+# Script is in web_dashboard/scripts/, so project root is up 2 levels
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 # Load environment variables
 from dotenv import load_dotenv

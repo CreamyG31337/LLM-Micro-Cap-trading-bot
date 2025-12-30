@@ -7,6 +7,13 @@ import sys
 import os
 from pathlib import Path
 
+# Add project root to path for utils imports
+current_dir = Path(__file__).resolve().parent
+if current_dir.name == 'scheduler':
+    project_root = current_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
 # Initialize logger
 logger = logging.getLogger(__name__)
 

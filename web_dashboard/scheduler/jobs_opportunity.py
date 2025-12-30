@@ -1,5 +1,21 @@
 
 
+import logging
+import time
+import sys
+import os
+from pathlib import Path
+
+# Add project root to path for utils imports
+current_dir = Path(__file__).resolve().parent
+if current_dir.name == 'scheduler':
+    project_root = current_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+logger = logging.getLogger(__name__)
+
+
 def opportunity_discovery_job() -> None:
     """Hunt for new investment opportunities using targeted search queries.
     

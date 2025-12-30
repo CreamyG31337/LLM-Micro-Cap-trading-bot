@@ -18,7 +18,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scheduler.scheduler_core import log_job_execution
 
+
 logger = logging.getLogger(__name__)
+
+# Add project root to path for utils imports if running from web_dashboard
+import sys
+import os
+from pathlib import Path
+
+# If running from web_dashboard/scheduler, go up two levels
+current_dir = Path(__file__).resolve().parent
+if current_dir.name == 'scheduler':
+    project_root = current_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
 
 
 # Job definitions with metadata

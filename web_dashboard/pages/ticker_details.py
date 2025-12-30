@@ -14,17 +14,43 @@ from datetime import datetime
 import pandas as pd
 import logging
 
+logger = logging.getLogger(__name__)
+
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+parent_dir = Path(__file__).parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 from auth_utils import is_authenticated, refresh_token_if_needed
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
 from ticker_utils import get_ticker_info, get_ticker_external_links
-from utils.db_utils import get_all_unique_tickers
 
-logger = logging.getLogger(__name__)
+# Import from utils.db_utils - handle import error gracefully
+try:
+    from utils.db_utils import get_all_unique_tickers
+except (ImportError, ModuleNotFoundError) as e:
+    # Fallback: try importing directly if utils path doesn't work
+    try:
+        import importlib.util
+        # Ensure parent_dir is in sys.path for db_utils dependencies
+        if str(parent_dir) not in sys.path:
+            sys.path.insert(0, str(parent_dir))
+        db_utils_path = parent_dir / "utils" / "db_utils.py"
+        spec = importlib.util.spec_from_file_location("utils.db_utils", db_utils_path)
+        db_utils = importlib.util.module_from_spec(spec)
+        # Set __file__ and __package__ to help with relative imports
+        db_utils.__file__ = str(db_utils_path)
+        db_utils.__package__ = "utils"
+        spec.loader.exec_module(db_utils)
+        get_all_unique_tickers = db_utils.get_all_unique_tickers
+    except Exception as import_error:
+        logger.error(f"Failed to import get_all_unique_tickers: {e}, {import_error}", exc_info=True)
+        # Define a fallback function
+        def get_all_unique_tickers() -> list[str]:
+            logger.warning("Using fallback get_all_unique_tickers - returning empty list")
+            return []
 
 # Page configuration
 st.set_page_config(

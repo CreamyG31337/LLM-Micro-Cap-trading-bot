@@ -393,12 +393,12 @@ def render_ticker_link(
     Example:
         >>> link = render_ticker_link("AAPL")
         >>> print(link)
-        '[AAPL](pages/ticker_details?ticker=AAPL)'
+        '[AAPL](ticker_details?ticker=AAPL)'
         >>> 
         >>> # Custom display text
         >>> link = render_ticker_link("AAPL", "Apple Inc.")
         >>> print(link)
-        '[Apple Inc.](pages/ticker_details?ticker=AAPL)'
+        '[Apple Inc.](ticker_details?ticker=AAPL)'
         >>> 
         >>> # Use in Streamlit markdown
         >>> import streamlit as st
@@ -416,8 +416,8 @@ def render_ticker_link(
     
     if use_page_link:
         # Use Streamlit page_link format
-        # Format: pages/ticker_details.py?ticker=AAPL
-        return f"[{display}](pages/ticker_details?ticker={ticker_upper})"
+        # Format: ticker_details?ticker=AAPL
+        return f"[{display}](ticker_details?ticker={ticker_upper})"
     else:
         # Fallback to query parameter format
         return f"[{display}](?ticker={ticker_upper})"

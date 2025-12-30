@@ -229,10 +229,10 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
             pos_df = pd.DataFrame([
                 {
                     'Fund': pos.get('fund', 'N/A'),
-                    'Shares': f"{pos.get('shares', 0):,.2f}",
-                    'Price': f"${pos.get('price', 0):.2f}",
-                    'Cost Basis': f"${pos.get('cost_basis', 0):.2f}",
-                    'P&L': f"${pos.get('pnl', 0):.2f}",
+                    'Shares': f"{(pos.get('shares') or 0):,.2f}",
+                    'Price': f"${(pos.get('price') or 0):.2f}",
+                    'Cost Basis': f"${(pos.get('cost_basis') or 0):.2f}",
+                    'P&L': f"${(pos.get('pnl') or 0):.2f}",
                     'Date': format_date_safe(pos.get('date'))
                 }
                 for pos in latest_positions.values()
@@ -248,8 +248,8 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
                 {
                     'Date': format_date_safe(trade.get('date')),
                     'Action': trade.get('action', 'N/A'),
-                    'Shares': f"{trade.get('shares', 0):,.2f}",
-                    'Price': f"${trade.get('price', 0):.2f}",
+                    'Shares': f"{(trade.get('shares') or 0):,.2f}",
+                    'Price': f"${(trade.get('price') or 0):.2f}",
                     'Fund': trade.get('fund', 'N/A'),
                     'Reason': trade.get('reason', 'N/A')[:50] if trade.get('reason') else 'N/A'
                 }
@@ -299,9 +299,9 @@ if social_sentiment:
             {
                 'Platform': metric.get('platform', 'N/A').title(),
                 'Sentiment': metric.get('sentiment_label', 'N/A'),
-                'Score': f"{metric.get('sentiment_score', 0):.2f}",
-                'Volume': metric.get('volume', 0),
-                'Bull/Bear Ratio': f"{metric.get('bull_bear_ratio', 0):.2f}" if metric.get('bull_bear_ratio') else 'N/A',
+                'Score': f"{(metric.get('sentiment_score') or 0):.2f}",
+                'Volume': metric.get('volume') or 0,
+                'Bull/Bear Ratio': f"{(metric.get('bull_bear_ratio') or 0):.2f}" if metric.get('bull_bear_ratio') is not None else 'N/A',
                 'Last Updated': format_date_safe(metric.get('created_at')) if metric.get('created_at') else 'N/A'
             }
             for metric in latest_metrics
@@ -313,12 +313,13 @@ if social_sentiment:
         st.subheader("Recent Alerts (Last 24 Hours)")
         for alert in alerts:
             sentiment_label = alert.get('sentiment_label', 'N/A')
+            sentiment_score = alert.get('sentiment_score') or 0
             if sentiment_label == 'EUPHORIC':
-                st.success(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {alert.get('sentiment_score', 0):.2f})")
+                st.success(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {sentiment_score:.2f})")
             elif sentiment_label == 'FEARFUL':
-                st.error(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {alert.get('sentiment_score', 0):.2f})")
+                st.error(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {sentiment_score:.2f})")
             elif sentiment_label == 'BULLISH':
-                st.info(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {alert.get('sentiment_score', 0):.2f})")
+                st.info(f"**{alert.get('platform', 'Unknown').title()}** - {sentiment_label} (Score: {sentiment_score:.2f})")
 else:
     st.info(f"No social sentiment data available for {current_ticker}.")
 

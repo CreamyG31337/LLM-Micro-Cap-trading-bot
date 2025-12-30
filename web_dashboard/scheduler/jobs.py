@@ -1065,6 +1065,9 @@ def ticker_research_job() -> None:
         
         logger.info(f"Found {len(regular_tickers)} regular tickers to research: {list(regular_tickers.keys())}")
         
+        # Create owned_tickers set for relevance scoring (includes both ETFs and regular tickers)
+        owned_tickers = set(targets.keys())
+        
         articles_saved = 0
         articles_failed = 0
         tickers_processed = 0

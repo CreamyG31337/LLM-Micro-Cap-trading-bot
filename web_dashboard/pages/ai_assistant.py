@@ -825,10 +825,13 @@ with right_col:
                                 sectors_str = ", ".join(top_sectors)
                                 set_suggested_prompt(f"What's happening in these sectors today: {sectors_str}? Provide news and analysis for each.")
                             else:
+                                logger.warning("Sector News: No sectors found in positions data (after filtering)")
                                 set_suggested_prompt("What's happening in the stock market sectors today?")
                         else:
+                            logger.warning(f"Sector News: positions_df missing required columns. Empty={positions_df.empty}, Has sector={'sector' in positions_df.columns}, Has total_value={'total_value' in positions_df.columns}")
                             set_suggested_prompt("What's happening in the stock market sectors today?")
-                    except Exception:
+                    except Exception as e:
+                        logger.error(f"Sector News: Error loading positions data: {e}", exc_info=True)
                         set_suggested_prompt("What's happening in the stock market sectors today?")
                 else:
                     set_suggested_prompt("What's happening in the stock market sectors today?")

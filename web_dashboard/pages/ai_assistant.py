@@ -816,9 +816,9 @@ with right_col:
                     # Get top sectors from current holdings, weighted by portfolio allocation
                     try:
                         positions_df = get_current_positions(selected_fund)
-                        if not positions_df.empty and 'sector' in positions_df.columns and 'total_value' in positions_df.columns:
-                            # Group by sector and sum total values, then get top 5
-                            sector_weights = positions_df.groupby('sector')['total_value'].sum().sort_values(ascending=False)
+                        if not positions_df.empty and 'sector' in positions_df.columns and 'market_value' in positions_df.columns:
+                            # Group by sector and sum market values, then get top 5
+                            sector_weights = positions_df.groupby('sector')['market_value'].sum().sort_values(ascending=False)
                             top_sectors = sector_weights.head(5).index.tolist()
                             
                             if top_sectors:
@@ -828,7 +828,7 @@ with right_col:
                                 logger.warning("Sector News: No sectors found in positions data (after filtering)")
                                 set_suggested_prompt("What's happening in the stock market sectors today?")
                         else:
-                            logger.warning(f"Sector News: positions_df missing required columns. Empty={positions_df.empty}, Has sector={'sector' in positions_df.columns}, Has total_value={'total_value' in positions_df.columns}")
+                            logger.warning(f"Sector News: positions_df missing required columns. Empty={positions_df.empty}, Has sector={'sector' in positions_df.columns}, Has market_value={'market_value' in positions_df.columns}")
                             set_suggested_prompt("What's happening in the stock market sectors today?")
                     except Exception as e:
                         logger.error(f"Sector News: Error loading positions data: {e}", exc_info=True)

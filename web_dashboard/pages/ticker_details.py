@@ -10,19 +10,19 @@ and provides external links to financial websites.
 import streamlit as st
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Any
-from datetime import datetime, timezone
+from datetime import datetime
 import pandas as pd
 import logging
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email
+from auth_utils import is_authenticated, refresh_token_if_needed
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
 from ticker_utils import get_ticker_info, get_ticker_external_links
+from utils.db_utils import get_all_unique_tickers
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ if not is_authenticated():
     st.stop()
 
 # Refresh token if needed
-from auth_utils import refresh_token_if_needed
 if not refresh_token_if_needed():
     from auth_utils import logout_user
     logout_user()
@@ -76,15 +75,19 @@ supabase_client = get_supabase_client()
 query_params = st.query_params
 ticker = query_params.get("ticker", "")
 
+# Get all available tickers for dropdown
+all_tickers = get_all_unique_tickers()
+
 # Ticker search box
 col_search, col_spacer = st.columns([0.3, 0.7])
 with col_search:
-    search_ticker = st.text_input(
+    search_ticker = st.selectbox(
         "Search Ticker",
-        value=ticker.upper() if ticker else "",
-        placeholder="Enter ticker symbol (e.g., AAPL)",
+        options=[""] + all_tickers,
+        index=0 if not ticker else (all_tickers.index(ticker.upper()) + 1 if ticker.upper() in all_tickers else 0),
+        placeholder="Select ticker symbol",
         key="ticker_search"
-    ).upper().strip()
+    )
 
 # If user entered a new ticker, update query params
 if search_ticker and search_ticker != ticker:
@@ -145,7 +148,7 @@ if basic_info:
     industry = basic_info.get('industry', 'N/A')
     currency = basic_info.get('currency', 'USD')
     exchange = basic_info.get('exchange', 'N/A')
-    
+
     st.header(f"{company_name}")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -154,7 +157,7 @@ if basic_info:
         st.metric("Industry", industry)
     with col3:
         st.metric("Currency", currency)
-    
+
     if exchange != 'N/A':
         st.caption(f"Exchange: {exchange}")
 else:
@@ -180,7 +183,7 @@ st.markdown("---")
 portfolio_data = ticker_data.get('portfolio_data')
 if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get('has_trades')):
     st.header("💼 Portfolio Data")
-    
+
     # Current Positions
     if portfolio_data.get('has_positions'):
         positions = portfolio_data.get('positions', [])
@@ -196,7 +199,7 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
                     # Keep the most recent
                     if pos.get('date', '') > latest_positions[fund].get('date', ''):
                         latest_positions[fund] = pos
-            
+
             pos_df = pd.DataFrame([
                 {
                     'Fund': pos.get('fund', 'N/A'),
@@ -209,7 +212,7 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
                 for pos in latest_positions.values()
             ])
             st.dataframe(pos_df, use_container_width=True, hide_index=True)
-    
+
     # Trade History
     if portfolio_data.get('has_trades'):
         trades = portfolio_data.get('trades', [])
@@ -237,7 +240,7 @@ research_articles = ticker_data.get('research_articles', [])
 if research_articles:
     st.header("📚 Research Articles")
     st.caption(f"Found {len(research_articles)} articles mentioning {current_ticker} (last 30 days)")
-    
+
     for article in research_articles[:10]:  # Show top 10
         with st.expander(f"{article.get('title', 'Untitled')[:80]}..."):
             col1, col2 = st.columns([3, 1])
@@ -262,7 +265,7 @@ st.markdown("---")
 social_sentiment = ticker_data.get('social_sentiment')
 if social_sentiment:
     st.header("💬 Social Sentiment")
-    
+
     latest_metrics = social_sentiment.get('latest_metrics', [])
     if latest_metrics:
         st.subheader("Latest Metrics")
@@ -278,7 +281,7 @@ if social_sentiment:
             for metric in latest_metrics
         ])
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
-    
+
     alerts = social_sentiment.get('alerts', [])
     if alerts:
         st.subheader("Recent Alerts (Last 24 Hours)")
@@ -300,7 +303,7 @@ congress_trades = ticker_data.get('congress_trades', [])
 if congress_trades:
     st.header("🏛️ Congress Trades")
     st.caption(f"Found {len(congress_trades)} recent trades by politicians (last 30 days)")
-    
+
     trades_df = pd.DataFrame([
         {
             'Date': format_date_safe(trade.get('transaction_date')),
@@ -334,5 +337,5 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption(f"Data last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+st.caption(f"Data last updated: {datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 

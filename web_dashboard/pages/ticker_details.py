@@ -137,10 +137,8 @@ except Exception as e:
 # Header
 st.title(f"📊 {current_ticker}")
 
-# Wrap main content in try-except for better error handling
-try:
-    # Basic Info Section
-    basic_info = ticker_data.get('basic_info')
+# Basic Info Section
+basic_info = ticker_data.get('basic_info')
 if basic_info:
     company_name = basic_info.get('company_name', 'N/A')
     sector = basic_info.get('sector', 'N/A')
@@ -206,7 +204,7 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
                     'Price': f"${pos.get('price', 0):.2f}",
                     'Cost Basis': f"${pos.get('cost_basis', 0):.2f}",
                     'P&L': f"${pos.get('pnl', 0):.2f}",
-                    'Date': pos.get('date', 'N/A')[:10] if pos.get('date') else 'N/A'
+                    'Date': format_date_safe(pos.get('date'))
                 }
                 for pos in latest_positions.values()
             ])
@@ -219,7 +217,7 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
             st.subheader("Recent Trade History")
             trade_df = pd.DataFrame([
                 {
-                    'Date': trade.get('date', 'N/A')[:10] if trade.get('date') else 'N/A',
+                    'Date': format_date_safe(trade.get('date')),
                     'Action': trade.get('action', 'N/A'),
                     'Shares': f"{trade.get('shares', 0):,.2f}",
                     'Price': f"${trade.get('price', 0):.2f}",
@@ -305,7 +303,7 @@ if congress_trades:
     
     trades_df = pd.DataFrame([
         {
-            'Date': trade.get('transaction_date', 'N/A'),
+            'Date': format_date_safe(trade.get('transaction_date')),
             'Politician': trade.get('politician', 'N/A'),
             'Chamber': trade.get('chamber', 'N/A'),
             'Type': trade.get('type', 'N/A'),
@@ -333,11 +331,6 @@ if watchlist_status:
         st.metric("Source", watchlist_status.get('source', 'N/A'))
 else:
     st.info(f"{current_ticker} is not in the watchlist.")
-
-except Exception as e:
-    logger.error(f"Error rendering ticker details page for {current_ticker}: {e}", exc_info=True)
-    st.error(f"❌ An error occurred while displaying ticker information: {str(e)}")
-    st.info("Please try refreshing the page or contact support if the problem persists.")
 
 # Footer
 st.markdown("---")

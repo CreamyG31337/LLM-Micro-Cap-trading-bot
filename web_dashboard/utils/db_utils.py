@@ -47,36 +47,37 @@ def get_all_unique_tickers() -> list[str]:
     if sb_client:
         try:
             # From securities table
-            securities = sb_client.table('securities').select('ticker').execute()
+            securities = sb_client.supabase.table('securities').select('ticker').execute()
             for row in securities.data:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
             # From portfolio_positions
-            positions = sb_client.table('portfolio_positions').select('ticker').execute()
+            positions = sb_client.supabase.table('portfolio_positions').select('ticker').execute()
             for row in positions.data:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
             # From trade_log
-            trades = sb_client.table('trade_log').select('ticker').execute()
+            trades = sb_client.supabase.table('trade_log').select('ticker').execute()
             for row in trades.data:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
             # From watched_tickers (active only)
-            watched = sb_client.table('watched_tickers').select('ticker').eq('is_active', True).execute()
+            watched = sb_client.supabase.table('watched_tickers').select('ticker').eq('is_active', True).execute()
             for row in watched.data:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
             # From congress_trades
-            congress = sb_client.table('congress_trades').select('ticker').execute()
+            congress = sb_client.supabase.table('congress_trades').select('ticker').execute()
             for row in congress.data:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
         except Exception as e:
+            logger.error(f"Error fetching tickers from Supabase: {e}")
             st.error(f"Error fetching tickers from Supabase: {e}")
 
     # Get PostgreSQL client for research DB
@@ -84,24 +85,23 @@ def get_all_unique_tickers() -> list[str]:
     if pg_client:
         try:
             # From research_articles (unnest array)
-            pg_client.execute("""
+            articles = pg_client.execute_query("""
                 SELECT DISTINCT UNNEST(tickers) as ticker
                 FROM research_articles
                 WHERE tickers IS NOT NULL
             """)
-            articles = pg_client.fetchall()
             for row in articles:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
             # From social_metrics
-            pg_client.execute("SELECT DISTINCT ticker FROM social_metrics")
-            social = pg_client.fetchall()
+            social = pg_client.execute_query("SELECT DISTINCT ticker FROM social_metrics")
             for row in social:
                 if row.get('ticker'):
                     tickers.add(row['ticker'].upper())
 
         except Exception as e:
+            logger.error(f"Error fetching tickers from PostgreSQL: {e}")
             st.error(f"Error fetching tickers from PostgreSQL: {e}")
 
     # Return sorted list

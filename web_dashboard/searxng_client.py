@@ -151,7 +151,7 @@ class SearXNGClient:
             return {
                 'results': results,
                 'query': data.get('query', query),
-                'number_of_results': data.get('number_of_results', len(results)),
+                'number_of_results': data.get('number_of_results') or len(results),
                 'answers': data.get('answers', []),
                 'corrections': data.get('corrections', [])
             }

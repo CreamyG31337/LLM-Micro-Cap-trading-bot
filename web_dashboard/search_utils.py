@@ -69,7 +69,8 @@ def format_search_results(search_data: Dict[str, Any], max_results: int = 10) ->
     
     formatted_parts = []
     formatted_parts.append(f"Web Search Results for: {search_data.get('query', 'Unknown query')}")
-    formatted_parts.append(f"Total results: {search_data.get('number_of_results', len(results))}")
+    total_count = search_data.get('number_of_results') or len(search_data.get('results', []))
+    formatted_parts.append(f"Showing {len(results)} of {total_count} results")
     formatted_parts.append("")
     
     for i, result in enumerate(results, 1):

@@ -30,12 +30,13 @@ from ai_context_builder import (
     format_cash_balances, format_investor_allocations
 )
 from ai_prompts import get_system_prompt
-from user_preferences import get_user_ai_model
+from user_preferences import get_user_ai_model, set_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
     calculate_portfolio_value_over_time, calculate_performance_metrics,
     get_fund_thesis_data, get_investor_allocations, get_available_funds
 )
+from research_repository import ResearchRepository
 
 logger = logging.getLogger(__name__)
 
@@ -403,13 +404,20 @@ with st.sidebar:
     if default_model not in available_models:
         available_models.insert(0, default_model)
 
+    # Callback to save model preference
+    def on_model_change():
+        new_model = st.session_state.ai_model_selector
+        set_user_ai_model(new_model)
+        st.toast(f"Model saved: {new_model}")
+
     # Model selection dropdown
     selected_model = st.selectbox(
         "AI Model",
         options=available_models,
         index=available_models.index(default_model) if default_model in available_models else 0,
         help="Select the AI model for analysis",
-        key="ai_model_selector"
+        key="ai_model_selector",
+        on_change=on_model_change
     )
 
     # Get model description if available
@@ -527,13 +535,76 @@ with st.sidebar:
             key="toggle_search"
         )
 
-        # Auto-search for tickers option
-        auto_search_tickers = st.checkbox(
-            "Auto-search ticker news",
-            value=False,
-            help="Automatically search for news about portfolio tickers",
-            key="auto_search_tickers"
-        )
+
+
+        # Portfolio Intelligence Section
+        st.markdown("### 🧠 Portfolio Intelligence")
+        
+        if st.button("🔍 Check Portfolio News", help="Scan local research repository for noteworthy updates on your holdings (past 7 days)", use_container_width=True):
+            with st.spinner("Scanning research repository for portfolio updates..."):
+                try:
+                    # Initialize repository
+                    repo = ResearchRepository()
+                    
+                    # Get portfolio tickers
+                    portfolio_tickers = set()
+                    if current_fund:
+                        positions_df = get_current_positions(current_fund)
+                        if not positions_df.empty and 'ticker' in positions_df.columns:
+                            # Clean and collect tickers
+                            portfolio_tickers = {t.strip().upper() for t in positions_df['ticker'].dropna().unique()}
+                    
+                    if not portfolio_tickers:
+                        st.warning("No positions found in current portfolio to check.")
+                    else:
+                        # Fetch recent articles
+                        recent_articles = repo.get_recent_articles(limit=50, days=7)
+                        
+                        # Filter for holdings
+                        matching_articles = []
+                        seen_titles = set()
+                        
+                        for article in recent_articles:
+                            # Check if article mentions any portfolio ticker
+                            article_tickers = article.get('tickers')
+                            if not article_tickers:
+                                continue
+                                
+                            # Convert article tickers to set of strings for intersection
+                            art_ticker_set = {t.upper() for t in article_tickers}
+                            
+                            # Find intersection
+                            matches = art_ticker_set.intersection(portfolio_tickers)
+                            
+                            if matches and article['title'] not in seen_titles:
+                                article['matched_holdings'] = list(matches)
+                                matching_articles.append(article)
+                                seen_titles.add(article['title'])
+                        
+                        if matching_articles:
+                            # Format context for AI
+                            article_context = "Here are recent research articles found for the user's portfolio holdings:\n\n"
+                            for i, art in enumerate(matching_articles[:10], 1):  # Limit to top 10 relevant
+                                article_context += f"{i}. Title: {art.get('title')}\n"
+                                article_context += f"   Holdings: {', '.join(art.get('matched_holdings'))}\n"
+                                article_context += f"   Summary: {art.get('summary', 'No summary')}\n"
+                                article_context += f"   Conclusion: {art.get('conclusion', 'N/A')}\n"
+                                article_context += "\n"
+                            
+                            # Set suggestion for the user to send
+                            st.session_state.suggested_prompt = (
+                                "Review the following recent research articles about my portfolio holdings. "
+                                "Identify any noteworthy events, risks, or opportunities that strictly require my attention.\n\n"
+                                f"{article_context}"
+                            )
+                            st.toast(f"Found {len(matching_articles)} relevant articles. Prompt ready!")
+                            st.rerun()
+                        else:
+                            st.info(f"No recent articles found in the repository for your {len(portfolio_tickers)} holdings (past 7 days).")
+                            
+                except Exception as e:
+                    logger.error(f"Error checking portfolio news: {e}")
+                    st.error(f"Failed to check portfolio news: {e}")
 
         # Search settings expander
         with st.expander("🎛️ Search Settings"):
@@ -559,7 +630,6 @@ with st.sidebar:
         st.warning("⚠️ SearXNG unavailable")
         st.caption("Web search will be disabled. SearXNG may be starting up or not configured.")
         include_search = False
-        auto_search_tickers = False
         min_relevance_score = 0.3
         filter_general_queries = False
 
@@ -1166,7 +1236,7 @@ if user_query:
                         # General search (use web search, broader time range)
                         search_query_used = build_search_query(
                             user_query,
-                            tickers=portfolio_tickers if auto_search_tickers else None,
+                            tickers=None,
                             preserve_keywords=True,
                             research_intent=research_intent
                         )

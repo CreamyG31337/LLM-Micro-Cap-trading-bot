@@ -270,13 +270,16 @@ def get_user_ai_model() -> Optional[str]:
     except Exception as e:
         logger.warning(f"Could not load system default model: {e}")
     
-    # Fall back to environment variable
-    env_model = os.getenv("OLLAMA_MODEL")
-    if env_model:
-        return env_model
+    # Fall back to hardcoded default (Granite 3.3)
+    return "granite3.3:8b"
+
+    # Fall back to environment variable (deprotilized in favor of Granite)
+    # env_model = os.getenv("OLLAMA_MODEL")
+    # if env_model:
+    #     return env_model
     
     # Final fallback
-    return "granite3.3:8b"
+    # return "llama3"
 
 
 def set_user_ai_model(model: str) -> bool:

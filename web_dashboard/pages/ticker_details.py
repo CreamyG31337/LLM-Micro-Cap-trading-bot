@@ -196,14 +196,46 @@ if not basic_info:
             info = ticker_obj.info
             
             if info and info.get('symbol'):
+                # Extract fields with multiple fallback attempts
+                company_name = (
+                    info.get('longName') or 
+                    info.get('shortName') or 
+                    info.get('displayName') or 
+                    current_ticker
+                )
+                
+                # Sector - try multiple fields
+                sector = (
+                    info.get('sector') or 
+                    info.get('sectorDisp') or 
+                    info.get('sectorKey')
+                )
+                
+                # Industry - try multiple fields
+                industry = (
+                    info.get('industry') or 
+                    info.get('industryDisp') or 
+                    info.get('industryKey')
+                )
+                
+                # Currency
+                currency = info.get('currency') or info.get('financialCurrency') or 'USD'
+                
+                # Exchange
+                exchange = (
+                    info.get('exchange') or 
+                    info.get('exchangeName') or 
+                    info.get('fullExchangeName')
+                )
+                
                 # Create basic_info structure from yfinance data
                 basic_info = {
                     'ticker': current_ticker,
-                    'company_name': info.get('longName') or info.get('shortName', current_ticker),
-                    'sector': info.get('sector', 'N/A'),
-                    'industry': info.get('industry', 'N/A'),
-                    'currency': info.get('currency', 'USD'),
-                    'exchange': info.get('exchange', 'N/A')
+                    'company_name': company_name,
+                    'sector': sector if sector else None,
+                    'industry': industry if industry else None,
+                    'currency': currency,
+                    'exchange': exchange if exchange else None
                 }
                 
                 # Save to database for future lookups
@@ -225,9 +257,41 @@ if not basic_info:
         st.warning(f"⚠️ Could not find ticker information for {current_ticker}")
 
 if basic_info:
+    # Check if we have incomplete data (None values for sector/industry)
+    if (basic_info.get('sector') is None or basic_info.get('industry') is None):
+        try:
+            import yfinance as yf
+            logger.info(f"Re-fetching {current_ticker} from yfinance due to incomplete data")
+            
+            ticker_obj = yf.Ticker(current_ticker)
+            info = ticker_obj.info
+            
+            if info and info.get('symbol'):
+                # Try to get missing fields
+                sector = basic_info.get('sector') or info.get('sector') or info.get('sectorDisp') or info.get('sectorKey')
+                industry = basic_info.get('industry') or info.get('industry') or info.get('industryDisp') or info.get('industryKey')
+                
+                # Update if we got new data
+                if sector or industry:
+                    basic_info['sector'] = sector
+                    basic_info['industry'] = industry
+                    
+                    # Update database
+                    if supabase_client:
+                        try:
+                            supabase_client.supabase.table("securities")\
+                                .update({'sector': sector, 'industry': industry})\
+                                .eq('ticker', current_ticker)\
+                                .execute()
+                            logger.info(f"Updated {current_ticker} with sector/industry from yfinance")
+                        except Exception as update_error:
+                            logger.warning(f"Could not update {current_ticker}: {update_error}")
+        except Exception as e:
+            logger.warning(f"Error re-fetching data for {current_ticker}: {e}")
+    
     company_name = basic_info.get('company_name', 'N/A')
-    sector = basic_info.get('sector', 'N/A')
-    industry = basic_info.get('industry', 'N/A')
+    sector = basic_info.get('sector') or 'N/A'
+    industry = basic_info.get('industry') or 'N/A'
     currency = basic_info.get('currency', 'USD')
     exchange = basic_info.get('exchange', 'N/A')
 

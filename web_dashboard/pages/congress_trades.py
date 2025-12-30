@@ -1451,7 +1451,8 @@ try:
             enable_enterprise_modules=False
         )
         
-        # Handle ticker navigation from selection
+        
+        # Handle ticker navigation from selection (automatic, no button needed)
         try:
             selected_data = grid_response.get('selected_rows', pd.DataFrame())
             if not selected_data.empty:
@@ -1459,12 +1460,10 @@ try:
                 selected_row = selected_data.iloc[0].to_dict()
                 ticker = selected_row.get('Ticker')
                 
-                # If ticker exists and user wants to navigate, show button
+                # Automatically navigate if ticker exists
                 if ticker and ticker != 'N/A':
-                    st.info(f"💡 **Tip**: To view details for **{ticker}**, click the button below")
-                    if st.button(f"📊 View {ticker} Details", key="nav_ticker", type="primary"):
-                        st.session_state['selected_ticker'] = ticker
-                        st.switch_page("pages/ticker_details.py")
+                    st.session_state['selected_ticker'] = ticker
+                    st.switch_page("pages/ticker_details.py")
         except Exception as nav_error:
             pass  # Silently ignore navigation errors
         

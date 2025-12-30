@@ -21,7 +21,7 @@ parent_dir = Path(__file__).parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from auth_utils import is_authenticated, refresh_token_if_needed
+from auth_utils import is_authenticated, refresh_token_if_needed, is_admin, get_user_token
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
@@ -87,9 +87,19 @@ def get_postgres_client():
 
 @st.cache_resource
 def get_supabase_client():
-    """Get Supabase client instance"""
+    """Get Supabase client instance with role-based access"""
     try:
-        return SupabaseClient(use_service_role=True)
+        # Admins use service_role to see all funds
+        if is_admin():
+            return SupabaseClient(use_service_role=True)
+        
+        # Regular users use their token to respect RLS
+        user_token = get_user_token()
+        if user_token:
+            return SupabaseClient(user_token=user_token)
+        else:
+            logger.error("No user token available for non-admin user")
+            return None
     except Exception as e:
         logger.error(f"Failed to initialize SupabaseClient: {e}")
         return None

@@ -29,7 +29,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email, is_admin
+from auth_utils import is_authenticated, get_user_email, is_admin, get_user_token
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
@@ -74,9 +74,19 @@ def get_postgres_client():
 # Initialize Supabase client (with error handling)
 @st.cache_resource
 def get_supabase_client():
-    """Get Supabase client instance, handling errors gracefully"""
+    """Get Supabase client instance with role-based access"""
     try:
-        return SupabaseClient(use_service_role=True)
+        # Admins use service_role to see all funds
+        if is_admin():
+            return SupabaseClient(use_service_role=True)
+        
+        # Regular users use their token to respect RLS
+        user_token = get_user_token()
+        if user_token:
+            return SupabaseClient(user_token=user_token)
+        else:
+            logger.error("No user token available for non-admin user")
+            return None
     except Exception as e:
         logger.error(f"Failed to initialize SupabaseClient: {e}")
         return None

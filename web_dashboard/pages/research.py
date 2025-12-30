@@ -30,7 +30,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email, is_admin
+from auth_utils import is_authenticated, get_user_email, is_admin, get_user_token
 from navigation import render_navigation
 from research_repository import ResearchRepository
 from postgres_client import PostgresClient
@@ -188,22 +188,33 @@ def reanalyze_article(article_id: str, model_name: str) -> tuple[bool, str]:
         owned_tickers = []
         try:
             from supabase_client import SupabaseClient
-            client = SupabaseClient(use_service_role=True)
             
-            # Get production funds directly from Supabase (matching pattern from scheduler/jobs.py)
-            funds_result = client.supabase.table("funds")\
-                .select("name")\
-                .eq("is_production", True)\
-                .execute()
+            # Use role-based access for security
+            if is_admin():
+                client = SupabaseClient(use_service_role=True)
+            else:
+                user_token = get_user_token()
+                if user_token:
+                    client = SupabaseClient(user_token=user_token)
+                else:
+                    logger.warning("No user token available, skipping owned tickers")
+                    client = None
             
-            if funds_result.data:
-                prod_funds = [f['name'] for f in funds_result.data]
-                positions_result = client.supabase.table("latest_positions")\
-                    .select("ticker")\
-                    .in_("fund", prod_funds)\
+            if client:
+                # Get production funds directly from Supabase (matching pattern from scheduler/jobs.py)
+                funds_result = client.supabase.table("funds")\
+                    .select("name")\
+                    .eq("is_production", True)\
                     .execute()
-                if positions_result.data:
-                    owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
+                
+                if funds_result.data:
+                    prod_funds = [f['name'] for f in funds_result.data]
+                    positions_result = client.supabase.table("latest_positions")\
+                        .select("ticker")\
+                        .in_("fund", prod_funds)\
+                        .execute()
+                    if positions_result.data:
+                        owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
         except Exception as e:
             logger.warning(f"Could not fetch owned tickers for relevance scoring: {e}")
         

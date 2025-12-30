@@ -148,12 +148,12 @@ if not current_ticker:
 
 # Fetch ticker information
 @st.cache_data(ttl=60)
-def fetch_ticker_data(_ticker: str):
-    """Fetch ticker data with caching"""
+def fetch_ticker_data(ticker_symbol: str):
+    """Fetch ticker data with caching - ticker_symbol is part of cache key"""
     # Get clients inside the cached function
     pg_client = get_postgres_client()
     sb_client = get_supabase_client()
-    return get_ticker_info(_ticker, sb_client, pg_client)
+    return get_ticker_info(ticker_symbol, sb_client, pg_client)
 
 # Check if clients are available
 if not postgres_client and not supabase_client:
@@ -186,6 +186,44 @@ st.title(f"📊 {current_ticker}")
 
 # Basic Info Section
 basic_info = ticker_data.get('basic_info')
+
+# If no basic info, try fetching from yfinance
+if not basic_info:
+    try:
+        import yfinance as yf
+        with st.spinner(f"Looking up {current_ticker} from Yahoo Finance..."):
+            ticker_obj = yf.Ticker(current_ticker)
+            info = ticker_obj.info
+            
+            if info and info.get('symbol'):
+                # Create basic_info structure from yfinance data
+                basic_info = {
+                    'ticker': current_ticker,
+                    'company_name': info.get('longName') or info.get('shortName', current_ticker),
+                    'sector': info.get('sector', 'N/A'),
+                    'industry': info.get('industry', 'N/A'),
+                    'currency': info.get('currency', 'USD'),
+                    'exchange': info.get('exchange', 'N/A')
+                }
+                
+                # Save to database for future lookups
+                if supabase_client:
+                    try:
+                        supabase_client.supabase.table("securities").insert(basic_info).execute()
+                        st.success(f"✅ Saved {current_ticker} ({basic_info['company_name']}) to database")
+                        logger.info(f"Saved ticker {current_ticker} to securities table from yfinance")
+                    except Exception as insert_error:
+                        # If insert fails (e.g., duplicate), just log it - we still have the data
+                        logger.warning(f"Could not save {current_ticker} to database: {insert_error}")
+                        st.info(f"ℹ️ Fetched {current_ticker} info from Yahoo Finance")
+                else:
+                    st.info(f"ℹ️ Fetched {current_ticker} info from Yahoo Finance. Database not available to save.")
+            else:
+                st.warning(f"⚠️ Could not find ticker information for {current_ticker}")
+    except Exception as e:
+        logger.warning(f"Error fetching from yfinance for {current_ticker}: {e}")
+        st.warning(f"⚠️ Could not find ticker information for {current_ticker}")
+
 if basic_info:
     company_name = basic_info.get('company_name', 'N/A')
     sector = basic_info.get('sector', 'N/A')

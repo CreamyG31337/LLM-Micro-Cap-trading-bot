@@ -127,6 +127,146 @@ def get_watchlist_tickers(_supabase_client, _refresh_key: int) -> List[Dict[str,
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
+def get_dynamic_watchlist_tickers(
+    _supabase_client, 
+    _postgres_client, 
+    _refresh_key: int
+) -> List[Dict[str, Any]]:
+    """Get dynamic watchlist tickers from multiple sources (trade log, congress trades, articles)
+    
+    Combines tickers from:
+    - watched_tickers table (TRADELOG source)
+    - congress_trades_enriched (last 30 days, CONGRESS source)
+    - research_articles (last 30 days, ARTICLES source)
+    
+    Assigns priority tiers based on source count:
+    - Tier A: Appears in 3 sources
+    - Tier B: Appears in 2 sources
+    - Tier C: Appears in 1 source only
+    
+    Returns:
+        List of dictionaries with ticker, priority_tier, source_count, sources, etc.
+    """
+    try:
+        # Dictionary to track tickers and their sources
+        ticker_data: Dict[str, Dict[str, Any]] = {}
+        
+        # 1. Get tickers from watched_tickers table (TRADELOG source)
+        if _supabase_client:
+            try:
+                result = _supabase_client.supabase.table("watched_tickers")\
+                    .select("ticker, priority_tier, is_active, source, created_at")\
+                    .eq("is_active", True)\
+                    .execute()
+                
+                if result.data:
+                    for item in result.data:
+                        ticker = item.get('ticker', '').upper().strip()
+                        if ticker:
+                            if ticker not in ticker_data:
+                                ticker_data[ticker] = {
+                                    'ticker': ticker,
+                                    'sources': [],
+                                    'source_count': 0,
+                                    'priority_tier': item.get('priority_tier', 'C'),
+                                    'created_at': item.get('created_at')
+                                }
+                            ticker_data[ticker]['sources'].append('TRADELOG')
+                            ticker_data[ticker]['source_count'] = len(ticker_data[ticker]['sources'])
+            except Exception as e:
+                logger.warning(f"Error fetching watched_tickers: {e}")
+        
+        # 2. Get tickers from congress_trades_enriched (last 30 days)
+        if _supabase_client:
+            try:
+                thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+                result = _supabase_client.supabase.table("congress_trades_enriched")\
+                    .select("ticker")\
+                    .gte("transaction_date", thirty_days_ago.isoformat())\
+                    .not_.is_("ticker", "null")\
+                    .execute()
+                
+                if result.data:
+                    congress_tickers = set()
+                    for item in result.data:
+                        ticker = item.get('ticker', '').upper().strip()
+                        if ticker:
+                            congress_tickers.add(ticker)
+                    
+                    for ticker in congress_tickers:
+                        if ticker not in ticker_data:
+                            ticker_data[ticker] = {
+                                'ticker': ticker,
+                                'sources': [],
+                                'source_count': 0,
+                                'priority_tier': 'C',
+                                'created_at': None
+                            }
+                        if 'CONGRESS' not in ticker_data[ticker]['sources']:
+                            ticker_data[ticker]['sources'].append('CONGRESS')
+                            ticker_data[ticker]['source_count'] = len(ticker_data[ticker]['sources'])
+            except Exception as e:
+                logger.warning(f"Error fetching congress trades: {e}")
+        
+        # 3. Get tickers from research_articles (last 30 days)
+        if _postgres_client:
+            try:
+                thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+                query = """
+                    SELECT DISTINCT UNNEST(tickers) as ticker
+                    FROM research_articles
+                    WHERE fetched_at >= %s
+                      AND tickers IS NOT NULL
+                      AND array_length(tickers, 1) > 0
+                """
+                results = _postgres_client.execute_query(query, (thirty_days_ago.isoformat(),))
+                
+                if results:
+                    article_tickers = set()
+                    for row in results:
+                        ticker = row.get('ticker', '').upper().strip()
+                        if ticker:
+                            article_tickers.add(ticker)
+                    
+                    for ticker in article_tickers:
+                        if ticker not in ticker_data:
+                            ticker_data[ticker] = {
+                                'ticker': ticker,
+                                'sources': [],
+                                'source_count': 0,
+                                'priority_tier': 'C',
+                                'created_at': None
+                            }
+                        if 'ARTICLES' not in ticker_data[ticker]['sources']:
+                            ticker_data[ticker]['sources'].append('ARTICLES')
+                            ticker_data[ticker]['source_count'] = len(ticker_data[ticker]['sources'])
+            except Exception as e:
+                logger.warning(f"Error fetching research articles: {e}")
+        
+        # Calculate priority tiers based on source count
+        for ticker, data in ticker_data.items():
+            source_count = data['source_count']
+            if source_count >= 3:
+                data['priority_tier'] = 'A'
+            elif source_count == 2:
+                data['priority_tier'] = 'B'
+            else:
+                # Keep existing tier if from TRADELOG, otherwise C
+                if 'TRADELOG' not in data['sources']:
+                    data['priority_tier'] = 'C'
+                # If TRADELOG exists, keep its original tier (already set above)
+        
+        # Convert to list and sort by priority tier, then ticker
+        watchlist = list(ticker_data.values())
+        watchlist.sort(key=lambda x: (x['priority_tier'], x['ticker']))
+        
+        return watchlist
+        
+    except Exception as e:
+        logger.error(f"Error fetching dynamic watchlist: {e}", exc_info=True)
+        return []
+
+@st.cache_data(ttl=60, show_spinner=False)
 def get_latest_sentiment_per_ticker(_client, _refresh_key: int) -> List[Dict[str, Any]]:
     """Get the most recent sentiment metric for each ticker/platform combination
     
@@ -290,11 +430,15 @@ try:
             st.session_state.refresh_key += 1
             st.rerun()
     
-    # Get watchlist (cached)
+    # Get dynamic watchlist (cached)
     watchlist_tickers = []
-    if supabase_client:
-        with st.spinner("Loading watchlist..."):
-            watchlist_tickers = get_watchlist_tickers(supabase_client, st.session_state.refresh_key)
+    if supabase_client or postgres_client:
+        with st.spinner("Loading dynamic watchlist..."):
+            watchlist_tickers = get_dynamic_watchlist_tickers(
+                supabase_client, 
+                postgres_client, 
+                st.session_state.refresh_key
+            )
     
     # Get alerts (cached)
     with st.spinner("Loading alerts..."):
@@ -302,12 +446,13 @@ try:
     
     # Display Watchlist Section
     st.header("📋 Watchlist")
+    st.caption("Dynamic watchlist combining tickers from trade log, congress trades (30 days), and research articles (30 days)")
     
     if watchlist_tickers:
         watchlist_df = pd.DataFrame(watchlist_tickers)
         
         # Show watchlist summary
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Watchlist Tickers", len(watchlist_tickers))
         with col2:
@@ -316,22 +461,43 @@ try:
         with col3:
             tier_b = len([t for t in watchlist_tickers if t.get('priority_tier') == 'B'])
             st.metric("Priority B", tier_b)
+        with col4:
+            tier_c = len([t for t in watchlist_tickers if t.get('priority_tier') == 'C'])
+            st.metric("Priority C", tier_c)
+        
+        # Show source count distribution
+        source_counts = {}
+        for t in watchlist_tickers:
+            count = t.get('source_count', 0)
+            source_counts[count] = source_counts.get(count, 0) + 1
+        
+        if source_counts:
+            st.subheader("Source Distribution")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("3 Sources (Tier A)", source_counts.get(3, 0))
+            with col2:
+                st.metric("2 Sources (Tier B)", source_counts.get(2, 0))
+            with col3:
+                st.metric("1 Source (Tier C)", source_counts.get(1, 0))
         
         # Show watchlist table
+        st.subheader("Watchlist Tickers")
         watchlist_display = pd.DataFrame([
             {
                 'Ticker': t.get('ticker', 'N/A'),
-                'Priority': t.get('priority_tier', 'B'),
-                'Source': t.get('source', 'N/A')
+                'Priority': t.get('priority_tier', 'C'),
+                'Sources': ', '.join(t.get('sources', [])),
+                'Source Count': t.get('source_count', 0)
             }
             for t in watchlist_tickers
         ])
         st.dataframe(watchlist_display, use_container_width=True, hide_index=True)
     else:
-        if supabase_client is None:
-            st.warning("⚠️ Supabase connection unavailable - cannot load watchlist")
+        if supabase_client is None and postgres_client is None:
+            st.warning("⚠️ Database connections unavailable - cannot load watchlist")
         else:
-            st.info("📭 No active tickers in watchlist. Run the migration `19_create_watchlist.sql` in Supabase to populate from trade_log.")
+            st.info("📭 No tickers found in watchlist. Tickers are dynamically populated from trade log, congress trades (last 30 days), and research articles (last 30 days).")
     
     st.markdown("---")
     

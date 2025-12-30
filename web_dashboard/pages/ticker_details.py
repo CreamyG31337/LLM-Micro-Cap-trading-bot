@@ -10,7 +10,7 @@ and provides external links to financial websites.
 import streamlit as st
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import logging
 
@@ -363,5 +363,5 @@ else:
 
 # Footer
 st.markdown("---")
-st.caption(f"Data last updated: {datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+st.caption(f"Data last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
 

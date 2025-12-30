@@ -256,7 +256,12 @@ def request_password_reset(email: str) -> Optional[Dict]:
         return None
     
     # Redirect to auth callback page which processes hash and redirects to Streamlit
-    redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", "https://ai-trading.hobo.cash/auth_callback.html")
+    # Build redirect URL from APP_DOMAIN env variable (e.g., "drifting.space" or "ai-trading.drifting.space")
+    app_domain = os.getenv("APP_DOMAIN")
+    if not app_domain:
+        return {"error": "APP_DOMAIN environment variable is required. Please set it in your .env file or environment."}
+    
+    redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", f"https://{app_domain}/auth_callback.html")
     
     try:
         # Use Supabase client library which handles redirect_to correctly
@@ -280,7 +285,12 @@ def send_magic_link(email: str) -> Optional[Dict]:
         return None
     
     # Redirect to auth callback page which processes hash and redirects to Streamlit
-    redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", "https://ai-trading.hobo.cash/auth_callback.html")
+    # Build redirect URL from APP_DOMAIN env variable (e.g., "drifting.space" or "ai-trading.drifting.space")
+    app_domain = os.getenv("APP_DOMAIN")
+    if not app_domain:
+        return {"error": "APP_DOMAIN environment variable is required. Please set it in your .env file or environment."}
+    
+    redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", f"https://{app_domain}/auth_callback.html")
     
     try:
         # Use Supabase client library which handles redirect_to correctly

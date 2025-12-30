@@ -19,6 +19,10 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+APP_DOMAIN = os.getenv("APP_DOMAIN")
+if not APP_DOMAIN:
+    print("[ERROR] APP_DOMAIN environment variable is required. Please set it in your .env file or environment.")
+    sys.exit(1)
 
 
 def login_and_get_token(email: str, password: str):
@@ -75,11 +79,13 @@ if __name__ == "__main__":
         print("\n1. Open browser DevTools (F12)")
         print("2. Go to Application/Storage tab")
         print("3. Click 'Cookies' in the left sidebar")
-        print("4. Select the domain: ai-trading.hobo.cash")
+        print(f"4. Select the domain: {APP_DOMAIN}")
         print("5. Add a new cookie with:")
         print(f"   Name: auth_token")
         print(f"   Value: {token}")
-        print("   Domain: .hobo.cash (or ai-trading.hobo.cash)")
+        # Extract base domain (e.g., "drifting.space" from "ai-trading.drifting.space")
+        base_domain = APP_DOMAIN.split('.', 1)[-1] if '.' in APP_DOMAIN else APP_DOMAIN
+        print(f"   Domain: .{base_domain} (or {APP_DOMAIN})")
         print("   Path: /")
         print("   Secure: (check if HTTPS)")
         print("   HttpOnly: (leave unchecked)")
@@ -88,7 +94,7 @@ if __name__ == "__main__":
         print("\n" + "=" * 60)
         print(f"\n[INFO] Or use this JavaScript in the browser console:")
         print("=" * 60)
-        print(f"\ndocument.cookie = 'auth_token={token}; path=/; domain=.hobo.cash; SameSite=Lax';")
+        print(f"\ndocument.cookie = 'auth_token={token}; path=/; domain=.{base_domain}; SameSite=Lax';")
         print("location.reload();")
         print("\n" + "=" * 60)
     else:

@@ -284,3 +284,6 @@ test_output.txt
 
 # Cache version file for Streamlit cache invalidation
 .cache_version
+
+# Caddyfile with domain configuration (use Caddyfile.example as template)
+web_dashboard/Caddyfile

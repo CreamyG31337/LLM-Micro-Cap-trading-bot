@@ -13,6 +13,8 @@
 # - supabase_url: Your Supabase project URL
 # - supabase_publishable_key: For user authentication
 # - supabase_secret_key: For admin scripts and debug operations
+# - app_domain: Your application domain (e.g., "ai-trading.drifting.space")
+#               Used for magic links, password resets, and cookie domain settings
 # - research_database_url: (optional) Postgres connection string for research articles
 #                          Format: postgresql://user:password@host:port/database
 #                          For Docker container connecting to host Postgres: use host.docker.internal
@@ -41,6 +43,8 @@ steps:
         from_secret: supabase_publishable_key
       SUPABASE_SECRET_KEY:
         from_secret: supabase_secret_key
+      APP_DOMAIN:
+        from_secret: app_domain
       RESEARCH_DATABASE_URL:
         from_secret: research_database_url
       FMP_API_KEY:
@@ -87,6 +91,9 @@ steps:
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_PUBLISHABLE_KEY=\"$SUPABASE_PUBLISHABLE_KEY\""
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_SECRET_KEY=\"$SUPABASE_SECRET_KEY\""
         DOCKER_CMD="$DOCKER_CMD -e BUILD_TIMESTAMP=\"$BUILD_TIMESTAMP\""
+        
+        # Add APP_DOMAIN (required for auth callbacks and cookie domain)
+        [ -n "$APP_DOMAIN" ] && DOCKER_CMD="$DOCKER_CMD -e APP_DOMAIN=\"$APP_DOMAIN\""
         
         # Add optional environment variables if set
         [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""

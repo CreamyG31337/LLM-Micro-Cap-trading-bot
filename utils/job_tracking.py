@@ -80,7 +80,8 @@ def mark_job_completed(
     job_name: str,
     target_date: date,
     fund_name: Optional[str],
-    funds_processed: List[str]
+    funds_processed: List[str],
+    duration_ms: Optional[int] = None
 ) -> None:
     """
     Mark a job as successfully completed.
@@ -90,6 +91,7 @@ def mark_job_completed(
         target_date: Date the job processed
         fund_name: Specific fund processed, None if all funds
         funds_processed: List of fund names that completed successfully
+        duration_ms: Execution duration in milliseconds (optional)
     """
     try:
         from supabase_client import SupabaseClient
@@ -129,6 +131,10 @@ def mark_job_completed(
             'funds_processed': funds_processed
         }
         
+        # Add duration_ms if provided
+        if duration_ms is not None:
+            data['duration_ms'] = duration_ms
+        
         client.supabase.table("job_executions").upsert(
             data,
             on_conflict='job_name,target_date,fund_name'
@@ -143,7 +149,8 @@ def mark_job_failed(
     job_name: str,
     target_date: date,
     fund_name: Optional[str],
-    error: str
+    error: str,
+    duration_ms: Optional[int] = None
 ) -> None:
     """
     Mark a job as failed with error message.
@@ -153,6 +160,7 @@ def mark_job_failed(
         target_date: Date the job was processing
         fund_name: Specific fund being processed, None if all funds
         error: Error message
+        duration_ms: Execution duration in milliseconds (optional)
     """
     try:
         from supabase_client import SupabaseClient
@@ -168,14 +176,23 @@ def mark_job_failed(
     
     try:
         client = SupabaseClient(use_service_role=True)
-        client.supabase.table("job_executions").upsert({
+        data = {
             'job_name': job_name,
             'target_date': target_date.isoformat(),
             'fund_name': fund_name,
             'status': 'failed',
             'completed_at': datetime.now(timezone.utc).isoformat(),
             'error_message': error[:500]  # Truncate to prevent huge error strings
-        }, on_conflict='job_name,target_date,fund_name').execute()
+        }
+        
+        # Add duration_ms if provided
+        if duration_ms is not None:
+            data['duration_ms'] = duration_ms
+        
+        client.supabase.table("job_executions").upsert(
+            data,
+            on_conflict='job_name,target_date,fund_name'
+        ).execute()
         
         logger.debug(f"Marked job '{job_name}' as failed for {target_date}")
     except Exception as e:

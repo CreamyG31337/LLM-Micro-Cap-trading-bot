@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS job_executions (
   status VARCHAR(20) NOT NULL CHECK (status IN ('running', 'success', 'failed')),
   started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   completed_at TIMESTAMP WITH TIME ZONE,
+  duration_ms INTEGER,  -- Execution duration in milliseconds (calculated by job)
   funds_processed TEXT[],  -- List of funds successfully completed
   error_message TEXT,
   CONSTRAINT unique_job_execution UNIQUE(job_name, target_date, fund_name)
@@ -35,6 +36,8 @@ COMMENT ON COLUMN job_executions.fund_name IS
 COMMENT ON COLUMN job_executions.status IS 
   'running = in progress (becomes stale if crashed), success = completed normally, failed = error occurred';
 
+COMMENT ON COLUMN job_executions.duration_ms IS 
+  'Execution duration in milliseconds, calculated by the job using time.time()';
 COMMENT ON COLUMN job_executions.funds_processed IS 
   'Array of fund names that completed successfully (for audit trail)';
 

@@ -233,7 +233,7 @@ def alpha_research_job() -> None:
         message = f"Query: '{base_query}' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         try:
-            mark_job_completed(job_id, target_date, None, [])
+            mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
         except Exception:
             pass
         logger.info(f"✅ {message}")

@@ -301,7 +301,7 @@ def benchmark_refresh_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Updated {benchmarks_updated} benchmarks ({total_rows_cached} rows), {benchmarks_failed} failed"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('benchmark_refresh', target_date, None, [])
+        mark_job_completed('benchmark_refresh', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -309,7 +309,7 @@ def benchmark_refresh_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('benchmark_refresh', target_date, None, message)
+            mark_job_failed('benchmark_refresh', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Benchmark refresh job failed: {e}", exc_info=True)
@@ -623,7 +623,7 @@ def market_research_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('market_research', target_date, None, [])
+        mark_job_completed('market_research', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -631,7 +631,7 @@ def market_research_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('market_research', target_date, None, message)
+            mark_job_failed('market_research', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Market research job failed: {e}", exc_info=True)
@@ -895,7 +895,7 @@ def rss_feed_ingest_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {feeds_processed} feeds: {total_articles_saved} saved, {total_articles_skipped} skipped, {total_junk_filtered} junk filtered"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('rss_feed_ingest', target_date, None, [])
+        mark_job_completed('rss_feed_ingest', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -903,7 +903,7 @@ def rss_feed_ingest_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('rss_feed_ingest', target_date, None, message)
+            mark_job_failed('rss_feed_ingest', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass
         logger.error(f"❌ RSS feed ingestion job failed: {e}", exc_info=True)
@@ -1400,7 +1400,7 @@ def ticker_research_job() -> None:
         message_parts.append(f"Saved {articles_saved} new articles")
         message = ". ".join(message_parts) + "."
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('ticker_research', target_date, None, [])
+        mark_job_completed('ticker_research', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -1408,7 +1408,7 @@ def ticker_research_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('ticker_research', target_date, None, message)
+            mark_job_failed('ticker_research', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Ticker research job failed: {e}", exc_info=True)
@@ -1676,7 +1676,7 @@ def opportunity_discovery_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('opportunity_discovery', target_date, None, [])
+        mark_job_completed('opportunity_discovery', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -1684,7 +1684,7 @@ def opportunity_discovery_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('opportunity_discovery', target_date, None, message)
+            mark_job_failed('opportunity_discovery', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
@@ -1941,7 +1941,7 @@ def opportunity_discovery_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('opportunity_discovery', target_date, None, [])
+        mark_job_completed('opportunity_discovery', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -1949,7 +1949,7 @@ def opportunity_discovery_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('opportunity_discovery', target_date, None, message)
+            mark_job_failed('opportunity_discovery', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
@@ -1987,13 +1987,13 @@ def refresh_exchange_rates_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Updated USD/CAD rate: {rate}"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            mark_job_completed('exchange_rates', target_date, None, [])
+            mark_job_completed('exchange_rates', target_date, None, [], duration_ms=duration_ms)
             logger.info(f"✅ {message}")
         else:
             duration_ms = int((time.time() - start_time) * 1000)
             message = "Failed to fetch exchange rate from API"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-            mark_job_failed('exchange_rates', target_date, None, message)
+            mark_job_failed('exchange_rates', target_date, None, message, duration_ms=duration_ms)
             logger.warning(f"⚠️ {message}")
             
     except Exception as e:
@@ -2002,7 +2002,7 @@ def refresh_exchange_rates_job() -> None:
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
             from utils.job_tracking import mark_job_failed
-            mark_job_failed('exchange_rates', target_date, None, message)
+            mark_job_failed('exchange_rates', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Exchange rates job failed: {e}")
@@ -2126,7 +2126,7 @@ def populate_performance_metrics_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Populated {rows_inserted} fund(s) for {yesterday}"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('performance_metrics', yesterday, None, list(fund_totals.keys()))
+        mark_job_completed('performance_metrics', yesterday, None, list(fund_totals.keys()), duration_ms=duration_ms)
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -2136,7 +2136,7 @@ def populate_performance_metrics_job() -> None:
         try:
             from utils.job_tracking import mark_job_failed
             yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
-            mark_job_failed('performance_metrics', yesterday, None, message)
+            mark_job_failed('performance_metrics', yesterday, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Performance metrics job failed: {e}")
@@ -2673,7 +2673,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         logger.info(f"✅ {message}")
         
         # Mark job as completed successfully
-        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed)
+        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms)
         
         # Bump cache version to invalidate Streamlit cache immediately
         try:
@@ -2697,7 +2697,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         # Mark job as failed in database
         # If target_date not defined (early crash), use today as fallback
         fallback_date = date.today() if 'target_date' not in locals() else target_date
-        mark_job_failed('update_portfolio_prices', fallback_date, None, str(e))
+        mark_job_failed('update_portfolio_prices', fallback_date, None, str(e), duration_ms=duration_ms)
     finally:
         # Always release the lock, even if job fails
         _update_prices_lock.release()
@@ -3130,7 +3130,7 @@ def fetch_social_sentiment_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = "No tickers to process"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            mark_job_completed('social_sentiment', target_date, None, [])
+            mark_job_completed('social_sentiment', target_date, None, [], duration_ms=duration_ms)
             logger.info(f"ℹ️ {message}")
             return
         
@@ -3173,7 +3173,7 @@ def fetch_social_sentiment_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {len(all_tickers)} tickers: {success_count} successful, {error_count} errors"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('social_sentiment', target_date, None, [])
+        mark_job_completed('social_sentiment', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ Social sentiment job completed: {message} in {duration_ms/1000:.2f}s")
         
         # Log failed tickers if any
@@ -3184,7 +3184,7 @@ def fetch_social_sentiment_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        mark_job_failed('social_sentiment', target_date, None, str(e))
+        mark_job_failed('social_sentiment', target_date, None, str(e), duration_ms=duration_ms)
         logger.error(f"❌ Social sentiment job failed: {e}", exc_info=True)
 
 
@@ -3228,14 +3228,14 @@ def cleanup_social_metrics_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Updated {results['rows_updated']} records, deleted {results['rows_deleted']} records"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('social_metrics_cleanup', target_date, None, [])
+        mark_job_completed('social_metrics_cleanup', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ Social metrics cleanup job completed: {message} in {duration_ms/1000:.2f}s")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        mark_job_failed('social_metrics_cleanup', target_date, None, str(e))
+        mark_job_failed('social_metrics_cleanup', target_date, None, str(e), duration_ms=duration_ms)
         logger.error(f"❌ Social metrics cleanup job failed: {e}", exc_info=True)
 
 
@@ -3322,14 +3322,14 @@ def social_sentiment_ai_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Extracted {extraction_result['posts_created']} posts, created {session_result['sessions_created']} sessions, completed {analyses_completed} AI analyses"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('social_sentiment_ai', target_date, None, [])
+        mark_job_completed('social_sentiment_ai', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ Social Sentiment AI Analysis job completed: {message} in {duration_ms/1000:.2f}s")
 
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        mark_job_failed('social_sentiment_ai', target_date, None, str(e))
+        mark_job_failed('social_sentiment_ai', target_date, None, str(e), duration_ms=duration_ms)
         logger.error(f"❌ Social Sentiment AI Analysis job failed: {e}", exc_info=True)
 
 
@@ -3780,7 +3780,7 @@ def fetch_congress_trades_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Found {total_trades_found} trades: {new_trades} new, {skipped_duplicates} duplicates, {skipped_no_ticker} no ticker, {ai_analyzed} AI analyzed, {errors} errors"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('congress_trades', target_date, None, [])
+        mark_job_completed('congress_trades', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ Congress trades job completed: {message} in {duration_ms/1000:.2f}s")
         
     except Exception as e:
@@ -3788,7 +3788,7 @@ def fetch_congress_trades_job() -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('congress_trades', target_date, None, str(e))
+            mark_job_failed('congress_trades', target_date, None, str(e), duration_ms=duration_ms)
         except Exception:
             pass
         logger.error(f"❌ Congress trades job failed: {e}", exc_info=True)
@@ -3828,7 +3828,7 @@ def analyze_congress_trades_job() -> None:
             message = f"Missing dependency: {e}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             logger.error(f"❌ {message}")
-            mark_job_failed('analyze_congress_trades', target_date, None, message)
+            mark_job_failed('analyze_congress_trades', target_date, None, message, duration_ms=duration_ms)
             return
         
         # Import analysis functions from batch script
@@ -3857,7 +3857,7 @@ def analyze_congress_trades_job() -> None:
             message = "Ollama is not accessible - skipping analysis"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
             logger.warning(f"⚠️  {message}")
-            mark_job_completed('analyze_congress_trades', target_date, None, [])
+            mark_job_completed('analyze_congress_trades', target_date, None, [], duration_ms=duration_ms)
             return
         
         # Note: fix_failed_scores() is NOT called here automatically
@@ -3885,7 +3885,7 @@ def analyze_congress_trades_job() -> None:
                 message = "No unscored trades found"
                 log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
                 logger.info(f"✅ {message}")
-                mark_job_completed('analyze_congress_trades', target_date, None, [])
+                mark_job_completed('analyze_congress_trades', target_date, None, [], duration_ms=duration_ms)
                 return
             
             logger.info(f"Processing {len(trades)} unscored trades...")
@@ -3956,14 +3956,14 @@ def analyze_congress_trades_job() -> None:
             message = f"Processed {total_processed} trades, {total_errors} errors"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
             logger.info(f"✅ Congress trades analysis job completed: {message} in {duration_ms/1000:.2f}s")
-            mark_job_completed('analyze_congress_trades', target_date, None, [])
+            mark_job_completed('analyze_congress_trades', target_date, None, [], duration_ms=duration_ms)
             
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Error during analysis: {e}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             logger.error(f"❌ {message}", exc_info=True)
-            mark_job_failed('analyze_congress_trades', target_date, None, str(e))
+            mark_job_failed('analyze_congress_trades', target_date, None, str(e), duration_ms=duration_ms)
             
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
@@ -3973,7 +3973,7 @@ def analyze_congress_trades_job() -> None:
         try:
             from utils.job_tracking import mark_job_failed
             target_date = datetime.now(timezone.utc).date()
-            mark_job_failed('analyze_congress_trades', target_date, None, str(e))
+            mark_job_failed('analyze_congress_trades', target_date, None, str(e), duration_ms=duration_ms)
         except:
             pass
 
@@ -4013,7 +4013,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             message = f"Missing dependency: {e}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             logger.error(f"❌ {message}")
-            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message, duration_ms=duration_ms)
             return
         
         # Build script path
@@ -4025,7 +4025,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             message = f"Analysis script not found: {script_path}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             logger.error(f"❌ {message}")
-            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message, duration_ms=duration_ms)
             return
         
         # Run the batch analysis script with rescore parameters
@@ -4094,7 +4094,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
                 message = f"Rescore completed ({limit} sessions)"
             
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            mark_job_completed('rescore_congress_sessions', target_date, None, [])
+            mark_job_completed('rescore_congress_sessions', target_date, None, [], duration_ms=duration_ms)
             logger.info(f"✅ {message}")
         else:
             duration_ms = int((time.time() - start_time) * 1000)
@@ -4102,7 +4102,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
             error_snippet = "\n".join(full_output[-10:])
             message = f"Script failed with exit code {return_code}. Last output:\n{error_snippet}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message, duration_ms=duration_ms)
             logger.error(f"❌ Script failed: {message}")
         
     except subprocess.TimeoutExpired:
@@ -4110,7 +4110,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
         message = "Job timed out after 2 hours"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass
         logger.error(f"❌ {message}")
@@ -4119,7 +4119,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
-            mark_job_failed('rescore_congress_sessions', target_date, None, message)
+            mark_job_failed('rescore_congress_sessions', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass
         logger.error(f"❌ Congress sessions rescore job failed: {e}", exc_info=True)

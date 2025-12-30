@@ -812,7 +812,26 @@ with right_col:
 
             # Sector News
             if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
-                set_suggested_prompt("What's happening in the stock market sectors today?")
+                if selected_fund:
+                    # Get top sectors from current holdings, weighted by portfolio allocation
+                    try:
+                        positions_df = get_current_positions(selected_fund)
+                        if not positions_df.empty and 'sector' in positions_df.columns and 'total_value' in positions_df.columns:
+                            # Group by sector and sum total values, then get top 5
+                            sector_weights = positions_df.groupby('sector')['total_value'].sum().sort_values(ascending=False)
+                            top_sectors = sector_weights.head(5).index.tolist()
+                            
+                            if top_sectors:
+                                sectors_str = ", ".join(top_sectors)
+                                set_suggested_prompt(f"What's happening in these sectors today: {sectors_str}? Provide news and analysis for each.")
+                            else:
+                                set_suggested_prompt("What's happening in the stock market sectors today?")
+                        else:
+                            set_suggested_prompt("What's happening in the stock market sectors today?")
+                    except Exception:
+                        set_suggested_prompt("What's happening in the stock market sectors today?")
+                else:
+                    set_suggested_prompt("What's happening in the stock market sectors today?")
         else:
             st.info("🔍 Quick Research requires SearXNG to be available.")
 
@@ -834,7 +853,7 @@ with main_col:
         # Initialize widget state if not present
         if "editable_prompt_area" not in st.session_state:
             st.session_state.editable_prompt_area = st.session_state.suggested_prompt
-            
+
         editable_prompt = st.text_area(
             "Prompt",
             height=100,

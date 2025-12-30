@@ -20,6 +20,17 @@ Usage:
 import logging
 from datetime import date, datetime, timezone
 from typing import List, Optional, Dict, Any
+import sys
+import os
+from pathlib import Path
+
+# Add web_dashboard to path for supabase_client imports
+# This ensures job_tracking can import supabase_client regardless of execution context
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent
+web_dashboard_dir = project_root / 'web_dashboard'
+if str(web_dashboard_dir) not in sys.path:
+    sys.path.insert(0, str(web_dashboard_dir))
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +48,20 @@ def mark_job_started(
         target_date: Date the job is processing
         fund_name: Specific fund being processed, None if all funds
     """
-    from supabase_client import SupabaseClient
+    try:
+        from supabase_client import SupabaseClient
+    except ImportError:
+        # Try relative import from web_dashboard
+        import sys
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        web_dashboard_dir = current_file.parent.parent / 'web_dashboard'
+        if str(web_dashboard_dir) not in sys.path:
+            sys.path.insert(0, str(web_dashboard_dir))
+        from supabase_client import SupabaseClient
     
     try:
-        client = SupabaseClient()
+        client = SupabaseClient(use_service_role=True)
         client.supabase.table("job_executions").upsert({
             'job_name': job_name,
             'target_date': target_date.isoformat(),
@@ -70,10 +91,20 @@ def mark_job_completed(
         fund_name: Specific fund processed, None if all funds
         funds_processed: List of fund names that completed successfully
     """
-    from supabase_client import SupabaseClient
+    try:
+        from supabase_client import SupabaseClient
+    except ImportError:
+        # Try relative import from web_dashboard
+        import sys
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        web_dashboard_dir = current_file.parent.parent / 'web_dashboard'
+        if str(web_dashboard_dir) not in sys.path:
+            sys.path.insert(0, str(web_dashboard_dir))
+        from supabase_client import SupabaseClient
     
     try:
-        client = SupabaseClient()
+        client = SupabaseClient(use_service_role=True)
         
         # First check if there's an existing entry
         result = client.supabase.table("job_executions")\
@@ -123,10 +154,20 @@ def mark_job_failed(
         fund_name: Specific fund being processed, None if all funds
         error: Error message
     """
-    from supabase_client import SupabaseClient
+    try:
+        from supabase_client import SupabaseClient
+    except ImportError:
+        # Try relative import from web_dashboard
+        import sys
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        web_dashboard_dir = current_file.parent.parent / 'web_dashboard'
+        if str(web_dashboard_dir) not in sys.path:
+            sys.path.insert(0, str(web_dashboard_dir))
+        from supabase_client import SupabaseClient
     
     try:
-        client = SupabaseClient()
+        client = SupabaseClient(use_service_role=True)
         client.supabase.table("job_executions").upsert({
             'job_name': job_name,
             'target_date': target_date.isoformat(),
@@ -157,10 +198,20 @@ def is_job_completed(
     Returns:
         True if job completed successfully, False otherwise
     """
-    from supabase_client import SupabaseClient
+    try:
+        from supabase_client import SupabaseClient
+    except ImportError:
+        # Try relative import from web_dashboard
+        import sys
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        web_dashboard_dir = current_file.parent.parent / 'web_dashboard'
+        if str(web_dashboard_dir) not in sys.path:
+            sys.path.insert(0, str(web_dashboard_dir))
+        from supabase_client import SupabaseClient
     
     try:
-        client = SupabaseClient()
+        client = SupabaseClient(use_service_role=True)
         result = client.supabase.table("job_executions")\
             .select("status")\
             .eq("job_name", job_name)\
@@ -197,10 +248,20 @@ def get_incomplete_jobs(
     Returns:
         List of job execution records that are incomplete
     """
-    from supabase_client import SupabaseClient
+    try:
+        from supabase_client import SupabaseClient
+    except ImportError:
+        # Try relative import from web_dashboard
+        import sys
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        web_dashboard_dir = current_file.parent.parent / 'web_dashboard'
+        if str(web_dashboard_dir) not in sys.path:
+            sys.path.insert(0, str(web_dashboard_dir))
+        from supabase_client import SupabaseClient
     
     try:
-        client = SupabaseClient()
+        client = SupabaseClient(use_service_role=True)
         result = client.supabase.table("job_executions")\
             .select("*")\
             .eq("job_name", job_name)\

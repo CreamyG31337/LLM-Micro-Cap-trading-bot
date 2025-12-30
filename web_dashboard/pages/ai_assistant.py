@@ -10,36 +10,32 @@ Users can chat with AI about their portfolio data.
 import streamlit as st
 import sys
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 import logging
 import pandas as pd
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email, get_user_id
+from auth_utils import is_authenticated
 from chat_context import ChatContextManager, ContextItemType
 from ollama_client import get_ollama_client, check_ollama_health, list_available_models
 from searxng_client import get_searxng_client, check_searxng_health
 from search_utils import (
-    format_search_results, build_search_query, search_portfolio_tickers,
-    search_market_news, should_trigger_search, extract_tickers_from_query,
-    detect_research_intent, get_company_name_from_db, filter_relevant_results
+    format_search_results, build_search_query, should_trigger_search, detect_research_intent, get_company_name_from_db, filter_relevant_results
 )
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
-    format_cash_balances, format_investor_allocations, format_sector_allocation
+    format_cash_balances, format_investor_allocations
 )
 from ai_prompts import get_system_prompt
-from user_preferences import get_user_ai_model, set_user_ai_model
+from user_preferences import get_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
     calculate_portfolio_value_over_time, calculate_performance_metrics,
     get_fund_thesis_data, get_investor_allocations, get_available_funds
 )
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +187,7 @@ if st.session_state.get('clear_context_pending', False):
 
 # Initialize conversation history
 if 'chat_messages' not in st.session_state:
-    st.session_state.chat_messages: List[Dict[str, str]] = []
+    st.session_state.chat_messages: list[dict[str, str]] = []
 
 # Limit conversation history to prevent context overflow
 MAX_CONVERSATION_HISTORY = 20  # Keep last N messages (10 exchanges)
@@ -211,7 +207,7 @@ def get_cached_searxng_health() -> bool:
     return check_searxng_health()
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_portfolio_tickers_list(fund: str) -> List[str]:
+def get_portfolio_tickers_list(fund: str) -> list[str]:
     """Get portfolio tickers with 60s cache to avoid DB queries on every page load."""
     try:
         df = get_current_positions(fund)
@@ -233,9 +229,9 @@ def estimate_tokens(text: str) -> int:
 def calculate_context_size(
     system_prompt: str,
     context_string: str,
-    conversation_history: List[Dict[str, str]],
+    conversation_history: list[dict[str, str]],
     current_prompt: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Calculate total context size and token estimates.
     
     Returns:
@@ -251,25 +247,25 @@ def calculate_context_size(
     """
     system_tokens = estimate_tokens(system_prompt)
     context_tokens = estimate_tokens(context_string)
-    
+
     # Calculate history tokens
     history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
     history_tokens = estimate_tokens(history_text)
-    
+
     prompt_tokens = estimate_tokens(current_prompt)
-    
+
     total_tokens = system_tokens + context_tokens + history_tokens + prompt_tokens
     total_chars = len(system_prompt) + len(context_string) + len(history_text) + len(current_prompt)
-    
+
     # Get model context window (default to 4096 if not available)
     client = get_ollama_client()
     context_window = 4096  # Default
     if client:
         model_settings = client.get_model_settings(selected_model)
         context_window = model_settings.get('num_ctx', 4096)
-    
+
     usage_percent = (total_tokens / context_window * 100) if context_window > 0 else 0
-    
+
     return {
         'total_chars': total_chars,
         'total_tokens': total_tokens,
@@ -294,12 +290,12 @@ def build_context_string_internal() -> str:
     items = chat_context.get_items()
     if not items:
         return ""
-    
+
     context_parts = []
-    
+
     for item in items:
         fund = item.fund or selected_fund
-        
+
         try:
             if item.item_type == ContextItemType.HOLDINGS:
                 positions_df = get_current_positions(fund)
@@ -310,33 +306,33 @@ def build_context_string_internal() -> str:
                 include_fund = st.session_state.get('toggle_fundamentals', True)
                 context_parts.append(
                     format_holdings(
-                        positions_df, 
+                        positions_df,
                         fund or "Unknown",
                         trades_df=trades_df_for_holdings,
                         include_price_volume=include_pv,
                         include_fundamentals=include_fund
                     )
                 )
-            
+
             elif item.item_type == ContextItemType.THESIS:
                 thesis_data = get_fund_thesis_data(fund or "")
                 if thesis_data:
                     context_parts.append(format_thesis(thesis_data))
-            
+
             elif item.item_type == ContextItemType.TRADES:
                 limit = item.metadata.get('limit', 100)
                 trades_df = get_trade_log(limit=limit, fund=fund)
                 context_parts.append(format_trades(trades_df, limit))
-            
+
             elif item.item_type == ContextItemType.METRICS:
                 portfolio_df = calculate_portfolio_value_over_time(fund, days=365) if fund else None
                 metrics = calculate_performance_metrics(fund) if fund else {}
                 context_parts.append(format_performance_metrics(metrics, portfolio_df))
-            
+
             elif item.item_type == ContextItemType.CASH_BALANCES:
                 cash = get_cash_balances(fund) if fund else {}
                 context_parts.append(format_cash_balances(cash))
-            
+
             elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
                 allocations_df = get_investor_allocations(fund) if fund else pd.DataFrame()
                 # Convert DataFrame to dict format for formatter
@@ -350,16 +346,16 @@ def build_context_string_internal() -> str:
                     context_parts.append(format_investor_allocations(allocations_dict))
                 else:
                     context_parts.append(format_investor_allocations({}))
-            
+
             elif item.item_type == ContextItemType.SEARCH_RESULTS:
                 # Search results are added dynamically when user queries
                 # This is handled in the query processing section
                 pass
-            
+
         except Exception as e:
             st.warning(f"Error loading {item.item_type.value}: {e}")
             continue
-    
+
     return "\n\n---\n\n".join(context_parts)
 
 # ============================================================================
@@ -398,15 +394,15 @@ render_navigation(show_ai_assistant=False, show_settings=True)  # Don't show AI 
 
 with st.sidebar:
     st.header("⚙️ Model")
-    
+
     # Get available models and system default
     available_models = list_available_models()
     default_model = get_user_ai_model()
-    
+
     # Ensure default model is in the list
     if default_model not in available_models:
         available_models.insert(0, default_model)
-    
+
     # Model selection dropdown
     selected_model = st.selectbox(
         "AI Model",
@@ -415,16 +411,16 @@ with st.sidebar:
         help="Select the AI model for analysis",
         key="ai_model_selector"
     )
-    
+
     # Get model description if available
     client = get_ollama_client()
     if client:
         desc = client.get_model_description(selected_model)
         if desc:
             st.caption(f"ℹ️ {desc}")
-    
+
     st.markdown("---")
-    
+
     # Fund selection
     st.header("📊 Data Source")
     funds = get_available_funds()
@@ -433,15 +429,15 @@ with st.sidebar:
         current_fund = st.session_state.get('previous_fund', funds[0])
         # Ensure current_fund is in the list (handles case where fund was removed)
         fund_index = funds.index(current_fund) if current_fund in funds else 0
-        
+
         selected_fund = st.selectbox(
-            "Fund", 
-            options=funds, 
+            "Fund",
+            options=funds,
             index=fund_index,
-            help="Select fund for AI analysis", 
+            help="Select fund for AI analysis",
             key="fund_selector"
         )
-        
+
         # Clear chat when fund changes
         if 'previous_fund' not in st.session_state:
             st.session_state.previous_fund = selected_fund
@@ -453,27 +449,27 @@ with st.sidebar:
     else:
         selected_fund = None
         st.warning("No funds available")
-    
+
     st.markdown("---")
-    
+
     # Context selection - Simplified UI
     st.header("📋 Analysis Context")
-    
+
     # Get current context items for this fund
     context_items = chat_context.get_items()
     current_types = {item.item_type for item in context_items if item.fund == selected_fund}
-    
+
     # Core context (always included)
     st.caption("✅ **Always Included:** Holdings (with Daily P&L & Sector), Performance Metrics, Cash Balances")
-    
+
     # Auto-enable core items
     include_holdings = True
     include_metrics = True
     include_cash = True
-    
+
     # Optional context
     st.markdown("**Optional:**")
-    
+
     # Thesis toggle
     include_thesis = st.checkbox(
         "Investment Thesis",
@@ -481,7 +477,7 @@ with st.sidebar:
         help="Include your investment strategy and pillars",
         key="toggle_thesis"
     )
-    
+
     # Trades toggle (optional)
     include_trades = st.checkbox(
         "Recent Trades",
@@ -489,7 +485,7 @@ with st.sidebar:
         help="Include recent trading activity (last 50 trades)",
         key="toggle_trades"
     )
-    
+
     # Investor allocations toggle
     include_investors = st.checkbox(
         "Investor Allocations",
@@ -497,29 +493,29 @@ with st.sidebar:
         help="Include investor ownership breakdown",
         key="toggle_investors"
     )
-    
+
     st.markdown("---")
-    
+
     # Portfolio Table Options
     st.header("📊 Portfolio Table Options")
     st.caption("Customize which portfolio data tables to include")
-    
+
     include_price_volume = st.checkbox(
         "Price & Volume Table",
         value=True,  # Default ON
         help="Include Price & Volume data (Close, % Chg, Volume, Avg Vol)",
         key="toggle_price_volume"
     )
-    
+
     include_fundamentals = st.checkbox(
         "Company Fundamentals Table",
         value=True,  # Default ON
         help="Include Company Fundamentals (Sector, Industry, Mkt Cap, P/E, etc.)",
         key="toggle_fundamentals"
     )
-    
+
     st.markdown("---")
-    
+
     # Web Search section
     st.header("🔍 Web Search")
     if searxng_available:
@@ -530,7 +526,7 @@ with st.sidebar:
             help="Search the web for relevant information when answering questions",
             key="toggle_search"
         )
-        
+
         # Auto-search for tickers option
         auto_search_tickers = st.checkbox(
             "Auto-search ticker news",
@@ -538,7 +534,7 @@ with st.sidebar:
             help="Automatically search for news about portfolio tickers",
             key="auto_search_tickers"
         )
-        
+
         # Search settings expander
         with st.expander("🎛️ Search Settings"):
             min_relevance_score = st.slider(
@@ -550,14 +546,14 @@ with st.sidebar:
                 help="Lower = more results, higher = only highly relevant results. Used for ticker and market searches.",
                 key="min_relevance_score"
             )
-            
+
             filter_general_queries = st.checkbox(
                 "Filter general queries",
                 value=False,
                 help="Apply relevance filtering to general knowledge queries. Usually better to leave this off.",
                 key="filter_general_queries"
             )
-            
+
             st.caption("ℹ️ Ticker searches are always filtered for relevance")
     else:
         st.warning("⚠️ SearXNG unavailable")
@@ -566,12 +562,12 @@ with st.sidebar:
         auto_search_tickers = False
         min_relevance_score = 0.3
         filter_general_queries = False
-    
+
     st.markdown("---")
-    
+
     # Research Knowledge section
     st.header("🧠 Research Knowledge")
-    
+
     # Check if Ollama is available (needed for embeddings)
     if ollama_available:
         include_repository = st.checkbox(
@@ -580,7 +576,7 @@ with st.sidebar:
             help="Search your saved research repository for relevant information",
             key="toggle_repository"
         )
-        
+
         if include_repository:
             with st.expander("🎛️ Repository Settings"):
                 repository_max_results = st.slider(
@@ -591,7 +587,7 @@ with st.sidebar:
                     help="Number of similar articles to include in context",
                     key="repository_max_results"
                 )
-                
+
                 repository_min_similarity = st.slider(
                     "Minimum similarity score",
                     min_value=0.0,
@@ -606,8 +602,8 @@ with st.sidebar:
         include_repository = False
         repository_max_results = 3
         repository_min_similarity = 0.6
-    
-    
+
+
     # =========================================================================
     # CONTEXT SYNCHRONIZATION LOGIC
     # =========================================================================
@@ -615,14 +611,14 @@ with st.sidebar:
     # state (stored in st.session_state.context_items as a Set[ContextItem]).
     #
     # HOW IT WORKS:
-    # 1. current_types (line 197) gets the set of ContextItemType enums currently 
+    # 1. current_types (line 197) gets the set of ContextItemType enums currently
     #    stored for the selected_fund
     # 2. Each checkbox uses `ContextItemType.X in current_types` as its initial value
     # 3. When checkbox state changes, we add/remove the corresponding ContextItem
     #
     # WHY METADATA MATTERS:
     # ContextItem implements __eq__ and __hash__ using (item_type, fund, metadata).
-    # This means add_item and remove_item MUST use IDENTICAL metadata for the 
+    # This means add_item and remove_item MUST use IDENTICAL metadata for the
     # same item type, or the removal will fail silently (item not found in set).
     # For example: TRADES uses metadata={'limit': 50} - both add and remove must match.
     #
@@ -638,44 +634,44 @@ with st.sidebar:
             chat_context.add_item(ContextItemType.HOLDINGS, fund=selected_fund)
         elif not include_holdings and ContextItemType.HOLDINGS in current_types:
             chat_context.remove_item(ContextItemType.HOLDINGS, fund=selected_fund)
-        
+
         # THESIS - no metadata required
         if include_thesis and ContextItemType.THESIS not in current_types:
             chat_context.add_item(ContextItemType.THESIS, fund=selected_fund)
         elif not include_thesis and ContextItemType.THESIS in current_types:
             chat_context.remove_item(ContextItemType.THESIS, fund=selected_fund)
-        
+
         # TRADES - uses metadata for limit; add/remove MUST use same metadata!
         if include_trades and ContextItemType.TRADES not in current_types:
             chat_context.add_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
         elif not include_trades and ContextItemType.TRADES in current_types:
             chat_context.remove_item(ContextItemType.TRADES, fund=selected_fund, metadata={'limit': 50})
-        
+
         # METRICS - no metadata required
         if include_metrics and ContextItemType.METRICS not in current_types:
             chat_context.add_item(ContextItemType.METRICS, fund=selected_fund)
         elif not include_metrics and ContextItemType.METRICS in current_types:
             chat_context.remove_item(ContextItemType.METRICS, fund=selected_fund)
-        
+
         # CASH_BALANCES - no metadata required
         if include_cash and ContextItemType.CASH_BALANCES not in current_types:
             chat_context.add_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
         elif not include_cash and ContextItemType.CASH_BALANCES in current_types:
             chat_context.remove_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
-        
+
         # INVESTOR_ALLOCATIONS - no metadata required
         if include_investors and ContextItemType.INVESTOR_ALLOCATIONS not in current_types:
             chat_context.add_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
         elif not include_investors and ContextItemType.INVESTOR_ALLOCATIONS in current_types:
             chat_context.remove_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
-    
+
     # Handle search context
     if include_search and searxng_available:
         if ContextItemType.SEARCH_RESULTS not in current_types:
             chat_context.add_item(ContextItemType.SEARCH_RESULTS, fund=selected_fund)
     elif not include_search and ContextItemType.SEARCH_RESULTS in current_types:
         chat_context.remove_item(ContextItemType.SEARCH_RESULTS, fund=selected_fund)
-    
+
     # =========================================================================
     # PERFORMANCE OPTIMIZATION: Cache context string in session state
     # =========================================================================
@@ -684,12 +680,12 @@ with st.sidebar:
     # all DB queries). Instead, we cache it in session state and only rebuild
     # when the context items actually change (detected via fingerprint).
     # =========================================================================
-    
+
     # Initialize cache if needed
     if 'context_items_fingerprint' not in st.session_state:
         st.session_state.context_items_fingerprint = None
         st.session_state.cached_context_string = ""
-    
+
     # Create fingerprint of current context items (for change detection)
     updated_items = chat_context.get_items()
     # Include fund, type, and metadata in fingerprint for accurate change detection
@@ -697,12 +693,12 @@ with st.sidebar:
         (item.item_type.value, item.fund, tuple(sorted(item.metadata.items())) if item.metadata else ())
         for item in updated_items
     ]))
-    
+
     # Rebuild context string only if context items changed
     if st.session_state.context_items_fingerprint != current_fingerprint:
         st.session_state.cached_context_string = build_context_string_internal()
         st.session_state.context_items_fingerprint = current_fingerprint
-    
+
     # Show count
     if updated_items:
         st.caption(f"✅ {len(updated_items)} data source(s) selected")
@@ -718,16 +714,16 @@ with right_col:
     # Wrap everything in a container with the CSS class
     with st.container():
         st.markdown('<div class="quick-research-sidebar">', unsafe_allow_html=True)
-        
+
         if searxng_available:
             st.markdown("#### 🔍 Quick Research")
             st.caption("Select tickers to analyze")
-            
+
             # Get portfolio tickers for ticker-specific queries (cached)
             portfolio_tickers_list = []
             if selected_fund:
                 portfolio_tickers_list = get_portfolio_tickers_list(selected_fund)
-            
+
             # Unified Ticker Selection
             col_sel1, col_sel2 = st.columns([2, 1])
             with col_sel1:
@@ -745,12 +741,12 @@ with right_col:
                     label_visibility="collapsed",
                     key="custom_ticker_input"
                 ).strip().upper()
-            
+
             # Combine selections
             active_tickers = list(selected_tickers)
             if custom_ticker and custom_ticker not in active_tickers:
                 active_tickers.append(custom_ticker)
-                
+
             # Check if text_area key exists in session state - if so, we need to update it manually
             # to ensure the widget reflects the new value immediately
             def set_suggested_prompt(prompt_text):
@@ -760,83 +756,73 @@ with right_col:
                     st.session_state.editable_prompt_area = prompt_text
                 st.rerun()
 
-            # Helper to get display name for buttons
-            def get_ticker_display():
-                if not active_tickers:
-                    return ""
-                if len(active_tickers) == 1:
-                    return f" {active_tickers[0]}"
-                return f" ({len(active_tickers)})"
-
             st.markdown("---")
             st.caption("**Quick Actions:**")
-            
-            # Portfolio Analysis button (restores initial prompt)
-            if st.button("📊 Portfolio Analysis", use_container_width=True, key="btn_portfolio_analysis"):
-                # Generate the default analysis prompt
-                default_prompt = chat_context.generate_prompt()
-                set_suggested_prompt(default_prompt)
-            
-            # Buttons (Stacked for Sidebar Feel)
-            if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
-                set_suggested_prompt("What's the latest stock market news today?")
-            
-            # Research Button
-            btn_label = f"🔍 Research{get_ticker_display()}"
-            if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
-                if active_tickers:
+
+            # Ticker-Specific Actions
+            if active_tickers:
+                st.markdown("**📈 Ticker Analysis:**")
+
+                # Research Button
+                btn_label = f"🔍 Research {active_tickers[0]}" if len(active_tickers) == 1 else f"🔍 Research ({len(active_tickers)})"
+                if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
                     if len(active_tickers) == 1:
                         set_suggested_prompt(f"Research {active_tickers[0]} - latest news and analysis")
                     else:
                         tickers_str = ", ".join(active_tickers)
                         set_suggested_prompt(f"Research the following stocks: {tickers_str}. Provide latest news for each.")
-                else:
-                    set_suggested_prompt("Research stocks - find interesting opportunities")
-            
-            # Analysis Button
-            btn_label = f"📊 Analysis{get_ticker_display()}"
-            if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
-                if active_tickers:
+
+                # Analysis Button
+                btn_label = f"📊 Analyze {active_tickers[0]}" if len(active_tickers) == 1 else f"📊 Analyze ({len(active_tickers)})"
+                if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
                     if len(active_tickers) == 1:
                         set_suggested_prompt(f"Analyze {active_tickers[0]} stock - recent performance and outlook")
                     else:
                         tickers_str = ", ".join(active_tickers)
                         set_suggested_prompt(f"Analyze and compare the outlooks for: {tickers_str}")
-                else:
-                     set_suggested_prompt("Analyze a stock - provide recent performance and outlook analysis")
-            
-            # Compare Button
-            disabled_compare = len(active_tickers) == 1
-            if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
-                if len(active_tickers) >= 2:
-                    tickers_str = " and ".join(active_tickers)
-                    set_suggested_prompt(f"Compare {tickers_str} stocks. Which is a better investment?")
-                else:
-                    set_suggested_prompt("Compare two stocks - provide a detailed comparison")
 
-            if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
-                set_suggested_prompt("What's happening in the stock market sectors today?")
-            
-            # Earnings Button
-            btn_label = f"💰 Earnings{get_ticker_display()}"
-            if st.button(btn_label, use_container_width=True, key="btn_earnings"):
-                if active_tickers:
+                # Compare Button (only show if multiple tickers)
+                if len(active_tickers) >= 2:
+                    if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks"):
+                        tickers_str = " and ".join(active_tickers)
+                        set_suggested_prompt(f"Compare {tickers_str} stocks. Which is a better investment?")
+
+                # Earnings Button
+                btn_label = f"💰 Earnings {active_tickers[0]}" if len(active_tickers) == 1 else f"💰 Earnings ({len(active_tickers)})"
+                if st.button(btn_label, use_container_width=True, key="btn_earnings"):
                     if len(active_tickers) == 1:
                         set_suggested_prompt(f"Find recent earnings news for {active_tickers[0]}")
                     else:
                         tickers_str = ", ".join(active_tickers)
                         set_suggested_prompt(f"Find recent earnings reports for: {tickers_str}")
-                else:
-                    set_suggested_prompt("Find recent earnings news and announcements")
+
+                st.markdown("---")
+
+            # General Prompts
+            st.markdown("**🌐 General Prompts:**")
+
+            # Portfolio Analysis button (restores initial prompt)
+            if st.button("📊 Portfolio Analysis", use_container_width=True, key="btn_portfolio_analysis"):
+                # Generate the default analysis prompt
+                default_prompt = chat_context.generate_prompt()
+                set_suggested_prompt(default_prompt)
+
+            # Market News
+            if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
+                set_suggested_prompt("What's the latest stock market news today?")
+
+            # Sector News
+            if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
+                set_suggested_prompt("What's happening in the stock market sectors today?")
         else:
             st.info("🔍 Quick Research requires SearXNG to be available.")
-        
+
         st.markdown('</div>', unsafe_allow_html=True)
 
 # Left Column: Chat
 with main_col:
     st.markdown("### 💬 Chat")
-    
+
     # Start Analysis Workflow vs Standard Chat
     user_query = None
 
@@ -844,7 +830,7 @@ with main_col:
     if 'suggested_prompt' in st.session_state and st.session_state.suggested_prompt:
         st.markdown("### ✏️ Edit Your Prompt")
         st.caption("Review and edit the prompt below, then click Send.")
-        
+
         # Editable prompt area
         editable_prompt = st.text_area(
             "Prompt",
@@ -854,7 +840,7 @@ with main_col:
             label_visibility="collapsed",
             key="editable_prompt_area"
         )
-        
+
         col1, col2, col3 = st.columns([1, 1, 4])
         with col1:
             if st.button("📤 Send", type="primary", use_container_width=True, key="send_edited_prompt"):
@@ -866,21 +852,21 @@ with main_col:
             if st.button("❌ Cancel", use_container_width=True, key="cancel_edited_prompt"):
                 st.session_state.suggested_prompt = None
                 st.rerun()
-        
+
         st.markdown("---")
 
     # Display conversation history in scrollable container (chronological order)
     if st.session_state.chat_messages:
         # Create scrollable chat container
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-        
+
         # Display messages in chronological order (oldest first)
         for message in st.session_state.chat_messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-        
+
         st.markdown('</div>', unsafe_allow_html=True)
-        
+
         # Retry Button Logic (Only if last message was from assistant)
         if st.session_state.chat_messages[-1]['role'] == 'assistant':
             if st.button("🔄 Retry Last Response"):
@@ -897,14 +883,14 @@ with main_col:
     # If no messages yet and no suggested prompt active, show the "Start Analysis" workflow
     if updated_items and not st.session_state.chat_messages and not st.session_state.get('suggested_prompt'):
         st.info(f"✨ Ready to analyze {len(updated_items)} data source(s) from {selected_fund if selected_fund else 'N/A'}")
-        
+
         with st.container():
             st.markdown("### 🚀 Start Analysis")
             st.caption("Review and edit the prompt below, then click Run to start.")
-            
+
             # Generate default prompt
             default_prompt = chat_context.generate_prompt()
-            
+
             # Editable prompt area
             initial_query = st.text_area(
                 "Analysis Prompt",
@@ -913,7 +899,7 @@ with main_col:
                 help="You can edit this prompt before sending",
                 label_visibility="collapsed"
             )
-            
+
             col1, col2 = st.columns([1, 4])
             with col1:
                 if st.button("▶️ Run Analysis", type="primary", use_container_width=True):
@@ -930,10 +916,10 @@ if user_query:
         "role": "user",
         "content": user_query
     })
-    
+
     # Reuse cached context string (PERFORMANCE OPTIMIZATION)
     context_string = st.session_state.get('cached_context_string', '')
-    
+
     # Get portfolio tickers for search detection
     portfolio_tickers = []
     if selected_fund:
@@ -943,14 +929,14 @@ if user_query:
                 portfolio_tickers = positions_df['ticker'].tolist()
         except Exception:
             pass
-    
+
     # Perform web search - automatic detection or manual toggle
     search_results_text = ""
     search_data = None
     search_query_used = None
     search_triggered = False
     filtering_info = None  # Track filtering details for display
-    
+
     # Determine if search should be triggered
     if searxng_client and searxng_available:
         # Auto-trigger based on query content, or use manual toggle
@@ -961,31 +947,31 @@ if user_query:
         else:
             # Auto-detect research intent
             should_search = should_trigger_search(user_query, portfolio_tickers)
-        
+
         if should_search:
             search_triggered = True
             # Detect research intent for better search strategy
             research_intent = detect_research_intent(user_query)
-            
+
             with st.spinner(f"🔍 Searching the web for: {user_query[:50]}..."):
                 try:
                     # Build optimized search query based on intent
                     if research_intent['tickers']:
                         tickers = research_intent['tickers']
-                        
+
                         # Multi-ticker search: search each ticker CONCURRENTLY (PERFORMANCE OPTIMIZATION)
                         if len(tickers) > 1:
                             logger.info(f"Multi-ticker search for: {', '.join(tickers)}")
                             all_results = []
                             seen_urls = set()
-                            
+
                             # Define search function for a single ticker
-                            def search_single_ticker(ticker: str) -> List[Dict]:
+                            def search_single_ticker(ticker: str) -> list[dict]:
                                 """Search for a single ticker and return filtered results."""
                                 try:
                                     # Lookup company name from database
                                     company_name = get_company_name_from_db(ticker)
-                                    
+
                                     # Build query for this specific ticker
                                     ticker_search_query = build_search_query(
                                         user_query,
@@ -993,14 +979,14 @@ if user_query:
                                         company_name=company_name,
                                         preserve_keywords=True
                                     )
-                                    
+
                                     # Search for this ticker
                                     ticker_search_data = searxng_client.search_news(
                                         query=ticker_search_query,
                                         time_range='day',
                                         max_results=10
                                     )
-                                    
+
                                     # Filter results for relevance to this specific ticker
                                     if ticker_search_data and 'results' in ticker_search_data and ticker_search_data['results']:
                                         original_count = len(ticker_search_data['results'])
@@ -1011,7 +997,7 @@ if user_query:
                                             min_relevance_score=min_relevance_score
                                         )
                                         logger.info(f"Ticker {ticker}: Filtered {original_count} to {filter_result['relevant_count']} relevant results")
-                                        
+
                                         # Tag results with ticker
                                         relevant_results = filter_result['relevant']
                                         for result in relevant_results:
@@ -1021,11 +1007,11 @@ if user_query:
                                 except Exception as e:
                                     logger.error(f"Error searching ticker {ticker}: {e}")
                                     return []
-                            
+
                             # Execute searches in parallel (max 5 concurrent workers)
                             with ThreadPoolExecutor(max_workers=min(len(tickers), 5)) as executor:
                                 future_to_ticker = {executor.submit(search_single_ticker, ticker): ticker for ticker in tickers}
-                                
+
                                 for future in as_completed(future_to_ticker):
                                     ticker_results = future.result()
                                     # Deduplicate by URL
@@ -1034,7 +1020,7 @@ if user_query:
                                         if url and url not in seen_urls:
                                             seen_urls.add(url)
                                             all_results.append(result)
-                            
+
                             # Combine all results
                             if all_results:
                                 search_data = {'results': all_results}
@@ -1044,14 +1030,14 @@ if user_query:
                             else:
                                 search_data = None
                                 search_query_used = f"News for {', '.join(tickers)}"
-                        
+
                         # Single-ticker search (existing logic)
                         else:
                             ticker = tickers[0]
-                            
+
                             # Lookup company name from database
                             company_name = get_company_name_from_db(ticker)
-                            
+
                             # Build query with ticker, company name, and preserved keywords
                             search_query_used = build_search_query(
                                 user_query,
@@ -1059,14 +1045,14 @@ if user_query:
                                 company_name=company_name,
                                 preserve_keywords=True
                             )
-                            
+
                             # Fetch more results for filtering
                             search_data = searxng_client.search_news(
                                 query=search_query_used,
                                 time_range='day',
                                 max_results=20  # Get more results for filtering
                             )
-                            
+
                             # Filter results for relevance
                             if search_data and 'results' in search_data and search_data['results']:
                                 original_count = len(search_data['results'])
@@ -1076,7 +1062,7 @@ if user_query:
                                     company_name=company_name,
                                     min_relevance_score=min_relevance_score
                                 )
-                                
+
                                 # Store filtering info for display
                                 filtering_info = {
                                     'original_count': original_count,
@@ -1085,7 +1071,7 @@ if user_query:
                                     'filtered_scores': [r['relevance_score'] for r in filter_result['filtered_out']],
                                     'min_score': min_relevance_score
                                 }
-                                
+
                                 # Update search_data with filtered results
                                 search_data['results'] = filter_result['relevant']
                                 logger.info(f"Filtered {original_count} results to {filter_result['relevant_count']} relevant results for {ticker}")
@@ -1112,7 +1098,7 @@ if user_query:
                             time_range=None,  # No time limit for general queries
                             max_results=10
                         )
-                        
+
                         # Apply filtering only if user enabled it
                         if filter_general_queries and search_data and 'results' in search_data and search_data['results']:
                             # Extract ticker if present for filtering
@@ -1126,7 +1112,7 @@ if user_query:
                                     company_name=company_name,
                                     min_relevance_score=min_relevance_score
                                 )
-                                
+
                                 # Store filtering info for display
                                 filtering_info = {
                                     'original_count': original_count,
@@ -1135,39 +1121,39 @@ if user_query:
                                     'filtered_scores': [r['relevance_score'] for r in filter_result['filtered_out']],
                                     'min_score': min_relevance_score
                                 }
-                                
+
                                 # Update search_data with filtered results
                                 search_data['results'] = filter_result['relevant']
                                 logger.info(f"Filtered {original_count} general search results to {filter_result['relevant_count']} relevant results")
-                    
+
                     if search_data and 'results' in search_data and search_data['results']:
                         search_results_text = format_search_results(search_data, max_results=10)
                         context_string = f"{context_string}\n\n---\n\n{search_results_text}" if context_string else search_results_text
                     elif search_data and 'error' in search_data:
                         logger.warning(f"Search returned error: {search_data['error']}")
-                        
+
                 except Exception as e:
                     st.warning(f"Web search failed: {e}")
                     logger.error(f"Search error: {e}")
-    
+
     # Perform repository search (RAG)
     repository_results_text = ""
     repository_articles = []
     repository_triggered = False
-    
+
     if include_repository and ollama_available:
         repository_triggered = True
-        with st.spinner(f"🧠 Searching research repository..."):
+        with st.spinner("🧠 Searching research repository..."):
             try:
                 # Import repository
                 from research_repository import ResearchRepository
                 research_repo = ResearchRepository()
-                
+
                 # Generate embedding for the user query
                 client = get_ollama_client()
                 if client:
                     query_embedding = client.generate_embedding(user_query)
-                    
+
                     if query_embedding:
                         # Search for similar articles
                         repository_articles = research_repo.search_similar_articles(
@@ -1175,7 +1161,7 @@ if user_query:
                             limit=repository_max_results,
                             min_similarity=repository_min_similarity
                         )
-                        
+
                         if repository_articles:
                             # Format articles for context
                             articles_text = "## Relevant Research from Repository:\n\n"
@@ -1185,7 +1171,7 @@ if user_query:
                                 summary = article.get('summary', article.get('content', '')[:300])
                                 source = article.get('source', 'Unknown')
                                 published = article.get('published_at', '')
-                                
+
                                 articles_text += f"### Article {i} (Similarity: {similarity:.2%})\n"
                                 articles_text += f"**{title}**\n"
                                 articles_text += f"*Source: {source}"
@@ -1195,7 +1181,7 @@ if user_query:
                                 if summary:
                                     articles_text += f"{summary}\n\n"
                                 articles_text += "---\n\n"
-                            
+
                             repository_results_text = articles_text
                             # Add to context
                             context_string = f"{context_string}\n\n{repository_results_text}" if context_string else repository_results_text
@@ -1205,29 +1191,29 @@ if user_query:
             except Exception as e:
                 st.warning(f"Repository search failed: {e}")
                 logger.error(f"Repository search error: {e}")
-    
+
     # Generate prompt
     current_context_items = chat_context.get_items()
     if current_context_items:
         prompt = chat_context.generate_prompt(user_query)
     else:
         prompt = user_query
-    
+
     # Combine context and prompt
     full_prompt = prompt
     if context_string:
         full_prompt = f"{context_string}\n\n{prompt}"
-    
+
     # Display user message
     with st.chat_message("user"):
         st.markdown(user_query)
-        
+
         # Show search status and results inline
         if search_triggered:
             if search_data and search_data.get('results'):
                 # Build status message with filtering info
                 status_msg = f"🔍 **Searched:** {search_query_used}"
-                
+
                 if filtering_info:
                     # Show detailed filtering information
                     original = filtering_info['original_count']
@@ -1235,7 +1221,7 @@ if user_query:
                     filtered = filtering_info['filtered_count']
                     min_score = filtering_info['min_score']
                     filtered_scores = filtering_info['filtered_scores']
-                    
+
                     status_msg += f" | Found {relevant} results"
                     if filtered > 0:
                         # Format scores as comma-separated list, limited to first 10
@@ -1246,7 +1232,7 @@ if user_query:
                 else:
                     # No filtering applied
                     status_msg += f" | Found {len(search_data['results'])} results"
-                
+
                 st.info(status_msg)
                 # Show top results inline
                 with st.expander("📰 Search Results (click to view)", expanded=True):
@@ -1262,17 +1248,17 @@ if user_query:
                     filtered = filtering_info['filtered_count']
                     min_score = filtering_info['min_score']
                     filtered_scores = filtering_info['filtered_scores']
-                    
+
                     scores_str = ", ".join([f"{s:.2f}" for s in filtered_scores[:10]])
                     if len(filtered_scores) > 10:
                         scores_str += f", ... ({len(filtered_scores) - 10} more)"
-                    
+
                     status_msg += f" | Found 0 results. {filtered} results did not meet {min_score} filter ({scores_str})"
                 else:
                     # No results at all from search
                     status_msg += " | No results found"
                 st.info(status_msg)
-        
+
         # Show repository results inline
         if repository_triggered:
             if repository_articles:
@@ -1287,7 +1273,7 @@ if user_query:
                             st.caption(summary[:200] + "...")
             else:
                 st.info("🧠 **Repository:** No similar articles found")
-    
+
     # Calculate context size before sending to AI
     system_prompt = get_system_prompt()
     context_info = calculate_context_size(
@@ -1296,24 +1282,24 @@ if user_query:
         conversation_history=st.session_state.chat_messages,
         current_prompt=full_prompt
     )
-    
-    
+
+
     # Get AI response
     with st.chat_message("assistant"):
         # Show visible status indicator during generation
         status_placeholder = st.empty()
         status_placeholder.info("🧠 **Generating response...**")
-        
+
         message_placeholder = st.empty()
         full_response = ""
-        
+
         try:
             client = get_ollama_client()
             if not client:
                 status_placeholder.empty()
                 st.error("AI client not available")
                 st.stop()
-            
+
             # Stream response (status remains visible during streaming)
             # Pass None for temperature and max_tokens to let the client handle model-specific defaults
             # Model settings come from model_config.json and database overrides
@@ -1327,21 +1313,21 @@ if user_query:
             ):
                 full_response += chunk
                 message_placeholder.markdown(full_response + "▌")
-            
+
             # Clear status and show final response
             status_placeholder.empty()
             message_placeholder.markdown(full_response)
-            
+
         except Exception as e:
             st.error(f"Error getting AI response: {e}")
             full_response = f"Sorry, I encountered an error: {str(e)}"
-        
+
         # Add assistant message to history
         st.session_state.chat_messages.append({
             "role": "assistant",
             "content": full_response
         })
-        
+
         # Enforce conversation history limit (trim oldest messages)
         if len(st.session_state.chat_messages) > MAX_CONVERSATION_HISTORY:
             st.session_state.chat_messages = st.session_state.chat_messages[-MAX_CONVERSATION_HISTORY:]
@@ -1360,14 +1346,14 @@ try:
         last_user_msg = [msg for msg in st.session_state.chat_messages if msg.get('role') == 'user']
         if last_user_msg:
             current_prompt = last_user_msg[-1].get('content', '')
-    
+
     current_context_info = calculate_context_size(
         system_prompt=system_prompt,
         context_string=current_context_string,
         conversation_history=st.session_state.chat_messages,
         current_prompt=current_prompt
     )
-    
+
     # Determine color/warning based on usage
     usage_percent = current_context_info['usage_percent']
     if usage_percent >= 90:
@@ -1379,7 +1365,7 @@ try:
     else:
         usage_color = "🟢"
         usage_warning = None
-    
+
     # Display context usage
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1389,10 +1375,10 @@ try:
     with col3:
         search_status = "✅" if searxng_available else "❌"
         st.caption(f"**Model:** {selected_model} | **Search:** {search_status}")
-    
+
     if usage_warning:
         st.warning(usage_warning)
-    
+
     # Show detailed breakdown in expander
     with st.expander("📊 Context Breakdown", expanded=False):
         st.markdown(f"""
@@ -1406,7 +1392,7 @@ try:
         
         **Total:** {current_context_info['total_tokens']:,} tokens ({current_context_info['total_chars']:,} characters)
         """)
-        
+
         if usage_percent >= 75:
             st.info("💡 **Tip:** Clear chat history or reduce context items to free up space.")
 except Exception as e:
@@ -1420,12 +1406,12 @@ except Exception as e:
 with st.expander("🔧 Debug Context (Raw AI Input)", expanded=False):
     current_context_items = chat_context.get_items()
     st.caption(f"**Context Items Count:** {len(current_context_items)}")
-    
+
     if current_context_items:
         st.caption("**Item Types:**")
         for item in current_context_items:
             st.text(f"  • {item.item_type.value} (Fund: {item.fund})")
-        
+
         st.markdown("---")
         st.caption("**Full Context String:**")
         debug_context = build_context_string_internal()

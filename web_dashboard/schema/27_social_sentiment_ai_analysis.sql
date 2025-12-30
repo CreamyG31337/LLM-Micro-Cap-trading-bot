@@ -17,24 +17,18 @@
 
 CREATE TABLE IF NOT EXISTS social_sentiment_analysis (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL,       -- FK to Supabase sentiment_sessions
+    session_id INTEGER NOT NULL,
     ticker VARCHAR(20) NOT NULL,
-    platform VARCHAR(20) NOT NULL CHECK (platform IN ('stocktwits', 'reddit')),
-
-    -- AI analysis results
-    sentiment_score DECIMAL(3,2),      -- -2.0 to 2.0 (EUPHORIC to FEARFUL)
-    confidence_score DECIMAL(3,2),     -- 0.0 to 1.0
-    sentiment_label VARCHAR(20),       -- EUPHORIC, BULLISH, NEUTRAL, BEARISH, FEARFUL
-
-    -- AI-generated content
-    summary TEXT,                      -- AI summary of all posts in session
-    key_themes TEXT[],                 -- Main topics discussed
-    reasoning TEXT,                    -- Detailed AI reasoning for the analysis
-
-    -- Metadata
+    platform VARCHAR(20) NOT NULL,
+    sentiment_score NUMERIC(3, 2),
+    confidence_score NUMERIC(3, 2),
+    sentiment_label VARCHAR(20),
+    summary TEXT,
+    key_themes TEXT[],
+    reasoning TEXT,
     model_used VARCHAR(100) DEFAULT 'granite3.1:8b',
     analysis_version INTEGER DEFAULT 1,
-    analyzed_at TIMESTAMPTZ DEFAULT NOW()
+    analyzed_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Comments for social_sentiment_analysis table
@@ -87,19 +81,13 @@ CREATE TABLE IF NOT EXISTS extracted_tickers (
     id SERIAL PRIMARY KEY,
     analysis_id INTEGER REFERENCES social_sentiment_analysis(id),
     ticker VARCHAR(20) NOT NULL,
-    confidence DECIMAL(3,2),            -- AI confidence in extraction (0.0-1.0)
+    confidence NUMERIC(3,2),            -- AI confidence in extraction (0.0-1.0)
     context TEXT,                       -- Sentence/context where ticker was found
     is_primary BOOLEAN DEFAULT FALSE,   -- Main ticker of the session
     company_name VARCHAR(200),          -- Resolved company name
     sector VARCHAR(100),                -- Company sector if available
-    extracted_at TIMESTAMPTZ DEFAULT NOW()
+    extracted_at TIMESTAMPTZ DEFAULT now()
 );
-
--- Comments for extracted_tickers table
-COMMENT ON TABLE extracted_tickers IS
-  'AI-validated tickers extracted from social posts with context and confidence';
-
-COMMENT ON COLUMN extracted_tickers.analysis_id IS
   'Foreign key to social_sentiment_analysis table';
 
 COMMENT ON COLUMN extracted_tickers.confidence IS
@@ -135,14 +123,14 @@ CREATE TABLE IF NOT EXISTS post_summaries (
     post_id INTEGER NOT NULL,           -- FK to Supabase social_posts
     summary TEXT NOT NULL,              -- AI-generated summary
     key_points TEXT[],                  -- Bullet points of main ideas
-    sentiment_impact DECIMAL(3,2),      -- Contribution to overall sentiment (-2.0 to 2.0)
-    summarized_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS post_summaries (
+    id INTEGER PRIMARY KEY PRIMARY KEY,
+    post_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    key_points ARRAY,
+    sentiment_impact NUMERIC(3, 2),
+    summarized_at TIMESTAMPTZ DEFAULT now()
 );
-
--- Comments for post_summaries table
-COMMENT ON TABLE post_summaries IS
-  'AI-generated summaries for individual social posts';
-
 COMMENT ON COLUMN post_summaries.post_id IS
   'Foreign key to social_posts table in Supabase';
 

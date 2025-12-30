@@ -9,20 +9,27 @@ CREATE TABLE IF NOT EXISTS congress_trades_analysis (
     trade_id INTEGER NOT NULL,
     
     -- Analysis results
-    conflict_score DECIMAL(3,2) CHECK (conflict_score >= 0 AND conflict_score <= 1),
-    confidence_score DECIMAL(3,2) CHECK (confidence_score >= 0 AND confidence_score <= 1),
+    conflict_score NUMERIC(3,2),
+    confidence_score NUMERIC(3,2),
     reasoning TEXT,
     
     -- Analysis metadata
     model_used VARCHAR(100) NOT NULL DEFAULT 'granite3.3:8b',
-    analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    analyzed_at TIMESTAMPTZ DEFAULT now(),
     
     -- Track which version of the prompt/logic was used (for A/B testing)
     analysis_version INTEGER DEFAULT 1,
     
+    -- Additional fields added later
+    session_id INTEGER,
+    risk_pattern VARCHAR(20),
+    
     -- Ensure we don't duplicate analyses
     CONSTRAINT congress_trades_analysis_unique_trade_model_version 
-        UNIQUE (trade_id, model_used, analysis_version)
+        UNIQUE (trade_id, model_used, analysis_version),
+    
+    -- Foreign key to congress_trade_sessions
+    FOREIGN KEY (session_id) REFERENCES congress_trade_sessions(id)
 );
 
 -- Indexes for performance

@@ -751,6 +751,15 @@ with right_col:
             if custom_ticker and custom_ticker not in active_tickers:
                 active_tickers.append(custom_ticker)
                 
+            # Check if text_area key exists in session state - if so, we need to update it manually
+            # to ensure the widget reflects the new value immediately
+            def set_suggested_prompt(prompt_text):
+                st.session_state.suggested_prompt = prompt_text
+                # Force update of the text area widget if it exists
+                if 'editable_prompt_area' in st.session_state:
+                    st.session_state.editable_prompt_area = prompt_text
+                st.rerun()
+
             # Helper to get display name for buttons
             def get_ticker_display():
                 if not active_tickers:
@@ -766,73 +775,59 @@ with right_col:
             if st.button("📊 Portfolio Analysis", use_container_width=True, key="btn_portfolio_analysis"):
                 # Generate the default analysis prompt
                 default_prompt = chat_context.generate_prompt()
-                st.session_state.suggested_prompt = default_prompt
-                st.rerun()
+                set_suggested_prompt(default_prompt)
             
             # Buttons (Stacked for Sidebar Feel)
             if st.button("📰 Market News", use_container_width=True, key="btn_market_news"):
-                st.session_state.suggested_prompt = "What's the latest stock market news today?"
-                st.rerun()
+                set_suggested_prompt("What's the latest stock market news today?")
             
             # Research Button
             btn_label = f"🔍 Research{get_ticker_display()}"
             if st.button(btn_label, use_container_width=True, key="btn_research_ticker"):
                 if active_tickers:
                     if len(active_tickers) == 1:
-                        st.session_state.suggested_prompt = f"Research {active_tickers[0]} - latest news and analysis"
-                        st.rerun()
+                        set_suggested_prompt(f"Research {active_tickers[0]} - latest news and analysis")
                     else:
                         tickers_str = ", ".join(active_tickers)
-                        st.session_state.suggested_prompt = f"Research the following stocks: {tickers_str}. Provide latest news for each."
-                        st.rerun()
+                        set_suggested_prompt(f"Research the following stocks: {tickers_str}. Provide latest news for each.")
                 else:
-                    st.session_state.suggested_prompt = "Research stocks - find interesting opportunities"
-                    st.rerun()
+                    set_suggested_prompt("Research stocks - find interesting opportunities")
             
             # Analysis Button
             btn_label = f"📊 Analysis{get_ticker_display()}"
             if st.button(btn_label, use_container_width=True, key="btn_stock_analysis"):
                 if active_tickers:
                     if len(active_tickers) == 1:
-                        st.session_state.suggested_prompt = f"Analyze {active_tickers[0]} stock - recent performance and outlook"
-                        st.rerun()
+                        set_suggested_prompt(f"Analyze {active_tickers[0]} stock - recent performance and outlook")
                     else:
                         tickers_str = ", ".join(active_tickers)
-                        st.session_state.suggested_prompt = f"Analyze and compare the outlooks for: {tickers_str}"
-                        st.rerun()
+                        set_suggested_prompt(f"Analyze and compare the outlooks for: {tickers_str}")
                 else:
-                     st.session_state.suggested_prompt = "Analyze a stock - provide recent performance and outlook analysis"
-                     st.rerun()
+                     set_suggested_prompt("Analyze a stock - provide recent performance and outlook analysis")
             
             # Compare Button
             disabled_compare = len(active_tickers) == 1
             if st.button("📈 Compare Stocks", use_container_width=True, key="btn_compare_stocks", disabled=disabled_compare):
                 if len(active_tickers) >= 2:
                     tickers_str = " and ".join(active_tickers)
-                    st.session_state.suggested_prompt = f"Compare {tickers_str} stocks. Which is a better investment?"
-                    st.rerun()
+                    set_suggested_prompt(f"Compare {tickers_str} stocks. Which is a better investment?")
                 else:
-                    st.session_state.suggested_prompt = "Compare two stocks - provide a detailed comparison"
-                    st.rerun()
+                    set_suggested_prompt("Compare two stocks - provide a detailed comparison")
 
             if st.button("💼 Sector News", use_container_width=True, key="btn_sector_news"):
-                st.session_state.suggested_prompt = "What's happening in the stock market sectors today?"
-                st.rerun()
+                set_suggested_prompt("What's happening in the stock market sectors today?")
             
             # Earnings Button
             btn_label = f"💰 Earnings{get_ticker_display()}"
             if st.button(btn_label, use_container_width=True, key="btn_earnings"):
                 if active_tickers:
                     if len(active_tickers) == 1:
-                        st.session_state.suggested_prompt = f"Find recent earnings news for {active_tickers[0]}"
-                        st.rerun()
+                        set_suggested_prompt(f"Find recent earnings news for {active_tickers[0]}")
                     else:
                         tickers_str = ", ".join(active_tickers)
-                        st.session_state.suggested_prompt = f"Find recent earnings reports for: {tickers_str}"
-                        st.rerun()
+                        set_suggested_prompt(f"Find recent earnings reports for: {tickers_str}")
                 else:
-                    st.session_state.suggested_prompt = "Find recent earnings news and announcements"
-                    st.rerun()
+                    set_suggested_prompt("Find recent earnings news and announcements")
         else:
             st.info("🔍 Quick Research requires SearXNG to be available.")
         

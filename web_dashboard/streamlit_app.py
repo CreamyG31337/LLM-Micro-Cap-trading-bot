@@ -2173,7 +2173,7 @@ def main():
                 if 'reason' in trades_df.columns:
                     sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
                     st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
-                display_dataframe_with_copy(trades_df.head(20), label="Debug Trades", key_suffix="debug")
+                st.dataframe(trades_df.head(20), use_container_width=True)
         
         if num_closed > 0:
             # Display primary metrics (matching console app structure)
@@ -2292,10 +2292,8 @@ def main():
                 styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
                 
                 # Display dataframe with selection enabled
-                event = display_dataframe_with_copy(
+                event = st.dataframe(
                     styled_pnl_df, 
-                    label="Realized P&L", 
-                    key_suffix="ticker_pnl", 
                     use_container_width=True, 
                     height=300,
                     on_select="rerun",

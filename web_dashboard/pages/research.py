@@ -945,17 +945,16 @@ try:
             parts = []
             parts.append(f"**Source:** {article.get('source', 'N/A')}")
             parts.append(f"**Type:** {article.get('article_type', 'N/A')}")
-            
+            # Tickers - show as clickable pills
             tickers = article.get('tickers')
             if tickers:
                 if isinstance(tickers, list):
-                    ticker_links = [render_ticker_link(t, t) for t in tickers if t]
-                    parts.append(f"**Tickers:** {', '.join(ticker_links)}")
+                    parts.append(f"**Tickers:** {', '.join(tickers)}")
                 else:
-                    parts.append(f"**Tickers:** {render_ticker_link(str(tickers), str(tickers))}")
+                    parts.append(f"**Tickers:** {str(tickers)}")
             elif article.get('ticker'):
                 ticker = article.get('ticker')
-                parts.append(f"**Ticker:** {render_ticker_link(ticker, ticker)}")
+                parts.append(f"**Ticker:** {ticker}")
             
             if article.get('sector'):
                 parts.append(f"**Sector:** {article.get('sector')}")
@@ -990,13 +989,25 @@ try:
             
             with col_info1:
                 st.markdown(format_article_metadata(article))
+                
+                # Add ticker navigation buttons below metadata
+                tickers = article.get('tickers') or ([article.get('ticker')] if article.get('ticker') else [])
+                if tickers and isinstance(tickers, list):
+                    st.caption("Click ticker to view details:")
+                    # Create a row of ticker buttons
+                    ticker_cols = st.columns(min(len(tickers), 5))  # Max 5 per row
+                    for idx, ticker in enumerate(tickers[:5]):  # Limit to first 5
+                        with ticker_cols[idx]:
+                            if st.button(f"📊 {ticker}", key=f"ticker_{article['id']}_{ticker}", use_container_width=True):
+                                st.session_state['selected_ticker'] = ticker
+                                st.switch_page("pages/ticker_details.py")
             
             with col_info2:
                 st.markdown(format_article_dates(article))
             
             # URL link
             if article.get('url'):
-                st.link_button("� Open Original Article", article['url'], use_container_width=True)
+                st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
             
             # Admin actions
             if show_admin_actions:

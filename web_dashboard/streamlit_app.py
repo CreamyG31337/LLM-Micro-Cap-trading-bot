@@ -1068,7 +1068,6 @@ def main():
                         # This is the key improvement: recover session after Docker restart
                         try:
                             import requests
-                            import os
                             SUPABASE_URL = os.getenv("SUPABASE_URL")
                             SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
                             

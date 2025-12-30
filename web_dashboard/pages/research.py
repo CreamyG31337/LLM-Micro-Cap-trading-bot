@@ -38,6 +38,7 @@ from ollama_client import get_ollama_client, check_ollama_health
 from settings import get_summarizing_model
 from file_parsers import extract_text_from_file
 from streamlit_utils import get_available_funds
+from ticker_utils import render_ticker_link
 
 logger = logging.getLogger(__name__)
 
@@ -937,11 +938,13 @@ try:
             tickers = article.get('tickers')
             if tickers:
                 if isinstance(tickers, list):
-                    parts.append(f"**Tickers:** {', '.join(tickers)}")
+                    ticker_links = [render_ticker_link(t, t) for t in tickers if t]
+                    parts.append(f"**Tickers:** {', '.join(ticker_links)}")
                 else:
-                    parts.append(f"**Tickers:** {str(tickers)}")
+                    parts.append(f"**Tickers:** {render_ticker_link(str(tickers), str(tickers))}")
             elif article.get('ticker'):
-                parts.append(f"**Ticker:** {article.get('ticker')}")
+                ticker = article.get('ticker')
+                parts.append(f"**Ticker:** {render_ticker_link(ticker, ticker)}")
             
             if article.get('sector'):
                 parts.append(f"**Sector:** {article.get('sector')}")

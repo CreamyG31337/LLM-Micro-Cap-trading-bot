@@ -1704,7 +1704,7 @@ def main():
                     if isinstance(data, dict):
                         # New structure with detailed breakdown
                         ticker_data.append({
-                            'Ticker': ticker,
+                            'Ticker': f"ticker_details?ticker={ticker}",
                             f'Realized P&L {currency_label}': data.get('realized_pnl', 0.0),
                             'Shares Sold': data.get('shares_sold', 0.0),
                             f'Proceeds {currency_label}': data.get('proceeds', 0.0)
@@ -1712,7 +1712,7 @@ def main():
                     else:
                         # Legacy structure (just a number)
                         ticker_data.append({
-                            'Ticker': ticker,
+                            'Ticker': f"ticker_details?ticker={ticker}",
                             f'Realized P&L {currency_label}': float(data),
                             'Shares Sold': 0.0,
                             f'Proceeds {currency_label}': 0.0
@@ -1742,7 +1742,20 @@ def main():
                 }
                 styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
                 
-                display_dataframe_with_copy(styled_pnl_df, label="Realized P&L", key_suffix="ticker_pnl", use_container_width=True, height=300)
+                display_dataframe_with_copy(
+                    styled_pnl_df, 
+                    label="Realized P&L", 
+                    key_suffix="ticker_pnl", 
+                    use_container_width=True, 
+                    height=300,
+                    column_config={
+                        "Ticker": st.column_config.LinkColumn(
+                            "Ticker",
+                            display_text=r"ticker_details\?ticker=(.*)",
+                            help="Click to view details"
+                        )
+                    }
+                )
         else:
             st.info("No closed positions found. Realized P&L will appear here once you close positions.")
 

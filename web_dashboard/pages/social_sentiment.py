@@ -557,14 +557,26 @@ try:
         st.subheader("Watchlist Tickers")
         watchlist_display = pd.DataFrame([
             {
-                'Ticker': t.get('ticker', 'N/A'),
+                'Ticker': f"ticker_details?ticker={t.get('ticker', 'N/A')}",
                 'Priority': t.get('priority_tier', 'C'),
                 'Sources': ', '.join(t.get('sources', [])),
                 'Source Count': t.get('source_count', 0)
             }
             for t in watchlist_tickers
         ])
-        st.dataframe(watchlist_display, use_container_width=True, hide_index=True)
+        
+        st.dataframe(
+            watchlist_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Ticker": st.column_config.LinkColumn(
+                    "Ticker",
+                    display_text=r"ticker_details\?ticker=(.*)",
+                    help="Click to view details"
+                )
+            }
+        )
     else:
         if supabase_client is None and postgres_client is None:
             st.warning("⚠️ Database connections unavailable - cannot load watchlist")
@@ -866,7 +878,7 @@ try:
         
         # Build row data
         row = {
-            'Ticker': ticker,
+            'Ticker': f"ticker_details?ticker={ticker}",
             'Company': data['company'],
             'In Watchlist': '✅' if data['in_watchlist'] else '❌',
         }
@@ -968,7 +980,14 @@ try:
     st.dataframe(
         df.style.applymap(style_sentiment, subset=sentiment_columns),
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.LinkColumn(
+                "Ticker",
+                display_text=r"ticker_details\?ticker=(.*)",
+                help="Click to view details"
+            )
+        }
     )
     
     # Show summary statistics

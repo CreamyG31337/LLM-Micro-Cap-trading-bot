@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Union
 def get_trade_sessions(
     trades: List[Dict[str, Any]], 
     gap_days: int = 7,
+    max_group_size: int = 0,
     date_field: str = 'transaction_date'
 ) -> List[List[Dict[str, Any]]]:
     """Group trades into sessions based on time gaps between consecutive trades.
@@ -21,12 +22,16 @@ def get_trade_sessions(
     A "session" is a sequence of trades where each trade occurs within `gap_days`
     of the previous trade. When a gap exceeds `gap_days`, a new session starts.
     
+    If `max_group_size` is > 0, a new session is forced when the current session
+    reaches that size, regardless of the gap.
+    
     This is useful for detecting trading patterns and bursts of activity that may
     cross calendar month boundaries.
     
     Args:
         trades: List of trade dictionaries. Each trade must have a date field.
         gap_days: Maximum number of days between trades in the same session (default: 7)
+        max_group_size: Maximum number of trades per session (0 = unlimited)
         date_field: Name of the date field in trade dicts (default: 'transaction_date')
     
     Returns:
@@ -81,7 +86,13 @@ def get_trade_sessions(
         previous_date = parse_date(previous_trade.get(date_field))
         day_gap = (current_date - previous_date).days
         
-        if day_gap <= gap_days:
+        # Check conditions:
+        # 1. Gap is within limit
+        # 2. Size limit not reached (if set)
+        gap_ok = day_gap <= gap_days
+        size_ok = (max_group_size == 0) or (len(current_session) < max_group_size)
+        
+        if gap_ok and size_ok:
             # Same session
             current_session.append(current_trade)
         else:
@@ -121,6 +132,7 @@ def group_by_politician(
 def get_politician_sessions(
     trades: List[Dict[str, Any]],
     gap_days: int = 7,
+    max_group_size: int = 0,
     politician_field: str = 'politician',
     date_field: str = 'transaction_date'
 ) -> Dict[str, List[List[Dict[str, Any]]]]:
@@ -132,6 +144,7 @@ def get_politician_sessions(
     Args:
         trades: List of all trade dictionaries
         gap_days: Maximum days between trades in same session (default: 7)
+        max_group_size: Maximum trades per session (default: 0 = unlimited)
         politician_field: Name of politician field (default: 'politician')
         date_field: Name of date field (default: 'transaction_date')
     
@@ -151,7 +164,7 @@ def get_politician_sessions(
     # Then get sessions for each politician
     politician_sessions = {}
     for politician, politician_trades in by_politician.items():
-        sessions = get_trade_sessions(politician_trades, gap_days, date_field)
+        sessions = get_trade_sessions(politician_trades, gap_days, max_group_size, date_field)
         politician_sessions[politician] = sessions
     
     return politician_sessions

@@ -1575,9 +1575,15 @@ def opportunity_discovery_job() -> None:
                 # Extract logic_check for relationship confidence scoring
                 logic_check = summary_data.get("logic_check") if isinstance(summary_data, dict) else None
                 
+                # Check if tickers were found - for opportunity discovery, we only want actionable ideas
+                if not extracted_tickers:
+                    logger.info(f"Skipping opportunity discovery article (no tickers found): {title[:50]}...")
+                    articles_skipped += 1
+                    continue
+
                 # Save article with opportunity_discovery type
                 article_id = research_repo.save_article(
-                    tickers=extracted_tickers if extracted_tickers else None,
+                    tickers=extracted_tickers,
                     sector=extracted_sector,
                     article_type="opportunity_discovery",  # Special tag
                     title=extracted.get('title') or title,

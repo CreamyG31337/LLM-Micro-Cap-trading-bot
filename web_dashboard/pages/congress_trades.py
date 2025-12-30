@@ -1226,9 +1226,30 @@ try:
                 except (ValueError, TypeError):
                     pass
         
-        # Calculate Most Active Politician (excluding child and spouse owners)
+        # Calculate Most Active Politician (last 31 days, excluding child and spouse owners)
+        thirty_one_days_ago = date.today() - timedelta(days=31)
         politician_counts = {}
         for trade in all_trades:
+            # Filter by date - only count trades from last 31 days
+            transaction_date_str = trade.get('transaction_date')
+            if transaction_date_str:
+                try:
+                    # Parse ISO format date string
+                    if isinstance(transaction_date_str, str):
+                        # Handle ISO format: "2024-01-15" or "2024-01-15T00:00:00"
+                        transaction_date = datetime.fromisoformat(transaction_date_str.split('T')[0]).date()
+                    elif isinstance(transaction_date_str, date):
+                        transaction_date = transaction_date_str
+                    else:
+                        continue
+                    
+                    # Skip if trade is older than 31 days
+                    if transaction_date < thirty_one_days_ago:
+                        continue
+                except (ValueError, AttributeError, TypeError):
+                    # If we can't parse the date, skip this trade
+                    continue
+            
             owner = trade.get('owner')
             # Skip trades where owner is Child or Spouse
             if owner and owner.lower() in ('child', 'spouse'):
@@ -1271,7 +1292,7 @@ try:
             st.metric("High Risk Trades", high_risk_count)
         
         with col8:
-            st.metric("Most Active Politician", most_active_display)
+            st.metric("Most Active Politician (Last 31 Days)", most_active_display)
         
         st.markdown("---")
         

@@ -42,11 +42,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def backfill_sessions(gap_days: int = 7, limit: int = 0):
+def backfill_sessions(gap_days: int = 7, max_group_size: int = 0, limit: int = 0):
     """Backfill sessions for existing trades.
     
     Args:
         gap_days: Maximum gap between trades in same session
+        max_group_size: Max trades per session
         limit: Max trades to process (0 = all)
     """
     logger.info("Starting session backfill...")
@@ -93,11 +94,12 @@ def backfill_sessions(gap_days: int = 7, limit: int = 0):
     logger.info(f"Found {len(trades)} trades total")
     
     # Group by politician and create sessions
-    logger.info(f"Grouping trades into sessions (gap_days={gap_days})...")
+    logger.info(f"Grouping trades into sessions (gap_days={gap_days}, max_size={max_group_size})...")
     
     politician_sessions = get_politician_sessions(
         trades, 
         gap_days=gap_days,
+        max_group_size=max_group_size,
         politician_field='politician',
         date_field='transaction_date'
     )
@@ -188,8 +190,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Backfill congress trade sessions')
     parser.add_argument('--gap-days', type=int, default=7, 
                         help='Maximum days between trades in same session (default: 7)')
+    parser.add_argument('--max-size', type=int, default=100, 
+                        help='Maximum trades per session (default: 100, 0=unlimited)')
     parser.add_argument('--limit', type=int, default=0,
                         help='Limit number of trades to process (0 = all)')
     args = parser.parse_args()
     
-    backfill_sessions(gap_days=args.gap_days, limit=args.limit)
+    backfill_sessions(gap_days=args.gap_days, max_group_size=args.max_size, limit=args.limit)

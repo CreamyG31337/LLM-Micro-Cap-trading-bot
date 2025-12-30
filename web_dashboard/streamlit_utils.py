@@ -2223,7 +2223,7 @@ def display_dataframe_with_copy(
     underlying_df = df.data if is_styler else df
     
     # Display the dataframe (styled or not)
-    st.dataframe(df, **dataframe_kwargs)
+    result = st.dataframe(df, **dataframe_kwargs)
     
     # Add copy to clipboard functionality
     # Use underlying DataFrame for export (without styling)
@@ -2236,3 +2236,5 @@ def display_dataframe_with_copy(
             st.caption("Click the copy icon in the top-right corner of the box below to copy to clipboard")
             # st.code automatically adds a copy button
             st.code(tsv_data, language=None, line_numbers=False)
+            
+    return result

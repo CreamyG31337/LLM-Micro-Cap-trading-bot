@@ -1599,165 +1599,6 @@ def main():
                     f"${unrealized_pnl:,.2f}",
                     help="Unrealized Profit/Loss from currently held positions."
                 )
-        
-        # Close P&L section (realized gains/losses from closed positions)
-        st.markdown("---")
-        st.markdown("### Closed Positions P&L")
-        
-        # Calculate realized P&L
-        realized_pnl_data = get_realized_pnl(fund=fund_filter, display_currency=display_currency)
-        total_realized = realized_pnl_data.get('total_realized_pnl', 0.0)
-        num_closed = realized_pnl_data.get('num_closed_trades', 0)
-        winning_trades = realized_pnl_data.get('winning_trades', 0)
-        losing_trades = realized_pnl_data.get('losing_trades', 0)
-        trades_by_ticker = realized_pnl_data.get('trades_by_ticker', {})
-        
-        # Debug: Show what we found (only in debug mode)
-        if st.checkbox("🔍 Debug: Show trade log info", key="debug_realized_pnl"):
-            trades_df = get_trade_log(limit=100, fund=fund_filter)
-            if not trades_df.empty:
-                st.write(f"**Total trades found:** {len(trades_df)}")
-                st.write(f"**Columns:** {list(trades_df.columns)}")
-                if 'action' in trades_df.columns:
-                    st.write(f"**Unique action values:** {trades_df['action'].astype(str).unique().tolist()}")
-                    st.write(f"**SELL trades count:** {len(trades_df[trades_df['action'].astype(str).str.upper() == 'SELL'])}")
-                if 'reason' in trades_df.columns:
-                    sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
-                    st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
-                display_dataframe_with_copy(trades_df.head(20), label="Debug Trades", key_suffix="debug")
-        
-        if num_closed > 0:
-            # Display primary metrics (matching console app structure)
-            pnl_col1, pnl_col2, pnl_col3, pnl_col4 = st.columns(4)
-            
-            with pnl_col1:
-                st.metric(
-                    f"Total Realized P&L {format_currency_label(display_currency)}",
-                    f"${total_realized:,.2f}",
-                    help="Total realized profit/loss from all closed positions (matches console app)."
-                )
-            
-            with pnl_col2:
-                total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
-                st.metric(
-                    "Total Shares Sold",
-                    f"{total_shares_sold:,.2f}",
-                    help="Total number of shares sold across all closed positions."
-                )
-            
-            with pnl_col3:
-                total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
-                st.metric(
-                    f"Total Proceeds {format_currency_label(display_currency)}",
-                    f"${total_proceeds:,.2f}",
-                    help=f"Total proceeds from all sales in {display_currency}."
-                )
-            
-            with pnl_col4:
-                avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
-                st.metric(
-                    f"Avg Sell Price {format_currency_label(display_currency)}",
-                    f"${avg_sell_price:,.2f}",
-                    help=f"Average sell price per share across all closed positions in {display_currency}."
-                )
-            
-            # Secondary metrics row
-            pnl_col5, pnl_col6, pnl_col7, pnl_col8 = st.columns(4)
-            
-            with pnl_col5:
-                st.metric(
-                    "Closed Trades",
-                    f"{num_closed}",
-                    help="Total number of closed positions (sell transactions)."
-                )
-            
-            with pnl_col6:
-                st.metric(
-                    "Winning Trades",
-                    f"{winning_trades}",
-                    help="Number of closed positions with positive realized P&L."
-                )
-            
-            with pnl_col7:
-                st.metric(
-                    "Losing Trades",
-                    f"{losing_trades}",
-                    help="Number of closed positions with negative realized P&L."
-                )
-            
-            with pnl_col8:
-                win_rate = (winning_trades / num_closed * 100) if num_closed > 0 else 0.0
-                st.metric(
-                    "Win Rate",
-                    f"{win_rate:.1f}%",
-                    help="Percentage of closed trades with positive P&L."
-                )
-            
-            # Show breakdown by ticker if there are multiple tickers
-            if len(trades_by_ticker) > 1:
-                st.markdown("#### Realized P&L by Ticker")
-                
-                # Create DataFrame for display (handle new structure)
-                currency_label = format_currency_label(display_currency)
-                ticker_data = []
-                for ticker, data in trades_by_ticker.items():
-                    if isinstance(data, dict):
-                        # New structure with detailed breakdown
-                        ticker_data.append({
-                            'Ticker': f"ticker_details?ticker={ticker}",
-                            f'Realized P&L {currency_label}': data.get('realized_pnl', 0.0),
-                            'Shares Sold': data.get('shares_sold', 0.0),
-                            f'Proceeds {currency_label}': data.get('proceeds', 0.0)
-                        })
-                    else:
-                        # Legacy structure (just a number)
-                        ticker_data.append({
-                            'Ticker': f"ticker_details?ticker={ticker}",
-                            f'Realized P&L {currency_label}': float(data),
-                            'Shares Sold': 0.0,
-                            f'Proceeds {currency_label}': 0.0
-                        })
-                
-                ticker_pnl_df = pd.DataFrame(ticker_data)
-                pnl_col_name = f'Realized P&L {currency_label}'
-                ticker_pnl_df = ticker_pnl_df.sort_values(pnl_col_name, ascending=False)
-                
-                # Format and color-code
-                def color_pnl(val):
-                    try:
-                        if isinstance(val, str):
-                            val = float(val.replace('$', '').replace(',', ''))
-                        if val > 0:
-                            return 'color: #10b981'
-                        elif val < 0:
-                            return 'color: #ef4444'
-                    except:
-                        pass
-                    return ''
-                
-                format_dict = {
-                    pnl_col_name: '${:,.2f}',
-                    'Shares Sold': '{:,.2f}',
-                    f'Proceeds {currency_label}': '${:,.2f}'
-                }
-                styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
-                
-                display_dataframe_with_copy(
-                    styled_pnl_df, 
-                    label="Realized P&L", 
-                    key_suffix="ticker_pnl", 
-                    use_container_width=True, 
-                    height=300,
-                    column_config={
-                        "Ticker": st.column_config.LinkColumn(
-                            "Ticker",
-                            display_text=r"ticker_details\?ticker=(.*)",
-                            help="Click to view details"
-                        )
-                    }
-                )
-        else:
-            st.info("No closed positions found. Realized P&L will appear here once you close positions.")
 
         # Investment Thesis section (near top, after metrics)
         if fund_filter:
@@ -2307,6 +2148,169 @@ def main():
                 display_dataframe_with_copy(recent_trades, label="Recent Trades", key_suffix="recent_trades_raw", use_container_width=True, height=400)
         else:
             st.info("No recent trades found")
+        
+        # Close P&L section (realized gains/losses from closed positions)
+        st.markdown("---")
+        st.markdown("### Closed Positions P&L")
+        
+        # Calculate realized P&L
+        realized_pnl_data = get_realized_pnl(fund=fund_filter, display_currency=display_currency)
+        total_realized = realized_pnl_data.get('total_realized_pnl', 0.0)
+        num_closed = realized_pnl_data.get('num_closed_trades', 0)
+        winning_trades = realized_pnl_data.get('winning_trades', 0)
+        losing_trades = realized_pnl_data.get('losing_trades', 0)
+        trades_by_ticker = realized_pnl_data.get('trades_by_ticker', {})
+        
+        # Debug: Show what we found (only in debug mode)
+        if st.checkbox("🔍 Debug: Show trade log info", key="debug_realized_pnl"):
+            trades_df = get_trade_log(limit=100, fund=fund_filter)
+            if not trades_df.empty:
+                st.write(f"**Total trades found:** {len(trades_df)}")
+                st.write(f"**Columns:** {list(trades_df.columns)}")
+                if 'action' in trades_df.columns:
+                    st.write(f"**Unique action values:** {trades_df['action'].astype(str).unique().tolist()}")
+                    st.write(f"**SELL trades count:** {len(trades_df[trades_df['action'].astype(str).str.upper() == 'SELL'])}")
+                if 'reason' in trades_df.columns:
+                    sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
+                    st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
+                display_dataframe_with_copy(trades_df.head(20), label="Debug Trades", key_suffix="debug")
+        
+        if num_closed > 0:
+            # Display primary metrics (matching console app structure)
+            pnl_col1, pnl_col2, pnl_col3, pnl_col4 = st.columns(4)
+            
+            with pnl_col1:
+                st.metric(
+                    f"Total Realized P&L {format_currency_label(display_currency)}",
+                    f"${total_realized:,.2f}",
+                    help="Total realized profit/loss from all closed positions (matches console app)."
+                )
+            
+            with pnl_col2:
+                total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
+                st.metric(
+                    "Total Shares Sold",
+                    f"{total_shares_sold:,.2f}",
+                    help="Total number of shares sold across all closed positions."
+                )
+            
+            with pnl_col3:
+                total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
+                st.metric(
+                    f"Total Proceeds {format_currency_label(display_currency)}",
+                    f"${total_proceeds:,.2f}",
+                    help=f"Total proceeds from all sales in {display_currency}."
+                )
+            
+            with pnl_col4:
+                avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
+                st.metric(
+                    f"Avg Sell Price {format_currency_label(display_currency)}",
+                    f"${avg_sell_price:,.2f}",
+                    help=f"Average sell price per share across all closed positions in {display_currency}."
+                )
+            
+            # Secondary metrics row
+            pnl_col5, pnl_col6, pnl_col7, pnl_col8 = st.columns(4)
+            
+            with pnl_col5:
+                st.metric(
+                    "Closed Trades",
+                    f"{num_closed}",
+                    help="Total number of closed positions (sell transactions)."
+                )
+            
+            with pnl_col6:
+                st.metric(
+                    "Winning Trades",
+                    f"{winning_trades}",
+                    help="Number of closed positions with positive realized P&L."
+                )
+            
+            with pnl_col7:
+                st.metric(
+                    "Losing Trades",
+                    f"{losing_trades}",
+                    help="Number of closed positions with negative realized P&L."
+                )
+            
+            with pnl_col8:
+                win_rate = (winning_trades / num_closed * 100) if num_closed > 0 else 0.0
+                st.metric(
+                    "Win Rate",
+                    f"{win_rate:.1f}%",
+                    help="Percentage of closed trades with positive P&L."
+                )
+            
+            # Show breakdown by ticker if there are multiple tickers
+            if len(trades_by_ticker) > 1:
+                st.markdown("#### Realized P&L by Ticker")
+                
+                # Create DataFrame for display (handle new structure)
+                currency_label = format_currency_label(display_currency)
+                ticker_data = []
+                for ticker, data in trades_by_ticker.items():
+                    if isinstance(data, dict):
+                        # New structure with detailed breakdown
+                        ticker_data.append({
+                            'Ticker': ticker,
+                            f'Realized P&L {currency_label}': data.get('realized_pnl', 0.0),
+                            'Shares Sold': data.get('shares_sold', 0.0),
+                            f'Proceeds {currency_label}': data.get('proceeds', 0.0)
+                        })
+                    else:
+                        # Legacy structure (just a number)
+                        ticker_data.append({
+                            'Ticker': ticker,
+                            f'Realized P&L {currency_label}': float(data),
+                            'Shares Sold': 0.0,
+                            f'Proceeds {currency_label}': 0.0
+                        })
+                
+                ticker_pnl_df = pd.DataFrame(ticker_data)
+                pnl_col_name = f'Realized P&L {currency_label}'
+                ticker_pnl_df = ticker_pnl_df.sort_values(pnl_col_name, ascending=False)
+                
+                # Format and color-code
+                def color_pnl(val):
+                    try:
+                        if isinstance(val, str):
+                            val = float(val.replace('$', '').replace(',', ''))
+                        if val > 0:
+                            return 'color: #10b981'
+                        elif val < 0:
+                            return 'color: #ef4444'
+                    except:
+                        pass
+                    return ''
+                
+                format_dict = {
+                    pnl_col_name: '${:,.2f}',
+                    'Shares Sold': '{:,.2f}',
+                    f'Proceeds {currency_label}': '${:,.2f}'
+                }
+                styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
+                
+                # Display dataframe with selection enabled
+                event = display_dataframe_with_copy(
+                    styled_pnl_df, 
+                    label="Realized P&L", 
+                    key_suffix="ticker_pnl", 
+                    use_container_width=True, 
+                    height=300,
+                    on_select="rerun",
+                    selection_mode="single-row"
+                )
+                
+                # Handle row selection for navigation
+                if event.selection.rows:
+                    selected_idx = event.selection.rows[0]
+                    # Get ticker from the underlying dataframe (styled_pnl_df is a Styler)
+                    selected_ticker = ticker_pnl_df.iloc[selected_idx]['Ticker']
+                    st.query_params["ticker"] = selected_ticker
+                    st.switch_page("pages/ticker_details.py")
+        else:
+            st.info("No closed positions found. Realized P&L will appear here once you close positions.")
         
         # Footer with build info
         st.markdown("---")

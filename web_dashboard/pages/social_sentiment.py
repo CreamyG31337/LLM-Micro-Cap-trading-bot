@@ -567,7 +567,7 @@ try:
         st.subheader("Watchlist Tickers")
         watchlist_display = pd.DataFrame([
             {
-                'Ticker': f"ticker_details?ticker={t.get('ticker', 'N/A')}",
+                'Ticker': t.get('ticker', 'N/A'),
                 'Priority': t.get('priority_tier', 'C'),
                 'Sources': ', '.join(t.get('sources', [])),
                 'Source Count': t.get('source_count', 0)
@@ -575,18 +575,19 @@ try:
             for t in watchlist_tickers
         ])
         
-        st.dataframe(
+        event = st.dataframe(
             watchlist_display,
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "Ticker": st.column_config.LinkColumn(
-                    "Ticker",
-                    display_text=r"ticker_details\?ticker=(.*)",
-                    help="Click to view details"
-                )
-            }
+            on_select="rerun",
+            selection_mode="single-row"
         )
+        
+        if event.selection.rows:
+            selected_idx = event.selection.rows[0]
+            selected_ticker = watchlist_display.iloc[selected_idx]['Ticker']
+            st.query_params["ticker"] = selected_ticker
+            st.switch_page("pages/ticker_details.py")
     else:
         if supabase_client is None and postgres_client is None:
             st.warning("⚠️ Database connections unavailable - cannot load watchlist")
@@ -888,7 +889,7 @@ try:
         
         # Build row data
         row = {
-            'Ticker': f"ticker_details?ticker={ticker}",
+            'Ticker': ticker,
             'Company': data['company'],
             'In Watchlist': '✅' if data['in_watchlist'] else '❌',
         }
@@ -987,18 +988,20 @@ try:
     sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
     
     # Display dataframe with styling
-    st.dataframe(
+    # Display dataframe with styling
+    event = st.dataframe(
         df.style.applymap(style_sentiment, subset=sentiment_columns),
         use_container_width=True,
         hide_index=True,
-        column_config={
-            "Ticker": st.column_config.LinkColumn(
-                "Ticker",
-                display_text=r"ticker_details\?ticker=(.*)",
-                help="Click to view details"
-            )
-        }
+        on_select="rerun",
+        selection_mode="single-row"
     )
+    
+    if event.selection.rows:
+        selected_idx = event.selection.rows[0]
+        selected_ticker = df.iloc[selected_idx]['Ticker']
+        st.query_params["ticker"] = selected_ticker
+        st.switch_page("pages/ticker_details.py")
     
     # Show summary statistics
     st.markdown("---")

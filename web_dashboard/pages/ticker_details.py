@@ -107,9 +107,17 @@ def get_supabase_client():
 postgres_client = get_postgres_client()
 supabase_client = get_supabase_client()
 
-# Get ticker from query parameters
+# Get ticker from session state (set by navigation from other pages) or query parameters
+ticker_from_session = st.session_state.get('selected_ticker', '')
 query_params = st.query_params
-ticker = query_params.get("ticker", "")
+ticker_from_query = query_params.get("ticker", "")
+
+# Prefer session state, then query params
+ticker = ticker_from_session or ticker_from_query
+
+# Clear session state ticker after reading it
+if ticker_from_session:
+    st.session_state['selected_ticker'] = ''
 
 # Get all available tickers for dropdown
 all_tickers = get_all_unique_tickers()

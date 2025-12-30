@@ -586,7 +586,8 @@ try:
         
         # Handle ticker selection
         if selected_ticker:
-            st.query_params["ticker"] = selected_ticker
+            # Use session state to pass ticker to details page
+            st.session_state['selected_ticker'] = selected_ticker
             st.switch_page("pages/ticker_details.py")
     else:
         if supabase_client is None and postgres_client is None:
@@ -997,7 +998,8 @@ try:
     
     # Handle ticker selection
     if selected_ticker:
-        st.query_params["ticker"] = selected_ticker
+        # Use session state to pass ticker to details page
+        st.session_state['selected_ticker'] = selected_ticker
         st.switch_page("pages/ticker_details.py")
     
     # Show summary statistics

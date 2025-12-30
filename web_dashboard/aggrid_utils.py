@@ -89,13 +89,33 @@ def display_aggrid_with_ticker_navigation(
     )
     
     # Check if a row was selected
-    selected_rows = grid_response.get('selected_rows')
-    if selected_rows is not None and len(selected_rows) > 0:
-        selected_row = selected_rows[0]
-        if ticker_column in selected_row:
-            return selected_row[ticker_column]
-    
-    return None
+    try:
+        selected_rows = grid_response.get('selected_rows')
+        
+        if selected_rows is not None and len(selected_rows) > 0:
+            # AgGrid can return selected_rows as either DataFrame or list of dicts
+            if isinstance(selected_rows, pd.DataFrame):
+                # DataFrame format
+                if ticker_column in selected_rows.columns:
+                    ticker_value = str(selected_rows.iloc[0][ticker_column])
+                    return ticker_value
+            else:
+                # List of dicts format
+                selected_row = selected_rows[0]
+                if isinstance(selected_row, dict) and ticker_column in selected_row:
+                    ticker_value = str(selected_row[ticker_column])
+                    return ticker_value
+                elif hasattr(selected_row, ticker_column):
+                    # Handle if it's an object with attributes
+                    ticker_value = str(getattr(selected_row, ticker_column))
+                    return ticker_value
+        
+        return None
+    except Exception as e:
+        st.error(f"❌ Error processing ticker selection: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
 
 
 def display_aggrid_simple(

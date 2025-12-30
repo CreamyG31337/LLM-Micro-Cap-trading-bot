@@ -132,15 +132,17 @@ def get_dynamic_watchlist_tickers(
     _postgres_client, 
     _refresh_key: int
 ) -> List[Dict[str, Any]]:
-    """Get dynamic watchlist tickers from multiple sources (trade log, congress trades, articles)
+    """Get dynamic watchlist tickers from multiple sources (trade log, congress trades, articles, sentiment alerts)
     
     Combines tickers from:
     - watched_tickers table (TRADELOG source)
     - congress_trades_enriched (last 30 days, CONGRESS source)
     - research_articles (last 30 days, ARTICLES source)
+    - extreme sentiment alerts (EUPHORIC, FEARFUL - last 24 hours, EXTREME_ALERTS source)
+    - bullish sentiment alerts (BULLISH - last 24 hours, BULLISH_ALERTS source)
     
-    Assigns priority tiers based on source count:
-    - Tier A: Appears in 3 sources
+    Assigns priority tiers based on source count and alerts:
+    - Tier A: Has extreme sentiment alerts OR appears in 3+ sources
     - Tier B: Appears in 2 sources
     - Tier C: Appears in 1 source only
     
@@ -243,18 +245,88 @@ def get_dynamic_watchlist_tickers(
             except Exception as e:
                 logger.warning(f"Error fetching research articles: {e}")
         
-        # Calculate priority tiers based on source count
+        # 4. Get tickers from extreme sentiment alerts (EUPHORIC, FEARFUL - last 24 hours)
+        if _postgres_client:
+            try:
+                query = """
+                    SELECT DISTINCT ticker
+                    FROM social_metrics
+                    WHERE sentiment_label IN ('EUPHORIC', 'FEARFUL')
+                      AND created_at > NOW() - INTERVAL '24 hours'
+                """
+                results = _postgres_client.execute_query(query)
+                
+                if results:
+                    extreme_alert_tickers = set()
+                    for row in results:
+                        ticker = row.get('ticker', '').upper().strip()
+                        if ticker:
+                            extreme_alert_tickers.add(ticker)
+                    
+                    for ticker in extreme_alert_tickers:
+                        if ticker not in ticker_data:
+                            ticker_data[ticker] = {
+                                'ticker': ticker,
+                                'sources': [],
+                                'source_count': 0,
+                                'priority_tier': 'A',  # Extreme alerts get Tier A
+                                'created_at': None
+                            }
+                        if 'EXTREME_ALERTS' not in ticker_data[ticker]['sources']:
+                            ticker_data[ticker]['sources'].append('EXTREME_ALERTS')
+                            ticker_data[ticker]['source_count'] = len(ticker_data[ticker]['sources'])
+            except Exception as e:
+                logger.warning(f"Error fetching extreme sentiment alerts: {e}")
+        
+        # 5. Get tickers from bullish sentiment alerts (BULLISH - last 24 hours)
+        if _postgres_client:
+            try:
+                query = """
+                    SELECT DISTINCT ticker
+                    FROM social_metrics
+                    WHERE sentiment_label = 'BULLISH'
+                      AND created_at > NOW() - INTERVAL '24 hours'
+                """
+                results = _postgres_client.execute_query(query)
+                
+                if results:
+                    bullish_alert_tickers = set()
+                    for row in results:
+                        ticker = row.get('ticker', '').upper().strip()
+                        if ticker:
+                            bullish_alert_tickers.add(ticker)
+                    
+                    for ticker in bullish_alert_tickers:
+                        if ticker not in ticker_data:
+                            ticker_data[ticker] = {
+                                'ticker': ticker,
+                                'sources': [],
+                                'source_count': 0,
+                                'priority_tier': 'C',
+                                'created_at': None
+                            }
+                        if 'BULLISH_ALERTS' not in ticker_data[ticker]['sources']:
+                            ticker_data[ticker]['sources'].append('BULLISH_ALERTS')
+                            ticker_data[ticker]['source_count'] = len(ticker_data[ticker]['sources'])
+            except Exception as e:
+                logger.warning(f"Error fetching bullish sentiment alerts: {e}")
+        
+        # Calculate priority tiers based on source count and alerts
         for ticker, data in ticker_data.items():
-            source_count = data['source_count']
-            if source_count >= 3:
+            # Extreme alerts always get Tier A
+            if 'EXTREME_ALERTS' in data['sources']:
                 data['priority_tier'] = 'A'
-            elif source_count == 2:
-                data['priority_tier'] = 'B'
             else:
-                # Keep existing tier if from TRADELOG, otherwise C
-                if 'TRADELOG' not in data['sources']:
-                    data['priority_tier'] = 'C'
-                # If TRADELOG exists, keep its original tier (already set above)
+                source_count = data['source_count']
+                if source_count >= 3:
+                    data['priority_tier'] = 'A'
+                elif source_count == 2:
+                    data['priority_tier'] = 'B'
+                else:
+                    # Keep existing tier if from TRADELOG, otherwise C
+                    if 'TRADELOG' not in data['sources']:
+                        data['priority_tier'] = 'C'
+                    # If TRADELOG exists, keep its original tier (already set above)
         
         # Convert to list and sort by priority tier, then ticker
         watchlist = list(ticker_data.values())
@@ -446,7 +518,7 @@ try:
     
     # Display Watchlist Section
     st.header("📋 Watchlist")
-    st.caption("Dynamic watchlist combining tickers from trade log, congress trades (30 days), and research articles (30 days)")
+    st.caption("Dynamic watchlist combining tickers from trade log, congress trades (30 days), research articles (30 days), extreme sentiment alerts (24h), and bullish sentiment alerts (24h)")
     
     if watchlist_tickers:
         watchlist_df = pd.DataFrame(watchlist_tickers)
@@ -497,7 +569,7 @@ try:
         if supabase_client is None and postgres_client is None:
             st.warning("⚠️ Database connections unavailable - cannot load watchlist")
         else:
-            st.info("📭 No tickers found in watchlist. Tickers are dynamically populated from trade log, congress trades (last 30 days), and research articles (last 30 days).")
+            st.info("📭 No tickers found in watchlist. Tickers are dynamically populated from trade log, congress trades (last 30 days), research articles (last 30 days), extreme sentiment alerts (last 24 hours), and bullish sentiment alerts (last 24 hours).")
     
     st.markdown("---")
     

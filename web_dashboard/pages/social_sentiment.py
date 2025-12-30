@@ -168,6 +168,75 @@ def get_extreme_sentiment_alerts(_client, _refresh_key: int) -> List[Dict[str, A
         logger.error(f"Error fetching extreme sentiment alerts: {e}", exc_info=True)
         return []
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_ai_analyses(_client, _refresh_key: int) -> List[Dict[str, Any]]:
+    """Get latest AI sentiment analyses from research database
+    
+    Returns:
+        List of dictionaries with AI analysis data
+    """
+    try:
+        query = """
+            SELECT ssa.*, ss.post_count, ss.total_engagement
+            FROM social_sentiment_analysis ssa
+            JOIN sentiment_sessions ss ON ssa.session_id = ss.id
+            WHERE ssa.analyzed_at > NOW() - INTERVAL '7 days'
+            ORDER BY ssa.analyzed_at DESC
+            LIMIT 100
+        """
+        results = _client.execute_query(query)
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching AI analyses: {e}", exc_info=True)
+        return []
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_extracted_tickers(_client, analysis_id: int) -> List[Dict[str, Any]]:
+    """Get tickers extracted from a specific AI analysis
+    
+    Args:
+        analysis_id: ID of the analysis record
+        
+    Returns:
+        List of extracted ticker data
+    """
+    try:
+        query = """
+            SELECT * FROM extracted_tickers 
+            WHERE analysis_id = %s 
+            ORDER BY confidence DESC
+        """
+        results = _client.execute_query(query, (analysis_id,))
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching extracted tickers for analysis {analysis_id}: {e}", exc_info=True)
+        return []
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_social_posts_for_session(_client, session_id: int) -> List[Dict[str, Any]]:
+    """Get social posts for a specific sentiment session
+    
+    Args:
+        session_id: ID of the sentiment session
+        
+    Returns:
+        List of post data
+    """
+    try:
+        query = """
+            SELECT sp.*, sm.ticker, sm.platform
+            FROM social_posts sp
+            JOIN social_metrics sm ON sp.metric_id = sm.id
+            WHERE sm.analysis_session_id = %s
+            ORDER BY sp.engagement_score DESC
+            LIMIT 10
+        """
+        results = _client.execute_query(query, (session_id,))
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching posts for session {session_id}: {e}", exc_info=True)
+        return []
+
 # Helper function to format datetime for display
 def format_datetime(dt) -> str:
     """Format datetime for display in local timezone"""
@@ -290,6 +359,132 @@ try:
                 )
     else:
         st.info("✅ No extreme sentiment alerts in the last 24 hours")
+    
+    st.markdown("---")
+    
+    # Display AI Analysis Section
+    st.header("🤖 AI Sentiment Analysis")
+    
+    # Get AI analyses (cached)
+    with st.spinner("Loading AI analyses..."):
+        ai_analyses = get_ai_analyses(postgres_client, st.session_state.refresh_key)
+    
+    if ai_analyses:
+        # Show AI analysis summary
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            total_analyses = len(ai_analyses)
+            st.metric("AI Analyses", total_analyses)
+        with col2:
+            avg_confidence = sum(a.get('confidence_score', 0) for a in ai_analyses) / len(ai_analyses)
+            st.metric("Avg Confidence", f"{avg_confidence:.1%}")
+        with col3:
+            euphoric_count = sum(1 for a in ai_analyses if a.get('sentiment_label') == 'EUPHORIC')
+            st.metric("Euphoric", euphoric_count)
+        with col4:
+            fearful_count = sum(1 for a in ai_analyses if a.get('sentiment_label') == 'FEARFUL')
+            st.metric("Fearful", fearful_count)
+        
+        # AI Analysis table
+        analysis_data = []
+        for analysis in ai_analyses:
+            # Get extracted tickers for this analysis
+            extracted_tickers = get_extracted_tickers(postgres_client, analysis['id'])
+            
+            analysis_data.append({
+                'Ticker': analysis.get('ticker', 'N/A'),
+                'Platform': analysis.get('platform', 'N/A'),
+                'AI Sentiment': analysis.get('sentiment_label', 'N/A'),
+                'AI Score': f"{analysis.get('sentiment_score', 0):.1f}",
+                'Confidence': f"{analysis.get('confidence_score', 0):.1%}",
+                'Posts': analysis.get('post_count', 0),
+                'Engagement': analysis.get('total_engagement', 0),
+                'Tickers Found': len(extracted_tickers),
+                'Analyzed': format_datetime(analysis.get('analyzed_at')),
+                'analysis_id': analysis['id'],
+                'session_id': analysis['session_id']
+            })
+        
+        analysis_df = pd.DataFrame(analysis_data)
+        
+        # Display with expandable details
+        for idx, row in analysis_df.iterrows():
+            col1, col2, col3, col4, col5, col6 = st.columns([1,1,1,1,1,2])
+            
+            with col1:
+                st.write(f"**{row['Ticker']}**")
+            with col2:
+                st.write(row['Platform'])
+            with col3:
+                sentiment_color = get_sentiment_color(row['AI Sentiment'])
+                st.markdown(f"<span style='color:{sentiment_color}; font-weight:bold'>{row['AI Sentiment']}</span>", 
+                          unsafe_allow_html=True)
+            with col4:
+                st.write(row['AI Score'])
+            with col5:
+                st.write(row['Confidence'])
+            with col6:
+                if st.button("📋 Details", key=f"details_{row['analysis_id']}"):
+                    st.session_state[f"show_details_{row['analysis_id']}"] = True
+            
+            # Show details if requested
+            if st.session_state.get(f"show_details_{row['analysis_id']}", False):
+                with st.expander(f"AI Analysis Details for {row['Ticker']}", expanded=True):
+                    # Get full analysis data
+                    full_analysis = next((a for a in ai_analyses if a['id'] == row['analysis_id']), None)
+                    if full_analysis:
+                        st.subheader("Analysis Summary")
+                        st.write(full_analysis.get('summary', 'No summary available'))
+                        
+                        st.subheader("Key Themes")
+                        themes = full_analysis.get('key_themes', [])
+                        if themes:
+                            for theme in themes:
+                                st.write(f"• {theme}")
+                        else:
+                            st.write("No themes identified")
+                        
+                        st.subheader("Detailed Reasoning")
+                        st.write(full_analysis.get('reasoning', 'No reasoning provided'))
+                        
+                        # Show extracted tickers
+                        extracted_tickers = get_extracted_tickers(postgres_client, row['analysis_id'])
+                        if extracted_tickers:
+                            st.subheader("Extracted Tickers")
+                            ticker_data = []
+                            for ticker in extracted_tickers:
+                                ticker_data.append({
+                                    'Ticker': ticker.get('ticker'),
+                                    'Confidence': f"{ticker.get('confidence', 0):.1%}",
+                                    'Company': ticker.get('company_name', 'Unknown'),
+                                    'Primary': '✅' if ticker.get('is_primary') else '❌',
+                                    'Context': ticker.get('context', '')[:100] + '...' if ticker.get('context') else ''
+                                })
+                            st.dataframe(pd.DataFrame(ticker_data), use_container_width=True, hide_index=True)
+                        
+                        # Show top posts
+                        posts = get_social_posts_for_session(postgres_client, row['session_id'])
+                        if posts:
+                            st.subheader("Sample Posts")
+                            for post in posts[:3]:  # Show top 3
+                                with st.container():
+                                    st.write(f"**{post.get('author', 'Unknown')}** - {format_datetime(post.get('posted_at'))}")
+                                    st.write(post.get('content', '')[:300] + '...' if len(post.get('content', '')) > 300 else post.get('content', ''))
+                                    col_a, col_b = st.columns(2)
+                                    with col_a:
+                                        st.caption(f"👍 {post.get('engagement_score', 0)} engagement")
+                                    with col_b:
+                                        if post.get('url'):
+                                            st.caption(f"[View Original]({post.get('url')})")
+                                    st.divider()
+                    
+                    if st.button("Close Details", key=f"close_{row['analysis_id']}"):
+                        st.session_state[f"show_details_{row['analysis_id']}"] = False
+                        st.rerun()
+            
+            st.markdown("---")
+    else:
+        st.info("🤖 No AI analyses available yet. AI analysis will be performed on sentiment sessions as data is collected.")
     
     st.markdown("---")
     
@@ -462,6 +657,17 @@ try:
         
         row['Last Updated'] = format_datetime(latest_timestamp)
         
+        # Add AI analysis indicators
+        ai_analysis = next((a for a in ai_analyses if a.get('ticker') == ticker), None)
+        if ai_analysis:
+            row['🤖 AI Status'] = '✅ Analyzed'
+            row['🤖 AI Sentiment'] = ai_analysis.get('sentiment_label', 'N/A')
+            row['🤖 AI Confidence'] = f"{ai_analysis.get('confidence_score', 0):.1%}"
+        else:
+            row['🤖 AI Status'] = '⏳ Pending'
+            row['🤖 AI Sentiment'] = 'N/A'
+            row['🤖 AI Confidence'] = 'N/A'
+        
         df_data.append(row)
     
     df = pd.DataFrame(df_data)
@@ -481,6 +687,9 @@ try:
         'Ticker',
         'Company',
         'In Watchlist',
+        '🤖 AI Status',
+        '🤖 AI Sentiment',
+        '🤖 AI Confidence',
         '💬 Stocktwits Sentiment',
         '💬 Stocktwits Volume',
         '💬 Stocktwits Score',
@@ -514,7 +723,7 @@ try:
         # Use white text for better contrast
         return f'background-color: {color}; color: white; font-weight: bold;'
     
-    # Get sentiment column names
+    # Get sentiment column names (including AI sentiment)
     sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
     
     # Display dataframe with styling

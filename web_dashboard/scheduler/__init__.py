@@ -30,6 +30,7 @@ from scheduler.scheduler_core import (
 from scheduler.jobs import (
     AVAILABLE_JOBS,
     refresh_exchange_rates_job,
+    social_sentiment_ai_job,
 )
 
 __all__ = [
@@ -43,4 +44,5 @@ __all__ = [
     'get_all_jobs_status',
     'AVAILABLE_JOBS',
     'refresh_exchange_rates_job',
+    'social_sentiment_ai_job',
 ]

@@ -178,3 +178,47 @@ python setup_test_accounts.py
 ```
 
 See `web_dashboard/TEST_CREDENTIALS.md` for detailed documentation.
+
+## Social Sentiment AI Analysis System
+
+### Overview
+The social sentiment system now includes comprehensive AI analysis similar to congress trades:
+
+- **Data Collection**: Social posts from StockTwits and Reddit
+- **AI Analysis**: Sentiment scoring, theme extraction, ticker validation
+- **Storage**: Structured data in Supabase, AI results in Postgres research DB
+- **UI**: Enhanced dashboard with expandable post details and AI insights
+
+### Database Architecture
+- **Supabase**: `social_metrics`, `social_posts`, `sentiment_sessions`
+- **Postgres Research DB**: `social_sentiment_analysis`, `extracted_tickers`, `post_summaries`
+
+### Key Components
+- **social_service.py**: Core service with AI analysis methods
+- **social_sentiment_ai_job.py**: Scheduled job for AI processing
+- **pages/social_sentiment.py**: Enhanced UI with AI analysis display
+- **Schema files**: 18_social_metrics.sql, 27_social_sentiment_ai_analysis.sql
+
+### AI Analysis Pipeline
+1. Extract posts from `raw_data` into `social_posts`
+2. Group related posts into `sentiment_sessions` (4-hour windows)
+3. Perform AI analysis using Ollama Granite model
+4. Extract and validate tickers with context
+5. Store results in research database
+
+### Running AI Analysis
+```bash
+cd web_dashboard
+python social_sentiment_ai_job.py
+```
+
+### Data Retention
+- Raw posts: 14 days (then cleaned to save space)
+- AI analysis results: 90 days
+- Social metrics: 60 days (reduced from 90 for efficiency)
+
+### Testing AI Features
+1. Ensure Ollama is running with Granite model
+2. Run social sentiment collection to generate data
+3. Execute AI analysis job
+4. Check web dashboard for AI analysis results

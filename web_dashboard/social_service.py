@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://host.docker.internal:8191")
 
 # Import clients
-from web_dashboard.postgres_client import PostgresClient
-from web_dashboard.supabase_client import SupabaseClient
-from web_dashboard.ollama_client import OllamaClient, get_ollama_client
+from postgres_client import PostgresClient
+from supabase_client import SupabaseClient
+from ollama_client import OllamaClient, get_ollama_client
 
 
 class SocialSentimentService:
@@ -567,7 +567,519 @@ class SocialSentimentService:
             logger.error(f"Error saving {platform} metrics for {ticker}: {e}", exc_info=True)
             raise
     
+    def extract_posts_from_raw_data(self) -> Dict[str, int]:
+        """Extract individual posts from social_metrics.raw_posts JSONB into social_posts table
+        
+        Migrates existing raw_data to structured format for AI analysis.
+        
+        Returns:
+            Dictionary with counts of processed records
+        """
+        try:
+            logger.info("🔄 Starting post extraction from raw_data...")
+            
+            # Get metrics with raw_posts data that haven't been processed
+            query = """
+                SELECT id, ticker, platform, raw_posts, created_at
+                FROM social_metrics 
+                WHERE raw_posts IS NOT NULL 
+                  AND raw_posts != '{}'
+                  AND id NOT IN (SELECT DISTINCT metric_id FROM social_posts)
+                ORDER BY created_at DESC
+                LIMIT 100  -- Process in batches
+            """
+            metrics = self.postgres.execute_query(query)
+            
+            if not metrics:
+                logger.info("✅ No new raw_posts data to extract")
+                return {'processed': 0, 'posts_created': 0}
+            
+            posts_created = 0
+            
+            for metric in metrics:
+                metric_id = metric['id']
+                ticker = metric['ticker']
+                platform = metric['platform']
+                raw_posts = metric['raw_posts'] or []
+                
+                for post_data in raw_posts:
+                    try:
+                        # Extract post fields based on platform
+                        if platform == 'stocktwits':
+                            post_record = {
+                                'metric_id': metric_id,
+                                'platform': platform,
+                                'post_id': None,  # StockTwits doesn't provide IDs in current data
+                                'content': post_data.get('body', ''),
+                                'author': post_data.get('user', ''),
+                                'posted_at': post_data.get('created_at'),
+                                'engagement_score': 0,  # Not available in current StockTwits data
+                                'url': None,  # Not available
+                                'extracted_tickers': self._extract_tickers_basic(post_data.get('body', ''))
+                            }
+                        elif platform == 'reddit':
+                            post_record = {
+                                'metric_id': metric_id,
+                                'platform': platform,
+                                'post_id': post_data.get('id') or str(hash(post_data.get('url', ''))),
+                                'content': post_data.get('title', '') + '\n\n' + post_data.get('selftext', ''),
+                                'author': 'u/' + post_data.get('author', 'unknown'),
+                                'posted_at': datetime.fromtimestamp(post_data.get('created_utc', 0), tz=timezone.utc).isoformat(),
+                                'engagement_score': (post_data.get('score', 0) + post_data.get('num_comments', 0) * 2),
+                                'url': post_data.get('url', ''),
+                                'extracted_tickers': self._extract_tickers_basic(
+                                    post_data.get('title', '') + ' ' + post_data.get('selftext', '')
+                                )
+                            }
+                        
+                        # Insert post record
+                        insert_query = """
+                            INSERT INTO social_posts 
+                            (metric_id, platform, post_id, content, author, posted_at, 
+                             engagement_score, url, extracted_tickers)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """
+                        self.postgres.execute_update(insert_query, (
+                            post_record['metric_id'], post_record['platform'], post_record['post_id'],
+                            post_record['content'], post_record['author'], post_record['posted_at'],
+                            post_record['engagement_score'], post_record['url'], post_record['extracted_tickers']
+                        ))
+                        
+                        posts_created += 1
+                        
+                    except Exception as e:
+                        logger.warning(f"Error extracting post for metric {metric_id}: {e}")
+                        continue
+            
+            logger.info(f"✅ Post extraction complete: processed {len(metrics)} metrics, created {posts_created} posts")
+            return {'processed': len(metrics), 'posts_created': posts_created}
+            
+        except Exception as e:
+            logger.error(f"❌ Error during post extraction: {e}", exc_info=True)
+            raise
+    
+    def _extract_tickers_basic(self, text: str) -> List[str]:
+        """Basic ticker extraction using regex patterns
+        
+        Args:
+            text: Text content to extract tickers from
+            
+        Returns:
+            List of extracted ticker symbols
+        """
+        import re
+        
+        if not text:
+            return []
+        
+        # Common patterns: $TICKER, TICKER, (TICKER)
+        patterns = [
+            r'\$([A-Z]{1,5})(?:\W|$)',  # $TICKER
+            r'\b([A-Z]{1,5})\b',        # TICKER (word boundaries)
+        ]
+        
+        tickers = set()
+        for pattern in patterns:
+            matches = re.findall(pattern, text.upper())
+            for match in matches:
+                # Filter out common false positives
+                if match not in ['THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER', 'WAS', 'ONE', 'OUR', 'HAD', 'BY', 'HOT', 'BUT', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER', 'WAS', 'ONE', 'OUR', 'HAD', 'BY', 'HOT']:
+                    tickers.add(match)
+        
+        return list(tickers)
+    
+    def create_sentiment_sessions(self) -> Dict[str, int]:
+        """Create sentiment analysis sessions by grouping related posts
+        
+        Groups posts within time windows similar to congress trades sessions.
+        Uses 4-hour windows for social sentiment (more frequent than 7-day congress windows).
+        
+        Returns:
+            Dictionary with counts of sessions created
+        """
+        try:
+            logger.info("🎯 Creating sentiment analysis sessions...")
+            
+            # Get posts that haven't been assigned to sessions yet
+            query = """
+                SELECT sp.id, sp.metric_id, sm.ticker, sp.platform, sp.posted_at, sp.engagement_score
+                FROM social_posts sp
+                JOIN social_metrics sm ON sp.metric_id = sm.id
+                WHERE sp.id NOT IN (
+                    SELECT DISTINCT sp2.id
+                    FROM social_posts sp2
+                    JOIN sentiment_sessions ss ON ss.ticker = (
+                        SELECT sm2.ticker FROM social_metrics sm2 WHERE sm2.id = sp2.metric_id
+                    ) AND ss.platform = sp2.platform
+                    AND sp2.posted_at >= ss.session_start 
+                    AND sp2.posted_at <= ss.session_end
+                )
+                ORDER BY sp.posted_at DESC
+                LIMIT 500  -- Process in batches
+            """
+            unassigned_posts = self.postgres.execute_query(query)
+            
+            if not unassigned_posts:
+                logger.info("✅ No new posts to assign to sessions")
+                return {'sessions_created': 0, 'posts_assigned': 0}
+            
+            sessions_created = 0
+            posts_assigned = 0
+            
+            # Group posts by ticker-platform and 4-hour windows
+            from collections import defaultdict
+            session_groups = defaultdict(list)
+            
+            for post in unassigned_posts:
+                ticker = post['ticker']
+                platform = post['platform']
+                posted_at = post['posted_at']
+                
+                if isinstance(posted_at, str):
+                    posted_at = datetime.fromisoformat(posted_at.replace('Z', '+00:00'))
+                
+                # Round to 4-hour window
+                window_start = posted_at.replace(hour=posted_at.hour // 4 * 4, minute=0, second=0, microsecond=0)
+                window_end = window_start + timedelta(hours=4)
+                
+                key = (ticker, platform, window_start, window_end)
+                session_groups[key].append(post)
+            
+            # Create sessions for each group
+            for (ticker, platform, start, end), posts in session_groups.items():
+                try:
+                    # Calculate session metrics
+                    post_count = len(posts)
+                    total_engagement = sum(p['engagement_score'] or 0 for p in posts)
+                    
+                    # Create session
+                    insert_query = """
+                        INSERT INTO sentiment_sessions 
+                        (ticker, platform, session_start, session_end, post_count, total_engagement)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """
+                    result = self.postgres.execute_query(insert_query, (
+                        ticker, platform, start, end, post_count, total_engagement
+                    ))
+                    
+                    if result:
+                        session_id = result[0]['id']
+                        
+                        # Update social_metrics with session_id
+                        for post in posts:
+                            update_query = """
+                                UPDATE social_metrics 
+                                SET analysis_session_id = %s, has_ai_analysis = FALSE
+                                WHERE id = %s
+                            """
+                            self.postgres.execute_update(update_query, (session_id, post['metric_id']))
+                        
+                        sessions_created += 1
+                        posts_assigned += post_count
+                        
+                except Exception as e:
+                    logger.warning(f"Error creating session for {ticker}-{platform}: {e}")
+                    continue
+            
+            logger.info(f"✅ Session creation complete: {sessions_created} sessions, {posts_assigned} posts assigned")
+            return {'sessions_created': sessions_created, 'posts_assigned': posts_assigned}
+            
+        except Exception as e:
+            logger.error(f"❌ Error during session creation: {e}", exc_info=True)
+            raise
+    
+    def analyze_sentiment_session(self, session_id: int) -> Optional[Dict[str, Any]]:
+        """Perform AI analysis on a sentiment session
+        
+        Similar to congress trades analysis but for social sentiment.
+        Uses Ollama to analyze post content and extract insights.
+        
+        Args:
+            session_id: ID of the sentiment session to analyze
+            
+        Returns:
+            Dictionary with analysis results or None if failed
+        """
+        try:
+            # Get session details
+            session_query = """
+                SELECT ss.*, 
+                       array_agg(sp.content) as post_contents,
+                       array_agg(sp.extracted_tickers) as ticker_arrays
+                FROM sentiment_sessions ss
+                LEFT JOIN social_posts sp ON sp.metric_id IN (
+                    SELECT id FROM social_metrics 
+                    WHERE analysis_session_id = ss.id
+                )
+                WHERE ss.id = %s
+                GROUP BY ss.id
+            """
+            session_data = self.postgres.execute_query(session_query, (session_id,))
+            
+            if not session_data:
+                logger.warning(f"No session found with ID {session_id}")
+                return None
+            
+            session = session_data[0]
+            post_contents = session['post_contents'] or []
+            ticker_arrays = session['ticker_arrays'] or []
+            
+            # Combine all post content
+            all_content = '\n\n---\n\n'.join([c for c in post_contents if c])
+            
+            if not all_content.strip():
+                logger.warning(f"No content to analyze for session {session_id}")
+                return None
+            
+            # Extract all mentioned tickers
+            all_tickers = set()
+            for ticker_array in ticker_arrays:
+                if ticker_array:
+                    all_tickers.update(ticker_array)
+            
+            # AI Analysis using Ollama
+            analysis_prompt = f"""
+Analyze these social media posts about {session['ticker']} from {session['platform']}.
+
+Posts:
+{all_content[:4000]}  # Limit content length
+
+Provide analysis in JSON format:
+{{
+    "sentiment_score": -2.0 to 2.0,
+    "confidence_score": 0.0 to 1.0,
+    "sentiment_label": "EUPHORIC|BULLISH|NEUTRAL|BEARISH|FEARFUL",
+    "summary": "Brief summary of overall sentiment",
+    "key_themes": ["theme1", "theme2"],
+    "reasoning": "Detailed explanation of the analysis"
+}}
+"""
+            
+            if not self.ollama:
+                logger.warning("Ollama client not available for AI analysis")
+                return None
+            
+            # Get AI analysis
+            ai_response = self.ollama.generate_completion(
+                prompt=analysis_prompt,
+                model="granite3.1:8b",
+                json_mode=True
+            )
+            
+            if not ai_response:
+                logger.warning(f"AI analysis failed for session {session_id}")
+                return None
+            
+            try:
+                analysis_result = json.loads(ai_response)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON response from AI for session {session_id}")
+                return None
+            
+            # Store analysis results in research DB
+            analysis_record = {
+                'session_id': session_id,
+                'ticker': session['ticker'],
+                'platform': session['platform'],
+                'sentiment_score': analysis_result.get('sentiment_score'),
+                'confidence_score': analysis_result.get('confidence_score'),
+                'sentiment_label': analysis_result.get('sentiment_label'),
+                'summary': analysis_result.get('summary'),
+                'key_themes': analysis_result.get('key_themes', []),
+                'reasoning': analysis_result.get('reasoning'),
+                'model_used': 'granite3.1:8b',
+                'analysis_version': 1
+            }
+            
+            # Insert analysis
+            insert_query = """
+                INSERT INTO social_sentiment_analysis 
+                (session_id, ticker, platform, sentiment_score, confidence_score, 
+                 sentiment_label, summary, key_themes, reasoning, model_used, analysis_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            result = self.postgres.execute_query(insert_query, (
+                analysis_record['session_id'], analysis_record['ticker'], analysis_record['platform'],
+                analysis_record['sentiment_score'], analysis_record['confidence_score'],
+                analysis_record['sentiment_label'], analysis_record['summary'], 
+                analysis_record['key_themes'], analysis_record['reasoning'],
+                analysis_record['model_used'], analysis_record['analysis_version']
+            ))
+            
+            if result:
+                analysis_id = result[0]['id']
+                
+                # Extract and validate tickers with AI
+                self._extract_tickers_with_ai(analysis_id, all_content, list(all_tickers))
+                
+                # Update session as analyzed
+                update_query = "UPDATE sentiment_sessions SET needs_ai_analysis = FALSE WHERE id = %s"
+                self.postgres.execute_update(update_query, (session_id,))
+                
+                logger.info(f"✅ AI analysis complete for session {session_id}")
+                return analysis_record
+            
+        except Exception as e:
+            logger.error(f"❌ Error during AI analysis of session {session_id}: {e}", exc_info=True)
+            return None
+    
+    def _extract_tickers_with_ai(self, analysis_id: int, content: str, basic_tickers: List[str]) -> None:
+        """Use AI to validate and extract tickers with context
+        
+        Args:
+            analysis_id: ID of the analysis record
+            content: Full post content
+            basic_tickers: Tickers found via basic regex
+        """
+        try:
+            if not basic_tickers:
+                return
+            
+            extraction_prompt = f"""
+Analyze this social media content and validate/extract stock tickers.
+
+Content: {content[:2000]}
+
+Basic tickers found: {', '.join(basic_tickers)}
+
+For each ticker, provide JSON validation:
+[{{
+    "ticker": "SYMBOL",
+    "confidence": 0.0-1.0,
+    "context": "sentence where mentioned",
+    "is_primary": true/false,
+    "company_name": "Company Name if obvious"
+}}]
+"""
+            
+            ai_response = self.ollama.generate_completion(
+                prompt=extraction_prompt,
+                model="granite3.1:8b",
+                json_mode=True
+            )
+            
+            if ai_response:
+                try:
+                    validated_tickers = json.loads(ai_response)
+                    
+                    for ticker_data in validated_tickers:
+                        # Look up company info from Supabase
+                        company_info = self._lookup_company_info(ticker_data['ticker'])
+                        
+                        insert_query = """
+                            INSERT INTO extracted_tickers 
+                            (analysis_id, ticker, confidence, context, is_primary, 
+                             company_name, sector)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """
+                        self.postgres.execute_update(insert_query, (
+                            analysis_id,
+                            ticker_data['ticker'],
+                            ticker_data.get('confidence', 0.5),
+                            ticker_data.get('context', ''),
+                            ticker_data.get('is_primary', False),
+                            ticker_data.get('company_name') or company_info.get('company_name'),
+                            company_info.get('sector')
+                        ))
+                        
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Error parsing AI ticker extraction: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"Error during AI ticker extraction: {e}")
+    
+    def _lookup_company_info(self, ticker: str) -> Dict[str, str]:
+        """Look up company information from Supabase securities table
+        
+        Args:
+            ticker: Ticker symbol to look up
+            
+        Returns:
+            Dictionary with company_name and sector
+        """
+        try:
+            result = self.supabase.supabase.table("securities")\
+                .select("company_name, sector")\
+                .eq("ticker", ticker.upper())\
+                .execute()
+            
+            if result.data:
+                return {
+                    'company_name': result.data[0].get('company_name', ''),
+                    'sector': result.data[0].get('sector', '')
+                }
+        except Exception as e:
+            logger.warning(f"Error looking up company info for {ticker}: {e}")
+        
+        return {}
+    
     def run_daily_cleanup(self) -> Dict[str, int]:
+        """Run enhanced cleanup with new retention policy
+        
+        Updated policy: 14 days raw_data → 60 days deletion
+        Also cleans up old analysis data.
+        
+        Returns:
+            Dictionary with 'rows_updated' and 'rows_deleted' counts
+        """
+        try:
+            logger.info("🧹 Starting enhanced social metrics cleanup...")
+            
+            # Step 1: Remove heavy data after 14 days (extended from 7)
+            logger.info("  Step 1: Removing raw_posts JSON from records older than 14 days...")
+            update_query = """
+                UPDATE social_metrics 
+                SET raw_posts = NULL, collection_metadata = NULL
+                WHERE created_at < NOW() - INTERVAL '14 days' 
+                  AND raw_posts IS NOT NULL
+            """
+            rows_updated = self.postgres.execute_update(update_query)
+            logger.info(f"  ✅ Removed raw_posts from {rows_updated} records (14+ days old)")
+            
+            # Step 2: Clean up old analysis data (90 days)
+            logger.info("  Step 2: Removing old analysis data (90+ days)...")
+            analysis_cleanup = """
+                DELETE FROM extracted_tickers 
+                WHERE extracted_at < NOW() - INTERVAL '90 days'
+            """
+            ticker_rows = self.postgres.execute_update(analysis_cleanup)
+            
+            summary_cleanup = """
+                DELETE FROM post_summaries 
+                WHERE summarized_at < NOW() - INTERVAL '90 days'
+            """
+            summary_rows = self.postgres.execute_update(summary_cleanup)
+            
+            analysis_cleanup = """
+                DELETE FROM social_sentiment_analysis 
+                WHERE analyzed_at < NOW() - INTERVAL '90 days'
+            """
+            analysis_rows = self.postgres.execute_update(analysis_cleanup)
+            
+            logger.info(f"  ✅ Removed {ticker_rows} ticker records, {summary_rows} summaries, {analysis_rows} analyses")
+            
+            # Step 3: Delete entire social metrics rows after 60 days (reduced from 90)
+            logger.info("  Step 3: Deleting social metrics records older than 60 days...")
+            delete_query = """
+                DELETE FROM social_metrics 
+                WHERE created_at < NOW() - INTERVAL '60 days'
+            """
+            rows_deleted = self.postgres.execute_update(delete_query)
+            logger.info(f"  ✅ Deleted {rows_deleted} social metrics records (60+ days old)")
+            
+            logger.info(f"✅ Enhanced cleanup complete: {rows_updated} updated, {rows_deleted} deleted, {ticker_rows + summary_rows + analysis_rows} analysis records removed")
+            
+            return {
+                'rows_updated': rows_updated,
+                'rows_deleted': rows_deleted,
+                'analysis_records_removed': ticker_rows + summary_rows + analysis_rows
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error during enhanced cleanup: {e}", exc_info=True)
+            raise
         """Run daily cleanup to implement two-tier retention policy.
         
         Tier 1 (7 days): Remove raw_data JSON from old records (keep metrics)

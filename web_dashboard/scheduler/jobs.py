@@ -98,10 +98,17 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
     },
     'social_metrics_cleanup': {
         'name': 'Social Metrics Cleanup',
-        'description': 'Daily cleanup: remove raw_data JSON after 7 days, delete rows after 90 days',
+        'description': 'Daily cleanup: remove raw_data JSON after 14 days, delete rows after 60 days',
         'default_interval_minutes': 1440,  # Once per day
         'enabled_by_default': True,
         'icon': '🧹'
+    },
+    'social_sentiment_ai': {
+        'name': 'Social Sentiment AI Analysis',
+        'description': 'Extract posts, create sessions, and perform AI analysis on social sentiment data',
+        'default_interval_minutes': 60,  # Every hour
+        'enabled_by_default': True,
+        'icon': '🤖'
     },
     'congress_trades': {
         'name': 'Fetch Congress Trades',
@@ -3232,6 +3239,100 @@ def cleanup_social_metrics_job() -> None:
         logger.error(f"❌ Social metrics cleanup job failed: {e}", exc_info=True)
 
 
+def social_sentiment_ai_job() -> None:
+    """AI analysis job for social sentiment data.
+
+    This job:
+    1. Extracts posts from raw_data into structured social_posts table
+    2. Creates sentiment analysis sessions by grouping related posts
+    3. Performs AI analysis on sessions using Ollama Granite model
+    4. Stores detailed analysis results in research database
+    """
+    job_id = 'social_sentiment_ai'
+    start_time = time.time()
+
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+
+        logger.info("🤖 Starting Social Sentiment AI Analysis job...")
+
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('social_sentiment_ai', target_date)
+
+        # Import dependencies (lazy imports)
+        try:
+            from social_service import SocialSentimentService
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+
+        # Initialize service
+        service = SocialSentimentService()
+
+        # Check Ollama availability
+        if not service.ollama:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "Ollama client unavailable - cannot perform AI analysis"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+
+        # Step 1: Extract posts from raw_data
+        logger.info("📝 Step 1: Extracting posts from raw_data...")
+        extraction_result = service.extract_posts_from_raw_data()
+
+        # Step 2: Create sentiment sessions
+        logger.info("🎯 Step 2: Creating sentiment analysis sessions...")
+        session_result = service.create_sentiment_sessions()
+
+        # Step 3: Perform AI analysis on pending sessions
+        logger.info("🧠 Step 3: Performing AI analysis...")
+        analyses_completed = 0
+
+        # Get sessions that need analysis (limit to avoid timeouts)
+        from postgres_client import PostgresClient
+        pc = PostgresClient()
+        pending_sessions = pc.execute_query("""
+            SELECT id, ticker, platform FROM sentiment_sessions
+            WHERE needs_ai_analysis = TRUE
+            ORDER BY created_at ASC
+            LIMIT 10  -- Process in batches to avoid timeouts
+        """)
+
+        for session in pending_sessions:
+            session_id = session['id']
+            ticker = session['ticker']
+            platform = session['platform']
+
+            logger.info(f"Analyzing session {session_id} for {ticker} ({platform})...")
+            result = service.analyze_sentiment_session(session_id)
+
+            if result:
+                analyses_completed += 1
+                logger.info(f"✅ Completed AI analysis for {ticker}")
+            else:
+                logger.warning(f"❌ Failed AI analysis for session {session_id}")
+
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Extracted {extraction_result['posts_created']} posts, created {session_result['sessions_created']} sessions, completed {analyses_completed} AI analyses"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('social_sentiment_ai', target_date, None, [])
+        logger.info(f"✅ Social Sentiment AI Analysis job completed: {message} in {duration_ms/1000:.2f}s")
+
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        mark_job_failed('social_sentiment_ai', target_date, None, str(e))
+        logger.error(f"❌ Social Sentiment AI Analysis job failed: {e}", exc_info=True)
+
+
 def fetch_congress_trades_job() -> None:
     """Fetch and analyze congressional stock trades from Financial Modeling Prep API.
     
@@ -4291,6 +4392,17 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: social_sentiment (every 30 minutes)")
+    
+    # Social sentiment AI analysis job - every 2 hours
+    if AVAILABLE_JOBS['social_sentiment_ai']['enabled_by_default']:
+        scheduler.add_job(
+            social_sentiment_ai_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment_ai']['default_interval_minutes']),
+            id='social_sentiment_ai',
+            name=f"{get_job_icon('social_sentiment_ai')} Social Sentiment AI Analysis",
+            replace_existing=True
+        )
+        logger.info("Registered job: social_sentiment_ai (every 2 hours)")
     
     # Social metrics cleanup job - daily at 3:00 AM
     scheduler.add_job(

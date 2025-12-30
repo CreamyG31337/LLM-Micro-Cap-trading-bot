@@ -203,7 +203,8 @@ def build_search_query(
     user_query: str, 
     tickers: Optional[List[str]] = None,
     company_name: Optional[str] = None,
-    preserve_keywords: bool = True
+    preserve_keywords: bool = True,
+    research_intent: Optional[Dict[str, Any]] = None
 ) -> str:
     """Construct optimized search query from user input.
     
@@ -212,12 +213,18 @@ def build_search_query(
         tickers: Optional list of ticker symbols to include
         company_name: Optional company name to include in search
         preserve_keywords: Whether to preserve important keywords from query
+        research_intent: Optional research intent dictionary from detect_research_intent()
         
     Returns:
         Optimized search query string
     """
     query = user_query.strip()
     query_lower = query.lower()
+    
+    # Get intent subtype if available
+    intent_subtype = None
+    if research_intent:
+        intent_subtype = research_intent.get('intent_subtype')
     
     # Extract and preserve important financial keywords
     important_keywords = []
@@ -226,12 +233,29 @@ def build_search_query(
             'earnings', 'revenue', 'profit', 'loss', 'dividend', 'ipo',
             'merger', 'acquisition', 'financial', 'report', 'quarterly',
             'annual', 'guidance', 'forecast', 'analyst', 'rating', 'upgrade',
-            'downgrade', 'price target', 'valuation', 'results', 'announcement'
+            'downgrade', 'price target', 'valuation', 'results', 'announcement',
+            'outlook', 'performance', 'growth', 'decline'
         ]
         
         for keyword in financial_keywords:
             if keyword in query_lower:
                 important_keywords.append(keyword)
+    
+    # Preserve important context words
+    context_words = []
+    if 'latest' in query_lower or 'recent' in query_lower:
+        if 'latest' in query_lower:
+            context_words.append('latest')
+        if 'recent' in query_lower:
+            context_words.append('recent')
+    if 'today' in query_lower:
+        context_words.append('today')
+    if 'analysis' in query_lower:
+        context_words.append('analysis')
+    if 'outlook' in query_lower:
+        context_words.append('outlook')
+    if 'performance' in query_lower:
+        context_words.append('performance')
     
     # Build query components
     query_parts = []
@@ -241,27 +265,85 @@ def build_search_query(
         ticker_str = " ".join(tickers)
         query_parts.append(ticker_str)
     
-    # Add company name if provided
+    # Improve company name handling - use first 1-2 significant words
     if company_name and company_name.strip():
-        query_parts.append(company_name.strip())
+        company_words = company_name.strip().split()
+        # Filter out common suffixes
+        significant_words = [w for w in company_words if w.upper() not in 
+                           ['INC', 'CORP', 'CORPORATION', 'LTD', 'LIMITED', 'GROUP', 
+                            'HOLDINGS', 'COMPANY', 'CO', 'LLC']]
+        if significant_words:
+            # Use first 1-2 words max to keep query focused
+            company_name_short = " ".join(significant_words[:2])
+            # Only add if not already in query
+            if company_name_short.lower() not in query_lower:
+                query_parts.append(company_name_short)
     
-    # Add preserved important keywords
-    if important_keywords:
-        query_parts.extend(important_keywords)
+    # Add intent-specific terms
+    if intent_subtype == 'earnings':
+        query_parts.extend(['earnings', 'report', 'results'])
+    elif intent_subtype == 'analysis':
+        query_parts.extend(['stock', 'analysis'])
+        if 'price target' not in query_lower and 'analyst rating' not in query_lower:
+            query_parts.append('price target')
+    elif intent_subtype == 'research':
+        query_parts.extend(['news', 'analysis'])
+        if 'latest' not in query_lower:
+            query_parts.append('latest')
+    elif intent_subtype == 'compare':
+        # For compare, add comparison terms if multiple tickers
+        if tickers and len(tickers) >= 2:
+            # Don't add "vs" here - it will be handled in the final query building
+            query_parts.append('stock')
+            query_parts.append('comparison')
+    elif intent_subtype == 'market':
+        query_parts.append('stock market')
+        if 'today' not in query_lower and 'latest' not in query_lower:
+            query_parts.append('today')
     
-    # If we have tickers/company name and keywords, build focused query
+    # Add preserved important keywords (avoid duplicates)
+    for keyword in important_keywords:
+        if keyword not in [q.lower() for q in query_parts]:
+            query_parts.append(keyword)
+    
+    # Add preserved context words
+    for word in context_words:
+        if word not in [q.lower() for q in query_parts]:
+            query_parts.append(word)
+    
+    # Build final query based on intent and components
     if query_parts:
-        # Check if original query already contains these elements
-        query_contains_tickers = tickers and any(ticker.lower() in query_lower for ticker in tickers)
-        query_contains_company = company_name and company_name.lower() in query_lower
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_parts = []
+        for part in query_parts:
+            part_lower = part.lower()
+            if part_lower not in seen:
+                seen.add(part_lower)
+                unique_parts.append(part)
         
-        # If original query doesn't have tickers/company, use our built query
-        if not query_contains_tickers or (company_name and not query_contains_company):
-            built_query = " ".join(query_parts)
-            # Add "news" if not already present
-            if 'news' not in built_query.lower() and 'news' not in query_lower:
-                built_query += " news"
-            return built_query
+        # Special handling for compare intent with multiple tickers
+        if intent_subtype == 'compare' and tickers and len(tickers) >= 2:
+            # Build comparison query: "TICKER1 vs TICKER2 stock comparison"
+            ticker_str = " vs ".join(tickers)
+            final_query = f"{ticker_str} stock comparison"
+            # Add company names if available
+            if company_name:
+                company_words = company_name.strip().split()
+                significant_words = [w for w in company_words if w.upper() not in 
+                                   ['INC', 'CORP', 'CORPORATION', 'LTD', 'LIMITED', 'GROUP', 
+                                    'HOLDINGS', 'COMPANY', 'CO', 'LLC']]
+                if significant_words:
+                    final_query += f" {' '.join(significant_words[:2])}"
+            return final_query
+        
+        built_query = " ".join(unique_parts)
+        
+        # Add "news" if not already present and not a compare query
+        if intent_subtype != 'compare' and 'news' not in built_query.lower() and 'news' not in query_lower:
+            built_query += " news"
+        
+        return built_query
     
     # Fallback: enhance original query
     query = user_query.strip()
@@ -275,13 +357,22 @@ def build_search_query(
     
     # Add company name if provided and not already in query
     if company_name and company_name.strip():
-        if company_name.lower() not in query.lower():
-            query = f"{query} {company_name.strip()}"
+        company_words = company_name.strip().split()
+        significant_words = [w for w in company_words if w.upper() not in 
+                           ['INC', 'CORP', 'CORPORATION', 'LTD', 'LIMITED', 'GROUP', 
+                            'HOLDINGS', 'COMPANY', 'CO', 'LLC']]
+        if significant_words:
+            company_name_short = " ".join(significant_words[:2])
+            if company_name_short.lower() not in query.lower():
+                query = f"{query} {company_name_short}"
     
     # Add stock/market context if not present
     market_keywords = ['stock', 'market', 'trading', 'earnings', 'news', 'financial']
     if not any(keyword in query.lower() for keyword in market_keywords):
-        query = f"{query} stock"
+        if intent_subtype == 'market':
+            query = f"{query} stock market"
+        else:
+            query = f"{query} stock"
     
     return query
 
@@ -479,8 +570,9 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
         Dictionary with:
         - 'needs_search': bool - Whether search should be triggered
         - 'research_type': str - Type of research ('ticker', 'market', 'general', 'none')
+        - 'intent_subtype': str - Specific intent subtype ('research', 'analysis', 'earnings', 'compare', 'market', None)
         - 'tickers': List[str] - Extracted ticker symbols
-        - 'keywords': List[str] - Relevant keywords found
+        - 'keywords': Dict[str, List[str]] - Relevant keywords found
     """
     query_lower = query.lower()
     
@@ -507,6 +599,7 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
         return {
             'needs_search': False,
             'research_type': 'none',
+            'intent_subtype': None,
             'tickers': [],
             'keywords': {
                 'research': [],
@@ -517,6 +610,25 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
     
     # Extract tickers
     tickers = extract_tickers_from_query(query)
+    
+    # Detect specific intent subtypes
+    intent_subtype = None
+    
+    # Compare intent: keywords "compare", "better investment", "vs", "versus"
+    if any(word in query_lower for word in ['compare', 'better investment', ' vs ', ' versus ', 'comparison']):
+        intent_subtype = 'compare'
+    # Earnings intent: keywords "earnings", "earnings report", "quarterly"
+    elif any(word in query_lower for word in ['earnings', 'earnings report', 'quarterly', 'financial results', 'q1', 'q2', 'q3', 'q4']):
+        intent_subtype = 'earnings'
+    # Analysis intent: keywords "analyze", "performance", "outlook"
+    elif any(word in query_lower for word in ['analyze', 'analysis', 'performance', 'outlook', 'price target', 'analyst rating']):
+        intent_subtype = 'analysis'
+    # Research intent: keywords "research", "latest news and analysis"
+    elif 'research' in query_lower or ('latest news' in query_lower and 'analysis' in query_lower):
+        intent_subtype = 'research'
+    # Market intent: keywords "market", "stock market", "financial markets"
+    elif any(word in query_lower for word in ['market news', 'stock market', 'financial markets', 'market today']):
+        intent_subtype = 'market'
     
     # Research keywords that indicate need for web search
     research_keywords = [
@@ -575,6 +687,7 @@ def detect_research_intent(query: str) -> Dict[str, Any]:
     return {
         'needs_search': needs_search,
         'research_type': research_type,
+        'intent_subtype': intent_subtype,
         'tickers': tickers,
         'keywords': {
             'research': found_research_keywords,

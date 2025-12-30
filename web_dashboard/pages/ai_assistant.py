@@ -976,6 +976,17 @@ if user_query:
 
             with st.spinner(f"🔍 Searching the web for: {user_query[:50]}..."):
                 try:
+                    # Determine time range based on intent subtype
+                    intent_subtype = research_intent.get('intent_subtype')
+                    if intent_subtype == 'earnings':
+                        time_range = 'week'  # Earnings reports may be from last week/month
+                    elif intent_subtype == 'analysis':
+                        time_range = 'week'  # Analysis articles may be from recent days
+                    elif intent_subtype == 'compare':
+                        time_range = 'week'  # Comparison articles may be from recent days
+                    else:
+                        time_range = 'day'  # Default for research and market (latest news)
+                    
                     # Build optimized search query based on intent
                     if research_intent['tickers']:
                         tickers = research_intent['tickers']
@@ -985,6 +996,42 @@ if user_query:
                             logger.info(f"Multi-ticker search for: {', '.join(tickers)}")
                             all_results = []
                             seen_urls = set()
+                            
+                            # Special handling for comparison queries
+                            if intent_subtype == 'compare' and len(tickers) == 2:
+                                # First, search for head-to-head comparison articles
+                                try:
+                                    company_name1 = get_company_name_from_db(tickers[0])
+                                    company_name2 = get_company_name_from_db(tickers[1])
+                                    
+                                    # Build comparison query
+                                    comparison_query = build_search_query(
+                                        user_query,
+                                        tickers=tickers,
+                                        company_name=company_name1,  # Use first company name
+                                        preserve_keywords=True,
+                                        research_intent=research_intent
+                                    )
+                                    
+                                    # Search for comparison articles
+                                    comparison_data = searxng_client.search_news(
+                                        query=comparison_query,
+                                        time_range=time_range,
+                                        max_results=5
+                                    )
+                                    
+                                    if comparison_data and 'results' in comparison_data and comparison_data['results']:
+                                        # Tag comparison results
+                                        for result in comparison_data['results']:
+                                            result['related_ticker'] = f"{tickers[0]}/{tickers[1]}"
+                                            result['is_comparison'] = True
+                                            url = result.get('url', '')
+                                            if url and url not in seen_urls:
+                                                seen_urls.add(url)
+                                                all_results.append(result)
+                                        logger.info(f"Found {len(comparison_data['results'])} comparison articles")
+                                except Exception as e:
+                                    logger.warning(f"Error searching for comparison articles: {e}")
 
                             # Define search function for a single ticker
                             def search_single_ticker(ticker: str) -> list[dict]:
@@ -998,14 +1045,15 @@ if user_query:
                                         user_query,
                                         tickers=[ticker],
                                         company_name=company_name,
-                                        preserve_keywords=True
+                                        preserve_keywords=True,
+                                        research_intent=research_intent
                                     )
 
-                                    # Search for this ticker
+                                    # Search for this ticker with appropriate time range
                                     ticker_search_data = searxng_client.search_news(
                                         query=ticker_search_query,
-                                        time_range='day',
-                                        max_results=10
+                                        time_range=time_range,
+                                        max_results=10 if intent_subtype != 'compare' else 5
                                     )
 
                                     # Filter results for relevance to this specific ticker
@@ -1064,13 +1112,14 @@ if user_query:
                                 user_query,
                                 tickers=[ticker],
                                 company_name=company_name,
-                                preserve_keywords=True
+                                preserve_keywords=True,
+                                research_intent=research_intent
                             )
 
-                            # Fetch more results for filtering
+                            # Fetch more results for filtering with appropriate time range
                             search_data = searxng_client.search_news(
                                 query=search_query_used,
-                                time_range='day',
+                                time_range=time_range,
                                 max_results=20  # Get more results for filtering
                             )
 
@@ -1100,11 +1149,14 @@ if user_query:
                         # Market news search
                         search_query_used = build_search_query(
                             user_query,
-                            preserve_keywords=True
+                            preserve_keywords=True,
+                            research_intent=research_intent
                         )
+                        # Market queries use 'day' for today's news
+                        market_time_range = 'day'
                         search_data = searxng_client.search_news(
                             query=search_query_used,
-                            time_range='day',
+                            time_range=market_time_range,
                             max_results=10
                         )
                     else:
@@ -1112,7 +1164,8 @@ if user_query:
                         search_query_used = build_search_query(
                             user_query,
                             tickers=portfolio_tickers if auto_search_tickers else None,
-                            preserve_keywords=True
+                            preserve_keywords=True,
+                            research_intent=research_intent
                         )
                         search_data = searxng_client.search_web(
                             query=search_query_used,

@@ -33,6 +33,7 @@ from auth_utils import is_authenticated, get_user_email, is_admin, get_user_toke
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
+from aggrid_utils import display_aggrid_with_ticker_navigation
 
 logger = logging.getLogger(__name__)
 
@@ -575,17 +576,16 @@ try:
             for t in watchlist_tickers
         ])
         
-        event = st.dataframe(
+        # Display watchlist with AgGrid for ticker navigation
+        selected_ticker = display_aggrid_with_ticker_navigation(
             watchlist_display,
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row"
+            ticker_column="Ticker",
+            height=min(400, len(watchlist_display) * 35 + 50),
+            fit_columns=True
         )
         
-        if event.selection.rows:
-            selected_idx = event.selection.rows[0]
-            selected_ticker = watchlist_display.iloc[selected_idx]['Ticker']
+        # Handle ticker selection
+        if selected_ticker:
             st.query_params["ticker"] = selected_ticker
             st.switch_page("pages/ticker_details.py")
     else:
@@ -987,19 +987,16 @@ try:
     # Get sentiment column names (including AI sentiment)
     sentiment_columns = [col for col in df.columns if 'Sentiment' in col]
     
-    # Display dataframe with styling
-    # Display dataframe with styling
-    event = st.dataframe(
-        df.style.applymap(style_sentiment, subset=sentiment_columns),
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row"
+    # Display dataframe with AgGrid for ticker navigation
+    selected_ticker = display_aggrid_with_ticker_navigation(
+        df,
+        ticker_column="Ticker",
+        height=min(600, len(df) * 35 + 50),
+        fit_columns=True
     )
     
-    if event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_ticker = df.iloc[selected_idx]['Ticker']
+    # Handle ticker selection
+    if selected_ticker:
         st.query_params["ticker"] = selected_ticker
         st.switch_page("pages/ticker_details.py")
     

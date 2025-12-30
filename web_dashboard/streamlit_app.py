@@ -101,6 +101,7 @@ from streamlit_utils import (
     fetch_latest_rates_bulk,
     display_dataframe_with_copy
 )
+from aggrid_utils import display_aggrid_with_ticker_navigation
 from chart_utils import (
     create_portfolio_value_chart,
     create_performance_by_fund_chart,
@@ -2291,20 +2292,16 @@ def main():
                 }
                 styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
                 
-                # Display dataframe with selection enabled
-                event = st.dataframe(
-                    styled_pnl_df, 
-                    use_container_width=True, 
+                # Display dataframe with AgGrid for ticker navigation
+                selected_ticker = display_aggrid_with_ticker_navigation(
+                    ticker_pnl_df,
+                    ticker_column="Ticker",
                     height=300,
-                    on_select="rerun",
-                    selection_mode="single-row"
+                    fit_columns=True
                 )
                 
-                # Handle row selection for navigation
-                if event.selection.rows:
-                    selected_idx = event.selection.rows[0]
-                    # Get ticker from the underlying dataframe (styled_pnl_df is a Styler)
-                    selected_ticker = ticker_pnl_df.iloc[selected_idx]['Ticker']
+                # Handle ticker selection
+                if selected_ticker:
                     st.query_params["ticker"] = selected_ticker
                     st.switch_page("pages/ticker_details.py")
         else:

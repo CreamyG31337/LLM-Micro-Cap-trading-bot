@@ -751,9 +751,8 @@ with right_col:
             # to ensure the widget reflects the new value immediately
             def set_suggested_prompt(prompt_text):
                 st.session_state.suggested_prompt = prompt_text
-                # Force update of the text area widget if it exists
-                if 'editable_prompt_area' in st.session_state:
-                    st.session_state.editable_prompt_area = prompt_text
+                # Force update of the text area widget key
+                st.session_state.editable_prompt_area = prompt_text
                 st.rerun()
 
             st.markdown("---")
@@ -832,9 +831,12 @@ with main_col:
         st.caption("Review and edit the prompt below, then click Send.")
 
         # Editable prompt area
+        # Initialize widget state if not present
+        if "editable_prompt_area" not in st.session_state:
+            st.session_state.editable_prompt_area = st.session_state.suggested_prompt
+            
         editable_prompt = st.text_area(
             "Prompt",
-            value=st.session_state.suggested_prompt,
             height=100,
             help="You can edit this prompt before sending",
             label_visibility="collapsed",

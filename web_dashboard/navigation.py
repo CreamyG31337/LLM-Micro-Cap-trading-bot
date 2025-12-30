@@ -57,6 +57,8 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         client = get_supabase_client()
         if client and client.test_connection():
             st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
+            # Ticker Lookup - always available if we have database access
+            st.sidebar.page_link("pages/ticker_details.py", label="Ticker Lookup", icon="🔍")
     except Exception:
         pass  # Silently fail if Supabase not available
     

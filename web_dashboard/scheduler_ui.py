@@ -67,6 +67,30 @@ def format_datetime_local(dt: Optional[datetime]) -> str:
     return local_dt.strftime('%Y-%m-%d %H:%M:%S %Z')
 
 
+def format_duration(duration_ms: Optional[int]) -> str:
+    """Format duration in milliseconds to a human-readable string.
+    
+    Args:
+        duration_ms: Duration in milliseconds (can be None or negative)
+        
+    Returns:
+        Formatted string like "1.2s" or "500ms", or empty string if invalid
+    """
+    if duration_ms is None or duration_ms < 0:
+        return ""
+    
+    if duration_ms < 1000:
+        return f"{duration_ms}ms"
+    else:
+        seconds = duration_ms / 1000.0
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        else:
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{minutes}m {secs}s"
+
+
 def render_scheduler_admin():
     """Render the scheduler admin interface."""
     
@@ -163,7 +187,8 @@ def render_scheduler_admin():
                     for log in logs:
                         status_icon = "✅" if log['success'] else "❌"
                         time_str = format_datetime_local(log['timestamp'])
-                        duration = f"({log['duration_ms']}ms)" if log['duration_ms'] else ""
+                        duration_str = format_duration(log.get('duration_ms'))
+                        duration = f"({duration_str})" if duration_str else ""
                         st.text(f"{status_icon} {time_str} {duration} - {log['message'][:50]}")
                 else:
                     st.text("No recent executions")

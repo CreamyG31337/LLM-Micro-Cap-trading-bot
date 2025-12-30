@@ -209,17 +209,36 @@ def get_job_logs(job_id: str, limit: int = 10) -> List[Dict[str, Any]]:
                 started_at = record.get('started_at')
                 if started_at and completed_at:
                     try:
+                        # Parse started_at
                         if isinstance(started_at, str):
                             start_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
                         else:
                             start_dt = started_at
+                        
+                        # Parse completed_at
                         if isinstance(completed_at, str):
                             end_dt = datetime.fromisoformat(completed_at.replace('Z', '+00:00'))
                         else:
                             end_dt = completed_at
-                        duration_ms = int((end_dt - start_dt).total_seconds() * 1000)
-                    except Exception:
-                        pass
+                        
+                        # Ensure both are timezone-aware (UTC)
+                        if start_dt.tzinfo is None:
+                            start_dt = start_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            start_dt = start_dt.astimezone(timezone.utc)
+                        
+                        if end_dt.tzinfo is None:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            end_dt = end_dt.astimezone(timezone.utc)
+                        
+                        # Calculate duration and ensure it's never negative
+                        delta = end_dt - start_dt
+                        duration_seconds = delta.total_seconds()
+                        duration_ms = max(0, int(duration_seconds * 1000))  # Clamp to 0 if negative
+                    except Exception as e:
+                        logger.debug(f"Error calculating duration: {e}")
+                        duration_ms = 0
                 
                 logs.append({
                     'timestamp': timestamp,

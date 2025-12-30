@@ -113,14 +113,34 @@ if not postgres_client and not supabase_client:
     st.error("⚠️ Unable to connect to databases. Please check your configuration.")
     st.stop()
 
-with st.spinner(f"Loading information for {current_ticker}..."):
-    ticker_data = fetch_ticker_data(current_ticker)
+# Helper function to format dates safely
+def format_date_safe(date_val):
+    """Safely format a date value that might be string or datetime"""
+    if not date_val:
+        return 'N/A'
+    if isinstance(date_val, str):
+        return date_val[:10]  # Return first 10 chars (YYYY-MM-DD)
+    try:
+        return date_val.strftime('%Y-%m-%d')  # Format datetime object
+    except (AttributeError, ValueError):
+        return str(date_val)[:10]
+
+try:
+    with st.spinner(f"Loading information for {current_ticker}..."):
+        ticker_data = fetch_ticker_data(current_ticker)
+except Exception as e:
+    logger.error(f"Error fetching ticker data for {current_ticker}: {e}", exc_info=True)
+    st.error(f"❌ Error loading ticker data: {str(e)}")
+    st.info("Please try again or contact support if the problem persists.")
+    st.stop()
 
 # Header
 st.title(f"📊 {current_ticker}")
 
-# Basic Info Section
-basic_info = ticker_data.get('basic_info')
+# Wrap main content in try-except for better error handling
+try:
+    # Basic Info Section
+    basic_info = ticker_data.get('basic_info')
 if basic_info:
     company_name = basic_info.get('company_name', 'N/A')
     sector = basic_info.get('sector', 'N/A')
@@ -231,7 +251,8 @@ if research_articles:
             with col2:
                 st.caption(f"Source: {article.get('source', 'Unknown')}")
                 if article.get('published_at'):
-                    st.caption(f"Published: {article.get('published_at', '')[:10]}")
+                    published_date = format_date_safe(article.get('published_at'))
+                    st.caption(f"Published: {published_date}")
                 if article.get('sentiment'):
                     st.caption(f"Sentiment: {article.get('sentiment', 'N/A')}")
 else:
@@ -254,7 +275,7 @@ if social_sentiment:
                 'Score': f"{metric.get('sentiment_score', 0):.2f}",
                 'Volume': metric.get('volume', 0),
                 'Bull/Bear Ratio': f"{metric.get('bull_bear_ratio', 0):.2f}" if metric.get('bull_bear_ratio') else 'N/A',
-                'Last Updated': metric.get('created_at', 'N/A')[:16] if metric.get('created_at') else 'N/A'
+                'Last Updated': format_date_safe(metric.get('created_at')) if metric.get('created_at') else 'N/A'
             }
             for metric in latest_metrics
         ])
@@ -312,6 +333,11 @@ if watchlist_status:
         st.metric("Source", watchlist_status.get('source', 'N/A'))
 else:
     st.info(f"{current_ticker} is not in the watchlist.")
+
+except Exception as e:
+    logger.error(f"Error rendering ticker details page for {current_ticker}: {e}", exc_info=True)
+    st.error(f"❌ An error occurred while displaying ticker information: {str(e)}")
+    st.info("Please try refreshing the page or contact support if the problem persists.")
 
 # Footer
 st.markdown("---")

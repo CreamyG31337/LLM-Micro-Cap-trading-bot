@@ -22,19 +22,104 @@ def get_ticker_info(
 ) -> Dict[str, Any]:
     """Get comprehensive ticker information from all databases.
     
+    Aggregates ticker data from multiple sources (Supabase and Postgres) including
+    basic security info, portfolio data, research articles, social sentiment,
+    congress trades, and watchlist status.
+    
     Args:
         ticker: Ticker symbol (e.g., "AAPL", "XMA.TO")
-        supabase_client: Optional SupabaseClient instance
-        postgres_client: Optional PostgresClient instance
+        supabase_client: Optional SupabaseClient instance for accessing securities,
+            positions, trades, congress data, and watchlist
+        postgres_client: Optional PostgresClient instance for accessing research
+            articles and social sentiment metrics
         
     Returns:
-        Dictionary with all ticker information from various sources:
-        - basic_info: Company name, sector, industry, currency, exchange
-        - portfolio_data: Current positions, trade history, P&L
-        - research_articles: Recent articles mentioning the ticker
-        - social_sentiment: Latest sentiment metrics and alerts
-        - congress_trades: Recent trades by politicians
-        - watchlist_status: Whether ticker is in watchlist
+        Dictionary with the following structure:
+        {
+            'ticker': str,  # Uppercase ticker symbol
+            'found': bool,  # True if any data found for this ticker
+            'basic_info': dict | None,  # From securities table
+                {
+                    'ticker': str,
+                    'company_name': str,
+                    'sector': str,
+                    'industry': str,
+                    'currency': str,  # 'USD', 'CAD', etc.
+                    'exchange': str   # 'NASDAQ', 'NYSE', 'TSX', etc.
+                }
+            'portfolio_data': dict | None,
+                {
+                    'positions': list[dict],  # Latest 100 positions
+                    'trades': list[dict],     # Latest 100 trades
+                    'has_positions': bool,
+                    'has_trades': bool
+                }
+            'research_articles': list[dict],  # Last 30 days, limit 50
+                [
+                    {
+                        'id': int,
+                        'title': str,
+                        'url': str,
+                        'summary': str,
+                        'source': str,
+                        'published_at': datetime,
+                        'fetched_at': datetime,
+                        'relevance_score': float,
+                        'sentiment': str,  # 'positive', 'negative', 'neutral'
+                        'sentiment_score': float,
+                        'article_type': str
+                    }
+                ]
+            'social_sentiment': dict | None,
+                {
+                    'latest_metrics': list[dict],  # Latest per platform
+                    'alerts': list[dict]           # Extreme alerts (24h)
+                }
+            'congress_trades': list[dict],  # Last 30 days, limit 50
+                [
+                    {
+                        'ticker': str,
+                        'politician': str,
+                        'chamber': str,  # 'House' or 'Senate'
+                        'party': str,
+                        'type': str,     # 'Purchase' or 'Sale'
+                        'amount': str,
+                        'transaction_date': date
+                    }
+                ]
+            'watchlist_status': dict | None,
+                {
+                    'ticker': str,
+                    'priority_tier': str,  # 'A', 'B', or 'C'
+                    'source': str,
+                    'is_active': bool
+                }
+        }
+    
+    Example:
+        >>> from supabase_client import SupabaseClient
+        >>> from postgres_client import PostgresClient
+        >>> 
+        >>> sb_client = SupabaseClient()
+        >>> pg_client = PostgresClient()
+        >>> 
+        >>> # Get info for Apple
+        >>> info = get_ticker_info("AAPL", sb_client, pg_client)
+        >>> print(info['basic_info']['company_name'])
+        'Apple Inc.'
+        >>> print(f"Found {len(info['research_articles'])} articles")
+        Found 15 articles
+        >>> 
+        >>> # Canadian ticker
+        >>> info = get_ticker_info("XMA.TO", sb_client, pg_client)
+        >>> print(info['basic_info']['exchange'])
+        'TSX'
+    
+    Note:
+        - Function makes 6 separate database queries (can be slow for large datasets)
+        - Returns empty lists/None for missing data rather than raising exceptions
+        - All timestamps should be timezone-aware (UTC)
+        - Warnings logged for individual query failures (doesn't fail entire function)
     """
     ticker_upper = ticker.upper().strip()
     result = {
@@ -188,14 +273,46 @@ def get_ticker_info(
 
 
 def get_ticker_external_links(ticker: str, exchange: Optional[str] = None) -> Dict[str, str]:
-    """Generate external links for a ticker.
+    """Generate external links to financial websites for a ticker.
+    
+    Creates links to major financial data sources including Yahoo Finance,
+    TradingView, Finviz, Seeking Alpha, MarketWatch, StockTwits, Reddit, and
+    Google Finance. Handles both US and Canadian tickers appropriately.
     
     Args:
-        ticker: Ticker symbol (e.g., "AAPL", "XMA.TO")
-        exchange: Optional exchange code (e.g., "NASDAQ", "TSX")
+        ticker: Ticker symbol (e.g., "AAPL", "XMA.TO", "SHOP.V")
+        exchange: Optional exchange code for more specific routing.
+            Supported: 'NASDAQ', 'NYSE', 'TSX', 'TSXV', 'AMEX'
         
     Returns:
-        Dictionary mapping link names to URLs
+        Dictionary mapping site names to full URLs:
+        {
+            'Yahoo Finance': str,
+            'TradingView': str,
+            'Finviz': str,
+            'Seeking Alpha': str,
+            'MarketWatch': str,
+            'StockTwits': str,
+            'Reddit (WSB)': str,
+            'Google Finance': str
+        }
+    
+    Example:
+        >>> links = get_ticker_external_links("AAPL", "NASDAQ")
+        >>> print(links['Yahoo Finance'])
+        'https://finance.yahoo.com/quote/AAPL'
+        >>> print(links['TradingView'])
+        'https://www.tradingview.com/symbols/NASDAQ-AAPL/'
+        >>> 
+        >>> # Canadian ticker
+        >>> links = get_ticker_external_links("XMA.TO", "TSX")
+        >>> print(links['TradingView'])
+        'https://www.tradingview.com/symbols/TSX-XMA/'
+    
+    Note:
+        - Canadian ticker suffixes (.TO, .V) are automatically detected
+        - Base ticker extracted for sites that don't support suffixes
+        - All URLs are properly formatted and URL-safe
     """
     ticker_upper = ticker.upper().strip()
     
@@ -257,15 +374,42 @@ def render_ticker_link(
     display_text: Optional[str] = None,
     use_page_link: bool = True
 ) -> str:
-    """Generate a clickable ticker link for Streamlit.
+    """Generate a clickable ticker link for Streamlit markdown rendering.
+    
+    Creates markdown-formatted links that navigate to the ticker details page.
+    Note: Only works in markdown contexts (st.markdown, st.write with markdown),
+    NOT in st.dataframe() or AgGrid.
     
     Args:
-        ticker: Ticker symbol
-        display_text: Optional display text (defaults to ticker)
-        use_page_link: Whether to use st.page_link format (default: True)
+        ticker: Ticker symbol (e.g., "AAPL", "TSLA")
+        display_text: Optional text to display for the link.
+            If None, displays the ticker symbol itself.
+        use_page_link: If True, uses Streamlit's page navigation format.
+            If False, uses query parameter format (legacy).
         
     Returns:
-        Markdown link string that can be used in Streamlit
+        Markdown link string in format: "[display](url)"
+    
+    Example:
+        >>> link = render_ticker_link("AAPL")
+        >>> print(link)
+        '[AAPL](pages/ticker_details?ticker=AAPL)'
+        >>> 
+        >>> # Custom display text
+        >>> link = render_ticker_link("AAPL", "Apple Inc.")
+        >>> print(link)
+        '[Apple Inc.](pages/ticker_details?ticker=AAPL)'
+        >>> 
+        >>> # Use in Streamlit markdown
+        >>> import streamlit as st
+        >>> st.markdown(f"View details for {render_ticker_link('AAPL')}")
+    
+    Warning:
+        This does NOT work in st.dataframe() or AgGrid - the markdown
+        will display as plain text. For tables, consider:
+        - st.data_editor() with LinkColumn (Streamlit 1.29+)
+        - Separate "View Details" button column
+        - Custom HTML table with unsafe_allow_html=True
     """
     ticker_upper = ticker.upper().strip()
     display = display_text if display_text else ticker_upper

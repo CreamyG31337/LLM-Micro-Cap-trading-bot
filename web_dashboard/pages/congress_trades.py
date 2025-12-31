@@ -1393,16 +1393,26 @@ try:
         
         # Configure columns
         # Make Ticker column clickable with custom cell renderer
-        # According to AG Grid docs, cellRenderer can return HTML strings
+        # Make Ticker column clickable with custom cell renderer
+        # Use class-based renderer to avoid HTML string escaping issues
         ticker_cell_renderer = JsCode("""
-            function(params) {
-                if (params.value && params.value !== 'N/A') {
-                    // Return HTML string - AG Grid will render this
-                    return '<span style="color: #0066cc; font-weight: bold; text-decoration: underline; cursor: pointer;">' + 
-                           params.value + 
-                           '</span>';
+            class TickerCellRenderer {
+                init(params) {
+                    this.eGui = document.createElement('span');
+                    if (params.value && params.value !== 'N/A') {
+                        this.eGui.innerText = params.value;
+                        this.eGui.style.color = '#0066cc';
+                        this.eGui.style.fontWeight = 'bold';
+                        this.eGui.style.textDecoration = 'underline';
+                        this.eGui.style.cursor = 'pointer';
+                    } else {
+                        this.eGui.innerText = params.value || 'N/A';
+                    }
                 }
-                return params.value || 'N/A';
+
+                getGui() {
+                    return this.eGui;
+                }
             }
         """)
         gb.configure_column(

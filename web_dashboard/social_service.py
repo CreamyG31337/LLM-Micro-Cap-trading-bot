@@ -807,7 +807,7 @@ class SocialSentimentService:
             session_query = """
                 SELECT ss.*, 
                        array_agg(sp.content) as post_contents,
-                       array_agg(sp.extracted_tickers) as ticker_arrays
+                       json_agg(sp.extracted_tickers) as ticker_arrays
                 FROM sentiment_sessions ss
                 LEFT JOIN social_posts sp ON sp.metric_id IN (
                     SELECT id FROM social_metrics 

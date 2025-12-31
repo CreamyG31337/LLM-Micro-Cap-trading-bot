@@ -9,12 +9,8 @@ Define all background jobs here. Each job should:
 """
 
 import logging
-import time
-from datetime import datetime, timezone, timedelta, date, time as dt_time
-from typing import Dict, Any, Optional, List
-from decimal import Decimal
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from typing import Dict, Any
 
 from scheduler.scheduler_core import log_job_execution
 
@@ -258,6 +254,7 @@ __all__ = [
     # Social sentiment jobs
     'fetch_social_sentiment_job',
     'cleanup_social_metrics_job',
+    'social_sentiment_ai_job',
     # Congress jobs
     'fetch_congress_trades_job',
     'analyze_congress_trades_job',
@@ -271,18 +268,6 @@ __all__ = [
     'get_job_icon',
     'register_default_jobs',
 ]
-
-
-
-
-
-# Import congress jobs from separate module
-from scheduler.jobs_congress import (
-    fetch_congress_trades_job,
-    analyze_congress_trades_job,
-    rescore_congress_sessions_job
-)
-
 
 def register_default_jobs(scheduler) -> None:
     """Register all default jobs with the scheduler.

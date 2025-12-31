@@ -311,6 +311,7 @@ class SocialSentimentService:
             if top_posts:
                 raw_data = [
                     {
+                        'id': msg.get('id'),
                         'body': msg.get('body', ''),
                         'created_at': msg.get('created_at', ''),
                         'user': msg.get('user', {}).get('username', 'Unknown')
@@ -609,12 +610,12 @@ class SocialSentimentService:
                             post_record = {
                                 'metric_id': metric_id,
                                 'platform': platform,
-                                'post_id': None,  # StockTwits doesn't provide IDs in current data
+                                'post_id': post_data.get('id'),  # StockTwits now captures IDs
                                 'content': post_data.get('body', ''),
                                 'author': post_data.get('user', ''),
                                 'posted_at': post_data.get('created_at'),
                                 'engagement_score': 0,  # Not available in current StockTwits data
-                                'url': None,  # Not available
+                                'url': f"https://stocktwits.com/{post_data.get('user', 'Unknown')}/message/{post_data.get('id')}" if post_data.get('id') else None,
                                 'extracted_tickers': self._extract_tickers_basic(post_data.get('body', ''))
                             }
                         elif platform == 'reddit':

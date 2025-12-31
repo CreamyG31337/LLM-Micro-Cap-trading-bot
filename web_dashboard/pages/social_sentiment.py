@@ -653,9 +653,21 @@ try:
             # Get extracted tickers for this analysis
             extracted_tickers = get_extracted_tickers(postgres_client, analysis['id'])
             
+            # Create platform link
+            ticker = analysis.get('ticker', 'N/A')
+            platform_raw = analysis.get('platform', 'N/A')
+            platform_display = platform_raw
+            
+            if platform_raw and ticker and ticker != 'N/A':
+                platform_lower = platform_raw.lower()
+                if platform_lower == 'stocktwits':
+                    platform_display = f"[{platform_raw.upper()}](https://stocktwits.com/symbol/{ticker})"
+                elif platform_lower == 'reddit':
+                    platform_display = f"[{platform_raw.upper()}](https://www.reddit.com/search/?q=%24{ticker})"
+
             analysis_data.append({
-                'Ticker': analysis.get('ticker', 'N/A'),
-                'Platform': analysis.get('platform', 'N/A'),
+                'Ticker': ticker,
+                'Platform': platform_display,
                 'AI Sentiment': analysis.get('sentiment_label', 'N/A'),
                 'AI Score': f"{analysis.get('sentiment_score', 0):.1f}",
                 'Confidence': f"{analysis.get('confidence_score', 0):.1%}",

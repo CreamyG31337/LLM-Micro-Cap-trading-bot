@@ -126,7 +126,36 @@ def render_scheduler_admin():
         
         # Display each job
         for job in jobs:
-            with st.expander(f"**{job['name']}** - {'⏸️ Paused' if job['is_paused'] else '✅ Active'}", expanded=True):
+            # Determine status badge
+            if job.get('is_running'):
+                status_badge = "🔵 RUNNING"
+                status_color = "blue"
+            elif job.get('last_error'):
+                status_badge = "🔴 FAILED"
+                status_color = "red"
+            elif job['is_paused']:
+                status_badge = "⏸️ PAUSED"
+                status_color = "gray"
+            else:
+                status_badge = "✅ IDLE"
+                status_color = "green"
+            
+            with st.expander(f"**{job['name']}** - {status_badge}", expanded=True):
+                # Show running status prominently
+                if job.get('is_running'):
+                    running_since = job.get('running_since')
+                    if running_since:
+                        since_str = format_datetime_local(running_since)
+                        duration = datetime.now(running_since.tzinfo or datetime.now().astimezone().tzinfo) - running_since
+                        duration_str = f"{int(duration.total_seconds() // 60)}m {int(duration.total_seconds() % 60)}s"
+                        st.info(f"⏳ **Job is currently running** (Started: {since_str}, Duration: {duration_str})")
+                    else:
+                        st.info("⏳ **Job is currently running**")
+                
+                # Show last error prominently
+                if job.get('last_error'):
+                    st.error(f"❌ **Last Error:** {job['last_error']}")
+                
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
@@ -162,7 +191,9 @@ def render_scheduler_admin():
                                     job_params[param_name] = st.text_input(label, value=str(default_val), help=help_text, key=key)
 
                     # Action buttons
-                    if st.button("▶️ Run Now", key=f"run_{job['id']}"):
+                    # Disable run button if already running
+                    run_disabled = job.get('is_running', False)
+                    if st.button("▶️ Run Now", key=f"run_{job['id']}", disabled=run_disabled):
                         with st.spinner("Running..."):
                             success = run_job_now(job['id'], **job_params)
                             if success:
@@ -170,6 +201,9 @@ def render_scheduler_admin():
                             else:
                                 st.error("Job failed!")
                             st.rerun()
+                    
+                    if run_disabled:
+                        st.caption("⚠️ Job is currently running")
                     
                     if job['is_paused']:
                         if st.button("▶️ Resume", key=f"resume_{job['id']}"):

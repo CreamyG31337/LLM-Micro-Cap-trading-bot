@@ -278,24 +278,27 @@ def prefetch_securities_batch(client: SupabaseClient, tickers: List[str]) -> Non
     if not uncached_tickers:
         return
     
-    try:
-        response = client.supabase.table("securities")\
-            .select("ticker, company_name, sector")\
-            .in_("ticker", uncached_tickers)\
-            .execute()
-        
-        for sec in response.data:
-            ticker = sec.get('ticker')
-            if ticker:
-                _sector_cache[ticker] = {
-                    'company_name': sec.get('company_name', 'Unknown'),
-                    'sector': sec.get('sector', 'Unknown')
-                }
-        
-        logger.debug(f"Prefetched {len(response.data)} securities for {len(uncached_tickers)} tickers")
-        
-    except Exception as e:
-        logger.warning(f"Failed to prefetch securities batch: {e}")
+    # Chunk tickers to avoid "URL too long" error
+    chunk_size = 50
+    for i in range(0, len(uncached_tickers), chunk_size):
+        chunk = uncached_tickers[i:i + chunk_size]
+        try:
+            response = client.supabase.table("securities")\
+                .select("ticker, company_name, sector")\
+                .in_("ticker", chunk)\
+                .execute()
+            
+            for sec in response.data:
+                ticker = sec.get('ticker')
+                if ticker:
+                    _sector_cache[ticker] = {
+                        'company_name': sec.get('company_name', 'Unknown'),
+                        'sector': sec.get('sector', 'Unknown')
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to prefetch securities chunk {i}: {e}")
+            
+    logger.debug(f"Prefetched securities for {len(uncached_tickers)} tickers")
 
 
 def prefetch_politician_committees(client: SupabaseClient, politician_name: str) -> None:
@@ -689,13 +692,20 @@ def analyze_session(
         
         trade_ids = [row['trade_id'] for row in trades_result]
         
-        # Fetch full trade data from Supabase
-        response = supabase.supabase.table("congress_trades_enriched")\
-            .select("*")\
-            .in_("id", trade_ids)\
-            .execute()
-        
-        trades = response.data
+        # Fetch full trade data from Supabase (chunked)
+        trades = []
+        chunk_size = 50
+        for i in range(0, len(trade_ids), chunk_size):
+            chunk = trade_ids[i:i + chunk_size]
+            try:
+                response = supabase.supabase.table("congress_trades_enriched")\
+                    .select("*")\
+                    .in_("id", chunk)\
+                    .execute()
+                trades.extend(response.data)
+            except Exception as e:
+                logger.error(f"Failed to fetch trades chunk {i}: {e}")
+                return False
         
         if not trades:
             logger.warning(f"No trade data found in Supabase for session {session_id}")

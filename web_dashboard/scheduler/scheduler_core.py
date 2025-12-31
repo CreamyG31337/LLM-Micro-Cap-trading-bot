@@ -285,12 +285,68 @@ def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
     if not job:
         return None
     
+    # Map job_id to job_name for database lookup
+    job_name = _map_job_id_to_job_name(job_id)
+    
+    # Check if job is currently running
+    is_running = False
+    running_since = None
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        # Query for running executions
+        running_result = client.supabase.table("job_executions")\
+            .select("started_at")\
+            .eq("job_name", job_name)\
+            .eq("status", "running")\
+            .order("started_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if running_result.data and len(running_result.data) > 0:
+            is_running = True
+            started_at = running_result.data[0].get('started_at')
+            if started_at:
+                try:
+                    if isinstance(started_at, str):
+                        running_since = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    else:
+                        running_since = started_at
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Failed to check running status for {job_id}: {e}")
+    
+    # Get last error from failed executions
+    last_error = None
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        # Query for most recent failed execution
+        failed_result = client.supabase.table("job_executions")\
+            .select("error_message, completed_at")\
+            .eq("job_name", job_name)\
+            .eq("status", "failed")\
+            .order("completed_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if failed_result.data and len(failed_result.data) > 0:
+            last_error = failed_result.data[0].get('error_message')
+    except Exception as e:
+        logger.warning(f"Failed to fetch last error for {job_id}: {e}")
+    
     return {
         'id': job.id,
         'name': job.name or job.id,
         'next_run': job.next_run_time,
         'is_paused': job.next_run_time is None,
         'trigger': str(job.trigger),
+        'is_running': is_running,
+        'running_since': running_since,
+        'last_error': last_error,
         'recent_logs': get_job_logs(job.id, limit=5)
     }
 

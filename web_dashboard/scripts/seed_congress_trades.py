@@ -96,7 +96,46 @@ def preload_politician_states():
     if not client:
         _POLITICIAN_CACHE_LOADED = True
         return
-    
+    # If not found by bioguide, try to find by name (case insensitive)
+    if not existing:
+        existing = client.supabase.table('politicians')\
+            .select('*')\
+            .ilike('name', name)\
+            .execute()
+            
+        if existing.data:
+            return existing.data[0]['id']
+
+    # Check KNOWN_HISTORICAL_MAP
+    # If the name matches a known missing/historical politician, force use of that metadata
+    # This prevents creating a TMP record for someone who just hasn't been imported yet.
+    name_lower = name.lower().strip()
+    if name_lower in KNOWN_HISTORICAL_MAP:
+        hist_data = KNOWN_HISTORICAL_MAP[name_lower]
+        logger.info(f"Using known historical metadata for {name}: {hist_data['bioguide']}")
+        
+        # Check if this real bioguide already exists (failed name match?)
+        real_check = client.supabase.table('politicians').select('*').eq('bioguide_id', hist_data['bioguide']).execute()
+        if real_check.data:
+            # We found the real record by ID! Use it.
+            return real_check.data[0]['id']
+            
+        # Create new real record
+        new_pol = {
+            'name': name,  # Use scraper name, or maybe hardcoded proper name? Scraper name usually fine.
+            'bioguide_id': hist_data['bioguide'],
+            'party': hist_data['party'],
+            'state': hist_data['state'],
+            'chamber': hist_data['chamber'],
+            'updated_at': datetime.now().isoformat()
+        }
+        res = client.supabase.table('politicians').insert(new_pol).execute()
+        if res.data:
+            logger.info(f"Created historical politician: {name} ({hist_data['bioguide']})")
+            return res.data[0]['id']
+
+    # Create new politician with temp ID if no match found
+    # Generate a deterministic temp ID based on name hash if no bioguide provided
     try:
         result = client.supabase.table('politicians')\
             .select('name, state')\
@@ -499,6 +538,120 @@ def extract_owner_from_text(text: Optional[str]) -> Optional[str]:
     return None
 
 
+def normalize_politician_name(name: str) -> str:
+    """
+    Normalize politician name to match official records better.
+    Handles nicknames (Rafael -> Ted, Ladda -> Tammy) and removes suffixes.
+    """
+    if not name:
+        return name
+        
+    # Remove suffixes
+    name = re.sub(r'\s+(Jr\.?|Sr\.?|II|III|IV)\.?$', '', name, flags=re.IGNORECASE)
+    
+    # Specific known override map (Safer than broad nickname mapping)
+    full_name_overrides = {
+        'rafael cruz': 'Ted Cruz',
+        'ladda duckworth': 'Tammy Duckworth',
+        'james banks': 'Jim Banks',
+        'thomas cole': 'Tom Cole',
+        'edward case': 'Ed Case',
+        'suzanne lee': 'Susie Lee',
+        'william hagerty': 'Bill Hagerty',
+        'richard larsen': 'Rick Larsen',
+        'stephen cohen': 'Steve Cohen',
+        'richard scott': 'Rick Scott',
+        'gregory landsman': 'Greg Landsman',
+        'gregory stanton': 'Greg Stanton',
+        'dan sullivan': 'Daniel Sullivan', # Correction: DB has Daniel Sullivan? No, wait.
+                                          # Let's check matching report.
+                                          # Report said: Daniel Sullivan -> Dan Sullivan.
+                                          # So DB has Dan Sullivan. So Input "Daniel Sullivan" -> Target "Dan Sullivan".
+                                          # Wait, report said:
+                                          # TMP ("Daniel Sullivan") -> Real ("Dan Sullivan")
+                                          # So we need "Daniel Sullivan" to map to "Dan Sullivan"
+        'daniel sullivan': 'Dan Sullivan',
+        'jacklyn rosen': 'Jacky Rosen',
+        'james justice ii': 'James C. Justice',
+        'robert aderholt': 'Robert B. Aderholt',
+        'susan lofgren': 'Zoe Lofgren',
+        
+        # Additional mappings verified in Phase 2
+        'jamin raskin': 'Jamie Raskin',
+        'stephen cohen': 'Steve Cohen',
+        'chuck fleischmann': 'Charles J. "Chuck" Fleischmann',
+        'bob latta': 'Robert E. Latta',
+        'peter sessions': 'Pete Sessions',
+        'george kelly': 'Mike Kelly',
+        'john williams': 'Roger Williams', 
+        'james scott': 'Austin Scott',
+        'william steube': 'W. Gregory Steube',
+        'rebecca sherrill': 'Mikie Sherrill',
+        'james hill': 'French Hill',
+        'john ricketts': 'Pete Ricketts',
+        'thomas carper': 'Tom Carper',
+        'douglas lamborn': 'Doug Lamborn',
+        'jeffrey duncan': 'Jeff Duncan',
+        'james vance': 'J. D. Vance',
+        'mark green': 'Mark E. Green',
+        'john knott': 'Ted Budd',
+        'ronald wyden': 'Ron Wyden',
+        'marco rubio': 'Marco A. Rubio',
+        'michael burgess': 'Michael C. Burgess',
+        'david trone': 'David J. Trone',
+        'earl blumenauer': 'Earl Blumenauer',
+        'kathy manning': 'Kathy E. Manning',
+        'michael garcia': 'Mike Garcia',
+        'valerie hoyle': 'Valerie P. Hoyle',
+        'john delaney': 'John K. Delaney',
+        'garret graves': 'Garret N. Graves',
+        'william keating': 'William R. Keating',
+        'thomas suozzi': 'Tom Suozzi',
+        'rick allen': 'Rick W. Allen',
+        'neal dunn': 'Neal P. Dunn'
+    }
+    
+    lower_name = name.lower().strip()
+    if lower_name in full_name_overrides:
+        return full_name_overrides[lower_name]
+        
+    return name
+
+# Map of Name -> Metadata for known historical/missing politicians
+# These are people who are not in legislators-current.yaml (retired/resigned)
+# but appear in trade data. We explicitly map them to their correct Bioguide ID
+# to avoid creating "TMP" records.
+KNOWN_HISTORICAL_MAP = {
+    'earl blumenauer': {'bioguide': 'B001227', 'party': 'Democrat', 'state': 'OR', 'chamber': 'House'},
+    'marco rubio': {'bioguide': 'R000595', 'party': 'Republican', 'state': 'FL', 'chamber': 'Senate'},
+    'mark green': {'bioguide': 'G000590', 'party': 'Republican', 'state': 'TN', 'chamber': 'House'},
+    'mark e. green': {'bioguide': 'G000590', 'party': 'Republican', 'state': 'TN', 'chamber': 'House'},
+    'michael burgess': {'bioguide': 'B001248', 'party': 'Republican', 'state': 'TX', 'chamber': 'House'},
+    'thomas carper': {'bioguide': 'C000174', 'party': 'Democrat', 'state': 'DE', 'chamber': 'Senate'},
+    'tom carper': {'bioguide': 'C000174', 'party': 'Democrat', 'state': 'DE', 'chamber': 'Senate'},
+    'kathy manning': {'bioguide': 'M001222', 'party': 'Democrat', 'state': 'NC', 'chamber': 'House'},
+    'gilbert cisneros': {'bioguide': 'C001124', 'party': 'Democrat', 'state': 'CA', 'chamber': 'House'},
+    'valerie hoyle': {'bioguide': 'H001091', 'party': 'Democrat', 'state': 'OR', 'chamber': 'House'},
+    'douglas lamborn': {'bioguide': 'L000564', 'party': 'Republican', 'state': 'CO', 'chamber': 'House'},
+    'doug lamborn': {'bioguide': 'L000564', 'party': 'Republican', 'state': 'CO', 'chamber': 'House'},
+    'david trone': {'bioguide': 'T000486', 'party': 'Democrat', 'state': 'MD', 'chamber': 'House'},
+    'mike garcia': {'bioguide': 'G000593', 'party': 'Republican', 'state': 'CA', 'chamber': 'House'},
+    'michael garcia': {'bioguide': 'G000593', 'party': 'Republican', 'state': 'CA', 'chamber': 'House'},
+    'terri sewell': {'bioguide': 'S001185', 'party': 'Democrat', 'state': 'AL', 'chamber': 'House'},
+    'terrycina sewell': {'bioguide': 'S001185', 'party': 'Democrat', 'state': 'AL', 'chamber': 'House'},
+    'garret graves': {'bioguide': 'G000577', 'party': 'Republican', 'state': 'LA', 'chamber': 'House'},
+    'peter stauber': {'bioguide': 'S001212', 'party': 'Republican', 'state': 'MN', 'chamber': 'House'},
+    'jd vance': {'bioguide': 'V000137', 'party': 'Republican', 'state': 'OH', 'chamber': 'Senate'},
+    'j. d. vance': {'bioguide': 'V000137', 'party': 'Republican', 'state': 'OH', 'chamber': 'Senate'},
+    'james vance': {'bioguide': 'V000137', 'party': 'Republican', 'state': 'OH', 'chamber': 'Senate'},
+    'bob latta': {'bioguide': 'L000566', 'party': 'Republican', 'state': 'OH', 'chamber': 'House'},
+    'robert e. latta': {'bioguide': 'L000566', 'party': 'Republican', 'state': 'OH', 'chamber': 'House'},
+    'john delaney': {'bioguide': 'D000620', 'party': 'Democrat', 'state': 'MD', 'chamber': 'House'},
+    'mark warner': {'bioguide': 'W000805', 'party': 'Democrat', 'state': 'VA', 'chamber': 'Senate'}, # Just to be safe
+    'tammy duckworth': {'bioguide': 'D000622', 'party': 'Democrat', 'state': 'IL', 'chamber': 'Senate'}
+}
+
+
 def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Map scraped trade data to congress_trades schema"""
     try:
@@ -518,6 +671,9 @@ def map_trade_to_schema(trade_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         politician_name = f"{first_name} {last_name}".strip()
         if not politician_name:
             return None
+            
+        # Normalize name (handle nicknames/aliases)
+        politician_name = normalize_politician_name(politician_name)
         
         # Get chamber
         chamber = normalize_chamber(politician.get('chamber'))

@@ -6722,6 +6722,10 @@ HSAG:
   rank: 1
   title: Ranking Member
   bioguide: C001119
+- name: Abigail Spanberger
+  party: minority
+  rank: 99
+  bioguide: S001209
 - name: Frank D. Lucas
   party: majority
   rank: 2
@@ -7732,6 +7736,11 @@ HSGO:
   rank: 1
   title: Ranking Member
   bioguide: G000598
+- name: Gerry Connolly
+  party: minority
+  rank: 1
+  title: Ranking Member
+  bioguide: C001078
 - name: Jim Jordan
   party: majority
   rank: 2
@@ -8326,6 +8335,10 @@ HLIG:
   rank: 1
   title: Ranking Member
   bioguide: H001047
+- name: Abigail Spanberger
+  party: minority
+  rank: 99
+  bioguide: S001209
 - name: Elise M. Stefanik
   party: majority
   rank: 2
@@ -8656,6 +8669,10 @@ HSFA:
   rank: 1
   title: Ranking Member
   bioguide: M001137
+- name: Gerry Connolly
+  party: minority
+  rank: 99
+  bioguide: C001078
 - name: Christopher H. Smith
   party: majority
   rank: 2

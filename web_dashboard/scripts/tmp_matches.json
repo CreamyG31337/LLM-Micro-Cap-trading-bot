@@ -1,0 +1,119 @@
+[
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5417,
+    "tmp_bioguide": "TMP625207",
+    "tmp_name": "Bob Latta",
+    "real_id": 76,
+    "real_bioguide": "L000566",
+    "real_name": "Robert E. Latta"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5419,
+    "tmp_bioguide": "TMP391663",
+    "tmp_name": "Chuck Fleischmann",
+    "real_id": 51,
+    "real_bioguide": "F000459",
+    "real_name": "Charles J. \"Chuck\" Fleischmann"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5427,
+    "tmp_bioguide": "TMP038710",
+    "tmp_name": "Jamin Raskin",
+    "real_id": 241,
+    "real_bioguide": "R000606",
+    "real_name": "Jamie Raskin"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5442,
+    "tmp_bioguide": "TMP758339",
+    "tmp_name": "Stephen Cohen",
+    "real_id": 38,
+    "real_bioguide": "C001068",
+    "real_name": "Steve Cohen"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5447,
+    "tmp_bioguide": "TMP690892",
+    "tmp_name": "Peter Sessions",
+    "real_id": 324,
+    "real_bioguide": "S000250",
+    "real_name": "Pete Sessions"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5448,
+    "tmp_bioguide": "TMP591502",
+    "tmp_name": "George Kelly",
+    "real_id": 72,
+    "real_bioguide": "K000376",
+    "real_name": "Mike Kelly"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5460,
+    "tmp_bioguide": "TMP968006",
+    "tmp_name": "John Williams",
+    "real_id": 176,
+    "real_bioguide": "W000816",
+    "real_name": "Roger Williams"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5484,
+    "tmp_bioguide": "TMP136713",
+    "tmp_name": "James Scott",
+    "real_id": 110,
+    "real_bioguide": "S001189",
+    "real_name": "Austin Scott"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5429,
+    "tmp_bioguide": "TMP013466",
+    "tmp_name": "William Steube",
+    "real_id": 273,
+    "real_bioguide": "S001214",
+    "real_name": "W. Gregory Steube"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5432,
+    "tmp_bioguide": "TMP196200",
+    "tmp_name": "Rebecca Sherrill",
+    "real_id": 293,
+    "real_bioguide": "S001207",
+    "real_name": "Mikie Sherrill"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5437,
+    "tmp_bioguide": "TMP663044",
+    "tmp_name": "John Knott",
+    "real_id": 243,
+    "real_bioguide": "B001305",
+    "real_name": "Ted Budd"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5438,
+    "tmp_bioguide": "TMP627606",
+    "tmp_name": "Ronald Wyden",
+    "real_id": 138,
+    "real_bioguide": "W000779",
+    "real_name": "Ron Wyden"
+  },
+  {
+    "match_type": "Manual Map (Exact)",
+    "tmp_id": 5474,
+    "tmp_bioguide": "TMP977989",
+    "tmp_name": "John Ricketts",
+    "real_id": 455,
+    "real_bioguide": "R000618",
+    "real_name": "Pete Ricketts"
+  }
+]

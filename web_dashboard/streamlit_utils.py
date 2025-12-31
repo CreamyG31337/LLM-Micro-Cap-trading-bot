@@ -2196,6 +2196,135 @@ def get_fund_thesis_data(fund_name: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+@log_execution_time()
+def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit: int = 5) -> Dict[str, pd.DataFrame]:
+    """Get biggest gainers and losers from positions.
+    
+    Args:
+        positions_df: DataFrame with positions data
+        display_currency: Currency to display values in
+        limit: Number of top movers to return (default 5)
+        
+    Returns:
+        Dictionary with 'gainers' and 'losers' DataFrames
+    """
+    if positions_df.empty:
+        return {'gainers': pd.DataFrame(), 'losers': pd.DataFrame()}
+    
+    # Get exchange rates for currency conversion
+    all_currencies = set()
+    if 'currency' in positions_df.columns:
+        all_currencies.update(positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist())
+    
+    rate_map = fetch_latest_rates_bulk(list(all_currencies), display_currency) if all_currencies else {}
+    
+    def get_rate_safe(curr):
+        return rate_map.get(str(curr).upper(), 1.0)
+    
+    # Create a copy to avoid modifying original
+    df = positions_df.copy()
+    
+    # Ensure we have required columns
+    required_cols = ['ticker']
+    if not all(col in df.columns for col in required_cols):
+        return {'gainers': pd.DataFrame(), 'losers': pd.DataFrame()}
+    
+    # Determine which P&L column to use (prefer daily_pnl_pct, fallback to daily_pnl or return_pct)
+    pnl_pct_col = None
+    pnl_dollar_col = None
+    
+    if 'daily_pnl_pct' in df.columns:
+        pnl_pct_col = 'daily_pnl_pct'
+    elif 'return_pct' in df.columns:
+        pnl_pct_col = 'return_pct'
+    
+    if 'daily_pnl' in df.columns:
+        pnl_dollar_col = 'daily_pnl'
+    elif 'unrealized_pnl' in df.columns:
+        pnl_dollar_col = 'unrealized_pnl'
+    
+    if not pnl_pct_col and not pnl_dollar_col:
+        return {'gainers': pd.DataFrame(), 'losers': pd.DataFrame()}
+    
+    # Filter out positions with zero or missing P&L
+    if pnl_pct_col:
+        df = df[df[pnl_pct_col].notna() & (df[pnl_pct_col] != 0)]
+        sort_col = pnl_pct_col
+    else:
+        df = df[df[pnl_dollar_col].notna() & (df[pnl_dollar_col] != 0)]
+        sort_col = pnl_dollar_col
+    
+    if df.empty:
+        return {'gainers': pd.DataFrame(), 'losers': pd.DataFrame()}
+    
+    # Convert currency if needed
+    if 'currency' in df.columns and pnl_dollar_col:
+        rates = df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+        df['pnl_display'] = df[pnl_dollar_col] * rates
+    elif pnl_dollar_col:
+        df['pnl_display'] = df[pnl_dollar_col]
+    
+    # Get company names if available
+    company_col = None
+    if 'securities' in df.columns:
+        # Handle nested securities data
+        try:
+            df['company_name'] = df['securities'].apply(
+                lambda x: x.get('company_name', '') if isinstance(x, dict) else ''
+            )
+            company_col = 'company_name'
+        except:
+            pass
+    elif 'company_name' in df.columns:
+        company_col = 'company_name'
+    
+    # Build result columns (only include columns that exist)
+    result_cols = ['ticker']
+    if company_col and company_col in df.columns:
+        result_cols.append(company_col)
+    if pnl_pct_col and pnl_pct_col in df.columns:
+        result_cols.append(pnl_pct_col)
+    if pnl_dollar_col and 'pnl_display' in df.columns:
+        result_cols.append('pnl_display')
+    if 'current_price' in df.columns:
+        result_cols.append('current_price')
+    if 'market_value' in df.columns:
+        result_cols.append('market_value')
+    
+    # Filter to only columns that exist
+    result_cols = [col for col in result_cols if col in df.columns]
+    
+    if not result_cols:
+        return {'gainers': pd.DataFrame(), 'losers': pd.DataFrame()}
+    
+    # Get gainers (positive P&L)
+    if pnl_pct_col:
+        gainers_df = df[df[pnl_pct_col] > 0].nlargest(limit, pnl_pct_col)
+    else:
+        gainers_df = df[df['pnl_display'] > 0].nlargest(limit, 'pnl_display')
+    
+    # Get losers (negative P&L)
+    if pnl_pct_col:
+        losers_df = df[df[pnl_pct_col] < 0].nsmallest(limit, pnl_pct_col)
+    else:
+        losers_df = df[df['pnl_display'] < 0].nsmallest(limit, 'pnl_display')
+    
+    # Select only available columns
+    if not gainers_df.empty:
+        gainers = gainers_df[result_cols].copy()
+    else:
+        gainers = pd.DataFrame()
+    
+    if not losers_df.empty:
+        losers = losers_df[result_cols].copy()
+    else:
+        losers = pd.DataFrame()
+    
+    return {'gainers': gainers, 'losers': losers}
+    
+    return {'gainers': gainers, 'losers': losers}
+
+
 def display_dataframe_with_copy(
     df: pd.DataFrame,
     label: str = "table",

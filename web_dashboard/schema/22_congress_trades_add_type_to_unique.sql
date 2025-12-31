@@ -79,3 +79,4 @@ BEGIN
     RAISE NOTICE '   Now allows: Same politician/ticker/date/amount with different types';
 END $$;
 
+

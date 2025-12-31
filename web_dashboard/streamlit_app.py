@@ -99,7 +99,8 @@ from streamlit_utils import (
     get_user_display_currency,
     convert_to_display_currency,
     fetch_latest_rates_bulk,
-    display_dataframe_with_copy
+    display_dataframe_with_copy,
+    get_biggest_movers
 )
 from aggrid_utils import display_aggrid_with_ticker_navigation
 from chart_utils import (
@@ -1389,6 +1390,98 @@ def main():
             log_message(f"[{session_id}] PERF: calculate_portfolio_value_over_time took {time.time() - t0:.2f}s", level='PERF')
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='PERF')
+        
+        # Biggest Movers Table (near the top)
+        if not positions_df.empty:
+            try:
+                movers = get_biggest_movers(positions_df, display_currency, limit=5)
+                
+                if not movers['gainers'].empty or not movers['losers'].empty:
+                    st.markdown("### 📊 Biggest Movers")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if not movers['gainers'].empty:
+                            st.markdown("#### 🟢 Top Gainers")
+                            gainers_df = movers['gainers'].copy()
+                            
+                            # Format columns for display
+                            display_cols = {}
+                            if 'ticker' in gainers_df.columns:
+                                display_cols['ticker'] = 'Ticker'
+                            if 'company_name' in gainers_df.columns:
+                                display_cols['company_name'] = 'Company'
+                            if 'daily_pnl_pct' in gainers_df.columns:
+                                gainers_df['daily_pnl_pct'] = gainers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['daily_pnl_pct'] = '1-Day %'
+                            elif 'return_pct' in gainers_df.columns:
+                                gainers_df['return_pct'] = gainers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['return_pct'] = 'Return %'
+                            if 'pnl_display' in gainers_df.columns:
+                                gainers_df['pnl_display'] = gainers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
+                                display_cols['pnl_display'] = 'P&L'
+                            if 'current_price' in gainers_df.columns:
+                                gainers_df['current_price'] = gainers_df['current_price'].apply(lambda x: f"${x:.2f}")
+                                display_cols['current_price'] = 'Price'
+                            if 'market_value' in gainers_df.columns:
+                                gainers_df['market_value'] = gainers_df['market_value'].apply(lambda x: f"${x:,.0f}")
+                                display_cols['market_value'] = 'Value'
+                            
+                            # Rename columns
+                            gainers_df = gainers_df.rename(columns=display_cols)
+                            # Select only renamed columns that exist
+                            available_cols = [col for col in display_cols.values() if col in gainers_df.columns]
+                            if available_cols:
+                                gainers_df = gainers_df[available_cols]
+                            
+                            st.dataframe(gainers_df, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No gainers to display")
+                    
+                    with col2:
+                        if not movers['losers'].empty:
+                            st.markdown("#### 🔴 Top Losers")
+                            losers_df = movers['losers'].copy()
+                            
+                            # Format columns for display
+                            display_cols = {}
+                            if 'ticker' in losers_df.columns:
+                                display_cols['ticker'] = 'Ticker'
+                            if 'company_name' in losers_df.columns:
+                                display_cols['company_name'] = 'Company'
+                            if 'daily_pnl_pct' in losers_df.columns:
+                                losers_df['daily_pnl_pct'] = losers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['daily_pnl_pct'] = '1-Day %'
+                            elif 'return_pct' in losers_df.columns:
+                                losers_df['return_pct'] = losers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['return_pct'] = 'Return %'
+                            if 'pnl_display' in losers_df.columns:
+                                losers_df['pnl_display'] = losers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
+                                display_cols['pnl_display'] = 'P&L'
+                            if 'current_price' in losers_df.columns:
+                                losers_df['current_price'] = losers_df['current_price'].apply(lambda x: f"${x:.2f}")
+                                display_cols['current_price'] = 'Price'
+                            if 'market_value' in losers_df.columns:
+                                losers_df['market_value'] = losers_df['market_value'].apply(lambda x: f"${x:,.0f}")
+                                display_cols['market_value'] = 'Value'
+                            
+                            # Rename columns
+                            losers_df = losers_df.rename(columns=display_cols)
+                            # Select only renamed columns that exist
+                            available_cols = [col for col in display_cols.values() if col in losers_df.columns]
+                            if available_cols:
+                                losers_df = losers_df[available_cols]
+                            
+                            st.dataframe(losers_df, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No losers to display")
+                    
+                    st.markdown("---")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error displaying biggest movers: {e}", exc_info=True)
         
         # Metrics row
         st.markdown("### Performance Metrics")

@@ -124,6 +124,53 @@ else:
 from navigation import render_navigation
 render_navigation(show_ai_assistant=True, show_settings=True)
 
+# ===== CACHED HELPER FUNCTIONS FOR PERFORMANCE =====
+# These functions cache frequently accessed data to reduce database queries
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_cached_funds():
+    """Get all funds from database with caching."""
+    client = get_supabase_client()
+    if not client:
+        return []
+    try:
+        funds_result = client.supabase.table("funds").select("*").order("name").execute()
+        return funds_result.data if funds_result.data else []
+    except Exception as e:
+        st.error(f"Error loading funds: {e}")
+        return []
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_cached_fund_names():
+    """Get fund names only (lighter query)."""
+    funds = get_cached_funds()
+    return [f['name'] for f in funds]
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_cached_users():
+    """Get all users with their fund assignments."""
+    client = get_supabase_client()
+    if not client:
+        return []
+    try:
+        result = client.supabase.rpc('list_users_with_funds').execute()
+        return result.data if result.data else []
+    except Exception as e:
+        st.error(f"Error loading users: {e}")
+        return []
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_cached_contributors():
+    """Get all contributors from database."""
+    client = get_supabase_client()
+    if not client:
+        return []
+    try:
+        result = client.supabase.table("contributors").select("id, name, email").order("name").execute()
+        return result.data if result.data else []
+    except Exception as e:
+        return []
+
 # Create tabs for different admin sections
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "⏰ Scheduled Tasks",
@@ -166,91 +213,90 @@ with tab2:
     if not client:
         st.error("Failed to connect to database")
     else:
-        # Get all users with their fund assignments
-        try:
-            # Call the list_users_with_funds SQL function
-            result = client.supabase.rpc('list_users_with_funds').execute()
-            
-            if result.data:
-                users_df = pd.DataFrame(result.data)
+        # Get all users with their fund assignments (using cache)
+        with st.spinner("Loading users..."):
+            try:
+                users_df = pd.DataFrame(get_cached_users())
                 
-                # Display users table
-                st.subheader("All Users")
-                display_dataframe_with_copy(
-                    users_df,
-                    label="All Users",
-                    key_suffix="all_users",
-                    use_container_width=True,
-                    column_config={
-                        "email": "Email",
-                        "full_name": "Full Name",
-                        "funds": st.column_config.ListColumn("Assigned Funds")
-                    }
-                )
-                
-                # Delete user section
-                st.subheader("Delete User")
-                st.warning("⚠️ This action cannot be undone. Contributors (users with fund contributions) cannot be deleted.")
-                
-                col_del1, col_del2 = st.columns(2)
-                with col_del1:
-                    delete_email = st.selectbox(
-                        "Select User to Delete",
-                        options=[""] + users_df['email'].tolist(),
-                        key="delete_user_select"
+                if not users_df.empty:
+                    # Display users table
+                    st.subheader("All Users")
+                    display_dataframe_with_copy(
+                        users_df,
+                        label="All Users",
+                        key_suffix="all_users",
+                        use_container_width=True,
+                        column_config={
+                            "email": "Email",
+                            "full_name": "Full Name",
+                            "funds": st.column_config.ListColumn("Assigned Funds")
+                        }
                     )
-                
-                with col_del2:
-                    confirm_email = st.text_input(
-                        "Type email to confirm",
-                        key="confirm_delete_email",
-                        placeholder="Type the email exactly to confirm"
-                    )
-                
-                if st.button("🗑️ Delete User", type="secondary"):
-                    if not delete_email:
-                        st.error("Please select a user to delete")
-                    elif confirm_email != delete_email:
-                        st.error("Confirmation email does not match. Please type the email exactly.")
-                    else:
-                        try:
-                            delete_result = client.supabase.rpc(
-                                'delete_user_safe',
-                                {'user_email': delete_email}
-                            ).execute()
-                            
-                            if delete_result.data:
-                                result_data = delete_result.data
-                                if result_data.get('success'):
-                                    st.toast(f"✅ {result_data.get('message')}", icon="✅")
-                                    st.rerun()
-                                else:
-                                    if result_data.get('is_contributor'):
-                                        st.error(f"🚫 {result_data.get('message')}")
+                    
+                    # Delete user section
+                    st.subheader("Delete User")
+                    st.warning("⚠️ This action cannot be undone. Contributors (users with fund contributions) cannot be deleted.")
+                    
+                    col_del1, col_del2 = st.columns(2)
+                    with col_del1:
+                        delete_email = st.selectbox(
+                            "Select User to Delete",
+                            options=[""] + users_df['email'].tolist(),
+                            key="delete_user_select"
+                        )
+                    
+                    with col_del2:
+                        confirm_email = st.text_input(
+                            "Type email to confirm",
+                            key="confirm_delete_email",
+                            placeholder="Type the email exactly to confirm"
+                        )
+                    
+                    if st.button("🗑️ Delete User", type="secondary"):
+                        if not delete_email:
+                            st.error("Please select a user to delete")
+                        elif confirm_email != delete_email:
+                            st.error("Confirmation email does not match. Please type the email exactly.")
+                        else:
+                            try:
+                                delete_result = client.supabase.rpc(
+                                    'delete_user_safe',
+                                    {'user_email': delete_email}
+                                ).execute()
+                                
+                                if delete_result.data:
+                                    result_data = delete_result.data
+                                    if result_data.get('success'):
+                                        st.cache_data.clear()  # Clear cache after deletion
+                                        st.toast(f"✅ {result_data.get('message')}", icon="✅")
+                                        st.rerun()
                                     else:
-                                        st.error(result_data.get('message'))
-                            else:
-                                st.error("Failed to delete user")
-                        except Exception as e:
-                            st.error(f"Error deleting user: {e}")
-                
-                st.divider()
-                
-                # Fund assignment section
-                st.subheader("Assign Fund to User")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Get user emails from the users dataframe
-                    user_emails = users_df['email'].tolist() if not users_df.empty else []
-                    user_email = st.selectbox("User Email", options=[""] + user_emails, key="assign_user_email")
-                
-                # Get available funds from funds table
-                funds_result = client.supabase.table("funds").select("name").order("name").execute()
-                available_funds = [row['name'] for row in funds_result.data] if funds_result.data else []
-                
-                with col2:
-                    fund_name = st.selectbox("Fund Name", options=[""] + available_funds, key="assign_fund_name")
+                                        if result_data.get('is_contributor'):
+                                            st.error(f"🚫 {result_data.get('message')}")
+                                        else:
+                                            st.error(result_data.get('message'))
+                                else:
+                                    st.error("Failed to delete user")
+                            except Exception as e:
+                                st.error(f"Error deleting user: {e}")
+                    
+                    st.divider()
+                    
+                    # Fund assignment section
+                    st.subheader("Assign Fund to User")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Get user emails from the users dataframe
+                        user_emails = users_df['email'].tolist() if not users_df.empty else []
+                        user_email = st.selectbox("User Email", options=[""] + user_emails, key="assign_user_email")
+                    
+                    # Get available funds from cache
+                    available_funds = get_cached_fund_names()
+                    
+                    with col2:
+                        fund_name = st.selectbox("Fund Name", options=[""] + available_funds, key="assign_fund_name")
+
                 
                 if st.button("Assign Fund", type="primary"):
                     if user_email and fund_name:
@@ -403,44 +449,11 @@ with tab3:
                         st.info("💡 The table might exist but RLS is blocking access. Contact an admin.")
             
             if has_contributors_table:
-                # Get all contributors
-                all_contributors = client.supabase.table("contributors").select("id, name, email").order("name").execute()
-                contributors_list = all_contributors.data if all_contributors.data else []
+                # Get all contributors (using cache)
+                contributors_list = get_cached_contributors()
                 
-                # Get all users - query user_profiles directly instead of RPC to avoid permission issues
-                try:
-                    users_result = client.supabase.rpc('list_users_with_funds').execute()
-                    users_list = users_result.data if users_result.data else []
-                    using_fallback = False
-                except Exception as rpc_error:
-                    # Fallback: Query user_profiles directly and get funds separately
-                    using_fallback = True
-                    rpc_error_msg = str(rpc_error)
-                    
-                    try:
-                        # Get user profiles
-                        profiles_result = client.supabase.table("user_profiles").select("user_id, email, full_name").execute()
-                        profiles = profiles_result.data if profiles_result.data else []
-                        
-                        # Get user funds for each user
-                        users_list = []
-                        for profile in profiles:
-                            funds_result = client.supabase.table("user_funds").select("fund_name").eq("user_id", profile['user_id']).execute()
-                            funds = [f['fund_name'] for f in funds_result.data] if funds_result.data else []
-                            users_list.append({
-                                'user_id': profile['user_id'],
-                                'email': profile['email'],
-                                'full_name': profile['full_name'],
-                                'funds': funds
-                            })
-                    except Exception as direct_error:
-                        st.error(f"❌ Could not load users via fallback: {direct_error}")
-                        st.error(f"Original RPC error: {rpc_error_msg}")
-                        users_list = []
-                
-                # Show fallback warning after loading if we used fallback
-                if using_fallback and users_list:
-                    st.warning(f"⚠️ Using fallback query (RPC error: {rpc_error_msg[:100]}...). This is expected if the RPC function has permission issues.")
+                # Get all users (using cache)
+                users_list = get_cached_users()
                 
                 if contributors_list:
                     st.subheader("Grant Access")
@@ -592,40 +605,42 @@ with tab4:
     if not client:
         st.error("Failed to connect to database")
     else:
-        # Load all funds from the funds table
-        try:
-            funds_result = client.supabase.table("funds").select("*").order("name").execute()
-            fund_names = [row['name'] for row in funds_result.data] if funds_result.data else []
-            
-            # Get statistics for each fund
-            if fund_names:
-                fund_stats = []
-                for fund_name in fund_names:
-                    # Get position count
-                    pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
-                    position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
-                    
-                    # Get trade count
-                    trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
-                    trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
-                    
-                    # Get fund details
-                    fund_info = next((f for f in funds_result.data if f['name'] == fund_name), {})
-                    
-                    fund_stats.append({
-                        "Fund Name": fund_name,
-                        "Type": fund_info.get('fund_type', 'N/A'),
-                        "Currency": fund_info.get('currency', 'N/A'),
-                        "Production": "✅" if fund_info.get('is_production') else "❌",
-                        "Positions": position_count,
-                        "Trades": trade_count_val
-                    })
+        # Load all funds from cache with spinner
+        with st.spinner("Loading funds..."):
+            try:
+                funds_data = get_cached_funds()
+                fund_names = [f['name'] for f in funds_data]
                 
-                funds_df = pd.DataFrame(fund_stats)
-                st.subheader("All Funds")
-                display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
-            else:
-                st.info("No funds found in database")
+                # Get statistics for each fund
+                if fund_names:
+                    fund_stats = []
+                    for fund_name in fund_names:
+                        # Get position count
+                        pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
+                        position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
+                        
+                        # Get trade count
+                        trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
+                        trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
+                        
+                        # Get fund details
+                        fund_info = next((f for f in funds_data if f['name'] == fund_name), {})
+                        
+                        fund_stats.append({
+                            "Fund Name": fund_name,
+                            "Type": fund_info.get('fund_type', 'N/A'),
+                            "Currency": fund_info.get('currency', 'N/A'),
+                            "Production": "✅" if fund_info.get('is_production') else "❌",
+                            "Positions": position_count,
+                            "Trades": trade_count_val
+                        })
+                    
+                    funds_df = pd.DataFrame(fund_stats)
+                    st.subheader("All Funds")
+                    display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
+                else:
+                    st.info("No funds found in database")
+
             
             st.divider()
             
@@ -1961,7 +1976,7 @@ with tab8:
         with col3:
             num_logs = st.selectbox(
                 "Show",
-                options=[50, 100, 200, 500, 1000, 2000],
+                options=[50, 100, 200, 500, 1000],
                 index=1  # Default to 100
             )
         
@@ -1988,19 +2003,20 @@ with tab8:
                 except Exception as e:
                     st.error(f"Failed to clear logs: {e}")
         
-        # Get logs with filters
-        level = None if level_filter == "All" else level_filter
-        
-        # Use file-based reader
-        logs = read_logs_from_file(
-            n=num_logs,
-            level=level,
-            search=search_text if search_text else None
-        )
-        
-        # Apply sort order (default from file is oldest first)
-        if sort_order == "Newest First" and logs:
-            logs = list(reversed(logs))
+        # Get logs with filters (with spinner for better UX)
+        with st.spinner("Loading logs..."):
+            level = None if level_filter == "All" else level_filter
+            
+            # Use file-based reader (now optimized to read from end)
+            logs = read_logs_from_file(
+                n=num_logs,
+                level=level,
+                search=search_text if search_text else None
+            )
+            
+            # Apply sort order (default from file is oldest first)
+            if sort_order == "Newest First" and logs:
+                logs = list(reversed(logs))
         
         # Display logs in a code block for better formatting
         if logs:
@@ -2051,6 +2067,7 @@ with tab8:
         st.info("The logging module may not be initialized. Check streamlit_app.py configuration.")
     except Exception as e:
         st.error(f"Error loading logs: {e}")
+
 
 # Tab 9: AI Settings
 with tab9:

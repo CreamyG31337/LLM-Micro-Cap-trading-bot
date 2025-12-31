@@ -222,7 +222,10 @@ def setup_logging(level=logging.INFO):
 
 
 def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
-    """Read recent logs from the log file.
+    """Read recent logs from the log file efficiently.
+    
+    Reads from the end of the file to avoid loading the entire file into memory.
+    This is much faster for large log files.
     
     Args:
         n: Number of recent logs to return
@@ -241,13 +244,33 @@ def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
     logs = []
     
     try:
-        with open(log_file, 'r', encoding='utf-8') as f:
-            # Read all lines (for simple implementation)
-            # For massive logs, we'd use seek() from end, but rotation checks are better
-            lines = f.readlines()
+        # Get file size
+        file_size = os.path.getsize(log_file)
+        if file_size == 0:
+            return []
+        
+        # Read from end of file
+        # Estimate: average log line is ~150 bytes, read enough for n*3 lines (to account for filtering)
+        # But cap at 1MB to avoid memory issues
+        buffer_size = min(n * 3 * 150, 1024 * 1024, file_size)
+        
+        with open(log_file, 'rb') as f:
+            # Seek to position from end
+            f.seek(max(0, file_size - buffer_size))
+            
+            # Read the buffer
+            buffer = f.read().decode('utf-8', errors='ignore')
+            
+            # Split into lines (skip first partial line if we didn't start at beginning)
+            lines = buffer.split('\n')
+            if file_size > buffer_size:
+                lines = lines[1:]  # Skip first partial line
             
         # Parse lines
         for line in lines:
+            if not line.strip():
+                continue
+                
             try:
                 # Expected format: YYYY-MM-DD HH:MM:SS | LEVEL    | module | message
                 parts = line.split(' | ', 3)
@@ -282,6 +305,7 @@ def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
     except Exception as e:
         print(f"Error reading log file: {e}")
         return []
+
 
 def log_message(message: str, level: str = 'INFO', module: str = 'app'):
     """Convenience function to log a message."""

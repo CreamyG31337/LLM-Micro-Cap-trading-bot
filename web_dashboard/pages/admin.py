@@ -640,124 +640,133 @@ with tab4:
                     display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
                 else:
                     st.info("No funds found in database")
-
-            
-            st.divider()
-            
-            # ===== TOGGLE PRODUCTION FLAG =====
-            st.subheader("🏭 Toggle Production Status")
-            st.caption("Mark funds as production (included in automated backfill) or test/dev (excluded)")
-            with st.expander("Manage production flags", expanded=True):
-                if fund_names:
-                    for fund_name in fund_names:
-                        fund_info = next((f for f in funds_result.data if f['name'] == fund_name), {})
-                        is_prod = fund_info.get('is_production', False)
-                        
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"**{fund_name}**")
-                        with col2:
-                            new_status = st.checkbox(
-                                "Production",
-                                value=is_prod,
-                                key=f"prod_{fund_name}",
-                                label_visibility="collapsed"
-                            )
+                
+                st.divider()
+                
+                # ===== TOGGLE PRODUCTION FLAG =====
+                st.subheader("🏭 Toggle Production Status")
+                st.caption("Mark funds as production (included in automated backfill) or test/dev (excluded)")
+                with st.expander("Manage production flags", expanded=True):
+                    if fund_names:
+                        for fund_name in fund_names:
+                            fund_info = next((f for f in funds_data if f['name'] == fund_name), {})
+                            is_prod = fund_info.get('is_production', False)
                             
-                            # Update if changed
-                            if new_status != is_prod:
-                                try:
-                                    client.supabase.table("funds")\
-                                        .update({"is_production": new_status})\
-                                        .eq("name", fund_name)\
-                                        .execute()
-                                    st.toast(f"✅ {fund_name} marked as {'production' if new_status else 'test/dev'}", icon="✅")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error updating {fund_name}: {e}")
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write(f"**{fund_name}**")
+                            with col2:
+                                new_status = st.checkbox(
+                                    "Production",
+                                    value=is_prod,
+                                    key=f"prod_{fund_name}",
+                                    label_visibility="collapsed"
+                                )
+                                
+                                # Update if changed
+                                if new_status != is_prod:
+                                    try:
+                                        client.supabase.table("funds")\
+                                            .update({"is_production": new_status})\
+                                            .eq("name", fund_name)\
+                                            .execute()
+                                        st.cache_data.clear()  # Clear cache after update
+                                        st.toast(f"✅ {fund_name} marked as {'production' if new_status else 'test/dev'}", icon="✅")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error updating {fund_name}: {e}")
+                    else:
+                        st.info("No funds found")
+            except Exception as e:
+                st.error(f"Error loading funds: {e}")
+        
+        # All the remaining fund management sections are outside the try block
+        # They need access to fund_names which is defined inside, so we need to handle this differently
+        # Let's get fund_names again outside the spinner for the rest of the operations
+        fund_names = get_cached_fund_names()
+        
+        st.divider()
+        
+        # ===== ADD NEW FUND =====
+        st.subheader("➕ Add New Fund")
+        with st.expander("Create a new fund", expanded=False):
+            col_add1, col_add2 = st.columns(2)
+            with col_add1:
+                new_fund_name = st.text_input("Fund Name", placeholder="e.g., TFSA, RRSP", key="new_fund_name")
+                new_fund_type = st.selectbox("Fund Type", options=["investment", "retirement", "tfsa", "test"], key="new_fund_type")
+            with col_add2:
+                new_fund_description = st.text_input("Description", placeholder="Description of the fund", key="new_fund_desc")
+                new_fund_currency = st.selectbox("Currency", options=["CAD", "USD"], key="new_fund_currency")
+            
+            if st.button("➕ Create Fund", type="primary"):
+                if not new_fund_name:
+                    st.error("Please enter a fund name")
+                elif new_fund_name in fund_names:
+                    st.error(f"Fund '{new_fund_name}' already exists")
                 else:
-                    st.info("No funds found")
+                    try:
+                        # Insert into funds table
+                        client.supabase.table("funds").insert({
+                            "name": new_fund_name,
+                            "description": new_fund_description,
+                            "currency": new_fund_currency,
+                            "fund_type": new_fund_type
+                        }).execute()
+                        
+                        # Initialize cash balances for the new fund
+                        client.supabase.table("cash_balances").upsert([
+                            {"fund": new_fund_name, "currency": "CAD", "amount": 0},
+                            {"fund": new_fund_name, "currency": "USD", "amount": 0}
+                        ]).execute()
+                        
+                        st.cache_data.clear()  # Clear cache after adding fund
+                        st.toast(f"✅ Fund '{new_fund_name}' created!", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating fund: {e}")
+        
+        st.divider()
+        
+        # ===== RENAME FUND =====
+        st.subheader("✏️ Rename Fund")
+        with st.expander("Rename an existing fund", expanded=False):
+            col_ren1, col_ren2 = st.columns(2)
+            with col_ren1:
+                rename_fund = st.selectbox("Select Fund to Rename", options=[""] + fund_names, key="rename_fund_select")
+            with col_ren2:
+                new_name = st.text_input("New Fund Name", key="rename_new_name")
             
-            st.divider()
+            if st.button("✏️ Rename Fund", type="primary"):
+                if not rename_fund:
+                    st.error("Please select a fund to rename")
+                elif not new_name:
+                    st.error("Please enter a new name")
+                elif new_name in fund_names:
+                    st.error(f"Fund '{new_name}' already exists")
+                else:
+                    try:
+                        # Update funds table - ON UPDATE CASCADE will update all related tables
+                        client.supabase.table("funds").update({"name": new_name}).eq("name", rename_fund).execute()
+                        st.cache_data.clear()  # Clear cache after renaming
+                        st.toast(f"✅ Fund renamed to '{new_name}'", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error renaming fund: {e}")
+        
+        st.divider()
+        
+        # ===== WIPE FUND DATA =====
+        st.subheader("🧹 Wipe Fund Data")
+        st.warning("⚠️ This clears all positions, trades, and metrics but keeps the fund and contribution records.")
+        with st.expander("Wipe data for a fund", expanded=False):
+            col_wipe1, col_wipe2 = st.columns(2)
+            with col_wipe1:
+                wipe_fund = st.selectbox("Select Fund to Wipe", options=[""] + fund_names, key="wipe_fund_select")
+            with col_wipe2:
+                confirm_wipe_name = st.text_input("Type fund name to confirm", key="confirm_wipe_name", 
+                                                   placeholder="Type the fund name exactly")
             
-            # ===== ADD NEW FUND =====
-            st.subheader("➕ Add New Fund")
-            with st.expander("Create a new fund", expanded=False):
-                col_add1, col_add2 = st.columns(2)
-                with col_add1:
-                    new_fund_name = st.text_input("Fund Name", placeholder="e.g., TFSA, RRSP", key="new_fund_name")
-                    new_fund_type = st.selectbox("Fund Type", options=["investment", "retirement", "tfsa", "test"], key="new_fund_type")
-                with col_add2:
-                    new_fund_description = st.text_input("Description", placeholder="Description of the fund", key="new_fund_desc")
-                    new_fund_currency = st.selectbox("Currency", options=["CAD", "USD"], key="new_fund_currency")
-                
-                if st.button("➕ Create Fund", type="primary"):
-                    if not new_fund_name:
-                        st.error("Please enter a fund name")
-                    elif new_fund_name in fund_names:
-                        st.error(f"Fund '{new_fund_name}' already exists")
-                    else:
-                        try:
-                            # Insert into funds table
-                            client.supabase.table("funds").insert({
-                                "name": new_fund_name,
-                                "description": new_fund_description,
-                                "currency": new_fund_currency,
-                                "fund_type": new_fund_type
-                            }).execute()
-                            
-                            # Initialize cash balances for the new fund
-                            client.supabase.table("cash_balances").upsert([
-                                {"fund": new_fund_name, "currency": "CAD", "amount": 0},
-                                {"fund": new_fund_name, "currency": "USD", "amount": 0}
-                            ]).execute()
-                            
-                            st.toast(f"✅ Fund '{new_fund_name}' created!", icon="✅")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error creating fund: {e}")
-            
-            st.divider()
-            
-            # ===== RENAME FUND =====
-            st.subheader("✏️ Rename Fund")
-            with st.expander("Rename an existing fund", expanded=False):
-                col_ren1, col_ren2 = st.columns(2)
-                with col_ren1:
-                    rename_fund = st.selectbox("Select Fund to Rename", options=[""] + fund_names, key="rename_fund_select")
-                with col_ren2:
-                    new_name = st.text_input("New Fund Name", key="rename_new_name")
-                
-                if st.button("✏️ Rename Fund", type="primary"):
-                    if not rename_fund:
-                        st.error("Please select a fund to rename")
-                    elif not new_name:
-                        st.error("Please enter a new name")
-                    elif new_name in fund_names:
-                        st.error(f"Fund '{new_name}' already exists")
-                    else:
-                        try:
-                            # Update funds table - ON UPDATE CASCADE will update all related tables
-                            client.supabase.table("funds").update({"name": new_name}).eq("name", rename_fund).execute()
-                            st.toast(f"✅ Fund renamed to '{new_name}'", icon="✅")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error renaming fund: {e}")
-            
-            st.divider()
-            
-            # ===== WIPE FUND DATA =====
-            st.subheader("🧹 Wipe Fund Data")
-            st.warning("⚠️ This clears all positions, trades, and metrics but keeps the fund and contribution records.")
-            with st.expander("Wipe data for a fund", expanded=False):
-                col_wipe1, col_wipe2 = st.columns(2)
-                with col_wipe1:
-                    wipe_fund = st.selectbox("Select Fund to Wipe", options=[""] + fund_names, key="wipe_fund_select")
-                with col_wipe2:
-                    confirm_wipe_name = st.text_input("Type fund name to confirm", key="confirm_wipe_name", 
-                                                       placeholder="Type the fund name exactly")
-                
-                if st.button("🧹 Wipe Fund Data", type="secondary"):
+            if st.button("🧹 Wipe Fund Data", type="secondary"):
                     if not wipe_fund:
                         st.error("Please select a fund")
                     elif confirm_wipe_name != wipe_fund:
@@ -1091,9 +1100,8 @@ with tab4:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting fund: {e}")
-                            
-        except Exception as e:
-            st.error(f"Error loading funds: {e}")
+
+
 
 # Tab 5: System Status
 with tab5:

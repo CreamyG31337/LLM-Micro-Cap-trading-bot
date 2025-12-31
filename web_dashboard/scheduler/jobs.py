@@ -3371,7 +3371,7 @@ def fetch_congress_trades_job() -> None:
         try:
             from supabase_client import SupabaseClient
             from ollama_client import get_ollama_client
-            from utils.politician_mapping import lookup_politician_metadata, resolve_politician_name
+            from web_dashboard.utils.politician_mapping import lookup_politician_metadata, resolve_politician_name
         except ImportError as e:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Missing dependency: {e}"

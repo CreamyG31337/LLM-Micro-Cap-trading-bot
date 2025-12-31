@@ -579,12 +579,12 @@ class SocialSentimentService:
         try:
             logger.info("🔄 Starting post extraction from raw_data...")
             
-            # Get metrics with raw_posts data that haven't been processed
+            # Get metrics with raw_data data that haven't been processed
             query = """
-                SELECT id, ticker, platform, raw_posts, created_at
+                SELECT id, ticker, platform, raw_data, created_at
                 FROM social_metrics 
-                WHERE raw_posts IS NOT NULL 
-                  AND raw_posts != '{}'
+                WHERE raw_data IS NOT NULL 
+                  AND raw_data != '{}'
                   AND id NOT IN (SELECT DISTINCT metric_id FROM social_posts)
                 ORDER BY created_at DESC
                 LIMIT 100  -- Process in batches
@@ -592,7 +592,7 @@ class SocialSentimentService:
             metrics = self.postgres.execute_query(query)
             
             if not metrics:
-                logger.info("✅ No new raw_posts data to extract")
+                logger.info("✅ No new raw_data data to extract")
                 return {'processed': 0, 'posts_created': 0}
             
             posts_created = 0
@@ -601,7 +601,7 @@ class SocialSentimentService:
                 metric_id = metric['id']
                 ticker = metric['ticker']
                 platform = metric['platform']
-                raw_posts = metric['raw_posts'] or []
+                raw_posts = metric['raw_data'] or []
                 
                 for post_data in raw_posts:
                     try:

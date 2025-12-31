@@ -61,12 +61,19 @@ def display_aggrid_with_ticker_navigation(
             pre_selected_rows=[]
         )
     
-    # Configure ticker column with special styling
+    # Configure ticker column with clickable cell renderer
     if ticker_column in df.columns:
         gb.configure_column(
             ticker_column,
             header_name=ticker_column,
-            cellStyle={'color': '#1f77b4', 'fontWeight': 'bold', 'cursor': 'pointer'}
+            cellRenderer="""
+            function(params) {
+                if (params.value && params.value !== 'N/A') {
+                    return '<span style="color: #1f77b4; font-weight: bold; text-decoration: underline; cursor: pointer;">' + params.value + '</span>';
+                }
+                return params.value || 'N/A';
+            }
+            """
         )
     
     # Auto-size columns
@@ -75,6 +82,23 @@ def display_aggrid_with_ticker_navigation(
     
     # Build grid options
     grid_options_dict = gb.build()
+    
+    # Add cell click handler for ticker column navigation
+    if ticker_column in df.columns:
+        grid_options_dict['onCellClicked'] = {
+            'function': f'''
+            function(params) {{
+                // Only handle clicks on the {ticker_column} column
+                if (params.column && params.column.colId === '{ticker_column}' && params.value && params.value !== 'N/A') {{
+                    // Select the row to trigger navigation
+                    params.api.getSelectedNodes().forEach(function(node) {{
+                        node.setSelected(false);
+                    }});
+                    params.node.setSelected(true);
+                }}
+            }}
+            '''
+        }
     
     # Display grid
     grid_response = AgGrid(

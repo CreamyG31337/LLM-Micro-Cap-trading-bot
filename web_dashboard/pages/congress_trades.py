@@ -15,7 +15,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone, date
 import pandas as pd
 import logging
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 
 # Try to import zoneinfo for timezone conversion (Python 3.9+)
@@ -1393,18 +1393,38 @@ try:
         
         # Configure columns
         # Make Ticker column clickable with custom cell renderer
+        ticker_cell_renderer = JsCode("""
+            function(params) {
+                if (params.value && params.value !== 'N/A') {
+                    // Create a span element with clickable styling
+                    var span = document.createElement('span');
+                    span.style.color = '#0066cc';
+                    span.style.fontWeight = 'bold';
+                    span.style.textDecoration = 'underline';
+                    span.style.cursor = 'pointer';
+                    span.style.fontSize = 'inherit';
+                    span.textContent = params.value;
+                    span.title = 'Click to view ' + params.value + ' details';
+                    // Add hover effect via class
+                    span.onmouseenter = function() {
+                        this.style.color = '#004499';
+                        this.style.textDecoration = 'underline';
+                    };
+                    span.onmouseleave = function() {
+                        this.style.color = '#0066cc';
+                        this.style.textDecoration = 'underline';
+                    };
+                    return span;
+                }
+                return params.value || 'N/A';
+            }
+        """)
         gb.configure_column(
             "Ticker", 
             width=80, 
             pinned='left',
-            cellRenderer="""
-            function(params) {
-                if (params.value && params.value !== 'N/A') {
-                    return '<span style="color: #1f77b4; font-weight: bold; text-decoration: underline; cursor: pointer;">' + params.value + '</span>';
-                }
-                return params.value || 'N/A';
-            }
-            """
+            cellRenderer=ticker_cell_renderer,
+            cellStyle={'cursor': 'pointer', 'user-select': 'none'}
         )
         gb.configure_column("Company", width=200)
         gb.configure_column("Politician", width=180)
@@ -1453,8 +1473,7 @@ try:
         
         # Add cell click handler for ticker column navigation
         # This will be executed when a cell is clicked
-        gridOptions['onCellClicked'] = {
-            'function': '''
+        on_cell_clicked = JsCode("""
             function(params) {
                 // Only handle clicks on the Ticker column
                 if (params.column && params.column.colId === 'Ticker' && params.value && params.value !== 'N/A') {
@@ -1465,8 +1484,8 @@ try:
                     params.node.setSelected(true);
                 }
             }
-            '''
-        }
+        """)
+        gridOptions['onCellClicked'] = on_cell_clicked
 
         
         # Display AgGrid

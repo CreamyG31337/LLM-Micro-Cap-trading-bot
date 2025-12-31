@@ -1435,7 +1435,18 @@ def main():
                             if available_cols:
                                 gainers_df = gainers_df[available_cols]
                             
-                            st.dataframe(gainers_df, use_container_width=True, hide_index=True)
+                            # Use AgGrid with clickable ticker links
+                            selected_ticker = display_aggrid_with_ticker_navigation(
+                                gainers_df,
+                                ticker_column="Ticker",
+                                height=300,
+                                fit_columns=True
+                            )
+                            
+                            # Handle ticker selection
+                            if selected_ticker:
+                                st.session_state['selected_ticker'] = selected_ticker
+                                st.switch_page("pages/ticker_details.py")
                         else:
                             st.info("No gainers to display")
                     
@@ -1473,7 +1484,18 @@ def main():
                             if available_cols:
                                 losers_df = losers_df[available_cols]
                             
-                            st.dataframe(losers_df, use_container_width=True, hide_index=True)
+                            # Use AgGrid with clickable ticker links
+                            selected_ticker = display_aggrid_with_ticker_navigation(
+                                losers_df,
+                                ticker_column="Ticker",
+                                height=300,
+                                fit_columns=True
+                            )
+                            
+                            # Handle ticker selection
+                            if selected_ticker:
+                                st.session_state['selected_ticker'] = selected_ticker
+                                st.switch_page("pages/ticker_details.py")
                         else:
                             st.info("No losers to display")
                     

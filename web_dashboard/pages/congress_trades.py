@@ -1393,28 +1393,14 @@ try:
         
         # Configure columns
         # Make Ticker column clickable with custom cell renderer
+        # According to AG Grid docs, cellRenderer can return HTML strings
         ticker_cell_renderer = JsCode("""
             function(params) {
                 if (params.value && params.value !== 'N/A') {
-                    // Create a span element with clickable styling
-                    var span = document.createElement('span');
-                    span.style.color = '#0066cc';
-                    span.style.fontWeight = 'bold';
-                    span.style.textDecoration = 'underline';
-                    span.style.cursor = 'pointer';
-                    span.style.fontSize = 'inherit';
-                    span.textContent = params.value;
-                    span.title = 'Click to view ' + params.value + ' details';
-                    // Add hover effect via class
-                    span.onmouseenter = function() {
-                        this.style.color = '#004499';
-                        this.style.textDecoration = 'underline';
-                    };
-                    span.onmouseleave = function() {
-                        this.style.color = '#0066cc';
-                        this.style.textDecoration = 'underline';
-                    };
-                    return span;
+                    // Return HTML string - AG Grid will render this
+                    return '<span style="color: #0066cc; font-weight: bold; text-decoration: underline; cursor: pointer;">' + 
+                           params.value + 
+                           '</span>';
                 }
                 return params.value || 'N/A';
             }
@@ -1423,8 +1409,7 @@ try:
             "Ticker", 
             width=80, 
             pinned='left',
-            cellRenderer=ticker_cell_renderer,
-            cellStyle={'cursor': 'pointer', 'user-select': 'none'}
+            cellRenderer=ticker_cell_renderer
         )
         gb.configure_column("Company", width=200)
         gb.configure_column("Politician", width=180)

@@ -2011,24 +2011,62 @@ with tab8:
                 except Exception as e:
                     st.error(f"Failed to clear logs: {e}")
         
+        # Initialize pagination state
+        if 'log_page' not in st.session_state:
+            st.session_state.log_page = 1
+        
+        # Reset page to 1 if filters change
+        filter_key = f"{level_filter}_{num_logs}_{sort_order}_{search_text}"
+        if 'log_filter_key' not in st.session_state or st.session_state.log_filter_key != filter_key:
+            st.session_state.log_page = 1
+            st.session_state.log_filter_key = filter_key
+        
         # Get logs with filters (with spinner for better UX)
         with st.spinner("Loading logs..."):
             level = None if level_filter == "All" else level_filter
             
-            # Use file-based reader (now optimized to read from end)
-            logs = read_logs_from_file(
-                n=num_logs,
+            # Fetch all filtered logs for pagination
+            all_logs = read_logs_from_file(
+                n=None,  # Get all logs (up to reasonable limit)
                 level=level,
-                search=search_text if search_text else None
+                search=search_text if search_text else None,
+                return_all=True
             )
             
             # Apply sort order (default from file is oldest first)
-            if sort_order == "Newest First" and logs:
-                logs = list(reversed(logs))
+            if sort_order == "Newest First" and all_logs:
+                all_logs = list(reversed(all_logs))
+        
+        # Calculate pagination
+        total_logs = len(all_logs)
+        logs_per_page = num_logs
+        total_pages = max(1, (total_logs + logs_per_page - 1) // logs_per_page) if total_logs > 0 else 1
+        
+        # Ensure page is within valid range
+        if st.session_state.log_page > total_pages:
+            st.session_state.log_page = total_pages
+        if st.session_state.log_page < 1:
+            st.session_state.log_page = 1
+        
+        # Get logs for current page
+        start_idx = (st.session_state.log_page - 1) * logs_per_page
+        end_idx = start_idx + logs_per_page
+        logs = all_logs[start_idx:end_idx] if total_logs > 0 else []
+        
+        # Emoji mapping for log levels (used for display and download)
+        emoji_map = {
+            'DEBUG': '🔍',
+            'INFO': 'ℹ️',
+            'WARNING': '⚠️',
+            'ERROR': '❌',
+            'CRITICAL': '🔥'
+        }
         
         # Display logs in a code block for better formatting
         if logs:
-            st.caption(f"Showing {len(logs)} log entries ({sort_order.lower()})")
+            # Show pagination info
+            page_info = f"Page {st.session_state.log_page} of {total_pages} | Showing {len(logs)} of {total_logs} log entries ({sort_order.lower()})"
+            st.caption(page_info)
             
             # Create formatted log output
             log_lines = []
@@ -2039,13 +2077,7 @@ with tab8:
                 message = log['message']
                 
                 # Add emoji indicators for levels
-                emoji = {
-                    'DEBUG': '🔍',
-                    'INFO': 'ℹ️',
-                    'WARNING': '⚠️',
-                    'ERROR': '❌',
-                    'CRITICAL': '🔥'
-                }.get(log['level'], '•')
+                emoji = emoji_map.get(log['level'], '•')
                 
                 log_lines.append(f"{emoji} {timestamp} | {level_str} | {module} | {message}")
             
@@ -2053,14 +2085,45 @@ with tab8:
             log_text = "\n".join(log_lines)
             st.code(log_text, language=None)
             
-            # Download button
-            if st.download_button(
-                label="⬇️ Download Logs",
-                data=log_text,
-                file_name=f"app_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
-            ):
-                st.success("Logs downloaded!")
+            # Pagination controls
+            if total_pages > 1:
+                col_prev, col_info, col_next, col_download = st.columns([1, 2, 1, 1])
+                
+                with col_prev:
+                    if st.button("◀️ Previous", disabled=(st.session_state.log_page <= 1), use_container_width=True):
+                        st.session_state.log_page -= 1
+                        st.rerun()
+                
+                with col_info:
+                    st.caption(f"Page {st.session_state.log_page} of {total_pages}")
+                
+                with col_next:
+                    if st.button("Next ▶️", disabled=(st.session_state.log_page >= total_pages), use_container_width=True):
+                        st.session_state.log_page += 1
+                        st.rerun()
+                
+                with col_download:
+                    # Download all filtered logs (not just current page)
+                    all_log_text = "\n".join([
+                        f"{emoji_map.get(log.get('level', ''), '•')} {log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')} | {log['level'].ljust(8)} | {log['module'][:30].ljust(30)} | {log['message']}"
+                        for log in all_logs
+                    ])
+                    st.download_button(
+                        label="⬇️ Download All",
+                        data=all_log_text,
+                        file_name=f"app_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+            else:
+                # Download button (when no pagination needed)
+                if st.download_button(
+                    label="⬇️ Download Logs",
+                    data=log_text,
+                    file_name=f"app_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain"
+                ):
+                    st.success("Logs downloaded!")
         else:
             st.info("No logs found matching the filters")
         

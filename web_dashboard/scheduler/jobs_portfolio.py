@@ -845,8 +845,11 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                         
                         # Find price for target_date
                         try:
-                            # Normalize target_date to match DataFrame index
+                            # Normalize target_date to match DataFrame index timezone
                             target_ts = pd.Timestamp(target_date)
+                            # Make timezone-aware if the index is timezone-aware
+                            if price_df.index.tz is not None and target_ts.tz is None:
+                                target_ts = target_ts.tz_localize(price_df.index.tz)
                             
                             # Try exact match first
                             if target_ts in price_df.index:

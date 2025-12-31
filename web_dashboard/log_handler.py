@@ -221,16 +221,17 @@ def setup_logging(level=logging.INFO):
     # For now, let's just stick to FileHandler as the source of truth.
 
 
-def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
+def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> List[Dict]:
     """Read recent logs from the log file efficiently.
     
     Reads from the end of the file to avoid loading the entire file into memory.
     This is much faster for large log files.
     
     Args:
-        n: Number of recent logs to return
+        n: Number of recent logs to return (ignored if return_all=True)
         level: Filter by log level
         search: Filter by message text
+        return_all: If True, return all filtered logs (up to reasonable limit)
         
     Returns:
         List of dicts with timestamp, level, module, message keys
@@ -251,8 +252,11 @@ def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
         
         # Read from end of file
         # Estimate: average log line is ~150 bytes, read enough for n*3 lines (to account for filtering)
-        # But cap at 1MB to avoid memory issues
-        buffer_size = min(n * 3 * 150, 1024 * 1024, file_size)
+        # But cap at 1MB to avoid memory issues (or 5MB if return_all=True)
+        if return_all:
+            buffer_size = min(5 * 1024 * 1024, file_size)  # Read up to 5MB for pagination
+        else:
+            buffer_size = min(n * 3 * 150, 1024 * 1024, file_size)
         
         with open(log_file, 'rb') as f:
             # Seek to position from end
@@ -296,8 +300,8 @@ def read_logs_from_file(n=100, level=None, search=None) -> List[Dict]:
             search_lower = search.lower()
             logs = [log for log in logs if search_lower in log['message'].lower()]
             
-        # Return last n
-        if n:
+        # Return last n (unless return_all is True)
+        if not return_all and n:
             logs = logs[-n:]
             
         return logs

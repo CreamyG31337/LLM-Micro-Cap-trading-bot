@@ -1392,7 +1392,20 @@ try:
         gb = GridOptionsBuilder.from_dataframe(df)
         
         # Configure columns
-        gb.configure_column("Ticker", width=80, pinned='left')
+        # Make Ticker column clickable with custom cell renderer
+        gb.configure_column(
+            "Ticker", 
+            width=80, 
+            pinned='left',
+            cellRenderer="""
+            function(params) {
+                if (params.value && params.value !== 'N/A') {
+                    return '<span style="color: #1f77b4; font-weight: bold; text-decoration: underline; cursor: pointer;">' + params.value + '</span>';
+                }
+                return params.value || 'N/A';
+            }
+            """
+        )
         gb.configure_column("Company", width=200)
         gb.configure_column("Politician", width=180)
         gb.configure_column("Chamber", width=90)
@@ -1437,6 +1450,23 @@ try:
         
         # Set page size selector options directly (not supported by configure_grid_options)
         gridOptions['paginationPageSizeSelector'] = [100, 250, 500, 1000]
+        
+        # Add cell click handler for ticker column navigation
+        # This will be executed when a cell is clicked
+        gridOptions['onCellClicked'] = {
+            'function': '''
+            function(params) {
+                // Only handle clicks on the Ticker column
+                if (params.column && params.column.colId === 'Ticker' && params.value && params.value !== 'N/A') {
+                    // Select the row to trigger navigation
+                    params.api.getSelectedNodes().forEach(function(node) {
+                        node.setSelected(false);
+                    });
+                    params.node.setSelected(true);
+                }
+            }
+            '''
+        }
 
         
         # Display AgGrid
@@ -1447,7 +1477,7 @@ try:
             fit_columns_on_grid_load=False,
             height=600,  # Increased height since we removed pagination controls
             theme='streamlit',
-            allow_unsafe_jscode=False,
+            allow_unsafe_jscode=True,  # Enable for custom cell renderer
             enable_enterprise_modules=False
         )
         

@@ -977,12 +977,35 @@ def main():
         if args.skip_nulls:
             logger.info("SKIP NULLS: Only processing trades with complete metadata (party, state)")
         
+        # Cursor-based pagination for rescore mode
+        # Track the last processed (transaction_date, id) tuple to enable proper pagination
+        last_cursor_date = None
+        last_cursor_id = None
+        
         while True:
 
             # Fetch trades based on mode
             if args.rescore:
-                # Rescore mode: analyze ALL trades (allows multiple analyses)
+                # Rescore mode: analyze ALL trades with cursor-based pagination
+                # Use composite cursor (transaction_date, id) for deterministic ordering
                 query = client.supabase.table("congress_trades_enriched").select("*")
+                
+                # Apply cursor filter if we have a previous cursor
+                # For DESC ordering, we want trades that come AFTER the cursor
+                # We fetch a larger batch to account for filtering, then take batch_size
+                if last_cursor_date is not None:
+                    # Convert to string format if it's a date/datetime object
+                    if hasattr(last_cursor_date, 'isoformat'):
+                        cursor_date_str = last_cursor_date.isoformat()
+                    elif isinstance(last_cursor_date, str):
+                        cursor_date_str = last_cursor_date
+                    else:
+                        cursor_date_str = str(last_cursor_date)
+                    
+                    # Fetch trades with date <= cursor date (we'll filter to get only those after cursor)
+                    # Fetch 2x batch_size to ensure we have enough after filtering
+                    query = query.lte("transaction_date", cursor_date_str)
+                
             else:
                 # Normal mode: only analyze trades not yet analyzed with this version
                 # Get trade IDs that have been analyzed (from Postgres)
@@ -1002,18 +1025,71 @@ def main():
             if args.skip_nulls:
                 query = query.not_.is_("party", "null").not_.is_("state", "null")
             
+            # Order by transaction_date DESC, then id DESC for deterministic ordering
+            # This ensures consistent pagination even when multiple trades have the same date
+            # Fetch larger batch in rescore mode to account for cursor filtering
+            fetch_limit = args.batch_size * 2 if args.rescore and last_cursor_date is not None else args.batch_size
             response = query\
                 .order("transaction_date", desc=True)\
-                .limit(args.batch_size)\
+                .order("id", desc=True)\
+                .limit(fetch_limit)\
                 .execute()
             
             trades = response.data
             
+            # Apply cursor filtering in Python for rescore mode
+            # Filter out trades that come before or equal to the cursor
+            if args.rescore and last_cursor_date is not None and last_cursor_id is not None and trades:
+                from datetime import datetime
+                # Parse cursor date for comparison
+                if isinstance(last_cursor_date, str):
+                    try:
+                        cursor_date = datetime.fromisoformat(last_cursor_date.replace('Z', '+00:00'))
+                    except:
+                        cursor_date = None
+                else:
+                    cursor_date = last_cursor_date
+                
+                filtered_trades = []
+                for trade in trades:
+                    trade_date = trade.get('transaction_date')
+                    trade_id = trade.get('id')
+                    
+                    # Parse trade date for comparison
+                    if isinstance(trade_date, str):
+                        try:
+                            trade_date_parsed = datetime.fromisoformat(trade_date.replace('Z', '+00:00'))
+                        except:
+                            trade_date_parsed = None
+                    else:
+                        trade_date_parsed = trade_date
+                    
+                    # Include trade if:
+                    # 1. transaction_date < cursor_date, OR
+                    # 2. transaction_date == cursor_date AND id < cursor_id
+                    if trade_date_parsed and cursor_date:
+                        if trade_date_parsed < cursor_date:
+                            filtered_trades.append(trade)
+                        elif trade_date_parsed == cursor_date and trade_id and trade_id < last_cursor_id:
+                            filtered_trades.append(trade)
+                    elif not trade_date_parsed:
+                        # Include trades with null dates (shouldn't happen, but be safe)
+                        filtered_trades.append(trade)
+                
+                trades = filtered_trades[:args.batch_size]  # Take only batch_size after filtering
+            
             if not trades:
-                logger.info("   [DONE] No more unscored trades found.")
+                logger.info("   [DONE] No more trades found.")
                 break
                 
             logger.info(f"Processing batch of {len(trades)} trades...")
+            
+            # Update cursor for next iteration (use the last trade in the batch)
+            if args.rescore and trades:
+                last_trade = trades[-1]
+                last_cursor_date = last_trade.get('transaction_date')
+                last_cursor_id = last_trade.get('id')
+                logger.debug(f"Cursor updated: date={last_cursor_date}, id={last_cursor_id}")
             
             for trade in trades:
                 try:

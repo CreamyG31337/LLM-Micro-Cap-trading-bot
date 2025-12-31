@@ -656,6 +656,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         from utils.market_holidays import MarketHolidays
         from supabase_client import SupabaseClient
         from exchange_rates_utils import get_exchange_rate_for_date_from_db
+        from utils.job_tracking import mark_job_completed
+        from cache_version import bump_cache_version
         import pytz
         
         # Initialize components
@@ -691,6 +693,7 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         logger.info(f"Backfilling {len(trading_days)} trading days: {trading_days[0]} to {trading_days[-1]}")
         
         total_positions_created = 0
+        successful_funds = []  # Track which funds completed successfully
         
         for fund_name, base_currency in funds:
             try:
@@ -953,12 +956,31 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                     total_positions_created += inserted_count
                     
                     logger.info(f"  ✅ Inserted {inserted_count} positions for {fund_name}")
+                    # Track successful fund processing
+                    if fund_name not in successful_funds:
+                        successful_funds.append(fund_name)
                 except Exception as insert_error:
                     logger.error(f"  ❌ Failed to insert positions for {fund_name}: {insert_error}")
                 
             except Exception as e:
                 logger.error(f"  ❌ Error processing fund {fund_name}: {e}", exc_info=True)
                 continue
+        
+        # CRITICAL: Mark each trading day as completed for update_portfolio_prices job
+        # This prevents the backfill from re-running on every restart
+        logger.info(f"Marking {len(trading_days)} trading days as completed...")
+        for day in trading_days:
+            try:
+                mark_job_completed('update_portfolio_prices', day, None, successful_funds, duration_ms=None)
+            except Exception as e:
+                logger.warning(f"Failed to mark {day} as completed: {e}")
+        
+        # Bump cache version to force UI refresh
+        try:
+            bump_cache_version()
+            logger.info("Cache version bumped - Streamlit will show fresh data")
+        except Exception as e:
+            logger.warning(f"Failed to bump cache version: {e}")
         
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Backfilled {total_positions_created} positions for date range {start_date} to {end_date}"

@@ -62,10 +62,13 @@ def mark_job_started(
     
     try:
         client = SupabaseClient(use_service_role=True)
+        # Use empty string instead of None for fund_name to avoid PostgreSQL NULL uniqueness issue
+        # PostgreSQL treats NULL != NULL, so UNIQUE constraint doesn't prevent duplicates with NULLs
+        effective_fund_name = fund_name if fund_name is not None else ''
         client.supabase.table("job_executions").upsert({
             'job_name': job_name,
             'target_date': target_date.isoformat(),
-            'fund_name': fund_name,
+            'fund_name': effective_fund_name,
             'status': 'running',
             'started_at': datetime.now(timezone.utc).isoformat()
         }, on_conflict='job_name,target_date,fund_name').execute()
@@ -108,24 +111,22 @@ def mark_job_completed(
     try:
         client = SupabaseClient(use_service_role=True)
         
+        # Use empty string instead of None for fund_name (PostgreSQL NULL uniqueness issue)
+        effective_fund_name = fund_name if fund_name is not None else ''
+        
         # First check if there's an existing entry
         result = client.supabase.table("job_executions")\
             .select("id")\
             .eq("job_name", job_name)\
-            .eq("target_date", target_date.isoformat())
-        
-        if fund_name is not None:
-            result = result.eq("fund_name", fund_name)
-        else:
-            result = result.is_("fund_name", "null")
-        
-        result = result.execute()
+            .eq("target_date", target_date.isoformat())\
+            .eq("fund_name", effective_fund_name)\
+            .execute()
         
         # Update existing or insert new
         data = {
             'job_name': job_name,
             'target_date': target_date.isoformat(),
-            'fund_name': fund_name,
+            'fund_name': effective_fund_name,
             'status': 'success',
             'completed_at': datetime.now(timezone.utc).isoformat(),
             'funds_processed': funds_processed
@@ -176,10 +177,12 @@ def mark_job_failed(
     
     try:
         client = SupabaseClient(use_service_role=True)
+        # Use empty string instead of None for fund_name (PostgreSQL NULL uniqueness issue)
+        effective_fund_name = fund_name if fund_name is not None else ''
         data = {
             'job_name': job_name,
             'target_date': target_date.isoformat(),
-            'fund_name': fund_name,
+            'fund_name': effective_fund_name,
             'status': 'failed',
             'completed_at': datetime.now(timezone.utc).isoformat(),
             'error_message': error[:500]  # Truncate to prevent huge error strings

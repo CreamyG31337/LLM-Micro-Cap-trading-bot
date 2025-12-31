@@ -25,6 +25,7 @@ def check_job_history():
     print(f"{'Job Name':<35} | {'Started At':<25}")
     print("-" * 65)
     if running.data:
+        print(f"Found {len(running.data)} running job(s):")
         for job in running.data:
             print(f"{job.get('job_name'):<35} | {job.get('started_at')}")
     else:

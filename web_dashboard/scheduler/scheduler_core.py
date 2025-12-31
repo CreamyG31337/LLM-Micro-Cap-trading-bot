@@ -51,6 +51,51 @@ def get_scheduler() -> BackgroundScheduler:
     return _scheduler
 
 
+def cleanup_stale_running_jobs() -> int:
+    """Delete all jobs with status='running' on startup.
+    
+    When the container restarts, any jobs that were running are interrupted.
+    This function deletes those stale 'running' status records so they don't
+    falsely show as running or failed.
+    
+    Returns:
+        Number of stale jobs cleaned up
+    """
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        # Find all jobs still marked as running
+        result = client.supabase.table("job_executions")\
+            .select("id, job_name, started_at")\
+            .eq("status", "running")\
+            .execute()
+        
+        if not result.data:
+            logger.info("No stale running jobs to clean up")
+            return 0
+        
+        count = len(result.data)
+        logger.info(f"Found {count} stale 'running' job(s), deleting...")
+        
+        # Delete stale records
+        # Using a loop to be safe and log each one, though batch delete would work too
+        for job in result.data:
+            client.supabase.table("job_executions")\
+                .delete()\
+                .eq("id", job['id'])\
+                .execute()
+            
+            logger.info(f"  ✓ Deleted stale run for {job['job_name']} (started: {job.get('started_at')})")
+        
+        logger.info(f"✅ Deleted {count} stale running job records")
+        return count
+        
+    except Exception as e:
+        logger.error(f"Failed to clean up stale running jobs: {e}")
+        return 0
+
+
 def start_scheduler() -> bool:
     """Start the scheduler and register default jobs.
     
@@ -62,6 +107,9 @@ def start_scheduler() -> bool:
     if scheduler.running:
         logger.info("Scheduler already running")
         return False
+    
+    # Clean up any stale 'running' jobs from previous container run
+    cleanup_stale_running_jobs()
     
     # Register default jobs
     from scheduler.jobs import register_default_jobs
@@ -305,7 +353,6 @@ def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
             .execute()
         
         if running_result.data and len(running_result.data) > 0:
-            is_running = True
             started_at = running_result.data[0].get('started_at')
             if started_at:
                 try:
@@ -313,7 +360,25 @@ def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
                         running_since = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
                     else:
                         running_since = started_at
-                except Exception:
+                    
+                    # Ensure timezone awareness
+                    if running_since.tzinfo is None:
+                        running_since = running_since.replace(tzinfo=timezone.utc)
+                    else:
+                        running_since = running_since.astimezone(timezone.utc)
+                        
+                    # Ignore if older than 6 hours (likely stale/crashed)
+                    now_utc = datetime.now(timezone.utc)
+                    if (now_utc - running_since).total_seconds() < 6 * 3600:
+                        is_running = True
+                    else:
+                         # It's stale - ignore it for UI purposes
+                         # (Cleanup job will eventually catch it on restart, or we could trigger cleanup here)
+                         is_running = False
+                         logger.debug(f"Ignoring stale running status for {job_id} (started {running_since})")
+
+                except Exception as e:
+                    logger.warning(f"Error parsing running_since for {job_id}: {e}")
                     pass
     except Exception as e:
         logger.warning(f"Failed to check running status for {job_id}: {e}")

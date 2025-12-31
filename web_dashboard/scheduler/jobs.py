@@ -269,6 +269,7 @@ __all__ = [
     'register_default_jobs',
 ]
 
+
 def register_default_jobs(scheduler) -> None:
     """Register all default jobs with the scheduler.
     

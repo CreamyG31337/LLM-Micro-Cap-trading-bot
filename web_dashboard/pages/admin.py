@@ -296,75 +296,75 @@ with tab2:
                     
                     with col2:
                         fund_name = st.selectbox("Fund Name", options=[""] + available_funds, key="assign_fund_name")
+                    
+                    if st.button("Assign Fund", type="primary"):
+                        if user_email and fund_name:
+                            try:
+                                assign_result = client.supabase.rpc(
+                                    'assign_fund_to_user',
+                                    {'user_email': user_email, 'fund_name': fund_name}
+                                ).execute()
+                                
+                                # Handle JSON response - Supabase RPC returns JSON directly or wrapped in array
+                                result_data = assign_result.data
+                                if isinstance(result_data, list) and len(result_data) > 0:
+                                    result_data = result_data[0]
+                                
+                                if result_data and isinstance(result_data, dict):
+                                    if result_data.get('success'):
+                                        st.toast(f"✅ {result_data.get('message', f'Assigned {fund_name} to {user_email}')}", icon="✅")
+                                        st.rerun()
+                                    elif result_data.get('already_assigned'):
+                                        st.warning(f"⚠️ {result_data.get('message', f'Fund {fund_name} is already assigned to {user_email}')}")
+                                    else:
+                                        st.error(f"❌ {result_data.get('message', 'Failed to assign fund')}")
+                                else:
+                                    st.error("Failed to assign fund - invalid response")
+                            except Exception as e:
+                                st.error(f"Error assigning fund: {e}")
+                        else:
+                            st.warning("Please enter both email and fund name")
+                    
+                    # Remove fund assignment
+                    st.subheader("Remove Fund Assignment")
+                    col3, col4 = st.columns(2)
+                    
+                    with col3:
+                        # Get user emails from the users dataframe
+                        remove_user_emails = users_df['email'].tolist() if not users_df.empty else []
+                        remove_email = st.selectbox("User Email", options=[""] + remove_user_emails, key="remove_email")
+                    
+                    with col4:
+                        # Use the same funds list from funds table
+                        remove_fund = st.selectbox("Fund Name", options=[""] + available_funds, key="remove_fund")
+                    
+                    if st.button("Remove Assignment", type="secondary"):
+                        if remove_email and remove_fund:
+                            try:
+                                # Use RPC function that queries auth.users (same as assign_fund_to_user)
+                                # This ensures consistency - both assign and remove use the same user lookup
+                                remove_result = client.supabase.rpc(
+                                    'remove_fund_from_user',
+                                    {'user_email': remove_email, 'fund_name': remove_fund}
+                                ).execute()
+                                # Handle boolean result properly (False is valid, None is error)
+                                if remove_result.data is not None:
+                                    if remove_result.data:
+                                        st.toast(f"✅ Removed {remove_fund} from {remove_email}", icon="✅")
+                                        st.rerun()
+                                    else:
+                                        st.warning(f"No assignment found for {remove_email} → {remove_fund}")
+                                else:
+                                    st.error("Failed to remove fund assignment")
+                            except Exception as e:
+                                st.error(f"Error removing assignment: {e}")
+                        else:
+                            st.warning("Please enter both email and fund name")
+                else:
+                    st.info("No users found")
+            except Exception as e:
+                st.error(f"Error loading users: {e}")
 
-                
-                if st.button("Assign Fund", type="primary"):
-                    if user_email and fund_name:
-                        try:
-                            assign_result = client.supabase.rpc(
-                                'assign_fund_to_user',
-                                {'user_email': user_email, 'fund_name': fund_name}
-                            ).execute()
-                            
-                            # Handle JSON response - Supabase RPC returns JSON directly or wrapped in array
-                            result_data = assign_result.data
-                            if isinstance(result_data, list) and len(result_data) > 0:
-                                result_data = result_data[0]
-                            
-                            if result_data and isinstance(result_data, dict):
-                                if result_data.get('success'):
-                                    st.toast(f"✅ {result_data.get('message', f'Assigned {fund_name} to {user_email}')}", icon="✅")
-                                    st.rerun()
-                                elif result_data.get('already_assigned'):
-                                    st.warning(f"⚠️ {result_data.get('message', f'Fund {fund_name} is already assigned to {user_email}')}")
-                                else:
-                                    st.error(f"❌ {result_data.get('message', 'Failed to assign fund')}")
-                            else:
-                                st.error("Failed to assign fund - invalid response")
-                        except Exception as e:
-                            st.error(f"Error assigning fund: {e}")
-                    else:
-                        st.warning("Please enter both email and fund name")
-                
-                # Remove fund assignment
-                st.subheader("Remove Fund Assignment")
-                col3, col4 = st.columns(2)
-                
-                with col3:
-                    # Get user emails from the users dataframe
-                    remove_user_emails = users_df['email'].tolist() if not users_df.empty else []
-                    remove_email = st.selectbox("User Email", options=[""] + remove_user_emails, key="remove_email")
-                
-                with col4:
-                    # Use the same funds list from funds table
-                    remove_fund = st.selectbox("Fund Name", options=[""] + available_funds, key="remove_fund")
-                
-                if st.button("Remove Assignment", type="secondary"):
-                    if remove_email and remove_fund:
-                        try:
-                            # Use RPC function that queries auth.users (same as assign_fund_to_user)
-                            # This ensures consistency - both assign and remove use the same user lookup
-                            remove_result = client.supabase.rpc(
-                                'remove_fund_from_user',
-                                {'user_email': remove_email, 'fund_name': remove_fund}
-                            ).execute()
-                            # Handle boolean result properly (False is valid, None is error)
-                            if remove_result.data is not None:
-                                if remove_result.data:
-                                    st.toast(f"✅ Removed {remove_fund} from {remove_email}", icon="✅")
-                                    st.rerun()
-                                else:
-                                    st.warning(f"No assignment found for {remove_email} → {remove_fund}")
-                            else:
-                                st.error("Failed to remove fund assignment")
-                        except Exception as e:
-                            st.error(f"Error removing assignment: {e}")
-                    else:
-                        st.warning("Please enter both email and fund name")
-            else:
-                st.info("No users found")
-        except Exception as e:
-            st.error(f"Error loading users: {e}")
         
         # Unregistered contributors section
         st.divider()

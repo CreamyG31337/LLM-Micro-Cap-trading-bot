@@ -94,6 +94,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             )
             # Admin page link (only visible to admins)
             st.sidebar.page_link("pages/admin.py", label="Admin Panel", icon="🔧")
+            st.sidebar.page_link("pages/admin_logs.py", label="System Logs", icon="📜")
         else:
             # Check if user profile exists and show role
             try:

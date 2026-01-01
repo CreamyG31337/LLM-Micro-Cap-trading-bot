@@ -1089,7 +1089,8 @@ def main():
                 last_trade = trades[-1]
                 last_cursor_date = last_trade.get('transaction_date')
                 last_cursor_id = last_trade.get('id')
-                logger.debug(f"Cursor updated: date={last_cursor_date}, id={last_cursor_id}")
+                last_cursor_id = last_trade.get('id')
+                logger.info(f"   [CURSOR] Updated to: date={last_cursor_date}, id={last_cursor_id} (processed {len(trades)} trades in this batch)")
             
             for trade in trades:
                 try:

@@ -28,8 +28,15 @@ def get_system_setting(key: str, default: Any = None) -> Any:
         # Try to use service role client when outside Streamlit context
         try:
             import streamlit as st
-            if st is None:
-                raise AttributeError("st is None")
+            try:
+                from streamlit.runtime.scriptrunner import get_script_run_ctx
+                if not get_script_run_ctx():
+                     raise AttributeError("No script run context")
+            except ImportError:
+                 # fallback for older streamlit versions or if internal API changes
+                 if not hasattr(st, "runtime"): # rough check
+                      pass
+            
             from streamlit_utils import get_supabase_client
             client = get_supabase_client()
         except (ImportError, AttributeError):

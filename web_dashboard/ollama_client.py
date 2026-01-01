@@ -229,7 +229,8 @@ class OllamaClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         num_ctx: Optional[int] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        json_mode: bool = False
     ) -> Generator[str, None, None]:
         """Query Ollama API with a prompt and optional context.
         
@@ -242,6 +243,7 @@ class OllamaClient:
             max_tokens: Maximum tokens in response (num_predict)
             num_ctx: Context window size. If None, uses model default.
             system_prompt: Optional system prompt to set model behavior
+            json_mode: Whether to enforce JSON output format
             
         Yields:
             Response chunks as strings (streaming) or full response (non-streaming)
@@ -279,6 +281,10 @@ class OllamaClient:
         # Add system prompt if provided
         if system_prompt:
             payload["system"] = system_prompt
+            
+        # Add format if json_mode is enabled
+        if json_mode:
+            payload["format"] = "json"
         
         try:
             logger.info(f"Ollama query: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={effective_max_tokens}, stream={stream}")
@@ -323,6 +329,36 @@ class OllamaClient:
             logger.error(f"❌ Unexpected error querying Ollama: {e}", exc_info=True)
             yield f"An error occurred: {str(e)}"
     
+    def generate_completion(
+        self, 
+        prompt: str, 
+        model: str = "llama3", 
+        json_mode: bool = False,
+        temperature: Optional[float] = None
+    ) -> Optional[str]:
+        """Generate a complete response (non-streaming).
+        
+        Args:
+            prompt: User prompt
+            model: Model name
+            json_mode: Whether to enforce JSON output
+            temperature: Model temperature
+            
+        Returns:
+            Full response string or None if failed
+        """
+        try:
+            generator = self.query_ollama(
+                prompt=prompt,
+                model=model,
+                stream=False,
+                json_mode=json_mode,
+                temperature=temperature
+            )
+            return next(generator, None)
+        except Exception as e:
+            logger.error(f"Error generating completion: {e}")
+            return None
     def analyze_crowd_sentiment(self, texts: List[str], ticker: str, model: Optional[str] = None) -> Dict[str, Any]:
         """Analyze crowd sentiment from Reddit posts/comments.
         

@@ -14,6 +14,7 @@ import time
 import requests
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, timedelta
+from settings import get_summarizing_model
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -862,9 +863,10 @@ Provide analysis in JSON format:
                 return None
             
             # Get AI analysis
+            model_name = get_summarizing_model()
             ai_response = self.ollama.generate_completion(
                 prompt=analysis_prompt,
-                model="granite3.1:8b",
+                model=model_name,
                 json_mode=True
             )
             
@@ -889,7 +891,9 @@ Provide analysis in JSON format:
                 'summary': analysis_result.get('summary'),
                 'key_themes': analysis_result.get('key_themes', []),
                 'reasoning': analysis_result.get('reasoning'),
-                'model_used': 'granite3.1:8b',
+                'key_themes': analysis_result.get('key_themes', []),
+                'reasoning': analysis_result.get('reasoning'),
+                'model_used': model_name,
                 'analysis_version': 1
             }
             
@@ -955,9 +959,10 @@ For each ticker, provide JSON validation:
 }}]
 """
             
+            model_name = get_summarizing_model()
             ai_response = self.ollama.generate_completion(
                 prompt=extraction_prompt,
-                model="granite3.1:8b",
+                model=model_name,
                 json_mode=True
             )
             

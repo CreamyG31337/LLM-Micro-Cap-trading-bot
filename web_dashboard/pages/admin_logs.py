@@ -7,6 +7,13 @@ import time
 
 st.set_page_config(layout="wide", page_title="Admin: Log Viewer", page_icon="📜")
 
+# Add parent directory to path to allow imports
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+
+from navigation import render_navigation
+render_navigation()
+
 st.title("📜 System Logs Viewer")
 
 # --- MODE SELECTION ---

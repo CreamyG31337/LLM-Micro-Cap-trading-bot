@@ -308,10 +308,14 @@ def get_ticker_external_links(ticker: str, exchange: Optional[str] = None) -> Di
         >>> links = get_ticker_external_links("XMA.TO", "TSX")
         >>> print(links['TradingView'])
         'https://www.tradingview.com/symbols/TSX-XMA/'
+        >>> print(links['MarketWatch'])
+        'https://www.marketwatch.com/investing/stock/TSX:XMA'
     
     Note:
         - Canadian ticker suffixes (.TO, .V) are automatically detected
         - Base ticker extracted for sites that don't support suffixes
+        - MarketWatch uses TSX:TICKER format for Canadian stocks
+        - Finviz doesn't support Canadian tickers well (may not work)
         - All URLs are properly formatted and URL-safe
     """
     ticker_upper = ticker.upper().strip()
@@ -319,21 +323,24 @@ def get_ticker_external_links(ticker: str, exchange: Optional[str] = None) -> Di
     # Handle Canadian tickers
     base_ticker = ticker_upper
     is_canadian = False
+    canadian_exchange = None
     if '.TO' in ticker_upper:
         base_ticker = ticker_upper.replace('.TO', '')
         is_canadian = True
+        canadian_exchange = 'TSX'
         exchange = exchange or 'TSX'
     elif '.V' in ticker_upper:
         base_ticker = ticker_upper.replace('.V', '')
         is_canadian = True
+        canadian_exchange = 'TSXV'
         exchange = exchange or 'TSXV'
     
     links = {}
     
-    # Yahoo Finance
+    # Yahoo Finance - supports .TO/.V suffixes
     links['Yahoo Finance'] = f"https://finance.yahoo.com/quote/{ticker_upper}"
     
-    # TradingView
+    # TradingView - uses EXCHANGE-TICKER format
     if exchange:
         # Try to map exchange to TradingView format
         exchange_map = {
@@ -348,22 +355,38 @@ def get_ticker_external_links(ticker: str, exchange: Optional[str] = None) -> Di
     else:
         links['TradingView'] = f"https://www.tradingview.com/symbols/{base_ticker}/"
     
-    # Finviz
-    links['Finviz'] = f"https://finviz.com/quote.ashx?t={base_ticker}"
+    # Finviz - doesn't support Canadian tickers well
+    # For Canadian stocks, this will likely not work, but we include it anyway
+    # Users can manually search if needed
+    if is_canadian:
+        # Finviz doesn't support Canadian exchanges, so this link may not work
+        # But we include it for consistency - users will see it doesn't work
+        links['Finviz'] = f"https://finviz.com/quote.ashx?t={base_ticker}"
+    else:
+        links['Finviz'] = f"https://finviz.com/quote.ashx?t={base_ticker}"
     
-    # Seeking Alpha
-    links['Seeking Alpha'] = f"https://seekingalpha.com/symbol/{base_ticker}"
+    # Seeking Alpha - uses EXCHANGE:TICKER format for Canadian stocks
+    if is_canadian and canadian_exchange:
+        links['Seeking Alpha'] = f"https://seekingalpha.com/symbol/{canadian_exchange}:{base_ticker}"
+    else:
+        links['Seeking Alpha'] = f"https://seekingalpha.com/symbol/{base_ticker}"
     
-    # MarketWatch
-    links['MarketWatch'] = f"https://www.marketwatch.com/investing/stock/{base_ticker}"
+    # MarketWatch - uses EXCHANGE:TICKER format for Canadian stocks
+    if is_canadian and canadian_exchange:
+        links['MarketWatch'] = f"https://www.marketwatch.com/investing/stock/{canadian_exchange}:{base_ticker}"
+    else:
+        links['MarketWatch'] = f"https://www.marketwatch.com/investing/stock/{base_ticker}"
     
-    # StockTwits
-    links['StockTwits'] = f"https://stocktwits.com/symbol/{base_ticker}"
+    # StockTwits - supports full ticker with suffix for Canadian stocks
+    if is_canadian:
+        links['StockTwits'] = f"https://stocktwits.com/symbol/{ticker_upper}"
+    else:
+        links['StockTwits'] = f"https://stocktwits.com/symbol/{base_ticker}"
     
-    # Reddit (wallstreetbets search)
-    links['Reddit (WSB)'] = f"https://www.reddit.com/r/wallstreetbets/search/?q={base_ticker}&restrict_sr=1"
+    # Reddit (wallstreetbets search) - use full ticker for better search results
+    links['Reddit (WSB)'] = f"https://www.reddit.com/r/wallstreetbets/search/?q={ticker_upper}&restrict_sr=1"
     
-    # Google Finance
+    # Google Finance - supports .TO/.V suffixes
     links['Google Finance'] = f"https://www.google.com/finance/quote/{ticker_upper}"
     
     return links

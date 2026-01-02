@@ -1742,8 +1742,21 @@ Time: December 19, 2025 09:30 EST""",
                                     col_accept, col_reject = st.columns([1, 1])
                                     with col_accept:
                                         if st.button("✅ Accept Correction", key="accept_ticker_correction"):
-                                            trade.ticker = st.session_state.suggested_ticker
-                                            st.session_state.parsed_trade = trade
+                                            # Preserve all fields including timestamp when updating ticker
+                                            from data.models.trade import Trade
+                                            updated_trade = Trade(
+                                                ticker=st.session_state.suggested_ticker,
+                                                action=trade.action,
+                                                shares=trade.shares,
+                                                price=trade.price,
+                                                timestamp=trade.timestamp,  # Preserve original timestamp
+                                                cost_basis=trade.cost_basis,
+                                                pnl=trade.pnl,
+                                                reason=trade.reason,
+                                                currency=trade.currency,
+                                                trade_id=trade.trade_id
+                                            )
+                                            st.session_state.parsed_trade = updated_trade
                                             st.session_state.suggested_ticker = None
                                             st.rerun()
                                     with col_reject:
@@ -1773,8 +1786,21 @@ Time: December 19, 2025 09:30 EST""",
                                         col_accept, col_reject = st.columns([1, 1])
                                         with col_accept:
                                             if st.button("✅ Accept Selected Ticker", key="accept_selected_ticker"):
-                                                trade.ticker = st.session_state.suggested_ticker
-                                                st.session_state.parsed_trade = trade
+                                                # Preserve all fields including timestamp when updating ticker
+                                                from data.models.trade import Trade
+                                                updated_trade = Trade(
+                                                    ticker=st.session_state.suggested_ticker,
+                                                    action=trade.action,
+                                                    shares=trade.shares,
+                                                    price=trade.price,
+                                                    timestamp=trade.timestamp,  # Preserve original timestamp
+                                                    cost_basis=trade.cost_basis,
+                                                    pnl=trade.pnl,
+                                                    reason=trade.reason,
+                                                    currency=trade.currency,
+                                                    trade_id=trade.trade_id
+                                                )
+                                                st.session_state.parsed_trade = updated_trade
                                                 st.session_state.suggested_ticker = None
                                                 st.rerun()
                                         with col_reject:

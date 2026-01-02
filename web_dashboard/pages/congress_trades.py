@@ -764,6 +764,7 @@ try:
 
         
         # Display AgGrid
+        AgGrid(
             df,
             gridOptions=gridOptions,
             update_mode=GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED,

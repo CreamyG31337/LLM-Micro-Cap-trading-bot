@@ -14,6 +14,62 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from typing import Optional
 
 
+TICKER_CELL_RENDERER_JS = """
+class TickerCellRenderer {
+    init(params) {
+        this.eGui = document.createElement('span');
+        if (params.value && params.value !== 'N/A') {
+            this.eGui.innerText = params.value;
+            this.eGui.style.color = '#1f77b4';
+            this.eGui.style.fontWeight = 'bold';
+            this.eGui.style.textDecoration = 'underline';
+            this.eGui.style.cursor = 'pointer';
+        } else {
+            this.eGui.innerText = params.value || 'N/A';
+        }
+    }
+
+    getGui() {
+        return this.eGui;
+    }
+}
+"""
+
+TICKER_CLICK_HANDLER_JS_TEMPLATE = """
+function(params) {{
+    // Only handle clicks on the {col_id} column
+    if (params.column && params.column.colId === '{col_id}' && params.value && params.value !== 'N/A') {{
+        // Select the row to trigger navigation
+        params.api.getSelectedNodes().forEach(function(node) {{
+            node.setSelected(false);
+        }});
+        params.node.setSelected(true);
+    }}
+}}
+"""
+
+GLOBAL_CLICK_HANDLER_JS = """
+function(params) {
+    if (params.data) {
+        // Determine action based on column
+        var action = 'details';
+        if (params.column.colId === 'Ticker' && params.value && params.value !== 'N/A') {
+            action = 'navigate';
+        }
+        
+        // Update hidden column
+        params.node.setDataValue('_click_action', action);
+        
+        // Select the row to trigger Python callback
+        // We select it AFTER setting the data value so the update is included
+        params.api.getSelectedNodes().forEach(function(node) {
+            node.setSelected(false);
+        });
+        params.node.setSelected(true);
+    }
+}
+"""
+
 def display_aggrid_with_ticker_navigation(
     df: pd.DataFrame,
     ticker_column: str = "Ticker",
@@ -66,14 +122,7 @@ def display_aggrid_with_ticker_navigation(
         gb.configure_column(
             ticker_column,
             header_name=ticker_column,
-            cellRenderer="""
-            function(params) {
-                if (params.value && params.value !== 'N/A') {
-                    return '<span style="color: #1f77b4; font-weight: bold; text-decoration: underline; cursor: pointer;">' + params.value + '</span>';
-                }
-                return params.value || 'N/A';
-            }
-            """
+            cellRenderer=JsCode(TICKER_CELL_RENDERER_JS)
         )
     
     # Auto-size columns
@@ -86,18 +135,7 @@ def display_aggrid_with_ticker_navigation(
     # Add cell click handler for ticker column navigation
     if ticker_column in df.columns:
         grid_options_dict['onCellClicked'] = {
-            'function': f'''
-            function(params) {{
-                // Only handle clicks on the {ticker_column} column
-                if (params.column && params.column.colId === '{ticker_column}' && params.value && params.value !== 'N/A') {{
-                    // Select the row to trigger navigation
-                    params.api.getSelectedNodes().forEach(function(node) {{
-                        node.setSelected(false);
-                    }});
-                    params.node.setSelected(true);
-                }}
-            }}
-            '''
+            'function': TICKER_CLICK_HANDLER_JS_TEMPLATE.format(col_id=ticker_column)
         }
     
     # Display grid

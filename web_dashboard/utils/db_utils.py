@@ -109,12 +109,13 @@ def get_all_unique_tickers() -> list[str]:
 
 
 @st.cache_data(ttl=300)
-def fetch_dividend_log(days_lookback: int = 365) -> list[dict]:
+def fetch_dividend_log(days_lookback: int = 365, fund: str = None) -> list[dict]:
     """
     Fetch dividend log from Supabase.
     
     Args:
         days_lookback: Number of days of history to fetch (default 365)
+        fund: Optional fund name to filter by
         
     Returns:
         List of dicts containing dividend records
@@ -128,14 +129,20 @@ def fetch_dividend_log(days_lookback: int = 365) -> list[dict]:
         from datetime import datetime, timedelta
         start_date = (datetime.now() - timedelta(days=days_lookback)).date().isoformat()
         
-        response = client.supabase.table('dividend_log')\
+        query = client.supabase.table('dividend_log')\
             .select('*')\
-            .gte('pay_date', start_date)\
-            .order('pay_date', desc=True)\
-            .execute()
+            .gte('pay_date', start_date)
+        
+        # Apply fund filter if provided
+        if fund:
+            query = query.eq('fund', fund)
+            
+        response = query.order('pay_date', desc=True).execute()
             
         return response.data
     except Exception as e:
         logger.error(f"Error fetching dividend log: {e}")
         st.error(f"Error fetching dividend log: {e}")
+        return []
+
         return []

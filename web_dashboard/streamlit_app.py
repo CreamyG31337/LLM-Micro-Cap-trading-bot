@@ -2447,8 +2447,8 @@ def main():
                 # Fallback: if utils resolves to root utils (which has no db_utils), try full path
                 from web_dashboard.utils.db_utils import fetch_dividend_log
             
-            # Fetch dividend data (default 365 days)
-            dividend_data = fetch_dividend_log(days_lookback=365)
+            # Fetch dividend data (filtered by selected fund)
+            dividend_data = fetch_dividend_log(days_lookback=365, fund=fund_filter)
             
             if dividend_data:
                 # Convert to DataFrame

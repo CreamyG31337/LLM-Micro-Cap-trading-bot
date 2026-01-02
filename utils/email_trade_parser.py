@@ -7,10 +7,17 @@ Supports various email formats from different brokers and trading platforms.
 """
 
 import re
+import sys
+from pathlib import Path
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
 import logging
+
+# Ensure project root is in path for imports
+_project_root = Path(__file__).parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from data.models.trade import Trade
 from utils.timezone_utils import parse_csv_timestamp, get_current_trading_time

@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
+from contextlib import contextmanager
+from typing import Dict, List, Optional
+import logging
 
 # Try to import psutil for process checking (optional)
 try:
@@ -26,6 +29,30 @@ from auth_utils import is_authenticated, is_admin, get_user_email
 from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy
 from supabase_client import SupabaseClient
 from supabase import create_client
+
+# Performance logging setup
+logger = logging.getLogger(__name__)
+
+# Initialize performance tracking in session state
+if 'perf_log' not in st.session_state:
+    st.session_state.perf_log = []
+
+@contextmanager
+def perf_timer(operation_name: str, log_to_console: bool = True):
+    """Context manager for timing operations."""
+    start_time = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start_time
+        entry = {
+            'operation': operation_name,
+            'time_ms': round(elapsed * 1000, 2),
+            'timestamp': datetime.now().isoformat()
+        }
+        st.session_state.perf_log.append(entry)
+        if log_to_console:
+            logger.info(f"⏱️ {operation_name}: {entry['time_ms']}ms")
 
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
@@ -95,6 +122,39 @@ with col_header3:
 
 st.caption(f"Logged in as: {get_user_email()}")
 
+# Performance logging section (collapsible)
+with st.expander("⚡ Performance Metrics", expanded=False):
+    if st.session_state.perf_log:
+        perf_df = pd.DataFrame(st.session_state.perf_log)
+        total_time = perf_df['time_ms'].sum()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Operations", len(perf_df))
+        with col2:
+            st.metric("Total Time", f"{total_time:.2f}ms")
+        with col3:
+            st.metric("Avg Time", f"{total_time/len(perf_df):.2f}ms")
+        
+        # Show top 10 slowest operations
+        st.subheader("Slowest Operations")
+        slowest = perf_df.nlargest(10, 'time_ms')[['operation', 'time_ms']]
+        slowest.columns = ['Operation', 'Time (ms)']
+        st.dataframe(slowest, use_container_width=True, hide_index=True)
+        
+        # Show all operations
+        if st.checkbox("Show all operations"):
+            st.dataframe(perf_df, use_container_width=True, hide_index=True)
+        
+        if st.button("Clear Performance Log"):
+            st.session_state.perf_log = []
+            st.rerun()
+    else:
+        st.info("No performance data collected yet. Operations will be timed automatically.")
+
+# Start overall page load timer
+page_start_time = time.perf_counter()
+
 # Display build timestamp (from Woodpecker CI environment variable)
 import os
 build_timestamp = os.getenv("BUILD_TIMESTAMP")
@@ -131,15 +191,17 @@ render_navigation(show_ai_assistant=True, show_settings=True)
 @st.cache_data(ttl=60)  # Cache for 60 seconds
 def get_cached_funds():
     """Get all funds from database with caching."""
-    client = get_supabase_client()
-    if not client:
-        return []
-    try:
-        funds_result = client.supabase.table("funds").select("*").order("name").execute()
-        return funds_result.data if funds_result.data else []
-    except Exception as e:
-        st.error(f"Error loading funds: {e}")
-        return []
+    with perf_timer("get_cached_funds"):
+        client = get_supabase_client()
+        if not client:
+            return []
+        try:
+            with perf_timer("DB: funds.select", log_to_console=False):
+                funds_result = client.supabase.table("funds").select("*").order("name").execute()
+            return funds_result.data if funds_result.data else []
+        except Exception as e:
+            st.error(f"Error loading funds: {e}")
+            return []
 
 @st.cache_data(ttl=60)  # Cache for 60 seconds
 def get_cached_fund_names():
@@ -150,27 +212,31 @@ def get_cached_fund_names():
 @st.cache_data(ttl=60)  # Cache for 60 seconds
 def get_cached_users():
     """Get all users with their fund assignments."""
-    client = get_supabase_client()
-    if not client:
-        return []
-    try:
-        result = client.supabase.rpc('list_users_with_funds').execute()
-        return result.data if result.data else []
-    except Exception as e:
-        st.error(f"Error loading users: {e}")
-        return []
+    with perf_timer("get_cached_users"):
+        client = get_supabase_client()
+        if not client:
+            return []
+        try:
+            with perf_timer("DB: list_users_with_funds RPC", log_to_console=False):
+                result = client.supabase.rpc('list_users_with_funds').execute()
+            return result.data if result.data else []
+        except Exception as e:
+            st.error(f"Error loading users: {e}")
+            return []
 
 @st.cache_data(ttl=60)  # Cache for 60 seconds
 def get_cached_contributors():
     """Get all contributors from database."""
-    client = get_supabase_client()
-    if not client:
-        return []
-    try:
-        result = client.supabase.table("contributors").select("id, name, email").order("name").execute()
-        return result.data if result.data else []
-    except Exception as e:
-        return []
+    with perf_timer("get_cached_contributors"):
+        client = get_supabase_client()
+        if not client:
+            return []
+        try:
+            with perf_timer("DB: contributors.select", log_to_console=False):
+                result = client.supabase.table("contributors").select("id, name, email").order("name").execute()
+            return result.data if result.data else []
+        except Exception as e:
+            return []
 
 # Create tabs for different admin sections
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
@@ -187,23 +253,24 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 
 # Tab 1: Scheduled Tasks
 with tab1:
-    st.header("⏰ Scheduled Tasks")
-    st.caption("Manage background jobs running in this container")
-    
-    try:
-        # Import from parent directory
-        import sys
-        from pathlib import Path
-        parent_dir = Path(__file__).parent.parent
-        if str(parent_dir) not in sys.path:
-            sys.path.insert(0, str(parent_dir))
-        from scheduler_ui import render_scheduler_admin
-        render_scheduler_admin()
-    except ImportError as e:
-        st.warning(f"Scheduler UI not available: {e}")
-        st.info("The scheduler module may not be running in this environment.")
-    except Exception as e:
-        st.error(f"Error loading scheduler: {e}")
+    with perf_timer("Tab1: Scheduled Tasks"):
+        st.header("⏰ Scheduled Tasks")
+        st.caption("Manage background jobs running in this container")
+        
+        try:
+            # Import from parent directory
+            import sys
+            from pathlib import Path
+            parent_dir = Path(__file__).parent.parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            from scheduler_ui import render_scheduler_admin
+            render_scheduler_admin()
+        except ImportError as e:
+            st.warning(f"Scheduler UI not available: {e}")
+            st.info("The scheduler module may not be running in this environment.")
+        except Exception as e:
+            st.error(f"Error loading scheduler: {e}")
 
 # Tab 2: User Management
 with tab2:
@@ -217,7 +284,8 @@ with tab2:
         # Get all users with their fund assignments (using cache)
         with st.spinner("Loading users..."):
             try:
-                users_df = pd.DataFrame(get_cached_users())
+                with perf_timer("Tab2: User Management Load"):
+                    users_df = pd.DataFrame(get_cached_users())
                 
                 if not users_df.empty:
                     # Display users table (hide user_id column)
@@ -888,32 +956,35 @@ with tab4:
         # Load all funds from cache with spinner
         with st.spinner("Loading funds..."):
             try:
-                funds_data = get_cached_funds()
-                fund_names = [f['name'] for f in funds_data]
-                
-                # Get statistics for each fund
-                if fund_names:
-                    fund_stats = []
-                    for fund_name in fund_names:
-                        # Get position count
-                        pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
-                        position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
-                        
-                        # Get trade count
-                        trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
-                        trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
-                        
-                        # Get fund details
-                        fund_info = next((f for f in funds_data if f['name'] == fund_name), {})
-                        
-                        fund_stats.append({
-                            "Fund Name": fund_name,
-                            "Type": fund_info.get('fund_type', 'N/A'),
-                            "Currency": fund_info.get('currency', 'N/A'),
-                            "Production": "✅" if fund_info.get('is_production') else "❌",
-                            "Positions": position_count,
-                            "Trades": trade_count_val
-                        })
+                with perf_timer("Tab4: Fund Management Load"):
+                    funds_data = get_cached_funds()
+                    fund_names = [f['name'] for f in funds_data]
+                    
+                    # Get statistics for each fund
+                    if fund_names:
+                        fund_stats = []
+                        for fund_name in fund_names:
+                            # Get position count
+                            with perf_timer(f"DB: portfolio_positions.count({fund_name})", log_to_console=False):
+                                pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
+                            position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
+                            
+                            # Get trade count
+                            with perf_timer(f"DB: trade_log.count({fund_name})", log_to_console=False):
+                                trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
+                            trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
+                            
+                            # Get fund details
+                            fund_info = next((f for f in funds_data if f['name'] == fund_name), {})
+                            
+                            fund_stats.append({
+                                "Fund Name": fund_name,
+                                "Type": fund_info.get('fund_type', 'N/A'),
+                                "Currency": fund_info.get('currency', 'N/A'),
+                                "Production": "✅" if fund_info.get('is_production') else "❌",
+                                "Positions": position_count,
+                                "Trades": trade_count_val
+                            })
                     
                     funds_df = pd.DataFrame(fund_stats)
                     st.subheader("All Funds")
@@ -1385,45 +1456,49 @@ with tab4:
 
 # Tab 5: System Status
 with tab5:
-    st.header("📊 System Status")
-    st.caption("Monitor system health and status")
-    
-    client = get_supabase_client()
-    if not client:
-        st.error("❌ Database: Connection Failed")
-    else:
-        # Database connection status
-        st.subheader("Database Status")
-        try:
-            # Test connection with a simple query
-            test_result = client.supabase.table("user_profiles").select("user_id").limit(1).execute()
-            st.success("✅ Database: Connected")
-        except Exception as e:
-            st.error(f"❌ Database: Connection Error - {e}")
+    with perf_timer("Tab5: System Status"):
+        st.header("📊 System Status")
+        st.caption("Monitor system health and status")
         
-        # Exchange rates status
-        st.subheader("Exchange Rates")
-        try:
-            rates_result = client.supabase.table("exchange_rates").select("timestamp").order("timestamp", desc=True).limit(1).execute()
-            if rates_result.data:
-                latest_rate_date = rates_result.data[0]['timestamp']
-                st.info(f"Latest rate: {latest_rate_date}")
-            else:
-                st.warning("No exchange rates found")
-        except Exception as e:
-            st.error(f"Error checking exchange rates: {e}")
-        
-        # Performance metrics status
-        st.subheader("Performance Metrics")
-        try:
-            metrics_result = client.supabase.table("performance_metrics").select("date").order("date", desc=True).limit(1).execute()
-            if metrics_result.data:
-                latest_metrics_date = metrics_result.data[0]['date']
-                st.info(f"Latest metrics: {latest_metrics_date}")
-            else:
-                st.warning("No performance metrics found")
-        except Exception as e:
-            st.error(f"Error checking performance metrics: {e}")
+        client = get_supabase_client()
+        if not client:
+            st.error("❌ Database: Connection Failed")
+        else:
+            # Database connection status
+            st.subheader("Database Status")
+            try:
+                # Test connection with a simple query
+                with perf_timer("DB: user_profiles connection test", log_to_console=False):
+                    test_result = client.supabase.table("user_profiles").select("user_id").limit(1).execute()
+                st.success("✅ Database: Connected")
+            except Exception as e:
+                st.error(f"❌ Database: Connection Error - {e}")
+            
+            # Exchange rates status
+            st.subheader("Exchange Rates")
+            try:
+                with perf_timer("DB: exchange_rates.select", log_to_console=False):
+                    rates_result = client.supabase.table("exchange_rates").select("timestamp").order("timestamp", desc=True).limit(1).execute()
+                if rates_result.data:
+                    latest_rate_date = rates_result.data[0]['timestamp']
+                    st.info(f"Latest rate: {latest_rate_date}")
+                else:
+                    st.warning("No exchange rates found")
+            except Exception as e:
+                st.error(f"Error checking exchange rates: {e}")
+            
+            # Performance metrics status
+            st.subheader("Performance Metrics")
+            try:
+                with perf_timer("DB: performance_metrics.select", log_to_console=False):
+                    metrics_result = client.supabase.table("performance_metrics").select("date").order("date", desc=True).limit(1).execute()
+                if metrics_result.data:
+                    latest_metrics_date = metrics_result.data[0]['date']
+                    st.info(f"Latest metrics: {latest_metrics_date}")
+                else:
+                    st.warning("No performance metrics found")
+            except Exception as e:
+                st.error(f"Error checking performance metrics: {e}")
         
         # Postgres (Research Repository) status
         st.subheader("Postgres (Research Repository)")
@@ -1537,9 +1612,12 @@ with tab6:
                             # Combine date and time
                             trade_datetime = datetime.combine(trade_date, trade_time)
                             
+                            # Create service role client once for admin operations (bypasses RLS)
+                            admin_client = SupabaseClient(use_service_role=True)
+                            
                             # Ensure ticker exists in securities table
                             if not ticker_check.data:
-                                client.supabase.table("securities").insert({
+                                admin_client.supabase.table("securities").insert({
                                     "ticker": trade_ticker,
                                     "company_name": trade_ticker,
                                     "currency": trade_currency
@@ -1623,7 +1701,7 @@ with tab6:
                                 "date": trade_datetime.isoformat()
                             }
                             
-                            client.supabase.table("trade_log").insert(trade_data).execute()
+                            admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
                             # Clear data caches to prevent stale data (particularly get_trade_log which is cached forever)
                             st.cache_data.clear()
@@ -1853,10 +1931,13 @@ Time: December 19, 2025 09:30 EST""",
                             # Use override currency if changed
                             final_currency = override_currency
                             
+                            # Create service role client once for admin operations (bypasses RLS)
+                            admin_client = SupabaseClient(use_service_role=True)
+                            
                             # Ensure ticker exists in securities table
                             ticker_check = client.supabase.table("securities").select("ticker").eq("ticker", trade.ticker).execute()
                             if not ticker_check.data:
-                                client.supabase.table("securities").insert({
+                                admin_client.supabase.table("securities").insert({
                                     "ticker": trade.ticker,
                                     "company_name": trade.ticker,
                                     "currency": final_currency
@@ -1936,8 +2017,7 @@ Time: December 19, 2025 09:30 EST""",
                                 "date": trade.timestamp.isoformat()
                             }
 
-                            
-                            client.supabase.table("trade_log").insert(trade_data).execute()
+                            admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
                             st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                             
@@ -2959,3 +3039,13 @@ except AttributeError:
         st.caption(f"Streamlit v{streamlit_version}")
     except Exception:
         st.caption("Streamlit version unavailable")
+
+# Calculate and log total page load time
+page_load_time = (time.perf_counter() - page_start_time) * 1000
+total_entry = {
+    'operation': 'TOTAL PAGE LOAD',
+    'time_ms': round(page_load_time, 2),
+    'timestamp': datetime.now().isoformat()
+}
+st.session_state.perf_log.append(total_entry)
+logger.info(f"⏱️ TOTAL PAGE LOAD: {total_entry['time_ms']}ms")

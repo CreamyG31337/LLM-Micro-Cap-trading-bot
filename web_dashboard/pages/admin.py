@@ -1701,13 +1701,46 @@ with tab6:
                                 "date": trade_datetime.isoformat()
                             }
                             
+                            
                             admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
                             # Clear data caches to prevent stale data (particularly get_trade_log which is cached forever)
                             st.cache_data.clear()
                             
-                            st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
-                            st.info("💡 Note: Run portfolio rebuild to update positions based on trade log.")
+                            # DETECT BACKDATING AND TRIGGER REBUILD
+                            is_backdated = trade_datetime.date() < datetime.now().date()
+                            
+                            if is_backdated:
+                                # Trigger background rebuild from the backdated date
+                                try:
+                                    import sys
+                                    from pathlib import Path
+                                    # Add project root to path
+                                    project_root = Path(__file__).parent.parent.parent
+                                    if str(project_root) not in sys.path:
+                                        sys.path.insert(0, str(project_root))
+                                    
+                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                    
+                                    job_id = trigger_background_rebuild(trade_fund, trade_datetime.date())
+                                    
+                                    if job_id:
+                                        st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                                        st.toast(f"⏳ Rebuilding positions from {trade_date}...", icon="📊")
+                                        st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id[:8]}...)")
+                                    else:
+                                        st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                                        st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild from Fund Management tab.")
+                                    
+                                except Exception as rebuild_error:
+                                    # Log error but don't fail the trade entry
+                                    import logging
+                                    logging.getLogger(__name__).error(f"Failed to trigger rebuild: {rebuild_error}")
+                                    st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                                    st.warning(f"⚠️ Automatic rebuild failed: {str(rebuild_error)[:100]}. Please run manual rebuild.")
+                            else:
+                                # Not backdated - just show success
+                                st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                             
                         except Exception as e:
                             st.error(f"Error recording trade: {e}")
@@ -2017,9 +2050,37 @@ Time: December 19, 2025 09:30 EST""",
                                 "date": trade.timestamp.isoformat()
                             }
 
+
                             admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
-                            st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
+                            # DETECT BACKDATING AND TRIGGER REBUILD (same as manual trade entry)
+                            is_backdated = trade.timestamp.date() < datetime.now().date()
+                            
+                            if is_backdated:
+                                try:
+                                    import sys
+                                    from pathlib import Path
+                                    project_root = Path(__file__).parent.parent.parent
+                                    if str(project_root) not in sys.path:
+                                        sys.path.insert(0, str(project_root))
+                                    
+                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                    
+                                    job_id = trigger_background_rebuild(email_fund, trade.timestamp.date())
+                                    
+                                    if job_id:
+                                        st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
+                                        st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
+                                    else:
+                                        st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
+                                        st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild.")
+                                
+                                except Exception as rebuild_error:
+                                    import logging
+                                    logging.getLogger(__name__).error(f"Failed to trigger rebuild: {rebuild_error}")
+                                    st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
+                            else:
+                                st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                             
                             # Clear the parsed trade
                             st.session_state.parsed_trade = None

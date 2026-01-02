@@ -991,7 +991,9 @@ with tab4:
                         display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
                     else:
                         st.info("No funds found in database")
-                
+            except Exception as e:
+                st.error(f"Error loading funds: {e}")
+        
         st.divider()
         
         # ===== REFRESH TICKER METADATA =====

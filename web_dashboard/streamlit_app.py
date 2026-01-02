@@ -1394,7 +1394,7 @@ def main():
         # Biggest Movers Table (near the top)
         if not positions_df.empty:
             try:
-                movers = get_biggest_movers(positions_df, display_currency, limit=5)
+                movers = get_biggest_movers(positions_df, display_currency, limit=10)
                 
                 if not movers['gainers'].empty or not movers['losers'].empty:
                     st.markdown("### 📊 Biggest Movers")
@@ -1439,7 +1439,7 @@ def main():
                             selected_ticker = display_aggrid_with_ticker_navigation(
                                 gainers_df,
                                 ticker_column="Ticker",
-                                height=300,
+                                height=500,
                                 fit_columns=True
                             )
                             
@@ -1488,7 +1488,7 @@ def main():
                             selected_ticker = display_aggrid_with_ticker_navigation(
                                 losers_df,
                                 ticker_column="Ticker",
-                                height=300,
+                                height=500,
                                 fit_columns=True
                             )
                             

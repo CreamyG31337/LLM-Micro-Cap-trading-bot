@@ -221,7 +221,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         
         logger.info(f"   Fetching prices for {len(tickers_to_price)} tickers")
         
-        # Fetch prices
+        # Fetch prices - NO FALLBACKS, exact prices only
         fetcher = MarketDataFetcher()
         price_cache = {}  # (ticker, date) -> price
         
@@ -234,11 +234,13 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
                 if result.df is not None and not result.df.empty:
                     for idx, row in result.df.iterrows():
                         price_date = idx.date() if hasattr(idx, 'date') else idx
-                        price_cache[(ticker, price_date)] = Decimal(str(row['Close']))
+                        price = Decimal(str(row['Close']))
+                        if price > 0:
+                            price_cache[(ticker, price_date)] = price
             except Exception as e:
                 logger.warning(f"Failed to fetch prices for {ticker}: {e}")
-        
-        # Step 5: Save snapshots for rebuild dates
+
+        # Step 5: Save snapshots for rebuild dates (TRADING DAYS ONLY)
         logger.info("Step 5: Saving updated snapshots...")
         if job_id:
             _update_job_status(job_id, 'running', f'Saving {len(trading_days_to_rebuild)} snapshots')
@@ -257,16 +259,16 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
                 if pos_data['shares'] <= 0:
                     continue
                 
-                # Get price for this ticker on this date
+                # Get EXACT price for this trading day - no fallbacks
                 current_price = price_cache.get((ticker, trading_day))
                 if current_price is None:
-                    logger.warning(f"No price for {ticker} on {trading_day}, skipping")
+                    logger.error(f"CRITICAL: No price for {ticker} on TRADING DAY {trading_day} - skipping position")
                     continue
                 
                 # Create Position object
                 shares = pos_data['shares']
                 cost_basis = pos_data['cost']
-                avg_price = cost_basis / shares
+                avg_price = cost_basis / shares if shares > 0 else Decimal('0')
                 market_value = shares * current_price
                 pnl = market_value - cost_basis
                 
@@ -285,7 +287,12 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
             if snapshot_positions:
                 # Create snapshot timestamp (4pm ET on trading day)
                 snapshot_time = datetime.combine(trading_day, datetime.min.time().replace(hour=16, minute=0))
-                snapshot_time = trading_tz.localize(snapshot_time)
+                
+                # Handle timezone localization compatible with both pytz and zoneinfo
+                if hasattr(trading_tz, 'localize'):
+                    snapshot_time = trading_tz.localize(snapshot_time)
+                else:
+                    snapshot_time = snapshot_time.replace(tzinfo=trading_tz)
                 
                 snapshot = PortfolioSnapshot(
                     positions=snapshot_positions,

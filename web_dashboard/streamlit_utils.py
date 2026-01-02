@@ -2197,13 +2197,13 @@ def get_fund_thesis_data(fund_name: str) -> Optional[Dict[str, Any]]:
 
 
 @log_execution_time()
-def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit: int = 5) -> Dict[str, pd.DataFrame]:
+def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit: int = 10) -> Dict[str, pd.DataFrame]:
     """Get biggest gainers and losers from positions.
     
     Args:
         positions_df: DataFrame with positions data
         display_currency: Currency to display values in
-        limit: Number of top movers to return (default 5)
+        limit: Number of top movers to return (default 10)
         
     Returns:
         Dictionary with 'gainers' and 'losers' DataFrames
@@ -2319,8 +2319,6 @@ def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit:
         losers = losers_df[result_cols].copy()
     else:
         losers = pd.DataFrame()
-    
-    return {'gainers': gainers, 'losers': losers}
     
     return {'gainers': gainers, 'losers': losers}
 

@@ -364,70 +364,181 @@ with tab2:
                     
                     st.divider()
                     
-                    # Update user email section
-                    st.subheader("Update User Email")
-                    st.caption("Change a user's email address in the authentication system")
+                    # Update contributor email section
+                    st.subheader("Update Contributor Email")
+                    st.caption("Change a contributor's email address (updates contributors table and fund_contributions records)")
                     
                     col_email1, col_email2 = st.columns(2)
                     
                     with col_email1:
-                        # Create display options with user_id as value
-                        # Format: "Full Name (email)" or "user_id" if no name/email
-                        user_options = [""]
-                        user_id_map = {}  # Maps display string to user_id
+                        # Get all contributors from both sources
+                        contributor_options = [""]
+                        contributor_map = {}  # Maps display string to (contributor_name, contributor_id, current_email, is_user)
                         
+                        # 1. Get contributors from contributors table
+                        try:
+                            contributors_list = get_cached_contributors()
+                            for c in contributors_list:
+                                name = c.get('name', '')
+                                email = c.get('email') or ""
+                                contrib_id = c.get('id')
+                                
+                                if name:
+                                    if email:
+                                        display_label = f"{name} ({email}) [Contributor]"
+                                    else:
+                                        display_label = f"{name} (no email) [Contributor]"
+                                    
+                                    contributor_options.append(display_label)
+                                    contributor_map[display_label] = {
+                                        'name': name,
+                                        'id': contrib_id,
+                                        'email': email,
+                                        'is_user': False,
+                                        'type': 'contributor'
+                                    }
+                        except Exception as e:
+                            st.warning(f"Could not load contributors table: {e}")
+                        
+                        # 2. Get unique contributors from fund_contributions
+                        try:
+                            # Get all unique contributors from fund_contributions
+                            all_contribs = []
+                            batch_size = 1000
+                            offset = 0
+                            
+                            while True:
+                                result = client.supabase.table("fund_contributions")\
+                                    .select("contributor, email")\
+                                    .range(offset, offset + batch_size - 1)\
+                                    .execute()
+                                
+                                if not result.data:
+                                    break
+                                
+                                all_contribs.extend(result.data)
+                                
+                                if len(result.data) < batch_size:
+                                    break
+                                
+                                offset += batch_size
+                                if offset > 50000:
+                                    break
+                            
+                            # Group by contributor name, get most common email
+                            from collections import defaultdict
+                            contrib_dict = defaultdict(lambda: {'emails': [], 'count': 0})
+                            
+                            for record in all_contribs:
+                                name = record.get('contributor', '').strip()
+                                email = record.get('email', '').strip() if record.get('email') else ""
+                                if name:
+                                    contrib_dict[name]['count'] += 1
+                                    if email:
+                                        contrib_dict[name]['emails'].append(email)
+                            
+                            # Add contributors from fund_contributions that aren't already in the list
+                            for name, data in contrib_dict.items():
+                                # Get most common email
+                                emails = data['emails']
+                                most_common_email = max(set(emails), key=emails.count) if emails else ""
+                                
+                                # Check if already added from contributors table
+                                already_added = any(
+                                    c['name'] == name and c['type'] == 'contributor' 
+                                    for c in contributor_map.values()
+                                )
+                                
+                                if not already_added:
+                                    if most_common_email:
+                                        display_label = f"{name} ({most_common_email}) [From Contributions]"
+                                    else:
+                                        display_label = f"{name} (no email) [From Contributions]"
+                                    
+                                    # Only add if not already in options
+                                    if display_label not in contributor_options:
+                                        contributor_options.append(display_label)
+                                        contributor_map[display_label] = {
+                                            'name': name,
+                                            'id': None,  # No ID from fund_contributions
+                                            'email': most_common_email,
+                                            'is_user': False,
+                                            'type': 'fund_contribution'
+                                        }
+                        except Exception as e:
+                            st.warning(f"Could not load contributors from fund_contributions: {e}")
+                        
+                        # 3. Also add registered users who might not be contributors yet
                         for _, row in users_df.iterrows():
-                            user_id = row['user_id']  # Keep as UUID object
-                            user_id_str = str(user_id)
+                            user_id = row['user_id']
                             full_name = row.get('full_name') or ""
                             email = row.get('email') or ""
                             
-                            # Create display label
-                            if full_name and email:
-                                display_label = f"{full_name} ({email})"
-                            elif full_name:
-                                display_label = f"{full_name} (no email)"
-                            elif email:
-                                display_label = email
-                            else:
-                                display_label = f"User {user_id_str[:8]}... (no name/email)"
+                            # Check if this user is already in the list as a contributor
+                            already_listed = any(
+                                c['email'] == email and email 
+                                for c in contributor_map.values()
+                            )
                             
-                            user_options.append(display_label)
-                            user_id_map[display_label] = user_id  # Store UUID object, not string
+                            if not already_listed:
+                                if full_name and email:
+                                    display_label = f"{full_name} ({email}) [Registered User]"
+                                elif full_name:
+                                    display_label = f"{full_name} (no email) [Registered User]"
+                                elif email:
+                                    display_label = f"{email} [Registered User]"
+                                else:
+                                    user_id_str = str(user_id)
+                                    display_label = f"User {user_id_str[:8]}... (no name/email) [Registered User]"
+                                
+                                contributor_options.append(display_label)
+                                contributor_map[display_label] = {
+                                    'name': full_name or email or f"User {str(user_id)[:8]}",
+                                    'id': user_id,
+                                    'email': email,
+                                    'is_user': True,
+                                    'type': 'user'
+                                }
                         
-                        selected_user_display = st.selectbox(
-                            "Select User to Update",
-                            options=user_options,
+                        selected_contributor_display = st.selectbox(
+                            "Select Contributor/User to Update",
+                            options=contributor_options,
                             key="update_email_select"
                         )
                         
-                        # Get the selected user_id and current email
-                        selected_user_id = user_id_map.get(selected_user_display) if selected_user_display else None
-                        current_user_email = None
-                        if selected_user_id:
-                            # Get current email from dataframe
-                            user_row = users_df[users_df['user_id'] == selected_user_id]
-                            if not user_row.empty:
-                                current_user_email = user_row.iloc[0].get('email') or ""
+                        # Get the selected contributor info
+                        selected_contributor = contributor_map.get(selected_contributor_display) if selected_contributor_display else None
+                        current_contributor_email = selected_contributor.get('email') if selected_contributor else None
                     
                     with col_email2:
-                        # Show current email if available
-                        if selected_user_id and current_user_email:
-                            st.caption(f"Current email: {current_user_email}")
+                        # Show current email and type if available
+                        if selected_contributor:
+                            contrib_type = selected_contributor.get('type', 'unknown')
+                            if contrib_type == 'contributor':
+                                st.caption("Type: Contributor (from contributors table)")
+                            elif contrib_type == 'fund_contribution':
+                                st.caption("Type: Contributor (from fund_contributions)")
+                            elif contrib_type == 'user':
+                                st.caption("Type: Registered User")
+                            
+                            if current_contributor_email:
+                                st.caption(f"Current email: {current_contributor_email}")
+                            else:
+                                st.caption("Current email: None")
                         
                         new_user_email = st.text_input(
                             "New Email Address",
                             key="new_user_email",
                             placeholder="Enter new email address",
-                            disabled=not selected_user_id
+                            disabled=not selected_contributor
                         )
                     
                     if st.button("✏️ Update Email", type="primary"):
-                        if not selected_user_id:
-                            st.error("Please select a user to update")
+                        if not selected_contributor:
+                            st.error("Please select a contributor/user to update")
                         elif not new_user_email:
                             st.error("Please enter a new email address")
-                        elif current_user_email and current_user_email == new_user_email:
+                        elif current_contributor_email and current_contributor_email == new_user_email:
                             st.warning("New email must be different from current email")
                         else:
                             try:
@@ -437,54 +548,91 @@ with tab2:
                                 if not re.match(email_pattern, new_user_email):
                                     st.error("Invalid email format")
                                 else:
-                                    # Use service role client for admin operations
-                                    supabase_url = os.getenv("SUPABASE_URL")
-                                    service_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                                    contrib_type = selected_contributor.get('type')
+                                    contrib_name = selected_contributor.get('name')
+                                    contrib_id = selected_contributor.get('id')
                                     
-                                    if not supabase_url or not service_key:
-                                        st.error("Admin credentials not configured. SUPABASE_SECRET_KEY must be set.")
-                                    else:
-                                        # Create admin client
-                                        admin_client = create_client(supabase_url, service_key)
-                                        
-                                        # Get all users to check for duplicate emails
-                                        users_response = admin_client.auth.admin.list_users()
-                                        users_list = users_response if isinstance(users_response, list) else getattr(users_response, 'users', [])
-                                        
-                                        # Check if new email already exists
-                                        email_exists = False
-                                        for u in users_list:
-                                            check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
-                                            if check_email and check_email.lower() == new_user_email.lower():
-                                                email_exists = True
-                                                break
-                                        
-                                        if email_exists:
-                                            st.error(f"Email {new_user_email} is already in use by another user")
-                                        else:
-                                            # Update email in auth.users using admin API (using user_id directly)
-                                            update_response = admin_client.auth.admin.update_user_by_id(
-                                                selected_user_id,
+                                    updates_made = []
+                                    
+                                    # Update based on type
+                                    if contrib_type == 'contributor' and contrib_id:
+                                        # Update contributors table
+                                        try:
+                                            client.supabase.table("contributors").update(
                                                 {"email": new_user_email}
-                                            )
+                                            ).eq("id", contrib_id).execute()
+                                            updates_made.append("contributors table")
+                                        except Exception as e:
+                                            st.warning(f"Could not update contributors table: {e}")
+                                    
+                                    # Always update fund_contributions for this contributor name
+                                    try:
+                                        client.supabase.table("fund_contributions").update(
+                                            {"email": new_user_email}
+                                        ).eq("contributor", contrib_name).execute()
+                                        updates_made.append("fund_contributions records")
+                                    except Exception as e:
+                                        st.warning(f"Could not update fund_contributions: {e}")
+                                    
+                                    # If it's a registered user, also update auth
+                                    if contrib_type == 'user' and contrib_id:
+                                        try:
+                                            # Use service role client for admin operations
+                                            supabase_url = os.getenv("SUPABASE_URL")
+                                            service_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
                                             
-                                            if update_response and update_response.user:
-                                                # Also update email in user_profiles table if it exists
-                                                try:
-                                                    client.supabase.table("user_profiles").update(
-                                                        {"email": new_user_email}
-                                                    ).eq("user_id", selected_user_id).execute()
-                                                except Exception as profile_error:
-                                                    # Log but don't fail - user_profiles might not exist for all users
-                                                    st.warning(f"Note: Could not update user_profiles: {profile_error}")
+                                            if supabase_url and service_key:
+                                                admin_client = create_client(supabase_url, service_key)
                                                 
-                                                # Clear caches
-                                                st.cache_data.clear()
-                                                display_name = selected_user_display.split(" (")[0] if " (" in selected_user_display else selected_user_display
-                                                st.toast(f"✅ Email updated for {display_name} to {new_user_email}", icon="✅")
-                                                st.rerun()
+                                                # Check if email already exists in auth.users
+                                                users_response = admin_client.auth.admin.list_users()
+                                                users_list = users_response if isinstance(users_response, list) else getattr(users_response, 'users', [])
+                                                
+                                                email_exists = False
+                                                for u in users_list:
+                                                    check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
+                                                    if check_email and check_email.lower() == new_user_email.lower():
+                                                        # Check if it's the same user
+                                                        check_id = u.id if hasattr(u, 'id') else u.get('id') if isinstance(u, dict) else None
+                                                        if str(check_id) != str(contrib_id):
+                                                            email_exists = True
+                                                            break
+                                                
+                                                if email_exists:
+                                                    st.error(f"Email {new_user_email} is already in use by another user")
+                                                else:
+                                                    # Update email in auth.users using admin API
+                                                    update_response = admin_client.auth.admin.update_user_by_id(
+                                                        contrib_id,
+                                                        {"email": new_user_email}
+                                                    )
+                                                    
+                                                    if update_response and update_response.user:
+                                                        updates_made.append("auth.users")
+                                                        
+                                                        # Also update email in user_profiles table
+                                                        try:
+                                                            client.supabase.table("user_profiles").update(
+                                                                {"email": new_user_email}
+                                                            ).eq("user_id", contrib_id).execute()
+                                                            updates_made.append("user_profiles")
+                                                        except Exception as profile_error:
+                                                            st.warning(f"Note: Could not update user_profiles: {profile_error}")
+                                                    else:
+                                                        st.error("Failed to update email in auth.users")
                                             else:
-                                                st.error("Failed to update email - invalid response from server")
+                                                st.warning("Admin credentials not configured - could not update auth.users")
+                                        except Exception as auth_error:
+                                            st.warning(f"Could not update auth.users: {auth_error}")
+                                    
+                                    if updates_made:
+                                        # Clear caches
+                                        st.cache_data.clear()
+                                        display_name = selected_contributor_display.split(" (")[0] if " (" in selected_contributor_display else selected_contributor_display
+                                        st.toast(f"✅ Email updated for {display_name} in: {', '.join(updates_made)}", icon="✅")
+                                        st.rerun()
+                                    else:
+                                        st.error("No updates were made")
                             except Exception as e:
                                 st.error(f"Error updating email: {e}")
                                 import traceback

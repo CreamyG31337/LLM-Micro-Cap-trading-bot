@@ -1425,7 +1425,7 @@ def main():
                                 gainers_df['current_price'] = gainers_df['current_price'].apply(lambda x: f"${x:.2f}")
                                 display_cols['current_price'] = 'Price'
                             if 'market_value' in gainers_df.columns:
-                                gainers_df['market_value'] = gainers_df['market_value'].apply(lambda x: f"${x:,.0f}")
+                                gainers_df['market_value'] = gainers_df['market_value'].apply(lambda x: f"${x:,.2f}")
                                 display_cols['market_value'] = 'Value'
                             
                             # Rename columns
@@ -1480,7 +1480,7 @@ def main():
                                 losers_df['current_price'] = losers_df['current_price'].apply(lambda x: f"${x:.2f}")
                                 display_cols['current_price'] = 'Price'
                             if 'market_value' in losers_df.columns:
-                                losers_df['market_value'] = losers_df['market_value'].apply(lambda x: f"${x:,.0f}")
+                                losers_df['market_value'] = losers_df['market_value'].apply(lambda x: f"${x:,.2f}")
                                 display_cols['market_value'] = 'Value'
                             
                             # Rename columns
@@ -2472,6 +2472,14 @@ def main():
                 display_cols = ['pay_date', 'ticker', 'gross_amount', 'net_amount', 'reinvested_shares', 'drip_price']
                 div_display_df = div_df[display_cols].copy()
                 div_display_df.columns = ['Pay Date', 'Ticker', 'Gross ($)', 'Net ($)', 'Reinvested Shares', 'DRIP Price ($)']
+                
+                # Format dollar columns to 2 decimals
+                if 'Gross ($)' in div_display_df.columns:
+                    div_display_df['Gross ($)'] = div_display_df['Gross ($)'].apply(lambda x: f"${float(x):,.2f}" if pd.notna(x) else "$0.00")
+                if 'Net ($)' in div_display_df.columns:
+                    div_display_df['Net ($)'] = div_display_df['Net ($)'].apply(lambda x: f"${float(x):,.2f}" if pd.notna(x) else "$0.00")
+                if 'DRIP Price ($)' in div_display_df.columns:
+                    div_display_df['DRIP Price ($)'] = div_display_df['DRIP Price ($)'].apply(lambda x: f"${float(x):,.2f}" if pd.notna(x) else "$0.00")
                 
                 # AgGrid Display with ticker navigation
                 selected_ticker = display_aggrid_with_ticker_navigation(

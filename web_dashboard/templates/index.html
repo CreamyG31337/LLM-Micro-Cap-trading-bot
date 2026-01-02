@@ -306,9 +306,9 @@
             }
 
             // Update metrics
-            document.getElementById('total-value').textContent = `$${metrics.total_value?.toLocaleString() || '0.00'}`;
+            document.getElementById('total-value').textContent = `$${(metrics.total_value || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
             document.getElementById('performance-pct').textContent = `${metrics.performance_pct?.toFixed(2) || '0.00'}%`;
-            document.getElementById('unrealized-pnl').textContent = `$${metrics.unrealized_pnl?.toLocaleString() || '0.00'}`;
+            document.getElementById('unrealized-pnl').textContent = `$${(metrics.unrealized_pnl || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
             document.getElementById('total-trades').textContent = metrics.total_trades || '0';
 
             // Update performance percentage color
@@ -364,7 +364,7 @@
                                 <p class="text-sm text-gray-600">${position.shares} shares @ $${position.price}</p>
                             </div>
                             <div class="text-right">
-                                <p class="font-bold">$${position.market_value.toLocaleString()}</p>
+                                <p class="font-bold">$${position.market_value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
                                 <p class="text-sm ${pnlClass}">${position.pnl >= 0 ? '+' : ''}$${position.pnl.toFixed(2)}</p>
                                 <p class="text-xs ${pnlPctClass}">${position.pnl_pct >= 0 ? '+' : ''}${position.pnl_pct.toFixed(2)}%</p>
                             </div>
@@ -428,11 +428,11 @@
                         </div>
                         <div>
                             <p class="text-sm text-gray-600">Total Contributions</p>
-                            <p class="text-2xl font-bold text-green-600">$${data.total_net_contributions.toLocaleString()}</p>
+                            <p class="text-2xl font-bold text-green-600">$${data.total_net_contributions.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
                         </div>
                         <div>
                             <p class="text-sm text-gray-600">Average per Contributor</p>
-                            <p class="text-2xl font-bold text-purple-600">$${Math.round(data.total_net_contributions / data.total_contributors).toLocaleString()}</p>
+                            <p class="text-2xl font-bold text-purple-600">$${(data.total_net_contributions / data.total_contributors).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
                         </div>
                     </div>
                 </div>
@@ -456,7 +456,7 @@
                                 <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                                     <div>
                                         <p class="text-gray-500">Net Contribution</p>
-                                        <p class="font-bold text-green-600">$${contributor.net_contribution.toLocaleString()}</p>
+                                        <p class="font-bold text-green-600">$${contributor.net_contribution.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
                                     </div>
                                     <div>
                                         <p class="text-gray-500">Ownership</p>

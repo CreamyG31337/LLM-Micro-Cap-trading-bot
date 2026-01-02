@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 # Add project root to path for market data imports
-project_root = Path(__file__).resolve().parent.parent.parent
+# ai_context_builder.py is in web_dashboard/, so parent is the project root
+project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -262,6 +263,9 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
         market_hours = MarketHours()
     except Exception as e:
         # If MarketDataFetcher not available, use data from positions_df
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"MarketDataFetcher not available for Price & Volume table: {e}")
         pass
     
     for idx, row in positions_df.iterrows():
@@ -308,8 +312,11 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
                                     avg_vol_str = f"{int(avg_volume/1000):,}K"
                                 else:
                                     avg_vol_str = f"{int(avg_volume):,}"
-            except Exception:
+            except Exception as e:
                 # Fallback to "—" if fetch fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to fetch volume data for {ticker}: {e}")
                 pass
         
         price_str = f"{current_price:,.2f}" if current_price > 0 else "—"
@@ -472,13 +479,18 @@ def format_trades(trades_df: pd.DataFrame, limit: int = 100) -> str:
     ]
     
     for idx, row in df.iterrows():
-        timestamp = row.get('timestamp', '')
+        # Handle both 'timestamp' and 'date' columns from different data sources
+        timestamp = row.get('timestamp') or row.get('date', '')
         symbol = row.get('symbol', row.get('ticker', 'N/A'))
         action = row.get('action', 'N/A')
-        quantity = row.get('quantity', 0)
+        # Handle both 'quantity' and 'shares' columns
+        quantity = row.get('quantity') or row.get('shares', 0)
         price = row.get('price', 0)
         currency = row.get('currency', 'CAD')
-        total_value = row.get('total_value', 0)
+        # Calculate total_value if not present
+        total_value = row.get('total_value')
+        if not total_value and quantity and price:
+            total_value = float(quantity) * float(price)
         
         # Compact date format (MM-DD-YY)
         date_str = "N/A"

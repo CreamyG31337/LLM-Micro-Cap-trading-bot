@@ -27,14 +27,14 @@ from search_utils import (
 )
 from ai_context_builder import (
     format_holdings, format_thesis, format_trades, format_performance_metrics,
-    format_cash_balances, format_investor_allocations
+    format_cash_balances
 )
 from ai_prompts import get_system_prompt
 from user_preferences import get_user_ai_model, set_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
     calculate_portfolio_value_over_time, calculate_performance_metrics,
-    get_fund_thesis_data, get_investor_allocations, get_available_funds
+    get_fund_thesis_data, get_available_funds
 )
 from research_repository import ResearchRepository
 
@@ -334,20 +334,6 @@ def build_context_string_internal() -> str:
                 cash = get_cash_balances(fund) if fund else {}
                 context_parts.append(format_cash_balances(cash))
 
-            elif item.item_type == ContextItemType.INVESTOR_ALLOCATIONS:
-                allocations_df = get_investor_allocations(fund) if fund else pd.DataFrame()
-                # Convert DataFrame to dict format for formatter
-                if not allocations_df.empty:
-                    allocations_dict = {}
-                    for _, row in allocations_df.iterrows():
-                        allocations_dict[row['contributor_display']] = {
-                            'value': row['net_contribution'],
-                            'percentage': row['ownership_pct']
-                        }
-                    context_parts.append(format_investor_allocations(allocations_dict))
-                else:
-                    context_parts.append(format_investor_allocations({}))
-
             elif item.item_type == ContextItemType.SEARCH_RESULTS:
                 # Search results are added dynamically when user queries
                 # This is handled in the query processing section
@@ -492,14 +478,6 @@ with st.sidebar:
         value=ContextItemType.TRADES in current_types,
         help="Include recent trading activity (last 50 trades)",
         key="toggle_trades"
-    )
-
-    # Investor allocations toggle
-    include_investors = st.checkbox(
-        "Investor Allocations",
-        value=ContextItemType.INVESTOR_ALLOCATIONS in current_types,
-        help="Include investor ownership breakdown",
-        key="toggle_investors"
     )
 
     st.markdown("---")
@@ -728,12 +706,6 @@ with st.sidebar:
             chat_context.add_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
         elif not include_cash and ContextItemType.CASH_BALANCES in current_types:
             chat_context.remove_item(ContextItemType.CASH_BALANCES, fund=selected_fund)
-
-        # INVESTOR_ALLOCATIONS - no metadata required
-        if include_investors and ContextItemType.INVESTOR_ALLOCATIONS not in current_types:
-            chat_context.add_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
-        elif not include_investors and ContextItemType.INVESTOR_ALLOCATIONS in current_types:
-            chat_context.remove_item(ContextItemType.INVESTOR_ALLOCATIONS, fund=selected_fund)
 
     # Handle search context
     if include_search and searxng_available:

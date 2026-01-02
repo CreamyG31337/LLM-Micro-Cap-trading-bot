@@ -523,8 +523,8 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
             .in_("job_name", job_names_list)\
             .eq("status", "failed")\
             .order("completed_at", desc=True)\
-            .limit(100)  # Get enough to find most recent per job\
-            .execute()
+            .limit(100)\
+            .execute()  # Get enough to find most recent per job
         
         if failed_result.data:
             # Group by job_name, keeping only the most recent for each
@@ -554,8 +554,8 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
             .in_("job_name", job_names_list)\
             .in_("status", ["success", "failed"])\
             .order("completed_at", desc=True)\
-            .limit(200)  # Get enough to have recent logs for each job\
-            .execute()
+            .limit(200)\
+            .execute()  # Get enough to have recent logs for each job
         
         if logs_result.data:
             # Group logs by job_name, keeping most recent per job

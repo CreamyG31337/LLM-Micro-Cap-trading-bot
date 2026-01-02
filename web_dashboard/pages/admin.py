@@ -1079,6 +1079,55 @@ with tab4:
         
         st.divider()
         
+        # ===== EDIT FUND DETAILS =====
+        st.subheader("✏️ Edit Fund Details")
+        st.caption("Update fund type, description, or currency")
+        with st.expander("Edit fund details", expanded=False):
+            col_edit1, col_edit2 = st.columns(2)
+            with col_edit1:
+                edit_fund = st.selectbox("Select Fund to Edit", options=[""] + fund_names, key="edit_fund_select")
+            
+            # Fetch current details if fund selected
+            current_desc = ""
+            current_type = "investment"
+            current_curr = "CAD"
+            
+            if edit_fund:
+                fund_info = next((f for f in funds_data if f['name'] == edit_fund), {})
+                current_desc = fund_info.get('description', '')
+                current_type = fund_info.get('fund_type', 'investment')
+                current_curr = fund_info.get('currency', 'CAD')
+            
+            with col_edit1:
+                new_desc = st.text_input("Description", value=current_desc, key="edit_fund_desc")
+                new_curr = st.selectbox("Currency", options=["CAD", "USD"], index=0 if current_curr == "CAD" else 1, key="edit_fund_curr")
+            
+            with col_edit2:
+                # Add 'rrsp' to options explicitly
+                type_options = sorted(list(set(["investment", "retirement", "tfsa", "test", "rrsp", "margin", "personal"])))
+                # Ensure current type is in options
+                if current_type not in type_options:
+                    type_options.append(current_type)
+                
+                type_index = type_options.index(current_type) if current_type in type_options else 0
+                new_type = st.selectbox("Fund Type (Set to 'rrsp' for tax exemption)", options=type_options, index=type_index, key="edit_fund_type")
+                
+            if st.button("💾 Save Changes", type="primary", disabled=not edit_fund):
+                try:
+                    client.supabase.table("funds").update({
+                        "description": new_desc,
+                        "fund_type": new_type,
+                        "currency": new_curr
+                    }).eq("name", edit_fund).execute()
+                    
+                    st.cache_data.clear()
+                    st.toast(f"✅ Updated details for '{edit_fund}'", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error updating fund: {e}")
+        
+        st.divider()
+        
         # ===== ADD NEW FUND =====
         st.subheader("➕ Add New Fund")
         with st.expander("Create a new fund", expanded=False):

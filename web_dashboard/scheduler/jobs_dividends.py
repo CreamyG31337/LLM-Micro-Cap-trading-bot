@@ -112,13 +112,12 @@ def calculate_withholding_tax(gross_amount: Decimal, fund_type: str, ticker: str
         return Decimal('0')
     
     fund_type_lower = fund_type.lower()
-    if fund_type_lower in ['rrsp']:
-        return Decimal('0')  # RRSP has treaty protection
     
-    if fund_type_lower in ['tfsa', 'personal', 'investment']:
-        return gross_amount * Decimal('0.15')  # 15% withholding
+    # Standardized Rule: RRSP gets 0% (treaty), everything else gets 15%
+    if fund_type_lower == 'rrsp':
+        return Decimal('0')
     
-    return Decimal('0')  # Default: no tax
+    return gross_amount * Decimal('0.15')  # Default 15% for TFSA, Investment, Margin, etc.
 
 
 def get_unique_holdings(client) -> List[Tuple[str, str]]:

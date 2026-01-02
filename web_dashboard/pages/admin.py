@@ -220,10 +220,13 @@ with tab2:
                 users_df = pd.DataFrame(get_cached_users())
                 
                 if not users_df.empty:
-                    # Display users table
+                    # Display users table (hide user_id column)
                     st.subheader("All Users")
+                    # Select only columns to display (exclude user_id)
+                    display_columns = ["email", "full_name", "funds"]
+                    users_display_df = users_df[[col for col in display_columns if col in users_df.columns]]
                     display_dataframe_with_copy(
-                        users_df,
+                        users_display_df,
                         label="All Users",
                         key_suffix="all_users",
                         use_container_width=True,
@@ -1711,15 +1714,82 @@ Time: December 19, 2025 09:30 EST""",
                     
                     st.markdown("### 📋 Parsed Trade Preview")
                     
-                    # Currency validation check
+                    # Currency validation check with auto-lookup
                     canadian_suffixes = ['.TO', '.V', '.CN', '.NE']
                     is_canadian_ticker = any(trade.ticker.upper().endswith(suffix) for suffix in canadian_suffixes)
                     currency_warning = None
+                    ticker_suggestions = []
                     
                     if is_canadian_ticker and trade.currency.upper() != 'CAD':
                         currency_warning = f"⚠️ **Currency mismatch**: {trade.ticker} appears to be a Canadian stock but currency is {trade.currency}"
                     elif not is_canadian_ticker and trade.currency.upper() == 'CAD':
-                        currency_warning = f"ℹ️ **Note**: {trade.ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+                        # Auto-lookup Canadian suffix candidates
+                        try:
+                            from utils.ticker_utils import lookup_ticker_suffix_candidates
+                            ticker_suggestions = lookup_ticker_suffix_candidates(trade.ticker, trade.currency)
+                            
+                            if ticker_suggestions:
+                                # Found Canadian ticker matches
+                                if len(ticker_suggestions) == 1:
+                                    # Single match - show success with accept button
+                                    suggested = ticker_suggestions[0]
+                                    st.success(f"✅ **Found Canadian ticker**: {suggested['ticker']} - {suggested['name']} ({suggested['exchange']})")
+                                    
+                                    # Store suggested ticker in session state for acceptance
+                                    if 'suggested_ticker' not in st.session_state:
+                                        st.session_state.suggested_ticker = suggested['ticker']
+                                    
+                                    col_accept, col_reject = st.columns([1, 1])
+                                    with col_accept:
+                                        if st.button("✅ Accept Correction", key="accept_ticker_correction"):
+                                            trade.ticker = st.session_state.suggested_ticker
+                                            st.session_state.parsed_trade = trade
+                                            st.session_state.suggested_ticker = None
+                                            st.rerun()
+                                    with col_reject:
+                                        if st.button("❌ Keep Original", key="reject_ticker_correction"):
+                                            st.session_state.suggested_ticker = None
+                                            st.rerun()
+                                else:
+                                    # Multiple matches - show selection dropdown
+                                    st.info(f"🔍 **Found {len(ticker_suggestions)} Canadian ticker matches for {trade.ticker}:**")
+                                    
+                                    # Create options list for dropdown
+                                    ticker_options = [f"{match['ticker']} - {match['name']} ({match['exchange']})" for match in ticker_suggestions]
+                                    ticker_options.insert(0, f"{trade.ticker} - Keep original")
+                                    
+                                    selected_index = st.selectbox(
+                                        "Select the correct ticker:",
+                                        options=range(len(ticker_options)),
+                                        format_func=lambda x: ticker_options[x],
+                                        key="ticker_selection"
+                                    )
+                                    
+                                    if selected_index > 0:
+                                        # User selected a suggested ticker
+                                        selected_match = ticker_suggestions[selected_index - 1]
+                                        st.session_state.suggested_ticker = selected_match['ticker']
+                                        
+                                        col_accept, col_reject = st.columns([1, 1])
+                                        with col_accept:
+                                            if st.button("✅ Accept Selected Ticker", key="accept_selected_ticker"):
+                                                trade.ticker = st.session_state.suggested_ticker
+                                                st.session_state.parsed_trade = trade
+                                                st.session_state.suggested_ticker = None
+                                                st.rerun()
+                                        with col_reject:
+                                            if st.button("❌ Keep Original", key="reject_selected_ticker"):
+                                                st.session_state.suggested_ticker = None
+                                                st.rerun()
+                                    else:
+                                        # User selected "Keep original"
+                                        st.session_state.suggested_ticker = None
+                            else:
+                                # No matches found - show existing info message
+                                currency_warning = f"ℹ️ **Note**: {trade.ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+                        except Exception as e:
+                            # Fallback to original behavior if lookup fails
+                            currency_warning = f"ℹ️ **Note**: {trade.ticker} has no Canadian suffix but currency is CAD. Verify this is correct. (Lookup failed: {str(e)})"
                     
                     if currency_warning:
                         st.warning(currency_warning)
@@ -1728,7 +1798,11 @@ Time: December 19, 2025 09:30 EST""",
                     col_left, col_right = st.columns(2)
                     
                     with col_left:
-                        st.write(f"**Ticker:** {trade.ticker}")
+                        # Show ticker with suggestion if available
+                        ticker_display = trade.ticker
+                        if 'suggested_ticker' in st.session_state and st.session_state.suggested_ticker:
+                            ticker_display = f"{trade.ticker} → {st.session_state.suggested_ticker}"
+                        st.write(f"**Ticker:** {ticker_display}")
                         st.write(f"**Action:** {trade.action}")
                         st.write(f"**Shares:** {trade.shares}")
                     

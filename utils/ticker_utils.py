@@ -7,7 +7,7 @@ to intelligently detect Canadian vs US stocks.
 
 import re
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, List, Dict
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,107 @@ def detect_and_correct_ticker(ticker: str, buy_price: float = None) -> str:
         # Default to original ticker
         TICKER_CORRECTION_CACHE[ticker] = ticker
         return ticker
+
+
+def lookup_ticker_suffix_candidates(ticker: str, currency: Optional[str] = None) -> List[Dict[str, str]]:
+    """
+    Look up ticker suffix candidates without user prompts (UI-friendly version).
+    
+    Tests all variants (.TO, .V, .CN, .NE, and base ticker) and returns valid matches.
+    When currency is CAD, filters for Canadian exchanges.
+    
+    Args:
+        ticker: Base ticker symbol (without suffix)
+        currency: Optional currency hint ('CAD' or 'USD') to filter results
+        
+    Returns:
+        List of dictionaries with keys: 'ticker', 'exchange', 'name'
+        Each dict represents a valid ticker variant found via yfinance
+    """
+    ticker = ticker.upper().strip()
+    
+    # If already has a suffix, return empty list (nothing to look up)
+    if any(ticker.endswith(suffix) for suffix in ['.TO', '.V', '.CN', '.NE']):
+        return []
+    
+    # Cache key for lookup results
+    cache_key = f"lookup_{ticker}_{currency or 'any'}"
+    if cache_key in TICKER_CORRECTION_CACHE:
+        cached_result = TICKER_CORRECTION_CACHE[cache_key]
+        if isinstance(cached_result, list):
+            return cached_result
+    
+    valid_matches = []
+    
+    try:
+        import yfinance as yf
+        
+        # Suppress all yfinance logging and warnings
+        logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+        
+        # Test all variants - prioritize Canadian suffixes if currency is CAD
+        if currency and currency.upper() == 'CAD':
+            variants_to_test = [
+                f"{ticker}.TO",   # TSX
+                f"{ticker}.V",    # TSX Venture
+                f"{ticker}.CN",  # CSE
+                f"{ticker}.NE",  # NEO
+                ticker,          # Base (US) - check last
+            ]
+        else:
+            variants_to_test = [
+                ticker,          # Base (US)
+                f"{ticker}.TO",  # TSX
+                f"{ticker}.V",   # TSX Venture
+                f"{ticker}.CN",  # CSE
+                f"{ticker}.NE",  # NEO
+            ]
+        
+        for variant in variants_to_test:
+            try:
+                stock = yf.Ticker(variant)
+                info = stock.info
+                
+                # Check if we get valid info (not just empty dict)
+                if info and info.get('symbol') and info.get('symbol') != 'N/A':
+                    exchange = info.get('exchange', '')
+                    name = info.get('longName', info.get('shortName', ''))
+                    
+                    # Only count as valid if we have a real exchange AND a real company name
+                    if (exchange and exchange != 'N/A' and 
+                        name and name != 'N/A' and name != 'Unknown' and 
+                        len(name) > 3):  # Real company names are longer than 3 chars
+                        
+                        # If currency is CAD, filter for Canadian exchanges
+                        if currency and currency.upper() == 'CAD':
+                            canadian_exchanges = ['TOR', 'TSX', 'TSXV', 'CSE', 'NEO', 'TORONTO']
+                            exchange_upper = exchange.upper()
+                            is_canadian = (
+                                variant.endswith(('.TO', '.V', '.CN', '.NE')) or
+                                any(can_ex in exchange_upper for can_ex in canadian_exchanges) or
+                                info.get('country', '').upper() == 'CANADA'
+                            )
+                            if not is_canadian:
+                                continue
+                        
+                        valid_matches.append({
+                            'ticker': variant,
+                            'exchange': exchange,
+                            'name': name
+                        })
+            except Exception:
+                # Silently skip invalid tickers - don't show 404 errors
+                continue
+        
+        # Cache the results
+        TICKER_CORRECTION_CACHE[cache_key] = valid_matches
+        return valid_matches
+        
+    except Exception as e:
+        logger.warning(f"Could not lookup ticker suffixes for {ticker}: {e}")
+        # Return empty list on error
+        TICKER_CORRECTION_CACHE[cache_key] = []
+        return []
 
 
 def normalize_ticker_symbol(ticker: str, currency: str = "CAD", buy_price: Union[float, Decimal, None] = None) -> str:

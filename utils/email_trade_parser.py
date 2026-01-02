@@ -335,6 +335,9 @@ class EmailTradeParser:
         - Canadian tickers (.TO, .V, .CN, .NE) should always be CAD
         - US tickers (no suffix) on a US brokerage are typically USD
         
+        When CAD currency is detected but no suffix, automatically looks up Canadian ticker candidates
+        and includes suggestions in the log message.
+        
         This doesn't change the currency, just logs a warning for review.
         """
         canadian_suffixes = ['.TO', '.V', '.CN', '.NE']
@@ -346,8 +349,36 @@ class EmailTradeParser:
             logger.warning(warning_msg)
         elif not is_canadian_ticker and currency.upper() == 'CAD':
             # This could be intentional (trading CAD on TSX without suffix from Wealthsimple)
-            # Log as info rather than warning, but still alert user
-            info_msg = f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+            # Try to look up Canadian ticker candidates to provide better info
+            try:
+                from utils.ticker_utils import lookup_ticker_suffix_candidates
+                ticker_suggestions = lookup_ticker_suffix_candidates(ticker, currency)
+                
+                if ticker_suggestions:
+                    if len(ticker_suggestions) == 1:
+                        # Single match found
+                        suggested = ticker_suggestions[0]
+                        info_msg = (
+                            f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. "
+                            f"Found Canadian ticker: {suggested['ticker']} - {suggested['name']} ({suggested['exchange']}). "
+                            f"Consider using {suggested['ticker']} instead."
+                        )
+                    else:
+                        # Multiple matches found
+                        suggestions_list = ", ".join([f"{m['ticker']} ({m['exchange']})" for m in ticker_suggestions])
+                        info_msg = (
+                            f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. "
+                            f"Found {len(ticker_suggestions)} Canadian ticker candidates: {suggestions_list}. "
+                            f"Verify this is correct or consider using one of these tickers."
+                        )
+                else:
+                    # No matches found - use original message
+                    info_msg = f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+            except Exception as e:
+                # Fallback to original message if lookup fails
+                logger.debug(f"Ticker suffix lookup failed for {ticker}: {e}")
+                info_msg = f"ℹ️ Currency note: {ticker} has no Canadian suffix but currency is CAD. Verify this is correct."
+            
             print(info_msg)
             logger.info(info_msg)
 

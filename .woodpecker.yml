@@ -87,6 +87,8 @@ steps:
       - |
         # Build base docker run command
         DOCKER_CMD="docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway"
+        # Mount Ollama logs directory (host logs -> container logs/server)
+        DOCKER_CMD="$DOCKER_CMD -v /home/lance/ollama-logs:/app/web_dashboard/logs/server"
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_URL=\"$SUPABASE_URL\""
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_PUBLISHABLE_KEY=\"$SUPABASE_PUBLISHABLE_KEY\""
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_SECRET_KEY=\"$SUPABASE_SECRET_KEY\""

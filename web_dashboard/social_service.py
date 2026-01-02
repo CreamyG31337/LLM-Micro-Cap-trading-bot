@@ -58,6 +58,12 @@ class SocialSentimentService:
         """
         try:
             self.postgres = postgres_client or PostgresClient()
+            self.supabase = supabase_client or SupabaseClient()
+            self.ollama = ollama_client or get_ollama_client()
+            
+            # Rate limiting state
+            self.last_reddit_request_time = 0
+            
         except Exception as e:
             logger.error(f"Failed to initialize PostgresClient: {e}")
             raise
@@ -360,8 +366,12 @@ class SocialSentimentService:
             - raw_data: Top 3 posts/comments as JSONB
         """
         try:
-            # Rate limiting: wait 2 seconds before request to respect unauthenticated rate limits
-            time.sleep(2)
+            # Rate limiting: ensure at least 2 seconds between Reddit requests
+            now = time.time()
+            elapsed = now - getattr(self, 'last_reddit_request_time', 0)
+            if elapsed < 2:
+                time.sleep(2 - elapsed)
+            self.last_reddit_request_time = time.time()
             
             # Use browser-like User-Agent to avoid 429 errors
             headers = {

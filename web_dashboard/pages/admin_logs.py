@@ -48,13 +48,26 @@ if mode == "Docker Containers (Live)":
             container_names = [c.name for c in containers]
             container_names.sort()
             
+            # Find Ollama containers and prioritize them
+            ollama_containers = [name for name in container_names if 'ollama' in name.lower()]
+            other_containers = [name for name in container_names if 'ollama' not in name.lower()]
+            sorted_containers = ollama_containers + other_containers
+            
             # Create mapping
             name_to_id = {c.name: c.id for c in containers}
             
             col1, col2 = st.columns([1, 3])
             
             with col1:
-                selected_container_name = st.selectbox("Select Container", container_names, index=0 if container_names else None)
+                # Default to first Ollama container if available (they're listed first)
+                default_index = 0 if ollama_containers and sorted_containers else None
+                
+                selected_container_name = st.selectbox(
+                    "Select Container", 
+                    sorted_containers, 
+                    index=default_index,
+                    help="Ollama containers are listed first for easy access"
+                )
                 tail_lines = st.number_input("Lines to fetch", min_value=100, max_value=5000, value=500)
                 
                 if st.button("🔄 Refresh Logs"):
@@ -89,6 +102,17 @@ else:
     # Ensure directory exists
     if not LOGS_DIR.exists():
         st.warning(f"Logs directory not found at {LOGS_DIR}")
+        st.info("""
+        **Ollama logs are typically available in Docker mode:**
+        1. Switch to **"Docker Containers (Live)"** mode above
+        2. Select the Ollama container from the dropdown
+        3. Ollama containers are automatically listed first for easy access
+        
+        **If running in Docker with volume mapping:**
+        - Ollama logs should appear at `server/server.log` in File System mode
+        - Ensure the volume is mapped: Host `~/ollama-logs` → Container `/app/web_dashboard/logs/server`
+        - See `LOGGING_SETUP.md` for detailed setup instructions
+        """)
     else:
         # Get list of log files (recursive to find server/ollama.log)
         log_files = list(LOGS_DIR.rglob("*.log"))
@@ -96,6 +120,13 @@ else:
 
         if not log_files:
             st.warning("No log files found in logs directory.")
+            st.info("""
+            **To view Ollama logs:**
+            1. Switch to **"Docker Containers (Live)"** mode above (recommended)
+            2. Select the Ollama container from the dropdown
+            
+            **Expected Ollama log location:** `server/server.log` (when volume mapping is configured)
+            """)
         else:
             # Sort by modification time (newest first)
             log_files.sort(key=os.path.getmtime, reverse=True)

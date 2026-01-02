@@ -295,7 +295,9 @@ def register_default_jobs(scheduler) -> None:
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['exchange_rates']['default_interval_minutes']),
             id='exchange_rates',
             name=f"{get_job_icon('exchange_rates')} Refresh Exchange Rates",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: exchange_rates (every 2 hours)")
     
@@ -306,7 +308,9 @@ def register_default_jobs(scheduler) -> None:
             trigger=CronTrigger(hour=17, minute=0, timezone='America/New_York'),
             id='performance_metrics',
             name=f"{get_job_icon('performance_metrics')} Populate Performance Metrics",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: performance_metrics (daily at 5 PM EST)")
     
@@ -365,7 +369,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='market_research_premarket',
             name=f"{get_job_icon('market_research_premarket')} Market Research (Pre-Market)",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
         
@@ -380,7 +386,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='market_research_midmorning',
             name=f"{get_job_icon('market_research_midmorning')} Market Research (Mid-Morning)",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
         
@@ -395,7 +403,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='market_research_powerhour',
             name=f"{get_job_icon('market_research_powerhour')} Market Research (Power Hour)",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
         
@@ -410,69 +420,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='market_research_postmarket',
             name=f"{get_job_icon('market_research_postmarket')} Market Research (Post-Market)",
-            replace_existing=True
-        )
-        logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
-    
-    # Market research job - 4 times daily at strategic times
-    if AVAILABLE_JOBS['market_research']['enabled_by_default']:
-        # Pre-Market: 08:00 EST (Mon-Fri)
-        scheduler.add_job(
-            market_research_job,
-            trigger=CronTrigger(
-                day_of_week='mon-fri',
-                hour=8,
-                minute=0,
-                timezone='America/New_York'
-            ),
-            id='market_research_premarket',
-            name=f"{get_job_icon('market_research_premarket')} Market Research (Pre-Market)",
-            replace_existing=True
-        )
-        logger.info("Registered job: market_research_premarket (weekdays 8:00 AM EST)")
-        
-        # Mid-Morning: 11:00 EST (Mon-Fri)
-        scheduler.add_job(
-            market_research_job,
-            trigger=CronTrigger(
-                day_of_week='mon-fri',
-                hour=11,
-                minute=0,
-                timezone='America/New_York'
-            ),
-            id='market_research_midmorning',
-            name=f"{get_job_icon('market_research_midmorning')} Market Research (Mid-Morning)",
-            replace_existing=True
-        )
-        logger.info("Registered job: market_research_midmorning (weekdays 11:00 AM EST)")
-        
-        # Power Hour: 14:00 EST (Mon-Fri)
-        scheduler.add_job(
-            market_research_job,
-            trigger=CronTrigger(
-                day_of_week='mon-fri',
-                hour=14,
-                minute=0,
-                timezone='America/New_York'
-            ),
-            id='market_research_powerhour',
-            name=f"{get_job_icon('market_research_powerhour')} Market Research (Power Hour)",
-            replace_existing=True
-        )
-        logger.info("Registered job: market_research_powerhour (weekdays 2:00 PM EST)")
-        
-        # Post-Market: 16:30 EST (Mon-Fri)
-        scheduler.add_job(
-            market_research_job,
-            trigger=CronTrigger(
-                day_of_week='mon-fri',
-                hour=16,
-                minute=30,
-                timezone='America/New_York'
-            ),
-            id='market_research_postmarket',
-            name=f"{get_job_icon('market_research_postmarket')} Market Research (Post-Market)",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: market_research_postmarket (weekdays 4:30 PM EST)")
 
@@ -486,7 +436,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='ticker_research_job',
             name=f"{get_job_icon('ticker_research_job')} Ticker Specific Research",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: ticker_research_job (every 6 hours)")
 
@@ -500,7 +452,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='opportunity_discovery_job',
             name=f"{get_job_icon('opportunity_discovery_job')} Opportunity Discovery",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: opportunity_discovery_job (every 12 hours)")
 
@@ -516,7 +470,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='alpha_research',
             name=f"{get_job_icon('alpha_research')} Alpha Hunter",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: alpha_research (every 6 hours)")
     
@@ -532,7 +488,9 @@ def register_default_jobs(scheduler) -> None:
             ),
             id='benchmark_refresh',
             name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")
     
@@ -543,20 +501,25 @@ def register_default_jobs(scheduler) -> None:
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment']['default_interval_minutes']),
             id='social_sentiment',
             name=f"{get_job_icon('social_sentiment')} Social Sentiment Tracking",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: social_sentiment (every 60 minutes - 1 hour)")
     
     # Social sentiment AI analysis job - every 2 hours
-    if AVAILABLE_JOBS['social_sentiment_ai']['enabled_by_default']:
-        scheduler.add_job(
-            social_sentiment_ai_job,
-            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment_ai']['default_interval_minutes']),
-            id='social_sentiment_ai',
-            name=f"{get_job_icon('social_sentiment_ai')} Social Sentiment AI Analysis",
-            replace_existing=True
-        )
-        logger.info("Registered job: social_sentiment_ai (every 2 hours)")
+    # DISABLED: Redundant with inline analysis in fetch_social_sentiment_job
+    # if AVAILABLE_JOBS['social_sentiment_ai']['enabled_by_default']:
+    #     scheduler.add_job(
+    #         social_sentiment_ai_job,
+    #         trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['social_sentiment_ai']['default_interval_minutes']),
+    #         id='social_sentiment_ai',
+    #         name=f"{get_job_icon('social_sentiment_ai')} Social Sentiment AI Analysis",
+    #         replace_existing=True,
+    #         max_instances=1,
+    #         coalesce=True
+    #     )
+    #     logger.info("Registered job: social_sentiment_ai (every 2 hours)")
     
     # Social metrics cleanup job - daily at 3:00 AM
     scheduler.add_job(
@@ -568,7 +531,9 @@ def register_default_jobs(scheduler) -> None:
         ),
         id='social_metrics_cleanup',
         name=f"{get_job_icon('social_metrics_cleanup')} Social Metrics Cleanup",
-        replace_existing=True
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True
     )
     logger.info("Registered job: social_metrics_cleanup (daily at 3:00 AM EST)")
     
@@ -593,7 +558,9 @@ def register_default_jobs(scheduler) -> None:
             trigger=IntervalTrigger(minutes=12),
             id='congress_trades',
             name=f"{get_job_icon('congress_trades')} Fetch Congress Trades",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: congress_trades (every 12 minutes - 120 runs/day, 240 API calls/day)")
     
@@ -604,7 +571,9 @@ def register_default_jobs(scheduler) -> None:
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['analyze_congress_trades']['default_interval_minutes']),
             id='analyze_congress_trades',
             name=f"{get_job_icon('analyze_congress_trades')} Analyze Congress Trades",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: analyze_congress_trades (every 30 minutes - processes unscored trades)")
     
@@ -615,6 +584,8 @@ def register_default_jobs(scheduler) -> None:
             trigger=CronTrigger(hour=2, minute=0, timezone='America/Los_Angeles'),
             id='dividend_processing',
             name=f"{get_job_icon('dividend_processing')} Process Dividend Reinvestments",
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
         )
         logger.info("Registered job: dividend_processing (daily at 2:00 AM PST)")

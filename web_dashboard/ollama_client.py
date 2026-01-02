@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import time
+import threading
 from typing import Generator, Optional, List, Dict, Any
 import requests
 from requests.adapters import HTTPAdapter
@@ -230,7 +231,8 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
         num_ctx: Optional[int] = None,
         system_prompt: Optional[str] = None,
-        json_mode: bool = False
+        json_mode: bool = False,
+        streaming_timeout: int = 90
     ) -> Generator[str, None, None]:
         """Query Ollama API with a prompt and optional context.
         
@@ -244,6 +246,7 @@ class OllamaClient:
             num_ctx: Context window size. If None, uses model default.
             system_prompt: Optional system prompt to set model behavior
             json_mode: Whether to enforce JSON output format
+            streaming_timeout: Timeout in seconds for streaming responses (default: 90)
             
         Yields:
             Response chunks as strings (streaming) or full response (non-streaming)
@@ -286,8 +289,11 @@ class OllamaClient:
         if json_mode:
             payload["format"] = "json"
         
+        # Track request timing
+        request_start_time = time.time()
+        
         try:
-            logger.info(f"Ollama query: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={effective_max_tokens}, stream={stream}")
+            logger.info(f"🤖 Ollama query starting: model={model}, temp={effective_temp}, ctx={effective_ctx}, max_tokens={effective_max_tokens}, stream={stream}, timeout={streaming_timeout}s")
             logger.debug(f"Prompt length: {len(full_prompt)} chars")
             
             response = self.session.post(
@@ -297,36 +303,73 @@ class OllamaClient:
                 timeout=self.timeout
             )
             response.raise_for_status()
-            logger.debug("Ollama response received, streaming...")
+            
+            connection_time = time.time() - request_start_time
+            logger.debug(f"⏱️  Ollama connection established in {connection_time:.2f}s, streaming...")
             
             if stream:
-                # Stream response chunks
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            chunk_data = json.loads(line)
-                            if "response" in chunk_data:
-                                yield chunk_data["response"]
-                            if chunk_data.get("done", False):
-                                break
-                        except json.JSONDecodeError:
-                            continue
+                # Stream response chunks with timeout protection
+                timeout_triggered = threading.Event()
+                response_iterator = response.iter_lines()
+                
+                def timeout_handler():
+                    """Handler called when streaming timeout is reached"""
+                    timeout_triggered.set()
+                    logger.error(f"❌ Ollama streaming timeout after {streaming_timeout}s - killing connection")
+                
+                # Set up timeout timer
+                timeout_timer = threading.Timer(streaming_timeout, timeout_handler)
+                timeout_timer.daemon = True
+                timeout_timer.start()
+                
+                try:
+                    for line in response_iterator:
+                        # Check if timeout was triggered
+                        if timeout_triggered.is_set():
+                            elapsed = time.time() - request_start_time
+                            logger.error(f"❌ Ollama streaming timed out after {elapsed:.2f}s")
+                            yield f"\n\n[ERROR: Streaming timed out after {elapsed:.1f}s - response may be incomplete]"
+                            break
+                        
+                        if line:
+                            try:
+                                chunk_data = json.loads(line)
+                                if "response" in chunk_data:
+                                    yield chunk_data["response"]
+                                if chunk_data.get("done", False):
+                                    # Cancel timeout timer on successful completion
+                                    timeout_timer.cancel()
+                                    elapsed = time.time() - request_start_time
+                                    logger.info(f"✅ Ollama streaming completed in {elapsed:.2f}s")
+                                    break
+                            except json.JSONDecodeError:
+                                continue
+                finally:
+                    # Always cancel the timer when done
+                    timeout_timer.cancel()
+                    
             else:
-                # Return full response
+                # Non-streaming response
                 data = response.json()
+                elapsed = time.time() - request_start_time
+                logger.info(f"✅ Ollama request completed in {elapsed:.2f}s")
                 yield data.get("response", "")
                 
         except requests.exceptions.Timeout:
-            logger.error(f"❌ Ollama request timed out after {self.timeout}s")
+            elapsed = time.time() - request_start_time
+            logger.error(f"❌ Ollama request timed out after {elapsed:.2f}s (timeout setting: {self.timeout}s)")
             yield "Request timed out. Please try again with a shorter prompt or context."
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"❌ Cannot connect to Ollama API at {self.base_url}: {e}")
+            elapsed = time.time() - request_start_time
+            logger.error(f"❌ Cannot connect to Ollama API at {self.base_url} after {elapsed:.2f}s: {e}")
             yield "Cannot connect to AI assistant. Please check if Ollama is running."
         except requests.exceptions.HTTPError as e:
-            logger.error(f"❌ Ollama API HTTP error: {e}")
+            elapsed = time.time() - request_start_time
+            logger.error(f"❌ Ollama API HTTP error after {elapsed:.2f}s: {e}")
             yield f"AI assistant error: {str(e)}"
         except Exception as e:
-            logger.error(f"❌ Unexpected error querying Ollama: {e}", exc_info=True)
+            elapsed = time.time() - request_start_time
+            logger.error(f"❌ Unexpected error querying Ollama after {elapsed:.2f}s: {e}", exc_info=True)
             yield f"An error occurred: {str(e)}"
     
     def generate_completion(
@@ -404,34 +447,32 @@ class OllamaClient:
             combined_text = combined_text[:max_chars] + "..."
             logger.debug(f"Truncated combined text to {max_chars} characters")
         
-        # System prompt - ask for label only, NOT numeric score
-        system_prompt = f"""You are a financial sentiment analyst. Analyze the crowd sentiment from these social media posts about {ticker}.
+        # System prompt - Robust crowd sentiment analysis
+        system_prompt = f"""You are an expert financial sentiment analyst specializing in social media momentum. Analyze these posts about {ticker}.
 
-Analyze the overall sentiment and categorize it as exactly ONE of these labels:
-- EUPHORIC: Extreme bullishness, FOMO, "to the moon", excessive optimism
-- BULLISH: Positive sentiment, optimistic outlook, buying interest
-- NEUTRAL: Mixed or balanced sentiment, no strong opinion
-- BEARISH: Negative sentiment, pessimistic outlook, selling pressure
-- FEARFUL: Extreme bearishness, panic, "going to zero", excessive pessimism
+TASK:
+1. Read the posts and identify the prevailing emotion and conviction.
+2. categorize the overall sentiment into exactly ONE of these labels:
+   - EUPHORIC: Extreme irrational exuberance, "moon" talk, massive FOMO.
+   - BULLISH: Confidence, buying discussion, positive catalysts.
+   - NEUTRAL: Mixed opinions, questions, or balanced bull/bear debate.
+   - BEARISH: Selling discussion, negative catalysts, doubt.
+   - FEARFUL: Panic selling, despair, "it's over" talk.
 
-CRITICAL: Return ONLY a valid JSON object with these exact fields:
+OUTPUT FORMAT:
+Return ONLY a raw JSON object with no markdown formatting or code blocks:
 {{
-  "sentiment": "EUPHORIC" | "BULLISH" | "NEUTRAL" | "BEARISH" | "FEARFUL",
-  "reasoning": "Brief explanation of why this sentiment was chosen"
-}}
-
-Do NOT include:
-- Numeric scores
-- Explanatory text outside the JSON
-- Comments or markdown formatting
-- Any text before or after the JSON object
-
-Return ONLY the JSON object, nothing else."""
+  "sentiment": "LABEL",
+  "reasoning": "One concise sentence explaining why (e.g., 'Users are excited about upcoming earnings' or 'Panic due to recent drop')."
+}}"""
         
         # User prompt with the actual posts
-        user_prompt = f"Analyze the sentiment from these social media posts about {ticker}:\n\n{combined_text}"
+        user_prompt = f"Analyze the sentiment for {ticker} based on these posts:\n\n{combined_text}"
         
         try:
+            # Calculate dynamic timeout based on text length (min 30s, max 90s)
+            dynamic_timeout = max(30, min(90, len(combined_text) // 100))
+            
             # Query Ollama (non-streaming for structured response)
             full_response = ""
             for chunk in self.query_ollama(
@@ -439,7 +480,9 @@ Return ONLY the JSON object, nothing else."""
                 model=model,
                 stream=True,
                 system_prompt=system_prompt,
-                temperature=0.3  # Lower temperature for more consistent classification
+                temperature=0.1,  # Low temperature for strict JSON adherence
+                json_mode=True,   # Enforce JSON mode
+                streaming_timeout=dynamic_timeout
             ):
                 full_response += chunk
             

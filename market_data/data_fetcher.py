@@ -337,8 +337,6 @@ class MarketDataFetcher:
         # Check if this is a Canadian ticker based on currency in portfolio data
         is_likely_canadian = ticker.endswith(('.TO', '.V'))  # Already has Canadian suffix
         
-        logger.info(f"DEBUG: Fetching {ticker}, is_likely_canadian={is_likely_canadian}")
-        
         # If no suffix, check if we have currency info from portfolio
         if not is_likely_canadian and hasattr(self, '_portfolio_currency_cache'):
             currency = self._portfolio_currency_cache.get(ticker.upper())
@@ -361,7 +359,6 @@ class MarketDataFetcher:
             # For likely Canadian tickers, try Canadian suffixes first
             # But don't add suffixes if ticker already has them
             if ticker.endswith(('.TO', '.V')):
-                logger.info("DEBUG: Suffix detected, populating strategies")
                 # Ticker already has Canadian suffix, use as-is
                 fetch_strategies = [
                     ("yahoo", lambda: self._fetch_yahoo_data(ticker, start_date, end_date, **kwargs)),
@@ -372,7 +369,6 @@ class MarketDataFetcher:
                     ("yahoo-proxy", lambda: self._fetch_proxy_data(ticker, start_date, end_date, **kwargs)),
                 ]
             else:
-                logger.info("DEBUG: No suffix, adding CA strategies")
                 # Ticker doesn't have suffix, try adding Canadian suffixes
                 fetch_strategies = [
                     ("yahoo-ca-to", lambda: self._fetch_yahoo_data(f"{ticker}.TO", start_date, end_date, **kwargs)),
@@ -426,10 +422,8 @@ class MarketDataFetcher:
                     self._normalize_ticker_in_csvs(ticker, strategy_name)
                     
                     break
-                else:
-                    failed_strategies.append(f"{strategy_name} (empty)")
             except Exception as e:
-                failed_strategies.append(f"{strategy_name} ({e})")
+                failed_strategies.append(strategy_name)
                 continue
 
             # Log a summary instead of individual errors
@@ -513,9 +507,6 @@ class MarketDataFetcher:
         try:
             import yfinance as yf
 
-            # DEBUG: Log what we're requesting
-            logger.info(f"DEBUG _fetch_yahoo_data: ticker={ticker}, start={start}, end={end}, kwargs={kwargs}")
-
             # Suppress yfinance warnings and provide our own clear messaging
             yf_logger = logging.getLogger("yfinance")
             original_level = yf_logger.level
@@ -529,12 +520,6 @@ class MarketDataFetcher:
                     end=end,
                     **kwargs
                 )
-                
-                # DEBUG: Log what we got back
-                logger.info(f"DEBUG _fetch_yahoo_data result: ticker={ticker}, df.shape={df.shape if hasattr(df, 'shape') else 'N/A'}, df.empty={df.empty if isinstance(df, pd.DataFrame) else 'not a df'}")
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    logger.info(f"DEBUG _fetch_yahoo_data: df.index={df.index[:5] if len(df) > 0 else 'empty'}")
-                    logger.info(f"DEBUG _fetch_yahoo_data: df.columns={list(df.columns)}")
 
                 if isinstance(df, pd.DataFrame) and not df.empty:
                     # Remove extra columns that aren't OHLCV
@@ -547,7 +532,6 @@ class MarketDataFetcher:
                 yf_logger.setLevel(original_level)
 
         except Exception as e:
-            logger.info(f"DEBUG _fetch_yahoo_data EXCEPTION: ticker={ticker}, error={e}")
             error_msg = str(e).lower()
             # Don't treat "possibly delisted" as a hard failure for ETFs and known tickers
             # These are often false positives from yfinance

@@ -992,10 +992,51 @@ with tab4:
                     else:
                         st.info("No funds found in database")
                 
-                st.divider()
-                
-                # ===== TOGGLE PRODUCTION FLAG =====
-                st.subheader("🏭 Toggle Production Status")
+        st.divider()
+        
+        # ===== REFRESH TICKER METADATA =====
+        st.subheader("🔄 Refresh Ticker Metadata")
+        st.caption("Update company name, sector, and industry for any ticker from yfinance")
+        
+        col_ticker, col_currency, col_button = st.columns([2, 1, 1])
+        with col_ticker:
+            refresh_ticker = st.text_input("Ticker Symbol", placeholder="e.g., PRE", key="refresh_ticker_input", label_visibility="collapsed")
+        with col_currency:
+            refresh_currency = st.selectbox("Currency", options=["CAD", "USD"], index=0, key="refresh_currency_select", label_visibility="collapsed")
+        with col_button:
+            st.write("")  # Spacer
+            if st.button("🔄 Refresh Metadata", key="refresh_metadata_button", use_container_width=True):
+                if not refresh_ticker:
+                    st.error("Please enter a ticker symbol")
+                else:
+                    try:
+                        with st.spinner(f"Refreshing metadata for {refresh_ticker}..."):
+                            admin_client = SupabaseClient(use_service_role=True)
+                            success = admin_client.ensure_ticker_in_securities(refresh_ticker.upper().strip(), refresh_currency)
+                            
+                            if success:
+                                # Get updated data to show
+                                updated = admin_client.supabase.table("securities")\
+                                    .select("ticker, company_name, sector, industry, currency")\
+                                    .eq("ticker", refresh_ticker.upper().strip())\
+                                    .execute()
+                                
+                                if updated.data:
+                                    data = updated.data[0]
+                                    st.success(f"✅ **{data.get('company_name', refresh_ticker)}**")
+                                    st.info(f"**Sector:** {data.get('sector', 'N/A')} | **Industry:** {data.get('industry', 'N/A')} | **Currency:** {data.get('currency', 'N/A')}")
+                                    st.cache_data.clear()
+                                else:
+                                    st.warning(f"Ticker {refresh_ticker} not found after refresh")
+                            else:
+                                st.error(f"Failed to refresh metadata for {refresh_ticker}")
+                    except Exception as e:
+                        st.error(f"Error refreshing metadata: {e}")
+        
+        st.divider()
+        
+        # ===== TOGGLE PRODUCTION FLAG =====
+        st.subheader("🏭 Toggle Production Status")
                 st.caption("Mark funds as production (included in automated backfill) or test/dev (excluded)")
                 with st.expander("Manage production flags", expanded=True):
                     if fund_names:
@@ -1590,9 +1631,42 @@ with tab6:
                 
                 # Ticker validation
                 if trade_ticker:
-                    ticker_check = client.supabase.table("securities").select("ticker, company_name, currency").eq("ticker", trade_ticker).execute()
+                    ticker_check = client.supabase.table("securities").select("ticker, company_name, currency, sector, industry").eq("ticker", trade_ticker).execute()
                     if ticker_check.data:
-                        st.success(f"✅ {ticker_check.data[0].get('company_name', trade_ticker)} ({ticker_check.data[0].get('currency', 'USD')})")
+                        ticker_data = ticker_check.data[0]
+                        company_name = ticker_data.get('company_name', trade_ticker)
+                        currency = ticker_data.get('currency', 'USD')
+                        sector = ticker_data.get('sector')
+                        industry = ticker_data.get('industry')
+                        
+                        # Check if metadata is incomplete
+                        is_incomplete = (
+                            not company_name or 
+                            company_name == trade_ticker or 
+                            company_name == 'Unknown' or
+                            (not sector and not industry)
+                        )
+                        
+                        col_info, col_refresh = st.columns([3, 1])
+                        with col_info:
+                            if is_incomplete:
+                                st.warning(f"⚠️ {company_name} ({currency}) - Metadata incomplete (missing sector/industry)")
+                            else:
+                                sector_industry = f" - {sector}" if sector else ""
+                                if industry:
+                                    sector_industry += f" / {industry}"
+                                st.success(f"✅ {company_name} ({currency}){sector_industry}")
+                        
+                        with col_refresh:
+                            if st.button("🔄 Refresh", key="refresh_ticker_metadata", help="Refresh company name, sector, and industry from yfinance"):
+                                try:
+                                    admin_client = SupabaseClient(use_service_role=True)
+                                    admin_client.ensure_ticker_in_securities(trade_ticker, currency or trade_currency)
+                                    st.success(f"✅ Refreshed metadata for {trade_ticker}")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error refreshing metadata: {e}")
                     else:
                         st.warning(f"⚠️ Ticker '{trade_ticker}' not in securities table. Will be added.")
                 
@@ -1615,13 +1689,8 @@ with tab6:
                             # Create service role client once for admin operations (bypasses RLS)
                             admin_client = SupabaseClient(use_service_role=True)
                             
-                            # Ensure ticker exists in securities table
-                            if not ticker_check.data:
-                                admin_client.supabase.table("securities").insert({
-                                    "ticker": trade_ticker,
-                                    "company_name": trade_ticker,
-                                    "currency": trade_currency
-                                }).execute()
+                            # Ensure ticker exists in securities table with proper company name from yfinance
+                            admin_client.ensure_ticker_in_securities(trade_ticker, trade_currency)
                             
                             # Calculate cost basis and P&L
                             cost_basis = trade_shares * trade_price
@@ -2116,14 +2185,8 @@ Time: December 19, 2025 09:30 EST""",
                             # Create service role client once for admin operations (bypasses RLS)
                             admin_client = SupabaseClient(use_service_role=True)
                             
-                            # Ensure ticker exists in securities table
-                            ticker_check = client.supabase.table("securities").select("ticker").eq("ticker", trade.ticker).execute()
-                            if not ticker_check.data:
-                                admin_client.supabase.table("securities").insert({
-                                    "ticker": trade.ticker,
-                                    "company_name": trade.ticker,
-                                    "currency": final_currency
-                                }).execute()
+                            # Ensure ticker exists in securities table with proper company name from yfinance
+                            admin_client.ensure_ticker_in_securities(trade.ticker, final_currency)
                             
                             # Calculate P&L for SELL trades using FIFO
                             final_pnl = float(trade.pnl) if trade.pnl else 0

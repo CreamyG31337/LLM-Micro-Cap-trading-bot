@@ -131,25 +131,45 @@ class SupabaseClient:
         """
         try:
             # Check if ticker already exists with complete metadata
-            existing = self.supabase.table("securities").select("ticker, company_name").eq("ticker", ticker).execute()
+            existing = self.supabase.table("securities").select("ticker, company_name, sector, industry").eq("ticker", ticker).execute()
             
-            # If ticker exists with valid company name (not NULL, empty, or 'Unknown'), no need to update
-            company_name = existing.data[0].get('company_name')
-            if existing.data and company_name and company_name != 'Unknown':
-                logger.debug(f"Ticker {ticker} already exists in securities table with company name")
+            # Check if ticker exists with valid metadata (not just ticker name, has sector/industry)
+            existing_company_name = None
+            has_complete_metadata = False
+            
+            if existing.data:
+                existing_company_name = existing.data[0].get('company_name')
+                existing_sector = existing.data[0].get('sector')
+                existing_industry = existing.data[0].get('industry')
+                
+                # Consider metadata complete if:
+                # 1. Company name exists and is not just the ticker, not 'Unknown', and not empty
+                # 2. Has sector or industry (indicates yfinance data was fetched)
+                if (existing_company_name and 
+                    existing_company_name != ticker and 
+                    existing_company_name != 'Unknown' and
+                    existing_company_name.strip() and
+                    (existing_sector or existing_industry)):
+                    has_complete_metadata = True
+            
+            # If ticker exists with complete metadata, no need to update
+            if has_complete_metadata:
+                logger.debug(f"Ticker {ticker} already exists in securities table with complete metadata")
                 return True
             
-            # Need to fetch metadata from yfinance
+            # Need to fetch/update metadata from yfinance
             metadata = {
                 'ticker': ticker,
                 'currency': currency
             }
             
-            # If company_name was provided, use it; otherwise fetch from yfinance
-            if company_name and company_name.strip():
+            # If company_name parameter was provided and ticker doesn't have complete metadata, use it
+            # Otherwise fetch from yfinance to get full metadata including sector/industry
+            if company_name and company_name.strip() and not existing.data:
+                # Only use provided company_name if ticker doesn't exist at all
                 metadata['company_name'] = company_name.strip()
             else:
-                # Fetch from yfinance
+                # Always fetch from yfinance to get complete metadata (company_name, sector, industry, etc.)
                 try:
                     import yfinance as yf
                     stock = yf.Ticker(ticker)
@@ -169,7 +189,7 @@ class SupabaseClient:
                         if market_cap:
                             metadata['market_cap'] = str(market_cap)
                         
-                        logger.debug(f"Fetched metadata for {ticker}: {metadata.get('company_name')}")
+                        logger.debug(f"Fetched metadata for {ticker}: {metadata.get('company_name')}, sector={metadata.get('sector')}, industry={metadata.get('industry')}")
                     else:
                         logger.warning(f"No yfinance info available for {ticker}")
                         metadata['company_name'] = 'Unknown'

@@ -371,28 +371,63 @@ with tab2:
                     col_email1, col_email2 = st.columns(2)
                     
                     with col_email1:
-                        # Get user emails from the users dataframe
-                        update_email_users = users_df['email'].tolist() if not users_df.empty else []
-                        current_user_email = st.selectbox(
+                        # Create display options with user_id as value
+                        # Format: "Full Name (email)" or "user_id" if no name/email
+                        user_options = [""]
+                        user_id_map = {}  # Maps display string to user_id
+                        
+                        for _, row in users_df.iterrows():
+                            user_id = row['user_id']  # Keep as UUID object
+                            user_id_str = str(user_id)
+                            full_name = row.get('full_name') or ""
+                            email = row.get('email') or ""
+                            
+                            # Create display label
+                            if full_name and email:
+                                display_label = f"{full_name} ({email})"
+                            elif full_name:
+                                display_label = f"{full_name} (no email)"
+                            elif email:
+                                display_label = email
+                            else:
+                                display_label = f"User {user_id_str[:8]}... (no name/email)"
+                            
+                            user_options.append(display_label)
+                            user_id_map[display_label] = user_id  # Store UUID object, not string
+                        
+                        selected_user_display = st.selectbox(
                             "Select User to Update",
-                            options=[""] + update_email_users,
+                            options=user_options,
                             key="update_email_select"
                         )
+                        
+                        # Get the selected user_id and current email
+                        selected_user_id = user_id_map.get(selected_user_display) if selected_user_display else None
+                        current_user_email = None
+                        if selected_user_id:
+                            # Get current email from dataframe
+                            user_row = users_df[users_df['user_id'] == selected_user_id]
+                            if not user_row.empty:
+                                current_user_email = user_row.iloc[0].get('email') or ""
                     
                     with col_email2:
+                        # Show current email if available
+                        if selected_user_id and current_user_email:
+                            st.caption(f"Current email: {current_user_email}")
+                        
                         new_user_email = st.text_input(
                             "New Email Address",
                             key="new_user_email",
                             placeholder="Enter new email address",
-                            disabled=not current_user_email
+                            disabled=not selected_user_id
                         )
                     
                     if st.button("✏️ Update Email", type="primary"):
-                        if not current_user_email:
+                        if not selected_user_id:
                             st.error("Please select a user to update")
                         elif not new_user_email:
                             st.error("Please enter a new email address")
-                        elif current_user_email == new_user_email:
+                        elif current_user_email and current_user_email == new_user_email:
                             st.warning("New email must be different from current email")
                         else:
                             try:
@@ -412,59 +447,44 @@ with tab2:
                                         # Create admin client
                                         admin_client = create_client(supabase_url, service_key)
                                         
-                                        # Get user by email
+                                        # Get all users to check for duplicate emails
                                         users_response = admin_client.auth.admin.list_users()
                                         users_list = users_response if isinstance(users_response, list) else getattr(users_response, 'users', [])
                                         
-                                        user = None
+                                        # Check if new email already exists
+                                        email_exists = False
                                         for u in users_list:
-                                            user_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
-                                            if user_email == current_user_email:
-                                                user = u
+                                            check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
+                                            if check_email and check_email.lower() == new_user_email.lower():
+                                                email_exists = True
                                                 break
                                         
-                                        if not user:
-                                            st.error(f"User with email {current_user_email} not found")
+                                        if email_exists:
+                                            st.error(f"Email {new_user_email} is already in use by another user")
                                         else:
-                                            # Get user ID
-                                            user_id = user.id if hasattr(user, 'id') else user.get('id') if isinstance(user, dict) else None
+                                            # Update email in auth.users using admin API (using user_id directly)
+                                            update_response = admin_client.auth.admin.update_user_by_id(
+                                                selected_user_id,
+                                                {"email": new_user_email}
+                                            )
                                             
-                                            if not user_id:
-                                                st.error("Could not get user ID")
-                                            else:
-                                                # Check if new email already exists
-                                                email_exists = False
-                                                for u in users_list:
-                                                    check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
-                                                    if check_email and check_email.lower() == new_user_email.lower():
-                                                        email_exists = True
-                                                        break
-                                                
-                                                if email_exists:
-                                                    st.error(f"Email {new_user_email} is already in use by another user")
-                                                else:
-                                                    # Update email in auth.users using admin API
-                                                    update_response = admin_client.auth.admin.update_user_by_id(
-                                                        user_id,
+                                            if update_response and update_response.user:
+                                                # Also update email in user_profiles table if it exists
+                                                try:
+                                                    client.supabase.table("user_profiles").update(
                                                         {"email": new_user_email}
-                                                    )
-                                                    
-                                                    if update_response and update_response.user:
-                                                        # Also update email in user_profiles table if it exists
-                                                        try:
-                                                            client.supabase.table("user_profiles").update(
-                                                                {"email": new_user_email}
-                                                            ).eq("user_id", user_id).execute()
-                                                        except Exception as profile_error:
-                                                            # Log but don't fail - user_profiles might not exist for all users
-                                                            st.warning(f"Note: Could not update user_profiles: {profile_error}")
-                                                        
-                                                        # Clear caches
-                                                        st.cache_data.clear()
-                                                        st.toast(f"✅ Email updated from {current_user_email} to {new_user_email}", icon="✅")
-                                                        st.rerun()
-                                                    else:
-                                                        st.error("Failed to update email - invalid response from server")
+                                                    ).eq("user_id", selected_user_id).execute()
+                                                except Exception as profile_error:
+                                                    # Log but don't fail - user_profiles might not exist for all users
+                                                    st.warning(f"Note: Could not update user_profiles: {profile_error}")
+                                                
+                                                # Clear caches
+                                                st.cache_data.clear()
+                                                display_name = selected_user_display.split(" (")[0] if " (" in selected_user_display else selected_user_display
+                                                st.toast(f"✅ Email updated for {display_name} to {new_user_email}", icon="✅")
+                                                st.rerun()
+                                            else:
+                                                st.error("Failed to update email - invalid response from server")
                             except Exception as e:
                                 st.error(f"Error updating email: {e}")
                                 import traceback

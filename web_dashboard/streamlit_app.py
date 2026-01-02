@@ -1435,11 +1435,17 @@ def main():
                             if available_cols:
                                 gainers_df = gainers_df[available_cols]
                             
+                            # Calculate dynamic height based on number of rows
+                            # Header: ~45px, each row: ~38px, padding: ~10px
+                            # Cap at 500px max (for 10 rows limit)
+                            num_rows = len(gainers_df)
+                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
+                            
                             # Use AgGrid with clickable ticker links
                             selected_ticker = display_aggrid_with_ticker_navigation(
                                 gainers_df,
                                 ticker_column="Ticker",
-                                height=500,
+                                height=dynamic_height,
                                 fit_columns=True
                             )
                             
@@ -1484,11 +1490,17 @@ def main():
                             if available_cols:
                                 losers_df = losers_df[available_cols]
                             
+                            # Calculate dynamic height based on number of rows
+                            # Header: ~45px, each row: ~38px, padding: ~10px
+                            # Cap at 500px max (for 10 rows limit)
+                            num_rows = len(losers_df)
+                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
+                            
                             # Use AgGrid with clickable ticker links
                             selected_ticker = display_aggrid_with_ticker_navigation(
                                 losers_df,
                                 ticker_column="Ticker",
-                                height=500,
+                                height=dynamic_height,
                                 fit_columns=True
                             )
                             

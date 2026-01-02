@@ -91,6 +91,13 @@ def format_duration(duration_ms: Optional[int]) -> str:
             return f"{minutes}m {secs}s"
 
 
+@st.cache_data(ttl=5)  # Cache for 5 seconds to reduce database load
+def _get_cached_jobs_status():
+    """Get all jobs status with caching."""
+    from scheduler import get_all_jobs_status
+    return get_all_jobs_status()
+
+
 def render_scheduler_admin():
     """Render the scheduler admin interface."""
     
@@ -103,7 +110,6 @@ def render_scheduler_admin():
             resume_job,
             start_scheduler
         )
-        from scheduler.scheduler_core import get_job_logs
         
         from scheduler.jobs import AVAILABLE_JOBS
         
@@ -117,8 +123,8 @@ def render_scheduler_admin():
             st.warning("Scheduler is not running. Click above to start.")
             return
         
-        # Get all jobs
-        jobs = get_all_jobs_status()
+        # Get all jobs (using cached version for performance)
+        jobs = _get_cached_jobs_status()
         
         if not jobs:
             st.info("No scheduled jobs configured.")
@@ -214,8 +220,8 @@ def render_scheduler_admin():
                             pause_job(job['id'])
                             st.rerun()
                 
-                # Recent execution logs
-                logs = get_job_logs(job['id'], limit=5)
+                # Recent execution logs (already included in job status from batched query)
+                logs = job.get('recent_logs', [])
                 if logs:
                     st.write("**Recent executions:**")
                     for log in logs:
@@ -230,6 +236,8 @@ def render_scheduler_admin():
         # Refresh button
         st.divider()
         if st.button("🔄 Refresh Status"):
+            # Clear cache on refresh
+            _get_cached_jobs_status.clear()
             st.rerun()
             
     except ImportError as e:

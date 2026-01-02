@@ -779,7 +779,7 @@ try:
         st.info("""
         📭 No social sentiment data available yet.
         
-        Data is collected every 30 minutes by the automated scheduler. 
+        Data is collected every 60 minutes (1 hour) by the automated scheduler. 
         Check back soon or ensure the `social_sentiment` job is running.
         """)
         st.stop()
@@ -948,7 +948,7 @@ try:
     
     if df.empty:
         if show_only_watchlist:
-            st.info("📭 No sentiment data available for watchlist tickers yet. The scheduler will collect data for these tickers every 30 minutes.")
+            st.info("📭 No sentiment data available for watchlist tickers yet. The scheduler will collect data for these tickers every 60 minutes (1 hour).")
         else:
             st.info("📭 No sentiment data available.")
         st.stop()

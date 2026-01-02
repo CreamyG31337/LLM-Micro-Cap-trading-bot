@@ -88,7 +88,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
     'social_sentiment': {
         'name': 'Social Sentiment Tracking',
         'description': 'Fetch retail hype and sentiment from StockTwits and Reddit',
-        'default_interval_minutes': 30,  # Every 30 minutes
+        'default_interval_minutes': 60,  # Every 60 minutes (1 hour) - job takes 11-24 min, needs buffer
         'enabled_by_default': True,
         'icon': '💬'
     },
@@ -536,7 +536,7 @@ def register_default_jobs(scheduler) -> None:
         )
         logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")
     
-    # Social sentiment job - every 30 minutes
+    # Social sentiment job - every 60 minutes (1 hour)
     if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:
         scheduler.add_job(
             fetch_social_sentiment_job,
@@ -545,7 +545,7 @@ def register_default_jobs(scheduler) -> None:
             name=f"{get_job_icon('social_sentiment')} Social Sentiment Tracking",
             replace_existing=True
         )
-        logger.info("Registered job: social_sentiment (every 30 minutes)")
+        logger.info("Registered job: social_sentiment (every 60 minutes - 1 hour)")
     
     # Social sentiment AI analysis job - every 2 hours
     if AVAILABLE_JOBS['social_sentiment_ai']['enabled_by_default']:

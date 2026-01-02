@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS social_metrics (
 
 -- Add comments for documentation
 COMMENT ON TABLE social_metrics IS 
-  'Social sentiment metrics from StockTwits and Reddit for watched tickers. Updated every 30 minutes.';
+  'Social sentiment metrics from StockTwits and Reddit for watched tickers. Updated every 60 minutes (1 hour).';
 
 COMMENT ON COLUMN social_metrics.volume IS 
   'Post count filtered for last 60 minutes (StockTwits) or last 24 hours (Reddit)';

@@ -2473,13 +2473,18 @@ def main():
                 div_display_df = div_df[display_cols].copy()
                 div_display_df.columns = ['Pay Date', 'Ticker', 'Gross ($)', 'Net ($)', 'Reinvested Shares', 'DRIP Price ($)']
                 
-                # AgGrid Display
-                display_aggrid_with_ticker_navigation(
+                # AgGrid Display with ticker navigation
+                selected_ticker = display_aggrid_with_ticker_navigation(
                     div_display_df,
                     ticker_column="Ticker",
                     height=300,
                     fit_columns=True
                 )
+                
+                # Handle ticker selection
+                if selected_ticker:
+                    st.session_state['selected_ticker'] = selected_ticker
+                    st.switch_page("pages/ticker_details.py")
             else:
                 st.info("No dividend history found for the last 365 days.")
                 

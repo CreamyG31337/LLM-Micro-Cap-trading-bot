@@ -134,6 +134,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '🦊'
     },
+    'dividend_processing': {
+        'name': 'Process Dividend Reinvestments',
+        'description': 'Detect dividends and create DRIP transactions',
+        'default_interval_minutes': 1440,  # Daily
+        'enabled_by_default': True,
+        'icon': '💰'
+    },
     'rescore_congress_sessions': {
         'name': 'Rescore Congress Sessions (Manual)',
         'description': 'One-time backfill: Rescore 1000 sessions with new AI logic',
@@ -232,6 +239,9 @@ from scheduler.jobs_congress import (
 
 # Import opportunity discovery job
 from scheduler.jobs_opportunity import opportunity_discovery_job
+
+# Import dividend processing job
+from scheduler.jobs_dividends import process_dividends_job
 
 # Import shared utilities
 from scheduler.jobs_common import calculate_relevance_score
@@ -597,3 +607,14 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True
         )
         logger.info("Registered job: analyze_congress_trades (every 30 minutes - processes unscored trades)")
+    
+    # Dividend processing job - daily at 2:00 AM PST
+    if AVAILABLE_JOBS['dividend_processing']['enabled_by_default']:
+        scheduler.add_job(
+            process_dividends_job,
+            trigger=CronTrigger(hour=2, minute=0, timezone='America/Los_Angeles'),
+            id='dividend_processing',
+            name=f"{get_job_icon('dividend_processing')} Process Dividend Reinvestments",
+            replace_existing=True
+        )
+        logger.info("Registered job: dividend_processing (daily at 2:00 AM PST)")

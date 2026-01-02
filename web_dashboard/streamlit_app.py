@@ -2435,6 +2435,53 @@ def main():
         else:
             st.info("No closed positions found. Realized P&L will appear here once you close positions.")
         
+        # Dividend History Section
+        st.markdown("---")
+        st.markdown("### Dividend History")
+
+        try:
+            # Import utility locally to avoid circular imports
+            from utils.db_utils import fetch_dividend_log
+            
+            # Fetch dividend data (default 365 days)
+            dividend_data = fetch_dividend_log(days_lookback=365)
+            
+            if dividend_data:
+                # Convert to DataFrame
+                div_df = pd.DataFrame(dividend_data)
+                
+                # Calculate Summary Metrics
+                total_dividends = div_df['net_amount'].sum()
+                total_reinvested = div_df['reinvested_shares'].sum()
+                num_payouts = len(div_df)
+                
+                # Display Metrics
+                d_col1, d_col2, d_col3 = st.columns(3)
+                with d_col1:
+                    st.metric("Total Dividends (LTM)", f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
+                with d_col2:
+                    st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
+                with d_col3:
+                    st.metric("Payout Events", f"{num_payouts}", help="Number of dividend payments received.")
+
+                # Format DataFrame for Display
+                display_cols = ['pay_date', 'ticker', 'gross_amount', 'net_amount', 'reinvested_shares', 'drip_price']
+                div_display_df = div_df[display_cols].copy()
+                div_display_df.columns = ['Pay Date', 'Ticker', 'Gross ($)', 'Net ($)', 'Reinvested Shares', 'DRIP Price ($)']
+                
+                # AgGrid Display
+                display_aggrid_with_ticker_navigation(
+                    div_display_df,
+                    ticker_column="Ticker",
+                    height=300,
+                    fit_columns=True
+                )
+            else:
+                st.info("No dividend history found for the last 365 days.")
+                
+        except Exception as e:
+            st.error(f"Error loading dividend history: {e}")
+        
         # Footer with build info
         st.markdown("---")
         # Get build timestamp from environment variable (set by CI) or use current time

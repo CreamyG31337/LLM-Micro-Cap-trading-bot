@@ -291,3 +291,11 @@ web_dashboard/Caddyfile
 
 # Private Agent Context
 PRIVATE_AGENTS.md
+
+# Investigation archives and temporary logs
+web_dashboard/scripts/archive_investigation/*.txt
+web_dashboard/scripts/archive_investigation/*.log
+web_dashboard/scripts/archive_investigation/*_output*
+test_output*.txt
+debug_output*.txt
+

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from auth_utils import is_authenticated, is_admin, get_user_email
 from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy
 from supabase_client import SupabaseClient
+from supabase import create_client
 
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
@@ -360,6 +361,114 @@ with tab2:
                                 st.error(f"Error removing assignment: {e}")
                         else:
                             st.warning("Please enter both email and fund name")
+                    
+                    st.divider()
+                    
+                    # Update user email section
+                    st.subheader("Update User Email")
+                    st.caption("Change a user's email address in the authentication system")
+                    
+                    col_email1, col_email2 = st.columns(2)
+                    
+                    with col_email1:
+                        # Get user emails from the users dataframe
+                        update_email_users = users_df['email'].tolist() if not users_df.empty else []
+                        current_user_email = st.selectbox(
+                            "Select User to Update",
+                            options=[""] + update_email_users,
+                            key="update_email_select"
+                        )
+                    
+                    with col_email2:
+                        new_user_email = st.text_input(
+                            "New Email Address",
+                            key="new_user_email",
+                            placeholder="Enter new email address",
+                            disabled=not current_user_email
+                        )
+                    
+                    if st.button("✏️ Update Email", type="primary"):
+                        if not current_user_email:
+                            st.error("Please select a user to update")
+                        elif not new_user_email:
+                            st.error("Please enter a new email address")
+                        elif current_user_email == new_user_email:
+                            st.warning("New email must be different from current email")
+                        else:
+                            try:
+                                # Validate email format
+                                import re
+                                email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                                if not re.match(email_pattern, new_user_email):
+                                    st.error("Invalid email format")
+                                else:
+                                    # Use service role client for admin operations
+                                    supabase_url = os.getenv("SUPABASE_URL")
+                                    service_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                                    
+                                    if not supabase_url or not service_key:
+                                        st.error("Admin credentials not configured. SUPABASE_SECRET_KEY must be set.")
+                                    else:
+                                        # Create admin client
+                                        admin_client = create_client(supabase_url, service_key)
+                                        
+                                        # Get user by email
+                                        users_response = admin_client.auth.admin.list_users()
+                                        users_list = users_response if isinstance(users_response, list) else getattr(users_response, 'users', [])
+                                        
+                                        user = None
+                                        for u in users_list:
+                                            user_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
+                                            if user_email == current_user_email:
+                                                user = u
+                                                break
+                                        
+                                        if not user:
+                                            st.error(f"User with email {current_user_email} not found")
+                                        else:
+                                            # Get user ID
+                                            user_id = user.id if hasattr(user, 'id') else user.get('id') if isinstance(user, dict) else None
+                                            
+                                            if not user_id:
+                                                st.error("Could not get user ID")
+                                            else:
+                                                # Check if new email already exists
+                                                email_exists = False
+                                                for u in users_list:
+                                                    check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
+                                                    if check_email and check_email.lower() == new_user_email.lower():
+                                                        email_exists = True
+                                                        break
+                                                
+                                                if email_exists:
+                                                    st.error(f"Email {new_user_email} is already in use by another user")
+                                                else:
+                                                    # Update email in auth.users using admin API
+                                                    update_response = admin_client.auth.admin.update_user_by_id(
+                                                        user_id,
+                                                        {"email": new_user_email}
+                                                    )
+                                                    
+                                                    if update_response and update_response.user:
+                                                        # Also update email in user_profiles table if it exists
+                                                        try:
+                                                            client.supabase.table("user_profiles").update(
+                                                                {"email": new_user_email}
+                                                            ).eq("user_id", user_id).execute()
+                                                        except Exception as profile_error:
+                                                            # Log but don't fail - user_profiles might not exist for all users
+                                                            st.warning(f"Note: Could not update user_profiles: {profile_error}")
+                                                        
+                                                        # Clear caches
+                                                        st.cache_data.clear()
+                                                        st.toast(f"✅ Email updated from {current_user_email} to {new_user_email}", icon="✅")
+                                                        st.rerun()
+                                                    else:
+                                                        st.error("Failed to update email - invalid response from server")
+                            except Exception as e:
+                                st.error(f"Error updating email: {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
                 else:
                     st.info("No users found")
             except Exception as e:

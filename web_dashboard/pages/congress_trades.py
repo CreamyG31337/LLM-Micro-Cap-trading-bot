@@ -1458,7 +1458,8 @@ try:
             ensureDomOrder=True,
             domLayout='normal',
             pagination=True,
-            paginationPageSize=100
+            paginationPageSize=100,
+            suppressRowClickSelection=True
         )
         
         gridOptions = gb.build()

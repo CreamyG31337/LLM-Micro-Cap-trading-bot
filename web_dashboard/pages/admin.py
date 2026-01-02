@@ -985,12 +985,12 @@ with tab4:
                                 "Positions": position_count,
                                 "Trades": trade_count_val
                             })
-                    
-                    funds_df = pd.DataFrame(fund_stats)
-                    st.subheader("All Funds")
-                    display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
-                else:
-                    st.info("No funds found in database")
+                        
+                        funds_df = pd.DataFrame(fund_stats)
+                        st.subheader("All Funds")
+                        display_dataframe_with_copy(funds_df, label="All Funds", key_suffix="funds", use_container_width=True)
+                    else:
+                        st.info("No funds found in database")
                 
                 st.divider()
                 

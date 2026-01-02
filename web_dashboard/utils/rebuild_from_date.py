@@ -267,8 +267,8 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
                 shares = pos_data['shares']
                 cost_basis = pos_data['cost']
                 avg_price = cost_basis / shares
-                total_value = shares * current_price
-                pnl = total_value - cost_basis
+                market_value = shares * current_price
+                pnl = market_value - cost_basis
                 
                 position = Position(
                     ticker=ticker,
@@ -276,7 +276,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
                     avg_price=avg_price,
                     cost_basis=cost_basis,
                     current_price=current_price,
-                    total_value=total_value,
+                    market_value=market_value,
                     unrealized_pnl=pnl,
                     currency=pos_data['currency']
                 )

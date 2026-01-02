@@ -1757,6 +1757,155 @@ with tab6:
                 else:
                     st.info("No recent trades")
                 
+                # ===== EDIT/DELETE TRADE =====
+                st.divider()
+                st.subheader("✏️ Edit or Delete Trade")
+                with st.expander("Modify existing trade", expanded=False):
+                    st.caption("Edit or delete a recent trade. Automatic rebuild will trigger if dates change.")
+                    
+                    # Get editable trades (last 50)
+                    edit_trades = client.supabase.table("trade_log")\
+                        .select("*")\
+                        .eq("fund", trade_fund if 'trade_fund' in locals() else fund_names[0])\
+                        .order("date", desc=True)\
+                        .limit(50)\
+                        .execute()
+                    
+                    if edit_trades.data and len(edit_trades.data) > 0:
+                        # Create selection dropdown
+                        trade_options = []
+                        trade_lookup = {}
+                        for t in edit_trades.data:
+                            trade_date = pd.to_datetime(t['date']).strftime('%Y-%m-%d %H:%M')
+                            label = f"{trade_date} | {t['action']} {t['shares']} {t['ticker']} @ ${t['price']}"
+                            trade_options.append(label)
+                            trade_lookup[label] = t
+                        
+                        selected_trade_label = st.selectbox(
+                            "Select trade to edit/delete",
+                            options=[""] + trade_options,
+                            key="edit_trade_select"
+                        )
+                        
+                        if selected_trade_label:
+                            selected_trade = trade_lookup[selected_trade_label]
+                            
+                            col_edit1, col_edit2 = st.columns(2)
+                            
+                            with col_edit1:
+                                edit_ticker = st.text_input("Ticker", value=selected_trade['ticker'], key="edit_ticker")
+                                edit_action = st.selectbox("Action", options=["BUY", "SELL"], 
+                                                          index=0 if selected_trade['action'] == 'BUY' else 1, 
+                                                          key="edit_action")
+                                edit_shares = st.number_input("Shares", value=float(selected_trade['shares']), 
+                                                             min_value=0.000001, step=1.0, format="%.6f", key="edit_shares")
+                            
+                            with col_edit2:
+                                edit_price = st.number_input("Price", value=float(selected_trade['price']), 
+                                                            min_value=0.01, step=0.01, format="%.2f", key="edit_price")
+                                edit_currency = st.selectbox("Currency", options=["USD", "CAD"], 
+                                                            index=0 if selected_trade['currency'] == 'USD' else 1,
+                                                            key="edit_currency")
+                                original_date = pd.to_datetime(selected_trade['date'])
+                                edit_date = st.date_input("Trade Date", value=original_date.date(), key="edit_date")
+                            
+                            col_save, col_delete = st.columns(2)
+                            
+                            with col_save:
+                                if st.button("💾 Save Changes", type="primary"):
+                                    try:
+                                        admin_client = SupabaseClient(use_service_role=True)
+                                        
+                                        # Detect date change
+                                        new_date = datetime.combine(edit_date, original_date.time())
+                                        date_changed = new_date.date() != original_date.date()
+                                        
+                                        # Update trade
+                                        update_data = {
+                                            'ticker': edit_ticker,
+                                            'action': edit_action,
+                                            'shares': float(edit_shares),
+                                            'price': float(edit_price),
+                                            'currency': edit_currency,
+                                            'cost_basis': float(edit_shares * edit_price),
+                                            'date': new_date.isoformat()
+                                        }
+                                        
+                                        admin_client.supabase.table("trade_log")\
+                                            .update(update_data)\
+                                            .eq("id", selected_trade['id'])\
+                                            .execute()
+                                        
+                                        st.cache_data.clear()
+                                        
+                                        # Trigger rebuild if date changed
+                                        if date_changed:
+                                            try:
+                                                from pathlib import Path
+                                                project_root = Path(__file__).parent.parent.parent
+                                                if str(project_root) not in sys.path:
+                                                    sys.path.insert(0, str(project_root))
+                                                
+                                                from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                                
+                                                # Rebuild from earliest affected date
+                                                rebuild_from = min(new_date.date(), original_date.date())
+                                                job_id = trigger_background_rebuild(selected_trade['fund'], rebuild_from)
+                                                
+                                                st.success("✅ Trade updated successfully!")
+                                                if job_id:
+                                                    st.info(f"📊 Date changed - recalculating from {rebuild_from}... (Job ID: {job_id[:8]}...)")
+                                            except Exception as e:
+                                                st.success("✅ Trade updated successfully!")
+                                                st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
+                                        else:
+                                            st.success("✅ Trade updated successfully!")
+                                        
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"Error updating trade: {e}")
+                            
+                            with col_delete:
+                                if st.button("🗑️ Delete Trade", type="secondary"):
+                                    try:
+                                        admin_client = SupabaseClient(use_service_role=True)
+                                        
+                                        # Delete the trade
+                                        admin_client.supabase.table("trade_log")\
+                                            .delete()\
+                                            .eq("id", selected_trade['id'])\
+                                            .execute()
+                                        
+                                        st.cache_data.clear()
+                                        
+                                        # Trigger rebuild from deleted trade date
+                                        try:
+                                            from pathlib import Path
+                                            project_root = Path(__file__).parent.parent.parent
+                                            if str(project_root) not in sys.path:
+                                                sys.path.insert(0, str(project_root))
+                                            
+                                            from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                            
+                                            job_id = trigger_background_rebuild(selected_trade['fund'], original_date.date())
+                                            
+                                            st.success("✅ Trade deleted successfully!")
+                                            if job_id:
+                                                st.info(f"📊 Recalculating positions from {original_date.date()}... (Job ID: {job_id[:8]}...)")
+                                                
+                                        except Exception as e:
+                                            st.success("✅ Trade deleted successfully!")
+                                            st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
+                                        
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"Error deleting trade: {e}")
+                    else:
+                        st.info("No trades found for this fund")
+                
+                
                 # ===== EMAIL TRADE ENTRY =====
                 st.divider()
                 st.subheader("📧 Email Trade Entry")

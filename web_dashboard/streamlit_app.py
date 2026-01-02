@@ -2441,7 +2441,11 @@ def main():
 
         try:
             # Import utility locally to avoid circular imports
-            from utils.db_utils import fetch_dividend_log
+            try:
+                from utils.db_utils import fetch_dividend_log
+            except ImportError:
+                # Fallback: if utils resolves to root utils (which has no db_utils), try full path
+                from web_dashboard.utils.db_utils import fetch_dividend_log
             
             # Fetch dividend data (default 365 days)
             dividend_data = fetch_dividend_log(days_lookback=365)

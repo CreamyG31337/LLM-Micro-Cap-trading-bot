@@ -65,14 +65,6 @@ if not refresh_token_if_needed():
 render_navigation(show_ai_assistant=True, show_settings=True)
 
 # Initialize Supabase client using standard utility
-# Debug: Check if token is available
-from auth_utils import get_user_token
-user_token = get_user_token()
-if user_token:
-    logger.info(f"✅ User token found (length: {len(user_token)})")
-else:
-    logger.warning("⚠️ No user token found in session state!")
-
 supabase_client = get_supabase_client()
 
 # Check if Supabase is available
@@ -86,17 +78,6 @@ if supabase_client is None:
     Check the logs or contact an administrator for assistance.
     """)
     st.stop()
-
-# Debug: Test a simple query
-try:
-    test_result = supabase_client.supabase.table("etf_holdings_log").select("date", count="exact").limit(1).execute()
-    logger.info(f"📊 ETF holdings test query returned {test_result.count} total records")
-    if test_result.count == 0:
-        st.warning("⚠️ Database query returned 0 records. This may be an RLS/authentication issue.")
-        st.info(f"Debug: User token present: {user_token is not None}, Token length: {len(user_token) if user_token else 0}")
-except Exception as e:
-    logger.error(f"❌ Test query failed: {e}")
-    st.error(f"Database test query failed: {e}")
 
 # Header
 st.title("💼 ETF Holdings Watchtower")
@@ -171,8 +152,8 @@ def get_available_etfs(_db_client, _refresh_key: int) -> List[Dict[str, str]]:
         tickers = sorted(list(set(row['etf_ticker'] for row in holdings_res.data)))
         
         # Get names from securities table
-        securities_res = _db_client.supabase.table("securities").select("ticker, name").in_("ticker", tickers).execute()
-        names_map = {row['ticker']: row['name'] for row in securities_res.data}
+        securities_res = _db_client.supabase.table("securities").select("ticker, company_name").in_("ticker", tickers).execute()
+        names_map = {row['ticker']: row['company_name'] for row in securities_res.data}
         
         return [{'ticker': t, 'name': names_map.get(t, t)} for t in tickers]
     except Exception as e:

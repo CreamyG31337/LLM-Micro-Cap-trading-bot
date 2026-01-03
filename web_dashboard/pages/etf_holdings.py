@@ -288,9 +288,14 @@ def get_summary_stats(
 
 # Get available data
 latest_date = get_latest_date(postgres_client, st.session_state.refresh_key)
-available_etfs = get_available_etfs(postgres_client, st.session_state.refresh_key)
+available_etf_data = get_available_etfs(postgres_client, st.session_state.refresh_key)
+available_tickers = [item['ticker'] for item in available_etf_data]
 
-if not available_etfs:
+# Create display mapping
+etf_display_map = {item['ticker']: f"{item['ticker']} - {item['name']}" for item in available_etf_data}
+etf_display_map["All ETFs"] = "All ETFs"
+
+if not available_etf_data:
     st.warning("⚠️ No ETF holdings data available. Run the ETF Watchtower job to collect data.")
     st.stop()
 
@@ -302,7 +307,8 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     etf_filter = st.selectbox(
         "ETF Ticker",
-        options=["All ETFs"] + available_etfs,
+        options=["All ETFs"] + available_tickers,
+        format_func=lambda x: etf_display_map.get(x, x),
         index=0
     )
 

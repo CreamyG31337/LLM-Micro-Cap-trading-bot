@@ -61,8 +61,8 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
     """
     Trigger background rebuild subprocess.
     
-    Launches rebuild_from_date.py as a detached subprocess and returns
-    immediately. The job can be monitored via the job_executions table.
+    Checks for running rebuild jobs for the same fund and cancels them if found,
+    then launches rebuild_from_date.py as a detached subprocess.
     
     Args:
         fund_name: Fund to rebuild
@@ -72,8 +72,42 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
         job_id for tracking, or None if failed to launch
     """
     try:
-        # Create job execution record first
-        job_id = create_rebuild_job_record(fund_name, start_date)
+        # Check for running rebuild jobs for this fund
+        running_jobs = find_running_rebuild_jobs(fund_name)
+        
+        # Determine optimal start_date
+        optimal_start_date = start_date
+        cancelled_jobs = []
+        
+        if running_jobs:
+            # Extract start_dates from running jobs
+            running_start_dates = []
+            for job in running_jobs:
+                metadata = job.get("metadata", {})
+                if isinstance(metadata, dict):
+                    start_date_str = metadata.get("start_date")
+                    if start_date_str:
+                        try:
+                            running_start_date = datetime.fromisoformat(start_date_str).date()
+                            running_start_dates.append(running_start_date)
+                        except (ValueError, AttributeError):
+                            logger.warning(f"Could not parse start_date from job {job.get('id')}")
+            
+            if running_start_dates:
+                # Use the minimum of new trade date and all running job start dates
+                optimal_start_date = min(start_date, min(running_start_dates))
+                logger.info(f"Found {len(running_jobs)} running rebuild job(s). Optimal start_date: {optimal_start_date}")
+            
+            # Cancel all running jobs
+            for job in running_jobs:
+                job_id_to_cancel = job.get("id")
+                if job_id_to_cancel:
+                    reason = f"New backdated trade entered (date: {start_date}). Restarting rebuild from {optimal_start_date}."
+                    if cancel_rebuild_job(job_id_to_cancel, reason):
+                        cancelled_jobs.append(job_id_to_cancel)
+        
+        # Create job execution record with optimal start_date
+        job_id = create_rebuild_job_record(fund_name, optimal_start_date)
         
         # Get path to rebuild script
         script_path = Path(__file__).parent / "rebuild_from_date.py"
@@ -81,12 +115,12 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
             logger.error(f"Rebuild script not found: {script_path}")
             return None
         
-        # Build command
+        # Build command with optimal start_date
         cmd = [
             sys.executable,
             str(script_path),
             fund_name,
-            start_date.isoformat(),
+            optimal_start_date.isoformat(),
             '--job-id', job_id
         ]
         
@@ -146,3 +180,88 @@ def get_job_status(job_id: str) -> Optional[dict]:
     except Exception as e:
         logger.error(f"Failed to get job status: {e}")
         return None
+
+
+def find_running_rebuild_jobs(fund_name: str) -> list:
+    """
+    Find all running or pending rebuild jobs for a specific fund.
+    
+    Args:
+        fund_name: Fund name to search for
+        
+    Returns:
+        List of job records with 'id' and 'metadata' (containing start_date)
+    """
+    try:
+        from web_dashboard.supabase_client import SupabaseClient
+        
+        client = SupabaseClient(use_service_role=True)
+        
+        # Query for rebuild jobs with pending or running status
+        # Check metadata->>'fund' for the fund name
+        result = client.supabase.table("job_executions") \
+            .select("id, status, metadata, start_time") \
+            .eq("job_name", "rebuild_from_date") \
+            .in_("status", ["pending", "running"]) \
+            .execute()
+        
+        if not result.data:
+            return []
+        
+        # Filter by fund name from metadata
+        running_jobs = []
+        for job in result.data:
+            metadata = job.get("metadata", {})
+            if isinstance(metadata, dict) and metadata.get("fund") == fund_name:
+                running_jobs.append(job)
+        
+        logger.info(f"Found {len(running_jobs)} running/pending rebuild jobs for {fund_name}")
+        return running_jobs
+        
+    except Exception as e:
+        logger.error(f"Failed to find running rebuild jobs: {e}")
+        return []
+
+
+def cancel_rebuild_job(job_id: str, reason: str) -> bool:
+    """
+    Cancel a running rebuild job by marking it as failed with cancellation reason.
+    
+    Args:
+        job_id: Job execution ID to cancel
+        reason: Reason for cancellation
+        
+    Returns:
+        True if cancellation succeeded, False otherwise
+    """
+    try:
+        from web_dashboard.supabase_client import SupabaseClient
+        from datetime import datetime, timezone
+        
+        client = SupabaseClient(use_service_role=True)
+        
+        # First check if job is still running/pending
+        job = get_job_status(job_id)
+        if not job:
+            logger.warning(f"Job {job_id} not found, cannot cancel")
+            return False
+        
+        current_status = job.get("status")
+        if current_status not in ["pending", "running"]:
+            logger.info(f"Job {job_id} is already {current_status}, no need to cancel")
+            return True  # Already done, consider it successful
+        
+        # Mark as failed with cancellation reason
+        cancellation_message = f"Cancelled: {reason}"
+        client.supabase.table("job_executions").update({
+            'status': 'failed',
+            'output': cancellation_message,
+            'end_time': datetime.now(timezone.utc).isoformat()
+        }).eq('id', job_id).execute()
+        
+        logger.info(f"Cancelled rebuild job {job_id}: {reason}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to cancel rebuild job {job_id}: {e}")
+        return False

@@ -21,7 +21,7 @@ import requests
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from postgres_client import PostgresClient
+from supabase_client import SupabaseClient
 from research_repository import ResearchRepository
 
 logger = logging.getLogger(__name__)
@@ -452,7 +452,7 @@ def etf_watchtower_job():
     """Main ETF Watchtower job - run daily after market close."""
     logger.info("🏛️ Starting ETF Watchtower Job...")
     
-    db = PostgresClient()
+    db = SupabaseClient(use_service_role=True)  # Use service role for writes
     repo = ResearchRepository()
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     

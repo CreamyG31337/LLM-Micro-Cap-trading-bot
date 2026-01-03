@@ -1696,6 +1696,30 @@ with tab6:
                             (not sector and not industry)
                         )
                         
+                        # Automatically try to fetch missing metadata if incomplete
+                        if is_incomplete:
+                            try:
+                                admin_client = SupabaseClient(use_service_role=True)
+                                # Try to fetch/update metadata from yfinance
+                                admin_client.ensure_ticker_in_securities(trade_ticker, currency or trade_currency)
+                                # Re-fetch to get updated data
+                                ticker_check = client.supabase.table("securities").select("ticker, company_name, currency, sector, industry").eq("ticker", trade_ticker).execute()
+                                if ticker_check.data:
+                                    ticker_data = ticker_check.data[0]
+                                    company_name = ticker_data.get('company_name', trade_ticker)
+                                    sector = ticker_data.get('sector')
+                                    industry = ticker_data.get('industry')
+                                    # Re-check if still incomplete after fetch attempt
+                                    is_incomplete = (
+                                        not company_name or 
+                                        company_name == trade_ticker or 
+                                        company_name == 'Unknown' or
+                                        (not sector and not industry)
+                                    )
+                            except Exception as fetch_error:
+                                # If fetch fails, just show warning - don't block trade entry
+                                logger.warning(f"Could not auto-fetch metadata for {trade_ticker}: {fetch_error}")
+                        
                         col_info, col_refresh = st.columns([3, 1])
                         with col_info:
                             if is_incomplete:
@@ -1717,7 +1741,38 @@ with tab6:
                                 except Exception as e:
                                     st.error(f"Error refreshing metadata: {e}")
                     else:
-                        st.warning(f"⚠️ Ticker '{trade_ticker}' not in securities table. Will be added.")
+                        # Ticker doesn't exist - try to fetch metadata automatically
+                        try:
+                            admin_client = SupabaseClient(use_service_role=True)
+                            admin_client.ensure_ticker_in_securities(trade_ticker, trade_currency)
+                            # Re-check to see if it was added
+                            ticker_check = client.supabase.table("securities").select("ticker, company_name, currency, sector, industry").eq("ticker", trade_ticker).execute()
+                            if ticker_check.data:
+                                ticker_data = ticker_check.data[0]
+                                company_name = ticker_data.get('company_name', trade_ticker)
+                                currency = ticker_data.get('currency', trade_currency)
+                                sector = ticker_data.get('sector')
+                                industry = ticker_data.get('industry')
+                                
+                                is_incomplete = (
+                                    not company_name or 
+                                    company_name == trade_ticker or 
+                                    company_name == 'Unknown' or
+                                    (not sector and not industry)
+                                )
+                                
+                                if is_incomplete:
+                                    st.warning(f"⚠️ {company_name} ({currency}) - Metadata incomplete (missing sector/industry)")
+                                else:
+                                    sector_industry = f" - {sector}" if sector else ""
+                                    if industry:
+                                        sector_industry += f" / {industry}"
+                                    st.success(f"✅ {company_name} ({currency}){sector_industry}")
+                            else:
+                                st.warning(f"⚠️ Ticker '{trade_ticker}' not found. Will be added when trade is submitted.")
+                        except Exception as fetch_error:
+                            logger.warning(f"Could not auto-fetch metadata for {trade_ticker}: {fetch_error}")
+                            st.warning(f"⚠️ Ticker '{trade_ticker}' not in securities table. Will be added when trade is submitted.")
                 
                 # Calculate totals
                 total_value = trade_shares * trade_price
@@ -1806,6 +1861,26 @@ with tab6:
                                     pnl = 0
 
                             
+                            # Build reason - ensure action is included for proper inference
+                            if trade_reason:
+                                reason_lower = trade_reason.lower()
+                                # Check if action is already in the reason
+                                has_buy = 'buy' in reason_lower
+                                has_sell = 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower
+                                
+                                if trade_action == "SELL" and not has_sell:
+                                    # Append SELL if not present
+                                    final_reason = f"{trade_reason} - SELL"
+                                elif trade_action == "BUY" and not has_buy and not has_sell:
+                                    # Append BUY if not present (and not a sell)
+                                    final_reason = f"{trade_reason} - BUY"
+                                else:
+                                    # Action already in reason or reason is empty
+                                    final_reason = trade_reason
+                            else:
+                                # No custom reason, use default
+                                final_reason = f"{trade_action} order"
+                            
                             # Insert trade
                             trade_data = {
                                 "fund": trade_fund,
@@ -1814,7 +1889,7 @@ with tab6:
                                 "price": float(trade_price),
                                 "cost_basis": float(cost_basis),
                                 "pnl": float(pnl),
-                                "reason": trade_reason or f"{trade_action} order",
+                                "reason": final_reason,
                                 "currency": trade_currency,
                                 "date": trade_datetime.isoformat()
                             }
@@ -1838,14 +1913,20 @@ with tab6:
                                     if str(project_root) not in sys.path:
                                         sys.path.insert(0, str(project_root))
                                     
-                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild, find_running_rebuild_jobs
+                                    
+                                    # Check if there was a running job (will be cancelled by trigger_background_rebuild)
+                                    had_running_job = len(find_running_rebuild_jobs(trade_fund)) > 0
                                     
                                     job_id = trigger_background_rebuild(trade_fund, trade_datetime.date())
                                     
                                     if job_id:
                                         st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
-                                        st.toast(f"⏳ Rebuilding positions from {trade_date}...", icon="📊")
-                                        st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id[:8]}...)")
+                                        if had_running_job:
+                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade_datetime.date()}... (Job ID: {job_id[:8]}...)")
+                                        else:
+                                            st.toast(f"⏳ Rebuilding positions from {trade_date}...", icon="📊")
+                                            st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id[:8]}...)")
                                     else:
                                         st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild from Fund Management tab.")
@@ -2338,6 +2419,31 @@ Time: December 19, 2025 09:30 EST""",
                                     logging.getLogger(__name__).warning(f"Could not calculate P&L for email SELL: {calc_error}")
                                     final_pnl = 0
                             
+                            # Build reason - ensure action is included for proper inference
+                            if trade.reason:
+                                reason_lower = trade.reason.lower()
+                                # Infer action from trade object (it has action field)
+                                # Check if action is already in the reason
+                                has_buy = 'buy' in reason_lower
+                                has_sell = 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower
+                                
+                                # Get action from trade object
+                                trade_action = trade.action if hasattr(trade, 'action') else 'BUY'
+                                
+                                if trade_action == "SELL" and not has_sell:
+                                    # Append SELL if not present
+                                    final_reason = f"{trade.reason} - SELL"
+                                elif trade_action == "BUY" and not has_buy and not has_sell:
+                                    # Append BUY if not present (and not a sell)
+                                    final_reason = f"{trade.reason} - BUY"
+                                else:
+                                    # Action already in reason
+                                    final_reason = trade.reason
+                            else:
+                                # No reason, infer from trade object
+                                trade_action = trade.action if hasattr(trade, 'action') else 'BUY'
+                                final_reason = f"EMAIL TRADE - {trade_action}"
+                            
                             # Insert the trade
                             trade_data = {
                                 "fund": email_fund,
@@ -2346,7 +2452,7 @@ Time: December 19, 2025 09:30 EST""",
                                 "price": float(trade.price),
                                 "cost_basis": float(trade.cost_basis),
                                 "pnl": final_pnl,
-                                "reason": trade.reason or f"EMAIL TRADE",
+                                "reason": final_reason,
                                 "currency": final_currency,
                                 "date": trade.timestamp.isoformat()
                             }
@@ -2365,13 +2471,19 @@ Time: December 19, 2025 09:30 EST""",
                                     if str(project_root) not in sys.path:
                                         sys.path.insert(0, str(project_root))
                                     
-                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+                                    from web_dashboard.utils.background_rebuild import trigger_background_rebuild, find_running_rebuild_jobs
+                                    
+                                    # Check if there was a running job (will be cancelled by trigger_background_rebuild)
+                                    had_running_job = len(find_running_rebuild_jobs(email_fund)) > 0
                                     
                                     job_id = trigger_background_rebuild(email_fund, trade.timestamp.date())
                                     
                                     if job_id:
                                         st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
-                                        st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
+                                        if had_running_job:
+                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
+                                        else:
+                                            st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
                                     else:
                                         st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild.")

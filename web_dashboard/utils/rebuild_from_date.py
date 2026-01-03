@@ -118,6 +118,18 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         
         logger.info(f"   Loaded {len(trades)} trades")
         
+        # Check for cancellation before processing
+        if job_id and _check_job_cancelled(job_id):
+            msg = "Rebuild cancelled due to new backdated trade"
+            logger.info(msg)
+            _update_job_status(job_id, 'failed', msg)
+            return {
+                'success': False,
+                'dates_rebuilt': 0,
+                'positions_updated': 0,
+                'message': msg
+            }
+        
         # Step 3: Rebuild positions using FIFO
         logger.info(f"Step 3: Rebuilding positions from {start_date}...")
         if job_id:
@@ -248,7 +260,20 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         positions_created = 0
         trading_tz = get_trading_timezone()
         
-        for trading_day in trading_days_to_rebuild:
+        for idx, trading_day in enumerate(trading_days_to_rebuild):
+            # Check for cancellation periodically (every 10 days or at start)
+            if job_id and (idx % 10 == 0 or idx == 0):
+                if _check_job_cancelled(job_id):
+                    msg = f"Rebuild cancelled after processing {idx} of {len(trading_days_to_rebuild)} days"
+                    logger.info(msg)
+                    _update_job_status(job_id, 'failed', msg)
+                    return {
+                        'success': False,
+                        'dates_rebuilt': idx,
+                        'positions_updated': positions_created,
+                        'message': msg
+                    }
+            
             if trading_day not in date_positions:
                 continue
                 
@@ -333,6 +358,38 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
             'positions_updated': 0,
             'message': error_msg
         }
+
+
+def _check_job_cancelled(job_id: str) -> bool:
+    """
+    Check if a job has been cancelled.
+    
+    Args:
+        job_id: Job execution ID to check
+        
+    Returns:
+        True if job is cancelled (status is 'failed' with cancellation message), False otherwise
+    """
+    try:
+        from web_dashboard.supabase_client import SupabaseClient
+        
+        client = SupabaseClient(use_service_role=True)
+        result = client.supabase.table("job_executions").select("status, output").eq("id", job_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            job = result.data[0]
+            status = job.get("status")
+            output = job.get("output", "")
+            
+            # Check if status is 'failed' and output indicates cancellation
+            if status == "failed" and "Cancelled:" in str(output):
+                return True
+        
+        return False
+        
+    except Exception as e:
+        logger.warning(f"Could not check job cancellation status: {e}")
+        return False
 
 
 def _update_job_status(job_id: str, status: str, message: str):

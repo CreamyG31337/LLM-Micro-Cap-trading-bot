@@ -192,6 +192,16 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
                 'description': 'Ollama model name'
             }
         }
+    },
+    'etf_watchtower': {
+        'name': 'ETF Watchtower',
+        'description': 'Track daily ETF holdings changes (ARK, iShares) to detect institutional accumulation/distribution',
+        'default_interval_minutes': 1440,  # Once per day
+        'enabled_by_default': True,
+        'icon': '🏛️',
+        'cron_triggers': [
+            {'hour': 20, 'minute': 0, 'timezone': 'America/New_York'}  # 20:00 EST - after ARK publishes
+        ]
     }
 }
 

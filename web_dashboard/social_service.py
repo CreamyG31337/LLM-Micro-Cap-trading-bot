@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import time
+import re
 import requests
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, timedelta
@@ -353,6 +354,7 @@ class SocialSentimentService:
         """Fetch sentiment data from Reddit using public JSON endpoint
         
         Uses Reddit's public search API without authentication.
+        Only searches whitelisted stock-related subreddits.
         Respects rate limits with 2-second delay between requests.
         
         Args:
@@ -360,7 +362,7 @@ class SocialSentimentService:
             
         Returns:
             Dictionary with:
-            - volume: Post count in last 24 hours
+            - volume: Post count in last week
             - sentiment_label: AI-categorized label (EUPHORIC, BULLISH, NEUTRAL, BEARISH, FEARFUL)
             - sentiment_score: Numeric score mapped from label (-2.0 to 2.0)
             - raw_data: Top 3 posts/comments as JSONB
@@ -377,6 +379,32 @@ class SocialSentimentService:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
+            
+            # Whitelist of stock-related subreddits
+            STOCK_SUBREDDITS = [
+                'stocks',
+                'investing',
+                'wallstreetbets',
+                'StockMarket',
+                'securityanalysis',
+                'valueinvesting',
+                'options',
+                'stock_picks',
+                'robinhood',
+                'investments',
+                'pennystocks',
+                'RobinHoodPennyStocks',
+                'microcap',
+                'Shortsqueeze',
+                'biotechplays',
+                'CanadianPennyStocks',
+                'Undervalued',
+                'BayStreetBets',
+                'SPACs',
+                'dividends',
+                'weedstocks',
+                'CryptoCurrency'  # Sometimes discusses stock tickers
+            ]
             
             # Define common words that are also tickers (noisy plain text search)
             common_words = {
@@ -396,77 +424,92 @@ class SocialSentimentService:
                      search_queries.append(ticker)
             
             all_posts = []
-            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(days=7)  # Last week
             
-            for query in search_queries:
-                try:
-                    # Reddit public search JSON endpoint
-                    url = f"https://www.reddit.com/search.json?q={query}&sort=new&t=day&limit=10"
-                    
-                    response = requests.get(url, headers=headers, timeout=10)
-                    
-                    # Handle rate limiting
-                    if response.status_code == 429:
-                        logger.warning(f"Reddit rate limit hit for {ticker}. Waiting longer...")
-                        time.sleep(5)  # Wait longer if rate limited
-                        continue
-                    
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    # Parse nested JSON structure: response['data']['children'][i]['data']
-                    if 'data' in data and 'children' in data['data']:
-                        for child in data['data']['children']:
-                            if 'data' not in child:
-                                continue
-                            
-                            post_data = child['data']
-                            
-                            # Extract fields
-                            title = post_data.get('title', '')
-                            selftext = post_data.get('selftext', '')
-                            ups = post_data.get('ups', 0)  # upvotes
-                            num_comments = post_data.get('num_comments', 0)
-                            created_utc = post_data.get('created_utc', 0)
-                            url = post_data.get('url', '')
-                            subreddit = post_data.get('subreddit', '')
-                            
-                            # Convert created_utc (Unix timestamp) to datetime
-                            if created_utc:
-                                post_dt = datetime.fromtimestamp(created_utc, tz=timezone.utc)
+            # Search each whitelisted subreddit
+            for subreddit_name in STOCK_SUBREDDITS:
+                for query in search_queries:
+                    try:
+                        # Search within specific subreddit using relevance sort and last week
+                        # Format: /r/subreddit/search.json?q=query&sort=relevance&t=week&limit=25&restrict_sr=1
+                        url = f"https://www.reddit.com/r/{subreddit_name}/search.json?q={query}&sort=relevance&t=week&limit=25&restrict_sr=1"
+                        
+                        response = requests.get(url, headers=headers, timeout=10)
+                        
+                        # Handle rate limiting
+                        if response.status_code == 429:
+                            logger.warning(f"Reddit rate limit hit for {ticker} in r/{subreddit_name}. Waiting longer...")
+                            time.sleep(5)  # Wait longer if rate limited
+                            continue
+                        
+                        response.raise_for_status()
+                        data = response.json()
+                        
+                        # Parse nested JSON structure: response['data']['children'][i]['data']
+                        if 'data' in data and 'children' in data['data']:
+                            for child in data['data']['children']:
+                                if 'data' not in child:
+                                    continue
                                 
-                                # Filter posts from last 24 hours
-                                if post_dt >= cutoff_time:
+                                post_data = child['data']
+                                
+                                # Extract fields
+                                title = post_data.get('title', '')
+                                selftext = post_data.get('selftext', '')
+                                ups = post_data.get('ups', 0)  # upvotes
+                                num_comments = post_data.get('num_comments', 0)
+                                created_utc = post_data.get('created_utc', 0)
+                                url = post_data.get('url', '')
+                                subreddit = post_data.get('subreddit', '')
+                                
+                                # Convert created_utc (Unix timestamp) to datetime
+                                if created_utc:
+                                    post_dt = datetime.fromtimestamp(created_utc, tz=timezone.utc)
                                     
-                                    # Strict Relevance Check for plain text queries
-                                    if query == ticker:
-                                        # Use regex to ensure ticker appears as a distinct word
-                                        import re
+                                    # Filter posts from last week
+                                    if post_dt >= cutoff_time:
+                                        
+                                        # CRITICAL: Validate that post actually mentions the ticker
+                                        # Combine title and text for validation
                                         full_text = (title + " " + selftext).upper()
-                                        if not re.search(r'\b' + re.escape(ticker) + r'\b', full_text):
-                                            # Skip if ticker isn't a distinct word (e.g. "CATS" matches "CAT")
-                                            continue
-                                            
-                                    all_posts.append({
-                                        'title': title,
-                                        'selftext': selftext,
-                                        'score': ups,  # Use upvotes as score
-                                        'num_comments': num_comments,
-                                        'created_utc': created_utc,
-                                        'url': url,
-                                        'subreddit': subreddit
-                                    })
-                
-                except requests.exceptions.HTTPError as e:
-                    if e.response.status_code == 429:
-                        logger.warning(f"Reddit rate limit for {ticker} query '{query}'. Skipping.")
-                        time.sleep(5)
-                    else:
-                        logger.debug(f"HTTP error searching Reddit for {query}: {e}")
-                    continue
-                except Exception as e:
-                    logger.debug(f"Error searching Reddit for {query}: {e}")
-                    continue
+                                        
+                                        # Check for cashtag mention ($TICKER)
+                                        cashtag_pattern = r'\$' + re.escape(ticker) + r'\b'
+                                        has_cashtag = bool(re.search(cashtag_pattern, full_text, re.IGNORECASE))
+                                        
+                                        # Check for plain ticker mention with word boundaries
+                                        # Only accept if it's clearly a stock ticker (not part of another word)
+                                        ticker_pattern = r'\b' + re.escape(ticker) + r'\b'
+                                        has_ticker = bool(re.search(ticker_pattern, full_text, re.IGNORECASE))
+                                        
+                                        # Only accept posts that actually mention the ticker
+                                        if has_cashtag or has_ticker:
+                                            all_posts.append({
+                                                'title': title,
+                                                'selftext': selftext,
+                                                'score': ups,  # Use upvotes as score
+                                                'num_comments': num_comments,
+                                                'created_utc': created_utc,
+                                                'url': url,
+                                                'subreddit': subreddit
+                                            })
+                                        else:
+                                            # Log filtered posts for debugging
+                                            logger.debug(f"Filtered out post for {ticker} in r/{subreddit_name}: '{title[:50]}...' (no ticker mention)")
+                        
+                        # Small delay between subreddit searches to be respectful
+                        time.sleep(0.5)
+                    
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 429:
+                            logger.warning(f"Reddit rate limit for {ticker} in r/{subreddit_name}. Skipping.")
+                            time.sleep(5)
+                        else:
+                            logger.debug(f"HTTP error searching r/{subreddit_name} for {query}: {e}")
+                        continue
+                    except Exception as e:
+                        logger.debug(f"Error searching r/{subreddit_name} for {query}: {e}")
+                        continue
             
             # Deduplicate by URL
             seen_urls = set()
@@ -787,6 +830,7 @@ OUTPUT JSON ONLY:
                 return {'processed': 0, 'posts_created': 0}
             
             posts_created = 0
+            posts_filtered = 0
             
             for metric in metrics:
                 metric_id = metric['id']
@@ -798,30 +842,48 @@ OUTPUT JSON ONLY:
                     try:
                         # Extract post fields based on platform
                         if platform == 'stocktwits':
+                            content = post_data.get('body', '')
+                            # StockTwits posts are already filtered by ticker, so accept all
                             post_record = {
                                 'metric_id': metric_id,
                                 'platform': platform,
                                 'post_id': post_data.get('id'),  # StockTwits now captures IDs
-                                'content': post_data.get('body', ''),
+                                'content': content,
                                 'author': post_data.get('user', ''),
                                 'posted_at': post_data.get('created_at'),
                                 'engagement_score': 0,  # Not available in current StockTwits data
                                 'url': f"https://stocktwits.com/{post_data.get('user', 'Unknown')}/message/{post_data.get('id')}" if post_data.get('id') else None,
-                                'extracted_tickers': self._extract_tickers_basic(post_data.get('body', ''))
+                                'extracted_tickers': self._extract_tickers_basic(content)
                             }
                         elif platform == 'reddit':
+                            title = post_data.get('title', '')
+                            selftext = post_data.get('selftext', '')
+                            content = title + '\n\n' + selftext
+                            full_text = content.upper()
+                            
+                            # Validate that post actually mentions the ticker
+                            cashtag_pattern = r'\$' + re.escape(ticker) + r'\b'
+                            ticker_pattern = r'\b' + re.escape(ticker) + r'\b'
+                            
+                            has_cashtag = bool(re.search(cashtag_pattern, full_text, re.IGNORECASE))
+                            has_ticker = bool(re.search(ticker_pattern, full_text, re.IGNORECASE))
+                            
+                            # If post doesn't mention ticker, skip it
+                            if not (has_cashtag or has_ticker):
+                                posts_filtered += 1
+                                logger.debug(f"Filtered out post for {ticker}: '{title[:50]}...' (no ticker mention)")
+                                continue
+                            
                             post_record = {
                                 'metric_id': metric_id,
                                 'platform': platform,
                                 'post_id': post_data.get('id') or str(hash(post_data.get('url', ''))),
-                                'content': post_data.get('title', '') + '\n\n' + post_data.get('selftext', ''),
+                                'content': content,
                                 'author': 'u/' + post_data.get('author', 'unknown'),
                                 'posted_at': datetime.fromtimestamp(post_data.get('created_utc', 0), tz=timezone.utc).isoformat(),
                                 'engagement_score': (post_data.get('score', 0) + post_data.get('num_comments', 0) * 2),
                                 'url': post_data.get('url', ''),
-                                'extracted_tickers': self._extract_tickers_basic(
-                                    post_data.get('title', '') + ' ' + post_data.get('selftext', '')
-                                )
+                                'extracted_tickers': self._extract_tickers_basic(title + ' ' + selftext)
                             }
                         
                         # Insert post record
@@ -842,6 +904,9 @@ OUTPUT JSON ONLY:
                     except Exception as e:
                         logger.warning(f"Error extracting post for metric {metric_id}: {e}")
                         continue
+            
+            if posts_filtered > 0:
+                logger.info(f"⚠️  Filtered out {posts_filtered} posts that didn't mention their ticker")
             
             logger.info(f"✅ Post extraction complete: processed {len(metrics)} metrics, created {posts_created} posts")
             return {'processed': len(metrics), 'posts_created': posts_created}

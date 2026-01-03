@@ -722,21 +722,34 @@ class PromptGenerator:
                 # Use daily P&L from the row data (already calculated in trading script)
                 daily_pnl_dollar = row.get('daily_pnl', 'N/A')
                 
+                # Check for pre-calculated percentage (from Supabase/DB)
+                # This is preferred as it's calculated against previous close, not current value
+                daily_pnl_pct_stored = row.get('daily_pnl_percentage')
+
                 # Calculate proper daily P&L percentage for better color coding
                 daily_pnl_value = 0.0
+                daily_pnl_pct_str = "0.0%" # Default initialization
+                
                 if daily_pnl_dollar != 'N/A' and daily_pnl_dollar != '$0.00':
-                    # Extract dollar value from daily_pnl_dollar for percentage calculation
+                    # Extract dollar value from daily_pnl_dollar
                     try:
                         # Remove $ and , and * characters, then convert to float
                         daily_pnl_value = float(daily_pnl_dollar.replace('$', '').replace(',', '').replace('*', ''))
-                        # Calculate percentage based on current position value
-                        if total_value > 0:
+                        
+                        if daily_pnl_pct_stored is not None:
+                            # Use stored percentage directly
+                            daily_pnl_pct = float(daily_pnl_pct_stored)
+                            daily_pnl_pct_str = f"{daily_pnl_pct:+.1f}%"
+                        elif total_value > 0:
+                            # Fallback: Approximate percentage using current value (Note: denominator is technically inexact)
                             daily_pnl_pct = (daily_pnl_value / total_value) * 100
                             daily_pnl_pct_str = f"{daily_pnl_pct:+.1f}%"
                         else:
                             daily_pnl_pct_str = "0.0%"
+                            
                         daily_pnl = f"{daily_pnl_pct_str} {daily_pnl_dollar}"
                     except (ValueError, AttributeError):
+                        # Formatting failed, keep existing string if possible
                         daily_pnl = f"{daily_pnl_pct_str} {daily_pnl_dollar}"
                 else:
                     daily_pnl = f"0.0% $0.00"

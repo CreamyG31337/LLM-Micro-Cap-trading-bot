@@ -2073,111 +2073,187 @@ def main():
                 else:
                     st.info("No investor data available for this fund")
             
-            # Positions table with compact/full mode toggle
+            # Positions table
             st.markdown("#### Positions Table")
-            compact_mode = st.checkbox("📱 Compact View (fewer columns)", value=False, help="Show fewer columns for mobile/narrow screens")
             
-            # Define column sets
-            if compact_mode:
-                # Mobile-friendly: essential columns only
-                display_cols = ['ticker', 'shares', 'current_price', 'market_value', 'return_pct']
-                col_names = {'ticker': 'Ticker', 'shares': 'Shares', 'current_price': 'Price', 
-                           'market_value': 'Value', 'return_pct': 'Return %'}
-            else:
-                # Full desktop view - removed company name (now in Holdings Info table below)
-                display_cols = ['ticker', 'shares', 'current_price', 'cost_basis', 
-                              'market_value', 'unrealized_pnl', 'return_pct', 'daily_pnl', 
-                              'daily_pnl_pct', 'five_day_pnl_pct']
-                col_names = {'ticker': 'Ticker', 'shares': 'Shares',
-                           'current_price': 'Price', 'cost_basis': 'Cost Basis',
-                           'market_value': 'Value', 'unrealized_pnl': 'P&L ($)',
-                           'return_pct': 'Return %', 'daily_pnl': '1-Day ($)',
-                           'daily_pnl_pct': '1-Day %', 'five_day_pnl_pct': '5-Day %'}
-            
-            # Filter to only columns that exist
-            display_cols = [col for col in display_cols if col in positions_df.columns]
-            
-            if display_cols:
-                display_df = positions_df[display_cols].copy()
+            # Fetch additional data for enhanced view
+            # 1. First trade dates for "Opened" column
+            try:
+                from streamlit_utils import get_first_trade_dates
+                first_trade_dates = get_first_trade_dates(fund_filter)
+            except ImportError:
+                first_trade_dates = {}
                 
-                # Convert currency-denominated columns to display currency
-                # The rate_map was already calculated earlier in the function (around line 1156)
-                # We need to apply currency conversion to values that are in position's native currency
-                if not positions_df.empty and 'currency' in positions_df.columns:
-                    # Recalculate rate_map if needed (or reuse from earlier - it's in scope)
-                    # Get unique currencies from positions
-                    unique_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
-                    display_rate_map = fetch_latest_rates_bulk(unique_currencies, display_currency)
-                    
-                    def get_display_rate(curr):
-                        return display_rate_map.get(str(curr).upper(), 1.0)
-                    
-                    # Apply currency conversion to currency-denominated columns
-                    currency_cols = ['cost_basis', 'market_value', 'unrealized_pnl', 'daily_pnl', 'current_price']
-                    for col in currency_cols:
-                        if col in display_df.columns:
-                            # Get currency for each row and apply conversion rate
-                            # Match by index to ensure we get the right currency for each position
-                            rates = positions_df.loc[display_df.index, 'currency'].fillna('CAD').astype(str).str.upper().map(get_display_rate)
-                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce').fillna(0) * rates
-                    
-                    # Debug: Log positions with zero P&L after currency conversion
-                    if 'unrealized_pnl' in display_df.columns:
-                        zero_pnl_mask = display_df['unrealized_pnl'].abs() < 0.01
-                        zero_pnl_positions = display_df[zero_pnl_mask]
-                        if len(zero_pnl_positions) > 0:
-                            log_message(f"[{session_id}] WARNING: Found {len(zero_pnl_positions)} positions with zero P&L after currency conversion: {list(zero_pnl_positions.get('Ticker', zero_pnl_positions.index))}", level='WARNING')
-                            # Check if cost_basis equals market_value (which would cause zero P&L)
-                            if 'Cost Basis' in display_df.columns and 'Value' in display_df.columns:
-                                cost_value_match = (display_df['Cost Basis'] - display_df['Value']).abs() < 0.01
-                                matching = display_df[cost_value_match & zero_pnl_mask]
-                                if len(matching) > 0:
-                                    log_message(f"[{session_id}] WARNING: {len(matching)} positions have cost_basis = market_value: {list(matching.get('Ticker', matching.index))}", level='WARNING')
+            if not positions_df.empty:
+                # Prepare enhanced dataframe for AgGrid
+                ag_df = positions_df.copy()
                 
-                # Rename columns for display
-                display_df = display_df.rename(columns={c: col_names.get(c, c) for c in display_cols})
+                # Add Company Name from securities (already in positions_df if joined, effectively)
+                # The view 'latest_positions' has 'company', let's accept it.
+                if 'company' not in ag_df.columns:
+                    ag_df['company'] = ag_df.get('company_name', '')
                 
-                # Format numeric columns
-                format_dict = {}
-                for col in display_df.columns:
-                    if col == 'Shares':
-                        format_dict[col] = '{:.4f}'
-                    elif col in ['Price', 'Cost Basis', 'Value', 'P&L ($)', '1-Day ($)']:
-                        format_dict[col] = '${:,.2f}'
-                    elif col in ['Return %', '1-Day %', '5-Day %']:
-                        format_dict[col] = '{:+.2f}%'
+                # Add Date Opened
+                ag_df['opened'] = ag_df['ticker'].map(first_trade_dates)
                 
-                # Apply color styling to P&L columns
-                def color_pnl(val):
-                    """Color positive values green, negative red"""
-                    try:
-                        if isinstance(val, str):
-                            val = float(val.replace('$', '').replace('%', '').replace(',', '').replace('+', ''))
-                        if val > 0:
-                            return 'color: #10b981'  # Green
-                        elif val < 0:
-                            return 'color: #ef4444'  # Red
-                    except:
-                        pass
-                    return ''
+                # Add Avg Price and Current Price
+                # cost_basis is total cost. shares is total shares.
+                ag_df['avg_price'] = ag_df.apply(lambda x: x['cost_basis'] / x['shares'] if x['shares'] > 0 else 0, axis=1)
                 
-                # Style the dataframe
-                pnl_cols = [c for c in display_df.columns if any(x in c for x in ['P&L', 'Return', '1-Day', '5-Day'])]
-                styled_df = display_df.style.format(format_dict)
+                # Ensure we have current price
+                if 'current_price' not in ag_df.columns:
+                    ag_df['current_price'] = ag_df['price'] # Fallback
                 
-                for col in pnl_cols:
-                    if col in display_df.columns:
-                        styled_df = styled_df.map(color_pnl, subset=[col])
+                # Calculate Portfolio Weight
+                total_portfolio_value = ag_df['market_value'].sum()
+                ag_df['weight'] = ag_df['market_value'] / total_portfolio_value if total_portfolio_value > 0 else 0
                 
-                display_dataframe_with_copy(
-                    styled_df,
-                    label="Current Positions",
-                    key_suffix="positions_styled",
-                    use_container_width=True,
-                    height=400
+                # Format Combined Columns (Value + P&L)
+                # User wants: "merge the dollars and % into single columns"
+                # We will create display columns for AgGrid
+                
+                def format_combined_pnl(val, pct, currency_symbol="$"):
+                    if pd.isna(val) or pd.isna(pct):
+                        return "—"
+                    color = "green" if val >= 0 else "red"
+                    arrow = "▲" if val >= 0 else "▼"
+                    # HTML styling will be handled by AgGrid cell renderer or we just pass text
+                    # For now with simple config, let's pass formatted text string
+                    # But user wants color. We need AgGrid renderer relative to value.
+                    return f"{currency_symbol}{abs(val):,.2f} {arrow} {abs(pct):.1f}%"
+
+                # We will leave the raw values for AgGrid to render with custom cell renderer for colors
+                # But to merge columns, we create a valid field.
+                
+                # Let's create specific fields for AgGrid
+                
+                # 1. Ticker (with navigation)
+                # 2. Company
+                # 3. Opened
+                # 4. Shares
+                # 5. Avg Price
+                # 6. Current Price
+                # 7. Value
+                # 8. Total P&L (Value + %)
+                # 9. 1-Day P&L (Value + %)
+                # 10. 5-Day P&L (Value + %)
+                # 11. Weight
+                
+                # Helper for currency symbol
+                curr_symbol = "$" if display_currency in ['USD', 'CAD'] else "" # Simple logic
+                
+                # Prepare display data
+                display_df = pd.DataFrame()
+                display_df['Ticker'] = ag_df['ticker']
+                display_df['Company'] = ag_df['company'].fillna('—')
+                # Ensure date format is strictly mm-dd-yy (e.g. 08-25-25)
+                display_df['Opened'] = pd.to_datetime(ag_df['opened'], errors='coerce').dt.strftime('%m-%d-%y').fillna('—')
+                display_df['Shares'] = ag_df['shares']
+                display_df['Avg Price'] = ag_df['avg_price']
+                display_df['Current Price'] = ag_df['current_price']
+                display_df['Value'] = ag_df['market_value']
+                
+                # P&L Data (Hidden, for styling)
+                display_df['_total_pnl'] = ag_df['unrealized_pnl']
+                display_df['_total_pnl_pct'] = ag_df['return_pct']
+                display_df['_daily_pnl'] = ag_df.get('daily_pnl', 0)
+                display_df['_daily_pnl_pct'] = ag_df.get('daily_pnl_pct', 0)
+                display_df['_5day_pnl'] = ag_df.get('five_day_pnl', 0)
+                display_df['_5day_pnl_pct'] = ag_df.get('five_day_pnl_pct', 0)
+                
+                display_df['Weight'] = ag_df['weight']
+                
+                # Define combined columns (Strings)
+                display_df['Total P&L'] = display_df.apply(
+                    lambda x: f"${x['_total_pnl']:,.2f} {x['_total_pnl_pct']:+.1f}%", axis=1
                 )
+                display_df['1-Day P&L'] = display_df.apply(
+                    lambda x: f"${x['_daily_pnl']:,.2f} {x['_daily_pnl_pct']:+.1f}%", axis=1
+                )
+                display_df['5-Day P&L'] = display_df.apply(
+                    lambda x: f"${x['_5day_pnl']:,.2f} {x['_5day_pnl_pct']:+.1f}%", axis=1
+                )
+
+                # Import AgGrid components
+                from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+                
+                gb = GridOptionsBuilder.from_dataframe(display_df)
+                
+                # Configure Columns
+                gb.configure_column("Ticker", pinned="left", width=100, cellRenderer=JsCode(TICKER_CELL_RENDERER_JS))
+                gb.configure_column("Company", width=200, tooltipField="Company")
+                gb.configure_column("Opened", width=100)
+                gb.configure_column("Shares", type=["numericColumn", "numberColumnFilter"], precision=4, width=100)
+                gb.configure_column("Avg Price", type=["numericColumn", "numberColumnFilter"], valueFormatter="x.toLocaleString('en-US', {style: 'currency', currency: 'USD'})", width=100)
+                gb.configure_column("Current Price", type=["numericColumn", "numberColumnFilter"], valueFormatter="x.toLocaleString('en-US', {style: 'currency', currency: 'USD'})", width=100)
+                gb.configure_column("Value", type=["numericColumn", "numberColumnFilter"], valueFormatter="x.toLocaleString('en-US', {style: 'currency', currency: 'USD'})", width=120)
+                
+                # Configure Weight
+                gb.configure_column("Weight", type=["numericColumn"], valueFormatter="(x * 100).toFixed(1) + '%'", width=80)
+                
+                # Configure Combined P&L Columns with Custom Coloring
+                pnl_cell_style = JsCode("""
+                function(params) {
+                    if (!params.value) return null;
+                    // Check if string contains '-' suggesting negative money or %
+                    // Actually clearer to use the hidden raw values if accessible, but params.data accesses the row data
+                    let val = 0;
+                    if (params.colDef.field === 'Total P&L') val = params.data._total_pnl;
+                    else if (params.colDef.field === '1-Day P&L') val = params.data._daily_pnl;
+                    else if (params.colDef.field === '5-Day P&L') val = params.data._5day_pnl;
+                    
+                    if (val > 0) return {color: '#10b981', fontWeight: 'bold'}; // Green
+                    if (val < 0) return {color: '#ef4444', fontWeight: 'bold'}; // Red
+                    return null;
+                }
+                """)
+                
+                gb.configure_column("Total P&L", cellStyle=pnl_cell_style, width=150)
+                gb.configure_column("1-Day P&L", cellStyle=pnl_cell_style, width=150)
+                gb.configure_column("5-Day P&L", cellStyle=pnl_cell_style, width=150)
+                
+                # Hide technical columns
+                for col in ['_total_pnl', '_total_pnl_pct', '_daily_pnl', '_daily_pnl_pct', '_5day_pnl', '_5day_pnl_pct']:
+                    gb.configure_column(col, hide=True)
+                
+                # General Options
+                gb.configure_pagination(paginationPageSize=20)
+                gb.configure_grid_options(domLayout='normal')
+                gb.configure_selection(selection_mode="single", use_checkbox=False)
+                
+                # Add Ticker Click Handler
+                grid_options = gb.build()
+                grid_options['onCellClicked'] = {
+                    'function': TICKER_CLICK_HANDLER_JS_TEMPLATE.format(col_id='Ticker')
+                }
+                
+                # Render Grid
+                grid_response = AgGrid(
+                    display_df,
+                    gridOptions=grid_options,
+                    height=400,
+                    update_mode=GridUpdateMode.SELECTION_CHANGED,
+                    allow_unsafe_jscode=True,
+                    theme='streamlit'
+                )
+                
+                # Handle Navigation
+                selected_rows = grid_response.get('selected_rows')
+                if selected_rows is not None and len(selected_rows) > 0:
+                    if isinstance(selected_rows, pd.DataFrame):
+                        if 'Ticker' in selected_rows.columns:
+                            selected_ticker = str(selected_rows.iloc[0]['Ticker'])
+                    elif isinstance(selected_rows, list):
+                        selected_row = selected_rows[0]
+                        if isinstance(selected_row, dict) and 'Ticker' in selected_row:
+                            selected_ticker = str(selected_row['Ticker'])
+                    
+                    if selected_ticker:
+                         st.session_state['selected_ticker'] = selected_ticker
+                         st.switch_page("pages/ticker_details.py")
+            
             else:
-                display_dataframe_with_copy(positions_df, label="Current Positions", key_suffix="positions_raw", use_container_width=True, height=400)
+                 st.info("No current positions found")
             
             # Holdings Info table - Company, Sector, Industry
             # Data is already available from latest_positions view (joins with securities table)

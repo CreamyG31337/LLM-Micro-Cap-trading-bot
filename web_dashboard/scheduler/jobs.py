@@ -142,6 +142,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '🦊'
     },
+    'seeking_alpha_symbol': {
+        'name': 'Seeking Alpha Symbol Scraper',
+        'description': 'Scrape Seeking Alpha symbol pages for portfolio tickers to extract news articles',
+        'default_interval_minutes': 1440,  # Every 24 hours (daily)
+        'enabled_by_default': True,
+        'icon': '📑'
+    },
     'dividend_processing': {
         'name': 'Process Dividend Reinvestments',
         'description': 'Detect dividends and create DRIP transactions',
@@ -307,6 +314,9 @@ from scheduler.jobs_congress import (
 # Import opportunity discovery job
 from scheduler.jobs_opportunity import opportunity_discovery_job
 
+# Import symbol article scraper job
+from scheduler.jobs_symbol_articles import seeking_alpha_symbol_job
+
 # Import dividend processing job
 from scheduler.jobs_dividends import process_dividends_job
 
@@ -347,6 +357,8 @@ __all__ = [
     'rescore_congress_sessions_job',
     # Opportunity discovery
     'opportunity_discovery_job',
+    # Seeking Alpha scraper
+    'seeking_alpha_symbol_job',
     # Dividend processing
     'process_dividends_job',
     # Watchdog
@@ -662,6 +674,23 @@ def register_default_jobs(scheduler) -> None:
             coalesce=True
         )
         logger.info("Registered job: alpha_research_collect (every 6 hours)")
+    
+    # Seeking Alpha Symbol Scraper: Daily at 2:00 AM EST (off-peak, avoids conflicts with 3:00 AM cleanup)
+    if AVAILABLE_JOBS.get('seeking_alpha_symbol', {}).get('enabled_by_default'):
+        scheduler.add_job(
+            seeking_alpha_symbol_job,
+            trigger=CronTrigger(
+                hour=2,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='seeking_alpha_symbol_scrape',
+            name=f"{get_job_icon('seeking_alpha_symbol')} Seeking Alpha Symbol Scraper",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: seeking_alpha_symbol_scrape (daily at 2:00 AM EST)")
     
     # Benchmark refresh job - daily after market close
     if AVAILABLE_JOBS['benchmark_refresh']['enabled_by_default']:

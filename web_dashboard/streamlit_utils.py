@@ -665,6 +665,100 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
 
 @log_execution_time()
 @st.cache_data(ttl=300)
+def get_first_trade_dates(fund: Optional[str] = None) -> Dict[str, datetime]:
+    """Get the first trade date for each ticker.
+    
+    Approximation: Uses MIN(date) from portfolio_positions for each ticker.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    client = get_supabase_client()
+    if not client:
+        return {}
+    
+    try:
+        query = client.supabase.table("portfolio_positions").select("ticker, date")
+        if fund:
+            query = query.eq("fund", fund)
+            
+        # We need all history -> this could be large. 
+        # Optimization: Only select min date directly via group by if Supabase supported it easily.
+        # Since we can't easily do efficient group-by aggregation in postgrest without rpc, 
+        # and checking all rows is heavy...
+        # BETTER APPROXIMATION: Use trade_log which represents transactions.
+        # Find first BUY for each ticker.
+        
+        # ACTUALLY: Let's use a simpler approach for now to avoid fetching 50k rows.
+        # Check if we can use the `trade_log` which is smaller? No, trade_log grows too.
+        # Let's try to fetch just unique (ticker, min_date).
+        # We can use an RPC call if one existed, but let's stick to standard queries.
+        # Let's try fetching from trade_log ordered by date asc, distinct on ticker? 
+        # PostgREST 9+ supports distinct.
+        
+        # Try finding first 'BUY' in trade_log
+        # This is reasonably safe for "Opened" date
+        today = datetime.now().date()
+        
+        # We have to be careful about pagination if there are many trades.
+        # For now, let's limit to finding dates for CURRENT holdings only?
+        # That requires knowing current holdings.
+        
+        # Let's revert to a "best effort" via trade_log with a reasonable limit
+        # or use a dedicated RPC function if we had one.
+        # Given constraints, let's look at `portfolio_positions`.
+        # Taking MIN(date) from portfolio_positions is actually "when did we first have a record".
+        
+        # Let's ignore the perfect "gaps" logic and just get min date per ticker from trade_log
+        # Fetch all trades (lightweight: just ticker and date)
+        
+        all_dates = {}
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            # Get earliest trades first
+            q = client.supabase.table("trade_log").select("ticker, date").order("date", desc=False).range(offset, offset + batch_size - 1)
+            if fund:
+                q = q.eq("fund", fund)
+            
+            res = q.execute()
+            if not res.data:
+                break
+                
+            for row in res.data:
+                ticker = row['ticker']
+                if ticker not in all_dates:
+                    try:
+                        all_dates[ticker] = pd.to_datetime(row['date']).date()
+                    except:
+                        pass
+            
+            # Optimization: If we have dates for "enough" tickers, maybe stop? 
+            # But we don't know which ones are active. 
+            # Given we fetch earliest first, the FIRST time we see a ticker is its start date.
+            # So we just need to iterate until we've seen all tickers? No, we might miss new tickers if we stop.
+            # But wait! If we order by date ASC, the first time we see a ticker IS the min date.
+            # So `if ticker not in all_dates: all_dates[ticker] = date` is correct.
+            # Do we need to fetch ALL trades? Yes, to find the first date for late-blooming tickers.
+            # This might be slow.
+            
+            if len(res.data) < batch_size:
+                break
+            offset += batch_size
+            
+            if offset > 10000: # Safety cap
+                break
+                
+        return all_dates
+
+    except Exception as e:
+        logger.error(f"Error getting trade dates: {e}")
+        return {}
+
+
+@log_execution_time()
+@st.cache_data(ttl=300)
 def get_cash_balances(fund: Optional[str] = None) -> Dict[str, float]:
     """Get cash balances by currency"""
     import logging

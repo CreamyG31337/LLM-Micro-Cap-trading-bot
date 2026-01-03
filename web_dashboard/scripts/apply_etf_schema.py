@@ -24,6 +24,7 @@ def apply_schema():
     print(f"Applying schema from {schema_file.name}...")
     
     # Execute
+    # Execute
     db.execute_update(schema_sql)
     
     # Also apply the ALTER just in case table exists

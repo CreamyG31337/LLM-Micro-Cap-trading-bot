@@ -138,8 +138,9 @@ def get_etf_info(_postgres_client, etf_ticker: str, _refresh_key: int) -> Option
         return None
     try:
         # Match columns to securities table schema
+        # Match columns to securities table schema
         result = _postgres_client.execute_query(
-            "SELECT ticker, company_name, sector, industry, country, market_cap, currency, last_updated FROM securities WHERE ticker = %s",
+            "SELECT ticker, name as company_name, sector, industry, exchange, asset_class, currency, last_updated FROM securities WHERE ticker = %s",
             (etf_ticker,)
         )
         if result and result[0]:
@@ -163,6 +164,12 @@ def get_holdings_changes(
     try:
         # Build query with optional ETF filter
         query = """
+        WITH prev_dates AS (
+            SELECT etf_ticker, MAX(date) as prev_date
+            FROM etf_holdings_log
+            WHERE date < %s
+            GROUP BY etf_ticker
+        )
         SELECT 
             t1.date as date,
             t1.etf_ticker,
@@ -170,37 +177,38 @@ def get_holdings_changes(
             t1.holding_name,
             COALESCE(t1.shares_held, 0) as current_shares,
             COALESCE(t0.shares_held, 0) as previous_shares,
-            COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0) as share_change,
             CASE 
+                WHEN pd.prev_date IS NULL THEN 0 
+                ELSE COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0) 
+            END as share_change,
+            CASE 
+                WHEN pd.prev_date IS NULL THEN NULL
                 WHEN COALESCE(t0.shares_held, 0) > 0 
                 THEN ((COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0)) / t0.shares_held * 100)
                 ELSE NULL 
             END as percent_change,
             CASE 
+                WHEN pd.prev_date IS NULL THEN 'HOLD' -- First snapshot is not a BUY
                 WHEN COALESCE(t1.shares_held, 0) > COALESCE(t0.shares_held, 0) THEN 'BUY'
                 WHEN COALESCE(t1.shares_held, 0) < COALESCE(t0.shares_held, 0) THEN 'SELL'
                 ELSE 'HOLD'
             END as action
         FROM etf_holdings_log t1
+        LEFT JOIN prev_dates pd ON t1.etf_ticker = pd.etf_ticker
         LEFT JOIN etf_holdings_log t0 
             ON t1.etf_ticker = t0.etf_ticker 
             AND t1.holding_ticker = t0.holding_ticker
-            AND t0.date = (
-                SELECT MAX(date) 
-                FROM etf_holdings_log 
-                WHERE date < t1.date 
-                AND etf_ticker = t1.etf_ticker
-            )
+            AND t0.date = pd.prev_date
         WHERE t1.date = %s
         """
         
-        params = [target_date]
+        params = [target_date, target_date]
         
         if etf_ticker:
             query += " AND t1.etf_ticker = %s"
             params.append(etf_ticker)
         
-        query += " ORDER BY ABS(COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0)) DESC"
+        query += " ORDER BY ABS(CASE WHEN pd.prev_date IS NULL THEN 0 ELSE COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0) END) DESC"
         
         result = _postgres_client.execute_query(query, tuple(params))
         

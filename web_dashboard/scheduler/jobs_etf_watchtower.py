@@ -322,12 +322,8 @@ def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: s
             
         unique_securities = df.drop_duplicates(subset=['ticker']).copy()
         
-        # Map 'name' column to 'company_name' if it exists
-        if 'name' in unique_securities.columns and 'company_name' not in unique_securities.columns:
-            unique_securities['company_name'] = unique_securities['name']
-        
-        # Ensure all columns exist (using company_name, not name)
-        cols = ['ticker', 'company_name', 'sector', 'industry', 'country', 'currency']
+        # Ensure all columns exist
+        cols = ['ticker', 'name', 'sector', 'industry', 'asset_class', 'exchange', 'currency']
         for col in cols:
             if col not in unique_securities.columns:
                 unique_securities[col] = None
@@ -340,27 +336,29 @@ def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: s
                 
             rows.append((
                 ticker,
-                row.get('company_name') or row.get('name'),  # Support both for backward compatibility
-                row.get('sector'),
+                row['name'],
+                row['sector'],
                 row.get('industry'),
-                row.get('country'),
-                row.get('currency') or 'USD',
+                row['asset_class'],
+                row['exchange'],
+                row['currency'],
+                f"{provider} ETF"
             ))
             
         if not rows:
             return
             
         upsert_query = """
-            INSERT INTO securities (ticker, company_name, sector, industry, country, currency, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            INSERT INTO securities (ticker, name, sector, industry, asset_class, exchange, currency, first_detected_by, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (ticker) DO UPDATE SET
-                company_name = COALESCE(EXCLUDED.company_name, securities.company_name),
+                name = EXCLUDED.name,
                 sector = COALESCE(EXCLUDED.sector, securities.sector),
-                industry = COALESCE(EXCLUDED.industry, securities.industry),
-                country = COALESCE(EXCLUDED.country, securities.country),
+                asset_class = COALESCE(EXCLUDED.asset_class, securities.asset_class),
+                exchange = COALESCE(EXCLUDED.exchange, securities.exchange),
                 currency = COALESCE(EXCLUDED.currency, securities.currency),
                 last_updated = NOW()
-            WHERE securities.company_name IS NULL OR securities.sector IS NULL
+            WHERE securities.name IS NULL OR securities.sector IS NULL
         """
         
         db.execute_many(upsert_query, rows)

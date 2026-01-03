@@ -237,12 +237,22 @@ def _map_job_id_to_job_name(job_id: str) -> str:
     # Handle special cases for job variants
     if job_id == 'update_portfolio_prices_close':
         return 'update_portfolio_prices'
-    elif job_id.startswith('market_research_'):
+    elif job_id.startswith('market_research_collect_'):
         return 'market_research'
-    elif job_id == 'ticker_research_job':
-        return 'ticker_research'
-    elif job_id == 'opportunity_discovery_job':
-        return 'opportunity_discovery'
+    # Remove verb suffixes to get base job name for grouping
+    # This allows variants to be grouped together in the database
+    if job_id.endswith('_refresh'):
+        return job_id[:-8]  # Remove '_refresh'
+    elif job_id.endswith('_populate'):
+        return job_id[:-9]  # Remove '_populate'
+    elif job_id.endswith('_collect'):
+        return job_id[:-8]  # Remove '_collect'
+    elif job_id.endswith('_scan'):
+        return job_id[:-5]  # Remove '_scan'
+    elif job_id.endswith('_fetch'):
+        return job_id[:-6]  # Remove '_fetch'
+    elif job_id.endswith('_cleanup'):
+        return job_id[:-8]  # Remove '_cleanup'
     # Default: use job_id as-is
     return job_id
 

@@ -1922,11 +1922,12 @@ with tab6:
                                     
                                     if job_id:
                                         st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                                        job_id_str = str(job_id)
                                         if had_running_job:
-                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade_datetime.date()}... (Job ID: {job_id[:8]}...)")
+                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade_datetime.date()}... (Job ID: {job_id_str})")
                                         else:
                                             st.toast(f"⏳ Rebuilding positions from {trade_date}...", icon="📊")
-                                            st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id[:8]}...)")
+                                            st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id_str})")
                                     else:
                                         st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild from Fund Management tab.")
@@ -2077,7 +2078,7 @@ with tab6:
                                                 
                                                 st.success("✅ Trade updated successfully!")
                                                 if job_id:
-                                                    st.info(f"📊 Date changed - recalculating from {rebuild_from}... (Job ID: {job_id[:8]}...)")
+                                                    st.info(f"📊 Date changed - recalculating from {rebuild_from}... (Job ID: {job_id})")
                                             except Exception as e:
                                                 st.success("✅ Trade updated successfully!")
                                                 st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
@@ -2115,7 +2116,7 @@ with tab6:
                                             
                                             st.success("✅ Trade deleted successfully!")
                                             if job_id:
-                                                st.info(f"📊 Recalculating positions from {original_date.date()}... (Job ID: {job_id[:8]}...)")
+                                                st.info(f"📊 Recalculating positions from {original_date.date()}... (Job ID: {job_id})")
                                                 
                                         except Exception as e:
                                             st.success("✅ Trade deleted successfully!")
@@ -2481,9 +2482,9 @@ Time: December 19, 2025 09:30 EST""",
                                     if job_id:
                                         st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                                         if had_running_job:
-                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
+                                            st.info(f"📊 Previous rebuild cancelled. Restarting from {trade.timestamp.date()}... (Job ID: {job_id})")
                                         else:
-                                            st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id[:8]}...)")
+                                            st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id})")
                                     else:
                                         st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild.")

@@ -32,9 +32,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth_utils import is_authenticated, get_user_email
 from navigation import render_navigation
-from postgres_client import PostgresClient
+from supabase_client import SupabaseClient
 from user_preferences import get_user_timezone
-from aggrid_utils import TICKER_CELL_RENDERER_JS
+from aggrid_utils import TICKER_CELL_RENDERER_JS, TICKER_CLICK_HANDLER_JS_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -63,24 +63,24 @@ if not refresh_token_if_needed():
 # Render navigation
 render_navigation(show_ai_assistant=True, show_settings=True)
 
-# Initialize PostgreSQL client
+# Initialize Supabase client
 @st.cache_resource
-def get_postgres_client():
-    """Get PostgreSQL client instance"""
+def get_supabase_client():
+    """Get Supabase client instance"""
     try:
-        return PostgresClient()
+        return SupabaseClient()
     except Exception as e:
-        logger.warning(f"PostgreSQL not available: {e}")
+        logger.warning(f"Supabase not available: {e}")
         return None
 
-postgres_client = get_postgres_client()
+supabase_client = get_supabase_client()
 
-# Check if PostgreSQL is available
-if postgres_client is None:
+# Check if Supabase is available
+if supabase_client is None:
     st.error("⚠️ ETF Holdings Database Unavailable")
     st.info("""
     The ETF holdings database is not available. This could be because:
-    - PostgreSQL is not configured
+    - Supabase is not configured
     - Database connection failed
     
     Check the logs or contact an administrator for assistance.
@@ -104,59 +104,66 @@ if 'refresh_key' not in st.session_state:
 
 # Query functions
 @st.cache_data(ttl=60, show_spinner=False)
-def get_latest_date(_postgres_client, _refresh_key: int) -> Optional[date]:
+def get_latest_date(_db_client, _refresh_key: int) -> Optional[date]:
     """Get latest available date from etf_holdings_log"""
-    if _postgres_client is None:
+    if _db_client is None:
         return None
     try:
-        result = _postgres_client.execute_query("SELECT MAX(date) as max_date FROM etf_holdings_log")
-        if result and result[0] and result[0].get('max_date'):
-            return result[0]['max_date']
+        result = _db_client.supabase.table("etf_holdings_log").select("date").order("date", desc=True).limit(1).execute()
+        if result.data and result.data[0].get('date'):
+            return datetime.strptime(result.data[0]['date'], '%Y-%m-%d').date()
         return None
     except Exception as e:
         logger.error(f"Error fetching latest date: {e}")
         return None
 
 @st.cache_data(ttl=60, show_spinner=False)
-def check_etf_ownership(_postgres_client, etf_ticker: str, _refresh_key: int) -> Optional[Dict[str, Any]]:
+def check_etf_ownership(_db_client, etf_ticker: str, _refresh_key: int) -> Optional[Dict[str, Any]]:
     """Check if user owns shares of the ETF itself"""
-    if _postgres_client is None or not etf_ticker:
+    if _db_client is None or not etf_ticker:
         return None
     try:
-        query = """
-            SELECT 
-                SUM(p.quantity) as total_shares,
-                STRING_AGG(DISTINCT p.fund_name, ', ') as funds
-            FROM portfolio_positions p
-            WHERE p.ticker = %s
-              AND p.date = (SELECT MAX(date) FROM portfolio_positions)
-              AND p.quantity > 0
-        """
-        result = _postgres_client.execute_query(query, (etf_ticker,))
-        if result and result[0] and result[0]['total_shares']:
-            return result[0]
+        # Get latest date from portfolio_positions
+        max_date_res = _db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
+        if not max_date_res.data:
+            return None
+        max_date = max_date_res.data[0]['date']
+        
+        # Query positions for the ETF ticker
+        result = _db_client.supabase.table("portfolio_positions").select("quantity, fund_name").eq("ticker", etf_ticker).eq("date", max_date).gt("quantity", 0).execute()
+        
+        if result.data:
+            total_shares = sum(row['quantity'] for row in result.data)
+            funds = ", ".join(set(row['fund_name'] for row in result.data))
+            return {
+                'total_shares': total_shares,
+                'funds': funds
+            }
         return None
     except Exception as e:
         logger.error(f"Error checking ETF ownership for {etf_ticker}: {e}")
         return None
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_available_etfs(_postgres_client, _refresh_key: int) -> List[Dict[str, str]]:
-    """Get all available ETF tickers with names"""
-    if _postgres_client is None:
+def get_available_etfs(_db_client, _refresh_key: int) -> List[Dict[str, str]]:
+    """Get all available ETF tickers with names from Supabase"""
+    if _db_client is None:
         return []
     try:
-        # Join with securities to get names
-        query = """
-            SELECT DISTINCT t.etf_ticker, s.name 
-            FROM etf_holdings_log t
-            LEFT JOIN securities s ON t.etf_ticker = s.ticker
-            ORDER BY t.etf_ticker
-        """
-        result = _postgres_client.execute_query(query)
-        if result:
-            return [{'ticker': row['etf_ticker'], 'name': row['name'] or row['etf_ticker']} for row in result]
-        return []
+        # Get distinct etf_tickers from etf_holdings_log
+        # Supabase doesn't support SELECT DISTINCT nicely across columns in one go with joins easily via postgrest
+        # So we query holdings first then securities
+        holdings_res = _db_client.supabase.table("etf_holdings_log").select("etf_ticker").execute()
+        if not holdings_res.data:
+            return []
+        
+        tickers = sorted(list(set(row['etf_ticker'] for row in holdings_res.data)))
+        
+        # Get names from securities table
+        securities_res = _db_client.supabase.table("securities").select("ticker, name").in_("ticker", tickers).execute()
+        names_map = {row['ticker']: row['name'] for row in securities_res.data}
+        
+        return [{'ticker': t, 'name': names_map.get(t, t)} for t in tickers]
     except Exception as e:
         logger.error(f"Error fetching available ETFs: {e}")
         return []
@@ -164,138 +171,186 @@ def get_available_etfs(_postgres_client, _refresh_key: int) -> List[Dict[str, st
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_all_holdings(
-    _postgres_client,
+    _db_client,
     target_date: date,
     etf_ticker: str,
     _refresh_key: int = 0
 ) -> pd.DataFrame:
-    """Get ALL current holdings for a specific ETF on a specific date (not just changes)"""
-    if _postgres_client is None:
+    """Get ALL current holdings for a specific ETF on a specific date with user portfolio overlap"""
+    if _db_client is None:
         return pd.DataFrame()
     
     try:
-        query = """
-        SELECT 
-            t.date as date,
-            t.etf_ticker,
-            t.holding_ticker,
-            t.holding_name,
-            t.shares_held as current_shares,
-            t.weight_percent,
-            COALESCE(SUM(p.quantity), 0) as user_shares
-        FROM etf_holdings_log t
-        LEFT JOIN portfolio_positions p 
-            ON t.holding_ticker = p.ticker 
-            AND p.date = (SELECT MAX(date) FROM portfolio_positions)
-        WHERE t.date = %s
-          AND t.etf_ticker = %s
-          AND COALESCE(t.shares_held, 0) > 0  -- Only show active holdings
-        GROUP BY t.date, t.etf_ticker, t.holding_ticker, t.holding_name, t.shares_held, t.weight_percent
-        ORDER BY t.weight_percent DESC NULLS LAST, t.shares_held DESC
-        """
+        # 1. Fetch ETF holdings
+        target_date_str = target_date.isoformat()
+        holdings_res = _db_client.supabase.table("etf_holdings_log").select(
+            "date, etf_ticker, holding_ticker, holding_name, shares_held, weight_percent"
+        ).eq("date", target_date_str).eq("etf_ticker", etf_ticker).gt("shares_held", 0).execute()
         
-        result = _postgres_client.execute_query(query, (target_date, etf_ticker))
+        if not holdings_res.data:
+            return pd.DataFrame()
         
-        if result:
-            df = pd.DataFrame(result)
-            return df
-        return pd.DataFrame()
+        holdings_df = pd.DataFrame(holdings_res.data)
+        # Rename to match expected UI columns
+        holdings_df = holdings_df.rename(columns={
+            'shares_held': 'current_shares'
+        })
+        
+        # 2. Fetch user's latest portfolio positions for overlap
+        # Get latest date from portfolio_positions
+        max_date_res = _db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
+        if max_date_res.data:
+            max_date = max_date_res.data[0]['date']
+            user_pos_res = _db_client.supabase.table("portfolio_positions").select("ticker, quantity").eq("date", max_date).gt("quantity", 0).execute()
+            
+            if user_pos_res.data:
+                user_df = pd.DataFrame(user_pos_res.data)
+                # Aggregate by ticker (sum quantity across funds)
+                user_agg = user_df.groupby('ticker')['quantity'].sum().reset_index()
+                user_agg = user_agg.rename(columns={'quantity': 'user_shares'})
+                
+                # Merge with holdings
+                holdings_df = holdings_df.merge(user_agg, left_on='holding_ticker', right_on='ticker', how='left').drop(columns=['ticker'])
+                holdings_df['user_shares'] = holdings_df['user_shares'].fillna(0)
+            else:
+                holdings_df['user_shares'] = 0
+        else:
+            holdings_df['user_shares'] = 0
+            
+        return holdings_df.sort_values(by=['weight_percent', 'current_shares'], ascending=[False, False])
+        
     except Exception as e:
         logger.error(f"Error fetching all holdings: {e}", exc_info=True)
         return pd.DataFrame()
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_holdings_changes(
-    _postgres_client,
+    _db_client,
     target_date: date,
     etf_ticker: Optional[str] = None,
     _refresh_key: int = 0
 ) -> pd.DataFrame:
     """Calculate holdings changes for a specific date compared to previous date"""
-    if _postgres_client is None:
+    if _db_client is None:
         return pd.DataFrame()
     
     try:
-        # Build query with optional ETF filter
-        query = """
-        WITH prev_dates AS (
-            SELECT etf_ticker, MAX(date) as prev_date
-            FROM etf_holdings_log
-            WHERE date < %s
-            GROUP BY etf_ticker
-        ),
-        user_positions AS (
-            SELECT ticker, SUM(quantity) as user_shares
-            FROM portfolio_positions
-            WHERE date = (SELECT MAX(date) FROM portfolio_positions)
-            GROUP BY ticker
-        )
-        SELECT 
-            t1.date as date,
-            t1.etf_ticker,
-            t1.holding_ticker,
-            t1.holding_name,
-            COALESCE(t1.shares_held, 0) as current_shares,
-            COALESCE(t0.shares_held, 0) as previous_shares,
-            CASE 
-                WHEN pd.prev_date IS NULL THEN 0 
-                ELSE COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0) 
-            END as share_change,
-            CASE 
-                WHEN pd.prev_date IS NULL THEN NULL
-                WHEN COALESCE(t0.shares_held, 0) > 0 
-                THEN ((COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0)) / t0.shares_held * 100)
-                ELSE NULL 
-            END as percent_change,
-            CASE 
-                WHEN pd.prev_date IS NULL THEN 'HOLD' -- First snapshot is not a BUY
-                WHEN COALESCE(t1.shares_held, 0) > COALESCE(t0.shares_held, 0) THEN 'BUY'
-                WHEN COALESCE(t1.shares_held, 0) < COALESCE(t0.shares_held, 0) THEN 'SELL'
-                ELSE 'HOLD'
-            END as action,
-            COALESCE(up.user_shares, 0) as user_shares
-        FROM etf_holdings_log t1
-        LEFT JOIN prev_dates pd ON t1.etf_ticker = pd.etf_ticker
-        LEFT JOIN etf_holdings_log t0 
-            ON t1.etf_ticker = t0.etf_ticker 
-            AND t1.holding_ticker = t0.holding_ticker
-            AND t0.date = pd.prev_date
-        LEFT JOIN user_positions up ON t1.holding_ticker = up.ticker
-        WHERE t1.date = %s
-          AND (COALESCE(t1.shares_held, 0) > 0 OR COALESCE(t0.shares_held, 0) > 0) -- Hide 0->0 noise
-        """
+        target_date_str = target_date.isoformat()
         
-        params = [target_date, target_date]
+        # 1. Fetch current holdings
+        curr_query = _db_client.supabase.table("etf_holdings_log").select(
+            "date, etf_ticker, holding_ticker, holding_name, shares_held"
+        ).eq("date", target_date_str)
         
-        if etf_ticker:
-            query += " AND t1.etf_ticker = %s"
-            params.append(etf_ticker)
+        if etf_ticker and etf_ticker != "All ETFs":
+            curr_query = curr_query.eq("etf_ticker", etf_ticker)
+            
+        curr_res = curr_query.execute()
+        if not curr_res.data:
+            return pd.DataFrame()
         
-        query += " ORDER BY ABS(CASE WHEN pd.prev_date IS NULL THEN 0 ELSE COALESCE(t1.shares_held, 0) - COALESCE(t0.shares_held, 0) END) DESC"
+        curr_df = pd.DataFrame(curr_res.data)
         
-        result = _postgres_client.execute_query(query, tuple(params))
+        # 2. Fetch previous holdings for the same ETFs
+        tickers_to_check = curr_df['etf_ticker'].unique().tolist()
         
-        if result:
-            df = pd.DataFrame(result)
-            return df
-        return pd.DataFrame()
+        # Find latest previous date for each ETF
+        hist_res = _db_client.supabase.table("etf_holdings_log").select("etf_ticker, date").lt("date", target_date_str).in_("etf_ticker", tickers_to_check).order("date", desc=True).execute()
+        
+        if not hist_res.data:
+            # First snapshot
+            curr_df['previous_shares'] = 0
+            curr_df['share_change'] = 0
+            curr_df['percent_change'] = 0
+            curr_df['action'] = 'HOLD'
+        else:
+            hist_df = pd.DataFrame(hist_res.data)
+            latest_prev = hist_df.groupby('etf_ticker')['date'].max().reset_index()
+            
+            prev_holdings_list = []
+            for _, row in latest_prev.iterrows():
+                p_res = _db_client.supabase.table("etf_holdings_log").select(
+                    "etf_ticker, holding_ticker, shares_held"
+                ).eq("etf_ticker", row['etf_ticker']).eq("date", row['date']).execute()
+                if p_res.data:
+                    prev_holdings_list.extend(p_res.data)
+            
+            if prev_holdings_list:
+                prev_df = pd.DataFrame(prev_holdings_list)
+                prev_df = prev_df.rename(columns={'shares_held': 'previous_shares'})
+                
+                merged_df = curr_df.merge(
+                    prev_df, 
+                    on=['etf_ticker', 'holding_ticker'], 
+                    how='outer'
+                )
+                
+                merged_df['shares_held'] = merged_df['shares_held'].fillna(0)
+                merged_df['previous_shares'] = merged_df['previous_shares'].fillna(0)
+                
+                merged_df['share_change'] = merged_df['shares_held'] - merged_df['previous_shares']
+                
+                def calc_pct(row):
+                    if row['previous_shares'] > 0:
+                        return (row['share_change'] / row['previous_shares']) * 100
+                    return 0
+                
+                merged_df['percent_change'] = merged_df.apply(calc_pct, axis=1)
+                
+                def determine_action(row):
+                    if row['previous_shares'] == 0 and row['shares_held'] > 0: return 'BUY'
+                    if row['shares_held'] > row['previous_shares']: return 'BUY'
+                    if row['shares_held'] < row['previous_shares']: return 'SELL'
+                    return 'HOLD'
+                
+                merged_df['action'] = merged_df.apply(determine_action, axis=1)
+                curr_df = merged_df
+            else:
+                curr_df['previous_shares'] = 0
+                curr_df['share_change'] = 0
+                curr_df['percent_change'] = 0
+                curr_df['action'] = 'HOLD'
+        
+        # Final cleanup and overlap check
+        curr_df = curr_df.rename(columns={'shares_held': 'current_shares'})
+        
+        # 3. Fetch user portfolio positions for overlap
+        max_date_res = _db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
+        if max_date_res.data:
+            max_date = max_date_res.data[0]['date']
+            user_pos_res = _db_client.supabase.table("portfolio_positions").select("ticker, quantity").eq("date", max_date).gt("quantity", 0).execute()
+            
+            if user_pos_res.data:
+                user_df = pd.DataFrame(user_pos_res.data)
+                user_agg = user_df.groupby('ticker')['quantity'].sum().reset_index()
+                user_agg = user_agg.rename(columns={'quantity': 'user_shares'})
+                
+                curr_df = curr_df.merge(user_agg, left_on='holding_ticker', right_on='ticker', how='left').drop(columns=['ticker'])
+                curr_df['user_shares'] = curr_df['user_shares'].fillna(0)
+            else:
+                curr_df['user_shares'] = 0
+        else:
+            curr_df['user_shares'] = 0
+            
+        return curr_df
+        
     except Exception as e:
         logger.error(f"Error fetching holdings changes: {e}", exc_info=True)
         return pd.DataFrame()
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_summary_stats(
-    _postgres_client,
+    _db_client,
     target_date: date,
     etf_ticker: Optional[str] = None,
     _refresh_key: int = 0
 ) -> Dict[str, Any]:
     """Get summary statistics for a specific date"""
-    if _postgres_client is None:
+    if _db_client is None:
         return {}
     
     try:
-        changes_df = get_holdings_changes(_postgres_client, target_date, etf_ticker, _refresh_key)
+        changes_df = get_holdings_changes(_db_client, target_date, etf_ticker, _refresh_key)
         
         if changes_df.empty:
             return {
@@ -349,8 +404,8 @@ def get_summary_stats(
         return {}
 
 # Get available data
-latest_date = get_latest_date(postgres_client, st.session_state.refresh_key)
-available_etf_data = get_available_etfs(postgres_client, st.session_state.refresh_key)
+latest_date = get_latest_date(supabase_client, st.session_state.refresh_key)
+available_etf_data = get_available_etfs(supabase_client, st.session_state.refresh_key)
 available_tickers = [item['ticker'] for item in available_etf_data]
 
 # Create display mapping
@@ -417,17 +472,17 @@ selected_etf = None if etf_filter == "All ETFs" else etf_filter
 
 # Check if we own the ETF itself
 if selected_etf:
-    etf_ownership = check_etf_ownership(postgres_client, selected_etf, st.session_state.refresh_key)
+    etf_ownership = check_etf_ownership(supabase_client, selected_etf, st.session_state.refresh_key)
     if etf_ownership:
         st.success(f"✓ **You own {int(etf_ownership['total_shares']):,} shares of {selected_etf}** in: {etf_ownership['funds']}")
 
 if selected_etf:
     # Show ALL holdings for the selected ETF
-    changes_df = get_all_holdings(postgres_client, selected_date, selected_etf, st.session_state.refresh_key)
+    changes_df = get_all_holdings(supabase_client, selected_date, selected_etf, st.session_state.refresh_key)
     view_mode = "holdings"
 else:
     # Show changes across all ETFs
-    changes_df = get_holdings_changes(postgres_client, selected_date, None, st.session_state.refresh_key)
+    changes_df = get_holdings_changes(supabase_client, selected_date, None, st.session_state.refresh_key)
     view_mode = "changes"
 
 # Apply filters

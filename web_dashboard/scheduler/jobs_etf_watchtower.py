@@ -36,8 +36,8 @@ ETF_CONFIGS = {
     "ARKG": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv" },
     "ARKF": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_BLOCKCHAIN_%26_FINTECH_INNOVATION_ETF_ARKF_HOLDINGS.csv" },
     "ARKX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_SPACE_%26_DEFENSE_INNOVATION_ETF_ARKX_HOLDINGS.csv" },
-    \"IZRL\": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
-    \"PRNT\": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
+    "IZRL": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
+    "PRNT": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
     # Removed single-holding funds (ARKB, ARKD, ARKT) and venture funds (ARKSX, ARKVX, ARKUX) - they don't provide useful stock signals
     
     # iShares (BlackRock) - Requires specific AJAX URL with Product ID
@@ -217,7 +217,7 @@ def fetch_ark_holdings(etf_ticker: str, csv_url: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def get_previous_holdings(db: PostgresClient, etf_ticker: str, date: datetime) -> pd.DataFrame:
+def get_previous_holdings(db: SupabaseClient, etf_ticker: str, date: datetime) -> pd.DataFrame:
     """Fetch yesterday's holdings from database.
     
     Args:
@@ -230,19 +230,27 @@ def get_previous_holdings(db: PostgresClient, etf_ticker: str, date: datetime) -
     """
     previous_date = (date - timedelta(days=1)).strftime('%Y-%m-%d')
     
-    query = """
-        SELECT holding_ticker as ticker, shares_held as shares, weight_percent
-        FROM etf_holdings_log
-        WHERE etf_ticker = %s AND date = %s
-    """
-    
-    results = db.execute_query(query, (etf_ticker, previous_date))
-    
-    if not results:
-        logger.info(f"No previous holdings found for {etf_ticker} on {previous_date}")
+    try:
+        result = db.supabase.table('etf_holdings_log').select(
+            'holding_ticker, shares_held, weight_percent'
+        ).eq('etf_ticker', etf_ticker).eq('date', previous_date).execute()
+        
+        if not result.data:
+            logger.info(f"No previous holdings found for {etf_ticker} on {previous_date}")
+            return pd.DataFrame(columns=['ticker', 'shares', 'weight_percent'])
+        
+        df = pd.DataFrame(result.data)
+        # Rename to match expected schema
+        df = df.rename(columns={
+            'holding_ticker': 'ticker',
+            'shares_held': 'shares'
+        })
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error getting previous holdings: {e}")
         return pd.DataFrame(columns=['ticker', 'shares', 'weight_percent'])
-    
-    return pd.DataFrame(results)
 
 
 def calculate_diff(today: pd.DataFrame, yesterday: pd.DataFrame, etf_ticker: str) -> List[Dict]:
@@ -287,7 +295,7 @@ def calculate_diff(today: pd.DataFrame, yesterday: pd.DataFrame, etf_ticker: str
     return significant.to_dict('records')
 
 
-def save_holdings_snapshot(db: PostgresClient, etf_ticker: str, holdings: pd.DataFrame, date: datetime):
+def save_holdings_snapshot(db: SupabaseClient, etf_ticker: str, holdings: pd.DataFrame, date: datetime):
     """Save today's holdings snapshot to database.
     
     Args:
@@ -299,35 +307,29 @@ def save_holdings_snapshot(db: PostgresClient, etf_ticker: str, holdings: pd.Dat
     date_str = date.strftime('%Y-%m-%d')
     
     # Prepare batch insert
-    rows = []
+    records = []
     for _, row in holdings.iterrows():
-        rows.append((
-            date_str,
-            etf_ticker,
-            row.get('ticker', ''),
-            row.get('name', ''),
-            float(row.get('shares', 0)) if pd.notna(row.get('shares')) else None,
-            float(row.get('weight_percent', 0)) if pd.notna(row.get('weight_percent')) else None,
-            None  # market_value (optional, can calculate later)
-        ))
+        record = {
+            'date': date_str,
+            'etf_ticker': etf_ticker,
+            'holding_ticker': row.get('ticker', ''),
+            'holding_name': row.get('name', ''),
+        }
+        
+        # Add optional numeric fields
+        if pd.notna(row.get('shares')):
+            record['shares_held'] = float(row.get('shares', 0))
+        if pd.notna(row.get('weight_percent')):
+            record['weight_percent'] = float(row.get('weight_percent', 0))
+            
+        records.append(record)
     
-    # Batch insert (ON CONFLICT for idempotency)
-    insert_query = """
-        INSERT INTO etf_holdings_log 
-        (date, etf_ticker, holding_ticker, holding_name, shares_held, weight_percent, market_value)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date, etf_ticker, holding_ticker) 
-        DO UPDATE SET
-            shares_held = EXCLUDED.shares_held,
-            weight_percent = EXCLUDED.weight_percent,
-            market_value = EXCLUDED.market_value
-    """
-    
-    db.execute_many(insert_query, rows)
-    logger.info(f"💾 Saved {len(rows)} holdings for {etf_ticker} on {date_str}")
+    # Batch upsert
+    db.supabase.table('etf_holdings_log').upsert(records).execute()
+    logger.info(f"💾 Saved {len(records)} holdings for {etf_ticker} on {date_str}")
 
 
-def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: str):
+def upsert_securities_metadata(db: SupabaseClient, df: pd.DataFrame, provider: str):
     """Upsert security metadata into securities table."""
     try:
         # Deduplicate by ticker
@@ -342,61 +344,58 @@ def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: s
             if col not in unique_securities.columns:
                 unique_securities[col] = None
         
-        rows = []
+        records = []
         for _, row in unique_securities.iterrows():
             ticker = row['ticker']
-            if not ticker or len(str(ticker)) > 20: # Skip long garbage tickers
+            if not ticker or len(str(ticker)) > 20:  # Skip long garbage tickers
                 continue
                 
-            rows.append((
-                ticker,
-                row['name'],
-                row['sector'],
-                row.get('industry'),
-                row['asset_class'],
-                row['exchange'],
-                row['currency'],
-                f"{provider} ETF"
-            ))
+            record = {
+                'ticker': ticker,
+                'name': row['name'],
+                'first_detected_by': f"{provider} ETF",
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            }
             
-        if not rows:
+            # Add optional fields if they have values
+            if row.get('sector'):
+                record['sector'] = row['sector']
+            if row.get('industry'):
+                record['industry'] = row['industry']
+            if row.get('asset_class'):
+                record['asset_class'] = row['asset_class']
+            if row.get('exchange'):
+                record['exchange'] = row['exchange']
+            if row.get('currency'):
+                record['currency'] = row['currency']
+                
+            records.append(record)
+            
+        if not records:
             return
             
-        upsert_query = """
-            INSERT INTO securities (ticker, name, sector, industry, asset_class, exchange, currency, first_detected_by, last_updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            ON CONFLICT (ticker) DO UPDATE SET
-                name = EXCLUDED.name,
-                sector = COALESCE(EXCLUDED.sector, securities.sector),
-                asset_class = COALESCE(EXCLUDED.asset_class, securities.asset_class),
-                exchange = COALESCE(EXCLUDED.exchange, securities.exchange),
-                currency = COALESCE(EXCLUDED.currency, securities.currency),
-                last_updated = NOW()
-            WHERE securities.name IS NULL OR securities.sector IS NULL
-        """
-        
-        db.execute_many(upsert_query, rows)
-        logger.info(f"ℹ️  Upserted metadata for {len(rows)} securities from {provider}")
+        # Batch upsert
+        db.supabase.table('securities').upsert(records).execute()
+        logger.info(f"ℹ️  Upserted metadata for {len(records)} securities from {provider}")
         
     except Exception as e:
         logger.error(f"❌ Error upserting securities metadata: {e}")
 
 
-def upsert_etf_metadata(db: PostgresClient, etf_ticker: str, provider: str):
+def upsert_etf_metadata(db: SupabaseClient, etf_ticker: str, provider: str):
     """Upsert ETF metadata into securities table."""
     try:
         etf_name = ETF_NAMES.get(etf_ticker, etf_ticker)
         
-        upsert_query = """
-            INSERT INTO securities (ticker, name, asset_class, first_detected_by, last_updated)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (ticker) DO UPDATE SET
-                name = EXCLUDED.name,
-                asset_class = COALESCE(EXCLUDED.asset_class, securities.asset_class),
-                last_updated = NOW()
-        """
+        record = {
+            'ticker': etf_ticker,
+            'name': etf_name,
+            'asset_class': 'ETF',
+            'first_detected_by': f"{provider} ETF Watchtower",
+            'last_updated': datetime.now(timezone.utc).isoformat()
+        }
         
-        db.execute_update(upsert_query, (etf_ticker, etf_name, 'ETF', f"{provider} ETF Watchtower"))
+        db.supabase.table('securities').upsert(record).execute()
         logger.info(f"ℹ️  Upserted ETF metadata for {etf_ticker}")
         
     except Exception as e:

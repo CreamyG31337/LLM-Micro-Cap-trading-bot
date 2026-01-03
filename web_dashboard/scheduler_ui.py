@@ -130,6 +130,30 @@ def render_scheduler_admin():
             st.info("No scheduled jobs configured.")
             return
         
+        # Sort option
+        col_sort1, col_sort2 = st.columns([1, 4])
+        with col_sort1:
+            sort_by = st.selectbox(
+                "Sort by:",
+                ["Scheduled Time", "Job Name"],
+                key="job_sort_order"
+            )
+        
+        # Sort jobs based on selection
+        if sort_by == "Job Name":
+            jobs = sorted(jobs, key=lambda x: x.get('name', '').lower())
+        else:
+            # Sort by scheduled time (next_run), with None (paused) jobs at the end
+            from datetime import timezone
+            max_datetime = datetime.max.replace(tzinfo=timezone.utc)
+            jobs = sorted(
+                jobs, 
+                key=lambda x: (
+                    x.get('next_run') is None,  # Paused jobs (None) go to end (True sorts after False)
+                    x.get('next_run') if x.get('next_run') is not None else max_datetime
+                )
+            )
+        
         # Display each job
         for job in jobs:
             # Determine status badge
@@ -173,28 +197,107 @@ def render_scheduler_admin():
                     st.write(f"🔄 **Schedule:** {job['trigger']}")
                 
                 with col2:
-                    # Capture parameters if defined
+                    # Always show parameters editor for manual runs
                     job_params = {}
-                    if job['id'] in AVAILABLE_JOBS and 'parameters' in AVAILABLE_JOBS[job['id']]:
-                        with st.expander("⚙️ Parameters", expanded=True):
-                            params = AVAILABLE_JOBS[job['id']]['parameters']
+                    job_id_base = job['id']
+                    
+                    # Get parameter definitions (check both job_id and base job_id for variants)
+                    params = {}
+                    if job_id_base in AVAILABLE_JOBS and 'parameters' in AVAILABLE_JOBS[job_id_base]:
+                        params = AVAILABLE_JOBS[job_id_base]['parameters']
+                    
+                    # Show parameters editor in expander
+                    with st.expander("⚙️ Edit Parameters", expanded=False):
+                        if params:
                             for param_name, param_info in params.items():
                                 label = param_name.replace('_', ' ').title()
                                 help_text = param_info.get('description', '')
                                 default_val = param_info.get('default')
                                 param_type = param_info.get('type', 'text')
+                                optional = param_info.get('optional', False)
                                 
                                 key = f"param_{job['id']}_{param_name}"
                                 
-                                if param_type == 'number':
-                                    if isinstance(default_val, int):
-                                        job_params[param_name] = st.number_input(label, value=default_val, step=1, help=help_text, key=key)
+                                if param_type == 'date':
+                                    # Date picker for date parameters
+                                    if default_val is None:
+                                        default_date = datetime.now().date()
+                                    elif isinstance(default_val, str):
+                                        from datetime import datetime as dt
+                                        try:
+                                            default_date = dt.fromisoformat(default_val).date()
+                                        except (ValueError, AttributeError):
+                                            default_date = datetime.now().date()
+                                    elif isinstance(default_val, date):
+                                        default_date = default_val
                                     else:
-                                        job_params[param_name] = st.number_input(label, value=default_val, help=help_text, key=key)
+                                        default_date = datetime.now().date()
+                                    
+                                    selected_date = st.date_input(
+                                        label, 
+                                        value=default_date, 
+                                        help=help_text, 
+                                        key=key
+                                    )
+                                    # For optional date params with None default, only include if user changed from today
+                                    if optional and default_val is None:
+                                        if selected_date != datetime.now().date():
+                                            job_params[param_name] = selected_date
+                                    else:
+                                        job_params[param_name] = selected_date
+                                elif param_type == 'number':
+                                    # Number input
+                                    if isinstance(default_val, int):
+                                        input_val = st.number_input(
+                                            label, 
+                                            value=default_val, 
+                                            step=1, 
+                                            help=help_text, 
+                                            key=key
+                                        )
+                                    else:
+                                        input_val = st.number_input(
+                                            label, 
+                                            value=default_val if default_val is not None else 0.0, 
+                                            help=help_text, 
+                                            key=key
+                                        )
+                                    # For optional params, only include if different from default
+                                    if optional and default_val is not None:
+                                        if input_val != default_val:
+                                            job_params[param_name] = input_val
+                                    else:
+                                        job_params[param_name] = input_val
                                 elif param_type == 'boolean':
-                                    job_params[param_name] = st.checkbox(label, value=default_val, help=help_text, key=key)
+                                    # Checkbox for boolean parameters
+                                    input_val = st.checkbox(
+                                        label, 
+                                        value=default_val if default_val is not None else False, 
+                                        help=help_text, 
+                                        key=key
+                                    )
+                                    # For optional boolean params, only include if different from default
+                                    if optional and default_val is not None:
+                                        if input_val != default_val:
+                                            job_params[param_name] = input_val
+                                    else:
+                                        job_params[param_name] = input_val
                                 else:
-                                    job_params[param_name] = st.text_input(label, value=str(default_val), help=help_text, key=key)
+                                    # Text input for string parameters
+                                    input_val = st.text_input(
+                                        label, 
+                                        value=str(default_val) if default_val is not None else '', 
+                                        help=help_text, 
+                                        key=key
+                                    )
+                                    # For optional text params, only include if different from default
+                                    if optional and default_val is not None:
+                                        if input_val != str(default_val):
+                                            job_params[param_name] = input_val
+                                    else:
+                                        job_params[param_name] = input_val
+                        else:
+                            st.info("This job has no configurable parameters.")
 
                     # Action buttons
                     # Disable run button if already running

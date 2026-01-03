@@ -365,7 +365,7 @@ def _check_job_cancelled(job_id: str) -> bool:
     Check if a job has been cancelled.
     
     Args:
-        job_id: Job execution ID to check
+        job_id: Job execution ID to check (can be string or int)
         
     Returns:
         True if job is cancelled (status is 'failed' with cancellation message), False otherwise
@@ -374,15 +374,17 @@ def _check_job_cancelled(job_id: str) -> bool:
         from web_dashboard.supabase_client import SupabaseClient
         
         client = SupabaseClient(use_service_role=True)
-        result = client.supabase.table("job_executions").select("status, output").eq("id", job_id).execute()
+        # Convert to int if it's a string
+        job_id_int = int(job_id) if isinstance(job_id, str) else job_id
+        result = client.supabase.table("job_executions").select("status, error_message").eq("id", job_id_int).execute()
         
         if result.data and len(result.data) > 0:
             job = result.data[0]
             status = job.get("status")
-            output = job.get("output", "")
+            error_message = job.get("error_message", "")
             
-            # Check if status is 'failed' and output indicates cancellation
-            if status == "failed" and "Cancelled:" in str(output):
+            # Check if status is 'failed' and error_message indicates cancellation
+            if status == "failed" and "Cancelled:" in str(error_message):
                 return True
         
         return False
@@ -396,13 +398,22 @@ def _update_job_status(job_id: str, status: str, message: str):
     """Update job execution status in database."""
     try:
         from web_dashboard.supabase_client import SupabaseClient
+        from datetime import datetime, timezone
         client = SupabaseClient(use_service_role=True)
         
-        client.supabase.table("job_executions").update({
-            'status': status,
-            'output': message,
-            'end_time': datetime.utcnow().isoformat() if status in ('completed', 'failed') else None
-        }).eq('id', job_id).execute()
+        # Convert to int if it's a string
+        job_id_int = int(job_id) if isinstance(job_id, str) else job_id
+        
+        update_data = {
+            'status': status
+        }
+        
+        if status in ('success', 'failed'):
+            update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+            if status == 'failed':
+                update_data['error_message'] = message  # Use error_message instead of output
+        
+        client.supabase.table("job_executions").update(update_data).eq('id', job_id_int).execute()
     except Exception as e:
         logger.warning(f"Could not update job status: {e}")
 

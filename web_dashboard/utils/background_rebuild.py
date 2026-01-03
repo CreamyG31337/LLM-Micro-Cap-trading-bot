@@ -7,7 +7,6 @@ subprocess and track its execution via the job_executions table.
 
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -16,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def create_rebuild_job_record(fund_name: str, start_date: date) -> str:
+def create_rebuild_job_record(fund_name: str, start_date: date) -> Optional[int]:
     """
     Create a job execution record in the database.
     
@@ -25,39 +24,37 @@ def create_rebuild_job_record(fund_name: str, start_date: date) -> str:
         start_date: Start date for rebuild
         
     Returns:
-        job_id: UUID of created job execution record
+        job_id: Integer ID of created job execution record, or None if failed
     """
     try:
         from web_dashboard.supabase_client import SupabaseClient
         
         client = SupabaseClient(use_service_role=True)
-        job_id = str(uuid.uuid4())
         
         job_data = {
-            'id': job_id,
             'job_name': 'rebuild_from_date',
-            'status': 'pending',
-            'start_time': datetime.now(timezone.utc).isoformat(),
-            'output': f'Initializing rebuild for {fund_name} from {start_date}',
-            'metadata': {
-                'fund': fund_name,
-                'start_date': start_date.isoformat(),
-                'trigger': 'backdated_trade'
-            }
+            'target_date': start_date.isoformat(),
+            'fund_name': fund_name,
+            'status': 'running',  # Use 'running' instead of 'pending'
+            'started_at': datetime.now(timezone.utc).isoformat()  # Use 'started_at' not 'start_time'
         }
         
-        client.supabase.table("job_executions").insert(job_data).execute()
-        logger.info(f"Created job execution record: {job_id}")
+        result = client.supabase.table("job_executions").insert(job_data).execute()
         
-        return job_id
+        if result.data and len(result.data) > 0:
+            job_id = result.data[0].get('id')
+            logger.info(f"Created job execution record: {job_id}")
+            return job_id
+        else:
+            logger.error("Failed to create job record: no data returned")
+            return None
         
     except Exception as e:
         logger.error(f"Failed to create job record: {e}")
-        # Return a dummy ID and proceed anyway
-        return str(uuid.uuid4())
+        return None
 
 
-def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str]:
+def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int]:
     """
     Trigger background rebuild subprocess.
     
@@ -69,7 +66,7 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
         start_date: Start date for rebuild (inclusive)
         
     Returns:
-        job_id for tracking, or None if failed to launch
+        job_id (integer) for tracking, or None if failed to launch
     """
     try:
         # Check for running rebuild jobs for this fund
@@ -80,18 +77,16 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
         cancelled_jobs = []
         
         if running_jobs:
-            # Extract start_dates from running jobs
+            # Extract start_dates from running jobs (from target_date column)
             running_start_dates = []
             for job in running_jobs:
-                metadata = job.get("metadata", {})
-                if isinstance(metadata, dict):
-                    start_date_str = metadata.get("start_date")
-                    if start_date_str:
-                        try:
-                            running_start_date = datetime.fromisoformat(start_date_str).date()
-                            running_start_dates.append(running_start_date)
-                        except (ValueError, AttributeError):
-                            logger.warning(f"Could not parse start_date from job {job.get('id')}")
+                target_date_str = job.get("target_date")
+                if target_date_str:
+                    try:
+                        running_start_date = datetime.fromisoformat(target_date_str).date()
+                        running_start_dates.append(running_start_date)
+                    except (ValueError, AttributeError):
+                        logger.warning(f"Could not parse target_date from job {job.get('id')}")
             
             if running_start_dates:
                 # Use the minimum of new trade date and all running job start dates
@@ -108,6 +103,9 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
         
         # Create job execution record with optimal start_date
         job_id = create_rebuild_job_record(fund_name, optimal_start_date)
+        if not job_id:
+            logger.error("Failed to create job record, cannot launch rebuild")
+            return None
         
         # Get path to rebuild script
         script_path = Path(__file__).parent / "rebuild_from_date.py"
@@ -121,7 +119,7 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[str
             str(script_path),
             fund_name,
             optimal_start_date.isoformat(),
-            '--job-id', job_id
+            '--job-id', str(job_id)  # Convert to string for command line
         ]
         
         # Launch subprocess (detached)
@@ -161,7 +159,7 @@ def get_job_status(job_id: str) -> Optional[dict]:
     Get status of a job execution.
     
     Args:
-        job_id: Job execution ID
+        job_id: Job execution ID (can be string or int)
         
     Returns:
         Job data dict or None if not found
@@ -170,7 +168,9 @@ def get_job_status(job_id: str) -> Optional[dict]:
         from web_dashboard.supabase_client import SupabaseClient
         
         client = SupabaseClient(use_service_role=True)
-        result = client.supabase.table("job_executions").select("*").eq("id", job_id).execute()
+        # Convert to int if it's a string
+        job_id_int = int(job_id) if isinstance(job_id, str) else job_id
+        result = client.supabase.table("job_executions").select("*").eq("id", job_id_int).execute()
         
         if result.data and len(result.data) > 0:
             return result.data[0]
@@ -184,39 +184,32 @@ def get_job_status(job_id: str) -> Optional[dict]:
 
 def find_running_rebuild_jobs(fund_name: str) -> list:
     """
-    Find all running or pending rebuild jobs for a specific fund.
+    Find all running rebuild jobs for a specific fund.
     
     Args:
         fund_name: Fund name to search for
         
     Returns:
-        List of job records with 'id' and 'metadata' (containing start_date)
+        List of job records with 'id' and 'target_date'
     """
     try:
         from web_dashboard.supabase_client import SupabaseClient
         
         client = SupabaseClient(use_service_role=True)
         
-        # Query for rebuild jobs with pending or running status
-        # Check metadata->>'fund' for the fund name
+        # Query for rebuild jobs with running status, filtered by fund_name
         result = client.supabase.table("job_executions") \
-            .select("id, status, metadata, start_time") \
+            .select("id, status, target_date, fund_name, started_at") \
             .eq("job_name", "rebuild_from_date") \
-            .in_("status", ["pending", "running"]) \
+            .eq("status", "running") \
+            .eq("fund_name", fund_name) \
             .execute()
         
         if not result.data:
             return []
         
-        # Filter by fund name from metadata
-        running_jobs = []
-        for job in result.data:
-            metadata = job.get("metadata", {})
-            if isinstance(metadata, dict) and metadata.get("fund") == fund_name:
-                running_jobs.append(job)
-        
-        logger.info(f"Found {len(running_jobs)} running/pending rebuild jobs for {fund_name}")
-        return running_jobs
+        logger.info(f"Found {len(result.data)} running rebuild jobs for {fund_name}")
+        return result.data
         
     except Exception as e:
         logger.error(f"Failed to find running rebuild jobs: {e}")
@@ -228,7 +221,7 @@ def cancel_rebuild_job(job_id: str, reason: str) -> bool:
     Cancel a running rebuild job by marking it as failed with cancellation reason.
     
     Args:
-        job_id: Job execution ID to cancel
+        job_id: Job execution ID (can be string or int)
         reason: Reason for cancellation
         
     Returns:
@@ -240,14 +233,17 @@ def cancel_rebuild_job(job_id: str, reason: str) -> bool:
         
         client = SupabaseClient(use_service_role=True)
         
-        # First check if job is still running/pending
+        # Convert to int if it's a string
+        job_id_int = int(job_id) if isinstance(job_id, str) else job_id
+        
+        # First check if job is still running
         job = get_job_status(job_id)
         if not job:
             logger.warning(f"Job {job_id} not found, cannot cancel")
             return False
         
         current_status = job.get("status")
-        if current_status not in ["pending", "running"]:
+        if current_status != "running":
             logger.info(f"Job {job_id} is already {current_status}, no need to cancel")
             return True  # Already done, consider it successful
         
@@ -255,9 +251,9 @@ def cancel_rebuild_job(job_id: str, reason: str) -> bool:
         cancellation_message = f"Cancelled: {reason}"
         client.supabase.table("job_executions").update({
             'status': 'failed',
-            'output': cancellation_message,
-            'end_time': datetime.now(timezone.utc).isoformat()
-        }).eq('id', job_id).execute()
+            'error_message': cancellation_message,  # Use error_message instead of output
+            'completed_at': datetime.now(timezone.utc).isoformat()  # Use completed_at instead of end_time
+        }).eq('id', job_id_int).execute()
         
         logger.info(f"Cancelled rebuild job {job_id}: {reason}")
         return True

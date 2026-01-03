@@ -372,6 +372,13 @@ with st.sidebar:
     search_text = st.text_input("🔍 Search", placeholder="Search in title, summary, content...")
     search_filter = search_text.strip() if search_text else None
     
+    # Owned tickers filter
+    filter_owned_tickers = st.checkbox(
+        "📊 Only owned tickers",
+        value=False,
+        help="Show only articles related to tickers owned in any production fund"
+    )
+    
     # Hidden filters (for debugging - uncomment to re-enable)
     # Source filter
     source_filter = None
@@ -575,7 +582,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Reset pagination when filters change
-    filter_key = f"{date_range_option}_{article_type}_{selected_ticker}_{search_filter or ''}"
+    filter_key = f"{date_range_option}_{article_type}_{selected_ticker}_{search_filter or ''}_{filter_owned_tickers}"
     if 'last_filter_key' not in st.session_state or st.session_state.last_filter_key != filter_key:
         st.session_state.current_page = 1
         st.session_state.last_filter_key = filter_key
@@ -591,6 +598,50 @@ with st.sidebar:
 def get_cached_statistics(_repo, refresh_key: int):
     """Get article statistics with caching (60s TTL)"""
     return _repo.get_article_statistics(days=90)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_cached_owned_tickers(_refresh_key: int):
+    """Get owned tickers from all production funds with caching (5min TTL)"""
+    try:
+        from supabase_client import SupabaseClient
+        
+        # Use role-based access for security
+        if is_admin():
+            client = SupabaseClient(use_service_role=True)
+        else:
+            user_token = get_user_token()
+            if user_token:
+                client = SupabaseClient(user_token=user_token)
+            else:
+                logger.warning("No user token available, cannot fetch owned tickers")
+                return set()
+        
+        if not client:
+            return set()
+        
+        # Get production funds
+        funds_result = client.supabase.table("funds")\
+            .select("name")\
+            .eq("is_production", True)\
+            .execute()
+        
+        if not funds_result.data:
+            return set()
+        
+        prod_funds = [f['name'] for f in funds_result.data]
+        positions_result = client.supabase.table("latest_positions")\
+            .select("ticker")\
+            .in_("fund", prod_funds)\
+            .execute()
+        
+        if positions_result.data:
+            owned_tickers = {pos['ticker'] for pos in positions_result.data if pos.get('ticker')}
+            return owned_tickers
+        
+        return set()
+    except Exception as e:
+        logger.warning(f"Could not fetch owned tickers: {e}")
+        return set()
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_cached_embedding_stats(_repo, refresh_key: int):
@@ -736,6 +787,30 @@ try:
                 if (a.get('tickers') and ticker_filter in a.get('tickers', [])) 
                    or a.get('ticker') == ticker_filter
             ]
+        
+        # Apply owned tickers filter client-side (after fetch)
+        if filter_owned_tickers:
+            owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)
+            if owned_tickers:
+                filtered_articles = []
+                for article in articles:
+                    article_tickers = []
+                    if article.get('tickers'):
+                        if isinstance(article.get('tickers'), list):
+                            article_tickers = article.get('tickers', [])
+                        else:
+                            article_tickers = [article.get('tickers')]
+                    elif article.get('ticker'):
+                        article_tickers = [article.get('ticker')]
+                    
+                    # Check if any article ticker matches owned tickers
+                    if any(ticker in owned_tickers for ticker in article_tickers if ticker):
+                        filtered_articles.append(article)
+                
+                articles = filtered_articles
+            else:
+                # No owned tickers found, show no results
+                articles = []
         
         # Get total count for pagination (simplified - get one more to check if there are more)
         article_count = len(articles)

@@ -576,7 +576,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         logger.info(f"✅ {message}")
         
         # Mark job as completed successfully
-        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms)
+        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms, message=message)
         
         # Bump cache version to invalidate Streamlit cache immediately
         try:
@@ -694,6 +694,10 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         
         total_positions_created = 0
         successful_funds = []  # Track which funds completed successfully
+        # ISSUE #1 FIX: Track per-day, per-fund success to detect partial failures
+        from collections import defaultdict
+        days_funds_complete = defaultdict(set)  # {date: {fund1, fund2, ...}}
+        all_production_funds = set(f[0] for f in funds)  # All funds we're processing
         
         for fund_name, base_currency in funds:
             try:
@@ -772,6 +776,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 
                 # Now process each trading day
                 all_positions = []  # Collect all position records for batch insert
+                # ISSUE #2 CLARITY: Track positions count per day FOR THIS FUND
+                positions_per_day = {}  # Per-fund tracking: {date: count}
                 
                 for target_date in trading_days:
                     # CORRECTNESS FIX: Filter trades to only those on or before target_date
@@ -816,7 +822,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                     }
                     
                     if not current_holdings:
-                        logger.debug(f"  {target_date}: No active positions")
+                        # ISSUE #3: Better logging for edge cases
+                        logger.debug(f"  {target_date}: No active positions for {fund_name} (no trades yet or all sold)")
                         continue
                     
                     # Get exchange rate for this date
@@ -861,12 +868,14 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                                 # Find nearest date (forward fill - use last known price)
                                 valid_dates = price_df.index[price_df.index <= target_ts]
                                 if len(valid_dates) == 0:
-                                    logger.debug(f"  {target_date} {ticker}: No price data for this date")
+                                    # ISSUE #3: Better logging - track why day was skipped
+                                    logger.debug(f"  {target_date} {ticker}: No price data available (skipping)")
                                     continue
                                 nearest_date = valid_dates[-1]
                                 current_price = Decimal(str(price_df.loc[nearest_date, 'Close']))
                         except Exception as e:
-                            logger.debug(f"  {target_date} {ticker}: Error looking up price: {e}")
+                            # ISSUE #3: Better logging for failures
+                            logger.debug(f"  {target_date} {ticker}: Price lookup error: {e}")
                             continue
                         
                         shares = holding['shares']
@@ -907,6 +916,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                             'pnl_base': float(pnl_base),
                             'exchange_rate': float(conversion_rate)
                         })
+                        # BUG FIX: Track that this day has positions
+                        positions_per_day[target_date] = positions_per_day.get(target_date, 0) + 1
                 
                 if not all_positions:
                     logger.info(f"  No positions to backfill for {fund_name}")
@@ -946,34 +957,166 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 if deleted_total > 0:
                     logger.info(f"  Deleted {deleted_total} existing positions")
                 
-                # BATCH INSERT: Insert all positions at once
-                try:
-                    insert_result = client.supabase.table("portfolio_positions")\
-                        .insert(all_positions)\
-                        .execute()
+                # CHUNKED BATCH INSERT: Process in chunks to avoid Supabase 1000-row limit
+                # FIX: Chunking, validation, and per-chunk tracking
+                CHUNK_SIZE = 1000
+                total_inserted = 0
+                days_inserted_for_fund = set()  # Days that actually got inserted for this fund
+                failed_chunks = []  # Track failed chunks for retry
+                
+                # Split positions into chunks
+                num_chunks = (len(all_positions) + CHUNK_SIZE - 1) // CHUNK_SIZE
+                logger.info(f"  Inserting {len(all_positions)} positions in {num_chunks} chunk(s) of {CHUNK_SIZE}...")
+                
+                for chunk_idx in range(num_chunks):
+                    start_idx = chunk_idx * CHUNK_SIZE
+                    end_idx = min(start_idx + CHUNK_SIZE, len(all_positions))
+                    chunk = all_positions[start_idx:end_idx]
                     
-                    inserted_count = len(insert_result.data) if insert_result.data else len(all_positions)
-                    total_positions_created += inserted_count
-                    
-                    logger.info(f"  ✅ Inserted {inserted_count} positions for {fund_name}")
-                    # Track successful fund processing
+                    try:
+                        # Insert this chunk
+                        chunk_result = client.supabase.table("portfolio_positions")\
+                            .insert(chunk)\
+                            .execute()
+                        
+                        chunk_inserted = len(chunk_result.data) if chunk_result.data else len(chunk)
+                        total_inserted += chunk_inserted
+                        
+                        # Track which days are in this chunk (for validation)
+                        chunk_dates = set()
+                        for pos in chunk:
+                            # Extract date from ISO string (e.g., "2025-12-19T21:00:00+00:00")
+                            pos_date_str = pos['date']
+                            if 'T' in pos_date_str:
+                                pos_date = datetime.fromisoformat(pos_date_str.replace('Z', '+00:00')).date()
+                            else:
+                                pos_date = datetime.strptime(pos_date_str, '%Y-%m-%d').date()
+                            chunk_dates.add(pos_date)
+                        
+                        logger.info(f"    Chunk {chunk_idx + 1}/{num_chunks}: Inserted {chunk_inserted} positions for {len(chunk_dates)} days")
+                        
+                        # VALIDATION: Verify data actually exists in database for this chunk
+                        for day in chunk_dates:
+                            try:
+                                start_of_day = datetime.combine(day, dt_time(0, 0, 0)).isoformat()
+                                end_of_day = datetime.combine(day, dt_time(23, 59, 59, 999999)).isoformat()
+                                
+                                verify_result = client.supabase.table("portfolio_positions")\
+                                    .select("id", count='exact')\
+                                    .eq("fund", fund_name)\
+                                    .gte("date", start_of_day)\
+                                    .lte("date", end_of_day)\
+                                    .limit(1)\
+                                    .execute()
+                                
+                                if verify_result.count and verify_result.count > 0:
+                                    days_inserted_for_fund.add(day)
+                                else:
+                                    logger.warning(f"    ⚠️  {day}: Insert succeeded but validation found no data")
+                            except Exception as validation_error:
+                                logger.warning(f"    ⚠️  {day}: Validation query failed: {validation_error}")
+                        
+                    except Exception as chunk_error:
+                        # Chunk insert failed - track which days were in this chunk
+                        chunk_dates = set()
+                        for pos in chunk:
+                            pos_date_str = pos['date']
+                            if 'T' in pos_date_str:
+                                pos_date = datetime.fromisoformat(pos_date_str.replace('Z', '+00:00')).date()
+                            else:
+                                pos_date = datetime.strptime(pos_date_str, '%Y-%m-%d').date()
+                            chunk_dates.add(pos_date)
+                        
+                        failed_chunks.append({
+                            'chunk_number': chunk_idx + 1,
+                            'dates': sorted(list(chunk_dates)),
+                            'error': str(chunk_error),
+                            'position_count': len(chunk)
+                        })
+                        
+                        logger.error(f"    ❌ Chunk {chunk_idx + 1}/{num_chunks} failed: {chunk_error}")
+                        logger.warning(f"    Days in failed chunk: {sorted(list(chunk_dates))}")
+                        # Continue with next chunk - don't fail entire batch
+                
+                # Summary
+                if total_inserted > 0:
+                    logger.info(f"  ✅ Inserted {total_inserted}/{len(all_positions)} positions for {fund_name}")
                     if fund_name not in successful_funds:
                         successful_funds.append(fund_name)
-                except Exception as insert_error:
-                    logger.error(f"  ❌ Failed to insert positions for {fund_name}: {insert_error}")
+                    total_positions_created += total_inserted
+                
+                if failed_chunks:
+                    logger.error(f"  ❌ {len(failed_chunks)} chunk(s) failed for {fund_name}")
+                    for fail in failed_chunks:
+                        logger.error(f"    Chunk {fail['chunk_number']}: {fail['position_count']} positions, days: {fail['dates']}")
+                
+                # Track which days succeeded for THIS fund (only validated days)
+                if days_inserted_for_fund:
+                    logger.info(f"  ✅ Validated {len(days_inserted_for_fund)} days with data for {fund_name}")
+                    for day_with_data in days_inserted_for_fund:
+                        days_funds_complete[day_with_data].add(fund_name)
+                else:
+                    logger.warning(f"  ⚠️  No days validated for {fund_name} - will NOT be marked complete")
                 
             except Exception as e:
                 logger.error(f"  ❌ Error processing fund {fund_name}: {e}", exc_info=True)
                 continue
         
-        # CRITICAL: Mark each trading day as completed for update_portfolio_prices job
-        # This prevents the backfill from re-running on every restart
-        logger.info(f"Marking {len(trading_days)} trading days as completed...")
-        for day in trading_days:
+        # ISSUE #1 FIX: Only mark days as completed if ALL production funds succeeded
+        # This prevents partial failures from being marked as complete
+        days_all_funds_complete = [
+            day for day, funds_for_day in days_funds_complete.items()
+            if funds_for_day == all_production_funds
+        ]
+        
+        # ISSUE #4: Validate data exists in database before marking complete
+        days_validated = []
+        for day in days_all_funds_complete:
             try:
-                mark_job_completed('update_portfolio_prices', day, None, successful_funds, duration_ms=None)
+                # Quick validation: verify positions exist for this day
+                start_of_day = datetime.combine(day, dt_time(0, 0, 0)).isoformat()
+                end_of_day = datetime.combine(day, dt_time(23, 59, 59, 999999)).isoformat()
+                
+                verify_result = client.supabase.table("portfolio_positions")\
+                    .select("id", count='exact')\
+                    .gte("date", start_of_day)\
+                    .lte("date", end_of_day)\
+                    .in_("fund", list(all_production_funds))\
+                    .limit(1)\
+                    .execute()
+                
+                if verify_result.count and verify_result.count > 0:
+                    days_validated.append(day)
+                else:
+                    logger.warning(f"⚠️  {day}: Data validation failed - no positions found in DB despite successful insert")
             except Exception as e:
-                logger.warning(f"Failed to mark {day} as completed: {e}")
+                logger.warning(f"⚠️  {day}: Could not validate data existence: {e}")
+        
+        if days_validated:
+            logger.info(f"Marking {len(days_validated)} fully complete days (out of {len(trading_days)} trading days)...")
+            for day in days_validated:
+                try:
+                    mark_job_completed('update_portfolio_prices', day, None, successful_funds, duration_ms=None)
+                except Exception as e:
+                    logger.warning(f"Failed to mark {day} as completed: {e}")
+            
+            # ISSUE #3: Better logging for skipped days with reasons
+            skipped_days = set(trading_days) - set(days_validated)
+            if skipped_days:
+                logger.warning(f"⚠️  {len(skipped_days)} days NOT marked complete: {sorted(skipped_days)}")
+                
+                # Categorize why days were skipped
+                for day in sorted(skipped_days):
+                    funds_for_day = days_funds_complete.get(day, set())
+                    if not funds_for_day:
+                        logger.info(f"   {day}: No positions created (no active holdings or all tickers failed)")
+                    elif funds_for_day != all_production_funds:
+                        missing_funds = all_production_funds - funds_for_day
+                        logger.warning(f"   {day}: Partial failure - missing data for funds: {missing_funds}")
+                    else:
+                        logger.warning(f"   {day}: Validation failed - data missing from database")
+        else:
+            logger.warning(f"⚠️  No days fully completed - nothing marked as completed")
         
         # Bump cache version to force UI refresh
         try:

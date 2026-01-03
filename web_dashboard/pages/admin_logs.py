@@ -128,8 +128,23 @@ else:
             **Expected Ollama log location:** `server/server.log` (when volume mapping is configured)
             """)
         else:
-            # Sort by modification time (newest first)
-            log_files.sort(key=os.path.getmtime, reverse=True)
+            # Prioritize Ollama logs (server/server.log)
+            ollama_log = LOGS_DIR / "server" / "server.log"
+            ollama_logs = [f for f in log_files if "server" in str(f) and "server.log" in str(f)]
+            other_logs = [f for f in log_files if f not in ollama_logs]
+            
+            # Sort: Ollama logs first, then by modification time
+            if ollama_logs:
+                log_files = ollama_logs + sorted(other_logs, key=os.path.getmtime, reverse=True)
+            else:
+                log_files.sort(key=os.path.getmtime, reverse=True)
+                # Warn if Ollama logs are missing
+                st.warning("⚠️ Ollama logs (`server/server.log`) not found. Showing other log files.")
+                st.info("""
+                **To view Ollama logs:**
+                1. Switch to **"Docker Containers (Live)"** mode above (recommended)
+                2. Or ensure volume mapping is configured: Host `/home/lance/ollama-logs` → Container `/app/web_dashboard/logs/server`
+                """)
             
             # Create filenames list for dropdown (relative to logs dir)
             filenames = [str(f.relative_to(LOGS_DIR)) for f in log_files]
@@ -137,7 +152,16 @@ else:
             col1, col2 = st.columns([1, 3])
             
             with col1:
-                selected_filename = st.selectbox("Select Log File", filenames)
+                # Default to Ollama log if available
+                default_index = 0
+                if ollama_logs and filenames:
+                    # Find index of first Ollama log
+                    for i, fname in enumerate(filenames):
+                        if "server" in fname and "server.log" in fname:
+                            default_index = i
+                            break
+                
+                selected_filename = st.selectbox("Select Log File", filenames, index=default_index)
                 if st.button("🔄 Refresh File"):
                     st.rerun()
                     

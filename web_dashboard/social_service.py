@@ -378,8 +378,23 @@ class SocialSentimentService:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             
-            # Search Reddit for ticker (with $ prefix and without)
-            search_queries = [f"${ticker}", ticker]
+            # Define common words that are also tickers (noisy plain text search)
+            common_words = {
+                'AI', 'CAT', 'GOOD', 'FOR', 'ARE', 'ALL', 'CAN', 'NEW', 'ONE', 'OUT', 
+                'RUN', 'SEE', 'TWO', 'NOW', 'BIT', 'KEY', 'USA', 'EAT', 'BIG', 'LOW', 
+                'FAT', 'HOT', 'FUN', 'PLAY', 'LOVE', 'GET', 'SET', 'GO', 'CAR', 'DOG'
+            }
+            
+            # Determine search queries
+            # Always search for cashtag ($TICKER) - High signal
+            search_queries = [f"${ticker}"]
+            
+            # Only search plain text (TICKER) if safe
+            if ticker not in common_words:
+                # For 1-2 letter tickers, NEVER search plain text (too noisy)
+                if len(ticker) >= 3:
+                     search_queries.append(ticker)
+            
             all_posts = []
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
             
@@ -422,6 +437,16 @@ class SocialSentimentService:
                                 
                                 # Filter posts from last 24 hours
                                 if post_dt >= cutoff_time:
+                                    
+                                    # Strict Relevance Check for plain text queries
+                                    if query == ticker:
+                                        # Use regex to ensure ticker appears as a distinct word
+                                        import re
+                                        full_text = (title + " " + selftext).upper()
+                                        if not re.search(r'\b' + re.escape(ticker) + r'\b', full_text):
+                                            # Skip if ticker isn't a distinct word (e.g. "CATS" matches "CAT")
+                                            continue
+                                            
                                     all_posts.append({
                                         'title': title,
                                         'selftext': selftext,

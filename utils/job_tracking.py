@@ -84,7 +84,8 @@ def mark_job_completed(
     target_date: date,
     fund_name: Optional[str],
     funds_processed: List[str],
-    duration_ms: Optional[int] = None
+    duration_ms: Optional[int] = None,
+    message: Optional[str] = None
 ) -> None:
     """
     Mark a job as successfully completed.
@@ -95,6 +96,7 @@ def mark_job_completed(
         fund_name: Specific fund processed, None if all funds
         funds_processed: List of fund names that completed successfully
         duration_ms: Execution duration in milliseconds (optional)
+        message: Optional success message to display (stored in error_message field for display)
     """
     try:
         from supabase_client import SupabaseClient
@@ -135,6 +137,10 @@ def mark_job_completed(
         # Add duration_ms if provided
         if duration_ms is not None:
             data['duration_ms'] = duration_ms
+        
+        # Store message in error_message field (used for display even for successful jobs)
+        if message:
+            data['error_message'] = message[:500]  # Truncate to prevent huge strings
         
         client.supabase.table("job_executions").upsert(
             data,
@@ -241,7 +247,12 @@ def is_job_completed(
         if fund_name is not None:
             result = result.eq("fund_name", fund_name)
         else:
-            result = result.is_("fund_name", "null")
+            # BUG FIX: mark_job_completed uses empty string '' instead of NULL
+            # to avoid PostgreSQL NULL uniqueness issues. Check for BOTH.
+            # Use or_() to check for NULL OR empty string
+            result = result.or_(
+                "fund_name.is.null,fund_name.eq."
+            )
         
         result = result.execute()
         

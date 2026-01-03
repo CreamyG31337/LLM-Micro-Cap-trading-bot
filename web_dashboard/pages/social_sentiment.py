@@ -461,6 +461,31 @@ def get_social_posts_for_session(_client, session_id: int) -> List[Dict[str, Any
         logger.error(f"Error fetching posts for session {session_id}: {e}", exc_info=True)
         return []
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_social_posts_for_metric(_client, metric_id: int) -> List[Dict[str, Any]]:
+    """Get social posts for a specific metric
+    
+    Args:
+        metric_id: ID of the social_metrics record
+        
+    Returns:
+        List of post data
+    """
+    try:
+        query = """
+            SELECT sp.*, sm.ticker, sm.platform
+            FROM social_posts sp
+            JOIN social_metrics sm ON sp.metric_id = sm.id
+            WHERE sp.metric_id = %s
+            ORDER BY sp.engagement_score DESC
+            LIMIT 10
+        """
+        results = _client.execute_query(query, (metric_id,))
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching posts for metric {metric_id}: {e}", exc_info=True)
+        return []
+
 # Helper function to format datetime for display
 def format_datetime(dt) -> str:
     """Format datetime for display in local timezone"""
@@ -612,54 +637,67 @@ try:
             metric_id = alert.get('id')
             session_id = alert.get('analysis_session_id')
             
-            # Create columns for alert text and link button
-            col_alert, col_link = st.columns([0.85, 0.15])
+            # Create container for alert with source link
+            if sentiment_label == 'EUPHORIC':
+                st.success(
+                    f"**{ticker}** ({platform.upper()}) - {sentiment_label} "
+                    f"(Score: {sentiment_score:.1f}) - {time_str}"
+                )
+            elif sentiment_label == 'FEARFUL':
+                st.error(
+                    f"**{ticker}** ({platform.upper()}) - {sentiment_label} "
+                    f"(Score: {sentiment_score:.1f}) - {time_str}"
+                )
             
-            with col_alert:
-                if sentiment_label == 'EUPHORIC':
-                    st.success(
-                        f"**{ticker}** ({platform.upper()}) - {sentiment_label} "
-                        f"(Score: {sentiment_score:.1f}) - {time_str}"
-                    )
-                elif sentiment_label == 'FEARFUL':
-                    st.error(
-                        f"**{ticker}** ({platform.upper()}) - {sentiment_label} "
-                        f"(Score: {sentiment_score:.1f}) - {time_str}"
-                    )
+            # Create columns for action buttons
+            col_source, col_ticker = st.columns([0.5, 0.5])
             
-            with col_link:
+            # Show expandable section with source posts
+            # Try session_id first, then fall back to metric_id
+            posts = []
+            if postgres_client:
+                if session_id:
+                    posts = get_social_posts_for_session(postgres_client, session_id)
+                
+                # If no posts found via session_id, try metric_id
+                if not posts and metric_id:
+                    posts = get_social_posts_for_metric(postgres_client, metric_id)
+            
+            with col_source:
+                # Always show expandable section if we have posts or metric_id
+                if posts or metric_id:
+                    with st.expander(f"🔗 View Source Posts ({len(posts) if posts else 0} posts)", key=f"alert_posts_{idx}", expanded=False):
+                        if posts:
+                            st.caption(f"Showing {len(posts)} posts from this sentiment alert")
+                            for post_idx, post in enumerate(posts[:5]):  # Show top 5 posts
+                                with st.container():
+                                    col_author, col_time = st.columns([0.7, 0.3])
+                                    with col_author:
+                                        st.write(f"**{post.get('author', 'Unknown')}**")
+                                    with col_time:
+                                        st.caption(format_datetime(post.get('posted_at')))
+                                    
+                                    st.write(post.get('content', ''))
+                                    
+                                    col_eng, col_url = st.columns([0.5, 0.5])
+                                    with col_eng:
+                                        st.caption(f"👍 {post.get('engagement_score', 0)} engagement")
+                                    with col_url:
+                                        if post.get('url'):
+                                            st.markdown(f"[🔗 View Original Post]({post.get('url')})", unsafe_allow_html=True)
+                                    
+                                    if post_idx < len(posts[:5]) - 1:
+                                        st.divider()
+                        else:
+                            st.info("No posts found for this alert. Posts may not have been extracted yet.")
+                else:
+                    st.caption("⚠️ No source posts available")
+            
+            with col_ticker:
                 # Link to ticker details page
-                if st.button("🔗 View", key=f"alert_link_{idx}", use_container_width=True):
+                if st.button("📊 View Ticker Details", key=f"alert_ticker_{idx}", use_container_width=True):
                     st.session_state['selected_ticker'] = ticker
                     st.switch_page("pages/ticker_details.py")
-            
-            # Show expandable section with source posts if session_id exists
-            if session_id and postgres_client:
-                with st.expander(f"📝 View Source Posts", key=f"alert_posts_{idx}"):
-                    posts = get_social_posts_for_session(postgres_client, session_id)
-                    if posts:
-                        st.caption(f"Showing {len(posts)} posts from this sentiment session")
-                        for post_idx, post in enumerate(posts[:5]):  # Show top 5 posts
-                            with st.container():
-                                col_author, col_time = st.columns([0.7, 0.3])
-                                with col_author:
-                                    st.write(f"**{post.get('author', 'Unknown')}**")
-                                with col_time:
-                                    st.caption(format_datetime(post.get('posted_at')))
-                                
-                                st.write(post.get('content', ''))
-                                
-                                col_eng, col_url = st.columns([0.5, 0.5])
-                                with col_eng:
-                                    st.caption(f"👍 {post.get('engagement_score', 0)} engagement")
-                                with col_url:
-                                    if post.get('url'):
-                                        st.markdown(f"[🔗 View Original Post]({post.get('url')})", unsafe_allow_html=True)
-                                
-                                if post_idx < len(posts[:5]) - 1:
-                                    st.divider()
-                    else:
-                        st.info("No posts found for this session.")
     else:
         st.info("✅ No extreme sentiment alerts in the last 24 hours")
     

@@ -171,12 +171,12 @@ def fetch_ark_holdings(etf_ticker: str, csv_url: str) -> Optional[pd.DataFrame]:
         df.columns = df.columns.str.lower().str.strip()
         
         # Map to standard schema
-        # ARK columns: 'ticker', 'company', 'shares', 'weight(%)'
+        # ARK columns: 'ticker', 'company', 'shares', 'weight (%)'
         column_mapping = {
             'ticker': 'ticker',
             'company': 'name',
             'shares': 'shares',
-            'weight(%)': 'weight_percent'
+            'weight (%)': 'weight_percent'  # Note the space!
         }
         
         # Find actual column names (case-insensitive matching)
@@ -204,11 +204,14 @@ def fetch_ark_holdings(etf_ticker: str, csv_url: str) -> Optional[pd.DataFrame]:
         df = df[df['ticker'] != '']
         df['ticker'] = df['ticker'].str.upper().str.strip()
         
-        # Convert shares to numeric
+        # Convert shares to numeric (remove commas first)
         if 'shares' in df.columns:
+            df['shares'] = df['shares'].astype(str).str.replace(',', '').str.strip()
             df['shares'] = pd.to_numeric(df['shares'], errors='coerce')
         
+        # Convert weight_percent to numeric (remove % sign first)
         if 'weight_percent' in df.columns:
+            df['weight_percent'] = df['weight_percent'].astype(str).str.replace('%', '').str.strip()
             df['weight_percent'] = pd.to_numeric(df['weight_percent'], errors='coerce')
         
         logger.info(f"✅ Parsed {len(df)} holdings for {etf_ticker}")

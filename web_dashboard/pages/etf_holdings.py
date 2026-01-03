@@ -355,17 +355,25 @@ with col3:
         )
     else:
         selected_date = st.date_input(
-            "Date",
+        "Date",
             value=date.today(),
             max_value=date.today()
         )
 
-with col4:
-    action_filter = st.selectbox(
-        "Action",
-        options=["All", "BUY", "SELL"],
-        index=0
-    )
+# Determine view mode early to conditionally show filters
+preview_selected_etf = None if etf_filter == "All ETFs" else etf_filter
+preview_view_mode = "holdings" if preview_selected_etf else "changes"
+
+# Only show Action filter for changes view
+if preview_view_mode == "changes":
+    with col4:
+        action_filter = st.selectbox(
+            "Action",
+            options=["All", "BUY", "SELL"],
+            index=0
+        )
+else:
+    action_filter = "All"  # Default value for holdings view
 
 
 # Get data based on whether an ETF is selected
@@ -385,7 +393,8 @@ if not changes_df.empty:
     if holding_ticker_filter:
         changes_df = changes_df[changes_df['holding_ticker'].str.contains(holding_ticker_filter.upper(), case=False, na=False)]
     
-    if action_filter != "All":
+    # Only apply action filter in changes view (holdings view doesn't have 'action' column)
+    if view_mode == "changes" and action_filter != "All":
         changes_df = changes_df[changes_df['action'] == action_filter]
 
 # Summary Statistics (only for changes view)

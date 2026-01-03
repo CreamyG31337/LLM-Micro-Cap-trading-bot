@@ -1087,7 +1087,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 
                 # CHUNKED BATCH INSERT: Process in chunks to avoid Supabase 1000-row limit
                 # FIX: Chunking, validation, and per-chunk tracking
-                CHUNK_SIZE = 1000
+                # Reduced chunk size to avoid "Bad Request" errors with large position counts
+                CHUNK_SIZE = 500  # Reduced from 1000 to handle funds with many positions
                 total_inserted = 0
                 days_inserted_for_fund = set()  # Days that actually got inserted for this fund
                 failed_chunks = []  # Track failed chunks for retry

@@ -141,7 +141,18 @@ def render_scheduler_admin():
         
         # Sort jobs based on selection
         if sort_by == "Job Name":
-            jobs = sorted(jobs, key=lambda x: x.get('name', '').lower())
+            # Strip emoji and leading whitespace for sorting to get proper alphabetical order
+            def get_sort_key(job_name: str) -> str:
+                """Extract sortable name by removing emoji and leading whitespace."""
+                name = job_name.strip()
+                # Remove first character if it's not alphanumeric (likely an emoji)
+                if name and not name[0].isalnum():
+                    # Check if first char is emoji (not ASCII)
+                    if ord(name[0]) > 127:
+                        name = name[1:].lstrip()
+                return name.lower()
+            
+            jobs = sorted(jobs, key=lambda x: get_sort_key(x.get('name', '')))
         else:
             # Sort by scheduled time (next_run), with None (paused) jobs at the end
             from datetime import timezone

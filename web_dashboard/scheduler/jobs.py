@@ -165,7 +165,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '👽'
     },
     'watchdog': {
-        'name': 'Job Retry Watchdog',
+        'name': 'Watchdog',
         'description': 'Automatically retry failed calculation jobs and detect stale/interrupted jobs',
         'default_interval_minutes': 30,  # Every 30 minutes
         'enabled_by_default': True,
@@ -800,7 +800,7 @@ def register_default_jobs(scheduler) -> None:
             watchdog_job,
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['watchdog']['default_interval_minutes']),
             id='watchdog',
-            name=f"{get_job_icon('watchdog')} Job Retry Watchdog",
+            name=f"{get_job_icon('watchdog')} Watchdog",
             replace_existing=True,
             max_instances=1,
             coalesce=True

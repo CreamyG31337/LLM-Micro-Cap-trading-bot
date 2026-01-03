@@ -35,6 +35,7 @@ from navigation import render_navigation
 from supabase_client import SupabaseClient
 from user_preferences import get_user_timezone
 from aggrid_utils import TICKER_CELL_RENDERER_JS, TICKER_CLICK_HANDLER_JS_TEMPLATE
+from streamlit_utils import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +64,7 @@ if not refresh_token_if_needed():
 # Render navigation
 render_navigation(show_ai_assistant=True, show_settings=True)
 
-# Initialize Supabase client
-@st.cache_resource
-def get_supabase_client():
-    """Get Supabase client instance"""
-    try:
-        return SupabaseClient()
-    except Exception as e:
-        logger.warning(f"Supabase not available: {e}")
-        return None
-
+# Initialize Supabase client using standard utility
 supabase_client = get_supabase_client()
 
 # Check if Supabase is available

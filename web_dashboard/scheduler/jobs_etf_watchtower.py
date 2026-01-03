@@ -52,6 +52,25 @@ ETF_CONFIGS = {
     "IWO": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239709/ishares-russell-2000-growth-etf/1467271812596.ajax?fileType=csv&fileName=IWO_holdings&dataType=fund" },
 }
 
+# ETF Names for metadata
+ETF_NAMES = {
+    "ARKK": "ARK Innovation ETF",
+    "ARKQ": "ARK Autonomous Technology & Robotics ETF",
+    "ARKW": "ARK Next Generation Internet ETF",
+    "ARKG": "ARK Genomic Revolution ETF",
+    "ARKF": "ARK Fintech Innovation ETF",
+    "ARKX": "ARK Space Exploration & Innovation ETF",
+    "IZRL": "ARK Israel Innovative Technology ETF",
+    "PRNT": "The 3D Printing ETF",
+    "ARKSX": "ARK Venture Fund",
+    "ARKVX": "ARK Venture Fund",
+    "ARKUX": "ARK Venture Fund",
+    "IVV": "iShares Core S&P 500 ETF",
+    "IWM": "iShares Russell 2000 ETF",
+    "IWC": "iShares Micro-Cap ETF",
+    "IWO": "iShares Russell 2000 Growth ETF",
+}
+
 # Thresholds for "significant" changes
 MIN_SHARE_CHANGE = 1000  # Minimum absolute share change to log
 MIN_PERCENT_CHANGE = 0.5  # Minimum % change relative to previous holdings
@@ -368,6 +387,27 @@ def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: s
         logger.error(f"❌ Error upserting securities metadata: {e}")
 
 
+def upsert_etf_metadata(db: PostgresClient, etf_ticker: str, provider: str):
+    """Upsert ETF metadata into securities table."""
+    try:
+        etf_name = ETF_NAMES.get(etf_ticker, etf_ticker)
+        
+        upsert_query = """
+            INSERT INTO securities (ticker, name, asset_class, first_detected_by, last_updated)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (ticker) DO UPDATE SET
+                name = EXCLUDED.name,
+                asset_class = COALESCE(EXCLUDED.asset_class, securities.asset_class),
+                last_updated = NOW()
+        """
+        
+        db.execute_update(upsert_query, (etf_ticker, etf_name, 'ETF', f"{provider} ETF Watchtower"))
+        logger.info(f"ℹ️  Upserted ETF metadata for {etf_ticker}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error upserting ETF metadata for {etf_ticker}: {e}")
+
+
 def log_significant_changes(repo: ResearchRepository, changes: List[Dict], etf_ticker: str):
     """Log significant ETF changes to research_articles.
     
@@ -455,7 +495,10 @@ def etf_watchtower_job():
             else:
                 logger.info(f"ℹ️  No previous data for {etf_ticker} - this is the first snapshot")
             
-            # 4. Upsert metadata & Save snapshot
+            # 4. Upsert ETF metadata (the ETF itself)
+            upsert_etf_metadata(db, etf_ticker, config['provider'])
+            
+            # 5. Upsert holdings metadata & Save snapshot
             upsert_securities_metadata(db, today_holdings, config['provider'])
             save_holdings_snapshot(db, etf_ticker, today_holdings, today)
             

@@ -138,24 +138,43 @@ def get_available_etfs(_postgres_client, _refresh_key: int) -> List[Dict[str, st
         logger.error(f"Error fetching available ETFs: {e}")
         return []
 
+
 @st.cache_data(ttl=60, show_spinner=False)
-def get_etf_info(_postgres_client, etf_ticker: str, _refresh_key: int) -> Optional[Dict[str, Any]]:
-    """Get ETF information from securities table"""
-    if _postgres_client is None or not etf_ticker:
-        return None
+def get_all_holdings(
+    _postgres_client,
+    target_date: date,
+    etf_ticker: str,
+    _refresh_key: int = 0
+) -> pd.DataFrame:
+    """Get ALL current holdings for a specific ETF on a specific date (not just changes)"""
+    if _postgres_client is None:
+        return pd.DataFrame()
+    
     try:
-        # Match columns to securities table schema
-        # Match columns to securities table schema
-        result = _postgres_client.execute_query(
-            "SELECT ticker, name as company_name, sector, industry, exchange, asset_class, currency, last_updated FROM securities WHERE ticker = %s",
-            (etf_ticker,)
-        )
-        if result and result[0]:
-            return result[0]
-        return None
+        query = """
+        SELECT 
+            t.date as date,
+            t.etf_ticker,
+            t.holding_ticker,
+            t.holding_name,
+            t.shares_held as current_shares,
+            t.weight_percent
+        FROM etf_holdings_log t
+        WHERE t.date = %s
+          AND t.etf_ticker = %s
+          AND COALESCE(t.shares_held, 0) > 0  -- Only show active holdings
+        ORDER BY t.weight_percent DESC NULLS LAST, t.shares_held DESC
+        """
+        
+        result = _postgres_client.execute_query(query, (target_date, etf_ticker))
+        
+        if result:
+            df = pd.DataFrame(result)
+            return df
+        return pd.DataFrame()
     except Exception as e:
-        logger.error(f"Error fetching ETF info for {etf_ticker}: {e}")
-        return None
+        logger.error(f"Error fetching all holdings: {e}", exc_info=True)
+        return pd.DataFrame()
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_holdings_changes(
@@ -321,9 +340,10 @@ with col1:
 
 with col2:
     holding_ticker_filter = st.text_input(
-        "Holding Ticker",
+        "Filter Holdings",
         value="",
-        placeholder="Filter by holding ticker..."
+        placeholder="e.g., TSLA, NVDA...",
+        help="Filter the table by specific ticker symbols"
     )
 
 with col3:
@@ -347,27 +367,18 @@ with col4:
         index=0
     )
 
-# ETF Information Card
-if etf_filter != "All ETFs":
-    etf_info = get_etf_info(postgres_client, etf_filter, st.session_state.refresh_key)
-    if etf_info:
-        with st.expander(f"📊 ETF Information: {etf_filter}", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Company Name", etf_info.get('company_name', 'N/A'))
-                st.metric("Sector", etf_info.get('sector', 'N/A'))
-            with col2:
-                st.metric("Industry", etf_info.get('industry', 'N/A'))
-                st.metric("Exchange", etf_info.get('exchange', 'N/A'))
-            with col3:
-                st.metric("Asset Class", etf_info.get('asset_class', 'N/A'))
-                st.metric("Currency", etf_info.get('currency', 'N/A'))
-            if etf_info.get('last_updated'):
-                st.caption(f"Last Updated: {etf_info['last_updated']}")
 
-# Get data for selected filters
+# Get data based on whether an ETF is selected
 selected_etf = None if etf_filter == "All ETFs" else etf_filter
-changes_df = get_holdings_changes(postgres_client, selected_date, selected_etf, st.session_state.refresh_key)
+
+if selected_etf:
+    # Show ALL holdings for the selected ETF
+    changes_df = get_all_holdings(postgres_client, selected_date, selected_etf, st.session_state.refresh_key)
+    view_mode = "holdings"
+else:
+    # Show changes across all ETFs
+    changes_df = get_holdings_changes(postgres_client, selected_date, None, st.session_state.refresh_key)
+    view_mode = "changes"
 
 # Apply filters
 if not changes_df.empty:
@@ -377,70 +388,74 @@ if not changes_df.empty:
     if action_filter != "All":
         changes_df = changes_df[changes_df['action'] == action_filter]
 
-# Summary Statistics
-st.subheader("Summary Statistics")
-
-if not changes_df.empty:
-    # Calculate stats from filtered dataframe
-    significant_changes = changes_df[changes_df['action'] != 'HOLD'].copy()
-    bullish = significant_changes[significant_changes['action'] == 'BUY']
-    bearish = significant_changes[significant_changes['action'] == 'SELL']
+# Summary Statistics (only for changes view)
+if view_mode == "changes":
+    st.subheader("Summary Statistics")
     
-    # Find largest buy and sell from filtered data
-    largest_buy = None
-    largest_sell = None
-    
-    if not bullish.empty:
-        largest_buy_idx = bullish['share_change'].idxmax()
-        largest_buy_row = bullish.loc[largest_buy_idx]
-        largest_buy = {
-            'etf': largest_buy_row['etf_ticker'],
-            'ticker': largest_buy_row['holding_ticker'],
-            'change': largest_buy_row['share_change']
-        }
-    
-    if not bearish.empty:
-        largest_sell_idx = bearish['share_change'].idxmin()
-        largest_sell_row = bearish.loc[largest_sell_idx]
-        largest_sell = {
-            'etf': largest_sell_row['etf_ticker'],
-            'ticker': largest_sell_row['holding_ticker'],
-            'change': largest_sell_row['share_change']
-        }
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric("Latest Update", selected_date.strftime("%Y-%m-%d") if selected_date else "N/A")
-    
-    with col2:
-        st.metric("Total Changes", len(significant_changes))
-    
-    with col3:
-        st.metric("🟢 Bullish (BUY)", len(bullish), delta=None)
-    
-    with col4:
-        st.metric("🔴 Bearish (SELL)", len(bearish), delta=None)
-    
-    with col5:
-        total_etfs = changes_df['etf_ticker'].nunique() if 'etf_ticker' in changes_df.columns else 0
-        st.metric("ETFs Tracked", total_etfs)
-    
-    # Largest moves
-    if largest_buy or largest_sell:
-        st.caption("**Largest Moves:**")
-        col1, col2 = st.columns(2)
+    if not changes_df.empty:
+        # Calculate stats from filtered dataframe
+        significant_changes = changes_df[changes_df['action'] != 'HOLD'].copy()
+        bullish = significant_changes[significant_changes['action'] == 'BUY']
+        bearish = significant_changes[significant_changes['action'] == 'SELL']
+        
+        # Find largest buy and sell from filtered data
+        largest_buy = None
+        largest_sell = None
+        
+        if not bullish.empty:
+            largest_buy_idx = bullish['share_change'].idxmax()
+            largest_buy_row = bullish.loc[largest_buy_idx]
+            largest_buy = {
+                'etf': largest_buy_row['etf_ticker'],
+                'ticker': largest_buy_row['holding_ticker'],
+                'change': largest_buy_row['share_change']
+            }
+        
+        if not bearish.empty:
+            largest_sell_idx = bearish['share_change'].idxmin()
+            largest_sell_row = bearish.loc[largest_sell_idx]
+            largest_sell = {
+                'etf': largest_sell_row['etf_ticker'],
+                'ticker': largest_sell_row['holding_ticker'],
+                'change': largest_sell_row['share_change']
+            }
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
         with col1:
-            if largest_buy:
-                st.success(f"🟢 Largest Buy: {largest_buy['ticker']} ({largest_buy['etf']}) - {largest_buy['change']:+,.0f} shares")
+            st.metric("Latest Update", selected_date.strftime("%Y-%m-%d") if selected_date else "N/A")
+        
         with col2:
-            if largest_sell:
-                st.error(f"🔴 Largest Sell: {largest_sell['ticker']} ({largest_sell['etf']}) - {largest_sell['change']:+,.0f} shares")
-else:
-    st.info("No changes data available for the selected date and filters.")
+            st.metric("Total Changes", len(significant_changes))
+        
+        with col3:
+            st.metric("🟢 Bullish (BUY)", len(bullish), delta=None)
+        
+        with col4:
+            st.metric("🔴 Bearish (SELL)", len(bearish), delta=None)
+        
+        with col5:
+            total_etfs = changes_df['etf_ticker'].nunique() if 'etf_ticker' in changes_df.columns else 0
+            st.metric("ETFs Tracked", total_etfs)
+        
+        # Largest moves
+        if largest_buy or largest_sell:
+            st.caption("**Largest Moves:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                if largest_buy:
+                    st.success(f"🟢 Largest Buy: {largest_buy['ticker']} ({largest_buy['etf']}) - {largest_buy['change']:+,.0f} shares")
+            with col2:
+                if largest_sell:
+                    st.error(f"🔴 Largest Sell: {largest_sell['ticker']} ({largest_sell['etf']}) - {largest_sell['change']:+,.0f} shares")
+    else:
+        st.info("No changes data available for the selected date and filters.")
 
-# Main Data Display - Latest Changes Table
-st.subheader("Latest Changes")
+# Main Data Display
+if view_mode == "holdings":
+    st.subheader(f"Current Holdings - {etf_filter}")
+else:
+    st.subheader("Latest Changes")
 
 if not changes_df.empty:
     # Prepare DataFrame for display - keep numeric columns for sorting, add formatted columns
@@ -450,43 +465,71 @@ if not changes_df.empty:
     if 'date' in display_df.columns:
         display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%Y-%m-%d')
     
-    # Keep numeric values for sorting, but format for display
-    # Create formatted string columns while keeping numeric originals
-    if 'share_change' in display_df.columns:
-        display_df['share_change_formatted'] = display_df['share_change'].apply(
-            lambda x: f"{x:+,.0f}" if pd.notna(x) and x != 0 else "0"
-        )
+    # Format columns based on view mode
+    if view_mode == "holdings":
+        # Holdings view - format shares and weight
+        if 'current_shares' in display_df.columns:
+            display_df['current_shares_formatted'] = display_df['current_shares'].apply(
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A"
+            )
+        
+        if 'weight_percent' in display_df.columns:
+            display_df['weight_percent_formatted'] = display_df['weight_percent'].apply(
+                lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A"
+            )
+        
+        # Rename columns for display
+        display_df = display_df.rename(columns={
+            'date': 'Date',
+            'etf_ticker': 'ETF',
+            'holding_ticker': 'Ticker',
+            'holding_name': 'Name',
+            'current_shares_formatted': 'Shares',
+            'weight_percent_formatted': 'Weight %'
+        })
+        
+        # Column order for holdings view
+        column_order = ['Date', 'Ticker', 'Name', 'Shares', 'Weight %']
+        if 'ETF' in display_df.columns:
+            column_order.insert(1, 'ETF')
+    else:
+        # Changes view - format all change-related columns
+        if 'share_change' in display_df.columns:
+            display_df['share_change_formatted'] = display_df['share_change'].apply(
+                lambda x: f"{x:+,.0f}" if pd.notna(x) and x != 0 else "0"
+            )
+        
+        if 'percent_change' in display_df.columns:
+            display_df['percent_change_formatted'] = display_df['percent_change'].apply(
+                lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A"
+            )
+        
+        if 'current_shares' in display_df.columns:
+            display_df['current_shares_formatted'] = display_df['current_shares'].apply(
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A"
+            )
+        
+        if 'previous_shares' in display_df.columns:
+            display_df['previous_shares_formatted'] = display_df['previous_shares'].apply(
+                lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A"
+            )
+        
+        # Rename columns for display
+        display_df = display_df.rename(columns={
+            'date': 'Date',
+            'etf_ticker': 'ETF',
+            'holding_ticker': 'Holding Ticker',
+            'holding_name': 'Holding Name',
+            'action': 'Action',
+            'share_change_formatted': 'Share Change',
+            'percent_change_formatted': '% Change',
+            'previous_shares_formatted': 'Previous Shares',
+            'current_shares_formatted': 'Current Shares'
+        })
+        
+        # Column order for changes view
+        column_order = ['Date', 'ETF', 'Holding Ticker', 'Holding Name', 'Action', 'Share Change', '% Change', 'Previous Shares', 'Current Shares']
     
-    if 'percent_change' in display_df.columns:
-        display_df['percent_change_formatted'] = display_df['percent_change'].apply(
-            lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A"
-        )
-    
-    if 'current_shares' in display_df.columns:
-        display_df['current_shares_formatted'] = display_df['current_shares'].apply(
-            lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A"
-        )
-    
-    if 'previous_shares' in display_df.columns:
-        display_df['previous_shares_formatted'] = display_df['previous_shares'].apply(
-            lambda x: f"{x:,.0f}" if pd.notna(x) else "N/A"
-        )
-    
-    # Rename columns for display
-    display_df = display_df.rename(columns={
-        'date': 'Date',
-        'etf_ticker': 'ETF',
-        'holding_ticker': 'Holding Ticker',
-        'holding_name': 'Holding Name',
-        'action': 'Action',
-        'share_change_formatted': 'Share Change',
-        'percent_change_formatted': '% Change',
-        'previous_shares_formatted': 'Previous Shares',
-        'current_shares_formatted': 'Current Shares'
-    })
-    
-    # Reorder columns - only include columns that exist
-    column_order = ['Date', 'ETF', 'Holding Ticker', 'Holding Name', 'Action', 'Share Change', '% Change', 'Previous Shares', 'Current Shares']
     available_columns = [col for col in column_order if col in display_df.columns]
     display_df = display_df[available_columns]
     
@@ -533,10 +576,11 @@ if not changes_df.empty:
             """)
         )
     
-    # Configure Holding Ticker column with clickable cells
-    if 'Holding Ticker' in display_df.columns:
+    # Configure Ticker column with clickable cells (works for both "Ticker" and "Holding Ticker")
+    ticker_col_name = 'Ticker' if view_mode == "holdings" else 'Holding Ticker'
+    if ticker_col_name in display_df.columns:
         gb.configure_column(
-            'Holding Ticker',
+            ticker_col_name,
             cellRenderer=JsCode(TICKER_CELL_RENDERER_JS)
         )
     

@@ -927,6 +927,25 @@ def format_currency_label(currency_code: str) -> str:
     return f"({currency_code})"
 
 
+def format_metric_label(label: str, metric_type: str = "fund") -> str:
+    """Add badge prefix to metric labels to distinguish fund vs user metrics.
+    
+    Args:
+        label: Original metric label
+        metric_type: "user", "fund", or "portfolio" (for single investor)
+    
+    Returns:
+        Formatted label with appropriate badge
+    """
+    badges = {
+        "user": "👤 Your",
+        "fund": "🏦 Fund",
+        "portfolio": "💼 Portfolio"
+    }
+    badge = badges.get(metric_type, "")
+    return f"{badge} {label}" if badge else label
+
+
 def main():
     """Main dashboard function"""
     
@@ -1533,27 +1552,27 @@ def main():
                 
                 with col1:
                     st.metric(
-                        f"Your Value {format_currency_label(display_currency)}",
+                        f"{format_metric_label('Your Value', 'user')} {format_currency_label(display_currency)}",
                         f"${user_investment['current_value']:,.2f}",
                         help="Current market value of your specific share in the fund."
                     )
                 with col2:
                     st.metric(
-                        "Your Day Change",
+                        format_metric_label("Your Day Change", "user"),
                         f"${user_day_pnl:,.2f}",
                         f"{last_day_pnl_pct:+.2f}%", 
                         help="Estimated change in your investment value since last market close."
                     )
                 with col3:
                     st.metric(
-                        "Your Return",
+                        format_metric_label("Your Return", "user"),
                         f"${user_investment['gain_loss']:,.2f}",
                         f"{user_investment['gain_loss_pct']:+.2f}%",
                         help="Total return on your investment (Current Value - Net Contribution)."
                     )
                 with col4:
                     st.metric(
-                        "Ownership",
+                        format_metric_label("Ownership", "user"),
                         f"{user_investment['ownership_pct']:.2f}%",
                         help="Your percentage ownership of the total fund assets."
                     )
@@ -1565,21 +1584,21 @@ def main():
             
             with f_col1:
                 st.metric(
-                    f"Fund Total Value {format_currency_label(display_currency)}", 
+                    f"{format_metric_label('Fund Total Value', 'fund')} {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total value of all assets in the fund (Cash + Positions) for ALL investors."
                 )
             with f_col2:
                 st.metric(
-                    "Fund Return",
+                    format_metric_label("Fund Return", "fund"),
                     f"${fund_return_dollars:,.2f}", 
                     f"{fund_return_pct:+.2f}%",
                     help="Total return on all investments in the fund since inception."
                 )
             with f_col3:
-                st.metric("Investors", f"{num_investors}", help="Total number of distinct investors in this fund.")
+                st.metric(format_metric_label("Investors", "fund"), f"{num_investors}", help="Total number of distinct investors in this fund.")
             with f_col4:
-                st.metric("Holdings", f"{num_holdings}", help="Number of open stock positions.")
+                st.metric(format_metric_label("Holdings", "fund"), f"{num_holdings}", help="Number of open stock positions.")
 
         else:
             # === SINGLE INVESTOR LAYOUT ===
@@ -1590,7 +1609,7 @@ def main():
             
             with m_col1:
                 st.metric(
-                    f"Portfolio Value {format_currency_label(display_currency)}", 
+                    f"{format_metric_label('Portfolio Value', 'portfolio')} {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total current value of your portfolio (Cash + Positions)."
                 )
@@ -1599,7 +1618,7 @@ def main():
                 # Total Return - Prioritize user_investment calc as it accounts for realized gains
                 if user_investment:
                     st.metric(
-                        "Total Return",
+                        format_metric_label("Total Return", "portfolio"),
                         f"{user_investment['gain_loss_pct']:+.2f}%",
                         f"${user_investment['gain_loss']:,.2f}",
                         help="All-time return on investment (Current Value - Net Contribution)."
@@ -1607,7 +1626,7 @@ def main():
                 else:
                     # Fallback to unrealized if no contribution data
                     st.metric(
-                        f"Unrealized Return {format_currency_label(display_currency)}",
+                        f"{format_metric_label('Unrealized Return', 'portfolio')} {format_currency_label(display_currency)}",
                         f"${unrealized_pnl:,.2f}",
                         f"{unrealized_pnl_pct:+.2f}%",
                         help="Return based on currently held positions only (excludes realized gains/losses)."
@@ -1615,7 +1634,7 @@ def main():
 
             with m_col3:
                 st.metric(
-                    f"Day Change {format_currency_label(display_currency)}", 
+                    f"{format_metric_label('Day Change', 'portfolio')} {format_currency_label(display_currency)}", 
                     f"${last_day_pnl:,.2f}", 
                     f"{last_day_pnl_pct:+.2f}%",
                     help="Change in portfolio value since the last market close."
@@ -1623,7 +1642,7 @@ def main():
                 
             with m_col4:
                  st.metric(
-                    f"Open P&L {format_currency_label(display_currency)}", 
+                    f"{format_metric_label('Open P&L', 'portfolio')} {format_currency_label(display_currency)}", 
                     f"${unrealized_pnl:,.2f}",
                     help="Unrealized Profit/Loss from currently held positions."
                 )
@@ -2311,7 +2330,7 @@ def main():
             
             with pnl_col1:
                 st.metric(
-                    f"Total Realized P&L {format_currency_label(display_currency)}",
+                    f"{format_metric_label('Total Realized P&L', 'fund')} {format_currency_label(display_currency)}",
                     f"${total_realized:,.2f}",
                     help="Total realized profit/loss from all closed positions (matches console app)."
                 )
@@ -2319,7 +2338,7 @@ def main():
             with pnl_col2:
                 total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
                 st.metric(
-                    "Total Shares Sold",
+                    format_metric_label("Total Shares Sold", "fund"),
                     f"{total_shares_sold:,.2f}",
                     help="Total number of shares sold across all closed positions."
                 )
@@ -2327,7 +2346,7 @@ def main():
             with pnl_col3:
                 total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
                 st.metric(
-                    f"Total Proceeds {format_currency_label(display_currency)}",
+                    f"{format_metric_label('Total Proceeds', 'fund')} {format_currency_label(display_currency)}",
                     f"${total_proceeds:,.2f}",
                     help=f"Total proceeds from all sales in {display_currency}."
                 )
@@ -2335,7 +2354,7 @@ def main():
             with pnl_col4:
                 avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
                 st.metric(
-                    f"Avg Sell Price {format_currency_label(display_currency)}",
+                    f"{format_metric_label('Avg Sell Price', 'fund')} {format_currency_label(display_currency)}",
                     f"${avg_sell_price:,.2f}",
                     help=f"Average sell price per share across all closed positions in {display_currency}."
                 )
@@ -2345,21 +2364,21 @@ def main():
             
             with pnl_col5:
                 st.metric(
-                    "Closed Trades",
+                    format_metric_label("Closed Trades", "fund"),
                     f"{num_closed}",
                     help="Total number of closed positions (sell transactions)."
                 )
             
             with pnl_col6:
                 st.metric(
-                    "Winning Trades",
+                    format_metric_label("Winning Trades", "fund"),
                     f"{winning_trades}",
                     help="Number of closed positions with positive realized P&L."
                 )
             
             with pnl_col7:
                 st.metric(
-                    "Losing Trades",
+                    format_metric_label("Losing Trades", "fund"),
                     f"{losing_trades}",
                     help="Number of closed positions with negative realized P&L."
                 )
@@ -2367,7 +2386,7 @@ def main():
             with pnl_col8:
                 win_rate = (winning_trades / num_closed * 100) if num_closed > 0 else 0.0
                 st.metric(
-                    "Win Rate",
+                    format_metric_label("Win Rate", "fund"),
                     f"{win_rate:.1f}%",
                     help="Percentage of closed trades with positive P&L."
                 )
@@ -2451,11 +2470,11 @@ def main():
                 # Display Metrics
                 d_col1, d_col2, d_col3 = st.columns(3)
                 with d_col1:
-                    st.metric("Total Dividends (LTM)", f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
+                    st.metric(format_metric_label("Total Dividends (LTM)", "fund"), f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
                 with d_col2:
-                    st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
+                    st.metric(format_metric_label("Reinvested Shares", "fund"), f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
                 with d_col3:
-                    st.metric("Payout Events", f"{num_payouts}", help="Number of dividend payments received.")
+                    st.metric(format_metric_label("Payout Events", "fund"), f"{num_payouts}", help="Number of dividend payments received.")
 
                 # Format DataFrame for Display
                 display_cols = ['pay_date', 'ticker', 'gross_amount', 'net_amount', 'reinvested_shares', 'drip_price']

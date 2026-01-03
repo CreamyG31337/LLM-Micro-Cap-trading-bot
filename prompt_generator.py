@@ -174,11 +174,23 @@ class PromptGenerator:
         
         self.portfolio_manager = PortfolioManager(self.repository, fund)
         
-    def _get_market_data_table(self, portfolio_tickers: List[str]) -> List[List[str]]:
+    def _get_market_data_table(self, portfolio_tickers: List[str], portfolio_df: pd.DataFrame = None) -> List[List[str]]:
         """Fetch market data for portfolio tickers and benchmarks
         Returns rows with: [Ticker, Close, % Chg, Volume, Avg Vol (30d)]
+        
+        Args:
+            portfolio_tickers: List of tickers to fetch
+            portfolio_df: Optional DataFrame containing current portfolio snapshot (for pricing fallback)
         """
         rows: List[List[str]] = []
+        
+        # Create a lookup for portfolio data fallback
+        portfolio_lookup = {}
+        if portfolio_df is not None and not portfolio_df.empty:
+            for _, row in portfolio_df.iterrows():
+                t = row.get('ticker')
+                if t:
+                    portfolio_lookup[t] = row
         
         # Get a longer historical window so we can compute average volume
         start_d, end_d = self.market_hours.trading_day_window()
@@ -208,25 +220,100 @@ class PromptGenerator:
         
         # Note: Prompt generator fetches data regardless of market hours for display purposes
         
-        for ticker in all_tickers:
+        
+        # Parallel Fetching Configuration
+        max_workers = 10  # Limit concurrency to avoid rate limits
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # Define a helper function to fetch data for a single ticker
+        def fetch_ticker_data(ticker):
             try:
                 # First, try to get cached data
                 cached_data = self.price_cache.get_cached_price(ticker, start_d, end_d)
                 
+                # Check cache validity
                 if cached_data is not None and not cached_data.empty:
                     # Use cached data
-                    data = cached_data
-                    cache_hits += 1
-                    logger.debug(f"Cache hit for {ticker}: {len(cached_data)} rows")
+                    return ticker, cached_data, "cache", None
                 else:
-                    # Cache miss - fetch data even when markets are closed for prompt display
-                    # The prompt generator needs data for display purposes, even if markets are closed
+                    # Cache miss - fetch data from API
                     result = self.market_data_fetcher.fetch_price_data(ticker, start_d, end_d)
-                    data = result.df
-                    api_calls += 1
-                    logger.debug(f"API fetch for {ticker}: {len(result.df)} rows from {result.source}")
+                    return ticker, result.df, result.source, None
+            except Exception as e:
+                return ticker, pd.DataFrame(), "error", str(e)
+
+        # Execute fetches in parallel
+        # We process tickers in chunks or all at once depending on needs, 
+        # but here we just submit all and let ThreadPoolExecutor manage the queue
+        results = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_ticker = {executor.submit(fetch_ticker_data, ticker): ticker for ticker in all_tickers}
+            
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    t, df, source, error = future.result()
+                    results[ticker] = (df, source, error)
+                    
+                    if source == "cache":
+                        cache_hits += 1
+                        logger.debug(f"Cache hit for {ticker}: {len(df)} rows")
+                    elif source == "error":
+                        logger.warning(f"Error fetching {ticker}: {error}")
+                    else:
+                        api_calls += 1
+                        logger.debug(f"API fetch for {ticker}: {len(df)} rows from {source}")
+                        
+                except Exception as exc:
+                    logger.error(f"Generate prompt exception for {ticker}: {exc}")
+                    results[ticker] = (pd.DataFrame(), "error", str(exc))
+
+        # Process results and build rows (preserving original order)
+        for ticker in all_tickers:
+            data, source, error = results.get(ticker, (pd.DataFrame(), "missing", "Unknown error"))
+            
+            try:
+                # Check if we have valid data from API/Cache
+                has_valid_data = not data.empty and len(data) >= 2 and "Close" in data.columns
                 
-                if data.empty or len(data) < 2 or "Close" not in data.columns:
+                if not has_valid_data:
+                    # FALLBACK: Try to use portfolio snapshot data if available
+                    if ticker in portfolio_lookup:
+                        p_row = portfolio_lookup[ticker]
+                        
+                        # Get price from snapshot
+                        # Try 'current_price' first (DB view), then 'price' (snapshot object), then 'avg_price'
+                        fallback_price = p_row.get('current_price') or p_row.get('price') or p_row.get('avg_price', 0)
+                        
+                        try:
+                            price_val = float(fallback_price)
+                        except (ValueError, TypeError):
+                            price_val = 0.0
+                            
+                        if price_val > 0:
+                            # We have a valid fallback price!
+                            # Only log warnings for direct fetch failures if we're falling back
+                            if error:
+                                print(f"{_safe_emoji('⚠️')} Fetch failed for {ticker} ({error}), using portfolio fallback: ${price_val:.2f}")
+                            else:
+                                print(f"{_safe_emoji('ℹ️')} No market data for {ticker}, using portfolio fallback: ${price_val:.2f}")
+                            
+                            # Use daily P&L pct if available in snapshot
+                            fallback_pct = "—"
+                            daily_pnl_pct = p_row.get('daily_pnl_pct')
+                            
+                            # 'daily_pnl_pct' might be a string like "+1.5%" or a float
+                            if daily_pnl_pct is not None:
+                                if isinstance(daily_pnl_pct, (int, float)):
+                                     fallback_pct = f"{daily_pnl_pct:+.2f}%"
+                                elif isinstance(daily_pnl_pct, str) and daily_pnl_pct != 'N/A':
+                                     fallback_pct = daily_pnl_pct
+                            
+                            rows.append([ticker, f"{price_val:,.2f}", fallback_pct, "—", "—"])
+                            continue
+
+                    # No fallback available or price was invalid
                     rows.append([ticker, "—", "—", "—", "—"])
                     continue
                 
@@ -269,7 +356,20 @@ class PromptGenerator:
                 rows.append([ticker, f"{price:,.2f}", f"{percent_change:+.2f}%", volume_cell, avg_vol_cell])
                 
             except Exception as e:
-                print(f"Warning: Failed to fetch data for {ticker}: {e}")
+                print(f"Warning: Failed to process data for {ticker}: {e}")
+                
+                # Exception fallback
+                if ticker in portfolio_lookup:
+                     p_row = portfolio_lookup[ticker]
+                     fallback_price = p_row.get('current_price') or p_row.get('price') or p_row.get('avg_price', 0)
+                     try:
+                         price_val = float(fallback_price)
+                         if price_val > 0:
+                             rows.append([ticker, f"{price_val:,.2f}", "—", "—", "—"])
+                             continue
+                     except:
+                         pass
+                         
                 rows.append([ticker, "—", "—", "—", "—"])
         
         # Report optimization results
@@ -960,7 +1060,7 @@ class PromptGenerator:
         # Fetch market data
         print("Fetching current market data...")
         market_data_start = time.time()
-        market_rows = self._get_market_data_table(portfolio_tickers)
+        market_rows = self._get_market_data_table(portfolio_tickers, llm_portfolio)
         market_data_time = time.time() - market_data_start
         print(f"{_safe_emoji('✅')} Updated market data for {len(market_rows)} tickers ({market_data_time:.2f}s)")
 

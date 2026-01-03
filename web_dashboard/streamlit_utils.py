@@ -2252,6 +2252,22 @@ def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit:
     elif pnl_dollar_col:
         df['pnl_display'] = df[pnl_dollar_col]
     
+    # Handle 5-day P&L currency conversion
+    if 'five_day_pnl' in df.columns:
+        if 'currency' in df.columns:
+            rates = df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+            df['five_day_pnl_display'] = df['five_day_pnl'] * rates
+        else:
+            df['five_day_pnl_display'] = df['five_day_pnl']
+    
+    # Handle total P&L (unrealized_pnl) currency conversion
+    if 'unrealized_pnl' in df.columns:
+        if 'currency' in df.columns:
+            rates = df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate_safe)
+            df['total_pnl_display'] = df['unrealized_pnl'] * rates
+        else:
+            df['total_pnl_display'] = df['unrealized_pnl']
+    
     # Get company names if available
     company_col = None
     if 'securities' in df.columns:
@@ -2274,6 +2290,15 @@ def get_biggest_movers(positions_df: pd.DataFrame, display_currency: str, limit:
         result_cols.append(pnl_pct_col)
     if pnl_dollar_col and 'pnl_display' in df.columns:
         result_cols.append('pnl_display')
+    if 'five_day_pnl_pct' in df.columns:
+        result_cols.append('five_day_pnl_pct')
+    if 'five_day_pnl_display' in df.columns:
+        result_cols.append('five_day_pnl_display')
+    # Add total return % only if it's different from the daily P&L column
+    if 'return_pct' in df.columns and (not pnl_pct_col or pnl_pct_col != 'return_pct'):
+        result_cols.append('return_pct')
+    if 'total_pnl_display' in df.columns:
+        result_cols.append('total_pnl_display')
     if 'current_price' in df.columns:
         result_cols.append('current_price')
     if 'market_value' in df.columns:

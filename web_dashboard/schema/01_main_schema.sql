@@ -57,7 +57,6 @@ CREATE TABLE trade_log (
     fund VARCHAR(50) NOT NULL,
     date TIMESTAMP WITH TIME ZONE NOT NULL,
     ticker VARCHAR(20) NOT NULL,
-    action VARCHAR(10) NOT NULL DEFAULT 'BUY',  -- BUY/SELL/HOLD
     shares DECIMAL(15, 6) NOT NULL,
     price DECIMAL(10, 2) NOT NULL,
     cost_basis DECIMAL(10, 2) NOT NULL,
@@ -66,9 +65,6 @@ CREATE TABLE trade_log (
     currency VARCHAR(10) NOT NULL DEFAULT 'USD',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Migration: Add action column to existing trade_log table (if upgrading)
-ALTER TABLE trade_log ADD COLUMN IF NOT EXISTS action VARCHAR(10) NOT NULL DEFAULT 'BUY';
 
 -- Cash balances table
 CREATE TABLE cash_balances (

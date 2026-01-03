@@ -2207,30 +2207,19 @@ def main():
                 mask = recent_trades['company'].isna() | (recent_trades['company'] == '')
                 recent_trades.loc[mask, 'company'] = recent_trades.loc[mask, 'ticker'].map(ticker_to_company)
             
-            # Determine action type (BUY/SELL) - check multiple possible column names
-            action_col = None
-            for col_name in ['type', 'action', 'trade_type']:
-                if col_name in recent_trades.columns:
-                    action_col = col_name
-                    break
-            
-            # If no action column, infer from reason field (checking for "sell" keywords)
-            if action_col:
-                recent_trades['Action'] = recent_trades[action_col].str.upper()
+            # Infer action type (BUY/SELL) from reason field
+            if 'reason' in recent_trades.columns:
+                def infer_action(reason):
+                    if pd.isna(reason) or reason is None:
+                        return 'BUY'  # Default if no reason
+                    reason_lower = str(reason).lower()
+                    if 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower:
+                        return 'SELL'
+                    return 'BUY'  # Default to BUY if no sell keywords found
+                recent_trades['Action'] = recent_trades['reason'].apply(infer_action)
             else:
-                # Infer from reason field - check for sell keywords
-                if 'reason' in recent_trades.columns:
-                    def infer_action(reason):
-                        if pd.isna(reason) or reason is None:
-                            return 'BUY'  # Default if no reason
-                        reason_lower = str(reason).lower()
-                        if 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower:
-                            return 'SELL'
-                        return 'BUY'  # Default to BUY if no sell keywords found
-                    recent_trades['Action'] = recent_trades['reason'].apply(infer_action)
-                else:
-                    # No action or reason column - default to BUY
-                    recent_trades['Action'] = 'BUY'
+                # No reason column - default to BUY
+                recent_trades['Action'] = 'BUY'
             
             # Build display columns
             display_cols = ['date', 'ticker']
@@ -2311,9 +2300,6 @@ def main():
             if not trades_df.empty:
                 st.write(f"**Total trades found:** {len(trades_df)}")
                 st.write(f"**Columns:** {list(trades_df.columns)}")
-                if 'action' in trades_df.columns:
-                    st.write(f"**Unique action values:** {trades_df['action'].astype(str).unique().tolist()}")
-                    st.write(f"**SELL trades count:** {len(trades_df[trades_df['action'].astype(str).str.upper() == 'SELL'])}")
                 if 'reason' in trades_df.columns:
                     sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
                     st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")

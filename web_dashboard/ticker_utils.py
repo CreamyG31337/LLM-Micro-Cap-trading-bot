@@ -9,6 +9,7 @@ and generating clickable links to ticker details pages.
 
 import logging
 import re
+import pandas as pd
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, timezone
 
@@ -270,6 +271,106 @@ def get_ticker_info(
             logger.warning(f"Error fetching watchlist status for {ticker_upper}: {e}")
     
     return result
+
+
+def get_ticker_price_history(
+    ticker: str,
+    supabase_client=None,
+    days: int = 90
+) -> pd.DataFrame:
+    """Get historical price data for a ticker from portfolio_positions or yfinance.
+    
+    Fetches price history for the last N days, using portfolio_positions table
+    if available, otherwise falling back to yfinance API.
+    
+    Args:
+        ticker: Ticker symbol (e.g., "AAPL")
+        supabase_client: Optional SupabaseClient instance
+        days: Number of days to look back (default: 90 for 3 months)
+        
+    Returns:
+        DataFrame with columns: date, price, normalized (baseline 100)
+        Empty DataFrame if no data available
+    """
+    ticker_upper = ticker.upper().strip()
+    result_df = pd.DataFrame()
+    
+    # Calculate date range
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days)
+    
+    # Try portfolio_positions first
+    if supabase_client:
+        try:
+            pos_result = supabase_client.supabase.table("portfolio_positions")\
+                .select("date, price")\
+                .eq("ticker", ticker_upper)\
+                .gte("date", start_date.isoformat())\
+                .order("date")\
+                .execute()
+            
+            if pos_result.data and len(pos_result.data) >= 10:
+                # We have enough data from portfolio_positions
+                df = pd.DataFrame(pos_result.data)
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values('date')
+                
+                # Normalize to baseline 100 using first price
+                if len(df) > 0 and df['price'].iloc[0] > 0:
+                    baseline_price = float(df['price'].iloc[0])
+                    df['normalized'] = (df['price'].astype(float) / baseline_price) * 100
+                    result_df = df[['date', 'price', 'normalized']].copy()
+                    logger.info(f"Using portfolio_positions data for {ticker_upper}: {len(result_df)} data points")
+                    return result_df
+        except Exception as e:
+            logger.warning(f"Error fetching from portfolio_positions for {ticker_upper}: {e}")
+    
+    # Fallback to yfinance if insufficient portfolio data
+    try:
+        import yfinance as yf
+        logger.info(f"Fetching {ticker_upper} price history from yfinance (last {days} days)")
+        
+        # Add buffer days to ensure we get data
+        buffer_start = start_date - timedelta(days=5)
+        buffer_end = end_date + timedelta(days=2)
+        
+        ticker_obj = yf.Ticker(ticker_upper)
+        data = ticker_obj.history(start=buffer_start, end=buffer_end, auto_adjust=False)
+        
+        if data.empty:
+            logger.warning(f"No yfinance data available for {ticker_upper}")
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        data = data.reset_index()
+        data['Date'] = pd.to_datetime(data['Date'])
+        
+        # Filter to date range
+        data = data[(data['Date'] >= start_date) & (data['Date'] <= end_date)]
+        
+        if data.empty:
+            logger.warning(f"No yfinance data in date range for {ticker_upper}")
+            return pd.DataFrame()
+        
+        # Use Close price
+        df = pd.DataFrame({
+            'date': data['Date'],
+            'price': data['Close']
+        })
+        df = df.sort_values('date')
+        
+        # Normalize to baseline 100 using first price
+        if len(df) > 0 and df['price'].iloc[0] > 0:
+            baseline_price = float(df['price'].iloc[0])
+            df['normalized'] = (df['price'].astype(float) / baseline_price) * 100
+            result_df = df[['date', 'price', 'normalized']].copy()
+            logger.info(f"Using yfinance data for {ticker_upper}: {len(result_df)} data points")
+            return result_df
+        
+    except Exception as e:
+        logger.error(f"Error fetching from yfinance for {ticker_upper}: {e}")
+    
+    return pd.DataFrame()
 
 
 def get_ticker_external_links(ticker: str, exchange: Optional[str] = None) -> Dict[str, str]:

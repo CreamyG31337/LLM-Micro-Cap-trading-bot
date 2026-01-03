@@ -93,29 +93,18 @@ def _format_portfolio_snapshot_table(
         ticker_col = 'ticker' if 'ticker' in trades_df.columns else 'symbol'
         timestamp_col = 'timestamp' if 'timestamp' in trades_df.columns else 'date'
         
-        # Check if action column exists before trying to filter by it
-        action_col = None
-        for col_name in ['action', 'type', 'trade_type']:
-            if col_name in trades_df.columns:
-                action_col = col_name
-                break
-        
-        # Filter BUY trades only (if action column exists)
-        if action_col:
-            buy_trades = trades_df[trades_df[action_col].str.upper() == 'BUY'].copy()
+        # Filter BUY trades only - infer from reason field
+        if 'reason' in trades_df.columns:
+            # Infer from reason field - only include non-SELL trades
+            def is_buy_trade(reason):
+                if pd.isna(reason) or reason is None:
+                    return True  # Default to BUY if no reason
+                reason_lower = str(reason).lower()
+                return not ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower)
+            buy_trades = trades_df[trades_df['reason'].apply(is_buy_trade)].copy()
         else:
-            # If no action column, assume all trades are BUY (or infer from reason field)
-            if 'reason' in trades_df.columns:
-                # Infer from reason field - only include non-SELL trades
-                def is_buy_trade(reason):
-                    if pd.isna(reason) or reason is None:
-                        return True  # Default to BUY if no reason
-                    reason_lower = str(reason).lower()
-                    return not ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower)
-                buy_trades = trades_df[trades_df['reason'].apply(is_buy_trade)].copy()
-            else:
-                # No way to determine action, assume all are BUY trades
-                buy_trades = trades_df.copy()
+            # No way to determine action, assume all are BUY trades
+            buy_trades = trades_df.copy()
         
         if not buy_trades.empty:
             # Convert timestamp to datetime for sorting
@@ -512,10 +501,15 @@ def format_trades(trades_df: pd.DataFrame, limit: int = 100) -> str:
         
         lines.append(f"{date_str:<8} | {action_str:<6} | {symbol:<9} | {qty_str:>7} | {price_str:>8} | {total_str:>9}")
     
-    # Add summary statistics
-    if 'action' in df.columns:
-        buys = len(df[df['action'].str.upper() == 'BUY'])
-        sells = len(df[df['action'].str.upper() == 'SELL'])
+    # Add summary statistics - infer from reason if available
+    if 'reason' in df.columns:
+        def is_sell(reason):
+            if pd.isna(reason) or reason is None:
+                return False
+            reason_lower = str(reason).lower()
+            return 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower
+        sells = df['reason'].apply(is_sell).sum()
+        buys = len(df) - sells
         lines.append("")
         lines.append(f"Summary: {buys} buys, {sells} sells")
     
@@ -650,7 +644,7 @@ def build_full_context(context_items: List[Any], fund: Optional[str] = None) -> 
             # Try to determine type from DataFrame
             if 'symbol' in item.columns and 'quantity' in item.columns:
                 sections.append(format_holdings(item, fund or "Unknown"))
-            elif 'action' in item.columns or 'timestamp' in item.columns:
+            elif 'reason' in item.columns or 'timestamp' in item.columns:
                 sections.append(format_trades(item))
         elif isinstance(item, dict):
             if 'pillars' in item or 'thesis' in item or 'overview' in item:

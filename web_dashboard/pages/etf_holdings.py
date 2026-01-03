@@ -118,6 +118,29 @@ def get_latest_date(_postgres_client, _refresh_key: int) -> Optional[date]:
         return None
 
 @st.cache_data(ttl=60, show_spinner=False)
+def check_etf_ownership(_postgres_client, etf_ticker: str, _refresh_key: int) -> Optional[Dict[str, Any]]:
+    """Check if user owns shares of the ETF itself"""
+    if _postgres_client is None or not etf_ticker:
+        return None
+    try:
+        query = """
+            SELECT 
+                SUM(p.quantity) as total_shares,
+                STRING_AGG(DISTINCT p.fund_name, ', ') as funds
+            FROM portfolio_positions p
+            WHERE p.ticker = %s
+              AND p.date = (SELECT MAX(date) FROM portfolio_positions)
+              AND p.quantity > 0
+        """
+        result = _postgres_client.execute_query(query, (etf_ticker,))
+        if result and result[0] and result[0]['total_shares']:
+            return result[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error checking ETF ownership for {etf_ticker}: {e}")
+        return None
+
+@st.cache_data(ttl=60, show_spinner=False)
 def get_available_etfs(_postgres_client, _refresh_key: int) -> List[Dict[str, str]]:
     """Get all available ETF tickers with names"""
     if _postgres_client is None:
@@ -391,6 +414,12 @@ else:
 
 # Get data based on whether an ETF is selected
 selected_etf = None if etf_filter == "All ETFs" else etf_filter
+
+# Check if we own the ETF itself
+if selected_etf:
+    etf_ownership = check_etf_ownership(postgres_client, selected_etf, st.session_state.refresh_key)
+    if etf_ownership:
+        st.success(f"✓ **You own {int(etf_ownership['total_shares']):,} shares of {selected_etf}** in: {etf_ownership['funds']}")
 
 if selected_etf:
     # Show ALL holdings for the selected ETF

@@ -544,33 +544,21 @@ def get_realized_pnl(fund: Optional[str] = None, display_currency: Optional[str]
         # Debug: Log available columns
         logger.debug(f"get_realized_pnl: Available columns: {list(trades_df.columns)}")
         
-        # Filter for SELL trades
-        # Check action column first (preferred method)
+        # Filter for SELL trades - infer from reason column
         sell_trades = pd.DataFrame()
-        if 'action' in trades_df.columns:
-            # Check for SELL in action column (case-insensitive)
-            # Handle NaN values properly
-            action_upper = trades_df['action'].astype(str).str.upper()
-            sell_mask = action_upper == 'SELL'
-            sell_trades = trades_df[sell_mask].copy()
-            logger.debug(f"get_realized_pnl: Found {len(sell_trades)} SELL trades using 'action' column")
-            
-            # Debug: Show unique action values if no sells found
-            if sell_trades.empty:
-                unique_actions = trades_df['action'].astype(str).unique()
-                logger.debug(f"get_realized_pnl: No SELL trades found. Unique action values: {unique_actions}")
-        
-        # Fallback: Check reason column if action column didn't work
-        if sell_trades.empty and 'reason' in trades_df.columns:
+        if 'reason' in trades_df.columns:
             # Infer from reason field (case-insensitive)
-            reason_upper = trades_df['reason'].astype(str).str.upper()
-            sell_mask = reason_upper.str.contains('SELL', na=False)
+            # Check for 'sell', 'limit sell', or 'market sell' in reason
+            reason_lower = trades_df['reason'].astype(str).str.lower()
+            sell_mask = reason_lower.str.contains('sell', na=False) | \
+                       reason_lower.str.contains('limit sell', na=False) | \
+                       reason_lower.str.contains('market sell', na=False)
             sell_trades = trades_df[sell_mask].copy()
             logger.debug(f"get_realized_pnl: Found {len(sell_trades)} SELL trades using 'reason' column")
         
         # If still empty, return empty result
         if sell_trades.empty:
-            logger.debug("get_realized_pnl: No SELL trades found after checking both 'action' and 'reason' columns")
+            logger.debug("get_realized_pnl: No SELL trades found after checking 'reason' column")
             return {
                 'total_realized_pnl': 0.0,
                 'total_shares_sold': 0.0,

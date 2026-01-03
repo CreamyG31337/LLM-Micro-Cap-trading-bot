@@ -237,8 +237,7 @@ class TradeMapper:
             'created_at': datetime.now().isoformat()
         }
         
-        # Note: action field is not included as it's not in the current database schema
-        # TODO: Add action column to trade_log table in Supabase
+        # Action is inferred from reason field, not stored separately
         
         return db_data
 
@@ -247,15 +246,12 @@ class TradeMapper:
         """Convert database row to Trade model."""
         from ..models.trade import Trade
 
-        # Handle missing 'action' field - derive from reason or other indicators
-        action = row.get('action')
-        if not action:
-            # Try to derive action from reason field
-            reason = row.get('reason', '').lower()
-            if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
-                action = 'SELL'
-            else:
-                action = 'BUY'  # Default to BUY for trades
+        # Derive action from reason field
+        reason = row.get('reason', '').lower()
+        if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
+            action = 'SELL'
+        else:
+            action = 'BUY'  # Default to BUY for trades
 
         return Trade(
             ticker=row['ticker'],

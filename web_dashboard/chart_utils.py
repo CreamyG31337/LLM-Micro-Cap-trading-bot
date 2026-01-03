@@ -818,6 +818,166 @@ def create_trades_timeline_chart(trades_df: pd.DataFrame, fund_name: Optional[st
     return fig
 
 
+@log_execution_time()
+def create_ticker_price_chart(
+    ticker_df: pd.DataFrame,
+    ticker_symbol: str,
+    show_benchmarks: Optional[List[str]] = None,
+    show_weekend_shading: bool = True,
+    use_solid_lines: bool = False
+) -> go.Figure:
+    """Create a price history chart for an individual ticker with benchmark comparisons.
+    
+    Args:
+        ticker_df: DataFrame with columns: date, price, normalized (baseline 100)
+        ticker_symbol: Ticker symbol for display
+        show_benchmarks: List of benchmark keys to display (e.g., ['sp500', 'qqq'])
+        show_weekend_shading: If True, adds gray shading for weekends
+        use_solid_lines: If True, uses solid lines for benchmarks instead of dashed
+        
+    Returns:
+        Plotly Figure object
+    """
+    fig = go.Figure()
+    
+    if ticker_df.empty or 'date' not in ticker_df.columns or 'normalized' not in ticker_df.columns:
+        fig.add_annotation(
+            text="No price data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16)
+        )
+        return fig
+    
+    # Sort by date
+    df = ticker_df.sort_values('date').copy()
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
+    df = _adjust_to_market_close(df, 'date')
+    
+    # Calculate return percentage for label (from baseline 100)
+    if len(df) > 1:
+        last_value = df['normalized'].iloc[-1]
+        ticker_return = last_value - 100  # Return from baseline
+        label_suffix = f" ({ticker_return:+.2f}%)"
+    else:
+        label_suffix = ""
+    
+    # Add ticker trace
+    fig.add_trace(go.Scatter(
+        x=df['date'],
+        y=df['normalized'],
+        mode='lines+markers',
+        name=f'{ticker_symbol}{label_suffix}',
+        line=dict(color='#1f77b4', width=3),
+        marker=dict(size=4),
+        hovertemplate=f'{ticker_symbol}<br>%{{x|%Y-%m-%d}}<br>%{{y:,.2f}}<extra></extra>'
+    ))
+    
+    # Add benchmarks if requested
+    if show_benchmarks and len(df) > 0:
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+        benchmark_start = time.time()
+        
+        start_date = df['date'].min()
+        end_date = df['date'].max()
+        
+        # Normalize to date-only (midnight) for comparison with benchmark data
+        start_date_normalized = pd.Timestamp(start_date).normalize()
+        end_date_normalized = pd.Timestamp(end_date).normalize() + timedelta(days=1)
+        
+        for bench_key in show_benchmarks:
+            if bench_key not in BENCHMARK_CONFIG:
+                continue
+            
+            bench_t0 = time.time()
+            config = BENCHMARK_CONFIG[bench_key]
+            bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
+            bench_fetch_time = time.time() - bench_t0
+            logger.info(f"⏱️ create_ticker_price_chart - Fetch benchmark {bench_key}: {bench_fetch_time:.2f}s")
+            
+            if bench_data is not None and not bench_data.empty:
+                # Normalize bench_data dates to midnight for comparison
+                bench_data['Date'] = pd.to_datetime(bench_data['Date'])
+                if bench_data['Date'].dt.tz is not None:
+                    bench_data['Date'] = bench_data['Date'].dt.tz_convert(None)
+                bench_data['Date'] = bench_data['Date'].dt.normalize()
+                
+                # Filter out any NaT values before date range filtering
+                bench_data = bench_data[bench_data['Date'].notna()].copy()
+                
+                # Filter to ticker date range
+                start_dt64 = start_date_normalized.to_datetime64()
+                end_dt64 = end_date_normalized.to_datetime64()
+                bench_data = bench_data[
+                    (bench_data['Date'] >= start_dt64) & 
+                    (bench_data['Date'] < end_dt64)
+                ]
+                
+                if not bench_data.empty:
+                    # Calculate benchmark return for label (from baseline 100)
+                    bench_last = bench_data['normalized'].iloc[-1]
+                    bench_return = bench_last - 100  # Return from baseline
+                    
+                    # Use solid or dashed lines based on preference
+                    line_style = {} if use_solid_lines else {'dash': 'dash'}
+                    
+                    # S&P 500 visible by default, others hidden in legend
+                    visibility = True if bench_key == 'sp500' else 'legendonly'
+                    
+                    fig.add_trace(go.Scatter(
+                        x=bench_data['Date'],
+                        y=bench_data['normalized'],
+                        mode='lines',
+                        name=f"{config['name']} ({bench_return:+.2f}%)",
+                        line=dict(color=config['color'], width=3, **line_style),
+                        opacity=0.8,
+                        visible=visibility,
+                        hovertemplate='%{x|%Y-%m-%d}<br>%{y:,.2f}<extra></extra>'
+                    ))
+        
+        benchmark_total_time = time.time() - benchmark_start
+        logger.info(f"⏱️ create_ticker_price_chart - All benchmarks: {benchmark_total_time:.2f}s")
+    
+    # Add weekend shading
+    if show_weekend_shading and len(df) > 1:
+        _add_weekend_shading(fig, df['date'].min(), df['date'].max())
+    
+    # Add baseline reference line
+    fig.add_hline(
+        y=100,
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5,
+        annotation_text="Baseline (0%)",
+        annotation_position="right"
+    )
+    
+    # Title
+    title = f"{ticker_symbol} Price History vs Benchmarks"
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title="Date",
+        yaxis_title="Performance Index (Baseline 100)",
+        hovermode='x unified',
+        template='plotly_white',
+        height=500,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.8)"
+        )
+    )
+    
+    return fig
+
+
 def get_available_benchmarks() -> Dict[str, str]:
     """Return available benchmark options for UI."""
     return {key: config['name'] for key, config in BENCHMARK_CONFIG.items()}

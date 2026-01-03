@@ -1753,7 +1753,7 @@ with tab6:
                                     
                                     # Get existing trades for this ticker (FIFO order)
                                     existing_trades = client.supabase.table("trade_log") \
-                                        .select("shares, price, action, reason") \
+                                        .select("shares, price, reason") \
                                         .eq("fund", trade_fund) \
                                         .eq("ticker", trade_ticker) \
                                         .order("date") \
@@ -1762,8 +1762,9 @@ with tab6:
                                     # Build FIFO lot queue
                                     lots = deque()
                                     for t in (existing_trades.data or []):
-                                        is_buy = (t.get('action') == 'BUY' or 'BUY' in str(t.get('reason', '')).upper())
-                                        is_sell = (t.get('action') == 'SELL' or 'SELL' in str(t.get('reason', '')).upper())
+                                        reason_upper = str(t.get('reason', '')).upper()
+                                        is_buy = 'BUY' in reason_upper or ('SELL' not in reason_upper and 'sell' not in reason_upper.lower())
+                                        is_sell = 'SELL' in reason_upper or 'sell' in reason_upper.lower() or 'limit sell' in reason_upper.lower() or 'market sell' in reason_upper.lower()
                                         
                                         if is_buy:
                                             lots.append((Decimal(str(t['shares'])), Decimal(str(t['price']))))
@@ -1809,7 +1810,6 @@ with tab6:
                             trade_data = {
                                 "fund": trade_fund,
                                 "ticker": trade_ticker,
-                                "action": trade_action,
                                 "shares": float(trade_shares),
                                 "price": float(trade_price),
                                 "cost_basis": float(cost_basis),
@@ -1869,7 +1869,7 @@ with tab6:
                 recent_trades = client.supabase.table("trade_log").select("*").order("date", desc=True).limit(10).execute()
                 if recent_trades.data:
                     trades_df = pd.DataFrame(recent_trades.data)
-                    display_cols = ["date", "fund", "ticker", "action", "shares", "price", "currency"]
+                    display_cols = ["date", "fund", "ticker", "shares", "price", "currency"]
                     available_cols = [c for c in display_cols if c in trades_df.columns]
                     display_dataframe_with_copy(trades_df[available_cols], label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
                 else:
@@ -1892,13 +1892,11 @@ with tab6:
                     if edit_trades.data and len(edit_trades.data) > 0:
                         # Helper function to safely get action from trade
                         def get_trade_action(trade: dict) -> str:
-                            """Get action from trade, inferring from shares if action is missing."""
-                            action = trade.get('action', '').upper() if trade.get('action') else ''
-                            if action in ('BUY', 'SELL'):
-                                return action
-                            # Infer from shares: positive = BUY, negative = SELL
-                            shares = float(trade.get('shares', 0))
-                            return 'SELL' if shares < 0 else 'BUY'
+                            """Get action from trade, inferring from reason field."""
+                            reason = str(trade.get('reason', '')).lower()
+                            if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
+                                return 'SELL'
+                            return 'BUY'  # Default to BUY
                         
                         # Create selection dropdown
                         trade_options = []
@@ -1951,14 +1949,27 @@ with tab6:
                                         new_date = datetime.combine(edit_date, original_date.time())
                                         date_changed = new_date.date() != original_date.date()
                                         
-                                        # Update trade
+                                        # Update trade - update reason to reflect action
+                                        original_reason = selected_trade.get('reason', '')
+                                        # Update reason to include action if not already present
+                                        if edit_action == 'SELL':
+                                            if 'sell' not in original_reason.lower():
+                                                new_reason = f"{edit_action} order" if not original_reason else f"{original_reason} - {edit_action}"
+                                            else:
+                                                new_reason = original_reason
+                                        else:
+                                            if 'sell' in original_reason.lower():
+                                                new_reason = f"{edit_action} order"
+                                            else:
+                                                new_reason = original_reason or f"{edit_action} order"
+                                        
                                         update_data = {
                                             'ticker': edit_ticker,
-                                            'action': edit_action,
                                             'shares': float(edit_shares),
                                             'price': float(edit_price),
                                             'currency': edit_currency,
                                             'cost_basis': float(edit_shares * edit_price),
+                                            'reason': new_reason,
                                             'date': new_date.isoformat()
                                         }
                                         
@@ -2135,9 +2146,13 @@ Time: December 19, 2025 09:30 EST""",
                                         if st.button("✅ Accept Correction", key="accept_ticker_correction"):
                                             # Preserve all fields including timestamp when updating ticker
                                             from data.models.trade import Trade
+                                            # Infer action from reason
+                                            reason_lower = (trade.reason or '').lower()
+                                            inferred_action = 'SELL' if ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower) else 'BUY'
+                                            
                                             updated_trade = Trade(
                                                 ticker=st.session_state.suggested_ticker,
-                                                action=trade.action,
+                                                action=inferred_action,
                                                 shares=trade.shares,
                                                 price=trade.price,
                                                 timestamp=trade.timestamp,  # Preserve original timestamp
@@ -2179,9 +2194,13 @@ Time: December 19, 2025 09:30 EST""",
                                             if st.button("✅ Accept Selected Ticker", key="accept_selected_ticker"):
                                                 # Preserve all fields including timestamp when updating ticker
                                                 from data.models.trade import Trade
+                                                # Infer action from reason
+                                                reason_lower = (trade.reason or '').lower()
+                                                inferred_action = 'SELL' if ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower) else 'BUY'
+                                                
                                                 updated_trade = Trade(
                                                     ticker=st.session_state.suggested_ticker,
-                                                    action=trade.action,
+                                                    action=inferred_action,
                                                     shares=trade.shares,
                                                     price=trade.price,
                                                     timestamp=trade.timestamp,  # Preserve original timestamp
@@ -2220,7 +2239,10 @@ Time: December 19, 2025 09:30 EST""",
                         if 'suggested_ticker' in st.session_state and st.session_state.suggested_ticker:
                             ticker_display = f"{trade.ticker} → {st.session_state.suggested_ticker}"
                         st.write(f"**Ticker:** {ticker_display}")
-                        st.write(f"**Action:** {trade.action}")
+                        # Infer action from reason
+                        reason_lower = (trade.reason or '').lower()
+                        inferred_action = 'SELL' if ('sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower) else 'BUY'
+                        st.write(f"**Action:** {inferred_action}")
                         st.write(f"**Shares:** {trade.shares}")
                     
                     with col_right:
@@ -2253,14 +2275,18 @@ Time: December 19, 2025 09:30 EST""",
                             # Calculate P&L for SELL trades using FIFO
                             final_pnl = float(trade.pnl) if trade.pnl else 0
                             
-                            if trade.action == "SELL":
+                            # Infer action from reason
+                            reason_lower = (trade.reason or '').lower()
+                            is_sell = 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower
+                            
+                            if is_sell:
                                 try:
                                     from collections import deque
                                     from decimal import Decimal
                                     
                                     # Get existing trades for this ticker (FIFO order)
                                     existing_trades = client.supabase.table("trade_log") \
-                                        .select("shares, price, action, reason") \
+                                        .select("shares, price, reason") \
                                         .eq("fund", email_fund) \
                                         .eq("ticker", trade.ticker) \
                                         .order("date") \
@@ -2269,8 +2295,9 @@ Time: December 19, 2025 09:30 EST""",
                                     # Build FIFO lot queue
                                     lots = deque()
                                     for t in (existing_trades.data or []):
-                                        is_buy = (t.get('action') == 'BUY' or 'BUY' in str(t.get('reason', '')).upper())
-                                        is_sell = (t.get('action') == 'SELL' or 'SELL' in str(t.get('reason', '')).upper())
+                                        reason_upper = str(t.get('reason', '')).upper()
+                                        is_buy = 'BUY' in reason_upper or ('SELL' not in reason_upper and 'sell' not in reason_upper.lower())
+                                        is_sell = 'SELL' in reason_upper or 'sell' in reason_upper.lower() or 'limit sell' in reason_upper.lower() or 'market sell' in reason_upper.lower()
                                         
                                         if is_buy:
                                             lots.append((Decimal(str(t['shares'])), Decimal(str(t['price']))))
@@ -2319,7 +2346,7 @@ Time: December 19, 2025 09:30 EST""",
                                 "price": float(trade.price),
                                 "cost_basis": float(trade.cost_basis),
                                 "pnl": final_pnl,
-                                "reason": trade.reason or f"EMAIL TRADE - {trade.action}",
+                                "reason": trade.reason or f"EMAIL TRADE",
                                 "currency": final_currency,
                                 "date": trade.timestamp.isoformat()
                             }

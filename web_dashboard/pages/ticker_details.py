@@ -25,7 +25,8 @@ from auth_utils import is_authenticated, refresh_token_if_needed, is_admin, get_
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
-from ticker_utils import get_ticker_info, get_ticker_external_links
+from ticker_utils import get_ticker_info, get_ticker_external_links, get_ticker_price_history
+from chart_utils import create_ticker_price_chart
 
 # Import from utils.db_utils - handle import error gracefully
 try:
@@ -378,6 +379,66 @@ if portfolio_data and (portfolio_data.get('has_positions') or portfolio_data.get
             st.dataframe(trade_df, use_container_width=True, hide_index=True)
 else:
     st.info(f"No portfolio data found for {current_ticker}.")
+
+st.markdown("---")
+
+# Price History Chart Section
+st.header("📈 Price History")
+try:
+    # Fetch price history data (last 3 months)
+    with st.spinner(f"Loading price history for {current_ticker}..."):
+        price_history_df = get_ticker_price_history(
+            current_ticker,
+            supabase_client,
+            days=90  # 3 months
+        )
+    
+    if not price_history_df.empty:
+        # Chart controls
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            use_solid = st.checkbox("📱 Solid Lines Only (for mobile)", value=False, 
+                                   help="Use solid lines instead of dashed for better mobile readability")
+        
+        # All benchmarks available (S&P 500 visible, others in legend)
+        all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
+        
+        # Create chart
+        fig = create_ticker_price_chart(
+            price_history_df,
+            current_ticker,
+            show_benchmarks=all_benchmarks,
+            show_weekend_shading=True,
+            use_solid_lines=use_solid
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, key=f"ticker_price_chart_{current_ticker}")
+        
+        # Show data summary
+        if len(price_history_df) > 0:
+            first_price = price_history_df['price'].iloc[0]
+            last_price = price_history_df['price'].iloc[-1]
+            price_change = last_price - first_price
+            price_change_pct = (price_change / first_price * 100) if first_price > 0 else 0
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("First Price", f"${first_price:.2f}")
+            with col2:
+                st.metric("Last Price", f"${last_price:.2f}")
+            with col3:
+                st.metric("Change (3M)", f"{price_change_pct:+.2f}%")
+    else:
+        st.info(f"⚠️ No price history data available for {current_ticker}. This may be because:")
+        st.markdown("""
+        - The ticker is not in our portfolio database
+        - The ticker symbol may be invalid
+        - Historical data may not be available from external sources
+        """)
+except Exception as e:
+    logger.error(f"Error loading price history for {current_ticker}: {e}", exc_info=True)
+    st.error(f"❌ Error loading price history: {str(e)}")
+    st.info("Please try again or contact support if the problem persists.")
 
 st.markdown("---")
 

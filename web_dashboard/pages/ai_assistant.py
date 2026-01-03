@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="AI Assistant",
-    page_icon="🤖",
+    page_icon="🧠",  # Match navigation.py emoji
     layout="wide"
 )
 
@@ -350,7 +350,7 @@ def build_context_string_internal() -> str:
 # Header
 col1, col2 = st.columns([3, 1])
 with col1:
-    st.markdown("# 🤖 AI Portfolio Assistant")
+    st.markdown("# 🧠 AI Portfolio Assistant")
 with col2:
     if st.button("🔄 Clear Chat", use_container_width=True):
         st.session_state.chat_messages = []

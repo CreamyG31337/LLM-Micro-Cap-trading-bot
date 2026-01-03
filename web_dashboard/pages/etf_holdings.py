@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="ETF Holdings Watchtower",
-    page_icon="🏛️",
+    page_icon="💼",  # Match navigation.py emoji
     layout="wide"
 )
 
@@ -88,7 +88,7 @@ if postgres_client is None:
     st.stop()
 
 # Header
-st.title("🏛️ ETF Holdings Watchtower")
+st.title("💼 ETF Holdings Watchtower")
 st.caption(f"Logged in as: {get_user_email()}")
 
 # Description

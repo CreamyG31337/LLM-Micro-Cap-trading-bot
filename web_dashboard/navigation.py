@@ -49,7 +49,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         if client.test_connection():
             st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
             st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
-            st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="🏛️")
+            st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="💼")
     except Exception:
         pass  # Silently fail if Postgres not available
     
@@ -69,7 +69,19 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             from ollama_client import check_ollama_health
             
             if check_ollama_health():
-                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🤖")
+                # AI Assistant emoji options:
+                # 🤖 (robot - default, may be wider)
+                # 🧠 (brain - good alignment)
+                # 💡 (lightbulb - good alignment)
+                # ⚡ (lightning - good alignment)
+                # 🎯 (target - good alignment)
+                # 🔮 (crystal ball - good alignment)
+                # ✨ (sparkles - good alignment)
+                # 🚀 (rocket - good alignment)
+                # 💬 (speech bubble - good alignment)
+                # 🎓 (graduation cap - good alignment)
+                ai_emoji = "🧠"  # Change this to any emoji from the list above
+                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon=ai_emoji)
             else:
                 with st.sidebar.expander("💬 Chat Assistant", expanded=False):
                     st.warning("AI Assistant unavailable")

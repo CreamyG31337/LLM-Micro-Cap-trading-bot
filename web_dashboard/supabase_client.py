@@ -108,7 +108,6 @@ class SupabaseClient:
         """Test database connection"""
         try:
             result = self.supabase.table("cash_balances").select("*").limit(1).execute()
-            logger.info("✅ Supabase connection successful")
             return True
         except Exception as e:
             logger.error(f"❌ Supabase connection failed: {e}")

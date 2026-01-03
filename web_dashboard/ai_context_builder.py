@@ -267,11 +267,11 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
             pct_change = ((current_price - float(yesterday_price)) / float(yesterday_price)) * 100
             pct_change_str = f"{pct_change:+.2f}%"
         else:
-            pct_change_str = "—"
+            pct_change_str = "N/A"
         
         # Try to fetch volume data if MarketDataFetcher is available
-        volume_str = "—"
-        avg_vol_str = "—"
+        volume_str = "N/A"
+        avg_vol_str = "N/A"
         
         if market_fetcher:
             try:
@@ -302,13 +302,13 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
                                 else:
                                     avg_vol_str = f"{int(avg_volume):,}"
             except Exception as e:
-                # Fallback to "—" if fetch fails
+                # Fallback to "N/A" if fetch fails
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.debug(f"Failed to fetch volume data for {ticker}: {e}")
                 pass
         
-        price_str = f"{current_price:,.2f}" if current_price > 0 else "—"
+        price_str = f"{current_price:,.2f}" if current_price > 0 else "N/A"
         
         lines.append(f"{ticker:<18} | {price_str:>9} | {pct_change_str:>11} | {volume_str:>7} | {avg_vol_str:>14}")
     
@@ -338,7 +338,10 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
     try:
         from market_data.data_fetcher import MarketDataFetcher
         market_fetcher = MarketDataFetcher()
-    except Exception:
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"MarketDataFetcher not available for fundamentals table: {e}")
         pass
     
     for idx, row in positions_df.iterrows():
@@ -372,6 +375,7 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
             industry = 'ETF'
         
         # Fetch P/E, Dividend Yield, 52W High/Low from MarketDataFetcher if available
+        # Match console app's approach: use .get() directly with 'N/A' as default
         pe_ratio = "N/A"
         div_yield = "N/A"
         high_52w = "N/A"
@@ -380,12 +384,17 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         if market_fetcher:
             try:
                 fundamentals = market_fetcher.fetch_fundamentals(ticker)
-                pe_ratio = str(fundamentals.get('trailingPE', 'N/A'))
-                div_yield = str(fundamentals.get('dividendYield', 'N/A'))
-                high_52w = str(fundamentals.get('fiftyTwoWeekHigh', 'N/A'))
-                low_52w = str(fundamentals.get('fiftyTwoWeekLow', 'N/A'))
-            except Exception:
-                # Fallback to "N/A" if fetch fails
+                if fundamentals:
+                    # Use same approach as console app: direct .get() with 'N/A' default
+                    pe_ratio = str(fundamentals.get('trailingPE', 'N/A'))
+                    div_yield = str(fundamentals.get('dividendYield', 'N/A'))
+                    high_52w = str(fundamentals.get('fiftyTwoWeekHigh', 'N/A'))
+                    low_52w = str(fundamentals.get('fiftyTwoWeekLow', 'N/A'))
+            except Exception as e:
+                # Log the error for debugging but don't break the table
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to fetch fundamentals for {ticker}: {e}", exc_info=True)
                 pass
         
         # Truncate long values to fit columns

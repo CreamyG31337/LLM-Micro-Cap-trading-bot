@@ -2022,10 +2022,8 @@ def main():
                             table_df.columns = ['Investor', 'Investment', 'Ownership %']
                             
                             # Display as a styled table
-                            display_dataframe_with_copy(
+                            st.dataframe(
                                 table_df,
-                                label="Investor Allocation",
-                                key_suffix="investor_allocation",
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows

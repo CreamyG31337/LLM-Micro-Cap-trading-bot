@@ -247,13 +247,20 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     ]
     
     # Try to import MarketDataFetcher, but handle gracefully if not available
+    # Initialize like console app (prompt_generator.py) with cache and settings
     market_fetcher = None
     market_hours = None
     try:
         from market_data.data_fetcher import MarketDataFetcher
+        from market_data.price_cache import PriceCache
         from market_data.market_hours import MarketHours
-        market_fetcher = MarketDataFetcher()
-        market_hours = MarketHours()
+        from config.settings import get_settings
+        
+        # Initialize like console app: settings -> cache -> fetcher
+        settings = get_settings()
+        price_cache = PriceCache(settings=settings)
+        market_fetcher = MarketDataFetcher(cache_instance=price_cache)
+        market_hours = MarketHours(settings=settings)
     except Exception as e:
         # If MarketDataFetcher not available, use data from positions_df
         import logging
@@ -314,7 +321,7 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
                 # Fallback to position data if fetch fails
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.debug(f"Failed to fetch volume data for {ticker}: {e}")
+                logger.warning(f"Failed to fetch volume data for {ticker}: {e}", exc_info=True)
         
         # Fallback: use yesterday_price from positions_df if we still don't have % change
         if pct_change_str == "N/A" and yesterday_price and float(yesterday_price) > 0:
@@ -350,10 +357,17 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
     ]
     
     # Try to import MarketDataFetcher, but handle gracefully if not available
+    # Initialize like console app (prompt_generator.py) with cache and settings
     market_fetcher = None
     try:
         from market_data.data_fetcher import MarketDataFetcher
-        market_fetcher = MarketDataFetcher()
+        from market_data.price_cache import PriceCache
+        from config.settings import get_settings
+        
+        # Initialize like console app: settings -> cache -> fetcher
+        settings = get_settings()
+        price_cache = PriceCache(settings=settings)
+        market_fetcher = MarketDataFetcher(cache_instance=price_cache)
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -392,7 +406,7 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
                 # Log the error for debugging but don't break the table
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to fetch fundamentals for {ticker}: {e}")
+                logger.warning(f"Failed to fetch fundamentals for {ticker}: {e}", exc_info=True)
         
         # Fallback to securities join data only if fetch_fundamentals failed
         if sector == 'N/A' or industry == 'N/A':

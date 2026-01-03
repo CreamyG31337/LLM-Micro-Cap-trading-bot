@@ -299,3 +299,6 @@ web_dashboard/scripts/archive_investigation/*_output*
 test_output*.txt
 debug_output*.txt
 
+# URL key files for obfuscated scraper URLs (developer reference only)
+*.keys.json
+

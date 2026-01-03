@@ -148,13 +148,19 @@ def fetch_dividends_nasdaq(ticker: str) -> List[DividendEvent]:
     if is_canadian_ticker(ticker) or '.' in ticker:
         return []
 
+    # Base URLs (obfuscated)
+    _NASDAQ_API_ENCODED = "aHR0cHM6Ly9hcGkubmFzZGFxLmNvbQ=="
+    _NASDAQ_WWW_ENCODED = "aHR0cHM6Ly93d3cubmFzZGFxLmNvbQ=="
+    _NASDAQ_API = base64.b64decode(_NASDAQ_API_ENCODED).decode('utf-8')
+    _NASDAQ_WWW = base64.b64decode(_NASDAQ_WWW_ENCODED).decode('utf-8')
+    
     try:
-        url = f"https://api.nasdaq.com/api/quote/{ticker}/dividends?assetclass=stocks"
+        url = f"{_NASDAQ_API}/api/quote/{ticker}/dividends?assetclass=stocks"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
-            'Origin': 'https://www.nasdaq.com',
-            'Referer': f'https://www.nasdaq.com/market-activity/stocks/{ticker.lower()}/dividend-history'
+            'Origin': _NASDAQ_WWW,
+            'Referer': f'{_NASDAQ_WWW}/market-activity/stocks/{ticker.lower()}/dividend-history'
         }
         
         response = requests.get(url, headers=headers, timeout=10)

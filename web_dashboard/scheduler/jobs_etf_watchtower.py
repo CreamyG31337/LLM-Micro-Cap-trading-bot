@@ -12,6 +12,7 @@ Supported ETFs:
 
 import logging
 import sys
+import base64
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Tuple
@@ -26,25 +27,31 @@ from research_repository import ResearchRepository
 
 logger = logging.getLogger(__name__)
 
+# Base URLs (obfuscated)
+_ARK_BASE_ENCODED = "aHR0cHM6Ly9hc3NldHMuYXJrLWZ1bmRzLmNvbQ=="
+_ISHARES_BASE_ENCODED = "aHR0cHM6Ly93d3cuaXNoYXJlcy5jb20="
+_ARK_BASE = base64.b64decode(_ARK_BASE_ENCODED).decode('utf-8')
+_ISHARES_BASE = base64.b64decode(_ISHARES_BASE_ENCODED).decode('utf-8')
+
 # ETF Configuration
 # Format: {ticker: {provider, csv_url}}
 ETF_CONFIGS = {
-    # ARK Invest (Direct CSV links from assets.ark-funds.com)
-    "ARKK": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_INNOVATION_ETF_ARKK_HOLDINGS.csv" },
-    "ARKQ": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_AUTONOMOUS_TECH._%26_ROBOTICS_ETF_ARKQ_HOLDINGS.csv" },
-    "ARKW": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_NEXT_GENERATION_INTERNET_ETF_ARKW_HOLDINGS.csv" },
-    "ARKG": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv" },
-    "ARKF": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_BLOCKCHAIN_%26_FINTECH_INNOVATION_ETF_ARKF_HOLDINGS.csv" },
-    "ARKX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_SPACE_%26_DEFENSE_INNOVATION_ETF_ARKX_HOLDINGS.csv" },
-    "IZRL": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
-    "PRNT": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
+    # ARK Invest (Direct CSV links)
+    "ARKK": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_INNOVATION_ETF_ARKK_HOLDINGS.csv" },
+    "ARKQ": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_AUTONOMOUS_TECH._%26_ROBOTICS_ETF_ARKQ_HOLDINGS.csv" },
+    "ARKW": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_NEXT_GENERATION_INTERNET_ETF_ARKW_HOLDINGS.csv" },
+    "ARKG": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv" },
+    "ARKF": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_BLOCKCHAIN_%26_FINTECH_INNOVATION_ETF_ARKF_HOLDINGS.csv" },
+    "ARKX": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_SPACE_%26_DEFENSE_INNOVATION_ETF_ARKX_HOLDINGS.csv" },
+    "IZRL": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
+    "PRNT": { "provider": "ARK", "url": f"{_ARK_BASE}/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
     # Removed single-holding funds (ARKB, ARKD, ARKT) and venture funds (ARKSX, ARKVX, ARKUX) - they don't provide useful stock signals
     
     # iShares (BlackRock) - Requires specific AJAX URL with Product ID
-    "IVV": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund" },
-    "IWM": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund" },
-    "IWC": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239716/ishares-microcap-etf/1467271812596.ajax?fileType=csv&fileName=IWC_holdings&dataType=fund" },
-    "IWO": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239709/ishares-russell-2000-growth-etf/1467271812596.ajax?fileType=csv&fileName=IWO_holdings&dataType=fund" },
+    "IVV": { "provider": "iShares", "url": f"{_ISHARES_BASE}/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund" },
+    "IWM": { "provider": "iShares", "url": f"{_ISHARES_BASE}/us/products/239710/ishares-russell-2000-etf/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund" },
+    "IWC": { "provider": "iShares", "url": f"{_ISHARES_BASE}/us/products/239716/ishares-microcap-etf/1467271812596.ajax?fileType=csv&fileName=IWC_holdings&dataType=fund" },
+    "IWO": { "provider": "iShares", "url": f"{_ISHARES_BASE}/us/products/239709/ishares-russell-2000-growth-etf/1467271812596.ajax?fileType=csv&fileName=IWO_holdings&dataType=fund" },
 }
 
 # ETF Names for metadata
@@ -435,7 +442,7 @@ def log_significant_changes(repo: ResearchRepository, changes: List[Dict], etf_t
     # Save to research_articles
     repo.save_article(
         title=f"{etf_ticker} Daily Holdings Update",
-        url=f"https://ark-funds.com/funds/{etf_ticker.lower()}",  # Generic URL
+        url=f"{_ARK_BASE.replace('assets.', '')}/funds/{etf_ticker.lower()}",  # Generic URL
         content=content,
         summary=f"{etf_ticker} made {len(changes)} significant changes today",
         source="ETF Watchtower",

@@ -93,8 +93,9 @@ def fetch_congress_trades_job() -> None:
         # Calculate cutoff date (7 days ago)
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
         
-        # Base URL for FMP API (use /stable endpoints, not v3/v4 which are legacy)
-        base_url = "https://financialmodelingprep.com/stable"
+        # Base URL for FMP API (obfuscated)
+        _FMP_BASE_ENCODED = "aHR0cHM6Ly9maW5hbmNpYWxtb2RlbGluZ3ByZXAuY29tL3N0YWJsZQ=="
+        base_url = base64.b64decode(_FMP_BASE_ENCODED).decode('utf-8')
         
         # Track statistics
         total_trades_found = 0

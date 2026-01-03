@@ -2031,26 +2031,98 @@ with tab6:
                                         new_date = datetime.combine(edit_date, original_date.time())
                                         date_changed = new_date.date() != original_date.date()
                                         
-                                        # Update trade - update reason to reflect action
-                                        original_reason = selected_trade.get('reason', '')
-                                        # Update reason to include action if not already present
-                                        if edit_action == 'SELL':
-                                            if 'sell' not in original_reason.lower():
-                                                new_reason = f"{edit_action} order" if not original_reason else f"{original_reason} - {edit_action}"
-                                            else:
-                                                new_reason = original_reason
+                                        # Detect action change
+                                        original_action = get_trade_action(selected_trade)
+                                        action_changed = edit_action != original_action
+                                        
+                                        # Update reason to properly reflect the new action
+                                        original_reason = selected_trade.get('reason', '').strip()
+                                        
+                                        # Clean the reason by removing action indicators
+                                        cleaned_reason = original_reason
+                                        # Remove action suffixes
+                                        for suffix in [' - BUY', ' - SELL', ' BUY', ' SELL', '- BUY', '- SELL']:
+                                            if cleaned_reason.endswith(suffix):
+                                                cleaned_reason = cleaned_reason[:-len(suffix)].strip()
+                                        
+                                        # Remove action-only reasons
+                                        action_only_patterns = ['buy order', 'sell order', 'BUY order', 'SELL order', 
+                                                               'limit buy', 'limit sell', 'market buy', 'market sell']
+                                        if cleaned_reason.lower() in [p.lower() for p in action_only_patterns]:
+                                            cleaned_reason = ''
+                                        
+                                        # Build new reason with proper action
+                                        if cleaned_reason:
+                                            # Keep the cleaned reason and append action
+                                            new_reason = f"{cleaned_reason} - {edit_action}"
                                         else:
-                                            if 'sell' in original_reason.lower():
-                                                new_reason = f"{edit_action} order"
-                                            else:
-                                                new_reason = original_reason or f"{edit_action} order"
+                                            # No meaningful reason, use default
+                                            new_reason = f"{edit_action} order"
+                                        
+                                        # Calculate cost_basis and P&L
+                                        cost_basis = float(edit_shares * edit_price)
+                                        pnl = 0.0
+                                        
+                                        # For SELL trades, calculate P&L using FIFO
+                                        if edit_action == "SELL":
+                                            try:
+                                                from collections import deque
+                                                from decimal import Decimal
+                                                
+                                                # Get existing trades for this ticker (FIFO order, excluding current trade)
+                                                existing_trades = admin_client.supabase.table("trade_log") \
+                                                    .select("shares, price, reason, date") \
+                                                    .eq("fund", selected_trade['fund']) \
+                                                    .eq("ticker", edit_ticker) \
+                                                    .neq("id", selected_trade['id']) \
+                                                    .order("date") \
+                                                    .execute()
+                                                
+                                                # Build FIFO lot queue
+                                                lots = deque()
+                                                for t in (existing_trades.data or []):
+                                                    t_action = get_trade_action(t)
+                                                    if t_action == 'BUY':
+                                                        lots.append({
+                                                            'shares': Decimal(str(t['shares'])),
+                                                            'price': Decimal(str(t['price']))
+                                                        })
+                                                
+                                                # Calculate P&L for the sell
+                                                shares_to_sell = Decimal(str(edit_shares))
+                                                sell_price = Decimal(str(edit_price))
+                                                total_cost_basis = Decimal('0')
+                                                
+                                                while shares_to_sell > 0 and lots:
+                                                    lot = lots[0]
+                                                    if lot['shares'] <= shares_to_sell:
+                                                        # Use entire lot
+                                                        total_cost_basis += lot['shares'] * lot['price']
+                                                        shares_to_sell -= lot['shares']
+                                                        lots.popleft()
+                                                    else:
+                                                        # Use partial lot
+                                                        total_cost_basis += shares_to_sell * lot['price']
+                                                        lot['shares'] -= shares_to_sell
+                                                        shares_to_sell = Decimal('0')
+                                                
+                                                proceeds = Decimal(str(edit_shares)) * sell_price
+                                                pnl = float(proceeds - total_cost_basis)
+                                                cost_basis = float(total_cost_basis)
+                                                
+                                            except Exception as calc_error:
+                                                import logging
+                                                logging.getLogger(__name__).warning(f"Could not calculate P&L for SELL: {calc_error}")
+                                                pnl = 0
+                                                cost_basis = float(edit_shares * edit_price)
                                         
                                         update_data = {
                                             'ticker': edit_ticker,
                                             'shares': float(edit_shares),
                                             'price': float(edit_price),
                                             'currency': edit_currency,
-                                            'cost_basis': float(edit_shares * edit_price),
+                                            'cost_basis': cost_basis,
+                                            'pnl': pnl,
                                             'reason': new_reason,
                                             'date': new_date.isoformat()
                                         }
@@ -2062,8 +2134,8 @@ with tab6:
                                         
                                         st.cache_data.clear()
                                         
-                                        # Trigger rebuild if date changed
-                                        if date_changed:
+                                        # Trigger rebuild if date or action changed
+                                        if date_changed or action_changed:
                                             try:
                                                 from pathlib import Path
                                                 project_root = Path(__file__).parent.parent.parent
@@ -2077,8 +2149,9 @@ with tab6:
                                                 job_id = trigger_background_rebuild(selected_trade['fund'], rebuild_from)
                                                 
                                                 st.success("✅ Trade updated successfully!")
+                                                change_type = "Action and date" if (date_changed and action_changed) else ("Action" if action_changed else "Date")
                                                 if job_id:
-                                                    st.info(f"📊 Date changed - recalculating from {rebuild_from}... (Job ID: {job_id})")
+                                                    st.info(f"📊 {change_type} changed - recalculating positions from {rebuild_from}... (Job ID: {job_id})")
                                             except Exception as e:
                                                 st.success("✅ Trade updated successfully!")
                                                 st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")

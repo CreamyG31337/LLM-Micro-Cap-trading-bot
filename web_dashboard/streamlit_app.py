@@ -2440,6 +2440,9 @@ def main():
                 # Color-code P&L/Amount column
                 if 'Amount / P&L' in display_df.columns and 'Action' in display_df.columns:
                     def color_amount(row):
+                        # Return a Series with styling for the subset column
+                        result = pd.Series(index=['Amount / P&L'], dtype='object')
+                        
                         # Safely get action, default to BUY if not present
                         action = row.get('Action', 'BUY') if 'Action' in row.index else 'BUY'
                         val = row['Amount / P&L']
@@ -2453,18 +2456,23 @@ def main():
                             if action == 'SELL':
                                 # For sells, green if profit, red if loss
                                 if val_num > 0:
-                                    return 'color: #10b981; font-weight: bold'
+                                    result['Amount / P&L'] = 'color: #10b981; font-weight: bold'
                                 elif val_num < 0:
-                                    return 'color: #ef4444; font-weight: bold'
+                                    result['Amount / P&L'] = 'color: #ef4444; font-weight: bold'
+                                else:
+                                    result['Amount / P&L'] = ''
                             elif action == 'DRIP':
                                 # For DRIP, show in green
-                                return 'color: #10b981'
+                                result['Amount / P&L'] = 'color: #10b981'
                             elif action == 'BUY':
                                 # For BUY, show in yellow/orange
-                                return 'color: #f59e0b'
+                                result['Amount / P&L'] = 'color: #f59e0b'
+                            else:
+                                result['Amount / P&L'] = ''
                         except:
-                            pass
-                        return ''
+                            result['Amount / P&L'] = ''
+                        
+                        return result
                     
                     styled_df = styled_df.apply(color_amount, axis=1, subset=['Amount / P&L'])
                 elif 'Realized P&L' in display_df.columns:

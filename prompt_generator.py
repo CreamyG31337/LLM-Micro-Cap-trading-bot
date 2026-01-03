@@ -1000,12 +1000,16 @@ class PromptGenerator:
                 # Calculate daily P&L - now handled in SQL for Supabase
                 if hasattr(self.portfolio_manager.repository, 'get_latest_portfolio_snapshot_with_pnl'):
                     # Supabase repository - P&L is calculated in SQL
-                    # The daily_pnl_dollar and daily_pnl_pct are already in the position data
-                    daily_pnl_dollar = getattr(position, 'daily_pnl_dollar', 0)
-                    daily_pnl_pct = getattr(position, 'daily_pnl_pct', 0)
+                    # The daily_pnl and daily_pnl_pct are already in the position data
+                    # Note: daily_pnl (dollar) and daily_pnl_pct (percentage) are set by the repository
+                    daily_pnl_val = getattr(position, 'daily_pnl', 0) or 0
+                    daily_pnl_pct = getattr(position, 'daily_pnl_pct', 0) or 0
                     
-                    if daily_pnl_dollar != 0:
-                        pos_dict['daily_pnl'] = f"${daily_pnl_dollar:+.2f}"
+                    # Store raw percentage for formatter to use directly
+                    pos_dict['daily_pnl_percentage'] = daily_pnl_pct
+                    
+                    if daily_pnl_val != 0:
+                        pos_dict['daily_pnl'] = f"${daily_pnl_val:+.2f}"
                     else:
                         pos_dict['daily_pnl'] = "$0.00"
                 else:

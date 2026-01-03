@@ -1725,12 +1725,17 @@ def main():
                                 display_cols['ticker'] = 'Ticker'
                             if 'company_name' in losers_df.columns:
                                 display_cols['company_name'] = 'Company'
+                            # Track if return_pct is used as daily column to avoid duplication
+                            return_pct_used_as_daily = False
+                            
                             if 'daily_pnl_pct' in losers_df.columns:
                                 losers_df['daily_pnl_pct'] = losers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
                                 display_cols['daily_pnl_pct'] = '1-Day %'
                             elif 'return_pct' in losers_df.columns:
                                 losers_df['return_pct'] = losers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
                                 display_cols['return_pct'] = 'Return %'
+                                return_pct_used_as_daily = True
+                            
                             if 'pnl_display' in losers_df.columns:
                                 losers_df['pnl_display'] = losers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
                                 display_cols['pnl_display'] = '1-Day P&L'
@@ -1740,7 +1745,8 @@ def main():
                             if 'five_day_pnl_display' in losers_df.columns:
                                 losers_df['five_day_pnl_display'] = losers_df['five_day_pnl_display'].apply(lambda x: f"${x:+,.2f}" if pd.notna(x) else "N/A")
                                 display_cols['five_day_pnl_display'] = '5-Day P&L'
-                            if 'return_pct' in losers_df.columns:
+                            # Only show return_pct as total return if it wasn't already used as daily
+                            if 'return_pct' in losers_df.columns and not return_pct_used_as_daily:
                                 losers_df['return_pct'] = losers_df['return_pct'].apply(lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A")
                                 display_cols['return_pct'] = 'Total Return %'
                             if 'total_pnl_display' in losers_df.columns:

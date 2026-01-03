@@ -1154,7 +1154,7 @@ try:
             
             if user_is_admin:
                 # Admin view with checkbox, clickable ticker, and expander
-                col_check, col_ticker, col_expander = st.columns([0.05, 0.15, 0.80])
+                col_check, col_ticker, col_expander = st.columns([0.05, 0.08, 0.87])
                 with col_check:
                     article_id = article['id']
                     checkbox_key = f"select_{article_id}"
@@ -1188,7 +1188,7 @@ try:
                         render_article_content(article, show_admin_actions=True)
             else:
                 # Non-admin view - clickable ticker and expander
-                col_ticker, col_expander = st.columns([0.15, 0.85])
+                col_ticker, col_expander = st.columns([0.08, 0.92])
                 with col_ticker:
                     if clickable_ticker_display:
                         st.markdown(clickable_ticker_display)

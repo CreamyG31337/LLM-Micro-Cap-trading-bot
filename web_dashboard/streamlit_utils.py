@@ -1250,14 +1250,15 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
         else:
             cutoff_str = None  # All time
         
-        # Fetch position data with pagination
+        # Fetch position data with pagination - join with securities for sector/industry/currency
         all_rows = []
         batch_size = 1000
         offset = 0
         
         while True:
+            # Join with securities table to get sector, industry, currency
             query = client.supabase.table("portfolio_positions").select(
-                "ticker, date, shares, price, total_value, currency"
+                "ticker, date, shares, price, total_value, currency, securities(sector, industry, currency)"
             )
             
             query = query.eq("fund", fund)
@@ -1287,10 +1288,25 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             return pd.DataFrame()
         
         df = pd.DataFrame(all_rows)
+        
+        # Flatten nested securities data
+        if 'securities' in df.columns:
+            securities_df = pd.json_normalize(df['securities'])
+            if not securities_df.empty:
+                # Merge sector and industry from securities, prefer securities currency if available
+                if 'sector' in securities_df.columns:
+                    df['sector'] = securities_df['sector']
+                if 'industry' in securities_df.columns:
+                    df['industry'] = securities_df['industry']
+                if 'currency' in securities_df.columns:
+                    # Use securities currency if available, otherwise use position currency
+                    df['currency'] = securities_df['currency'].fillna(df.get('currency', 'USD'))
+            df = df.drop(columns=['securities'], errors='ignore')
+        
         # Normalize to date-only (midnight) for consistent charting
         df['date'] = pd.to_datetime(df['date']).dt.normalize()
         
-        # Calculate performance index per ticker (baseline 100)
+        # Calculate performance index per ticker (baseline 100) and return percentages
         holdings_performance = []
         
         for ticker in df['ticker'].unique():
@@ -1309,7 +1325,36 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             # Calculate performance index
             ticker_df['performance_index'] = (ticker_df['total_value'].astype(float) / baseline_value) * 100
             
-            holdings_performance.append(ticker_df[['ticker', 'date', 'performance_index']])
+            # Calculate total return percentage (from baseline to last value) - same for all rows of this ticker
+            last_value = float(ticker_df['total_value'].iloc[-1])
+            return_pct = ((last_value / baseline_value) - 1) * 100
+            ticker_df['return_pct'] = return_pct
+            
+            # Calculate daily P&L percentage (change from previous day)
+            ticker_df['daily_pnl_pct'] = ticker_df['performance_index'].diff()
+            
+            # Get metadata (sector, industry, currency) - use first non-null value and propagate
+            if 'sector' in ticker_df.columns:
+                sector_val = ticker_df['sector'].dropna().iloc[0] if not ticker_df['sector'].dropna().empty else None
+                ticker_df['sector'] = sector_val
+            else:
+                ticker_df['sector'] = None
+                
+            if 'industry' in ticker_df.columns:
+                industry_val = ticker_df['industry'].dropna().iloc[0] if not ticker_df['industry'].dropna().empty else None
+                ticker_df['industry'] = industry_val
+            else:
+                ticker_df['industry'] = None
+                
+            if 'currency' in ticker_df.columns:
+                currency_val = ticker_df['currency'].dropna().iloc[0] if not ticker_df['currency'].dropna().empty else 'USD'
+                ticker_df['currency'] = currency_val
+            else:
+                ticker_df['currency'] = 'USD'
+            
+            # Keep only needed columns for charting and filtering
+            cols_to_keep = ['ticker', 'date', 'performance_index', 'return_pct', 'daily_pnl_pct', 'sector', 'industry', 'currency']
+            holdings_performance.append(ticker_df[cols_to_keep])
         
         if not holdings_performance:
             return pd.DataFrame()
@@ -1324,6 +1369,7 @@ def get_individual_holdings_performance(fund: str, days: int = 7) -> pd.DataFram
             # Filter DataFrame to only include these dates
             result_df = result_df[result_df['date'].isin(unique_dates)]
             # Sort by date ascending for proper chart display
+        
         return result_df
         
     except Exception as e:

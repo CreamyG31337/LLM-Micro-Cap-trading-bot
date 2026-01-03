@@ -1893,50 +1893,63 @@ def main():
                         help="Filter the stocks shown in the chart below"
                     )
                     
-                    # Apply filter
-                    filtered_df = holdings_df.copy()
-                    
-                    if stock_filter == "Winners (↑ total %)":
-                        if 'return_pct' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['return_pct'].fillna(0) > 0]
-                    elif stock_filter == "Losers (↓ total %)":
-                        if 'return_pct' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['return_pct'].fillna(0) < 0]
-                    elif stock_filter == "Daily winners (↑ 1-day %)":
-                        if 'daily_pnl_pct' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['daily_pnl_pct'].fillna(0) > 0]
-                    elif stock_filter == "Daily losers (↓ 1-day %)":
-                        if 'daily_pnl_pct' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['daily_pnl_pct'].fillna(0) < 0]
-                    elif stock_filter == "Top 5 performers":
-                        if 'return_pct' in filtered_df.columns:
-                            filtered_df = filtered_df.nlargest(5, 'return_pct')
-                    elif stock_filter == "Bottom 5 performers":
-                        if 'return_pct' in filtered_df.columns:
-                            filtered_df = filtered_df.nsmallest(5, 'return_pct')
-                    elif stock_filter == "Canadian (CAD)":
-                        if 'currency' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['currency'] == 'CAD']
-                    elif stock_filter == "American (USD)":
-                        if 'currency' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['currency'] == 'USD']
-                    elif stock_filter == "Stocks only":
-                        if 'ticker' in filtered_df.columns:
-                            filtered_df = filtered_df[~filtered_df['ticker'].str.contains('ETF', case=False, na=False)]
-                    elif stock_filter == "ETFs only":
-                        if 'ticker' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['ticker'].str.contains('ETF', case=False, na=False)]
-                    elif stock_filter.startswith("Sector: "):
-                        sector_name = stock_filter.replace("Sector: ", "")
-                        if 'sector' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['sector'] == sector_name]
-                    elif stock_filter.startswith("Industry: "):
-                        industry_name = stock_filter.replace("Industry: ", "")
-                        if 'industry' in filtered_df.columns:
-                            filtered_df = filtered_df[filtered_df['industry'] == industry_name]
-                    # Skip separator lines
-                    elif stock_filter.startswith("---"):
-                        pass  # No filter applied
+                    # Apply filter - need to filter by unique tickers, not all rows
+                    # First, get unique tickers with their metadata for filtering
+                    if not holdings_df.empty:
+                        # Get latest row per ticker for filtering metadata
+                        latest_per_ticker = holdings_df.sort_values('date').groupby('ticker').last().reset_index()
+                        
+                        # Apply filter to get list of tickers to show
+                        tickers_to_show = latest_per_ticker['ticker'].tolist()
+                        
+                        if stock_filter == "Winners (↑ total %)":
+                            if 'return_pct' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['return_pct'].fillna(0) > 0]['ticker'].tolist()
+                        elif stock_filter == "Losers (↓ total %)":
+                            if 'return_pct' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['return_pct'].fillna(0) < 0]['ticker'].tolist()
+                        elif stock_filter == "Daily winners (↑ 1-day %)":
+                            if 'daily_pnl_pct' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['daily_pnl_pct'].fillna(0) > 0]['ticker'].tolist()
+                        elif stock_filter == "Daily losers (↓ 1-day %)":
+                            if 'daily_pnl_pct' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['daily_pnl_pct'].fillna(0) < 0]['ticker'].tolist()
+                        elif stock_filter == "Top 5 performers":
+                            if 'return_pct' in latest_per_ticker.columns:
+                                top_5 = latest_per_ticker.nlargest(5, 'return_pct')
+                                tickers_to_show = top_5['ticker'].tolist()
+                        elif stock_filter == "Bottom 5 performers":
+                            if 'return_pct' in latest_per_ticker.columns:
+                                bottom_5 = latest_per_ticker.nsmallest(5, 'return_pct')
+                                tickers_to_show = bottom_5['ticker'].tolist()
+                        elif stock_filter == "Canadian (CAD)":
+                            if 'currency' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['currency'] == 'CAD']['ticker'].tolist()
+                        elif stock_filter == "American (USD)":
+                            if 'currency' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['currency'] == 'USD']['ticker'].tolist()
+                        elif stock_filter == "Stocks only":
+                            if 'ticker' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[~latest_per_ticker['ticker'].str.contains('ETF', case=False, na=False)]['ticker'].tolist()
+                        elif stock_filter == "ETFs only":
+                            if 'ticker' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['ticker'].str.contains('ETF', case=False, na=False)]['ticker'].tolist()
+                        elif stock_filter.startswith("Sector: "):
+                            sector_name = stock_filter.replace("Sector: ", "")
+                            if 'sector' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['sector'] == sector_name]['ticker'].tolist()
+                        elif stock_filter.startswith("Industry: "):
+                            industry_name = stock_filter.replace("Industry: ", "")
+                            if 'industry' in latest_per_ticker.columns:
+                                tickers_to_show = latest_per_ticker[latest_per_ticker['industry'] == industry_name]['ticker'].tolist()
+                        # Skip separator lines - show all
+                        elif stock_filter.startswith("---"):
+                            pass  # No filter applied, show all
+                        
+                        # Filter the full time-series DataFrame to only include selected tickers
+                        filtered_df = holdings_df[holdings_df['ticker'].isin(tickers_to_show)].copy()
+                    else:
+                        filtered_df = holdings_df.copy()
                     
                     from chart_utils import create_individual_holdings_chart
                     holdings_fig = create_individual_holdings_chart(
@@ -2223,7 +2236,7 @@ def main():
                     gb.configure_column(col, hide=True)
                 
                 # General Options
-                gb.configure_pagination(paginationPageSize=20)
+                gb.configure_pagination(paginationPageSize=50)
                 gb.configure_grid_options(domLayout='normal')
                 gb.configure_selection(selection_mode="single", use_checkbox=False)
                 
@@ -2232,6 +2245,8 @@ def main():
                 grid_options['onCellClicked'] = {
                     'function': TICKER_CLICK_HANDLER_JS_TEMPLATE.format(col_id='Ticker')
                 }
+                # Configure page size selector options
+                grid_options['paginationPageSizeSelector'] = [25, 50, 100]
                 
                 # Render Grid
                 grid_response = AgGrid(
@@ -2443,34 +2458,49 @@ def main():
                         # Return a Series with styling for the subset column
                         result = pd.Series(index=['Amount / P&L'], dtype='object')
                         
-                        # Safely get action, default to BUY if not present
-                        action = row.get('Action', 'BUY') if 'Action' in row.index else 'BUY'
+                        # Safely get action - check both the row and the original dataframe
+                        if 'Action' in row.index:
+                            action = str(row['Action']).upper()
+                        else:
+                            action = 'BUY'
+                        
                         val = row['Amount / P&L']
                         
                         try:
+                            # Parse the value, handling string formatting
                             if isinstance(val, str):
-                                val_num = float(val.replace('$', '').replace(',', ''))
+                                # Remove $, commas, and any whitespace
+                                val_clean = val.replace('$', '').replace(',', '').strip()
+                                val_num = float(val_clean)
                             else:
                                 val_num = float(val)
                             
+                            # Apply color based on action type
                             if action == 'SELL':
-                                # For sells, green if profit, red if loss
+                                # For sells: green if profit (positive), red if loss (negative)
                                 if val_num > 0:
-                                    result['Amount / P&L'] = 'color: #10b981; font-weight: bold'
+                                    result['Amount / P&L'] = 'color: #10b981; font-weight: bold'  # Green for profit
                                 elif val_num < 0:
-                                    result['Amount / P&L'] = 'color: #ef4444; font-weight: bold'
+                                    result['Amount / P&L'] = 'color: #ef4444; font-weight: bold'  # Red for loss
                                 else:
-                                    result['Amount / P&L'] = ''
+                                    result['Amount / P&L'] = ''  # No color for zero
                             elif action == 'DRIP':
-                                # For DRIP, show in green
+                                # For DRIP, always show in green
+                                result['Amount / P&L'] = 'color: #10b981'  # Green
+                            elif action == 'BUY':
+                                # For BUY, show in yellow/orange (purchase amount)
+                                result['Amount / P&L'] = 'color: #f59e0b'  # Orange
+                            else:
+                                # Unknown action type, no color
+                                result['Amount / P&L'] = ''
+                        except (ValueError, TypeError, AttributeError) as e:
+                            # If parsing fails, default based on action
+                            if action == 'DRIP':
                                 result['Amount / P&L'] = 'color: #10b981'
                             elif action == 'BUY':
-                                # For BUY, show in yellow/orange
                                 result['Amount / P&L'] = 'color: #f59e0b'
                             else:
                                 result['Amount / P&L'] = ''
-                        except:
-                            result['Amount / P&L'] = ''
                         
                         return result
                     
@@ -2737,7 +2767,7 @@ def main():
                 # Find largest dividend
                 largest_idx = div_df['net_amount'].idxmax()
                 largest_dividend = div_df.loc[largest_idx, 'net_amount']
-                largest_date = pd.to_datetime(div_df.loc[largest_idx, 'pay_date']).strftime('%m/%d/%y')
+                largest_ticker = div_df.loc[largest_idx, 'ticker'] if 'ticker' in div_df.columns else 'N/A'
                 
                 # Display Metrics
                 d_col1, d_col2, d_col3, d_col4, d_col5 = st.columns(5)
@@ -2746,7 +2776,7 @@ def main():
                 with d_col2:
                     st.metric("US Tax Paid (LTM)", f"${total_us_tax:,.2f}", help="Total US withholding tax paid on dividends in the last 12 months.")
                 with d_col3:
-                    st.metric("Largest Dividend", f"${largest_dividend:,.2f}", delta=largest_date, help="Largest single dividend payment and its date.")
+                    st.metric("Largest Dividend", f"${largest_dividend:,.2f}", delta=largest_ticker, help="Largest single dividend payment and its ticker.")
                 with d_col4:
                     st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
                 with d_col5:

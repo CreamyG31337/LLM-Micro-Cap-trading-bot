@@ -115,14 +115,8 @@ def check_etf_ownership(_db_client, etf_ticker: str, _refresh_key: int) -> Optio
     if _db_client is None or not etf_ticker:
         return None
     try:
-        # Get latest date from portfolio_positions
-        max_date_res = _db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
-        if not max_date_res.data:
-            return None
-        max_date = max_date_res.data[0]['date']
-        
-        # Query positions for the ETF ticker
-        result = _db_client.supabase.table("portfolio_positions").select("shares, fund").eq("ticker", etf_ticker).eq("date", max_date).gt("shares", 0).execute()
+        # Use latest_positions view like the rest of the dashboard
+        result = _db_client.supabase.table("latest_positions").select("shares, fund").eq("ticker", etf_ticker).gt("shares", 0).execute()
         
         if result.data:
             total_shares = sum(row['shares'] for row in result.data)
@@ -188,24 +182,18 @@ def get_all_holdings(
             'shares_held': 'current_shares'
         })
         
-        # 2. Fetch user's latest portfolio positions for overlap
-        # Get latest date from portfolio_positions
-        max_date_res = _db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
-        if max_date_res.data:
-            max_date = max_date_res.data[0]['date']
-            user_pos_res = _db_client.supabase.table("portfolio_positions").select("ticker, shares").eq("date", max_date).gt("shares", 0).execute()
+        # 2. Fetch user's latest portfolio positions for overlap using latest_positions view
+        user_pos_res = _db_client.supabase.table("latest_positions").select("ticker, shares").gt("shares", 0).execute()
+        
+        if user_pos_res.data:
+            user_df = pd.DataFrame(user_pos_res.data)
+            # Aggregate by ticker (sum shares across funds)
+            user_agg = user_df.groupby('ticker')['shares'].sum().reset_index()
+            user_agg = user_agg.rename(columns={'shares': 'user_shares'})
             
-            if user_pos_res.data:
-                user_df = pd.DataFrame(user_pos_res.data)
-                # Aggregate by ticker (sum shares across funds)
-                user_agg = user_df.groupby('ticker')['shares'].sum().reset_index()
-                user_agg = user_agg.rename(columns={'shares': 'user_shares'})
-                
-                # Merge with holdings
-                holdings_df = holdings_df.merge(user_agg, left_on='holding_ticker', right_on='ticker', how='left').drop(columns=['ticker'])
-                holdings_df['user_shares'] = holdings_df['user_shares'].fillna(0)
-            else:
-                holdings_df['user_shares'] = 0
+            # Merge with holdings
+            holdings_df = holdings_df.merge(user_agg, left_on='holding_ticker', right_on='ticker', how='left').drop(columns=['ticker'])
+            holdings_df['user_shares'] = holdings_df['user_shares'].fillna(0)
         else:
             holdings_df['user_shares'] = 0
             

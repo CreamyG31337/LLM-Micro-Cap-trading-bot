@@ -927,25 +927,6 @@ def format_currency_label(currency_code: str) -> str:
     return f"({currency_code})"
 
 
-def format_metric_label(label: str, metric_type: str = "fund") -> str:
-    """Add badge prefix to metric labels to distinguish fund vs user metrics.
-    
-    Args:
-        label: Original metric label
-        metric_type: "user", "fund", or "portfolio" (for single investor)
-    
-    Returns:
-        Formatted label with appropriate badge
-    """
-    badges = {
-        "user": "👤 Your",
-        "fund": "🏦 Fund",
-        "portfolio": "💼 Portfolio"
-    }
-    badge = badges.get(metric_type, "")
-    return f"{badge} {label}" if badge else label
-
-
 def main():
     """Main dashboard function"""
     
@@ -1542,7 +1523,7 @@ def main():
             # === MULTI-INVESTOR LAYOUT ===
             # Separates "Your Performance" from "Fund Performance"
             
-            st.markdown("#### 👤 Your Investment")
+            st.markdown("#### 👤")
             col1, col2, col3, col4 = st.columns(4)
             
             if user_investment:
@@ -1552,53 +1533,53 @@ def main():
                 
                 with col1:
                     st.metric(
-                        f"{format_metric_label('Your Value', 'user')} {format_currency_label(display_currency)}",
+                        f"Your Value {format_currency_label(display_currency)}",
                         f"${user_investment['current_value']:,.2f}",
                         help="Current market value of your specific share in the fund."
                     )
                 with col2:
                     st.metric(
-                        format_metric_label("Your Day Change", "user"),
+                        "Your Day Change",
                         f"${user_day_pnl:,.2f}",
                         f"{last_day_pnl_pct:+.2f}%", 
                         help="Estimated change in your investment value since last market close."
                     )
                 with col3:
                     st.metric(
-                        format_metric_label("Your Return", "user"),
+                        "Your Return",
                         f"${user_investment['gain_loss']:,.2f}",
                         f"{user_investment['gain_loss_pct']:+.2f}%",
                         help="Total return on your investment (Current Value - Net Contribution)."
                     )
                 with col4:
                     st.metric(
-                        format_metric_label("Ownership", "user"),
+                        "Ownership",
                         f"{user_investment['ownership_pct']:.2f}%",
                         help="Your percentage ownership of the total fund assets."
                     )
             else:
                 st.info("No contribution data found for your account in this fund.")
 
-            st.markdown("#### 🏦 Fund Overview")
+            st.markdown("#### 🏦")
             f_col1, f_col2, f_col3, f_col4 = st.columns(4)
             
             with f_col1:
                 st.metric(
-                    f"{format_metric_label('Fund Total Value', 'fund')} {format_currency_label(display_currency)}", 
+                    f"Fund Total Value {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total value of all assets in the fund (Cash + Positions) for ALL investors."
                 )
             with f_col2:
                 st.metric(
-                    format_metric_label("Fund Return", "fund"),
+                    "Fund Return",
                     f"${fund_return_dollars:,.2f}", 
                     f"{fund_return_pct:+.2f}%",
                     help="Total return on all investments in the fund since inception."
                 )
             with f_col3:
-                st.metric(format_metric_label("Investors", "fund"), f"{num_investors}", help="Total number of distinct investors in this fund.")
+                st.metric("Investors", f"{num_investors}", help="Total number of distinct investors in this fund.")
             with f_col4:
-                st.metric(format_metric_label("Holdings", "fund"), f"{num_holdings}", help="Number of open stock positions.")
+                st.metric("Holdings", f"{num_holdings}", help="Number of open stock positions.")
 
         else:
             # === SINGLE INVESTOR LAYOUT ===
@@ -1607,9 +1588,12 @@ def main():
             # We want 4 main metrics: Value, Total Return (All time), Day P&L, Unrealized P&L
             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
             
+            # Add section heading for single investor layout
+            st.markdown("#### 💼")
+            
             with m_col1:
                 st.metric(
-                    f"{format_metric_label('Portfolio Value', 'portfolio')} {format_currency_label(display_currency)}", 
+                    f"Portfolio Value {format_currency_label(display_currency)}", 
                     f"${total_value:,.2f}",
                     help="Total current value of your portfolio (Cash + Positions)."
                 )
@@ -1618,7 +1602,7 @@ def main():
                 # Total Return - Prioritize user_investment calc as it accounts for realized gains
                 if user_investment:
                     st.metric(
-                        format_metric_label("Total Return", "portfolio"),
+                        "Total Return",
                         f"{user_investment['gain_loss_pct']:+.2f}%",
                         f"${user_investment['gain_loss']:,.2f}",
                         help="All-time return on investment (Current Value - Net Contribution)."
@@ -1626,7 +1610,7 @@ def main():
                 else:
                     # Fallback to unrealized if no contribution data
                     st.metric(
-                        f"{format_metric_label('Unrealized Return', 'portfolio')} {format_currency_label(display_currency)}",
+                        f"Unrealized Return {format_currency_label(display_currency)}",
                         f"${unrealized_pnl:,.2f}",
                         f"{unrealized_pnl_pct:+.2f}%",
                         help="Return based on currently held positions only (excludes realized gains/losses)."
@@ -1634,7 +1618,7 @@ def main():
 
             with m_col3:
                 st.metric(
-                    f"{format_metric_label('Day Change', 'portfolio')} {format_currency_label(display_currency)}", 
+                    f"Day Change {format_currency_label(display_currency)}", 
                     f"${last_day_pnl:,.2f}", 
                     f"{last_day_pnl_pct:+.2f}%",
                     help="Change in portfolio value since the last market close."
@@ -1642,7 +1626,7 @@ def main():
                 
             with m_col4:
                  st.metric(
-                    f"{format_metric_label('Open P&L', 'portfolio')} {format_currency_label(display_currency)}", 
+                    f"Open P&L {format_currency_label(display_currency)}", 
                     f"${unrealized_pnl:,.2f}",
                     help="Unrealized Profit/Loss from currently held positions."
                 )
@@ -2303,7 +2287,7 @@ def main():
         
         # Close P&L section (realized gains/losses from closed positions)
         st.markdown("---")
-        st.markdown("### Closed Positions P&L")
+        st.markdown("### 🏦 Closed Positions P&L")
         
         # Calculate realized P&L
         realized_pnl_data = get_realized_pnl(fund=fund_filter, display_currency=display_currency)
@@ -2330,7 +2314,7 @@ def main():
             
             with pnl_col1:
                 st.metric(
-                    f"{format_metric_label('Total Realized P&L', 'fund')} {format_currency_label(display_currency)}",
+                    f"Total Realized P&L {format_currency_label(display_currency)}",
                     f"${total_realized:,.2f}",
                     help="Total realized profit/loss from all closed positions (matches console app)."
                 )
@@ -2338,7 +2322,7 @@ def main():
             with pnl_col2:
                 total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
                 st.metric(
-                    format_metric_label("Total Shares Sold", "fund"),
+                    "Total Shares Sold",
                     f"{total_shares_sold:,.2f}",
                     help="Total number of shares sold across all closed positions."
                 )
@@ -2346,7 +2330,7 @@ def main():
             with pnl_col3:
                 total_proceeds = realized_pnl_data.get('total_proceeds', 0.0)
                 st.metric(
-                    f"{format_metric_label('Total Proceeds', 'fund')} {format_currency_label(display_currency)}",
+                    f"Total Proceeds {format_currency_label(display_currency)}",
                     f"${total_proceeds:,.2f}",
                     help=f"Total proceeds from all sales in {display_currency}."
                 )
@@ -2354,7 +2338,7 @@ def main():
             with pnl_col4:
                 avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
                 st.metric(
-                    f"{format_metric_label('Avg Sell Price', 'fund')} {format_currency_label(display_currency)}",
+                    f"Avg Sell Price {format_currency_label(display_currency)}",
                     f"${avg_sell_price:,.2f}",
                     help=f"Average sell price per share across all closed positions in {display_currency}."
                 )
@@ -2364,21 +2348,21 @@ def main():
             
             with pnl_col5:
                 st.metric(
-                    format_metric_label("Closed Trades", "fund"),
+                    "Closed Trades",
                     f"{num_closed}",
                     help="Total number of closed positions (sell transactions)."
                 )
             
             with pnl_col6:
                 st.metric(
-                    format_metric_label("Winning Trades", "fund"),
+                    "Winning Trades",
                     f"{winning_trades}",
                     help="Number of closed positions with positive realized P&L."
                 )
             
             with pnl_col7:
                 st.metric(
-                    format_metric_label("Losing Trades", "fund"),
+                    "Losing Trades",
                     f"{losing_trades}",
                     help="Number of closed positions with negative realized P&L."
                 )
@@ -2386,7 +2370,7 @@ def main():
             with pnl_col8:
                 win_rate = (winning_trades / num_closed * 100) if num_closed > 0 else 0.0
                 st.metric(
-                    format_metric_label("Win Rate", "fund"),
+                    "Win Rate",
                     f"{win_rate:.1f}%",
                     help="Percentage of closed trades with positive P&L."
                 )
@@ -2395,17 +2379,89 @@ def main():
             if len(trades_by_ticker) > 1:
                 st.markdown("#### Realized P&L by Ticker")
                 
+                # Get trade log to extract buy/sell prices and dates
+                all_trades_df = get_trade_log(limit=10000, fund=fund_filter)
+                
                 # Create DataFrame for display (handle new structure)
                 currency_label = format_currency_label(display_currency)
                 ticker_data = []
+                
                 for ticker, data in trades_by_ticker.items():
                     if isinstance(data, dict):
-                        # New structure with detailed breakdown
+                        # Get buy and sell trades for this ticker
+                        ticker_trades = all_trades_df[all_trades_df['ticker'] == ticker].copy() if not all_trades_df.empty else pd.DataFrame()
+                        
+                        # Identify buy vs sell trades
+                        buy_trades = pd.DataFrame()
+                        sell_trades = pd.DataFrame()
+                        
+                        if not ticker_trades.empty and 'reason' in ticker_trades.columns:
+                            reason_lower = ticker_trades['reason'].astype(str).str.lower()
+                            sell_mask = reason_lower.str.contains('sell', na=False)
+                            sell_trades = ticker_trades[sell_mask].copy()
+                            buy_trades = ticker_trades[~sell_mask].copy()
+                        
+                        # Calculate average buy price
+                        avg_buy_price = 0.0
+                        first_buy_date = None
+                        if not buy_trades.empty and 'price' in buy_trades.columns:
+                            # Calculate weighted average buy price
+                            buy_trades['total_cost'] = buy_trades['shares'] * buy_trades['price']
+                            total_buy_cost = buy_trades['total_cost'].sum()
+                            total_buy_shares = buy_trades['shares'].sum()
+                            if total_buy_shares > 0:
+                                avg_buy_price = total_buy_cost / total_buy_shares
+                            
+                            # Get first buy date
+                            if 'date' in buy_trades.columns:
+                                buy_dates = pd.to_datetime(buy_trades['date'], errors='coerce')
+                                buy_dates = buy_dates.dropna()
+                                if not buy_dates.empty:
+                                    first_buy_date = buy_dates.min()
+                        
+                        # Calculate average sell price
+                        avg_sell_price = 0.0
+                        last_sell_date = None
+                        if not sell_trades.empty and 'price' in sell_trades.columns:
+                            # Calculate weighted average sell price
+                            sell_trades['total_proceeds'] = sell_trades['shares'] * sell_trades['price']
+                            total_sell_proceeds = sell_trades['total_proceeds'].sum()
+                            total_sell_shares = sell_trades['shares'].sum()
+                            if total_sell_shares > 0:
+                                avg_sell_price = total_sell_proceeds / total_sell_shares
+                            
+                            # Get last sell date
+                            if 'date' in sell_trades.columns:
+                                sell_dates = pd.to_datetime(sell_trades['date'], errors='coerce')
+                                sell_dates = sell_dates.dropna()
+                                if not sell_dates.empty:
+                                    last_sell_date = sell_dates.max()
+                        
+                        # Convert prices to display currency if needed
+                        # Note: For simplicity, using current rates. For accuracy, should use historical rates.
+                        if avg_buy_price > 0 and not buy_trades.empty:
+                            buy_currency = str(buy_trades.iloc[0].get('currency', 'CAD')).upper() if pd.notna(buy_trades.iloc[0].get('currency')) else 'CAD'
+                            buy_date = first_buy_date if first_buy_date else None
+                            avg_buy_price = convert_to_display_currency(avg_buy_price, buy_currency, buy_date, display_currency)
+                        
+                        if avg_sell_price > 0 and not sell_trades.empty:
+                            sell_currency = str(sell_trades.iloc[0].get('currency', 'CAD')).upper() if pd.notna(sell_trades.iloc[0].get('currency')) else 'CAD'
+                            sell_date = last_sell_date if last_sell_date else None
+                            avg_sell_price = convert_to_display_currency(avg_sell_price, sell_currency, sell_date, display_currency)
+                        
+                        # Format dates as date only (no time)
+                        buy_date_str = first_buy_date.strftime('%Y-%m-%d') if first_buy_date and pd.notna(first_buy_date) else 'N/A'
+                        sell_date_str = last_sell_date.strftime('%Y-%m-%d') if last_sell_date and pd.notna(last_sell_date) else 'N/A'
+                        
                         ticker_data.append({
                             'Ticker': ticker,
                             f'Realized P&L {currency_label}': data.get('realized_pnl', 0.0),
                             'Shares Sold': data.get('shares_sold', 0.0),
-                            f'Proceeds {currency_label}': data.get('proceeds', 0.0)
+                            f'Proceeds {currency_label}': data.get('proceeds', 0.0),
+                            f'Avg Buy Price {currency_label}': avg_buy_price,
+                            f'Avg Sell Price {currency_label}': avg_sell_price,
+                            'First Buy Date': buy_date_str,
+                            'Last Sell Date': sell_date_str
                         })
                     else:
                         # Legacy structure (just a number)
@@ -2413,12 +2469,18 @@ def main():
                             'Ticker': ticker,
                             f'Realized P&L {currency_label}': float(data),
                             'Shares Sold': 0.0,
-                            f'Proceeds {currency_label}': 0.0
+                            f'Proceeds {currency_label}': 0.0,
+                            f'Avg Buy Price {currency_label}': 0.0,
+                            f'Avg Sell Price {currency_label}': 0.0,
+                            'First Buy Date': 'N/A',
+                            'Last Sell Date': 'N/A'
                         })
                 
                 ticker_pnl_df = pd.DataFrame(ticker_data)
                 pnl_col_name = f'Realized P&L {currency_label}'
                 proceeds_col_name = f'Proceeds {currency_label}'
+                buy_price_col_name = f'Avg Buy Price {currency_label}'
+                sell_price_col_name = f'Avg Sell Price {currency_label}'
                 ticker_pnl_df = ticker_pnl_df.sort_values(pnl_col_name, ascending=False)
                 
                 # Format dollar amounts as strings for AgGrid display
@@ -2426,6 +2488,8 @@ def main():
                 ticker_pnl_df[pnl_col_name] = ticker_pnl_df[pnl_col_name].apply(lambda x: f"${x:,.2f}")
                 ticker_pnl_df['Shares Sold'] = ticker_pnl_df['Shares Sold'].apply(lambda x: f"{x:,.2f}")
                 ticker_pnl_df[proceeds_col_name] = ticker_pnl_df[proceeds_col_name].apply(lambda x: f"${x:,.2f}")
+                ticker_pnl_df[buy_price_col_name] = ticker_pnl_df[buy_price_col_name].apply(lambda x: f"${x:,.2f}" if x > 0 else "N/A")
+                ticker_pnl_df[sell_price_col_name] = ticker_pnl_df[sell_price_col_name].apply(lambda x: f"${x:,.2f}" if x > 0 else "N/A")
                 
                 # Display dataframe with AgGrid for ticker navigation
                 selected_ticker = display_aggrid_with_ticker_navigation(
@@ -2445,7 +2509,7 @@ def main():
         
         # Dividend History Section
         st.markdown("---")
-        st.markdown("### Dividend History")
+        st.markdown("### 🏦 Dividend History")
 
         try:
             # Import utility locally to avoid circular imports
@@ -2470,11 +2534,11 @@ def main():
                 # Display Metrics
                 d_col1, d_col2, d_col3 = st.columns(3)
                 with d_col1:
-                    st.metric(format_metric_label("Total Dividends (LTM)", "fund"), f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
+                    st.metric("Total Dividends (LTM)", f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
                 with d_col2:
-                    st.metric(format_metric_label("Reinvested Shares", "fund"), f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
+                    st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
                 with d_col3:
-                    st.metric(format_metric_label("Payout Events", "fund"), f"{num_payouts}", help="Number of dividend payments received.")
+                    st.metric("Payout Events", f"{num_payouts}", help="Number of dividend payments received.")
 
                 # Format DataFrame for Display
                 display_cols = ['pay_date', 'ticker', 'gross_amount', 'net_amount', 'reinvested_shares', 'drip_price']

@@ -139,7 +139,7 @@ def get_etf_info(_postgres_client, etf_ticker: str, _refresh_key: int) -> Option
     try:
         # Match columns to securities table schema
         result = _postgres_client.execute_query(
-            "SELECT ticker, name as company_name, sector, industry, exchange, asset_class, currency, last_updated FROM securities WHERE ticker = %s",
+            "SELECT ticker, company_name, sector, industry, country, market_cap, currency, last_updated FROM securities WHERE ticker = %s",
             (etf_ticker,)
         )
         if result and result[0]:

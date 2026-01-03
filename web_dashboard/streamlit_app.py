@@ -1405,131 +1405,17 @@ def main():
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='PERF')
         
-        # Biggest Daily Movers Table (near the top)
-        if not positions_df.empty:
-            try:
-                movers = get_biggest_movers(positions_df, display_currency, limit=10)
-                
-                if not movers['gainers'].empty or not movers['losers'].empty:
-                    st.markdown("### 📊 Biggest Daily Movers")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if not movers['gainers'].empty:
-                            st.markdown("#### 🟢 Top Gainers")
-                            gainers_df = movers['gainers'].copy()
-                            
-                            # Format columns for display
-                            display_cols = {}
-                            if 'ticker' in gainers_df.columns:
-                                display_cols['ticker'] = 'Ticker'
-                            if 'company_name' in gainers_df.columns:
-                                display_cols['company_name'] = 'Company'
-                            if 'daily_pnl_pct' in gainers_df.columns:
-                                gainers_df['daily_pnl_pct'] = gainers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
-                                display_cols['daily_pnl_pct'] = '1-Day %'
-                            elif 'return_pct' in gainers_df.columns:
-                                gainers_df['return_pct'] = gainers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
-                                display_cols['return_pct'] = 'Return %'
-                            if 'pnl_display' in gainers_df.columns:
-                                gainers_df['pnl_display'] = gainers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
-                                display_cols['pnl_display'] = 'P&L'
-                            if 'current_price' in gainers_df.columns:
-                                gainers_df['current_price'] = gainers_df['current_price'].apply(lambda x: f"${x:.2f}")
-                                display_cols['current_price'] = 'Price'
-                            if 'market_value' in gainers_df.columns:
-                                gainers_df['market_value'] = gainers_df['market_value'].apply(lambda x: f"${x:,.2f}")
-                                display_cols['market_value'] = 'Value'
-                            
-                            # Rename columns
-                            gainers_df = gainers_df.rename(columns=display_cols)
-                            # Select only renamed columns that exist
-                            available_cols = [col for col in display_cols.values() if col in gainers_df.columns]
-                            if available_cols:
-                                gainers_df = gainers_df[available_cols]
-                            
-                            # Calculate dynamic height based on number of rows
-                            # Header: ~45px, each row: ~38px, padding: ~10px
-                            # Cap at 500px max (for 10 rows limit)
-                            num_rows = len(gainers_df)
-                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
-                            
-                            # Use AgGrid with clickable ticker links
-                            selected_ticker = display_aggrid_with_ticker_navigation(
-                                gainers_df,
-                                ticker_column="Ticker",
-                                height=dynamic_height,
-                                fit_columns=True
-                            )
-                            
-                            # Handle ticker selection
-                            if selected_ticker:
-                                st.session_state['selected_ticker'] = selected_ticker
-                                st.switch_page("pages/ticker_details.py")
-                        else:
-                            st.info("No gainers to display")
-                    
-                    with col2:
-                        if not movers['losers'].empty:
-                            st.markdown("#### 🔴 Top Losers")
-                            losers_df = movers['losers'].copy()
-                            
-                            # Format columns for display
-                            display_cols = {}
-                            if 'ticker' in losers_df.columns:
-                                display_cols['ticker'] = 'Ticker'
-                            if 'company_name' in losers_df.columns:
-                                display_cols['company_name'] = 'Company'
-                            if 'daily_pnl_pct' in losers_df.columns:
-                                losers_df['daily_pnl_pct'] = losers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
-                                display_cols['daily_pnl_pct'] = '1-Day %'
-                            elif 'return_pct' in losers_df.columns:
-                                losers_df['return_pct'] = losers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
-                                display_cols['return_pct'] = 'Return %'
-                            if 'pnl_display' in losers_df.columns:
-                                losers_df['pnl_display'] = losers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
-                                display_cols['pnl_display'] = 'P&L'
-                            if 'current_price' in losers_df.columns:
-                                losers_df['current_price'] = losers_df['current_price'].apply(lambda x: f"${x:.2f}")
-                                display_cols['current_price'] = 'Price'
-                            if 'market_value' in losers_df.columns:
-                                losers_df['market_value'] = losers_df['market_value'].apply(lambda x: f"${x:,.2f}")
-                                display_cols['market_value'] = 'Value'
-                            
-                            # Rename columns
-                            losers_df = losers_df.rename(columns=display_cols)
-                            # Select only renamed columns that exist
-                            available_cols = [col for col in display_cols.values() if col in losers_df.columns]
-                            if available_cols:
-                                losers_df = losers_df[available_cols]
-                            
-                            # Calculate dynamic height based on number of rows
-                            # Header: ~45px, each row: ~38px, padding: ~10px
-                            # Cap at 500px max (for 10 rows limit)
-                            num_rows = len(losers_df)
-                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
-                            
-                            # Use AgGrid with clickable ticker links
-                            selected_ticker = display_aggrid_with_ticker_navigation(
-                                losers_df,
-                                ticker_column="Ticker",
-                                height=dynamic_height,
-                                fit_columns=True
-                            )
-                            
-                            # Handle ticker selection
-                            if selected_ticker:
-                                st.session_state['selected_ticker'] = selected_ticker
-                                st.switch_page("pages/ticker_details.py")
-                        else:
-                            st.info("No losers to display")
-                    
-                    st.markdown("---")
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Error displaying biggest daily movers: {e}", exc_info=True)
+        # Investment Thesis section
+        if fund_filter:
+            thesis_data = get_fund_thesis_data(fund_filter)
+            if thesis_data:
+                # Top separator removed as this is now the first section
+                with st.expander("📋 Investment Thesis", expanded=True):
+                    st.markdown(f"### {thesis_data.get('title', 'Investment Thesis')}")
+                    st.markdown(thesis_data.get('overview', ''))
+                    # Note: Pillars will be shown near sectors chart below
+        
+        st.markdown("---")
         
         # Metrics row
         st.markdown("### Performance Metrics")
@@ -1742,15 +1628,131 @@ def main():
                     help="Unrealized Profit/Loss from currently held positions."
                 )
 
-        # Investment Thesis section (near top, after metrics)
-        if fund_filter:
-            thesis_data = get_fund_thesis_data(fund_filter)
-            if thesis_data:
-                st.markdown("---")
-                with st.expander("📋 Investment Thesis", expanded=True):
-                    st.markdown(f"### {thesis_data.get('title', 'Investment Thesis')}")
-                    st.markdown(thesis_data.get('overview', ''))
-                    # Note: Pillars will be shown near sectors chart below
+        # Biggest Daily Movers Table
+        if not positions_df.empty:
+            try:
+                movers = get_biggest_movers(positions_df, display_currency, limit=10)
+                
+                if not movers['gainers'].empty or not movers['losers'].empty:
+                    st.markdown("### 📊 Biggest Daily Movers")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if not movers['gainers'].empty:
+                            st.markdown("#### 🟢 Top Gainers")
+                            gainers_df = movers['gainers'].copy()
+                            
+                            # Format columns for display
+                            display_cols = {}
+                            if 'ticker' in gainers_df.columns:
+                                display_cols['ticker'] = 'Ticker'
+                            if 'company_name' in gainers_df.columns:
+                                display_cols['company_name'] = 'Company'
+                            if 'daily_pnl_pct' in gainers_df.columns:
+                                gainers_df['daily_pnl_pct'] = gainers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['daily_pnl_pct'] = '1-Day %'
+                            elif 'return_pct' in gainers_df.columns:
+                                gainers_df['return_pct'] = gainers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['return_pct'] = 'Return %'
+                            if 'pnl_display' in gainers_df.columns:
+                                gainers_df['pnl_display'] = gainers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
+                                display_cols['pnl_display'] = 'P&L'
+                            if 'current_price' in gainers_df.columns:
+                                gainers_df['current_price'] = gainers_df['current_price'].apply(lambda x: f"${x:.2f}")
+                                display_cols['current_price'] = 'Price'
+                            if 'market_value' in gainers_df.columns:
+                                gainers_df['market_value'] = gainers_df['market_value'].apply(lambda x: f"${x:,.2f}")
+                                display_cols['market_value'] = 'Value'
+                            
+                            # Rename columns
+                            gainers_df = gainers_df.rename(columns=display_cols)
+                            # Select only renamed columns that exist
+                            available_cols = [col for col in display_cols.values() if col in gainers_df.columns]
+                            if available_cols:
+                                gainers_df = gainers_df[available_cols]
+                            
+                            # Calculate dynamic height based on number of rows
+                            # Header: ~45px, each row: ~38px, padding: ~10px
+                            # Cap at 500px max (for 10 rows limit)
+                            num_rows = len(gainers_df)
+                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
+                            
+                            # Use AgGrid with clickable ticker links
+                            selected_ticker = display_aggrid_with_ticker_navigation(
+                                gainers_df,
+                                ticker_column="Ticker",
+                                height=dynamic_height,
+                                fit_columns=True
+                            )
+                            
+                            # Handle ticker selection
+                            if selected_ticker:
+                                st.session_state['selected_ticker'] = selected_ticker
+                                st.switch_page("pages/ticker_details.py")
+                        else:
+                            st.info("No gainers to display")
+                    
+                    with col2:
+                        if not movers['losers'].empty:
+                            st.markdown("#### 🔴 Top Losers")
+                            losers_df = movers['losers'].copy()
+                            
+                            # Format columns for display
+                            display_cols = {}
+                            if 'ticker' in losers_df.columns:
+                                display_cols['ticker'] = 'Ticker'
+                            if 'company_name' in losers_df.columns:
+                                display_cols['company_name'] = 'Company'
+                            if 'daily_pnl_pct' in losers_df.columns:
+                                losers_df['daily_pnl_pct'] = losers_df['daily_pnl_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['daily_pnl_pct'] = '1-Day %'
+                            elif 'return_pct' in losers_df.columns:
+                                losers_df['return_pct'] = losers_df['return_pct'].apply(lambda x: f"{x:+.2f}%")
+                                display_cols['return_pct'] = 'Return %'
+                            if 'pnl_display' in losers_df.columns:
+                                losers_df['pnl_display'] = losers_df['pnl_display'].apply(lambda x: f"${x:+,.2f}")
+                                display_cols['pnl_display'] = 'P&L'
+                            if 'current_price' in losers_df.columns:
+                                losers_df['current_price'] = losers_df['current_price'].apply(lambda x: f"${x:.2f}")
+                                display_cols['current_price'] = 'Price'
+                            if 'market_value' in losers_df.columns:
+                                losers_df['market_value'] = losers_df['market_value'].apply(lambda x: f"${x:,.2f}")
+                                display_cols['market_value'] = 'Value'
+                            
+                            # Rename columns
+                            losers_df = losers_df.rename(columns=display_cols)
+                            # Select only renamed columns that exist
+                            available_cols = [col for col in display_cols.values() if col in losers_df.columns]
+                            if available_cols:
+                                losers_df = losers_df[available_cols]
+                            
+                            # Calculate dynamic height based on number of rows
+                            # Header: ~45px, each row: ~38px, padding: ~10px
+                            # Cap at 500px max (for 10 rows limit)
+                            num_rows = len(losers_df)
+                            dynamic_height = min(500, max(100, 45 + (num_rows * 38) + 10))
+                            
+                            # Use AgGrid with clickable ticker links
+                            selected_ticker = display_aggrid_with_ticker_navigation(
+                                losers_df,
+                                ticker_column="Ticker",
+                                height=dynamic_height,
+                                fit_columns=True
+                            )
+                            
+                            # Handle ticker selection
+                            if selected_ticker:
+                                st.session_state['selected_ticker'] = selected_ticker
+                                st.switch_page("pages/ticker_details.py")
+                        else:
+                            st.info("No losers to display")
+                    
+                    st.markdown("---")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error displaying biggest daily movers: {e}", exc_info=True)
 
         # Charts section
         st.markdown("---")

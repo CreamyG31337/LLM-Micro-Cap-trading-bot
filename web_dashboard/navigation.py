@@ -49,6 +49,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         if client.test_connection():
             st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
             st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
+            st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="🏛️")
     except Exception:
         pass  # Silently fail if Postgres not available
     

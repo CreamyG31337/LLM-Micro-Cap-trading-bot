@@ -29,21 +29,95 @@ logger = logging.getLogger(__name__)
 # ETF Configuration
 # Format: {ticker: {provider, csv_url}}
 ETF_CONFIGS = {
-    # ARK Invest (Easy: Direct CSV links)
-    "ARKK": {
-        "provider": "ARK",
-        "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_INNOVATION_ETF_ARKK_HOLDINGS.csv"
-    },
-    "ARKQ": {
-        "provider": "ARK",
-        "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_AUTONOMOUS_TECH._%26_ROBOTICS_ETF_ARKQ_HOLDINGS.csv"
-    },
-    # iShares would require product ID mapping - start with ARK for MVP
+    # ARK Invest (Direct CSV links from assets.ark-funds.com)
+    "ARKK": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_INNOVATION_ETF_ARKK_HOLDINGS.csv" },
+    "ARKQ": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_AUTONOMOUS_TECH._%26_ROBOTICS_ETF_ARKQ_HOLDINGS.csv" },
+    "ARKW": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_NEXT_GENERATION_INTERNET_ETF_ARKW_HOLDINGS.csv" },
+    "ARKG": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv" },
+    "ARKF": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_BLOCKCHAIN_%26_FINTECH_INNOVATION_ETF_ARKF_HOLDINGS.csv" },
+    "ARKX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_SPACE_%26_DEFENSE_INNOVATION_ETF_ARKX_HOLDINGS.csv" },
+    "IZRL": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
+    "PRNT": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
+    # Removed single-holding funds (ARKB, ARKD, ARKT) as they don't provide stock signals
+    
+    # Venture Funds (Private/Public Mix)
+    "ARKSX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKSX_HOLDINGS.csv" },
+    "ARKVX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKVX_HOLDINGS.csv" },
+    "ARKUX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKUX_HOLDINGS.csv" },
+    
+    # iShares (BlackRock) - Requires specific AJAX URL with Product ID
+    "IVV": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund" },
+    "IWM": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund" },
+    "IWC": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239716/ishares-microcap-etf/1467271812596.ajax?fileType=csv&fileName=IWC_holdings&dataType=fund" },
+    "IWO": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239709/ishares-russell-2000-growth-etf/1467271812596.ajax?fileType=csv&fileName=IWO_holdings&dataType=fund" },
 }
 
 # Thresholds for "significant" changes
 MIN_SHARE_CHANGE = 1000  # Minimum absolute share change to log
 MIN_PERCENT_CHANGE = 0.5  # Minimum % change relative to previous holdings
+
+
+
+def fetch_ishares_holdings(etf_ticker: str, csv_url: str) -> Optional[pd.DataFrame]:
+    """Download and parse iShares ETF holdings CSV."""
+    try:
+        logger.info(f"📥 Downloading {etf_ticker} holdings from iShares...")
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/csv,application/csv;q=0.9,*/*;q=0.8',
+        }
+        
+        response = requests.get(csv_url, timeout=30, headers=headers)
+        response.raise_for_status()
+        
+        from io import StringIO
+        # iShares CSVs often have metadata headers. Look for "Ticker"
+        content = response.text
+        lines = content.split('\n')
+        header_row = 0
+        for i, line in enumerate(lines[:25]):
+            if 'Ticker' in line and ('Name' in line or 'Security Name' in line):
+                header_row = i
+                break
+        
+        df = pd.read_csv(StringIO(content), skiprows=header_row)
+        df.columns = df.columns.str.strip()
+        
+        column_mapping = {
+            'Ticker': 'ticker',
+            'Name': 'name',
+            'Security Name': 'name', 
+            'Shares': 'shares',
+            'Quantity': 'shares',  # Common in iShares CSV
+            'Weight (%)': 'weight_percent',
+            'Sector': 'sector',
+            'Asset Class': 'asset_class',
+            'Exchange': 'exchange',
+            'Market Currency': 'currency'
+        }
+        
+        df = df.rename(columns=column_mapping)
+        
+        if 'ticker' not in df.columns or 'shares' not in df.columns:
+            logger.error(f"❌ iShares CSV missing required columns. Found: {df.columns.tolist()}")
+            return None
+            
+        df = df[df['ticker'].notna()]
+        df = df[df['ticker'] != '-']
+        # Truncate ticker to avoid DB errors (max 50 chars)
+        df['ticker'] = df['ticker'].astype(str).str.upper().str.strip().str.slice(0, 50)
+        df['shares'] = pd.to_numeric(df['shares'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+        
+        if 'weight_percent' in df.columns:
+            df['weight_percent'] = pd.to_numeric(df['weight_percent'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+        
+        logger.info(f"✅ Parsed {len(df)} holdings for {etf_ticker}")
+        return df
+
+    except Exception as e:
+        logger.error(f"❌ Error parsing {etf_ticker} iShares CSV: {e}", exc_info=True)
+        return None
 
 
 def fetch_ark_holdings(etf_ticker: str, csv_url: str) -> Optional[pd.DataFrame]:
@@ -239,6 +313,61 @@ def save_holdings_snapshot(db: PostgresClient, etf_ticker: str, holdings: pd.Dat
     logger.info(f"💾 Saved {len(rows)} holdings for {etf_ticker} on {date_str}")
 
 
+def upsert_securities_metadata(db: PostgresClient, df: pd.DataFrame, provider: str):
+    """Upsert security metadata into securities table."""
+    try:
+        # Deduplicate by ticker
+        if 'ticker' not in df.columns:
+            return
+            
+        unique_securities = df.drop_duplicates(subset=['ticker']).copy()
+        
+        # Ensure all columns exist
+        cols = ['ticker', 'name', 'sector', 'industry', 'asset_class', 'exchange', 'currency']
+        for col in cols:
+            if col not in unique_securities.columns:
+                unique_securities[col] = None
+        
+        rows = []
+        for _, row in unique_securities.iterrows():
+            ticker = row['ticker']
+            if not ticker or len(str(ticker)) > 20: # Skip long garbage tickers
+                continue
+                
+            rows.append((
+                ticker,
+                row['name'],
+                row['sector'],
+                row.get('industry'),
+                row['asset_class'],
+                row['exchange'],
+                row['currency'],
+                f"{provider} ETF"
+            ))
+            
+        if not rows:
+            return
+            
+        upsert_query = """
+            INSERT INTO securities (ticker, name, sector, industry, asset_class, exchange, currency, first_detected_by, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (ticker) DO UPDATE SET
+                name = EXCLUDED.name,
+                sector = COALESCE(EXCLUDED.sector, securities.sector),
+                asset_class = COALESCE(EXCLUDED.asset_class, securities.asset_class),
+                exchange = COALESCE(EXCLUDED.exchange, securities.exchange),
+                currency = COALESCE(EXCLUDED.currency, securities.currency),
+                last_updated = NOW()
+            WHERE securities.name IS NULL OR securities.sector IS NULL
+        """
+        
+        db.execute_many(upsert_query, rows)
+        logger.info(f"ℹ️  Upserted metadata for {len(rows)} securities from {provider}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error upserting securities metadata: {e}")
+
+
 def log_significant_changes(repo: ResearchRepository, changes: List[Dict], etf_ticker: str):
     """Log significant ETF changes to research_articles.
     
@@ -303,6 +432,8 @@ def etf_watchtower_job():
             # 1. Download today's holdings
             if config['provider'] == 'ARK':
                 today_holdings = fetch_ark_holdings(etf_ticker, config['url'])
+            elif config['provider'] == 'iShares':
+                today_holdings = fetch_ishares_holdings(etf_ticker, config['url'])
             else:
                 logger.warning(f"⚠️ Provider {config['provider']} not yet implemented")
                 continue
@@ -324,7 +455,8 @@ def etf_watchtower_job():
             else:
                 logger.info(f"ℹ️  No previous data for {etf_ticker} - this is the first snapshot")
             
-            # 4. Save today's snapshot
+            # 4. Upsert metadata & Save snapshot
+            upsert_securities_metadata(db, today_holdings, config['provider'])
             save_holdings_snapshot(db, etf_ticker, today_holdings, today)
             
         except Exception as e:

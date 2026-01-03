@@ -8,6 +8,7 @@ Test that ETF holdings tracking is working correctly.
 import logging
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # Add parent to path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -59,15 +60,24 @@ def verify_etf_job():
         if result and result[0]['count'] > 0:
             logger.info(f"✅ Database contains {result[0]['count']} holding records")
             
-            # Show sample
+            # Show sample from today
             sample = db.execute_query("""
                 SELECT etf_ticker, COUNT(*) as holdings_count 
                 FROM etf_holdings_log 
+                WHERE date = CURRENT_DATE
                 GROUP BY etf_ticker
             """)
-            logger.info("\nETF Snapshots:")
+            logger.info(f"\nETF Snapshots (Today: {datetime.now().strftime('%Y-%m-%d')}):")
             for row in sample:
                 logger.info(f"  - {row['etf_ticker']}: {row['holdings_count']} holdings")
+                
+            # Check securities metadata
+            sec_count = db.execute_query("SELECT COUNT(*) as count FROM securities")
+            if sec_count and sec_count[0]['count'] > 0:
+                 logger.info(f"✅ Securities table populated: {sec_count[0]['count']} records")
+            else:
+                 logger.error("❌ Securities table is empty!")
+                 
         else:
             logger.warning("⚠️  No holdings data inserted (ARK CSVs may be unavailable)")
         

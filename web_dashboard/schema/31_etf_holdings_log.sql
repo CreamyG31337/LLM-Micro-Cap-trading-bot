@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS etf_holdings_log (
     date DATE NOT NULL,
     etf_ticker VARCHAR(10) NOT NULL,
-    holding_ticker VARCHAR(20) NOT NULL,
+    holding_ticker VARCHAR(50) NOT NULL,
     holding_name TEXT,
     shares_held NUMERIC,           -- Key metric for diffing
     weight_percent NUMERIC,        -- Subject to price drift, less reliable

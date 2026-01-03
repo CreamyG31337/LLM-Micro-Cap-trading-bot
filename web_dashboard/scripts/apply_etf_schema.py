@@ -26,7 +26,14 @@ def apply_schema():
     # Execute
     db.execute_update(schema_sql)
     
-    print("✅ Schema applied successfully")
+    # Also apply the ALTER just in case table exists
+    try:
+        db.execute_update("ALTER TABLE etf_holdings_log ALTER COLUMN holding_ticker TYPE VARCHAR(50);")
+        print("[OK] Column resized to VARCHAR(50)")
+    except Exception as e:
+        print(f"[WARNING] ALTER failed (maybe already done): {e}")
+    
+    print("[OK] Schema applied successfully")
 
 if __name__ == "__main__":
     apply_schema()

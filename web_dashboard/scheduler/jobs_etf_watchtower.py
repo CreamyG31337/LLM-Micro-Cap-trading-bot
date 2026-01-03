@@ -36,14 +36,9 @@ ETF_CONFIGS = {
     "ARKG": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_GENOMIC_REVOLUTION_ETF_ARKG_HOLDINGS.csv" },
     "ARKF": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_BLOCKCHAIN_%26_FINTECH_INNOVATION_ETF_ARKF_HOLDINGS.csv" },
     "ARKX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_SPACE_%26_DEFENSE_INNOVATION_ETF_ARKX_HOLDINGS.csv" },
-    "IZRL": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
-    "PRNT": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
-    # Removed single-holding funds (ARKB, ARKD, ARKT) as they don't provide stock signals
-    
-    # Venture Funds (Private/Public Mix)
-    "ARKSX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKSX_HOLDINGS.csv" },
-    "ARKVX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKVX_HOLDINGS.csv" },
-    "ARKUX": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_VENTURE_FUND_ARKUX_HOLDINGS.csv" },
+    \"IZRL\": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/ARK_ISRAEL_INNOVATIVE_TECHNOLOGY_ETF_IZRL_HOLDINGS.csv" },
+    \"PRNT\": { "provider": "ARK", "url": "https://assets.ark-funds.com/fund-documents/funds-etf-csv/THE_3D_PRINTING_ETF_PRNT_HOLDINGS.csv" },
+    # Removed single-holding funds (ARKB, ARKD, ARKT) and venture funds (ARKSX, ARKVX, ARKUX) - they don't provide useful stock signals
     
     # iShares (BlackRock) - Requires specific AJAX URL with Product ID
     "IVV": { "provider": "iShares", "url": "https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund" },
@@ -62,9 +57,6 @@ ETF_NAMES = {
     "ARKX": "ARK Space Exploration & Innovation ETF",
     "IZRL": "ARK Israel Innovative Technology ETF",
     "PRNT": "The 3D Printing ETF",
-    "ARKSX": "ARK Venture Fund",
-    "ARKVX": "ARK Venture Fund",
-    "ARKUX": "ARK Venture Fund",
     "IVV": "iShares Core S&P 500 ETF",
     "IWM": "iShares Russell 2000 ETF",
     "IWC": "iShares Micro-Cap ETF",

@@ -228,6 +228,9 @@ def _format_portfolio_snapshot_table(
 def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     """Format Price & Volume table for portfolio tickers.
     
+    Uses MarketDataFetcher to get volume and price change data, matching the
+    console app's prompt_generator.py approach.
+    
     Args:
         positions_df: DataFrame with current positions
         
@@ -245,6 +248,7 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     
     # Try to import MarketDataFetcher, but handle gracefully if not available
     market_fetcher = None
+    market_hours = None
     try:
         from market_data.data_fetcher import MarketDataFetcher
         from market_data.market_hours import MarketHours
@@ -255,58 +259,67 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"MarketDataFetcher not available for Price & Volume table: {e}")
-        pass
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
         current_price = float(row.get('current_price', row.get('price', 0)) or 0)
         yesterday_price = row.get('yesterday_price')
         
-        # Calculate % change
-        if yesterday_price and float(yesterday_price) > 0:
-            pct_change = ((current_price - float(yesterday_price)) / float(yesterday_price)) * 100
-            pct_change_str = f"{pct_change:+.2f}%"
-        else:
-            pct_change_str = "N/A"
-        
-        # Try to fetch volume data if MarketDataFetcher is available
+        # Initialize display values
+        pct_change_str = "N/A"
         volume_str = "N/A"
         avg_vol_str = "N/A"
         
-        if market_fetcher:
+        # Try to fetch market data if MarketDataFetcher is available
+        if market_fetcher and market_hours:
             try:
                 # Get trading day window
                 start_d, end_d = market_hours.trading_day_window()
-                # Get historical window for avg volume
+                # Get historical window for avg volume (90 days like console app)
                 start_d = end_d - pd.Timedelta(days=90)
                 
                 result = market_fetcher.fetch_price_data(ticker, start_d, end_d)
                 if not result.df.empty and "Close" in result.df.columns:
+                    # Use fetched current price if we don't have one
+                    if current_price <= 0:
+                        current_price = float(result.df['Close'].iloc[-1])
+                    
+                    # Calculate % change from fetched data (like console app)
+                    if len(result.df) >= 2:
+                        prev_price = float(result.df['Close'].iloc[-2])
+                        if prev_price > 0:
+                            pct_change = ((current_price - prev_price) / prev_price) * 100
+                            pct_change_str = f"{pct_change:+.2f}%"
+                    
                     # Get volume from last day
                     if "Volume" in result.df.columns and len(result.df) > 0:
                         volume = float(result.df["Volume"].iloc[-1])
-                        if pd.notna(volume):
+                        if pd.notna(volume) and volume > 0:
                             if volume >= 1000:
                                 volume_str = f"{int(volume/1000):,}K"
                             else:
                                 volume_str = f"{int(volume):,}"
                     
-                    # Calculate average volume (30 days)
+                    # Calculate average volume (30 days like console app)
                     if "Volume" in result.df.columns:
                         vol_series = result.df["Volume"].dropna()
                         if not vol_series.empty:
                             avg_volume = vol_series.tail(30).mean()
-                            if pd.notna(avg_volume):
+                            if pd.notna(avg_volume) and avg_volume > 0:
                                 if avg_volume >= 1000:
                                     avg_vol_str = f"{int(avg_volume/1000):,}K"
                                 else:
                                     avg_vol_str = f"{int(avg_volume):,}"
             except Exception as e:
-                # Fallback to "N/A" if fetch fails
+                # Fallback to position data if fetch fails
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.debug(f"Failed to fetch volume data for {ticker}: {e}")
-                pass
+        
+        # Fallback: use yesterday_price from positions_df if we still don't have % change
+        if pct_change_str == "N/A" and yesterday_price and float(yesterday_price) > 0:
+            pct_change = ((current_price - float(yesterday_price)) / float(yesterday_price)) * 100
+            pct_change_str = f"{pct_change:+.2f}%"
         
         price_str = f"{current_price:,.2f}" if current_price > 0 else "N/A"
         
@@ -317,6 +330,9 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
 
 def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
     """Format Company Fundamentals table for portfolio tickers.
+    
+    Uses MarketDataFetcher.fetch_fundamentals() to get properly formatted values
+    including P/E, Dividend Yield, 52W High/Low, and Market Cap.
     
     Args:
         positions_df: DataFrame with current positions
@@ -342,73 +358,132 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"MarketDataFetcher not available for fundamentals table: {e}")
-        pass
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
         
-        # Get sector, industry, country, market_cap from securities join
+        # Default values
         sector = "N/A"
         industry = "N/A"
         country = "N/A"
         market_cap = "N/A"
-        
-        securities = row.get('securities')
-        if securities:
-            if isinstance(securities, dict):
-                sector = securities.get('sector', 'N/A') or 'N/A'
-                industry = securities.get('industry', 'N/A') or 'N/A'
-                country = securities.get('country', 'N/A') or 'N/A'
-                market_cap = securities.get('market_cap', 'N/A') or 'N/A'
-            elif isinstance(securities, list) and len(securities) > 0:
-                sec = securities[0] if isinstance(securities[0], dict) else {}
-                sector = sec.get('sector', 'N/A') or 'N/A'
-                industry = sec.get('industry', 'N/A') or 'N/A'
-                country = sec.get('country', 'N/A') or 'N/A'
-                market_cap = sec.get('market_cap', 'N/A') or 'N/A'
-        
-        # Check if ETF
-        is_etf = market_cap == 'ETF' or (isinstance(market_cap, str) and 'ETF' in market_cap.upper())
-        if is_etf and sector == 'N/A':
-            sector = 'ETF'
-        if is_etf and industry == 'N/A':
-            industry = 'ETF'
-        
-        # Fetch P/E, Dividend Yield, 52W High/Low from MarketDataFetcher if available
-        # Match console app's approach: use .get() directly with 'N/A' as default
         pe_ratio = "N/A"
         div_yield = "N/A"
         high_52w = "N/A"
         low_52w = "N/A"
         
+        # Prefer fetching ALL fundamentals from MarketDataFetcher since it returns
+        # properly formatted values (e.g., "$1.2B" for market cap, "15.3" for P/E)
         if market_fetcher:
             try:
                 fundamentals = market_fetcher.fetch_fundamentals(ticker)
                 if fundamentals:
-                    # Use same approach as console app: direct .get() with 'N/A' default
-                    pe_ratio = str(fundamentals.get('trailingPE', 'N/A'))
-                    div_yield = str(fundamentals.get('dividendYield', 'N/A'))
-                    high_52w = str(fundamentals.get('fiftyTwoWeekHigh', 'N/A'))
-                    low_52w = str(fundamentals.get('fiftyTwoWeekLow', 'N/A'))
+                    # Get all values from fetch_fundamentals - it returns pre-formatted strings
+                    sector = fundamentals.get('sector', 'N/A') or 'N/A'
+                    industry = fundamentals.get('industry', 'N/A') or 'N/A'
+                    country = fundamentals.get('country', 'N/A') or 'N/A'
+                    # Market cap is already formatted as "$1.2B" or "$500M" by fetch_fundamentals
+                    market_cap = fundamentals.get('marketCap', 'N/A') or 'N/A'
+                    pe_ratio = fundamentals.get('trailingPE', 'N/A') or 'N/A'
+                    div_yield = fundamentals.get('dividendYield', 'N/A') or 'N/A'
+                    high_52w = fundamentals.get('fiftyTwoWeekHigh', 'N/A') or 'N/A'
+                    low_52w = fundamentals.get('fiftyTwoWeekLow', 'N/A') or 'N/A'
             except Exception as e:
                 # Log the error for debugging but don't break the table
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to fetch fundamentals for {ticker}: {e}", exc_info=True)
-                pass
+                logger.warning(f"Failed to fetch fundamentals for {ticker}: {e}")
         
-        # Truncate long values to fit columns
+        # Fallback to securities join data only if fetch_fundamentals failed
+        if sector == 'N/A' or industry == 'N/A':
+            securities = row.get('securities')
+            if securities:
+                if isinstance(securities, dict):
+                    if sector == 'N/A':
+                        sector = securities.get('sector', 'N/A') or 'N/A'
+                    if industry == 'N/A':
+                        industry = securities.get('industry', 'N/A') or 'N/A'
+                    if country == 'N/A':
+                        country = securities.get('country', 'N/A') or 'N/A'
+                    # Format market cap if it's a raw number from securities
+                    if market_cap == 'N/A':
+                        raw_cap = securities.get('market_cap')
+                        if raw_cap and raw_cap != 'N/A':
+                            market_cap = _format_market_cap(raw_cap)
+                elif isinstance(securities, list) and len(securities) > 0:
+                    sec = securities[0] if isinstance(securities[0], dict) else {}
+                    if sector == 'N/A':
+                        sector = sec.get('sector', 'N/A') or 'N/A'
+                    if industry == 'N/A':
+                        industry = sec.get('industry', 'N/A') or 'N/A'
+                    if country == 'N/A':
+                        country = sec.get('country', 'N/A') or 'N/A'
+                    if market_cap == 'N/A':
+                        raw_cap = sec.get('market_cap')
+                        if raw_cap and raw_cap != 'N/A':
+                            market_cap = _format_market_cap(raw_cap)
+        
+        # Check if ETF and provide better labeling
+        is_etf = market_cap == 'ETF' or (isinstance(market_cap, str) and 'ETF' in str(market_cap).upper())
+        if is_etf and sector == 'N/A':
+            sector = 'ETF'
+        if is_etf and industry == 'N/A':
+            industry = 'ETF'
+        
+        # Truncate long values to fit columns (values are already formatted strings)
         sector_str = str(sector)[:20] if sector != "N/A" else "N/A"
         industry_str = str(industry)[:26] if industry != "N/A" else "N/A"
         country_str = str(country)[:8] if country != "N/A" else "N/A"
         market_cap_str = str(market_cap)[:12] if market_cap != "N/A" else "N/A"
+        pe_str = str(pe_ratio)[:6] if pe_ratio != "N/A" else "N/A"
+        div_str = str(div_yield)[:6] if div_yield != "N/A" else "N/A"
+        high_str = str(high_52w)[:10] if high_52w != "N/A" else "N/A"
+        low_str = str(low_52w)[:10] if low_52w != "N/A" else "N/A"
         
         lines.append(
             f"{ticker:<10} | {sector_str:<20} | {industry_str:<26} | {country_str:<8} | "
-            f"{market_cap_str:<12} | {pe_ratio:<6} | {div_yield:<6} | {high_52w:<10} | {low_52w}"
+            f"{market_cap_str:<12} | {pe_str:<6} | {div_str:<6} | {high_str:<10} | {low_str}"
         )
     
     return "\n".join(lines)
+
+
+def _format_market_cap(value) -> str:
+    """Format market cap value into human-readable format (e.g., $1.2B, $500M).
+    
+    Args:
+        value: Raw market cap value (int, float, or string)
+        
+    Returns:
+        Formatted string like "$1.2B" or "$500M"
+    """
+    if value is None or value == 'N/A' or value == '':
+        return 'N/A'
+    
+    # If already formatted (string starting with $), return as-is
+    if isinstance(value, str):
+        if value.startswith('$'):
+            return value
+        # Try to convert string to number
+        try:
+            value = float(value.replace(',', ''))
+        except (ValueError, TypeError):
+            return str(value)
+    
+    try:
+        value = float(value)
+        if value >= 1e12:
+            return f"${value/1e12:.1f}T"
+        elif value >= 1e9:
+            return f"${value/1e9:.2f}B"
+        elif value >= 1e6:
+            return f"${value/1e6:.1f}M"
+        elif value >= 1e3:
+            return f"${value/1e3:.0f}K"
+        else:
+            return f"${value:,.0f}"
+    except (ValueError, TypeError):
+        return str(value)
 
 
 def format_thesis(thesis_data: Dict[str, Any]) -> str:

@@ -2235,8 +2235,8 @@ def main():
                 for col in ['_total_pnl', '_total_pnl_pct', '_daily_pnl', '_daily_pnl_pct', '_5day_pnl', '_5day_pnl_pct']:
                     gb.configure_column(col, hide=True)
                 
-                # General Options
-                gb.configure_pagination(paginationPageSize=50)
+                # General Options - disable auto page size so user can select from 25/50/100
+                gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=50)
                 gb.configure_grid_options(domLayout='normal')
                 gb.configure_selection(selection_mode="single", use_checkbox=False)
                 
@@ -2252,7 +2252,7 @@ def main():
                 grid_response = AgGrid(
                     display_df,
                     gridOptions=grid_options,
-                    height=400,
+                    height=600,
                     update_mode=GridUpdateMode.SELECTION_CHANGED,
                     allow_unsafe_jscode=True,
                     theme='streamlit'
@@ -2452,59 +2452,46 @@ def main():
                         return ''
                     styled_df = styled_df.map(color_action, subset=['Action'])
                 
-                # Color-code P&L/Amount column
+                # Color-code P&L/Amount column based on Action type
                 if 'Amount / P&L' in display_df.columns and 'Action' in display_df.columns:
-                    def color_amount(row):
-                        # Return a Series with styling for the subset column
-                        result = pd.Series(index=['Amount / P&L'], dtype='object')
+                    def color_amount_row(row):
+                        # Return a list of styles for ALL columns in the row
+                        styles = [''] * len(row)
                         
-                        # Safely get action - check both the row and the original dataframe
-                        if 'Action' in row.index:
-                            action = str(row['Action']).upper()
-                        else:
-                            action = 'BUY'
+                        # Find the index of the Amount / P&L column
+                        if 'Amount / P&L' not in row.index:
+                            return styles
                         
-                        val = row['Amount / P&L']
+                        amount_idx = row.index.get_loc('Amount / P&L')
                         
+                        # Get action
+                        action = str(row.get('Action', 'BUY')).upper()
+                        
+                        # Get the raw value from display_df (before formatting)
+                        row_idx = row.name
                         try:
-                            # Parse the value, handling string formatting
+                            val = display_df.loc[row_idx, 'Amount / P&L']
                             if isinstance(val, str):
-                                # Remove $, commas, and any whitespace
-                                val_clean = val.replace('$', '').replace(',', '').strip()
-                                val_num = float(val_clean)
+                                val_num = float(val.replace('$', '').replace(',', '').strip())
                             else:
-                                val_num = float(val)
-                            
-                            # Apply color based on action type
-                            if action == 'SELL':
-                                # For sells: green if profit (positive), red if loss (negative)
-                                if val_num > 0:
-                                    result['Amount / P&L'] = 'color: #10b981; font-weight: bold'  # Green for profit
-                                elif val_num < 0:
-                                    result['Amount / P&L'] = 'color: #ef4444; font-weight: bold'  # Red for loss
-                                else:
-                                    result['Amount / P&L'] = ''  # No color for zero
-                            elif action == 'DRIP':
-                                # For DRIP, always show in green
-                                result['Amount / P&L'] = 'color: #10b981'  # Green
-                            elif action == 'BUY':
-                                # For BUY, show in yellow/orange (purchase amount)
-                                result['Amount / P&L'] = 'color: #f59e0b'  # Orange
-                            else:
-                                # Unknown action type, no color
-                                result['Amount / P&L'] = ''
-                        except (ValueError, TypeError, AttributeError) as e:
-                            # If parsing fails, default based on action
-                            if action == 'DRIP':
-                                result['Amount / P&L'] = 'color: #10b981'
-                            elif action == 'BUY':
-                                result['Amount / P&L'] = 'color: #f59e0b'
-                            else:
-                                result['Amount / P&L'] = ''
+                                val_num = float(val) if pd.notna(val) else 0
+                        except:
+                            val_num = 0
                         
-                        return result
+                        # Apply color based on action type
+                        if action == 'SELL':
+                            if val_num > 0:
+                                styles[amount_idx] = 'color: #10b981; font-weight: bold'  # Green for profit
+                            elif val_num < 0:
+                                styles[amount_idx] = 'color: #ef4444; font-weight: bold'  # Red for loss
+                        elif action == 'DRIP':
+                            styles[amount_idx] = 'color: #10b981; font-weight: bold'  # Green always
+                        elif action == 'BUY':
+                            styles[amount_idx] = 'color: #f59e0b; font-weight: bold'  # Orange
+                        
+                        return styles
                     
-                    styled_df = styled_df.apply(color_amount, axis=1, subset=['Amount / P&L'])
+                    styled_df = styled_df.apply(color_amount_row, axis=1)
                 elif 'Realized P&L' in display_df.columns:
                     def color_trade_pnl(val):
                         try:

@@ -116,7 +116,7 @@ from streamlit_utils import (
     display_dataframe_with_copy,
     get_biggest_movers
 )
-from aggrid_utils import display_aggrid_with_ticker_navigation
+from aggrid_utils import display_aggrid_with_ticker_navigation, TICKER_CELL_RENDERER_JS, TICKER_CLICK_HANDLER_JS_TEMPLATE
 from chart_utils import (
     create_portfolio_value_chart,
     create_performance_by_fund_chart,

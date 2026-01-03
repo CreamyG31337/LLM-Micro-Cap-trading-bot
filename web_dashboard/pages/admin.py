@@ -1945,28 +1945,105 @@ with tab6:
                         except Exception as e:
                             st.error(f"Error recording trade: {e}")
                 
-                # Recent trades
+                # Recent trades - filtered by fund and excluding DRIP
                 st.divider()
                 st.subheader("Recent Trades")
-                recent_trades = client.supabase.table("trade_log").select("*").order("date", desc=True).limit(10).execute()
+                
+                # Initialize pagination state
+                if 'recent_trades_page' not in st.session_state:
+                    st.session_state.recent_trades_page = 0
+                if 'recent_trades_per_page' not in st.session_state:
+                    st.session_state.recent_trades_per_page = 20
+                
+                # Get total count (excluding DRIP) for pagination
+                total_trades_result = client.supabase.table("trade_log")\
+                    .select("id", count="exact")\
+                    .eq("fund", trade_fund)\
+                    .neq("reason", "DRIP")\
+                    .execute()
+                total_trades = total_trades_result.count if hasattr(total_trades_result, 'count') else 0
+                
+                # Calculate pagination
+                total_pages = max(1, (total_trades + st.session_state.recent_trades_per_page - 1) // st.session_state.recent_trades_per_page)
+                current_page = st.session_state.recent_trades_page
+                offset = current_page * st.session_state.recent_trades_per_page
+                
+                # Fetch paginated trades (excluding DRIP, filtered by fund)
+                recent_trades = client.supabase.table("trade_log")\
+                    .select("*")\
+                    .eq("fund", trade_fund)\
+                    .neq("reason", "DRIP")\
+                    .order("date", desc=True)\
+                    .range(offset, offset + st.session_state.recent_trades_per_page - 1)\
+                    .execute()
+                
                 if recent_trades.data:
                     trades_df = pd.DataFrame(recent_trades.data)
-                    display_cols = ["date", "fund", "ticker", "shares", "price", "currency"]
+                    
+                    # Format date column for display
+                    if 'date' in trades_df.columns:
+                        trades_df['date'] = pd.to_datetime(trades_df['date']).dt.strftime('%Y-%m-%d %H:%M')
+                    
+                    # Add action column for clarity
+                    def get_action_display(row):
+                        reason = str(row.get('reason', '')).lower()
+                        if 'sell' in reason or 'limit sell' in reason or 'market sell' in reason:
+                            return 'SELL'
+                        return 'BUY'
+                    
+                    trades_df['action'] = trades_df.apply(get_action_display, axis=1)
+                    
+                    display_cols = ["date", "action", "ticker", "shares", "price", "currency"]
                     available_cols = [c for c in display_cols if c in trades_df.columns]
                     display_dataframe_with_copy(trades_df[available_cols], label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
+                    
+                    # Pagination controls
+                    if total_pages > 1:
+                        col_page_info, col_page_prev, col_page_next, col_per_page = st.columns([2, 1, 1, 2])
+                        
+                        with col_page_info:
+                            st.caption(f"Page {current_page + 1} of {total_pages} ({total_trades} total trades)")
+                        
+                        with col_page_prev:
+                            if st.button("◀ Previous", disabled=(current_page == 0), key="prev_page"):
+                                st.session_state.recent_trades_page = max(0, current_page - 1)
+                                st.rerun()
+                        
+                        with col_page_next:
+                            if st.button("Next ▶", disabled=(current_page >= total_pages - 1), key="next_page"):
+                                st.session_state.recent_trades_page = min(total_pages - 1, current_page + 1)
+                                st.rerun()
+                        
+                        with col_per_page:
+                            per_page_options = [10, 20, 50, 100]
+                            new_per_page = st.selectbox(
+                                "Trades per page",
+                                options=per_page_options,
+                                index=per_page_options.index(st.session_state.recent_trades_per_page) if st.session_state.recent_trades_per_page in per_page_options else 1,
+                                key="trades_per_page_select"
+                            )
+                            if new_per_page != st.session_state.recent_trades_per_page:
+                                st.session_state.recent_trades_per_page = new_per_page
+                                st.session_state.recent_trades_page = 0  # Reset to first page
+                                st.rerun()
                 else:
-                    st.info("No recent trades")
+                    st.info(f"No recent trades for {trade_fund} (excluding DRIP transactions)")
                 
                 # ===== EDIT/DELETE TRADE =====
                 st.divider()
                 st.subheader("✏️ Edit or Delete Trade")
                 with st.expander("Modify existing trade", expanded=False):
-                    st.caption("Edit or delete a recent trade. Automatic rebuild will trigger if dates change.")
+                    st.caption("Select a trade from the table below to edit or delete. Automatic rebuild will trigger if dates or action changes.")
                     
-                    # Get editable trades (last 50)
+                    # Initialize selected trade ID in session state
+                    if 'selected_trade_id' not in st.session_state:
+                        st.session_state.selected_trade_id = None
+                    
+                    # Get editable trades (last 50, excluding DRIP)
                     edit_trades = client.supabase.table("trade_log")\
                         .select("*")\
                         .eq("fund", trade_fund if 'trade_fund' in locals() else fund_names[0])\
+                        .neq("reason", "DRIP")\
                         .order("date", desc=True)\
                         .limit(50)\
                         .execute()
@@ -1980,24 +2057,59 @@ with tab6:
                                 return 'SELL'
                             return 'BUY'  # Default to BUY
                         
-                        # Create selection dropdown
-                        trade_options = []
-                        trade_lookup = {}
-                        for t in edit_trades.data:
+                        # Prepare data for table display
+                        trades_for_table = []
+                        trade_id_map = {}  # Map row index to trade ID
+                        for idx, t in enumerate(edit_trades.data):
                             trade_date = pd.to_datetime(t['date']).strftime('%Y-%m-%d %H:%M')
                             action = get_trade_action(t)
-                            label = f"{trade_date} | {action} {t['shares']} {t['ticker']} @ ${t['price']}"
-                            trade_options.append(label)
-                            trade_lookup[label] = t
+                            trades_for_table.append({
+                                'date': trade_date,
+                                'action': action,
+                                'ticker': t['ticker'],
+                                'shares': t['shares'],
+                                'price': f"${t['price']:.2f}",
+                                'currency': t.get('currency', 'USD')
+                            })
+                            trade_id_map[idx] = t['id']
                         
-                        selected_trade_label = st.selectbox(
-                            "Select trade to edit/delete",
-                            options=[""] + trade_options,
-                            key="edit_trade_select"
-                        )
+                        trades_df = pd.DataFrame(trades_for_table)
                         
-                        if selected_trade_label:
-                            selected_trade = trade_lookup[selected_trade_label]
+                        # Display table
+                        st.markdown("**Select a trade from the table below:**")
+                        display_dataframe_with_copy(trades_df, label="Trades", key_suffix="edit_trades_table", use_container_width=True)
+                        
+                        # Use selectbox to select by row (references the table)
+                        if len(trades_df) > 0:
+                            row_options = []
+                            for idx, row in trades_df.iterrows():
+                                row_options.append(f"{row['date']} | {row['action']} {row['shares']} {row['ticker']} @ {row['price']}")
+                            
+                            selected_row_str = st.selectbox(
+                                "Select trade to edit",
+                                options=[""] + row_options,
+                                key="edit_trade_row_select"
+                            )
+                            
+                            # Get selected trade
+                            selected_trade = None
+                            if selected_row_str:
+                                # Find the row index
+                                try:
+                                    row_idx = row_options.index(selected_row_str)
+                                    selected_trade_id = trade_id_map[row_idx]
+                                    
+                                    # Find the full trade data
+                                    for t in edit_trades.data:
+                                        if t['id'] == selected_trade_id:
+                                            selected_trade = t
+                                            break
+                                except (ValueError, IndexError, KeyError):
+                                    pass
+                        else:
+                            selected_trade = None
+                        
+                        if selected_trade:
                             
                             col_edit1, col_edit2 = st.columns(2)
                             

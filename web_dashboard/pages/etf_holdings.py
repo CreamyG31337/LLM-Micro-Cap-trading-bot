@@ -200,6 +200,7 @@ def get_holdings_changes(
             AND t1.holding_ticker = t0.holding_ticker
             AND t0.date = pd.prev_date
         WHERE t1.date = %s
+          AND (COALESCE(t1.shares_held, 0) > 0 OR COALESCE(t0.shares_held, 0) > 0) -- Hide 0->0 noise
         """
         
         params = [target_date, target_date]

@@ -118,14 +118,21 @@ def get_latest_date(_postgres_client, _refresh_key: int) -> Optional[date]:
         return None
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_available_etfs(_postgres_client, _refresh_key: int) -> List[str]:
-    """Get all available ETF tickers"""
+def get_available_etfs(_postgres_client, _refresh_key: int) -> List[Dict[str, str]]:
+    """Get all available ETF tickers with names"""
     if _postgres_client is None:
         return []
     try:
-        result = _postgres_client.execute_query("SELECT DISTINCT etf_ticker FROM etf_holdings_log ORDER BY etf_ticker")
+        # Join with securities to get names
+        query = """
+            SELECT DISTINCT t.etf_ticker, s.name 
+            FROM etf_holdings_log t
+            LEFT JOIN securities s ON t.etf_ticker = s.ticker
+            ORDER BY t.etf_ticker
+        """
+        result = _postgres_client.execute_query(query)
         if result:
-            return [row['etf_ticker'] for row in result]
+            return [{'ticker': row['etf_ticker'], 'name': row['name'] or row['etf_ticker']} for row in result]
         return []
     except Exception as e:
         logger.error(f"Error fetching available ETFs: {e}")

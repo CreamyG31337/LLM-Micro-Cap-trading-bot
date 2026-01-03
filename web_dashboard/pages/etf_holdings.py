@@ -158,11 +158,16 @@ def get_all_holdings(
             t.holding_ticker,
             t.holding_name,
             t.shares_held as current_shares,
-            t.weight_percent
+            t.weight_percent,
+            COALESCE(SUM(p.quantity), 0) as user_shares
         FROM etf_holdings_log t
+        LEFT JOIN portfolio_positions p 
+            ON t.holding_ticker = p.ticker 
+            AND p.date = (SELECT MAX(date) FROM portfolio_positions)
         WHERE t.date = %s
           AND t.etf_ticker = %s
           AND COALESCE(t.shares_held, 0) > 0  -- Only show active holdings
+        GROUP BY t.date, t.etf_ticker, t.holding_ticker, t.holding_name, t.shares_held, t.weight_percent
         ORDER BY t.weight_percent DESC NULLS LAST, t.shares_held DESC
         """
         
@@ -195,6 +200,12 @@ def get_holdings_changes(
             FROM etf_holdings_log
             WHERE date < %s
             GROUP BY etf_ticker
+        ),
+        user_positions AS (
+            SELECT ticker, SUM(quantity) as user_shares
+            FROM portfolio_positions
+            WHERE date = (SELECT MAX(date) FROM portfolio_positions)
+            GROUP BY ticker
         )
         SELECT 
             t1.date as date,
@@ -218,13 +229,15 @@ def get_holdings_changes(
                 WHEN COALESCE(t1.shares_held, 0) > COALESCE(t0.shares_held, 0) THEN 'BUY'
                 WHEN COALESCE(t1.shares_held, 0) < COALESCE(t0.shares_held, 0) THEN 'SELL'
                 ELSE 'HOLD'
-            END as action
+            END as action,
+            COALESCE(up.user_shares, 0) as user_shares
         FROM etf_holdings_log t1
         LEFT JOIN prev_dates pd ON t1.etf_ticker = pd.etf_ticker
         LEFT JOIN etf_holdings_log t0 
             ON t1.etf_ticker = t0.etf_ticker 
             AND t1.holding_ticker = t0.holding_ticker
             AND t0.date = pd.prev_date
+        LEFT JOIN user_positions up ON t1.holding_ticker = up.ticker
         WHERE t1.date = %s
           AND (COALESCE(t1.shares_held, 0) > 0 OR COALESCE(t0.shares_held, 0) > 0) -- Hide 0->0 noise
         """
@@ -474,6 +487,15 @@ if not changes_df.empty:
     if 'date' in display_df.columns:
         display_df['date'] = pd.to_datetime(display_df['date']).dt.strftime('%Y-%m-%d')
     
+    # Add "We Hold" indicator based on user_shares
+    if 'user_shares' in display_df.columns:
+        display_df['we_hold'] = display_df['user_shares'].apply(
+            lambda x: "✓" if x > 0 else "—"
+        )
+        display_df['user_shares_formatted'] = display_df['user_shares'].apply(
+            lambda x: f"{int(x):,}" if x > 0 else "—"
+        )
+    
     # Format columns based on view mode
     if view_mode == "holdings":
         # Holdings view - format shares and weight
@@ -493,12 +515,14 @@ if not changes_df.empty:
             'etf_ticker': 'ETF',
             'holding_ticker': 'Ticker',
             'holding_name': 'Name',
+            'we_hold': 'We Hold',
+            'user_shares_formatted': 'Our Shares',
             'current_shares_formatted': 'Shares',
             'weight_percent_formatted': 'Weight %'
         })
         
         # Column order for holdings view
-        column_order = ['Date', 'Ticker', 'Name', 'Shares', 'Weight %']
+        column_order = ['Date', 'Ticker', 'Name', 'We Hold', 'Our Shares', 'Shares', 'Weight %']
         if 'ETF' in display_df.columns:
             column_order.insert(1, 'ETF')
     else:
@@ -529,6 +553,8 @@ if not changes_df.empty:
             'etf_ticker': 'ETF',
             'holding_ticker': 'Holding Ticker',
             'holding_name': 'Holding Name',
+            'we_hold': 'We Hold',
+            'user_shares_formatted': 'Our Shares',
             'action': 'Action',
             'share_change_formatted': 'Share Change',
             'percent_change_formatted': '% Change',
@@ -537,7 +563,7 @@ if not changes_df.empty:
         })
         
         # Column order for changes view
-        column_order = ['Date', 'ETF', 'Holding Ticker', 'Holding Name', 'Action', 'Share Change', '% Change', 'Previous Shares', 'Current Shares']
+        column_order = ['Date', 'ETF', 'Holding Ticker', 'Holding Name', 'We Hold', 'Our Shares', 'Action', 'Share Change', '% Change', 'Previous Shares', 'Current Shares']
     
     available_columns = [col for col in column_order if col in display_df.columns]
     display_df = display_df[available_columns]
@@ -547,6 +573,19 @@ if not changes_df.empty:
     gb.configure_pagination(paginationPageSize=50)
     gb.configure_side_bar()
     gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, aggFunc='sum', editable=False)
+    
+    # Highlight entire rows where we hold the stock
+    if 'We Hold' in display_df.columns:
+        gb.configure_grid_options(
+            getRowStyle=JsCode("""
+            function(params) {
+                if (params.data && params.data['We Hold'] === '✓') {
+                    return {backgroundColor: '#e8f5e9'};
+                }
+                return null;
+            }
+            """)
+        )
     
     # Configure Share Change column with color coding
     if 'Share Change' in display_df.columns:

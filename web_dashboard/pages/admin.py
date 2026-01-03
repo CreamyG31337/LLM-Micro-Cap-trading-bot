@@ -1890,12 +1890,23 @@ with tab6:
                         .execute()
                     
                     if edit_trades.data and len(edit_trades.data) > 0:
+                        # Helper function to safely get action from trade
+                        def get_trade_action(trade: dict) -> str:
+                            """Get action from trade, inferring from shares if action is missing."""
+                            action = trade.get('action', '').upper() if trade.get('action') else ''
+                            if action in ('BUY', 'SELL'):
+                                return action
+                            # Infer from shares: positive = BUY, negative = SELL
+                            shares = float(trade.get('shares', 0))
+                            return 'SELL' if shares < 0 else 'BUY'
+                        
                         # Create selection dropdown
                         trade_options = []
                         trade_lookup = {}
                         for t in edit_trades.data:
                             trade_date = pd.to_datetime(t['date']).strftime('%Y-%m-%d %H:%M')
-                            label = f"{trade_date} | {t['action']} {t['shares']} {t['ticker']} @ ${t['price']}"
+                            action = get_trade_action(t)
+                            label = f"{trade_date} | {action} {t['shares']} {t['ticker']} @ ${t['price']}"
                             trade_options.append(label)
                             trade_lookup[label] = t
                         
@@ -1912,8 +1923,9 @@ with tab6:
                             
                             with col_edit1:
                                 edit_ticker = st.text_input("Ticker", value=selected_trade['ticker'], key="edit_ticker")
+                                trade_action = get_trade_action(selected_trade)
                                 edit_action = st.selectbox("Action", options=["BUY", "SELL"], 
-                                                          index=0 if selected_trade['action'] == 'BUY' else 1, 
+                                                          index=0 if trade_action == 'BUY' else 1, 
                                                           key="edit_action")
                                 edit_shares = st.number_input("Shares", value=float(selected_trade['shares']), 
                                                              min_value=0.000001, step=1.0, format="%.6f", key="edit_shares")
@@ -1921,8 +1933,9 @@ with tab6:
                             with col_edit2:
                                 edit_price = st.number_input("Price", value=float(selected_trade['price']), 
                                                             min_value=0.01, step=0.01, format="%.2f", key="edit_price")
+                                trade_currency = selected_trade.get('currency', 'USD')
                                 edit_currency = st.selectbox("Currency", options=["USD", "CAD"], 
-                                                            index=0 if selected_trade['currency'] == 'USD' else 1,
+                                                            index=0 if trade_currency == 'USD' else 1,
                                                             key="edit_currency")
                                 original_date = pd.to_datetime(selected_trade['date'])
                                 edit_date = st.date_input("Trade Date", value=original_date.date(), key="edit_date")

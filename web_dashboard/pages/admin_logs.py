@@ -84,6 +84,9 @@ if mode == "Docker Containers (Live)":
                 try:
                     # Get logs
                     logs = container.logs(tail=tail_lines).decode('utf-8', errors='replace')
+                    # Reverse to show newest first
+                    log_lines = logs.split('\n')
+                    logs = '\n'.join(reversed(log_lines))
                     
                     st.code(logs, language=None)
                     
@@ -176,7 +179,8 @@ else:
                     
                     with open(selected_path, "r", encoding="utf-8", errors="replace") as f:
                         lines = f.readlines()
-                        log_content = "".join(lines[-2000:])
+                        # Reverse to show newest first
+                        log_content = "".join(reversed(lines[-2000:]))
                     
                     st.text_area("File Content", log_content, height=600)
                 except Exception as e:

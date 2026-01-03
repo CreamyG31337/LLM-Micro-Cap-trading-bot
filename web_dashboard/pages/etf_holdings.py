@@ -656,7 +656,7 @@ if not changes_df.empty:
             getRowStyle=JsCode("""
             function(params) {
                 if (params.data && params.data['We Hold'] === '✓') {
-                    return {backgroundColor: '#e8f5e9'};
+                    return {backgroundColor: '#2d5a3d'};
                 }
                 return null;
             }

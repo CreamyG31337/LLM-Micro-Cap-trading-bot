@@ -945,16 +945,18 @@ try:
             parts = []
             parts.append(f"**Source:** {article.get('source', 'N/A')}")
             parts.append(f"**Type:** {article.get('article_type', 'N/A')}")
-            # Tickers - show as clickable pills
+            # Tickers - show as clickable links
             tickers = article.get('tickers')
             if tickers:
                 if isinstance(tickers, list):
-                    parts.append(f"**Tickers:** {', '.join(tickers)}")
+                    # Convert each ticker to a clickable link
+                    clickable_tickers = [render_ticker_link(ticker, ticker) for ticker in tickers]
+                    parts.append(f"**Tickers:** {', '.join(clickable_tickers)}")
                 else:
-                    parts.append(f"**Tickers:** {str(tickers)}")
+                    parts.append(f"**Tickers:** {render_ticker_link(str(tickers), str(tickers))}")
             elif article.get('ticker'):
                 ticker = article.get('ticker')
-                parts.append(f"**Ticker:** {ticker}")
+                parts.append(f"**Ticker:** {render_ticker_link(ticker, ticker)}")
             
             if article.get('sector'):
                 parts.append(f"**Sector:** {article.get('sector')}")
@@ -1102,16 +1104,30 @@ try:
             # Combine both icons
             icon_badge = f"{job_icon}{status_icon} "
             
-            # Format tickers (show first 2 tickers max)
+            # Format tickers (show first 2 tickers max for display)
             tickers = article.get('tickers', [])
             if tickers and isinstance(tickers, list):
-                ticker_str = ", ".join(tickers[:2])
+                ticker_list = tickers[:2]
+                ticker_str = ", ".join(ticker_list)
                 if len(tickers) > 2:
                     ticker_str += f" +{len(tickers)-2}"
             elif article.get('ticker'):
+                ticker_list = [article.get('ticker')]
                 ticker_str = article.get('ticker')
             else:
+                ticker_list = []
                 ticker_str = ""
+            
+            # Create clickable ticker links for display
+            clickable_ticker_links = []
+            if ticker_list:
+                for ticker in ticker_list:
+                    clickable_ticker_links.append(render_ticker_link(ticker, ticker))
+                clickable_ticker_display = ", ".join(clickable_ticker_links)
+                if tickers and isinstance(tickers, list) and len(tickers) > 2:
+                    clickable_ticker_display += f" +{len(tickers)-2}"
+            else:
+                clickable_ticker_display = ""
             
             # Show fund for uploaded reports
             fund = article.get('fund')
@@ -1128,10 +1144,8 @@ try:
             else:
                 date_str = ""
             
-            # Build title: Ticker | Title | Date | Fund (if uploaded report)
+            # Build title: Title | Date | Fund (if uploaded report) - ticker removed from title
             title_parts = []
-            if ticker_str:
-                title_parts.append(f"**{ticker_str}**")
             title_parts.append(article.get('title', 'Untitled')[:60])
             if date_str:
                 title_parts.append(date_str)
@@ -1139,8 +1153,8 @@ try:
             expander_title = f"{icon_badge}{' | '.join(title_parts)}{fund_badge}"
             
             if user_is_admin:
-                # Admin view with checkbox
-                col_check, col_expander = st.columns([0.05, 0.95])
+                # Admin view with checkbox, clickable ticker, and expander
+                col_check, col_ticker, col_expander = st.columns([0.05, 0.15, 0.80])
                 with col_check:
                     article_id = article['id']
                     checkbox_key = f"select_{article_id}"
@@ -1165,13 +1179,23 @@ try:
                         on_change=make_checkbox_callback(article_id)
                     )
                 
+                with col_ticker:
+                    if clickable_ticker_display:
+                        st.markdown(clickable_ticker_display)
+                
                 with col_expander:
                     with st.expander(expander_title, expanded=False):
                         render_article_content(article, show_admin_actions=True)
             else:
-                # Non-admin view - no checkbox column
-                with st.expander(expander_title, expanded=False):
-                    render_article_content(article, show_admin_actions=False)
+                # Non-admin view - clickable ticker and expander
+                col_ticker, col_expander = st.columns([0.15, 0.85])
+                with col_ticker:
+                    if clickable_ticker_display:
+                        st.markdown(clickable_ticker_display)
+                
+                with col_expander:
+                    with st.expander(expander_title, expanded=False):
+                        render_article_content(article, show_admin_actions=False)
 
 
 

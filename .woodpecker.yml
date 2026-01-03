@@ -70,6 +70,9 @@ steps:
       - docker stop trading-dashboard || true
       - docker rm trading-dashboard || true
       
+      # Create logs directory on host with proper permissions
+      - mkdir -p /home/lance/trading-dashboard-logs && chmod 777 /home/lance/trading-dashboard-logs
+      
       # Verify secrets are set
       - |
         if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
@@ -87,6 +90,8 @@ steps:
       - |
         # Build base docker run command
         DOCKER_CMD="docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway"
+        # Mount application logs directory (host logs -> container logs)
+        DOCKER_CMD="$DOCKER_CMD -v /home/lance/trading-dashboard-logs:/app/web_dashboard/logs"
         # Mount Ollama logs directory (host logs -> container logs/server)
         DOCKER_CMD="$DOCKER_CMD -v /home/lance/ollama-logs:/app/web_dashboard/logs/server"
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_URL=\"$SUPABASE_URL\""

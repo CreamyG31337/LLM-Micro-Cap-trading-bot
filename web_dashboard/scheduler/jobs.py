@@ -155,6 +155,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '♻️'
     },
+    'log_cleanup': {
+        'name': 'Log File Cleanup',
+        'description': 'Delete log files older than 30 days to prevent unbounded disk usage',
+        'default_interval_minutes': 1440,  # Once per day
+        'enabled_by_default': True,
+        'icon': '🧹'
+    },
     'rescore_congress_sessions': {
         'name': 'Rescore Congress Sessions (Manual)',
         'description': 'One-time backfill: Rescore 1000 sessions with new AI logic',
@@ -303,7 +310,110 @@ __all__ = [
     'AVAILABLE_JOBS',
     'get_job_icon',
     'register_default_jobs',
+    # Log cleanup job
+    'cleanup_log_files_job',
 ]
+
+
+def cleanup_log_files_job() -> None:
+    """Daily cleanup job for log file retention policy.
+    
+    Deletes log files older than 30 days to prevent unbounded disk usage.
+    Preserves current app.log and recent rotated backups managed by RotatingFileHandler.
+    """
+    import time
+    import os
+    from pathlib import Path
+    
+    job_id = 'log_cleanup'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting log cleanup job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('log_cleanup', target_date)
+        
+        # Get logs directory path
+        # This works both in container and local development
+        log_dir = Path(__file__).parent.parent / 'logs'
+        
+        if not log_dir.exists():
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Logs directory not found: {log_dir}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.warning(f"⚠️ {message}")
+            mark_job_failed('log_cleanup', target_date, None, message, duration_ms=duration_ms)
+            return
+        
+        # Calculate cutoff date (30 days ago)
+        cutoff_time = time.time() - (30 * 24 * 60 * 60)  # 30 days in seconds
+        
+        deleted_count = 0
+        deleted_size = 0
+        preserved_count = 0
+        
+        # Get all log files in the directory
+        log_files = list(log_dir.glob("*.log*"))
+        
+        for log_file in log_files:
+            try:
+                # Get file modification time
+                file_mtime = os.path.getmtime(log_file)
+                file_size = os.path.getsize(log_file)
+                
+                # Skip if file is newer than cutoff
+                if file_mtime > cutoff_time:
+                    preserved_count += 1
+                    continue
+                
+                # Special handling for app.log and its rotated backups
+                # RotatingFileHandler creates: app.log, app.log.1, app.log.2, etc.
+                # We want to preserve at least the current app.log and recent backups
+                if log_file.name.startswith('app.log'):
+                    # For app.log files, be more conservative
+                    # Only delete if it's clearly old (60 days) and not the current app.log
+                    if log_file.name == 'app.log':
+                        # Never delete the current app.log file
+                        preserved_count += 1
+                        continue
+                    elif file_mtime < (time.time() - (60 * 24 * 60 * 60)):  # 60 days for rotated backups
+                        # Only delete rotated backups older than 60 days
+                        os.remove(log_file)
+                        deleted_count += 1
+                        deleted_size += file_size
+                        logger.debug(f"Deleted old rotated log: {log_file.name}")
+                    else:
+                        preserved_count += 1
+                else:
+                    # For other log files, use 30-day cutoff
+                    os.remove(log_file)
+                    deleted_count += 1
+                    deleted_size += file_size
+                    logger.debug(f"Deleted old log file: {log_file.name}")
+                    
+            except OSError as e:
+                logger.warning(f"Could not process {log_file.name}: {e}")
+                continue
+        
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        size_mb = deleted_size / (1024 * 1024)
+        message = f"Deleted {deleted_count} log files ({size_mb:.2f} MB), preserved {preserved_count} files"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('log_cleanup', target_date, None, [], duration_ms=duration_ms)
+        logger.info(f"✅ Log cleanup job completed: {message} in {duration_ms/1000:.2f}s")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        mark_job_failed('log_cleanup', target_date, None, str(e), duration_ms=duration_ms)
+        logger.error(f"❌ Log cleanup job failed: {e}", exc_info=True)
 
 
 def register_default_jobs(scheduler) -> None:
@@ -562,6 +672,23 @@ def register_default_jobs(scheduler) -> None:
         coalesce=True
     )
     logger.info("Registered job: social_metrics_cleanup (daily at 3:00 AM EST)")
+    
+    # Log cleanup job - daily at 2:00 AM EST
+    if AVAILABLE_JOBS['log_cleanup']['enabled_by_default']:
+        scheduler.add_job(
+            cleanup_log_files_job,
+            trigger=CronTrigger(
+                hour=2,
+                minute=0,
+                timezone='America/New_York'
+            ),
+            id='log_cleanup',
+            name=f"{get_job_icon('log_cleanup')} Log File Cleanup",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: log_cleanup (daily at 2:00 AM EST)")
     
     # Rescore Congress Sessions (Manual Only)
     # Always register this so it appears in UI, but it has no schedule

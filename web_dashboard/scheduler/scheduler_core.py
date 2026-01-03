@@ -52,22 +52,27 @@ def get_scheduler() -> BackgroundScheduler:
 
 
 def cleanup_stale_running_jobs() -> int:
-    """Delete all jobs with status='running' on startup.
+    """Clean up stale 'running' jobs on startup and add to retry queue.
     
     When the container restarts, any jobs that were running are interrupted.
-    This function deletes those stale 'running' status records so they don't
-    falsely show as running or failed.
+    This function:
+    1. Marks them as failed in job_executions
+    2. Adds calculation jobs to retry queue
+    3. Deletes the stale records
     
     Returns:
         Number of stale jobs cleaned up
     """
     try:
         from supabase_client import SupabaseClient
+        from utils.job_tracking import add_to_retry_queue, is_calculation_job, mark_job_failed
+        from datetime import datetime
+        
         client = SupabaseClient(use_service_role=True)
         
         # Find all jobs still marked as running
         result = client.supabase.table("job_executions")\
-            .select("id, job_name, started_at")\
+            .select("id, job_name, target_date, fund_name, started_at")\
             .eq("status", "running")\
             .execute()
         
@@ -76,19 +81,55 @@ def cleanup_stale_running_jobs() -> int:
             return 0
         
         count = len(result.data)
-        logger.info(f"Found {count} stale 'running' job(s), deleting...")
+        logger.info(f"Found {count} stale 'running' job(s), cleaning up...")
         
-        # Delete stale records
-        # Using a loop to be safe and log each one, though batch delete would work too
+        # Process each stale job
         for job in result.data:
+            job_name = job['job_name']
+            target_date_str = job.get('target_date')
+            fund_name = job.get('fund_name') or None
+            
+            # Mark as failed in job_executions
+            if target_date_str:
+                try:
+                    target_date = datetime.fromisoformat(target_date_str).date()
+                    mark_job_failed(
+                        job_name=job_name,
+                        target_date=target_date,
+                        fund_name=fund_name,
+                        error="Container restarted - job interrupted"
+                    )
+                except Exception as e:
+                    logger.warning(f"  Failed to mark {job_name} as failed: {e}")
+            
+            # Add to retry queue if calculation job
+            if target_date_str and is_calculation_job(job_name):
+                try:
+                    target_date = datetime.fromisoformat(target_date_str).date()
+                    entity_id = fund_name if fund_name else None
+                    entity_type = 'fund' if fund_name else 'all_funds'
+                    
+                    add_to_retry_queue(
+                        job_name=job_name,
+                        target_date=target_date,
+                        entity_id=entity_id,
+                        entity_type=entity_type,
+                        failure_reason='container_restart',
+                        error_message='Job interrupted by container restart'
+                    )
+                    logger.info(f"  📝 Added {job_name} {target_date} to retry queue")
+                except Exception as e:
+                    logger.error(f"  ❌ Failed to add {job_name} to retry queue: {e}")
+            
+            # Delete the stale record
             client.supabase.table("job_executions")\
                 .delete()\
                 .eq("id", job['id'])\
                 .execute()
             
-            logger.info(f"  ✓ Deleted stale run for {job['job_name']} (started: {job.get('started_at')})")
+            logger.info(f"  ✓ Cleaned up stale run for {job_name} (started: {job.get('started_at')})")
         
-        logger.info(f"✅ Deleted {count} stale running job records")
+        logger.info(f"✅ Cleaned up {count} stale running job records")
         return count
         
     except Exception as e:

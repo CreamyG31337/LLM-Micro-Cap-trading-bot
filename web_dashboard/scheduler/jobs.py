@@ -141,6 +141,20 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '💰'
     },
+    'watchdog': {
+        'name': 'Job Retry Watchdog',
+        'description': 'Automatically retry failed calculation jobs and detect stale/interrupted jobs',
+        'default_interval_minutes': 30,  # Every 30 minutes
+        'enabled_by_default': True,
+        'icon': '🔄'
+    },
+    'process_retry_queue': {
+        'name': 'Process Retry Queue',
+        'description': 'Automatically retry failed jobs from the retry queue',
+        'default_interval_minutes': 15,  # Every 15 minutes
+        'enabled_by_default': True,
+        'icon': '♻️'
+    },
     'rescore_congress_sessions': {
         'name': 'Rescore Congress Sessions (Manual)',
         'description': 'One-time backfill: Rescore 1000 sessions with new AI logic',
@@ -243,6 +257,12 @@ from scheduler.jobs_opportunity import opportunity_discovery_job
 # Import dividend processing job
 from scheduler.jobs_dividends import process_dividends_job
 
+# Import watchdog job
+from scheduler.jobs_watchdog import watchdog_job
+
+# Import retry queue processor job
+from scheduler.jobs_retry import process_retry_queue_job
+
 # Import shared utilities
 from scheduler.jobs_common import calculate_relevance_score
 
@@ -271,6 +291,12 @@ __all__ = [
     'rescore_congress_sessions_job',
     # Opportunity discovery
     'opportunity_discovery_job',
+    # Dividend processing
+    'process_dividends_job',
+    # Watchdog
+    'watchdog_job',
+    # Retry queue processor
+    'process_retry_queue_job',
     # Shared utilities
     'calculate_relevance_score',
     # Registry functions (defined in this file)
@@ -589,3 +615,29 @@ def register_default_jobs(scheduler) -> None:
             coalesce=True
         )
         logger.info("Registered job: dividend_processing (daily at 2:00 AM PST)")
+    
+    # Watchdog job - every 30 minutes
+    if AVAILABLE_JOBS['watchdog']['enabled_by_default']:
+        scheduler.add_job(
+            watchdog_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['watchdog']['default_interval_minutes']),
+            id='watchdog',
+            name=f"{get_job_icon('watchdog')} Job Retry Watchdog",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: watchdog (every 30 minutes)")
+    
+    # Retry queue processor job - every 15 minutes
+    if AVAILABLE_JOBS.get('process_retry_queue', {}).get('enabled_by_default', True):
+        scheduler.add_job(
+            process_retry_queue_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['process_retry_queue']['default_interval_minutes']),
+            id='process_retry_queue',
+            name=f"{get_job_icon('process_retry_queue')} Process Retry Queue",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: process_retry_queue (every 15 minutes)")

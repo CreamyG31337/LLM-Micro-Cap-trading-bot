@@ -353,3 +353,264 @@ def cleanup_stale_running_jobs(max_age_hours: int = 24) -> int:
     except Exception as e:
         logger.warning(f"Failed to cleanup stale jobs: {e}")
         return 0
+
+
+def add_to_retry_queue(
+    job_name: str,
+    target_date: date,
+    entity_id: Optional[str],
+    entity_type: str = 'fund',
+    failure_reason: str = 'job_failed',
+    error_message: str = '',
+    context: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    Add a failed job/day to the retry queue.
+    
+    Args:
+        job_name: Name of the job
+        target_date: Date that needs retry
+        entity_id: Specific entity (fund_name, ticker, etc.) or None
+        entity_type: Type of entity ('fund', 'ticker', 'all_funds', etc.)
+        failure_reason: Why it failed ('chunk_failed', 'insert_failed', etc.)
+        error_message: Error details
+        context: Optional JSONB context (batch ranges, chunk numbers, etc.)
+    """
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        # Use empty string instead of None for entity_id (PostgreSQL NULL uniqueness issue)
+        effective_entity_id = entity_id if entity_id is not None else ''
+        
+        # Check if already in queue (avoid duplicates)
+        existing = client.supabase.table("job_retry_queue")\
+            .select("id")\
+            .eq("job_name", job_name)\
+            .eq("target_date", target_date.isoformat())\
+            .eq("entity_id", effective_entity_id)\
+            .eq("entity_type", entity_type)\
+            .in_("status", ["pending", "retrying"])\
+            .execute()
+        
+        if existing.data:
+            logger.debug(f"Retry entry already exists for {job_name} {target_date} {entity_id}")
+            return
+        
+        # Insert new retry entry
+        data = {
+            'job_name': job_name,
+            'target_date': target_date.isoformat(),
+            'entity_id': effective_entity_id,
+            'entity_type': entity_type,
+            'failure_reason': failure_reason,
+            'error_message': error_message[:1000],  # Truncate long errors
+            'status': 'pending',
+            'retry_count': 0,
+        }
+        
+        if context is not None:
+            data['context'] = context
+        
+        client.supabase.table("job_retry_queue")\
+            .insert(data)\
+            .execute()
+        
+        logger.debug(f"Added {job_name} {target_date} {entity_id} to retry queue")
+        
+    except Exception as e:
+        logger.warning(f"Failed to add to retry queue: {e}")
+        # Don't raise - retry queue failure shouldn't break the job
+
+
+def get_pending_retries(
+    max_retries: int = 3,
+    max_age_days: int = 7,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Get pending retries from the retry queue.
+    
+    Args:
+        max_retries: Only return retries with retry_count < max_retries
+        max_age_days: Only return retries created within max_age_days
+        limit: Max number of retries to return (prevent overloading)
+        
+    Returns:
+        List of retry queue records
+    """
+    try:
+        from supabase_client import SupabaseClient
+        from datetime import timedelta
+        
+        client = SupabaseClient(use_service_role=True)
+        
+        # Calculate cutoff date
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).date()
+        
+        result = client.supabase.table("job_retry_queue")\
+            .select("*")\
+            .eq("status", "pending")\
+            .lt("retry_count", max_retries)\
+            .gte("target_date", cutoff_date.isoformat())\
+            .order("target_date", desc=False)\
+            .order("created_at", desc=False)\
+            .limit(limit)\
+            .execute()
+        
+        return result.data if result.data else []
+    except Exception as e:
+        logger.warning(f"Failed to get pending retries: {e}")
+        return []
+
+
+def mark_retrying(
+    job_name: str,
+    target_date: date,
+    entity_id: Optional[str],
+    entity_type: str = 'fund'
+) -> None:
+    """
+    Mark a retry entry as 'retrying'.
+    
+    Args:
+        job_name: Name of the job
+        target_date: Date being retried
+        entity_id: Specific entity or None
+        entity_type: Type of entity
+    """
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        effective_entity_id = entity_id if entity_id is not None else ''
+        
+        # Get current retry_count
+        result = client.supabase.table("job_retry_queue")\
+            .select("retry_count")\
+            .eq("job_name", job_name)\
+            .eq("target_date", target_date.isoformat())\
+            .eq("entity_id", effective_entity_id)\
+            .eq("entity_type", entity_type)\
+            .eq("status", "pending")\
+            .execute()
+        
+        if not result.data:
+            logger.warning(f"Retry entry not found for {job_name} {target_date} {entity_id}")
+            return
+        
+        current_count = result.data[0].get('retry_count', 0)
+        
+        # Update status and increment retry_count
+        client.supabase.table("job_retry_queue")\
+            .update({
+                'status': 'retrying',
+                'last_retry_at': datetime.now(timezone.utc).isoformat(),
+                'retry_count': current_count + 1
+            })\
+            .eq("job_name", job_name)\
+            .eq("target_date", target_date.isoformat())\
+            .eq("entity_id", effective_entity_id)\
+            .eq("entity_type", entity_type)\
+            .execute()
+        
+        logger.debug(f"Marked {job_name} {target_date} {entity_id} as retrying")
+        
+    except Exception as e:
+        logger.warning(f"Failed to mark retrying: {e}")
+
+
+def mark_resolved(
+    job_name: str,
+    target_date: date,
+    entity_id: Optional[str],
+    entity_type: str = 'fund'
+) -> None:
+    """
+    Mark a retry entry as 'resolved' (successful).
+    
+    Args:
+        job_name: Name of the job
+        target_date: Date that was retried
+        entity_id: Specific entity or None
+        entity_type: Type of entity
+    """
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        effective_entity_id = entity_id if entity_id is not None else ''
+        
+        client.supabase.table("job_retry_queue")\
+            .update({
+                'status': 'resolved',
+                'resolved_at': datetime.now(timezone.utc).isoformat()
+            })\
+            .eq("job_name", job_name)\
+            .eq("target_date", target_date.isoformat())\
+            .eq("entity_id", effective_entity_id)\
+            .eq("entity_type", entity_type)\
+            .in_("status", ["retrying", "pending"])\
+            .execute()
+        
+        logger.debug(f"Marked {job_name} {target_date} {entity_id} as resolved")
+        
+    except Exception as e:
+        logger.warning(f"Failed to mark resolved: {e}")
+
+
+def mark_abandoned(
+    job_name: str,
+    target_date: date,
+    entity_id: Optional[str],
+    entity_type: str = 'fund'
+) -> None:
+    """
+    Mark a retry entry as 'abandoned' (max retries exceeded).
+    
+    Args:
+        job_name: Name of the job
+        target_date: Date that failed
+        entity_id: Specific entity or None
+        entity_type: Type of entity
+    """
+    try:
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        
+        effective_entity_id = entity_id if entity_id is not None else ''
+        
+        client.supabase.table("job_retry_queue")\
+            .update({
+                'status': 'abandoned',
+                'resolved_at': datetime.now(timezone.utc).isoformat()
+            })\
+            .eq("job_name", job_name)\
+            .eq("target_date", target_date.isoformat())\
+            .eq("entity_id", effective_entity_id)\
+            .eq("entity_type", entity_type)\
+            .in_("status", ["retrying", "pending"])\
+            .execute()
+        
+        logger.warning(f"Marked {job_name} {target_date} {entity_id} as abandoned (max retries exceeded)")
+        
+    except Exception as e:
+        logger.warning(f"Failed to mark abandoned: {e}")
+
+
+def is_calculation_job(job_name: str) -> bool:
+    """
+    Determine if a job is a calculation job that needs retry tracking.
+    
+    Args:
+        job_name: Name of the job
+        
+    Returns:
+        True if calculation job, False if data collection job
+    """
+    calculation_jobs = {
+        'update_portfolio_prices',
+        'performance_metrics',
+        'dividend_processing'
+    }
+    return job_name in calculation_jobs

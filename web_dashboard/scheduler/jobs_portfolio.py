@@ -656,7 +656,7 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         from utils.market_holidays import MarketHolidays
         from supabase_client import SupabaseClient
         from exchange_rates_utils import get_exchange_rate_for_date_from_db
-        from utils.job_tracking import mark_job_completed
+        from utils.job_tracking import mark_job_completed, add_to_retry_queue
         from cache_version import bump_cache_version
         import pytz
         
@@ -1013,6 +1013,23 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                                     days_inserted_for_fund.add(day)
                                 else:
                                     logger.warning(f"    ⚠️  {day}: Insert succeeded but validation found no data")
+                                    # Add to retry queue - insert appeared to succeed but data missing
+                                    try:
+                                        add_to_retry_queue(
+                                            job_name='update_portfolio_prices',
+                                            target_date=day,
+                                            entity_id=fund_name,
+                                            entity_type='fund',
+                                            failure_reason='validation_failed',
+                                            error_message='Insert succeeded but validation found no data in database',
+                                            context={
+                                                'chunk_number': chunk_idx + 1,
+                                                'batch_range': f"{start_date} to {end_date}"
+                                            }
+                                        )
+                                        logger.info(f"    📝 Added {day} to retry queue for {fund_name} (validation failed)")
+                                    except Exception as retry_error:
+                                        logger.error(f"    ❌ Failed to add {day} to retry queue: {retry_error}")
                             except Exception as validation_error:
                                 logger.warning(f"    ⚠️  {day}: Validation query failed: {validation_error}")
                         
@@ -1036,6 +1053,27 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                         
                         logger.error(f"    ❌ Chunk {chunk_idx + 1}/{num_chunks} failed: {chunk_error}")
                         logger.warning(f"    Days in failed chunk: {sorted(list(chunk_dates))}")
+                        
+                        # Add each failed day to retry queue
+                        for failed_day in chunk_dates:
+                            try:
+                                add_to_retry_queue(
+                                    job_name='update_portfolio_prices',
+                                    target_date=failed_day,
+                                    entity_id=fund_name,
+                                    entity_type='fund',
+                                    failure_reason='chunk_failed',
+                                    error_message=f"Chunk {chunk_idx + 1} insert failed: {str(chunk_error)[:200]}",
+                                    context={
+                                        'chunk_number': chunk_idx + 1,
+                                        'position_count': len(chunk),
+                                        'batch_range': f"{start_date} to {end_date}"
+                                    }
+                                )
+                                logger.info(f"    📝 Added {failed_day} to retry queue for {fund_name}")
+                            except Exception as retry_error:
+                                logger.error(f"    ❌ Failed to add {failed_day} to retry queue: {retry_error}")
+                        
                         # Continue with next chunk - don't fail entire batch
                 
                 # Summary
@@ -1060,6 +1098,32 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                 
             except Exception as e:
                 logger.error(f"  ❌ Error processing fund {fund_name}: {e}", exc_info=True)
+                
+                # Add all remaining days to retry queue
+                # Find which days haven't been processed yet
+                # BUGFIX: days_inserted_for_fund might not exist if error occurred before chunking
+                processed_days = locals().get('days_inserted_for_fund', set())
+                remaining_days = set(trading_days) - processed_days
+                
+                if remaining_days:
+                    logger.warning(f"  📝 Adding {len(remaining_days)} unprocessed days to retry queue")
+                    for unprocessed_day in remaining_days:
+                        try:
+                            add_to_retry_queue(
+                                job_name='update_portfolio_prices',
+                                target_date=unprocessed_day,
+                                entity_id=fund_name,
+                                entity_type='fund',
+                                failure_reason='fund_processing_failed',
+                                error_message=f"Fund processing exception: {str(e)[:200]}",
+                                context={
+                                    'batch_range': f"{start_date} to {end_date}",
+                                    'processed_days': sorted(list(processed_days))
+                                }
+                            )
+                        except Exception as retry_error:
+                            logger.error(f"  ❌ Failed to add {unprocessed_day} to retry queue: {retry_error}")
+                
                 continue
         
         # ISSUE #1 FIX: Only mark days as completed if ALL production funds succeeded

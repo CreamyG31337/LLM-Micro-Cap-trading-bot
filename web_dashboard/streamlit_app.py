@@ -2202,9 +2202,9 @@ def main():
                     else if (params.colDef.field === '1-Day P&L') val = params.data._daily_pnl;
                     else if (params.colDef.field === '5-Day P&L') val = params.data._5day_pnl;
                     
-                    if (val > 0) return {color: '#10b981', fontWeight: 'bold'}; // Green
-                    if (val < 0) return {color: '#ef4444', fontWeight: 'bold'}; // Red
-                    return null;
+                    if (val > 0) return {color: '#10b981', fontWeight: 'bold', textAlign: 'right'}; // Green
+                    if (val < 0) return {color: '#ef4444', fontWeight: 'bold', textAlign: 'right'}; // Red
+                    return {textAlign: 'right'};
                 }
                 """)
                 
@@ -2320,7 +2320,7 @@ def main():
                 mask = recent_trades['company'].isna() | (recent_trades['company'] == '')
                 recent_trades.loc[mask, 'company'] = recent_trades.loc[mask, 'ticker'].map(ticker_to_company)
             
-            # Infer action type (BUY/SELL) from reason field
+            # Infer action type (BUY/SELL/DRIP) from reason field
             if 'reason' in recent_trades.columns:
                 def infer_action(reason):
                     if pd.isna(reason) or reason is None:
@@ -2328,7 +2328,9 @@ def main():
                     reason_lower = str(reason).lower()
                     if 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower:
                         return 'SELL'
-                    return 'BUY'  # Default to BUY if no sell keywords found
+                    if 'drip' in reason_lower or 'dividend' in reason_lower:
+                        return 'DRIP'
+                    return 'BUY'  # Default to BUY if no sell/drip keywords found
                 recent_trades['Action'] = recent_trades['reason'].apply(infer_action)
             else:
                 # No reason column - default to BUY
@@ -2345,8 +2347,25 @@ def main():
             display_cols.extend(['Action', 'shares', 'price'])
             col_rename.update({'Action': 'Action', 'shares': 'Shares', 'price': 'Price'})
             
-            # Add P&L if available
-            if 'pnl' in recent_trades.columns:
+            # Create a better P&L/Amount column
+            # For SELLs: show realized P&L (if available)
+            # For BUYs/DRIPs: show purchase amount (shares * price)
+            if 'pnl' in recent_trades.columns and 'shares' in recent_trades.columns and 'price' in recent_trades.columns:
+                def calculate_display_amount(row):
+                    action = row.get('Action', 'BUY')
+                    pnl = row.get('pnl', 0)
+                    shares = row.get('shares', 0)
+                    price = row.get('price', 0)
+                    
+                    if action == 'SELL':
+                        return pnl  # Show realized P&L for sells
+                    else:
+                        return shares * price  # Show purchase amount for buys/drips
+                
+                recent_trades['display_amount'] = recent_trades.apply(calculate_display_amount, axis=1)
+                display_cols.append('display_amount')
+                col_rename['display_amount'] = 'Amount / P&L'
+            elif 'pnl' in recent_trades.columns:
                 display_cols.append('pnl')
                 col_rename['pnl'] = 'Realized P&L'
             
@@ -2362,6 +2381,10 @@ def main():
                 display_df = recent_trades[display_cols].copy()
                 display_df = display_df.rename(columns=col_rename)
                 
+                # Format date column to show only date (no time)
+                if 'Date' in display_df.columns:
+                    display_df['Date'] = pd.to_datetime(display_df['Date'], errors='coerce').dt.strftime('%m-%d-%y')
+                
                 # Format columns
                 format_dict = {}
                 if 'Shares' in display_df.columns:
@@ -2370,12 +2393,54 @@ def main():
                     format_dict['Price'] = '${:.2f}'
                 if 'Realized P&L' in display_df.columns:
                     format_dict['Realized P&L'] = '${:,.2f}'
+                if 'Amount / P&L' in display_df.columns:
+                    format_dict['Amount / P&L'] = '${:,.2f}'
                 
                 # Apply styling
                 styled_df = display_df.style.format(format_dict)
                 
-                # Color-code P&L
-                if 'Realized P&L' in display_df.columns:
+                # Color-code based on Action type
+                if 'Action' in display_df.columns:
+                    def color_action(val):
+                        if val == 'SELL':
+                            return 'color: #ef4444; font-weight: bold'  # Red
+                        elif val == 'DRIP':
+                            return 'color: #10b981; font-weight: bold'  # Green
+                        elif val == 'BUY':
+                            return 'color: #f59e0b; font-weight: bold'  # Yellow/Orange
+                        return ''
+                    styled_df = styled_df.map(color_action, subset=['Action'])
+                
+                # Color-code P&L/Amount column
+                if 'Amount / P&L' in display_df.columns and 'Action' in display_df.columns:
+                    def color_amount(row):
+                        action = row['Action']
+                        val = row['Amount / P&L']
+                        
+                        try:
+                            if isinstance(val, str):
+                                val_num = float(val.replace('$', '').replace(',', ''))
+                            else:
+                                val_num = float(val)
+                            
+                            if action == 'SELL':
+                                # For sells, green if profit, red if loss
+                                if val_num > 0:
+                                    return 'color: #10b981; font-weight: bold'
+                                elif val_num < 0:
+                                    return 'color: #ef4444; font-weight: bold'
+                            elif action == 'DRIP':
+                                # For DRIP, show in green
+                                return 'color: #10b981'
+                            elif action == 'BUY':
+                                # For BUY, show in yellow/orange
+                                return 'color: #f59e0b'
+                        except:
+                            pass
+                        return ''
+                    
+                    styled_df = styled_df.apply(color_amount, axis=1, subset=['Amount / P&L'])
+                elif 'Realized P&L' in display_df.columns:
                     def color_trade_pnl(val):
                         try:
                             if isinstance(val, str):
@@ -2407,16 +2472,6 @@ def main():
         losing_trades = realized_pnl_data.get('losing_trades', 0)
         trades_by_ticker = realized_pnl_data.get('trades_by_ticker', {})
         
-        # Debug: Show what we found (only in debug mode)
-        if st.checkbox("🔍 Debug: Show trade log info", key="debug_realized_pnl"):
-            trades_df = get_trade_log(limit=100, fund=fund_filter)
-            if not trades_df.empty:
-                st.write(f"**Total trades found:** {len(trades_df)}")
-                st.write(f"**Columns:** {list(trades_df.columns)}")
-                if 'reason' in trades_df.columns:
-                    sell_in_reason = trades_df['reason'].astype(str).str.upper().str.contains('SELL', na=False)
-                    st.write(f"**Trades with 'SELL' in reason:** {sell_in_reason.sum()}")
-                st.dataframe(trades_df.head(20), use_container_width=True)
         
         if num_closed > 0:
             # Display primary metrics (matching console app structure)
@@ -2430,11 +2485,12 @@ def main():
                 )
             
             with pnl_col2:
-                total_shares_sold = realized_pnl_data.get('total_shares_sold', 0.0)
+                # Calculate average return percentage
+                avg_return_pct = (total_realized / realized_pnl_data.get('total_cost_basis', 1.0) * 100) if realized_pnl_data.get('total_cost_basis', 0) > 0 else 0.0
                 st.metric(
-                    "Total Shares Sold",
-                    f"{total_shares_sold:,.2f}",
-                    help="Total number of shares sold across all closed positions."
+                    "Avg Return %",
+                    f"{avg_return_pct:+.2f}%",
+                    help="Average return percentage across all closed positions."
                 )
             
             with pnl_col3:
@@ -2446,11 +2502,12 @@ def main():
                 )
             
             with pnl_col4:
-                avg_sell_price = realized_pnl_data.get('average_sell_price', 0.0)
+                # Calculate best trade percentage
+                best_trade_pct = realized_pnl_data.get('best_trade_pct', 0.0)
                 st.metric(
-                    f"Avg Sell Price {format_currency_label(display_currency)}",
-                    f"${avg_sell_price:,.2f}",
-                    help=f"Average sell price per share across all closed positions in {display_currency}."
+                    "Best Trade %",
+                    f"{best_trade_pct:+.2f}%",
+                    help="Highest return percentage from a single closed position."
                 )
             
             # Secondary metrics row
@@ -2640,14 +2697,24 @@ def main():
                 total_dividends = div_df['net_amount'].sum()
                 total_reinvested = div_df['reinvested_shares'].sum()
                 num_payouts = len(div_df)
+                total_us_tax = (div_df['gross_amount'] - div_df['net_amount']).sum()
+                
+                # Find largest dividend
+                largest_idx = div_df['net_amount'].idxmax()
+                largest_dividend = div_df.loc[largest_idx, 'net_amount']
+                largest_date = pd.to_datetime(div_df.loc[largest_idx, 'pay_date']).strftime('%m/%d/%y')
                 
                 # Display Metrics
-                d_col1, d_col2, d_col3 = st.columns(3)
+                d_col1, d_col2, d_col3, d_col4, d_col5 = st.columns(5)
                 with d_col1:
                     st.metric("Total Dividends (LTM)", f"${total_dividends:,.2f}", help="Total net dividends received in the last 12 months.")
                 with d_col2:
-                    st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
+                    st.metric("US Tax Paid (LTM)", f"${total_us_tax:,.2f}", help="Total US withholding tax paid on dividends in the last 12 months.")
                 with d_col3:
+                    st.metric("Largest Dividend", f"${largest_dividend:,.2f}", delta=largest_date, help="Largest single dividend payment and its date.")
+                with d_col4:
+                    st.metric("Reinvested Shares", f"{total_reinvested:.4f}", help="Total shares acquired via DRIP.")
+                with d_col5:
                     st.metric("Payout Events", f"{num_payouts}", help="Number of dividend payments received.")
 
                 # Format DataFrame for Display

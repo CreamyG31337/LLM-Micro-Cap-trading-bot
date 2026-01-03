@@ -1995,7 +1995,27 @@ with tab6:
                     
                     display_cols = ["date", "action", "ticker", "shares", "price", "currency"]
                     available_cols = [c for c in display_cols if c in trades_df.columns]
-                    display_dataframe_with_copy(trades_df[available_cols], label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
+                    
+                    # Format price column as currency and right-align dollar columns
+                    display_trades_df = trades_df[available_cols].copy()
+                    if 'price' in display_trades_df.columns:
+                        display_trades_df['price'] = display_trades_df['price'].apply(lambda x: f"${float(x):.2f}" if pd.notna(x) else "$0.00")
+                    
+                    # Style with right alignment for numeric columns
+                    dollar_cols = []
+                    if 'price' in display_trades_df.columns:
+                        dollar_cols.append('price')
+                    if 'shares' in display_trades_df.columns:
+                        dollar_cols.append('shares')
+                    
+                    if dollar_cols:
+                        styled_trades = display_trades_df.style.set_properties(
+                            subset=dollar_cols,
+                            **{'text-align': 'right'}
+                        )
+                        display_dataframe_with_copy(styled_trades, label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
+                    else:
+                        display_dataframe_with_copy(display_trades_df, label="Recent Trades", key_suffix="admin_recent_trades", use_container_width=True)
                     
                     # Pagination controls
                     if total_pages > 1:

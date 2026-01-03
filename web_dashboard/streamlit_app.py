@@ -2057,9 +2057,15 @@ def main():
                             table_df = display_df[['contributor_display', 'Investment', 'Percentage']].copy()
                             table_df.columns = ['Investor', 'Investment', 'Ownership %']
                             
+                            # Style the table with right-aligned dollar and percentage columns
+                            styled_table = table_df.style.set_properties(
+                                subset=['Investment', 'Ownership %'],
+                                **{'text-align': 'right'}
+                            )
+                            
                             # Display as a styled table
                             st.dataframe(
-                                table_df,
+                                styled_table,
                                 use_container_width=True,
                                 hide_index=True,
                                 height=min(400, 50 + len(table_df) * 35)  # Dynamic height based on rows
@@ -2333,7 +2339,11 @@ def main():
                     return 'BUY'  # Default to BUY if no sell/drip keywords found
                 recent_trades['Action'] = recent_trades['reason'].apply(infer_action)
             else:
-                # No reason column - default to BUY
+                # No reason column - default all rows to BUY
+                recent_trades['Action'] = 'BUY'
+            
+            # Ensure Action column exists (safety check)
+            if 'Action' not in recent_trades.columns:
                 recent_trades['Action'] = 'BUY'
             
             # Build display columns
@@ -2399,6 +2409,22 @@ def main():
                 # Apply styling
                 styled_df = display_df.style.format(format_dict)
                 
+                # Right-align dollar amount columns
+                dollar_columns = []
+                if 'Price' in display_df.columns:
+                    dollar_columns.append('Price')
+                if 'Amount / P&L' in display_df.columns:
+                    dollar_columns.append('Amount / P&L')
+                if 'Realized P&L' in display_df.columns:
+                    dollar_columns.append('Realized P&L')
+                
+                if dollar_columns:
+                    styled_df = styled_df.set_properties(subset=dollar_columns, **{'text-align': 'right'})
+                
+                # Right-align Shares column if present
+                if 'Shares' in display_df.columns:
+                    styled_df = styled_df.set_properties(subset=['Shares'], **{'text-align': 'right'})
+                
                 # Color-code based on Action type
                 if 'Action' in display_df.columns:
                     def color_action(val):
@@ -2414,7 +2440,8 @@ def main():
                 # Color-code P&L/Amount column
                 if 'Amount / P&L' in display_df.columns and 'Action' in display_df.columns:
                     def color_amount(row):
-                        action = row['Action']
+                        # Safely get action, default to BUY if not present
+                        action = row.get('Action', 'BUY') if 'Action' in row.index else 'BUY'
                         val = row['Amount / P&L']
                         
                         try:

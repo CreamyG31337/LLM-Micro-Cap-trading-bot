@@ -141,6 +141,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '💰'
     },
+    'subreddit_scanner': {
+        'name': 'Subreddit Discovery Scanner',
+        'description': 'Scans investment subreddits (pennystocks, microcap) for DD opportunities',
+        'default_interval_minutes': 240,  # Every 4 hours
+        'enabled_by_default': True,
+        'icon': '👽'
+    },
     'watchdog': {
         'name': 'Job Retry Watchdog',
         'description': 'Automatically retry failed calculation jobs and detect stale/interrupted jobs',
@@ -270,6 +277,9 @@ from scheduler.jobs_watchdog import watchdog_job
 # Import retry queue processor job
 from scheduler.jobs_retry import process_retry_queue_job
 
+# Import subreddit scanner job
+from scheduler.jobs_reddit_discovery import subreddit_scanner_job
+
 # Import shared utilities
 from scheduler.jobs_common import calculate_relevance_score
 
@@ -304,6 +314,8 @@ __all__ = [
     'watchdog_job',
     # Retry queue processor
     'process_retry_queue_job',
+    # Subreddit scanner
+    'subreddit_scanner_job',
     # Shared utilities
     'calculate_relevance_score',
     # Registry functions (defined in this file)
@@ -768,3 +780,17 @@ def register_default_jobs(scheduler) -> None:
             coalesce=True
         )
         logger.info("Registered job: process_retry_queue (every 15 minutes)")
+
+    # Subreddit Scanner - every 4 hours
+    if AVAILABLE_JOBS.get('subreddit_scanner', {}).get('enabled_by_default', True):
+        scheduler.add_job(
+            subreddit_scanner_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['subreddit_scanner']['default_interval_minutes']),
+            id='subreddit_scanner',
+            name=f"{get_job_icon('subreddit_scanner')} Subreddit Discovery Scanner",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600
+        )
+        logger.info("Registered job: subreddit_scanner (every 4 hours)")

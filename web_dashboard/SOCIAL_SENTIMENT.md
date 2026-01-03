@@ -40,6 +40,16 @@ Some steps run every **60 minutes**:
   - `ticker`, `platform`, `volume`, `sentiment_score`, `bull_bear_ratio`.
   - `raw_data`: JSON blob of top posts used for analysis.
 
+### 4. Subreddit Scanner (Discovery Job)
+- **Schedule**: Every 4 hours.
+- **Goal**: Find *new* investment opportunities (tickers not yet watched).
+- **Targets**: `r/pennystocks`, `r/RobinHoodPennyStocks`, `r/microcap`, `r/Shortsqueeze`.
+- **Logic**:
+  - Fetches top posts (Score > 20).
+  - Fetches top comments for context ("Deep Dive").
+  - Uses AI to determine if the post is a valid "Due Diligence" pitch.
+  - Svaes valid findings to `research_articles` with `article_type='reddit_discovery'`.
+
 ## Key Configurations
 - **Job Interval**: 60 minutes.
 - **AI Model**: `granite3.3:8b` (via Ollama).

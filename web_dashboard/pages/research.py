@@ -985,10 +985,19 @@ try:
         
         def render_article_content(article: dict, show_admin_actions: bool):
             """Render article content inside expander (shared by admin/non-admin paths)."""
+            
+            # Special UI for Reddit Discovery
+            if article.get('article_type') == 'reddit_discovery':
+                st.info(f"👽 **Reddit Discovery** | Source: {article.get('title', '').split(']')[0][1:] if ']' in article.get('title', '') else 'Reddit'}")
+                
             col_info1, col_info2 = st.columns(2)
             
             with col_info1:
-                st.markdown(format_article_metadata(article))
+                # Show standard metadata but highlight Reddit specifics
+                if article.get('article_type') == 'reddit_discovery':
+                     st.metric("Confidence Score", f"{article.get('relevance_score', 0.0):.2f}")
+                else:
+                    st.markdown(format_article_metadata(article))
                 
                 # Add ticker navigation buttons below metadata
                 tickers = article.get('tickers') or ([article.get('ticker')] if article.get('ticker') else [])
@@ -1032,7 +1041,8 @@ try:
             
             # Summary
             if article.get('summary'):
-                st.subheader("Summary")
+                header = "🧠 AI Analysis & Reasoning" if article.get('article_type') == 'reddit_discovery' else "Summary"
+                st.subheader(header)
                 st.write(article['summary'])
             
             # Chain of Thought Analysis (if available)

@@ -603,6 +603,161 @@ class SocialSentimentService:
         except Exception as e:
             logger.error(f"Error saving {platform} metrics for {ticker}: {e}", exc_info=True)
             raise
+
+    def scan_subreddit_opportunities(self, subreddit: str, limit: int = 20, min_score: int = 50) -> List[Dict[str, Any]]:
+        """Scan a subreddit for high-conviction investment opportunities
+        
+        Fetches top posts, their top comments, and uses AI to identify
+        tickers being pitched with significant due diligence.
+        
+        Args:
+            subreddit: Name of subreddit (e.g., 'pennystocks')
+            limit: Max posts to scan
+            min_score: Minimum upvotes to consider
+            
+        Returns:
+            List of opportunities (ticker, title, url, reasoning, confidence)
+        """
+        opportunities = []
+        
+        try:
+            logger.info(f"🔎 Scanning r/{subreddit} for opportunities...")
+            
+            # Rate limiting check
+            now = time.time()
+            elapsed = now - getattr(self, 'last_reddit_request_time', 0)
+            if elapsed < 2:
+                time.sleep(2 - elapsed)
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            # Fetch top posts
+            url = f"https://www.reddit.com/r/{subreddit}/top.json?t=day&limit={limit}"
+            response = requests.get(url, headers=headers, timeout=10)
+            self.last_reddit_request_time = time.time()
+            
+            if response.status_code == 429:
+                logger.warning(f"Rate limited scanning r/{subreddit}")
+                return []
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'data' not in data or 'children' not in data['data']:
+                logger.warning(f"Invalid response format from r/{subreddit}")
+                return []
+            
+            posts = data['data']['children']
+            logger.info(f"Found {len(posts)} posts in r/{subreddit}")
+            
+            for child in posts:
+                post = child.get('data', {})
+                if not post or post.get('score', 0) < min_score:
+                    continue
+                
+                # Check duplication (skip if URL already analyzed?)
+                # Ideally check DB here, but job will handle dedupe
+                
+                post_id = post.get('id')
+                title = post.get('title', '')
+                selftext = post.get('selftext', '')
+                score = post.get('score', 0)
+                url = post.get('url', '')
+                
+                # Fetch comments for context (Deep Dive)
+                comments_text = ""
+                try:
+                    # Rate limit for comment fetch
+                    time.sleep(2) 
+                    
+                    comments_url = f"https://www.reddit.com/comments/{post_id}.json?sort=top&limit=10"
+                    
+                    c_resp = requests.get(comments_url, headers=headers, timeout=10)
+                    self.last_reddit_request_time = time.time()
+                    
+                    if c_resp.status_code == 200:
+                        c_data = c_resp.json()
+                        # Reddit comment structure is [post_listing, comment_listing]
+                        if isinstance(c_data, list) and len(c_data) > 1:
+                            comment_listing = c_data[1]
+                            if 'data' in comment_listing and 'children' in comment_listing['data']:
+                                for c in comment_listing['data']['children']:
+                                    c_body = c.get('data', {}).get('body', '')
+                                    if c_body:
+                                        comments_text += f"- {c_body[:500]}...\n"
+                except Exception as e:
+                    logger.debug(f"Failed to fetch comments for {post_id}: {e}")
+                
+                # Prepare AI Prompt
+                # 8k context is ~32k characters. We can afford to be generous.
+                full_text = f"TITLE: {title}\n\nBODY: {selftext[:8000]}\n\nTOP COMMENTS:\n{comments_text}"
+                
+                if not self.ollama:
+                    continue
+                    
+                # Analyze with Ollama
+                try:
+                    system_prompt = """You are an expert investment analyst hunting for microcap opportunities.
+                    
+TASK:
+Analyze this Reddit post to see if it is a "Due Diligence" (DD) pitch for a specific stock ticker.
+Ignore memes, "to the moon" hype, or general market discussion.
+
+OUTPUT JSON ONLY:
+{
+    "is_opportunity": true/false,
+    "ticker": "TICKER",
+    "confidence": 0.0-1.0,
+    "reasoning": "Why this is a valid lookup (e.g. 'Detailed analysis of earnings', 'New contract announcement')"
+}"""
+                    
+                    user_prompt = f"Analyze this post from r/{subreddit}:\n\n{full_text}"
+                    
+                    # Call Ollama (reusing query_ollama logic or direct call)
+                    # We'll use query_ollama from client
+                    response_text = ""
+                    for chunk in self.ollama.query_ollama(
+                        prompt=user_prompt, 
+                        model="granite3.3:8b", # Explicitly use Granite for analysis
+                        system_prompt=system_prompt,
+                        json_mode=True,
+                        temperature=0.1,
+                        stream=True
+                    ):
+                        response_text += chunk
+                    
+                    # Parse
+                    import json
+                    result = json.loads(response_text)
+                    
+                    if result.get('is_opportunity') and result.get('ticker'):
+                        # Normalize ticker
+                        ticker = result['ticker'].upper().replace('$', '').strip()
+                        
+                        # Basic validation (length, etc.)
+                        if 2 <= len(ticker) <= 5:
+                            opportunities.append({
+                                'ticker': ticker,
+                                'title': title,
+                                'url': f"https://www.reddit.com{post.get('permalink')}",
+                                'reasoning': result.get('reasoning'),
+                                'confidence': result.get('confidence', 0.5),
+                                'score': score,
+                                'subreddit': subreddit,
+                                'full_text': full_text  # Return full context for UI
+                            })
+                            logger.info(f"💎 Found opportunity in r/{subreddit}: {ticker} ({result.get('confidence')})")
+                            
+                except Exception as e:
+                    logger.warning(f"Error analyzing post {post_id}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error scanning r/{subreddit}: {e}")
+            
+        return opportunities
     
     def extract_posts_from_raw_data(self) -> Dict[str, int]:
         """Extract individual posts from social_metrics.raw_posts JSONB into social_posts table

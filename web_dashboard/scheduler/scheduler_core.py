@@ -160,6 +160,15 @@ def start_scheduler() -> bool:
     scheduler.start()
     logger.info("✅ Background scheduler started")
     
+    # Log startup summary with all registered jobs
+    jobs = scheduler.get_jobs()
+    logger.info("="*50)
+    logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
+    for job in jobs:
+        next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
+        logger.info(f"   📋 {job.id}: {next_run}")
+    logger.info("="*50)
+    
     # Run backfill check once on startup (catches downtime/reboots)
     # This runs asynchronously to not block scheduler startup
     from scheduler.backfill import startup_backfill_check

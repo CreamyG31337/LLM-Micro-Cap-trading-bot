@@ -13,33 +13,47 @@ import base64
 import json
 import time
 import os
+import logging
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+
 # Initialize scheduler once per Streamlit worker process (lazy initialization)
-# Don't initialize at module load - only when needed after authentication
-_scheduler_initialized = False
+_logger = logging.getLogger(__name__)
 _postgres_checked = False
 
-def _init_scheduler():
-    """Initialize background scheduler once per Streamlit worker."""
-    global _scheduler_initialized
-    if _scheduler_initialized:
-        return True
+
+# Use @st.cache_resource to ensure scheduler starts exactly once per process
+# This is Streamlit's recommended pattern for singletons
+@st.cache_resource
+def _get_scheduler_singleton():
+    """Initialize scheduler once per Streamlit process."""
+    from scheduler import start_scheduler
+    
+    _logger.info("="*50)
+    _logger.info("SCHEDULER INITIALIZATION")
+    _logger.info("="*50)
     
     try:
-        from scheduler import start_scheduler
         started = start_scheduler()
         if started:
-            pass  # Scheduler started successfully
-        _scheduler_initialized = True
-        return True
+            _logger.info("✅ Scheduler started successfully")
+        else:
+            _logger.info("ℹ️ Scheduler already running (reused)")
+        return {"status": "running", "error": None}
     except Exception as e:
-        # Fail gracefully - scheduler is optional
-        print(f"⚠️ Scheduler initialization failed (non-critical): {e}")
-        _scheduler_initialized = True  # Mark as initialized to prevent retry loops
-        return False
+        import traceback
+        _logger.error(f"❌ Scheduler failed to start: {e}")
+        _logger.error(f"Traceback:\n{traceback.format_exc()}")
+        return {"status": "failed", "error": str(e)}
+
+
+def _init_scheduler():
+    """Initialize scheduler - wrapper for compatibility."""
+    # This will use the cached result if available, or run once if not
+    result = _get_scheduler_singleton()
+    return result["status"] == "running"
 
 def _check_postgres_connection():
     """Check Postgres connection on startup and log status."""
@@ -1190,10 +1204,10 @@ def main():
     
     # Initialize scheduler only after authentication (lazy initialization)
     # This prevents blocking the login page
-    try:
-        _init_scheduler()
-    except Exception:
-        pass  # Scheduler is optional
+    scheduler_result = _init_scheduler()
+    if not scheduler_result:
+        import logging
+        logging.getLogger(__name__).warning("Scheduler not running - some features may be unavailable")
     
     # Check Postgres connection (non-blocking, logs status)
     try:

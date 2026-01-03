@@ -217,6 +217,134 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         funds = [(f['name'], f.get('base_currency', 'CAD')) for f in funds_result.data]
         logger.info(f"Processing {len(funds)} production funds")
         
+        # AUTO-BACKFILL: Check for missing dates per fund and backfill if needed
+        # This ensures we don't have gaps in the data
+        logger.info("Checking for missing dates that need backfill...")
+        try:
+            # Check each fund individually for missing dates
+            funds_needing_backfill = []
+            
+            for fund_name, _ in funds:
+                # Find the latest date with data for THIS fund
+                latest_date_result = client.supabase.table("portfolio_positions")\
+                    .select("date")\
+                    .eq("fund", fund_name)\
+                    .order("date", desc=True)\
+                    .limit(1)\
+                    .execute()
+                
+                if latest_date_result.data:
+                    latest_date_str = latest_date_result.data[0]['date']
+                    if 'T' in latest_date_str:
+                        latest_date = datetime.fromisoformat(latest_date_str.replace('Z', '+00:00')).date()
+                    else:
+                        latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+                    
+                    # Check if there are missing trading days between latest_date and target_date
+                    missing_days = []
+                    check_date = latest_date + timedelta(days=1)
+                    while check_date < target_date:
+                        if market_holidays.is_trading_day(check_date, market="any"):
+                            # Verify data doesn't exist for this date for THIS fund
+                            start_of_day = datetime.combine(check_date, dt_time(0, 0, 0)).isoformat()
+                            end_of_day = datetime.combine(check_date, dt_time(23, 59, 59, 999999)).isoformat()
+                            
+                            data_check = client.supabase.table("portfolio_positions")\
+                                .select("id", count='exact')\
+                                .eq("fund", fund_name)\
+                                .gte("date", start_of_day)\
+                                .lt("date", end_of_day)\
+                                .limit(1)\
+                                .execute()
+                            
+                            if not (data_check.count and data_check.count > 0):
+                                missing_days.append(check_date)
+                        check_date += timedelta(days=1)
+                    
+                    if missing_days:
+                        funds_needing_backfill.append((fund_name, latest_date, missing_days))
+                else:
+                    # No data for this fund - find earliest trade and backfill from there
+                    trades_result = client.supabase.table("trade_log")\
+                        .select("date")\
+                        .eq("fund", fund_name)\
+                        .order("date")\
+                        .limit(1)\
+                        .execute()
+                    
+                    if trades_result.data:
+                        earliest_trade_str = trades_result.data[0]['date']
+                        if 'T' in earliest_trade_str:
+                            earliest_trade = datetime.fromisoformat(earliest_trade_str.replace('Z', '+00:00')).date()
+                        else:
+                            earliest_trade = datetime.strptime(earliest_trade_str, '%Y-%m-%d').date()
+                        
+                        # Find all missing trading days from earliest trade to target_date
+                        missing_days = []
+                        check_date = earliest_trade
+                        while check_date < target_date:
+                            if market_holidays.is_trading_day(check_date, market="any"):
+                                start_of_day = datetime.combine(check_date, dt_time(0, 0, 0)).isoformat()
+                                end_of_day = datetime.combine(check_date, dt_time(23, 59, 59, 999999)).isoformat()
+                                
+                                data_check = client.supabase.table("portfolio_positions")\
+                                    .select("id", count='exact')\
+                                    .eq("fund", fund_name)\
+                                    .gte("date", start_of_day)\
+                                    .lt("date", end_of_day)\
+                                    .limit(1)\
+                                    .execute()
+                                
+                                if not (data_check.count and data_check.count > 0):
+                                    missing_days.append(check_date)
+                            check_date += timedelta(days=1)
+                        
+                        if missing_days:
+                            funds_needing_backfill.append((fund_name, earliest_trade, missing_days))
+            
+            # If any funds need backfill, do it now
+            if funds_needing_backfill:
+                # Collect all unique missing days across all funds
+                all_missing_days = set()
+                for _, _, missing in funds_needing_backfill:
+                    all_missing_days.update(missing)
+                
+                if all_missing_days:
+                    sorted_missing = sorted(all_missing_days)
+                    backfill_start = sorted_missing[0]
+                    backfill_end = sorted_missing[-1]
+                    
+                    logger.warning(f"Found missing trading days for {len(funds_needing_backfill)} fund(s): {backfill_start} to {backfill_end}")
+                    logger.info(f"Total missing days: {len(sorted_missing)}")
+                    logger.info("Auto-backfilling missing dates...")
+                    
+                    # Release lock temporarily to allow backfill to acquire it
+                    _update_prices_lock.release()
+                    
+                    try:
+                        # Call backfill for the missing date range
+                        backfill_portfolio_prices_range(backfill_start, backfill_end)
+                        logger.info(f"Auto-backfill completed for {len(sorted_missing)} days")
+                    except Exception as backfill_error:
+                        logger.error(f"Auto-backfill failed: {backfill_error}", exc_info=True)
+                        # Continue with regular update anyway
+                    
+                    # Re-acquire lock for the regular update
+                    acquired = _update_prices_lock.acquire(blocking=False)
+                    if not acquired:
+                        # Another process got the lock - that's okay, we already backfilled
+                        logger.info("Lock not available after backfill - another process may be updating")
+                        return
+                else:
+                    logger.info("No missing dates found - data is continuous")
+            else:
+                logger.info("No missing dates found for any fund")
+        except Exception as backfill_check_error:
+            logger.warning(f"Could not check for missing dates: {backfill_check_error}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            # Continue with regular update anyway
+        
         # Mark job as started (for completion tracking)
         mark_job_started('update_portfolio_prices', target_date)
         

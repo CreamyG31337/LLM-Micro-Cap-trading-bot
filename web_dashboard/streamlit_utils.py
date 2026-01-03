@@ -806,11 +806,11 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
             if cutoff_date:
                 query = query.gte("date", cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ'))
             
-            # Order by date to ensure consistent pagination
+            # Order by date AND id to ensure consistent pagination (stable sort)
             # Use range() for pagination
             # Note: range is 0-indexed and inclusive for start, inclusive for end in PostgREST logic usually,
             # but supabase-py .range(start, end) handles it.
-            result = query.order("date").range(offset, offset + batch_size - 1).execute()
+            result = query.order("date").order("id").range(offset, offset + batch_size - 1).execute()
             
             rows = result.data
             if not rows:
@@ -1582,8 +1582,8 @@ def get_historical_fund_values(fund: str, dates: List[datetime], _cache_version:
         
         while True:
             query = client.supabase.table("portfolio_positions").select(
-                "date, ticker, shares, price, currency, cost_basis"
-            ).eq("fund", fund).gte("date", min_date).order("date")
+                "id, date, ticker, shares, price, currency, cost_basis"
+            ).eq("fund", fund).gte("date", min_date).order("date").order("id")
             
             result = query.range(offset, offset + batch_size - 1).execute()
             

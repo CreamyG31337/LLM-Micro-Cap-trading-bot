@@ -6,11 +6,20 @@ Provides the background scheduler instance and management functions.
 """
 
 import logging
+import sys
+from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from typing import Dict, List, Optional, Any
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
+
+# Add project root to path for utils imports
+current_dir = Path(__file__).resolve().parent
+if current_dir.name == 'scheduler':
+    project_root = current_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger(__name__)
 

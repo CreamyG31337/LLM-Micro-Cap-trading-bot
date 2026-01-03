@@ -307,8 +307,8 @@ class RSSClient:
                 return False
         
         # Check minimum length
-        if len(content) < MIN_CONTENT_LENGTH:
-            logger.debug(f"Junk filter: Content too short ({len(content)} < {MIN_CONTENT_LENGTH})")
+        if content is None or len(content) < MIN_CONTENT_LENGTH:
+            logger.debug(f"Junk filter: Content too short ({len(content) if content else 0} < {MIN_CONTENT_LENGTH})")
             return False
         
         # Filter out irrelevant categories if present

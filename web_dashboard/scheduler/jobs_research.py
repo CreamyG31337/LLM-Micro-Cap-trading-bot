@@ -96,10 +96,33 @@ def market_research_job() -> None:
         else:
             logger.info("No domains blacklisted")
         
-        # Fetch general market news
-        logger.info("Fetching general market news...")
+        # specific, high-quality queries to avoid junk (astrology, etc.)
+        queries = [
+            "microcap stock analysis",
+            "small cap undervalued stocks",
+            "biotech stock catalysts upcoming",
+            "penny stock signs of breakout",
+            "stock market spinoffs 2025",
+            "insider buying small cap stocks",
+            "merger arbitrage opportunities small cap",
+            # ETF / Index Rotation Tracking
+            "stock added to Russell 2000 index",
+            "S&P SmallCap 600 constituent change",
+            "ETF rebalancing announcement"
+        ]
+        
+        # Select query based on hour to rotate coverage
+        query_index = datetime.now().hour % len(queries)
+        base_query = queries[query_index]
+        
+        # Add negative keywords to explicitly block known junk
+        # "astrology", "horoscope", "zodiac" -> The user specifically mentioned these
+        negative_keywords = "-astrology -horoscope -zodiac -lottery"
+        final_query = f"{base_query} {negative_keywords}"
+        
+        logger.info(f"Fetching market news with query: '{final_query}'")
         search_results = searxng_client.search_news(
-            query="stock market news",
+            query=final_query,
             max_results=10
         )
         

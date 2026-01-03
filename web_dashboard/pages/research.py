@@ -1170,7 +1170,7 @@ try:
                         render_article_content(article, show_admin_actions=True)
             else:
                 # Non-admin view - no checkbox column
-                with st.expander(expander_title, expanded=False, key=f"article_expander_{article['id']}"):
+                with st.expander(expander_title, expanded=False):
                     render_article_content(article, show_admin_actions=False)
 
 

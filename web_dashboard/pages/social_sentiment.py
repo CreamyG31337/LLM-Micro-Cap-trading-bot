@@ -666,7 +666,7 @@ try:
             with col_source:
                 # Always show expandable section if we have posts or metric_id
                 if posts or metric_id:
-                    with st.expander(f"🔗 View Source Posts ({len(posts) if posts else 0} posts)", key=f"alert_posts_{idx}", expanded=False):
+                    with st.expander(f"🔗 View Source Posts ({len(posts) if posts else 0} posts)", expanded=False):
                         if posts:
                             st.caption(f"Showing {len(posts)} posts from this sentiment alert")
                             for post_idx, post in enumerate(posts[:5]):  # Show top 5 posts

@@ -38,7 +38,24 @@ class SearXNGClient:
             base_url: SearXNG API base URL (defaults to environment variable)
             timeout: Request timeout in seconds (defaults to environment variable)
         """
-        self.base_url = base_url or SEARXNG_BASE_URL
+        # Auto-detect correct host if running locally
+        if base_url is None:
+            # Default to env var or docker internal
+            candidate_url = SEARXNG_BASE_URL
+            
+            # If default is host.docker.internal but we can't resolve it (running on host), try localhost
+            if "host.docker.internal" in candidate_url:
+                import socket
+                try:
+                    socket.gethostbyname("host.docker.internal")
+                except socket.gaierror:
+                    logger.info("Could not resolve host.docker.internal, falling back to localhost for SearXNG")
+                    candidate_url = candidate_url.replace("host.docker.internal", "localhost")
+            
+            self.base_url = candidate_url
+        else:
+            self.base_url = base_url
+
         self.timeout = timeout or SEARXNG_TIMEOUT
         self.enabled = SEARXNG_ENABLED
         

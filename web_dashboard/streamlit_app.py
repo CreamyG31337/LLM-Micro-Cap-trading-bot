@@ -1405,13 +1405,13 @@ def main():
         
         log_message(f"[{session_id}] PERF: Total data load took {time.time() - data_load_start:.2f}s", level='PERF')
         
-        # Biggest Movers Table (near the top)
+        # Biggest Daily Movers Table (near the top)
         if not positions_df.empty:
             try:
                 movers = get_biggest_movers(positions_df, display_currency, limit=10)
                 
                 if not movers['gainers'].empty or not movers['losers'].empty:
-                    st.markdown("### 📊 Biggest Movers")
+                    st.markdown("### 📊 Biggest Daily Movers")
                     
                     col1, col2 = st.columns(2)
                     
@@ -1529,7 +1529,7 @@ def main():
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Error displaying biggest movers: {e}", exc_info=True)
+                logger.warning(f"Error displaying biggest daily movers: {e}", exc_info=True)
         
         # Metrics row
         st.markdown("### Performance Metrics")
@@ -2411,27 +2411,14 @@ def main():
                 
                 ticker_pnl_df = pd.DataFrame(ticker_data)
                 pnl_col_name = f'Realized P&L {currency_label}'
+                proceeds_col_name = f'Proceeds {currency_label}'
                 ticker_pnl_df = ticker_pnl_df.sort_values(pnl_col_name, ascending=False)
                 
-                # Format and color-code
-                def color_pnl(val):
-                    try:
-                        if isinstance(val, str):
-                            val = float(val.replace('$', '').replace(',', ''))
-                        if val > 0:
-                            return 'color: #10b981'
-                        elif val < 0:
-                            return 'color: #ef4444'
-                    except:
-                        pass
-                    return ''
-                
-                format_dict = {
-                    pnl_col_name: '${:,.2f}',
-                    'Shares Sold': '{:,.2f}',
-                    f'Proceeds {currency_label}': '${:,.2f}'
-                }
-                styled_pnl_df = ticker_pnl_df.style.format(format_dict).map(color_pnl, subset=[pnl_col_name])
+                # Format dollar amounts as strings for AgGrid display
+                # AgGrid doesn't use pandas styling, so we need to format values directly
+                ticker_pnl_df[pnl_col_name] = ticker_pnl_df[pnl_col_name].apply(lambda x: f"${x:,.2f}")
+                ticker_pnl_df['Shares Sold'] = ticker_pnl_df['Shares Sold'].apply(lambda x: f"{x:,.2f}")
+                ticker_pnl_df[proceeds_col_name] = ticker_pnl_df[proceeds_col_name].apply(lambda x: f"${x:,.2f}")
                 
                 # Display dataframe with AgGrid for ticker navigation
                 selected_ticker = display_aggrid_with_ticker_navigation(

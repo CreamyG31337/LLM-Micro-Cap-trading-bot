@@ -33,7 +33,8 @@ def subreddit_scanner_job() -> None:
     start_time = time.time()
     
     try:
-        from utils.job_tracking import log_job_execution, mark_job_started, mark_job_completed, mark_job_failed
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        from scheduler.scheduler_core import log_job_execution
         from social_service import SocialSentimentService
         from research_repository import ResearchRepository
         

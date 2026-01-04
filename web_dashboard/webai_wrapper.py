@@ -45,13 +45,51 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
     cookies_json = os.getenv("WEBAI_COOKIES_JSON")
     if cookies_json:
         try:
+            # Clean up the JSON string - handle newlines, extra whitespace, outer quotes
+            # Strip leading/trailing whitespace and newlines
+            cookies_json = cookies_json.strip()
+            
+            # Remove any leading/trailing quotes that might have been added during env var setting
+            # (but preserve escaped quotes inside the JSON, which json.loads will handle)
+            if len(cookies_json) >= 2:
+                if cookies_json.startswith('"') and cookies_json.endswith('"'):
+                    # Check if it's just outer quotes (not part of valid JSON)
+                    # Valid JSON should start with { or [, not "
+                    if cookies_json[1] in ['{', '[']:
+                        cookies_json = cookies_json[1:-1]
+                elif cookies_json.startswith("'") and cookies_json.endswith("'"):
+                    # Single quotes are not valid JSON, so remove them
+                    if cookies_json[1] in ['{', '[']:
+                        cookies_json = cookies_json[1:-1]
+            
+            # Handle literal newlines and carriage returns (not escaped ones)
+            # Remove actual newline characters that might have been inserted
+            cookies_json = cookies_json.replace('\n', '').replace('\r', '')
+            # Also handle escaped newlines that might be in the string
+            cookies_json = cookies_json.replace('\\n', '').replace('\\r', '')
+            
+            # Parse JSON (json.loads will handle escaped quotes correctly)
             cookies = json.loads(cookies_json)
             secure_1psid = cookies.get("__Secure-1PSID")
             secure_1psidts = cookies.get("__Secure-1PSIDTS")
             if secure_1psid:
                 return (secure_1psid, secure_1psidts)
-        except Exception:
-            pass
+            else:
+                # JSON exists but missing required cookie
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("WEBAI_COOKIES_JSON found but missing __Secure-1PSID cookie")
+        except json.JSONDecodeError as e:
+            # JSON parsing failed - log but continue to try other methods
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to parse WEBAI_COOKIES_JSON as JSON: {e}")
+            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {cookies_json[:200]}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error processing WEBAI_COOKIES_JSON: {e}")
+            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {cookies_json[:200]}")
     
     # Option 2: Individual environment variables
     secure_1psid = os.getenv("WEBAI_SECURE_1PSID")
@@ -81,6 +119,49 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
                     continue
     
     return (None, None)
+
+
+def check_cookie_config() -> dict:
+    """
+    Debug helper: Check cookie configuration status.
+    
+    Returns:
+        Dictionary with configuration status and details
+    """
+    status = {
+        "env_var_exists": bool(os.getenv("WEBAI_COOKIES_JSON")),
+        "env_var_length": len(os.getenv("WEBAI_COOKIES_JSON", "")),
+        "individual_vars": {
+            "WEBAI_SECURE_1PSID": bool(os.getenv("WEBAI_SECURE_1PSID")),
+            "WEBAI_SECURE_1PSIDTS": bool(os.getenv("WEBAI_SECURE_1PSIDTS"))
+        },
+        "cookie_files": {}
+    }
+    
+    # Check cookie files
+    cookie_names = ["webai_cookies.json", "ai_service_cookies.json"]
+    for name in cookie_names:
+        root_cookie = project_root / name
+        web_cookie = project_root / "web_dashboard" / name
+        status["cookie_files"][name] = {
+            "root_exists": root_cookie.exists(),
+            "web_exists": web_cookie.exists()
+        }
+    
+    # Try to parse WEBAI_COOKIES_JSON if it exists
+    cookies_json = os.getenv("WEBAI_COOKIES_JSON")
+    if cookies_json:
+        try:
+            cookies = json.loads(cookies_json)
+            status["json_parse_success"] = True
+            status["has_secure_1psid"] = "__Secure-1PSID" in cookies
+            status["has_secure_1psidts"] = "__Secure-1PSIDTS" in cookies
+            status["cookie_keys"] = list(cookies.keys())
+        except Exception as e:
+            status["json_parse_success"] = False
+            status["json_parse_error"] = str(e)
+    
+    return status
 
 
 class WebAIClient:
@@ -127,9 +208,26 @@ class WebAIClient:
             secure_1psid, secure_1psidts = _load_cookies()
         
         if not secure_1psid:
+            # Check if environment variable exists but wasn't parsed correctly
+            env_check = ""
+            cookies_json_env = os.getenv("WEBAI_COOKIES_JSON")
+            if cookies_json_env:
+                env_check = "\n\n💡 Note: WEBAI_COOKIES_JSON environment variable is set, but cookies couldn't be loaded.\n"
+                env_check += "   This might indicate:\n"
+                env_check += "   - JSON format is invalid (check for newlines, extra quotes, or escaping issues)\n"
+                env_check += "   - Missing __Secure-1PSID in the JSON\n"
+                env_check += "   - Woodpecker secret 'webai_cookies_json' should be a single-line JSON string:\n"
+                env_check += "     {\"__Secure-1PSID\":\"...\",\"__Secure-1PSIDTS\":\"...\"}\n"
+                env_check += "   - Avoid newlines in the secret value - use a single line\n"
+                env_check += "   - If using quotes, ensure they're properly escaped\n"
+            
             raise ValueError(
                 "No cookies found. Please extract cookies first:\n"
-                "  python web_dashboard/extract_ai_cookies.py --browser manual"
+                "  python web_dashboard/extract_ai_cookies.py --browser manual\n\n"
+                "Or configure via environment variable:\n"
+                "  - WEBAI_COOKIES_JSON (JSON string from Woodpecker secret 'webai_cookies_json')\n"
+                "    Format: {\"__Secure-1PSID\":\"...\",\"__Secure-1PSIDTS\":\"...\"} (single line, no newlines)\n"
+                "  - Or WEBAI_SECURE_1PSID + WEBAI_SECURE_1PSIDTS (individual cookies)" + env_check
             )
         
         # Initialize client with cookies

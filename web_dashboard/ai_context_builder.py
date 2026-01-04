@@ -261,11 +261,15 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
         price_cache = PriceCache(settings=settings)
         market_fetcher = MarketDataFetcher(cache_instance=price_cache)
         market_hours = MarketHours(settings=settings)
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[format_price_volume_table] MarketDataFetcher initialized successfully")
     except Exception as e:
         # If MarketDataFetcher not available, use data from positions_df
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"MarketDataFetcher not available for Price & Volume table: {e}")
+        logger.warning(f"MarketDataFetcher not available for Price & Volume table: {e}", exc_info=True)
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
@@ -284,6 +288,10 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
                 start_d, end_d = market_hours.trading_day_window()
                 # Get historical window for avg volume (90 days like console app)
                 start_d = end_d - pd.Timedelta(days=90)
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"[format_price_volume_table] Fetching data for {ticker}: {start_d} to {end_d}")
                 
                 result = market_fetcher.fetch_price_data(ticker, start_d, end_d)
                 if not result.df.empty and "Close" in result.df.columns:
@@ -368,10 +376,14 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         settings = get_settings()
         price_cache = PriceCache(settings=settings)
         market_fetcher = MarketDataFetcher(cache_instance=price_cache)
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[format_fundamentals_table] MarketDataFetcher initialized successfully")
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"MarketDataFetcher not available for fundamentals table: {e}")
+        logger.warning(f"MarketDataFetcher not available for fundamentals table: {e}", exc_info=True)
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
@@ -390,6 +402,10 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         # properly formatted values (e.g., "$1.2B" for market cap, "15.3" for P/E)
         if market_fetcher:
             try:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"[format_fundamentals_table] Fetching fundamentals for {ticker}")
+                
                 fundamentals = market_fetcher.fetch_fundamentals(ticker)
                 if fundamentals:
                     # Get all values from fetch_fundamentals - it returns pre-formatted strings

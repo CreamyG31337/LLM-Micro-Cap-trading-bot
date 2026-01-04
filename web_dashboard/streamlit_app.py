@@ -2394,11 +2394,6 @@ def main():
                 display_cols.append('pnl')
                 col_rename['pnl'] = 'Realized P&L'
             
-            # Add reason if available
-            if 'reason' in recent_trades.columns:
-                display_cols.append('reason')
-                col_rename['reason'] = 'Reason'
-            
             # Filter to existing columns
             display_cols = [col for col in display_cols if col in recent_trades.columns]
             

@@ -270,9 +270,12 @@ def calculate_context_size(
     # Get model context window (depends on model type)
     context_window = 4096  # Default for unknown models
     
-    if selected_model == "gemini-3-pro":
-        # Gemini 3 Pro has a larger context window
-        context_window = 32768
+    if selected_model.startswith("gemini-"):
+        # Gemini models have large context windows
+        if "flash" in selected_model:
+            context_window = 1048576  # 1M tokens for Flash
+        else:  # Pro models (2.5-pro, 3.0-pro)
+            context_window = 2097152  # 2M tokens for Pro
     else:
         # For Ollama models, get from model settings
         client = get_ollama_client()
@@ -413,16 +416,22 @@ with st.sidebar:
     if default_model not in available_models:
         available_models.insert(0, default_model)
 
-    # Format model names for display (show "Gemini 3 Pro" instead of "gemini-3-pro")
+    # Format model names for display (show "Gemini 2.5 Flash" instead of "gemini-2.5-flash")
     def format_model_name(model: str) -> str:
-        if model == "gemini-3-pro":
-            return "Gemini 3 Pro"
-        return model
+        model_display_names = {
+            "gemini-2.5-flash": "Gemini 2.5 Flash",
+            "gemini-2.5-pro": "Gemini 2.5 Pro",
+            "gemini-3.0-pro": "Gemini 3.0 Pro"
+        }
+        return model_display_names.get(model, model)
     
     def get_model_value(display_name: str) -> str:
-        if display_name == "Gemini 3 Pro":
-            return "gemini-3-pro"
-        return display_name
+        display_to_model = {
+            "Gemini 2.5 Flash": "gemini-2.5-flash",
+            "Gemini 2.5 Pro": "gemini-2.5-pro",
+            "Gemini 3.0 Pro": "gemini-3.0-pro"
+        }
+        return display_to_model.get(display_name, display_name)
     
     # Create display names for dropdown
     display_models = [format_model_name(m) for m in available_models]
@@ -449,8 +458,14 @@ with st.sidebar:
     selected_model = get_model_value(selected_display)
 
     # Check model-specific requirements
-    if selected_model == "gemini-3-pro":
-        st.caption("ℹ️ Gemini 3 Pro - Web-based AI model with persistent conversations")
+    if selected_model.startswith("gemini-"):
+        # Gemini models use web-based API
+        model_descriptions = {
+            "gemini-2.5-flash": "⚡ Gemini 2.5 Flash - Fast responses with 1M token context",
+            "gemini-2.5-pro": "🧠 Gemini 2.5 Pro - Advanced reasoning with 2M token context",
+            "gemini-3.0-pro": "✨ Gemini 3.0 Pro - Latest model with 2M token context"
+        }
+        st.caption(f"ℹ️ {model_descriptions.get(selected_model, 'Web-based AI model with persistent conversations')}")
         # Gemini doesn't need Ollama
         if not HAS_WEBAI:
             st.error("❌ WebAI package not installed. Install with: pip install gemini-webapi")
@@ -671,8 +686,9 @@ with st.sidebar:
     # Research Knowledge section
     st.header("🧠 Research Knowledge")
 
-    # Check if Ollama is available (needed for embeddings)
-    if ollama_available:
+    # Check if Ollama is available (needed for embeddings) AND not using Gemini
+    # Gemini users might not have Ollama running
+    if ollama_available and not selected_model.startswith("gemini-"):
         include_repository = st.checkbox(
             "Use Research Repository",
             value=True,
@@ -700,6 +716,11 @@ with st.sidebar:
                     help="Lower = more diverse results, higher = only very similar articles",
                     key="repository_min_similarity"
                 )
+    elif selected_model.startswith("gemini-"):
+        st.info("ℹ️ Repository search requires Ollama for embeddings. Not available with Gemini models.")
+        include_repository = False
+        repository_max_results = 3
+        repository_min_similarity = 0.6
     else:
         st.warning("⚠️ Repository search requires Ollama")
         include_repository = False
@@ -1468,9 +1489,13 @@ if user_query:
         full_response = ""
 
         try:
-            # Check if using Gemini 3 Pro (webai) or Ollama
-            if selected_model == "gemini-3-pro":
+            # Check if using Gemini (webai) or Ollama
+            if selected_model.startswith("gemini-"):
                 # Use webai service with persistent conversation
+                # NOTE: Gemini via web UI has limitations:
+                # - No system prompts (must include instructions in user message)
+                # - Context size limited by web UI input field
+                # - No tool/function calling support
                 try:
                     if not HAS_WEBAI:
                         status_placeholder.empty()
@@ -1496,15 +1521,37 @@ if user_query:
                     
                     # Initialize session if needed
                     if 'webai_session' not in st.session_state:
-                        # Create new session
+                        # Get system prompt for Gems
+                        system_prompt = get_system_prompt()
+                        
+                        # Create new session with model and system prompt
                         st.session_state.webai_session = PersistentConversationSession(
                             session_id=user_id,
-                            auto_refresh=False
+                            auto_refresh=False,
+                            model=selected_model,
+                            system_prompt=system_prompt
                         )
                         st.session_state.webai_user_id = user_id
                     
+                    # For Gemini web UI, we need to include instructions in the message itself
+                    # since there's no system prompt support
+                    gemini_instructions = (
+                        "You are an AI portfolio assistant. Analyze the provided portfolio data, "
+                        "news, and research articles to provide insights. Be concise and actionable.\n\n"
+                    )
+                    
+                    # Construct final message for Gemini (inline instructions + context + query)
+                    gemini_message = gemini_instructions + full_prompt
+                    
+                    # Warn if context is very large (web UI may have limits)
+                    if len(gemini_message) > 30000:  # ~7500 tokens
+                        st.warning(
+                            "⚠️ Large context detected. The web UI may truncate very long messages. "
+                            "Consider disabling some context sources or using an Ollama model for better handling."
+                        )
+                    
                     # Send message and get response
-                    full_response = st.session_state.webai_session.send_sync(full_prompt)
+                    full_response = st.session_state.webai_session.send_sync(gemini_message)
                     
                     # Clear status and show final response
                     status_placeholder.empty()
@@ -1522,12 +1569,15 @@ if user_query:
                     logger.exception("WebAI error")
                     st.stop()
             else:
-                # Use Ollama (existing code)
+                # Use Ollama (proper API with system prompts and streaming)
                 client = get_ollama_client()
                 if not client:
                     status_placeholder.empty()
                     st.error("AI client not available")
                     st.stop()
+
+                # Get system prompt for Ollama
+                system_prompt = get_system_prompt()
 
                 # Stream response (status remains visible during streaming)
                 # Pass None for temperature and max_tokens to let the client handle model-specific defaults

@@ -348,7 +348,9 @@ class PersistentConversationSession:
         session_id: str = "default",
         cookies_file: Optional[str] = None,
         auto_refresh: bool = False,
-        storage_dir: Optional[str] = None
+        storage_dir: Optional[str] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ):
         """
         Initialize persistent conversation session.
@@ -358,10 +360,15 @@ class PersistentConversationSession:
             cookies_file: Optional path to cookie file
             auto_refresh: Whether to automatically refresh cookies
             storage_dir: Directory to store session files (default: project_root/data/conversations)
+            model: Gemini model to use (e.g., "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro")
+            system_prompt: Optional system prompt (will create a custom Gem if provided)
         """
         self.session_id = session_id
+        self.model = model
+        self.system_prompt = system_prompt
         self._client = WebAIClient(cookies_file=cookies_file, auto_refresh=auto_refresh)
         self._chat_session = None
+        self._custom_gem = None
         self._initialized = False
         self._loop = None
         
@@ -420,12 +427,38 @@ class PersistentConversationSession:
             # Try to load saved metadata
             saved_metadata = self._load_metadata()
             
+            # Create custom Gem if system prompt provided
+            if self.system_prompt and not self._custom_gem:
+                try:
+                    # Create a custom gem with the system prompt
+                    gem_name = f"Portfolio Assistant {self.session_id[:8]}"
+                    self._custom_gem = await self._client._client.create_gem(
+                        name=gem_name,
+                        prompt=self.system_prompt,
+                        description="System prompt for portfolio AI assistant"
+                    )
+                except Exception as e:
+                    # If gem creation fails, continue without it
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to create custom gem: {e}")
+            
             if saved_metadata:
                 # Resume existing conversation
-                self._chat_session = self._client._client.start_chat(metadata=saved_metadata)
+                chat_params = {"metadata": saved_metadata}
+                if self.model:
+                    chat_params["model"] = self.model
+                if self._custom_gem:
+                    chat_params["gem"] = self._custom_gem
+                self._chat_session = self._client._client.start_chat(**chat_params)
             else:
                 # Start new conversation
-                self._chat_session = self._client._client.start_chat()
+                chat_params = {}
+                if self.model:
+                    chat_params["model"] = self.model
+                if self._custom_gem:
+                    chat_params["gem"] = self._custom_gem
+                self._chat_session = self._client._client.start_chat(**chat_params)
             
             self._initialized = True
     
@@ -463,6 +496,15 @@ class PersistentConversationSession:
     
     async def reset(self):
         """Reset the conversation and delete saved state."""
+        # Delete custom gem if it exists
+        if self._custom_gem:
+            try:
+                await self._client._init_client()
+                await self._client._client.delete_gem(self._custom_gem)
+            except Exception:
+                pass  # Silently fail
+            self._custom_gem = None
+        
         self._chat_session = None
         self._initialized = False
         if self.session_file.exists():
@@ -497,6 +539,15 @@ class PersistentConversationSession:
                 self._save_metadata(self._chat_session.metadata)
             except:
                 pass
+        
+        # Clean up custom gem
+        if self._custom_gem:
+            try:
+                await self._client._init_client()
+                await self._client._client.delete_gem(self._custom_gem)
+            except Exception:
+                pass  # Silently fail
+            self._custom_gem = None
         
         self._chat_session = None
         self._initialized = False

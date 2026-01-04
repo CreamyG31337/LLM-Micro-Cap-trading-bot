@@ -1007,26 +1007,28 @@ def check_ollama_health() -> bool:
 
 
 def list_available_models(include_hidden: bool = False) -> List[str]:
-    """List available Ollama models, filtered by JSON config.
-    
+    """
+    List all available AI models for selection.
+
     By default, excludes models marked as "hidden": true in model_config.json.
     Models not in the JSON config are included (backward compatibility).
-    Also includes "gemini-3-pro" as a special web-based model option.
-    
+    Also includes Gemini web-based model options.
+
     Args:
         include_hidden: If True, include models marked as hidden
-        
+
     Returns:
-        List of model names (filtered, includes gemini-3-pro)
+        List of model names (filtered, includes Gemini variants)
     """
     models = []
     client = get_ollama_client()
     if client:
         models = client.get_filtered_models(include_hidden=include_hidden)
     
-    # Add web-based AI model option
-    if "gemini-3-pro" not in models:
-        models.append("gemini-3-pro")
+    # Add web-based Gemini model options
+    gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
+    for gemini_model in gemini_models:
+        if gemini_model not in models:
+            models.append(gemini_model)
     
     return models
-

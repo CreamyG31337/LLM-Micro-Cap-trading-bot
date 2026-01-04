@@ -13,6 +13,7 @@ import logging
 import time
 import requests
 import json
+import base64
 from datetime import datetime, date, timedelta, time as dt_time
 from typing import Dict, List, Optional, Tuple, NamedTuple
 from decimal import Decimal

@@ -35,7 +35,7 @@ from navigation import render_navigation
 from supabase_client import SupabaseClient
 from user_preferences import get_user_timezone
 from aggrid_utils import TICKER_CELL_RENDERER_JS, TICKER_CLICK_HANDLER_JS_TEMPLATE
-from streamlit_utils import get_supabase_client
+from streamlit_utils import get_supabase_client, CACHE_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +95,8 @@ if 'refresh_key' not in st.session_state:
     st.session_state.refresh_key = 0
 
 # Query functions
-@st.cache_data(ttl=60, show_spinner=False)
-def get_latest_date(_db_client, _refresh_key: int) -> Optional[date]:
+@st.cache_data(ttl=300, show_spinner=False)
+def get_latest_date(_db_client, _refresh_key: int, _cache_version: str = "") -> Optional[date]:
     """Get latest available date from etf_holdings_log"""
     if _db_client is None:
         return None
@@ -109,8 +109,8 @@ def get_latest_date(_db_client, _refresh_key: int) -> Optional[date]:
         logger.error(f"Error fetching latest date: {e}")
         return None
 
-@st.cache_data(ttl=60, show_spinner=False)
-def check_etf_ownership(_db_client, etf_ticker: str, _refresh_key: int) -> Optional[Dict[str, Any]]:
+@st.cache_data(ttl=300, show_spinner=False)
+def check_etf_ownership(_db_client, etf_ticker: str, _refresh_key: int, _cache_version: str = "") -> Optional[Dict[str, Any]]:
     """Check if user owns shares of the ETF itself"""
     if _db_client is None or not etf_ticker:
         return None
@@ -130,8 +130,8 @@ def check_etf_ownership(_db_client, etf_ticker: str, _refresh_key: int) -> Optio
         logger.error(f"Error checking ETF ownership for {etf_ticker}: {e}")
         return None
 
-@st.cache_data(ttl=60, show_spinner=False)
-def get_available_etfs(_db_client, _refresh_key: int) -> List[Dict[str, str]]:
+@st.cache_data(ttl=300, show_spinner=False)
+def get_available_etfs(_db_client, _refresh_key: int, _cache_version: str = "") -> List[Dict[str, str]]:
     """Get all available ETF tickers with names from Supabase"""
     if _db_client is None:
         return []
@@ -155,12 +155,13 @@ def get_available_etfs(_db_client, _refresh_key: int) -> List[Dict[str, str]]:
         return []
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_holdings(
     _db_client,
     target_date: date,
     etf_ticker: str,
-    _refresh_key: int = 0
+    _refresh_key: int = 0,
+    _cache_version: str = ""
 ) -> pd.DataFrame:
     """Get ALL current holdings for a specific ETF on a specific date with user portfolio overlap"""
     if _db_client is None:
@@ -203,12 +204,13 @@ def get_all_holdings(
         logger.error(f"Error fetching all holdings: {e}", exc_info=True)
         return pd.DataFrame()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_holdings_changes(
     _db_client,
     target_date: date,
     etf_ticker: Optional[str] = None,
-    _refresh_key: int = 0
+    _refresh_key: int = 0,
+    _cache_version: str = ""
 ) -> pd.DataFrame:
     """Calculate holdings changes for a specific date compared to previous date"""
     if _db_client is None:
@@ -247,15 +249,25 @@ def get_holdings_changes(
             hist_df = pd.DataFrame(hist_res.data)
             latest_prev = hist_df.groupby('etf_ticker')['date'].max().reset_index()
             
+            # Optimize: Instead of N queries (one per ETF), batch by date
+            # Group ETFs by their latest previous date to reduce queries
+            date_groups = latest_prev.groupby('date')['etf_ticker'].apply(list).reset_index()
+            
             prev_holdings_list = []
-            for _, row in latest_prev.iterrows():
+            for _, date_row in date_groups.iterrows():
+                batch_date = date_row['date']
+                batch_etfs = date_row['etf_ticker']
+                
+                # Single query for all ETFs with this date
                 p_res = _db_client.supabase.table("etf_holdings_log").select(
                     "etf_ticker, holding_ticker, shares_held"
-                ).eq("etf_ticker", row['etf_ticker']).eq("date", row['date']).execute()
+                ).eq("date", batch_date).in_("etf_ticker", batch_etfs).execute()
+                
                 if p_res.data:
                     prev_holdings_list.extend(p_res.data)
             
             if prev_holdings_list:
+
                 prev_df = pd.DataFrame(prev_holdings_list)
                 prev_df = prev_df.rename(columns={'shares_held': 'previous_shares'})
                 
@@ -318,19 +330,20 @@ def get_holdings_changes(
         logger.error(f"Error fetching holdings changes: {e}", exc_info=True)
         return pd.DataFrame()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_summary_stats(
     _db_client,
     target_date: date,
     etf_ticker: Optional[str] = None,
-    _refresh_key: int = 0
+    _refresh_key: int = 0,
+    _cache_version: str = ""
 ) -> Dict[str, Any]:
     """Get summary statistics for a specific date"""
     if _db_client is None:
         return {}
     
     try:
-        changes_df = get_holdings_changes(_db_client, target_date, etf_ticker, _refresh_key)
+        changes_df = get_holdings_changes(_db_client, target_date, etf_ticker, _refresh_key, _cache_version)
         
         if changes_df.empty:
             return {
@@ -384,8 +397,8 @@ def get_summary_stats(
         return {}
 
 # Get available data
-latest_date = get_latest_date(supabase_client, st.session_state.refresh_key)
-available_etf_data = get_available_etfs(supabase_client, st.session_state.refresh_key)
+latest_date = get_latest_date(supabase_client, st.session_state.refresh_key, CACHE_VERSION)
+available_etf_data = get_available_etfs(supabase_client, st.session_state.refresh_key, CACHE_VERSION)
 available_tickers = [item['ticker'] for item in available_etf_data]
 
 # Create display mapping
@@ -452,17 +465,17 @@ selected_etf = None if etf_filter == "All ETFs" else etf_filter
 
 # Check if we own the ETF itself
 if selected_etf:
-    etf_ownership = check_etf_ownership(supabase_client, selected_etf, st.session_state.refresh_key)
+    etf_ownership = check_etf_ownership(supabase_client, selected_etf, st.session_state.refresh_key, CACHE_VERSION)
     if etf_ownership:
         st.success(f"✓ **You own {int(etf_ownership['total_shares']):,} shares of {selected_etf}** in: {etf_ownership['funds']}")
 
 if selected_etf:
     # Show ALL holdings for the selected ETF
-    changes_df = get_all_holdings(supabase_client, selected_date, selected_etf, st.session_state.refresh_key)
+    changes_df = get_all_holdings(supabase_client, selected_date, selected_etf, st.session_state.refresh_key, CACHE_VERSION)
     view_mode = "holdings"
 else:
     # Show changes across all ETFs
-    changes_df = get_holdings_changes(supabase_client, selected_date, None, st.session_state.refresh_key)
+    changes_df = get_holdings_changes(supabase_client, selected_date, None, st.session_state.refresh_key, CACHE_VERSION)
     view_mode = "changes"
 
 # Apply filters

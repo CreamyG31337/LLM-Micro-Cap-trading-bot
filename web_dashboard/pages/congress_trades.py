@@ -38,6 +38,7 @@ from supabase_client import SupabaseClient
 from postgres_client import PostgresClient
 from user_preferences import get_user_timezone
 from aggrid_utils import TICKER_CELL_RENDERER_JS, GLOBAL_CLICK_HANDLER_JS
+from streamlit_utils import CACHE_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +138,13 @@ if 'page_size' not in st.session_state:
     st.session_state.page_size = 100
 
 # Query functions
-@st.cache_data(ttl=60, show_spinner=False)
-def get_unique_tickers(_supabase_client, _refresh_key: int) -> List[str]:
-    """Get all unique tickers from congress_trades table"""
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_unique_tickers(_supabase_client, _refresh_key: int, _cache_version: str = "") -> List[str]:
+    """Get all unique tickers from congress_trades table
+    
+    Cached for 1 hour since tickers don't change frequently.
+    Auto-invalidates on deployment via _cache_version.
+    """
     try:
         if _supabase_client is None:
             return []
@@ -181,9 +186,13 @@ def get_unique_tickers(_supabase_client, _refresh_key: int) -> List[str]:
         logger.error(f"Error fetching unique tickers: {e}", exc_info=True)
         return []
 
-@st.cache_data(ttl=60, show_spinner=False)
-def get_unique_politicians(_supabase_client, _refresh_key: int) -> List[str]:
-    """Get all unique politicians from congress_trades table"""
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_unique_politicians(_supabase_client, _refresh_key: int, _cache_version: str = "") -> List[str]:
+    """Get all unique politicians from congress_trades table
+    
+    Cached for 1 hour since politicians don't change frequently.
+    Auto-invalidates on deployment via _cache_version.
+    """
     try:
         if _supabase_client is None:
             return []
@@ -448,8 +457,8 @@ with st.sidebar:
     
     # Get unique values for filters
     with st.spinner("Loading filter options..."):
-        unique_tickers = get_unique_tickers(supabase_client, st.session_state.refresh_key)
-        unique_politicians = get_unique_politicians(supabase_client, st.session_state.refresh_key)
+        unique_tickers = get_unique_tickers(supabase_client, st.session_state.refresh_key, CACHE_VERSION)
+        unique_politicians = get_unique_politicians(supabase_client, st.session_state.refresh_key, CACHE_VERSION)
     
     # Ticker filter
     ticker_options = ["All"] + unique_tickers

@@ -34,6 +34,7 @@ from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
 from aggrid_utils import display_aggrid_with_ticker_navigation
+from streamlit_utils import CACHE_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ if 'refresh_key' not in st.session_state:
 
 # Query functions
 @st.cache_data(ttl=60, show_spinner=False)
-def get_watchlist_tickers(_supabase_client, _refresh_key: int) -> List[Dict[str, Any]]:
+def get_watchlist_tickers(_supabase_client, _refresh_key: int, _cache_version: str = "") -> List[Dict[str, Any]]:
     """Get all active tickers from watched_tickers table
     
     Returns:
@@ -141,7 +142,8 @@ def get_watchlist_tickers(_supabase_client, _refresh_key: int) -> List[Dict[str,
 def get_dynamic_watchlist_tickers(
     _supabase_client, 
     _postgres_client, 
-    _refresh_key: int
+    _refresh_key: int,
+    _cache_version: str = ""
 ) -> List[Dict[str, Any]]:
     """Get dynamic watchlist tickers from multiple sources (trade log, congress trades, articles, sentiment alerts)
     
@@ -350,7 +352,7 @@ def get_dynamic_watchlist_tickers(
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_latest_sentiment_per_ticker(_client, _refresh_key: int) -> List[Dict[str, Any]]:
+def get_latest_sentiment_per_ticker(_client, _refresh_key: int, _cache_version: str = "") -> List[Dict[str, Any]]:
     """Get the most recent sentiment metric for each ticker/platform combination
     
     Returns:
@@ -371,7 +373,7 @@ def get_latest_sentiment_per_ticker(_client, _refresh_key: int) -> List[Dict[str
         return []
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_extreme_sentiment_alerts(_client, _refresh_key: int) -> List[Dict[str, Any]]:
+def get_extreme_sentiment_alerts(_client, _refresh_key: int, _cache_version: str = "") -> List[Dict[str, Any]]:
     """Get EUPHORIC or FEARFUL sentiment alerts from last 24 hours
     
     Returns:
@@ -546,12 +548,13 @@ try:
             watchlist_tickers = get_dynamic_watchlist_tickers(
                 supabase_client, 
                 postgres_client, 
-                st.session_state.refresh_key
+                st.session_state.refresh_key,
+                CACHE_VERSION
             )
     
     # Get alerts (cached)
     with st.spinner("Loading alerts..."):
-        alerts = get_extreme_sentiment_alerts(postgres_client, st.session_state.refresh_key)
+        alerts = get_extreme_sentiment_alerts(postgres_client, st.session_state.refresh_key, CACHE_VERSION)
     
     # Display Watchlist Section
     st.header("📋 Watchlist")

@@ -33,9 +33,9 @@ from ai_prompts import get_system_prompt
 from user_preferences import get_user_ai_model, set_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
-    calculate_portfolio_value_over_time, get_fund_thesis_data, get_available_funds
+    calculate_portfolio_value_over_time, get_fund_thesis_data, get_available_funds,
+    calculate_performance_metrics
 )
-from performance_metrics import calculate_performance_metrics # Moved from streamlit_utils
 from research_repository import ResearchRepository
 
 logger = logging.getLogger(__name__)

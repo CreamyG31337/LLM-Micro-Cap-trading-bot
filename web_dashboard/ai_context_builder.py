@@ -354,13 +354,18 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         logger.warning(f"[ai_context_builder.format_fundamentals_table] MarketDataFetcher not available: {e}")
     
     for idx, row in positions_df.iterrows():
-        ticker = row.get('symbol', row.get('ticker', 'N/A'))
+        # pandas Series: use row['key'] or row.get('key') both work, but check for column existence
+        ticker = row.get('ticker', row.get('symbol', 'N/A'))
+        
+        # Debug first row to see what columns and values we have
+        if idx == positions_df.index[0]:
+            logger.info(f"[ai_context_builder.format_fundamentals_table] First row columns: {list(row.index)}")
+            logger.info(f"[ai_context_builder.format_fundamentals_table] First row sector={row.get('sector')}, industry={row.get('industry')}")
         
         # USE DIRECT COLUMNS from positions_df (DB view flattens securities join)
-        # Available: sector, industry, current_price, yesterday_price, etc.
-        sector = row.get('sector', 'N/A') or 'N/A'
-        industry = row.get('industry', 'N/A') or 'N/A'
-        country = row.get('country', 'N/A') or 'N/A'
+        sector = str(row.get('sector', 'N/A') or 'N/A')
+        industry = str(row.get('industry', 'N/A') or 'N/A')
+        country = str(row.get('country', 'N/A') or 'N/A')
         
         # Format market cap from securities join if available
         market_cap = "N/A"
@@ -373,7 +378,6 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
                 raw_cap = securities[0].get('market_cap') if isinstance(securities[0], dict) else None
         if raw_cap and raw_cap != 'N/A':
             market_cap = _format_market_cap(raw_cap)
-
 
         
         # SECOND: Only fetch P/E, Div%, 52W High/Low from yfinance (not in securities table)

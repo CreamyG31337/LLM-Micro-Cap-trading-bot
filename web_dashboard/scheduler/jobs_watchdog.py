@@ -25,23 +25,48 @@ else:
 
 # CRITICAL: Project root must be FIRST in sys.path to ensure utils.job_tracking
 # is found from the project root, not from web_dashboard/utils
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-elif sys.path[0] != str(project_root):
-    # If it is in path but not first, move it to front
-    if str(project_root) in sys.path:
-        sys.path.remove(str(project_root))
-    sys.path.insert(0, str(project_root))
+# Force project root to be at index 0, removing it first if it exists elsewhere
+project_root_str = str(project_root)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
 
 # Also ensure web_dashboard is in path for supabase_client imports
 # (but AFTER project root so it doesn't shadow utils)
 web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-if web_dashboard_path not in sys.path:
-    sys.path.insert(1, web_dashboard_path)  # Insert at index 1, after project_root
+if web_dashboard_path in sys.path:
+    sys.path.remove(web_dashboard_path)
+# Insert at index 1, after project_root
+if len(sys.path) > 1:
+    sys.path.insert(1, web_dashboard_path)
+else:
+    sys.path.append(web_dashboard_path)
 
 from scheduler.scheduler_core import log_job_execution
 
-# Import job_tracking with fallback path setup if needed
+# Import job_tracking - path should be set up correctly now
+# Verify the file exists before importing
+job_tracking_path = project_root / 'utils' / 'job_tracking.py'
+if not job_tracking_path.exists():
+    raise ImportError(
+        f"utils.job_tracking not found at expected path: {job_tracking_path}\n"
+        f"Project root: {project_root}\n"
+        f"sys.path[0]: {sys.path[0] if sys.path else 'empty'}\n"
+        f"Current working directory: {Path.cwd()}"
+    )
+
+# Clear any cached import failures for utils.job_tracking
+import importlib
+if 'utils.job_tracking' in sys.modules:
+    del sys.modules['utils.job_tracking']
+if 'utils' in sys.modules:
+    # Only remove utils if it's from the wrong location
+    utils_module = sys.modules.get('utils')
+    if utils_module and hasattr(utils_module, '__file__'):
+        utils_file = Path(utils_module.__file__).resolve() if utils_module.__file__ else None
+        if utils_file and 'web_dashboard' in str(utils_file):
+            del sys.modules['utils']
+
 try:
     from utils.job_tracking import (
         add_to_retry_queue,
@@ -52,14 +77,33 @@ try:
         is_calculation_job,
         mark_job_failed
     )
-except ImportError:
-    # If import fails, ensure project root is definitely first and try again
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    elif sys.path[0] != str(project_root):
-        if str(project_root) in sys.path:
-            sys.path.remove(str(project_root))
-        sys.path.insert(0, str(project_root))
+except ImportError as e:
+    # Last resort: try to fix path and import again
+    # Remove any existing project_root and web_dashboard from path
+    project_root_str = str(project_root)
+    web_dashboard_str = str(web_dashboard_path)
+    if project_root_str in sys.path:
+        sys.path.remove(project_root_str)
+    if web_dashboard_str in sys.path:
+        sys.path.remove(web_dashboard_str)
+    # Insert in correct order
+    sys.path.insert(0, project_root_str)
+    if len(sys.path) > 1:
+        sys.path.insert(1, web_dashboard_str)
+    else:
+        sys.path.append(web_dashboard_str)
+    
+    # Clear module cache again
+    if 'utils.job_tracking' in sys.modules:
+        del sys.modules['utils.job_tracking']
+    if 'utils' in sys.modules:
+        utils_module = sys.modules.get('utils')
+        if utils_module and hasattr(utils_module, '__file__'):
+            utils_file = Path(utils_module.__file__).resolve() if utils_module.__file__ else None
+            if utils_file and 'web_dashboard' in str(utils_file):
+                del sys.modules['utils']
+    
+    # Try import one more time
     from utils.job_tracking import (
         add_to_retry_queue,
         get_pending_retries,

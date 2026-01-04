@@ -144,6 +144,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': False,  # DISABLED during session backfill - re-enable after
         'icon': '🔍'
     },
+    'archive_retry': {
+        'name': 'Archive Retry',
+        'description': 'Check for archived versions of paywalled articles and process them',
+        'default_interval_minutes': 45,  # Every 45 minutes
+        'enabled_by_default': True,
+        'icon': '📦'
+    },
     'rss_feed_ingest': {
         'name': 'RSS Feed Ingestion',
         'description': 'Fetch articles from validated RSS feeds (Push strategy)',
@@ -304,7 +311,8 @@ from scheduler.jobs_metrics import (
 from scheduler.jobs_research import (
     market_research_job,
     rss_feed_ingest_job,
-    ticker_research_job
+    ticker_research_job,
+    archive_retry_job
 )
 
 # Import portfolio jobs
@@ -360,6 +368,7 @@ __all__ = [
     'market_research_job',
     'rss_feed_ingest_job',
     'ticker_research_job',
+    'archive_retry_job',
     # Portfolio jobs
     'update_portfolio_prices_job',
     'backfill_portfolio_prices_range',
@@ -864,6 +873,19 @@ def register_default_jobs(scheduler) -> None:
             coalesce=True
         )
         logger.info("Registered job: process_retry_queue (every 15 minutes)")
+
+    # Archive retry job - every 45 minutes
+    if AVAILABLE_JOBS.get('archive_retry', {}).get('enabled_by_default', True):
+        scheduler.add_job(
+            archive_retry_job,
+            trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['archive_retry']['default_interval_minutes']),
+            id='archive_retry',
+            name=f"{get_job_icon('archive_retry')} Archive Retry",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: archive_retry (every 45 minutes)")
 
     # Subreddit Scanner - every 4 hours
     if AVAILABLE_JOBS.get('subreddit_scanner', {}).get('enabled_by_default', True):

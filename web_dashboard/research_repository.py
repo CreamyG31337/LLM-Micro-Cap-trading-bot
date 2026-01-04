@@ -231,8 +231,20 @@ class ResearchRepository:
                     logger.info(f"✅ Saved article: {title[:50]}... (ID: {article_id})")
                     return article_id
                 else:
-                    logger.warning("Article saved but no ID returned")
-                    return None
+                    # Article may already exist (ON CONFLICT DO NOTHING)
+                    # Try to get existing article ID
+                    logger.debug(f"Article may already exist, fetching ID for URL: {url}")
+                    existing = self.client.execute_query(
+                        "SELECT id FROM research_articles WHERE url = %s",
+                        (url,)
+                    )
+                    if existing:
+                        article_id = str(existing[0]['id'])
+                        logger.info(f"✅ Article already exists: {title[:50]}... (ID: {article_id})")
+                        return article_id
+                    else:
+                        logger.warning("Article saved but no ID returned and not found by URL")
+                        return None
                     
         except Exception as e:
             logger.error(f"❌ Error saving article: {e}")
@@ -359,6 +371,7 @@ class ResearchRepository:
                         SELECT id, tickers, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
                                claims, fact_check, conclusion, sentiment, sentiment_score,
+                               archive_url, archive_submitted_at, archive_checked_at,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (%s = ANY(tickers) OR (tickers IS NULL AND sector = %s))
@@ -368,6 +381,7 @@ class ResearchRepository:
                     query = """
                         SELECT id, tickers, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
+                               archive_url, archive_submitted_at, archive_checked_at,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE %s = ANY(tickers)
@@ -380,6 +394,7 @@ class ResearchRepository:
                         SELECT id, ticker, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
                                claims, fact_check, conclusion, sentiment, sentiment_score,
+                               archive_url, archive_submitted_at, archive_checked_at,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE (ticker = %s OR (ticker IS NULL AND sector = %s))
@@ -389,6 +404,7 @@ class ResearchRepository:
                     query = """
                         SELECT id, ticker, sector, article_type, title, url, summary, content,
                                source, published_at, fetched_at, relevance_score, fund,
+                               archive_url, archive_submitted_at, archive_checked_at,
                                (embedding IS NOT NULL) as has_embedding
                         FROM research_articles
                         WHERE ticker = %s
@@ -451,6 +467,7 @@ class ResearchRepository:
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score, fund,
+                       archive_url, archive_submitted_at, archive_checked_at,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s
@@ -673,6 +690,108 @@ class ResearchRepository:
                 
         except Exception as e:
             logger.error(f"❌ Error updating article {article_id} analysis: {e}")
+            return False
+    
+    def mark_archive_submitted(self, article_id: str, original_url: str) -> bool:
+        """Mark an article as submitted to archive service.
+        
+        Args:
+            article_id: UUID of the article
+            original_url: Original article URL that was submitted
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            query = """
+                UPDATE research_articles
+                SET archive_submitted_at = %s
+                WHERE id = %s
+            """
+            rows_updated = self.client.execute_update(
+                query,
+                (datetime.now(timezone.utc), article_id)
+            )
+            if rows_updated > 0:
+                logger.debug(f"Marked article {article_id} as archive submitted")
+                return True
+            else:
+                logger.warning(f"Article {article_id} not found for archive submission marking")
+                return False
+        except Exception as e:
+            logger.error(f"Error marking archive submitted for {article_id}: {e}")
+            return False
+    
+    def get_pending_archive_articles(self, min_wait_minutes: int = 5) -> List[Dict[str, Any]]:
+        """Get articles that were submitted for archiving but not yet checked.
+        
+        Only returns articles that were submitted at least min_wait_minutes ago
+        (to give archive service time to process).
+        
+        Args:
+            min_wait_minutes: Minimum minutes to wait after submission before checking
+            
+        Returns:
+            List of article dictionaries with id, url, archive_submitted_at
+        """
+        try:
+            query = """
+                SELECT id, url, archive_submitted_at, archive_checked_at
+                FROM research_articles
+                WHERE archive_submitted_at IS NOT NULL
+                  AND archive_url IS NULL
+                  AND archive_submitted_at <= %s
+                ORDER BY archive_submitted_at ASC
+                LIMIT 100
+            """
+            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=min_wait_minutes)
+            results = self.client.execute_query(query, (cutoff_time,))
+            return results
+        except Exception as e:
+            logger.error(f"Error getting pending archive articles: {e}")
+            return []
+    
+    def mark_archive_checked(self, article_id: str, archive_url: Optional[str] = None, success: bool = False) -> bool:
+        """Mark an article as checked for archiving.
+        
+        Args:
+            article_id: UUID of the article
+            archive_url: Archived URL if found, None otherwise
+            success: True if archived version was found
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if success and archive_url:
+                query = """
+                    UPDATE research_articles
+                    SET archive_checked_at = %s,
+                        archive_url = %s
+                    WHERE id = %s
+                """
+                rows_updated = self.client.execute_update(
+                    query,
+                    (datetime.now(timezone.utc), archive_url, article_id)
+                )
+            else:
+                query = """
+                    UPDATE research_articles
+                    SET archive_checked_at = %s
+                    WHERE id = %s
+                """
+                rows_updated = self.client.execute_update(
+                    query,
+                    (datetime.now(timezone.utc), article_id)
+                )
+            if rows_updated > 0:
+                logger.debug(f"Marked article {article_id} as archive checked (success: {success})")
+                return True
+            else:
+                logger.warning(f"Article {article_id} not found for archive check marking")
+                return False
+        except Exception as e:
+            logger.error(f"Error marking archive checked for {article_id}: {e}")
             return False
     
     def update_article_fund(self, article_id: str, fund: Optional[str] = None) -> bool:
@@ -1025,6 +1144,7 @@ class ResearchRepository:
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score, fund,
                        claims, fact_check, conclusion, sentiment, sentiment_score,
+                       archive_url, archive_submitted_at, archive_checked_at,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE fetched_at >= %s AND fetched_at <= %s
@@ -1113,6 +1233,7 @@ class ResearchRepository:
             query = f"""
                 SELECT id, {ticker_column}, sector, article_type, title, url, summary, content,
                        source, published_at, fetched_at, relevance_score, fund,
+                       archive_url, archive_submitted_at, archive_checked_at,
                        (embedding IS NOT NULL) as has_embedding
                 FROM research_articles
                 WHERE 1=1

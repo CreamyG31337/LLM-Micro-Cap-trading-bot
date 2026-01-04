@@ -109,6 +109,141 @@ def extract_article_content(url: str) -> Dict[str, Any]:
         # Get title
         title = metadata.title if metadata and metadata.title else ''
         
+        # Get source for filtering
+        source = extract_source_from_url(url)
+        
+        # Check for paywall using paywall detector
+        from paywall_detector import is_paywalled_article, detect_paywall
+        paywall_type = detect_paywall(extracted, url)
+        
+        if paywall_type:
+            logger.info(f"Paywall detected ({paywall_type}): {url}")
+            
+            # Try archive services as fallback
+            try:
+                from archive_service import check_archived, get_archived_content
+                
+                logger.info(f"Attempting to find archived version: {url}")
+                archived_url = check_archived(url)
+                
+                if archived_url:
+                    logger.info(f"Found archived version: {archived_url}")
+                    # Use our custom fetch function with browser-like headers
+                    # This avoids rate limiting that trafilatura.fetch_url() might trigger
+                    try:
+                        import time
+                        # Add a small delay to avoid rate limiting
+                        time.sleep(1)
+                        
+                        logger.debug(f"Fetching from archive URL with browser headers: {archived_url}")
+                        from archive_service import get_archived_content
+                        archived_html = get_archived_content(archived_url)
+                        
+                        if archived_html:
+                            # Re-extract content from archived page
+                            archived_extracted = trafilatura.extract(
+                                archived_html,
+                                include_comments=False,
+                                include_links=False,
+                                include_images=False,
+                                include_tables=False
+                            )
+                            
+                            if archived_extracted and len(archived_extracted) > 200:
+                                # Check if archived version also has paywall
+                                if not is_paywalled_article(archived_extracted, archived_url):
+                                    logger.info(f"Successfully extracted content from archived version")
+                                    # Use archived content
+                                    extracted = archived_extracted
+                                    # Update metadata from archived page if needed
+                                    archived_metadata = trafilatura.extract_metadata(archived_html)
+                                    if archived_metadata and archived_metadata.title:
+                                        title = archived_metadata.title
+                                else:
+                                    logger.warning(f"Archived version also has paywall, submitting for archiving")
+                                    # Archived version also paywalled, submit for archiving
+                                    from archive_service import submit_for_archiving
+                                    submit_for_archiving(url)
+                                    return {
+                                        'title': title,
+                                        'content': '',
+                                        'published_at': None,
+                                        'source': source,
+                                        'success': False,
+                                        'error': 'paid_subscription',
+                                        'archive_submitted': True
+                                    }
+                            else:
+                                logger.warning(f"Archived version has insufficient content")
+                                # Submit for archiving as fallback
+                                from archive_service import submit_for_archiving
+                                submit_for_archiving(url)
+                                return {
+                                    'title': title,
+                                    'content': '',
+                                    'published_at': None,
+                                    'source': source,
+                                    'success': False,
+                                    'error': 'paid_subscription',
+                                    'archive_submitted': True
+                                }
+                        else:
+                            logger.warning(f"Failed to fetch archived content from {archived_url}")
+                            # Submit for archiving
+                            from archive_service import submit_for_archiving
+                            submit_for_archiving(url)
+                            return {
+                                'title': title,
+                                'content': '',
+                                'published_at': None,
+                                'source': source,
+                                'success': False,
+                                'error': 'paid_subscription',
+                                'archive_submitted': True
+                            }
+                    except Exception as e:
+                        logger.warning(f"Error fetching from archive URL {archived_url}: {e}")
+                        # Submit for archiving as fallback
+                        from archive_service import submit_for_archiving
+                        submit_for_archiving(url)
+                        return {
+                            'title': title,
+                            'content': '',
+                            'published_at': None,
+                            'source': source,
+                            'success': False,
+                            'error': 'paid_subscription',
+                            'archive_submitted': True
+                        }
+                else:
+                    # Not archived yet, submit for archiving
+                    logger.info(f"URL not archived yet, submitting for archiving: {url}")
+                    from archive_service import submit_for_archiving
+                    submit_for_archiving(url)
+                    return {
+                        'title': title,
+                        'content': '',
+                        'published_at': None,
+                        'source': source,
+                        'success': False,
+                        'error': 'paid_subscription',
+                        'archive_submitted': True
+                    }
+            except ImportError:
+                logger.warning("Archive service not available, skipping archive fallback")
+            except Exception as e:
+                logger.error(f"Error during archive fallback: {e}", exc_info=True)
+            
+            # If archive fallback failed, return paywall error
+            return {
+                'title': title,
+                'content': '',
+                'published_at': None,
+                'source': source,
+                'success': False,
+                'error': 'paid_subscription'
+            }
+        
         # Get published date
         published_at = None
         if metadata and metadata.date:
@@ -131,7 +266,7 @@ def extract_article_content(url: str) -> Dict[str, Any]:
             'title': title,
             'content': extracted,
             'published_at': published_at,
-            'source': extract_source_from_url(url),
+            'source': source,
             'success': True,
             'error': None
         }

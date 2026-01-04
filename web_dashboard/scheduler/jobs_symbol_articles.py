@@ -198,6 +198,35 @@ def seeking_alpha_symbol_job() -> None:
                         logger.debug(f"  Extracting: {article_url[:60]}...")
                         extracted = extract_article_content(article_url)
                         
+                        # Check for paid subscription articles
+                        if extracted.get('error') == 'paid_subscription':
+                            # Check if archive was submitted
+                            if extracted.get('archive_submitted'):
+                                logger.info(f"  🔒 Paywalled article submitted to archive, saving for retry: {article_url[:60]}...")
+                                # Save article with minimal content so retry job can find it
+                                article_id = research_repo.save_article(
+                                    tickers=[ticker.upper()],
+                                    sector=None,
+                                    article_type="ticker_news",
+                                    title=title or "Paywalled Article",
+                                    url=article_url,
+                                    summary="[Paywalled - Submitted to archive for processing]",
+                                    content="[Paywalled - Submitted to archive for processing]",
+                                    source=extracted.get('source'),
+                                    published_at=None,
+                                    relevance_score=0.0,
+                                    embedding=None
+                                )
+                                if article_id:
+                                    # Mark as archive submitted
+                                    research_repo.mark_archive_submitted(article_id, article_url)
+                                    articles_paywalled += 1
+                                    logger.info(f"  Saved paywalled article for archive retry: {article_id}")
+                            else:
+                                logger.info(f"  🔒 Skipping paid subscription article: {article_url[:60]}...")
+                                articles_paywalled += 1
+                            continue
+                        
                         content = extracted.get('content', '')
                         title = extracted.get('title', '')
                         

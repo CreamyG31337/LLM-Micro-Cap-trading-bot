@@ -39,6 +39,7 @@ from settings import get_summarizing_model
 from file_parsers import extract_text_from_file
 from streamlit_utils import get_available_funds
 from ticker_utils import render_ticker_link
+from research_utils import normalize_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -943,6 +944,7 @@ try:
             st.markdown("""
             - 🧠 **AI Processed** - Article has been analyzed and embedded for AI search
             - ⏳ **Pending** - Article is waiting for AI processing
+            - ✅ **Owned Ticker** - Article mentions ticker(s) owned in your portfolio
             """)
     
     # Show owned tickers count when filter is active
@@ -1277,9 +1279,34 @@ try:
             with col_info2:
                 st.markdown(format_article_dates(article))
             
-            # URL link
+            # URL links (original + archive if available)
             if article.get('url'):
                 st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
+                
+                # Archive status and link
+                archive_url = article.get('archive_url')
+                archive_submitted_at = article.get('archive_submitted_at')
+                archive_checked_at = article.get('archive_checked_at')
+                
+                if archive_url:
+                    # Successfully archived - show link
+                    st.link_button("🔓 View Archived Version (Paywall Bypass)", archive_url, use_container_width=True, type="secondary")
+                elif archive_submitted_at:
+                    # Submitted but not yet archived
+                    from datetime import datetime, timezone
+                    if isinstance(archive_submitted_at, str):
+                        archive_submitted_at = datetime.fromisoformat(archive_submitted_at.replace('Z', '+00:00'))
+                    
+                    # Check if recently submitted (within last 10 minutes)
+                    time_since_submission = datetime.now(timezone.utc) - archive_submitted_at
+                    if time_since_submission.total_seconds() < 600:  # 10 minutes
+                        st.info("⏳ **Archiving in progress...** Check back in a few minutes for paywall bypass link.")
+                    elif archive_checked_at:
+                        # Checked but no URL found - likely failed
+                        st.warning("🔒 **Paywalled** - Archive service unable to bypass. Original source requires subscription.")
+                    else:
+                        # Submitted but not checked yet
+                        st.info("⏳ **Submitted for archiving** - Will check archive status shortly.")
             
             # Admin actions
             if show_admin_actions:
@@ -1343,6 +1370,9 @@ try:
                 with st.expander("📄 Full Content", expanded=False):
                     st.write(article['content'])
         
+        # Get owned tickers for ownership indicator (cached)
+        owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)
+        
         # Display articles
         for idx, article in enumerate(articles):
             # Build enhanced title with job icon + status icon
@@ -1362,8 +1392,30 @@ try:
             has_embedding = article.get('has_embedding', False)
             status_icon = "🧠" if has_embedding else "⏳"
             
+            # Check if article has owned tickers
+            article_tickers = article.get('tickers', [])
+            if not article_tickers and article.get('ticker'):
+                article_tickers = [article.get('ticker')]
+            
+            has_owned_ticker = False
+            if owned_tickers and article_tickers:
+                # Normalize article tickers and check if any match owned tickers
+                normalized_article_tickers = set()
+                for ticker in article_tickers:
+                    if ticker:
+                        normalized = normalize_ticker(ticker)
+                        if normalized:
+                            normalized_article_tickers.add(normalized)
+                
+                # Check for overlap
+                if normalized_article_tickers & owned_tickers:
+                    has_owned_ticker = True
+            
+            # Ownership indicator
+            ownership_indicator = "✅ " if has_owned_ticker else ""
+            
             # Combine both icons
-            icon_badge = f"{job_icon}{status_icon} "
+            icon_badge = f"{job_icon}{status_icon} {ownership_indicator}"
             
             # Format tickers (show first 2 tickers max for display)
             tickers = article.get('tickers', [])
@@ -1457,7 +1509,52 @@ try:
                 with col_expander:
                     with st.expander(expander_title, expanded=False):
                         render_article_content(article, show_admin_actions=False)
-
+        
+        # Bottom pagination controls - duplicate for easy navigation after scrolling
+        st.markdown("---")
+        
+        # Display pagination info and controls
+        col_info_bottom, col_nav_bottom = st.columns([2, 3])
+        
+        with col_info_bottom:
+            st.markdown(f"**Page {page} of {total_pages}** | Total results: **{total_count:,}** | Showing: **{len(articles)}**")
+        
+        with col_nav_bottom:
+            nav_col1_bottom, nav_col2_bottom, nav_col3_bottom, nav_col4_bottom = st.columns([1, 1, 1, 0.6])
+            
+            with nav_col1_bottom:
+                if page > 1:
+                    if st.button("◀ Previous", use_container_width=True, key="prev_bottom"):
+                        st.session_state.current_page = page - 1
+                        st.rerun()
+            
+            with nav_col2_bottom:
+                if has_more:
+                    if st.button("Next ▶", use_container_width=True, key="next_bottom"):
+                        st.session_state.current_page = page + 1
+                        st.rerun()
+            
+            with nav_col3_bottom:
+                # Jump to page input - using text_input to avoid auto-refresh on +/-
+                jump_page_str_bottom = st.text_input(
+                    "Jump to page",
+                    value=str(page),
+                    key="jump_page_input_bottom",
+                    label_visibility="collapsed",
+                    placeholder=f"Page (1-{total_pages})"
+                )
+                # Parse and validate
+                try:
+                    jump_page_bottom = int(jump_page_str_bottom)
+                    jump_page_bottom = max(1, min(jump_page_bottom, total_pages))  # Clamp to valid range
+                except (ValueError, TypeError):
+                    jump_page_bottom = page  # Default to current page if invalid
+            
+            with nav_col4_bottom:
+                if st.button("Go", use_container_width=True, key="go_bottom"):
+                    if jump_page_bottom != page:
+                        st.session_state.current_page = jump_page_bottom
+                        st.rerun()
 
 
 except Exception as e:

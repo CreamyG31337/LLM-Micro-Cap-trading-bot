@@ -176,6 +176,35 @@ def market_research_job() -> None:
                 logger.info(f"Extracting content: {title[:50]}...")
                 extracted = extract_article_content(url)
                 
+                # Check for paid subscription articles
+                if extracted.get('error') == 'paid_subscription':
+                    # Check if archive was submitted
+                    if extracted.get('archive_submitted'):
+                        logger.info(f"Paywalled article submitted to archive, saving for retry: {title[:50]}...")
+                        # Save article with minimal content so retry job can find it
+                        article_id = research_repo.save_article(
+                            tickers=None,
+                            sector=None,
+                            article_type="market_news",
+                            title=title,
+                            url=url,
+                            summary="[Paywalled - Submitted to archive for processing]",
+                            content="[Paywalled - Submitted to archive for processing]",
+                            source=extracted.get('source'),
+                            published_at=None,
+                            relevance_score=0.0,
+                            embedding=None
+                        )
+                        if article_id:
+                            # Mark as archive submitted
+                            research_repo.mark_archive_submitted(article_id, url)
+                            articles_skipped += 1
+                            logger.info(f"Saved paywalled article for archive retry: {article_id}")
+                    else:
+                        logger.info(f"Skipping paid subscription article: {title[:50]}...")
+                        articles_skipped += 1
+                    continue
+                
                 # Initialize health tracker (lazy import to avoid circular deps)
                 from research_domain_health import DomainHealthTracker, normalize_domain
                 tracker = DomainHealthTracker()
@@ -483,6 +512,36 @@ def rss_feed_ingest_job() -> None:
                         if not content or len(content) < 200:
                             logger.info(f"  Extracting full content: {title[:40]}...")
                             extracted = extract_article_content(url)
+                            
+                            # Check for paid subscription articles
+                            if extracted.get('error') == 'paid_subscription':
+                                # Check if archive was submitted
+                                if extracted.get('archive_submitted'):
+                                    logger.info(f"  Paywalled article submitted to archive, saving for retry: {title[:40]}...")
+                                    # Save article with minimal content so retry job can find it
+                                    article_id = research_repo.save_article(
+                                        tickers=None,
+                                        sector=None,
+                                        article_type="market_news",
+                                        title=title,
+                                        url=url,
+                                        summary="[Paywalled - Submitted to archive for processing]",
+                                        content="[Paywalled - Submitted to archive for processing]",
+                                        source=item.get('source'),
+                                        published_at=item.get('published_at'),
+                                        relevance_score=0.0,
+                                        embedding=None
+                                    )
+                                    if article_id:
+                                        # Mark as archive submitted
+                                        research_repo.mark_archive_submitted(article_id, url)
+                                        total_articles_skipped += 1
+                                        logger.info(f"  Saved paywalled article for archive retry: {article_id}")
+                                else:
+                                    logger.info(f"  Skipping paid subscription article: {title[:40]}...")
+                                    total_articles_skipped += 1
+                                continue
+                            
                             content = extracted.get('content', '')
                             if not content:
                                 logger.warning(f"Failed to extract content for {title[:40]}...")
@@ -1136,4 +1195,232 @@ def ticker_research_job() -> None:
         except Exception:
             pass  # Don't fail if tracking fails
         logger.error(f"❌ Ticker research job failed: {e}", exc_info=True)
+
+
+def archive_retry_job() -> None:
+    """Retry checking for archived versions of paywalled articles.
+    
+    This job:
+    1. Finds articles submitted to archive service but not yet archived
+    2. Checks if they're now archived (waits at least 5 minutes after submission)
+    3. If archived, extracts content and runs AI analysis
+    4. Updates articles with archived content
+    """
+    job_id = 'archive_retry'
+    start_time = time.time()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting archive retry job...")
+        
+        # Mark job as started
+        target_date = datetime.now(timezone.utc).date()
+        mark_job_started('archive_retry', target_date)
+        
+        # Import dependencies
+        try:
+            from research_repository import ResearchRepository
+            from research_utils import extract_article_content
+            from archive_service import check_archived, get_archived_content
+            from paywall_detector import is_paywalled_article
+            from ollama_client import get_ollama_client
+            from postgres_client import PostgresClient
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Get clients
+        research_repo = ResearchRepository()
+        ollama_client = get_ollama_client()
+        
+        # Get owned tickers for relevance scoring
+        from supabase_client import SupabaseClient
+        client = SupabaseClient(use_service_role=True)
+        funds_result = client.supabase.table("funds").select("name").eq("is_production", True).execute()
+        
+        owned_tickers = set()
+        if funds_result.data:
+            prod_funds = [f['name'] for f in funds_result.data]
+            positions_result = client.supabase.table("latest_positions").select("ticker").in_("fund", prod_funds).execute()
+            if positions_result.data:
+                owned_tickers = set(pos['ticker'] for pos in positions_result.data)
+        
+        # Get pending archive articles (submitted at least 5 minutes ago)
+        pending_articles = research_repo.get_pending_archive_articles(min_wait_minutes=5)
+        
+        if not pending_articles:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No pending archive articles to check"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed('archive_retry', target_date, None, [], duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        logger.info(f"Found {len(pending_articles)} pending archive articles to check")
+        
+        articles_checked = 0
+        articles_archived = 0
+        articles_processed = 0
+        
+        # Process each pending article
+        for article in pending_articles:
+            try:
+                article_id = article['id']
+                url = article['url']
+                submitted_at = article['archive_submitted_at']
+                
+                logger.info(f"Checking archive status for: {url[:60]}...")
+                
+                # Check if archived
+                archived_url = check_archived(url)
+                
+                if archived_url:
+                    logger.info(f"✅ Found archived version: {archived_url}")
+                    
+                    # Mark as checked with archived URL
+                    research_repo.mark_archive_checked(article_id, archived_url, success=True)
+                    
+                    # Fetch content from archived page using our custom function with browser headers
+                    # This avoids rate limiting that trafilatura.fetch_url() might trigger
+                    try:
+                        import trafilatura
+                        from archive_service import get_archived_content
+                        
+                        # Add delay to avoid rate limiting (retry job runs every 45 min, so this should be safe)
+                        time.sleep(2)
+                        
+                        logger.debug(f"Fetching archived content with browser headers: {archived_url}")
+                        archived_html = get_archived_content(archived_url)
+                        
+                        if archived_html:
+                            # Extract content using trafilatura
+                            extracted_content = trafilatura.extract(
+                                archived_html,
+                                include_comments=False,
+                                include_links=False,
+                                include_images=False,
+                                include_tables=False
+                            )
+                            
+                            if extracted_content and len(extracted_content) > 200:
+                                # Check if archived version also has paywall
+                                if is_paywalled_article(extracted_content, archived_url):
+                                    logger.warning(f"⚠️ Archived version still has paywall for {article_id}")
+                                    research_repo.mark_archive_checked(article_id, None, success=False)
+                                    continue
+                                
+                                # Generate AI summary and embedding
+                                summary = None
+                                summary_data = {}
+                                extracted_tickers = []
+                                extracted_sector = None
+                                embedding = None
+                                
+                                if ollama_client:
+                                    summary_data = ollama_client.generate_summary(extracted_content)
+                                    
+                                    if isinstance(summary_data, str):
+                                        summary = summary_data
+                                    elif isinstance(summary_data, dict) and summary_data:
+                                        summary = summary_data.get("summary", "")
+                                        
+                                        # Extract tickers
+                                        ai_tickers = summary_data.get("tickers", [])
+                                        from research_utils import validate_ticker_format, normalize_ticker
+                                        for ticker in ai_tickers:
+                                            if validate_ticker_format(ticker):
+                                                normalized = normalize_ticker(ticker)
+                                                if normalized:
+                                                    extracted_tickers.append(normalized)
+                                        
+                                        # Extract sector
+                                        sectors = summary_data.get("sectors", [])
+                                        if sectors:
+                                            extracted_sector = sectors[0]
+                                    
+                                    # Generate embedding
+                                    embedding = ollama_client.generate_embedding(extracted_content[:6000])
+                                
+                                # Calculate relevance score
+                                relevance_score = calculate_relevance_score(
+                                    extracted_tickers if extracted_tickers else [],
+                                    extracted_sector,
+                                    owned_tickers=list(owned_tickers) if owned_tickers else None
+                                )
+                                
+                                # Extract metadata
+                                metadata = trafilatura.extract_metadata(archived_html)
+                                title = metadata.title if metadata and metadata.title else article.get('title', 'Untitled')
+                                
+                                # Update article with archived content
+                                success = research_repo.update_article_analysis(
+                                    article_id=article_id,
+                                    summary=summary,
+                                    tickers=extracted_tickers if extracted_tickers else None,
+                                    sector=extracted_sector,
+                                    embedding=embedding,
+                                    relevance_score=relevance_score,
+                                    claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+                                    fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+                                    conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+                                    sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+                                    sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+                                )
+                                
+                                # Also update content
+                                try:
+                                    update_query = "UPDATE research_articles SET content = %s, title = %s WHERE id = %s"
+                                    research_repo.client.execute_query(update_query, (extracted_content, title, article_id))
+                                except Exception as e:
+                                    logger.warning(f"Failed to update content for {article_id}: {e}")
+                                
+                                if success:
+                                    articles_processed += 1
+                                    logger.info(f"✅ Processed archived article: {title[:40]}...")
+                                else:
+                                    logger.warning(f"⚠️ Failed to update article {article_id}")
+                            else:
+                                logger.warning(f"⚠️ Archived content too short for {article_id}")
+                        else:
+                            logger.warning(f"⚠️ Failed to fetch archived HTML for {article_id}")
+                    except ImportError:
+                        logger.error("trafilatura not available for content extraction")
+                    except Exception as e:
+                        logger.error(f"Error extracting archived content: {e}", exc_info=True)
+                    
+                    articles_archived += 1
+                else:
+                    # Not archived yet, mark as checked but don't update
+                    research_repo.mark_archive_checked(article_id, None, success=False)
+                    logger.debug(f"Article not yet archived: {url[:60]}...")
+                
+                articles_checked += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing article {article.get('id', 'unknown')}: {e}", exc_info=True)
+                continue
+        
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Checked {articles_checked} articles, found {articles_archived} archived, processed {articles_processed}"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('archive_retry', target_date, None, [], duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            from utils.job_tracking import mark_job_failed
+            target_date = datetime.now(timezone.utc).date()
+            mark_job_failed('archive_retry', target_date, None, message, duration_ms=duration_ms)
+        except Exception:
+            pass
+        logger.error(f"❌ Archive retry job failed: {e}", exc_info=True)
 

@@ -42,7 +42,20 @@ class OllamaClient:
             base_url: Ollama API base URL (defaults to environment variable)
             timeout: Request timeout in seconds (defaults to environment variable)
         """
-        self.base_url = base_url or OLLAMA_BASE_URL
+        candidate_url = base_url or OLLAMA_BASE_URL
+        
+        # Auto-detect correct URL if default is host.docker.internal but we're running on host
+        # Similar to SearXNG client - try localhost if host.docker.internal doesn't resolve
+        if "host.docker.internal" in candidate_url:
+            try:
+                import socket
+                socket.gethostbyname("host.docker.internal")
+            except (socket.gaierror, OSError):
+                # Can't resolve host.docker.internal - we're probably running on host, not in Docker
+                logger.info("Could not resolve host.docker.internal, falling back to localhost for Ollama")
+                candidate_url = candidate_url.replace("host.docker.internal", "localhost")
+        
+        self.base_url = candidate_url
         self.timeout = timeout or OLLAMA_TIMEOUT
         self.enabled = OLLAMA_ENABLED
         
@@ -365,8 +378,14 @@ class OllamaClient:
             yield "Cannot connect to AI assistant. Please check if Ollama is running."
         except requests.exceptions.HTTPError as e:
             elapsed = time.time() - request_start_time
-            logger.error(f"❌ Ollama API HTTP error after {elapsed:.2f}s: {e}")
-            yield f"AI assistant error: {str(e)}"
+            # Provide more helpful error messages for common issues
+            if e.response and e.response.status_code == 404:
+                # 404 usually means model doesn't exist
+                logger.error(f"❌ Ollama API HTTP 404 after {elapsed:.2f}s: Model '{model}' not found. Available models: {', '.join(self.list_available_models()[:5])}")
+                yield f"Model '{model}' not found. Please ensure the model is installed: ollama pull {model}"
+            else:
+                logger.error(f"❌ Ollama API HTTP error after {elapsed:.2f}s: {e}")
+                yield f"AI assistant error: {str(e)}"
         except Exception as e:
             elapsed = time.time() - request_start_time
             logger.error(f"❌ Unexpected error querying Ollama after {elapsed:.2f}s: {e}", exc_info=True)

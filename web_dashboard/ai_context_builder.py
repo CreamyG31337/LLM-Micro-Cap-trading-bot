@@ -254,6 +254,7 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     # Try to import MarketDataFetcher for volume data ONLY
     market_fetcher = None
     market_hours = None
+    fetcher_error = None
     try:
         from market_data.data_fetcher import MarketDataFetcher
         from market_data.price_cache import PriceCache
@@ -266,7 +267,10 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
         market_hours = MarketHours(settings=settings)
         logger.debug(f"[ai_context_builder.format_price_volume_table] MarketDataFetcher initialized")
     except Exception as e:
-        logger.warning(f"[ai_context_builder.format_price_volume_table] MarketDataFetcher not available: {e}")
+        fetcher_error = str(e)
+        logger.error(f"[ai_context_builder.format_price_volume_table] MarketDataFetcher FAILED: {e}", exc_info=True)
+    
+    fetch_failures = []
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
@@ -305,10 +309,20 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
                         if pd.notna(avg_volume) and avg_volume > 0:
                             avg_vol_str = f"{int(avg_volume/1000):,}K" if avg_volume >= 1000 else f"{int(avg_volume):,}"
             except Exception as e:
-                logger.debug(f"[ai_context_builder.format_price_volume_table] Volume fetch failed for {ticker}: {e}")
+                fetch_failures.append(f"{ticker}: {str(e)[:50]}")
+                logger.error(f"[ai_context_builder.format_price_volume_table] Volume fetch FAILED for {ticker}: {e}")
         
         price_str = f"{current_price:,.2f}" if current_price > 0 else "N/A"
         lines.append(f"{ticker:<18} | {price_str:>9} | {pct_change_str:>11} | {volume_str:>7} | {avg_vol_str:>14}")
+    
+    # Add diagnostic info if fetcher failed
+    if fetcher_error:
+        lines.append("")
+        lines.append(f"Note: Volume data unavailable - {fetcher_error[:80]}")
+    elif fetch_failures and len(fetch_failures) == len(positions_df):
+        # All fetches failed
+        lines.append("")
+        lines.append(f"Note: Volume data fetch failed for all tickers")
     
     return "\n".join(lines)
 
@@ -351,7 +365,7 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         market_fetcher = MarketDataFetcher(cache_instance=price_cache)
         logger.debug(f"[ai_context_builder.format_fundamentals_table] MarketDataFetcher ready for P/E, Div%, 52W")
     except Exception as e:
-        logger.warning(f"[ai_context_builder.format_fundamentals_table] MarketDataFetcher not available: {e}")
+        logger.error(f"[ai_context_builder.format_fundamentals_table] MarketDataFetcher FAILED: {e}", exc_info=True)
     
     for idx, row in positions_df.iterrows():
         # pandas Series: use row['key'] or row.get('key') both work, but check for column existence
@@ -409,7 +423,7 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
                     high_52w = fundamentals.get('fiftyTwoWeekHigh', 'N/A') or 'N/A'
                     low_52w = fundamentals.get('fiftyTwoWeekLow', 'N/A') or 'N/A'
             except Exception as e:
-                logger.debug(f"[ai_context_builder.format_fundamentals_table] Fetch failed for {ticker}: {e}")
+                logger.error(f"[ai_context_builder.format_fundamentals_table] Fetch FAILED for {ticker}: {e}")
         
         # Check if ETF and provide better labeling
         is_etf = market_cap == 'ETF' or (isinstance(market_cap, str) and 'ETF' in str(market_cap).upper())

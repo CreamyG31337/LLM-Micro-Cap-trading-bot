@@ -10,6 +10,7 @@ import time
 import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Optional
 
 # Add parent directory to path if needed (standard boilerplate for these jobs)
 import sys
@@ -78,6 +79,7 @@ def fetch_congress_trades_job() -> None:
             from supabase_client import SupabaseClient
             from ollama_client import get_ollama_client
             from web_dashboard.utils.politician_mapping import lookup_politician_metadata, resolve_politician_name
+            from settings import get_summarizing_model
         except ImportError as e:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Missing dependency: {e}"
@@ -386,16 +388,20 @@ def fetch_congress_trades_job() -> None:
                             conflict_score = None
                             notes = None
                             
+                            # Note: Ollama errors (e.g., 404 if service not running) are handled gracefully
+                            # Trades will still be saved without AI analysis if Ollama is unavailable
                             if ollama_client:
                                 try:
                                     # Build prompt for AI analysis
                                     prompt = f"Analyze this trade: {politician} {'bought' if trade_type == 'Purchase' else 'sold'} {ticker} on {transaction_date}. Asset: {asset_type}. Amount: {amount}. Is this suspicious given current events? Return JSON: {{'conflict_score': 0.0-1.0, 'reasoning': '...'}}"
                                     
                                     # Query Ollama (non-streaming for structured response)
+                                    # Get model from settings (defaults to granite3.3:8b from model_config.json)
+                                    model_name = get_summarizing_model()
                                     full_response = ""
                                     for chunk in ollama_client.query_ollama(
                                         prompt=prompt,
-                                        model="granite3.3",
+                                        model=model_name,
                                         stream=True,
                                         temperature=0.3  # Lower temperature for more consistent analysis
                                     ):
@@ -435,6 +441,7 @@ def fetch_congress_trades_job() -> None:
                             # Prepare trade record with ALL available fields
                             trade_record = {
                                 'ticker': ticker,
+                                'politician': politician,  # Text name (required for unique constraint)
                                 'politician_id': politician_id,  # FK to politicians table
                                 'chamber': chamber,
                                 'party': party,  # From politicians table lookup
@@ -451,11 +458,13 @@ def fetch_congress_trades_job() -> None:
                             }
                             
                             # Insert to Supabase (use upsert to handle any race conditions)
+                            # Note: Unique constraint is on (politician, ticker, transaction_date, amount, type, owner)
+                            # Using politician (text) not politician_id, as that's what the constraint uses
                             try:
                                 result = supabase_client.supabase.table("congress_trades")\
                                     .upsert(
                                         trade_record,
-                                        on_conflict="politician_id,ticker,transaction_date,amount,type,owner"
+                                        on_conflict="politician,ticker,transaction_date,amount,type,owner"
                                     )\
                                     .execute()
                                 
@@ -556,10 +565,14 @@ def analyze_congress_trades_job() -> None:
             analyze_trade,
             is_low_risk_asset
         )
+        from settings import get_summarizing_model
         
         # Initialize clients
         client = SupabaseClient(use_service_role=True)
         ollama = OllamaClient()
+        
+        # Get model from settings (defaults to granite3.3:8b from model_config.json)
+        model_name = get_summarizing_model()
         
         # Check Ollama health
         if not ollama or not ollama.check_health():
@@ -618,8 +631,8 @@ def analyze_congress_trades_job() -> None:
                         }
                         logger.info(f"   [FILTERED] {context['politician']} - {context['ticker']}: {filter_reason}")
                     else:
-                        # Analyze with AI
-                        analysis = analyze_trade(ollama, context, model='granite3.3:8b')
+                        # Analyze with AI (using model from settings)
+                        analysis = analyze_trade(ollama, context, model=model_name)
                     
                     if analysis and 'conflict_score' in analysis:
                         score = float(analysis['conflict_score'])
@@ -643,7 +656,7 @@ def analyze_congress_trades_job() -> None:
                                     reasoning = EXCLUDED.reasoning,
                                     analyzed_at = NOW()
                                 """,
-                                (trade['id'], score, confidence, reasoning, 'granite3.3:8b', 1)
+                                (trade['id'], score, confidence, reasoning, model_name, 1)
                             )
                             
                             logger.info(f"   [SCORED] {context['politician']} - {context['ticker']}: conflict={score:.2f}, confidence={confidence:.2f}")
@@ -688,7 +701,7 @@ def analyze_congress_trades_job() -> None:
             pass
 
 
-def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model: str = 'granite3.3:8b') -> None:
+def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model: Optional[str] = None) -> None:
     """Manual job: Rescore congress trades sessions using updated AI logic.
     
     This is a ONE-TIME job for backfilling the entire database with the new:
@@ -699,7 +712,7 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
     Args:
         limit: Max sessions to process (default 1000)
         batch_size: Number of sessions per batch (default 10)
-        model: Model to use (default granite3.3:8b)
+        model: Model to use (defaults to get_summarizing_model() from settings)
     """
     job_id = 'rescore_congress_sessions'
     start_time = time.time()
@@ -707,6 +720,11 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
     try:
         # Import job tracking
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        from settings import get_summarizing_model
+        
+        # Use provided model or get from settings
+        if model is None:
+            model = get_summarizing_model()
         
         logger.info(f"Starting congress sessions rescore job (Limit: {limit}, Batch: {batch_size}, Model: {model})...")
         

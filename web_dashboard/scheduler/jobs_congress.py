@@ -48,6 +48,7 @@ def fetch_congress_trades_job() -> None:
     import requests
     import json
     import re
+    import base64
     
     job_id = 'congress_trades'
     start_time = time.time()

@@ -22,6 +22,10 @@
 # - fmp_api_key: (optional) Financial Modeling Prep API key for congress trading module
 #                Get from: https://site.financialmodelingprep.com/developer/docs/
 #                Required for congress_trades scheduled job
+# - webai_cookies_json: (optional) JSON string of cookies for Gemini 3 Pro web-based AI
+#                       Format: {"__Secure-1PSID":"value","__Secure-1PSIDTS":"value"}
+#                       Extract using: python web_dashboard/extract_ai_cookies.py --browser manual
+#                       Required for Gemini 3 Pro model in AI Assistant
 # - ollama_base_url: (optional) Ollama API URL (default: http://host.docker.internal:11434)
 # - ollama_model: (optional) Default AI model (default: mistral-nemo:12b)
 # - ollama_enabled: (optional) Enable AI assistant (default: true)
@@ -49,6 +53,8 @@ steps:
         from_secret: research_database_url
       FMP_API_KEY:
         from_secret: fmp_api_key
+      WEBAI_COOKIES_JSON:
+        from_secret: webai_cookies_json
     commands:
       # Set timezone (Pacific Time - handles PST/PDT automatically)
       - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -105,6 +111,9 @@ steps:
         # Add optional environment variables if set
         [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
         [ -n "$FMP_API_KEY" ] && DOCKER_CMD="$DOCKER_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
+        
+        # Add WebAI cookies for Gemini 3 Pro (optional)
+        [ -n "$WEBAI_COOKIES_JSON" ] && DOCKER_CMD="$DOCKER_CMD -e WEBAI_COOKIES_JSON=\"$WEBAI_COOKIES_JSON\""
         
         # Add Ollama and Streamlit settings
         DOCKER_CMD="$DOCKER_CMD -e OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-http://host.docker.internal:11434}\""

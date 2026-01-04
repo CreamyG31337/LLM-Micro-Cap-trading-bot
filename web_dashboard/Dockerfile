@@ -26,7 +26,9 @@ RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 # Copy entire project (cleaner than selective copying)
 COPY . /app
 
-# Set PYTHONPATH to include project root and web_dashboard
+# Set PYTHONPATH to include project root FIRST, then web_dashboard
+# IMPORTANT: Order matters! /app must come before /app/web_dashboard 
+# to prevent web_dashboard/utils/ from shadowing root utils/ directory
 ENV PYTHONPATH=/app:/app/web_dashboard
 
 # Expose Streamlit port

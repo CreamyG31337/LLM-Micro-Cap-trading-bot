@@ -80,9 +80,14 @@ def main():
     
     # Execute streamlit from web_dashboard directory (this will block and run the web server)
     # Use subprocess with cwd to ensure Streamlit runs from the correct directory
+    # IMPORTANT: Set PYTHONPATH explicitly to ensure /app comes FIRST
+    # This prevents web_dashboard/utils from shadowing root utils/ directory
     logger.info(f"Running: {' '.join(cmd)}")
     logger.info(f"Working directory: {web_dashboard_dir}")
-    subprocess.run(cmd, cwd=web_dashboard_dir, check=False)
+    
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{parent_dir}:{web_dashboard_dir}:{env.get('PYTHONPATH', '')}"
+    subprocess.run(cmd, cwd=web_dashboard_dir, env=env, check=False)
 
 
 if __name__ == "__main__":

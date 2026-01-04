@@ -992,6 +992,7 @@ class ResearchRepository:
         source: Optional[str] = None,
         search_text: Optional[str] = None,
         embedding_filter: Optional[bool] = None,
+        tickers_filter: Optional[List[str]] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -1004,6 +1005,7 @@ class ResearchRepository:
             source: Optional filter by source
             search_text: Optional text search in title, summary, content
             embedding_filter: Optional filter by embedding status (True=has embedding, False=no embedding, None=all)
+            tickers_filter: Optional list of tickers to filter by (articles must have at least one matching ticker)
             limit: Maximum number of results
             offset: Number of results to skip
             
@@ -1049,6 +1051,12 @@ class ResearchRepository:
                 else:
                     query += " AND embedding IS NULL"
             
+            # Filter by tickers if provided (for owned tickers filter)
+            if tickers_filter and self._has_tickers_column:
+                # Use PostgreSQL array overlap operator to find articles with any matching ticker
+                query += " AND tickers && %s::text[]"
+                params.append(list(tickers_filter))
+            
             query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])
             
@@ -1081,6 +1089,7 @@ class ResearchRepository:
         source: Optional[str] = None,
         search_text: Optional[str] = None,
         embedding_filter: Optional[bool] = None,
+        tickers_filter: Optional[List[str]] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -1091,6 +1100,7 @@ class ResearchRepository:
             source: Optional filter by source
             search_text: Optional text search in title, summary, content
             embedding_filter: Optional filter by embedding status (True=has embedding, False=no embedding, None=all)
+            tickers_filter: Optional list of tickers to filter by (articles must have at least one matching ticker)
             limit: Maximum number of results
             offset: Number of results to skip
             
@@ -1127,6 +1137,12 @@ class ResearchRepository:
                     query += " AND embedding IS NOT NULL"
                 else:
                     query += " AND embedding IS NULL"
+            
+            # Filter by tickers if provided (for owned tickers filter)
+            if tickers_filter and self._has_tickers_column:
+                # Use PostgreSQL array overlap operator to find articles with any matching ticker
+                query += " AND tickers && %s::text[]"
+                params.append(list(tickers_filter))
             
             query += " ORDER BY fetched_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])

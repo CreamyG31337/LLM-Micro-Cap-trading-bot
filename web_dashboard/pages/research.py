@@ -601,9 +601,13 @@ def get_cached_statistics(_repo, refresh_key: int):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cached_owned_tickers(_refresh_key: int):
-    """Get owned tickers from all production funds with caching (5min TTL)"""
+    """Get owned tickers from all production funds with caching (5min TTL)
+    
+    Returns normalized tickers (uppercase, trimmed) for consistent comparison.
+    """
     try:
         from supabase_client import SupabaseClient
+        from research_utils import normalize_ticker
         
         # Use role-based access for security
         if is_admin():
@@ -629,13 +633,34 @@ def get_cached_owned_tickers(_refresh_key: int):
             return set()
         
         prod_funds = [f['name'] for f in funds_result.data]
+        logger.debug(f"Checking production funds: {prod_funds}")
+        
         positions_result = client.supabase.table("latest_positions")\
-            .select("ticker")\
+            .select("ticker, fund")\
             .in_("fund", prod_funds)\
             .execute()
         
         if positions_result.data:
-            owned_tickers = {pos['ticker'] for pos in positions_result.data if pos.get('ticker')}
+            # Normalize all tickers for consistent comparison
+            owned_tickers = set()
+            fund_ticker_map = {}  # Debug: track which fund has which tickers
+            for pos in positions_result.data:
+                ticker = pos.get('ticker')
+                fund = pos.get('fund')
+                if ticker:
+                    normalized = normalize_ticker(ticker)
+                    if normalized:
+                        owned_tickers.add(normalized)
+                        # Track fund-ticker mapping for debug
+                        if fund not in fund_ticker_map:
+                            fund_ticker_map[fund] = set()
+                        fund_ticker_map[fund].add(normalized)
+            
+            # Debug logging
+            logger.debug(f"Found {len(owned_tickers)} unique owned tickers")
+            for fund, tickers in fund_ticker_map.items():
+                logger.debug(f"  {fund}: {sorted(tickers)[:10]}{'...' if len(tickers) > 10 else ''}")
+            
             return owned_tickers
         
         return set()
@@ -666,10 +691,25 @@ def get_cached_articles(
     source_filter: str,
     search_filter: str,
     embedding_filter: bool,
+    tickers_filter_json: str,
     results_per_page: int,
     offset: int
 ):
-    """Get articles with caching (30s TTL for fresher data during active use)"""
+    """Get articles with caching (30s TTL for fresher data during active use)
+    
+    Args:
+        tickers_filter_json: JSON-encoded list of tickers to filter by, or empty string for no filter
+    """
+    import json
+    
+    # Parse tickers filter from JSON (needed for cache key serialization)
+    tickers_filter = None
+    if tickers_filter_json:
+        try:
+            tickers_filter = json.loads(tickers_filter_json)
+        except (json.JSONDecodeError, TypeError):
+            tickers_filter = None
+    
     try:
         if use_date_filter and start_datetime_str and end_datetime_str:
             start_dt = datetime.fromisoformat(start_datetime_str)
@@ -681,6 +721,7 @@ def get_cached_articles(
                 source=source_filter if source_filter else None,
                 search_text=search_filter if search_filter else None,
                 embedding_filter=embedding_filter,
+                tickers_filter=tickers_filter,
                 limit=results_per_page,
                 offset=offset
             )
@@ -690,6 +731,7 @@ def get_cached_articles(
                 source=source_filter if source_filter else None,
                 search_text=search_filter if search_filter else None,
                 embedding_filter=embedding_filter,
+                tickers_filter=tickers_filter,
                 limit=results_per_page,
                 offset=offset
             )
@@ -758,6 +800,8 @@ try:
     
     # Get filtered articles (cached)
     with st.spinner("Loading articles..."):
+        import json as json_lib
+        
         # Calculate pagination
         page = st.session_state.get('current_page', 1)
         offset = (page - 1) * results_per_page
@@ -765,6 +809,17 @@ try:
         # Convert datetime to ISO string for cache key (or empty string if None)
         start_dt_str = start_datetime.isoformat() if start_datetime else ""
         end_dt_str = end_datetime.isoformat() if end_datetime else ""
+        
+        # Pre-fetch owned tickers if filter is enabled (for database-level filtering)
+        tickers_filter_json = ""
+        if filter_owned_tickers:
+            owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)
+            if owned_tickers:
+                # Convert set to sorted list for consistent caching
+                tickers_filter_json = json_lib.dumps(sorted(list(owned_tickers)))
+            else:
+                # No owned tickers found, pass empty list to get no results
+                tickers_filter_json = "[]"
         
         articles = get_cached_articles(
             repo,
@@ -776,11 +831,12 @@ try:
             source_filter or "",
             search_filter or "",
             embedding_filter,
+            tickers_filter_json,
             results_per_page,
             offset
         )
         
-        # Apply ticker filter client-side (after fetch)
+        # Apply specific ticker filter client-side (dropdown selection - for single ticker)
         if ticker_filter:
             articles = [
                 a for a in articles 
@@ -788,36 +844,41 @@ try:
                    or a.get('ticker') == ticker_filter
             ]
         
-        # Apply owned tickers filter client-side (after fetch)
-        if filter_owned_tickers:
-            owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)
-            if owned_tickers:
-                filtered_articles = []
-                for article in articles:
-                    article_tickers = []
-                    if article.get('tickers'):
-                        if isinstance(article.get('tickers'), list):
-                            article_tickers = article.get('tickers', [])
-                        else:
-                            article_tickers = [article.get('tickers')]
-                    elif article.get('ticker'):
-                        article_tickers = [article.get('ticker')]
-                    
-                    # Check if any article ticker matches owned tickers
-                    if any(ticker in owned_tickers for ticker in article_tickers if ticker):
-                        filtered_articles.append(article)
-                
-                articles = filtered_articles
-            else:
-                # No owned tickers found, show no results
-                articles = []
-        
         # Get total count for pagination (simplified - get one more to check if there are more)
         article_count = len(articles)
         has_more = article_count == results_per_page
     
     # Results header
     st.header("📄 Articles")
+    
+    # Show owned tickers count when filter is active
+    if filter_owned_tickers:
+        owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)
+        if owned_tickers:
+            ticker_list = sorted(list(owned_tickers))
+            st.caption(f"📊 Filtering to {len(owned_tickers)} owned ticker(s): {', '.join(ticker_list[:15])}{'...' if len(owned_tickers) > 15 else ''}")
+            
+            # Debug expander for troubleshooting
+            with st.expander("🔍 Debug: Owned Tickers Filter", expanded=False):
+                st.write(f"**Total owned tickers:** {len(owned_tickers)}")
+                st.write(f"**Tickers:** {', '.join(ticker_list)}")
+                
+                # Check for specific ticker
+                from research_utils import normalize_ticker as normalize_ticker_func
+                test_ticker = st.text_input("Test ticker match", value="COST", key="debug_test_ticker")
+                if test_ticker:
+                    normalized_test = normalize_ticker_func(test_ticker)
+                    if normalized_test and normalized_test in owned_tickers:
+                        st.success(f"✅ '{test_ticker}' -> '{normalized_test}' FOUND in owned tickers")
+                    else:
+                        st.error(f"❌ '{test_ticker}' -> '{normalized_test}' NOT FOUND in owned tickers")
+                        # Show similar tickers
+                        if normalized_test:
+                            similar = [t for t in ticker_list if normalized_test.upper() in t.upper() or t.upper() in normalized_test.upper()]
+                            if similar:
+                                st.info(f"Similar tickers found: {similar}")
+        else:
+            st.warning("⚠️ No owned tickers found. Make sure you have positions in production funds.")
     
     if not articles:
         st.info("No articles found matching your filters. Try adjusting your search criteria.")

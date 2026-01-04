@@ -923,6 +923,28 @@ try:
     # Results header
     st.header("📄 Articles")
     
+    # Legend for article type and status emojis
+    with st.expander("📋 Legend: Article Type & Status Icons", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Article Type Icons:**")
+            st.markdown("""
+            - 📰 **Market News** - General market news and updates
+            - 🔍 **Ticker News** - News specific to a ticker
+            - 💡 **Opportunity Discovery** - Discovered investment opportunities
+            - 📤 **Uploaded Report** - Manually uploaded research reports
+            - 💰 **Earnings** - Earnings reports and announcements
+            - 📄 **General** - Other articles
+            """)
+        
+        with col2:
+            st.markdown("**Status Icons:**")
+            st.markdown("""
+            - 🧠 **AI Processed** - Article has been analyzed and embedded for AI search
+            - ⏳ **Pending** - Article is waiting for AI processing
+            """)
+    
     # Show owned tickers count when filter is active
     if filter_owned_tickers:
         owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)

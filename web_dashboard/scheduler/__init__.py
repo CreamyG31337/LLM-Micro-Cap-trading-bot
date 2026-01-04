@@ -16,6 +16,17 @@ Usage:
     jobs = scheduler.get_jobs()
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path for utils imports
+# This must happen before any imports that use utils.job_tracking
+current_dir = Path(__file__).resolve().parent
+if current_dir.name == 'scheduler':
+    project_root = current_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
 from scheduler.scheduler_core import (
     get_scheduler,
     start_scheduler,

@@ -23,13 +23,23 @@ from pathlib import Path
 current_dir = Path(__file__).resolve().parent
 if current_dir.name == 'scheduler':
     project_root = current_dir.parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+else:
+    project_root = current_dir.parent.parent
 
 # Also ensure web_dashboard is in path for supabase_client imports
 web_dashboard_path = str(Path(__file__).resolve().parent.parent)
 if web_dashboard_path not in sys.path:
     sys.path.insert(0, web_dashboard_path)
+
+# CRITICAL: Project root must be inserted LAST (at index 0) to ensure it comes
+# BEFORE web_dashboard in sys.path. This prevents web_dashboard/utils from
+# shadowing the project root's utils package.
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+elif sys.path[0] != str(project_root):
+    # If it is in path but not first, move it to front
+    sys.path.remove(str(project_root))
+    sys.path.insert(0, str(project_root))
 
 from scheduler.scheduler_core import log_job_execution
 

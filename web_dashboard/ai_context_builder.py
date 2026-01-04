@@ -364,6 +364,7 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         
         securities = row.get('securities')
         if securities:
+            logger.debug(f"[ai_context_builder.format_fundamentals_table] {ticker} securities type={type(securities)}, value={securities}")
             if isinstance(securities, dict):
                 sector = securities.get('sector', 'N/A') or 'N/A'
                 industry = securities.get('industry', 'N/A') or 'N/A'
@@ -379,6 +380,9 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
                 raw_cap = sec.get('market_cap')
                 if raw_cap and raw_cap != 'N/A':
                     market_cap = _format_market_cap(raw_cap)
+        else:
+            logger.debug(f"[ai_context_builder.format_fundamentals_table] {ticker} NO securities data. Row keys: {list(row.keys()) if hasattr(row, 'keys') else 'N/A'}")
+
         
         # SECOND: Only fetch P/E, Div%, 52W High/Low from yfinance (not in securities table)
         pe_ratio = "N/A"

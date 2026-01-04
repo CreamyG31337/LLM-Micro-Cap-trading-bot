@@ -26,11 +26,16 @@ from pathlib import Path
 
 # Add web_dashboard to path for supabase_client imports
 # This ensures job_tracking can import supabase_client regardless of execution context
+# IMPORTANT: Insert web_dashboard AFTER project root to avoid shadowing utils package
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent
 web_dashboard_dir = project_root / 'web_dashboard'
 if str(web_dashboard_dir) not in sys.path:
-    sys.path.insert(0, str(web_dashboard_dir))
+    # Insert at index 1 (after project root) if project root is at index 0
+    if sys.path and sys.path[0] == str(project_root):
+        sys.path.insert(1, str(web_dashboard_dir))
+    else:
+        sys.path.insert(0, str(web_dashboard_dir))
 
 logger = logging.getLogger(__name__)
 

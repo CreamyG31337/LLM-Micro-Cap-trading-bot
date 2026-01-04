@@ -23,31 +23,52 @@ if current_dir.name == 'scheduler':
 else:
     project_root = current_dir.parent.parent
 
-# Also ensure web_dashboard is in path for supabase_client imports
-web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-if web_dashboard_path not in sys.path:
-    sys.path.insert(0, web_dashboard_path)
-
-# CRITICAL: Project root must be inserted LAST (at index 0) to ensure it comes
-# BEFORE web_dashboard in sys.path. This prevents web_dashboard/utils from
-# shadowing the project root's utils package.
+# CRITICAL: Project root must be FIRST in sys.path to ensure utils.job_tracking
+# is found from the project root, not from web_dashboard/utils
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 elif sys.path[0] != str(project_root):
     # If it is in path but not first, move it to front
-    sys.path.remove(str(project_root))
+    if str(project_root) in sys.path:
+        sys.path.remove(str(project_root))
     sys.path.insert(0, str(project_root))
 
+# Also ensure web_dashboard is in path for supabase_client imports
+# (but AFTER project root so it doesn't shadow utils)
+web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+if web_dashboard_path not in sys.path:
+    sys.path.insert(1, web_dashboard_path)  # Insert at index 1, after project_root
+
 from scheduler.scheduler_core import log_job_execution
-from utils.job_tracking import (
-    add_to_retry_queue,
-    get_pending_retries,
-    mark_retrying,
-    mark_resolved,
-    mark_abandoned,
-    is_calculation_job,
-    mark_job_failed
-)
+
+# Import job_tracking with fallback path setup if needed
+try:
+    from utils.job_tracking import (
+        add_to_retry_queue,
+        get_pending_retries,
+        mark_retrying,
+        mark_resolved,
+        mark_abandoned,
+        is_calculation_job,
+        mark_job_failed
+    )
+except ImportError:
+    # If import fails, ensure project root is definitely first and try again
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    elif sys.path[0] != str(project_root):
+        if str(project_root) in sys.path:
+            sys.path.remove(str(project_root))
+        sys.path.insert(0, str(project_root))
+    from utils.job_tracking import (
+        add_to_retry_queue,
+        get_pending_retries,
+        mark_retrying,
+        mark_resolved,
+        mark_abandoned,
+        is_calculation_job,
+        mark_job_failed
+    )
 from utils.market_holidays import MarketHolidays
 
 logger = logging.getLogger(__name__)

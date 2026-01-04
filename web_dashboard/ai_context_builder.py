@@ -228,11 +228,12 @@ def _format_portfolio_snapshot_table(
 def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     """Format Price & Volume table for portfolio tickers.
     
-    Uses MarketDataFetcher to get volume and price change data, matching the
-    console app's prompt_generator.py approach.
+    Uses data from positions_df (current_price, yesterday_price already in DB view).
+    Only fetches volume data from MarketDataFetcher since it's not in the DB.
     
     Args:
-        positions_df: DataFrame with current positions
+        positions_df: DataFrame with current positions (from get_current_positions)
+                     Expected columns: ticker, current_price, yesterday_price, etc.
         
     Returns:
         Formatted string with Price & Volume data
@@ -240,14 +241,17 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
     if positions_df.empty:
         return ""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"[ai_context_builder.format_price_volume_table] Processing {len(positions_df)} positions")
+    
     lines = [
         "[ Price & Volume ]",
         "Ticker            | Close     | % Chg       | Volume  | Avg Vol (30d)",
         "------------------|-----------|-------------|---------|---------------"
     ]
     
-    # Try to import MarketDataFetcher, but handle gracefully if not available
-    # Initialize like console app (prompt_generator.py) with cache and settings
+    # Try to import MarketDataFetcher for volume data ONLY
     market_fetcher = None
     market_hours = None
     try:
@@ -256,88 +260,54 @@ def format_price_volume_table(positions_df: pd.DataFrame) -> str:
         from market_data.market_hours import MarketHours
         from config.settings import get_settings
         
-        # Initialize like console app: settings -> cache -> fetcher
         settings = get_settings()
         price_cache = PriceCache(settings=settings)
         market_fetcher = MarketDataFetcher(cache_instance=price_cache)
         market_hours = MarketHours(settings=settings)
-        
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[format_price_volume_table] MarketDataFetcher initialized successfully")
+        logger.debug(f"[ai_context_builder.format_price_volume_table] MarketDataFetcher initialized")
     except Exception as e:
-        # If MarketDataFetcher not available, use data from positions_df
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"MarketDataFetcher not available for Price & Volume table: {e}", exc_info=True)
+        logger.warning(f"[ai_context_builder.format_price_volume_table] MarketDataFetcher not available: {e}")
     
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
-        current_price = float(row.get('current_price', row.get('price', 0)) or 0)
-        yesterday_price = row.get('yesterday_price')
         
-        # Initialize display values
+        # USE EXISTING DATA FROM DB (don't fetch!)
+        current_price = float(row.get('current_price', 0) or 0)
+        yesterday_price = float(row.get('yesterday_price', 0) or 0)
+        
+        # Calculate % change from DB data
         pct_change_str = "N/A"
+        if yesterday_price > 0 and current_price > 0:
+            pct_change = ((current_price - yesterday_price) / yesterday_price) * 100
+            pct_change_str = f"{pct_change:+.2f}%"
+        
+        # ONLY fetch volume (not in DB)
         volume_str = "N/A"
         avg_vol_str = "N/A"
         
-        # Try to fetch market data if MarketDataFetcher is available
         if market_fetcher and market_hours:
             try:
-                # Get trading day window
                 start_d, end_d = market_hours.trading_day_window()
-                # Get historical window for avg volume (90 days like console app)
-                start_d = end_d - pd.Timedelta(days=90)
-                
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.debug(f"[format_price_volume_table] Fetching data for {ticker}: {start_d} to {end_d}")
+                start_d = end_d - pd.Timedelta(days=90)  # 90 days for avg volume calc
                 
                 result = market_fetcher.fetch_price_data(ticker, start_d, end_d)
-                if not result.df.empty and "Close" in result.df.columns:
-                    # Use fetched current price if we don't have one
-                    if current_price <= 0:
-                        current_price = float(result.df['Close'].iloc[-1])
-                    
-                    # Calculate % change from fetched data (like console app)
-                    if len(result.df) >= 2:
-                        prev_price = float(result.df['Close'].iloc[-2])
-                        if prev_price > 0:
-                            pct_change = ((current_price - prev_price) / prev_price) * 100
-                            pct_change_str = f"{pct_change:+.2f}%"
-                    
+                if not result.df.empty and "Volume" in result.df.columns:
                     # Get volume from last day
-                    if "Volume" in result.df.columns and len(result.df) > 0:
+                    if len(result.df) > 0:
                         volume = float(result.df["Volume"].iloc[-1])
                         if pd.notna(volume) and volume > 0:
-                            if volume >= 1000:
-                                volume_str = f"{int(volume/1000):,}K"
-                            else:
-                                volume_str = f"{int(volume):,}"
+                            volume_str = f"{int(volume/1000):,}K" if volume >= 1000 else f"{int(volume):,}"
                     
-                    # Calculate average volume (30 days like console app)
-                    if "Volume" in result.df.columns:
-                        vol_series = result.df["Volume"].dropna()
-                        if not vol_series.empty:
-                            avg_volume = vol_series.tail(30).mean()
-                            if pd.notna(avg_volume) and avg_volume > 0:
-                                if avg_volume >= 1000:
-                                    avg_vol_str = f"{int(avg_volume/1000):,}K"
-                                else:
-                                    avg_vol_str = f"{int(avg_volume):,}"
+                    # Calculate 30-day average volume
+                    vol_series = result.df["Volume"].dropna()
+                    if not vol_series.empty:
+                        avg_volume = vol_series.tail(30).mean()
+                        if pd.notna(avg_volume) and avg_volume > 0:
+                            avg_vol_str = f"{int(avg_volume/1000):,}K" if avg_volume >= 1000 else f"{int(avg_volume):,}"
             except Exception as e:
-                # Fallback to position data if fetch fails
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to fetch volume data for {ticker}: {e}", exc_info=True)
-        
-        # Fallback: use yesterday_price from positions_df if we still don't have % change
-        if pct_change_str == "N/A" and yesterday_price and float(yesterday_price) > 0:
-            pct_change = ((current_price - float(yesterday_price)) / float(yesterday_price)) * 100
-            pct_change_str = f"{pct_change:+.2f}%"
+                logger.debug(f"[ai_context_builder.format_price_volume_table] Volume fetch failed for {ticker}: {e}")
         
         price_str = f"{current_price:,.2f}" if current_price > 0 else "N/A"
-        
         lines.append(f"{ticker:<18} | {price_str:>9} | {pct_change_str:>11} | {volume_str:>7} | {avg_vol_str:>14}")
     
     return "\n".join(lines)
@@ -585,7 +555,18 @@ def format_trades(trades_df: pd.DataFrame, limit: int = 100) -> str:
         # Handle both 'timestamp' and 'date' columns from different data sources
         timestamp = row.get('timestamp') or row.get('date', '')
         symbol = row.get('symbol', row.get('ticker', 'N/A'))
-        action = row.get('action', 'N/A')
+        
+        # Extract action from reason field (like dashboard does)
+        action = 'BUY'  # Default to BUY
+        reason = row.get('reason', '')
+        if reason and isinstance(reason, str):
+            reason_lower = reason.lower()
+            if 'sell' in reason_lower or 'limit sell' in reason_lower or 'market sell' in reason_lower:
+                action = 'SELL'
+            elif 'drip' in reason_lower or 'dividend' in reason_lower:
+                action = 'DRIP'
+            # else: remains BUY (default)
+        
         # Handle both 'quantity' and 'shares' columns
         quantity = row.get('quantity') or row.get('shares', 0)
         price = row.get('price', 0)
@@ -611,9 +592,10 @@ def format_trades(trades_df: pd.DataFrame, limit: int = 100) -> str:
         qty_str = f"{float(quantity):.2f}" if quantity else "0"
         price_str = f"${float(price):.2f}" if price else "-"
         total_str = f"${float(total_value):,.0f}" if total_value else "-"
-        action_str = action.upper()[:4] if action else "-"  # BUY or SELL
+        action_str = action[:4].upper()  # BUY, SELL, or DRIP (truncated to 4 chars if needed)
         
         lines.append(f"{date_str:<8} | {action_str:<6} | {symbol:<9} | {qty_str:>7} | {price_str:>8} | {total_str:>9}")
+
     
     # Add summary statistics - infer from reason if available
     if 'reason' in df.columns:

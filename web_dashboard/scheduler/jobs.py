@@ -26,8 +26,24 @@ from pathlib import Path
 current_dir = Path(__file__).resolve().parent
 if current_dir.name == 'scheduler':
     project_root = current_dir.parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+else:
+    project_root = current_dir.parent.parent
+
+# CRITICAL: Project root must be FIRST in sys.path to ensure utils.job_tracking
+# is found from the project root, not from web_dashboard/utils
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+elif sys.path[0] != str(project_root):
+    # If it is in path but not first, move it to front
+    if str(project_root) in sys.path:
+        sys.path.remove(str(project_root))
+    sys.path.insert(0, str(project_root))
+
+# Also ensure web_dashboard is in path for supabase_client imports
+# (but AFTER project root so it doesn't shadow utils)
+web_dashboard_path = str(current_dir.parent)
+if web_dashboard_path not in sys.path:
+    sys.path.insert(1, web_dashboard_path)  # Insert at index 1, after project_root
 
 
 

@@ -45,22 +45,11 @@ else:
 from scheduler.scheduler_core import log_job_execution
 
 # Import job_tracking - path should be set up correctly now
-# Verify the file exists before importing
-job_tracking_path = project_root / 'utils' / 'job_tracking.py'
-if not job_tracking_path.exists():
-    raise ImportError(
-        f"utils.job_tracking not found at expected path: {job_tracking_path}\n"
-        f"Project root: {project_root}\n"
-        f"sys.path[0]: {sys.path[0] if sys.path else 'empty'}\n"
-        f"Current working directory: {Path.cwd()}"
-    )
-
 # Clear any cached import failures for utils.job_tracking
-import importlib
 if 'utils.job_tracking' in sys.modules:
     del sys.modules['utils.job_tracking']
 if 'utils' in sys.modules:
-    # Only remove utils if it's from the wrong location
+    # Only remove utils if it's from the wrong location (web_dashboard/utils)
     utils_module = sys.modules.get('utils')
     if utils_module and hasattr(utils_module, '__file__'):
         utils_file = Path(utils_module.__file__).resolve() if utils_module.__file__ else None

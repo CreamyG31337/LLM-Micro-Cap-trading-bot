@@ -357,27 +357,40 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
         # pandas Series: use row['key'] or row.get('key') both work, but check for column existence
         ticker = row.get('ticker', row.get('symbol', 'N/A'))
         
-        # Debug first row to see what columns and values we have
-        if idx == positions_df.index[0]:
-            logger.info(f"[ai_context_builder.format_fundamentals_table] First row columns: {list(row.index)}")
-            logger.info(f"[ai_context_builder.format_fundamentals_table] First row sector={row.get('sector')}, industry={row.get('industry')}")
+        # 1. Try getting directly from row (if flat)
+        sector = row.get('sector')
+        industry = row.get('industry')
+        country = row.get('country')
         
-        # USE DIRECT COLUMNS from positions_df (DB view flattens securities join)
-        sector = str(row.get('sector', 'N/A') or 'N/A')
-        industry = str(row.get('industry', 'N/A') or 'N/A')
-        country = str(row.get('country', 'N/A') or 'N/A')
-        
-        # Format market cap from securities join if available
+        # 2. If missing, try getting from securities join object
         market_cap = "N/A"
-        raw_cap = None
         securities = row.get('securities')
+        
         if securities:
+            # Handle both list and dict formats for joined data
+            sec_data = {}
             if isinstance(securities, dict):
-                raw_cap = securities.get('market_cap')
+                sec_data = securities
             elif isinstance(securities, list) and len(securities) > 0:
-                raw_cap = securities[0].get('market_cap') if isinstance(securities[0], dict) else None
-        if raw_cap and raw_cap != 'N/A':
-            market_cap = _format_market_cap(raw_cap)
+                sec_data = securities[0] if isinstance(securities[0], dict) else {}
+            
+            # Fill in missing values from securities relation
+            if not sector or str(sector) == 'N/A':
+                sector = sec_data.get('sector')
+            if not industry or str(industry) == 'N/A':
+                industry = sec_data.get('industry')
+            if not country or str(country) == 'N/A':
+                country = sec_data.get('country')
+                
+            # Handle market cap
+            raw_cap = sec_data.get('market_cap')
+            if raw_cap and raw_cap != 'N/A':
+                market_cap = _format_market_cap(raw_cap)
+        
+        # Final fallbacks and string conversion
+        sector = str(sector) if sector and str(sector) != 'nan' else 'N/A'
+        industry = str(industry) if industry and str(industry) != 'nan' else 'N/A'
+        country = str(country) if country and str(country) != 'nan' else 'N/A'
 
         
         # SECOND: Only fetch P/E, Div%, 52W High/Low from yfinance (not in securities table)

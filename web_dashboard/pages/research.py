@@ -740,6 +740,60 @@ def get_cached_articles(
         logger.error(f"Error fetching articles: {e}", exc_info=True)
         return []
 
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_article_count(
+    _repo,
+    refresh_key: int,
+    use_date_filter: bool,
+    start_datetime_str: str,
+    end_datetime_str: str,
+    article_type_filter: str,
+    source_filter: str,
+    search_filter: str,
+    embedding_filter: bool,
+    tickers_filter_json: str
+):
+    """Get total article count with caching (30s TTL)
+    
+    Args:
+        tickers_filter_json: JSON-encoded list of tickers to filter by, or empty string for no filter
+    """
+    import json
+    
+    # Parse tickers filter from JSON (needed for cache key serialization)
+    tickers_filter = None
+    if tickers_filter_json:
+        try:
+            tickers_filter = json.loads(tickers_filter_json)
+        except (json.JSONDecodeError, TypeError):
+            tickers_filter = None
+    
+    try:
+        if use_date_filter and start_datetime_str and end_datetime_str:
+            start_dt = datetime.fromisoformat(start_datetime_str)
+            end_dt = datetime.fromisoformat(end_datetime_str)
+            count = _repo.get_article_count(
+                start_date=start_dt,
+                end_date=end_dt,
+                article_type=article_type_filter if article_type_filter else None,
+                source=source_filter if source_filter else None,
+                search_text=search_filter if search_filter else None,
+                embedding_filter=embedding_filter,
+                tickers_filter=tickers_filter
+            )
+        else:
+            count = _repo.get_article_count(
+                article_type=article_type_filter if article_type_filter else None,
+                source=source_filter if source_filter else None,
+                search_text=search_filter if search_filter else None,
+                embedding_filter=embedding_filter,
+                tickers_filter=tickers_filter
+            )
+        return count
+    except Exception as e:
+        logger.error(f"Error fetching article count: {e}", exc_info=True)
+        return 0
+
 # Main content area
 try:
     # Get statistics (cached)
@@ -836,6 +890,20 @@ try:
             offset
         )
         
+        # Fetch total count for pagination
+        total_count = get_cached_article_count(
+            repo,
+            st.session_state.refresh_key,
+            use_date_filter,
+            start_dt_str,
+            end_dt_str,
+            article_type_filter or "",
+            source_filter or "",
+            search_filter or "",
+            embedding_filter,
+            tickers_filter_json
+        )
+        
         # Apply specific ticker filter client-side (dropdown selection - for single ticker)
         if ticker_filter:
             articles = [
@@ -843,10 +911,14 @@ try:
                 if (a.get('tickers') and ticker_filter in a.get('tickers', [])) 
                    or a.get('ticker') == ticker_filter
             ]
+            # Note: When ticker_filter is applied client-side, total_count is not accurate
+            # We'll show the filtered count instead
+            total_count = len(articles)
         
-        # Get total count for pagination (simplified - get one more to check if there are more)
+        # Calculate pagination info
+        total_pages = max(1, (total_count + results_per_page - 1) // results_per_page)
         article_count = len(articles)
-        has_more = article_count == results_per_page
+        has_more = page < total_pages
     
     # Results header
     st.header("📄 Articles")
@@ -956,20 +1028,47 @@ try:
                     st.session_state.selected_articles = set()
                     st.rerun()
         
-        # Pagination controls
-        col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
-        with col_pag1:
-            if page > 1:
-                if st.button("◀ Previous"):
-                    st.session_state.current_page = page - 1
-                    st.rerun()
-        with col_pag2:
-            st.caption(f"Page {page} - Showing {len(articles)} articles")
-        with col_pag3:
-            if has_more:
-                if st.button("Next ▶"):
-                    st.session_state.current_page = page + 1
-                    st.rerun()
+        # Pagination controls - Enhanced with total count and jump-to-page
+        st.markdown("---")
+        
+        # Display pagination info and controls
+        col_info, col_nav = st.columns([2, 3])
+        
+        with col_info:
+            st.markdown(f"**Page {page} of {total_pages}** | Total results: **{total_count:,}** | Showing: **{len(articles)}**")
+        
+        with col_nav:
+            nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 1.5, 1])
+            
+            with nav_col1:
+                if page > 1:
+                    if st.button("◀ Previous", use_container_width=True):
+                        st.session_state.current_page = page - 1
+                        st.rerun()
+            
+            with nav_col2:
+                if has_more:
+                    if st.button("Next ▶", use_container_width=True):
+                        st.session_state.current_page = page + 1
+                        st.rerun()
+            
+            with nav_col3:
+                # Jump to page input
+                jump_page = st.number_input(
+                    "Jump to page",
+                    min_value=1,
+                    max_value=total_pages,
+                    value=page,
+                    step=1,
+                    key="jump_page_input",
+                    label_visibility="collapsed"
+                )
+            
+            with nav_col4:
+                if st.button("Go", use_container_width=True):
+                    if jump_page != page:
+                        st.session_state.current_page = jump_page
+                        st.rerun()
         
         # Export button
         if st.button("📥 Export to CSV", use_container_width=False):

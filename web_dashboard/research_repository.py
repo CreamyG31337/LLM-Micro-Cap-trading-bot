@@ -1169,3 +1169,80 @@ class ResearchRepository:
         except Exception as e:
             logger.error(f"❌ Error getting all articles: {e}")
             return []
+    
+    def get_article_count(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        article_type: Optional[str] = None,
+        source: Optional[str] = None,
+        search_text: Optional[str] = None,
+        embedding_filter: Optional[bool] = None,
+        tickers_filter: Optional[List[str]] = None
+    ) -> int:
+        """Get total count of articles matching the given filters
+        
+        Args:
+            start_date: Optional start date (inclusive)
+            end_date: Optional end date (inclusive)
+            article_type: Optional filter by article type
+            source: Optional filter by source
+            search_text: Optional text search in title, summary, content
+            embedding_filter: Optional filter by embedding status (True=has embedding, False=no embedding, None=all)
+            tickers_filter: Optional list of tickers to filter by (articles must have at least one matching ticker)
+            
+        Returns:
+            Total count of matching articles
+        """
+        try:
+            query = "SELECT COUNT(*) as count FROM research_articles WHERE 1=1"
+            params = []
+            
+            # Date range filter
+            if start_date and end_date:
+                # Ensure timezone-aware datetimes
+                if start_date.tzinfo is None:
+                    start_date = start_date.replace(tzinfo=timezone.utc)
+                if end_date.tzinfo is None:
+                    end_date = end_date.replace(tzinfo=timezone.utc)
+                
+                query += " AND fetched_at >= %s AND fetched_at <= %s"
+                params.extend([start_date.isoformat(), end_date.isoformat()])
+            
+            # Article type filter
+            if article_type:
+                query += " AND article_type = %s"
+                params.append(article_type)
+            
+            # Source filter
+            if source:
+                query += " AND source = %s"
+                params.append(source)
+            
+            # Search text filter
+            if search_text:
+                query += " AND (title ILIKE %s OR summary ILIKE %s OR content ILIKE %s)"
+                search_pattern = f"%{search_text}%"
+                params.extend([search_pattern, search_pattern, search_pattern])
+            
+            # Embedding filter
+            if embedding_filter is not None:
+                if embedding_filter:
+                    query += " AND embedding IS NOT NULL"
+                else:
+                    query += " AND embedding IS NULL"
+            
+            # Tickers filter
+            if tickers_filter and self._has_tickers_column:
+                query += " AND tickers && %s::text[]"
+                params.append(list(tickers_filter))
+            
+            results = self.client.execute_query(query, tuple(params))
+            count = results[0]['count'] if results else 0
+            
+            logger.debug(f"Article count: {count}")
+            return count
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting article count: {e}")
+            return 0

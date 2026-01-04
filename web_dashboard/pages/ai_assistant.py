@@ -18,8 +18,8 @@ import pandas as pd
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated
-from chat_context import ChatContextManager, ContextItemType
+from auth_utils import is_authenticated, get_user_id
+from chat_context import ChatContextManager, ContextItem, ContextItemType # Added ContextItem
 from ollama_client import get_ollama_client, check_ollama_health, list_available_models
 from searxng_client import get_searxng_client, check_searxng_health
 from search_utils import (
@@ -33,12 +33,21 @@ from ai_prompts import get_system_prompt
 from user_preferences import get_user_ai_model, set_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
-    calculate_portfolio_value_over_time, calculate_performance_metrics,
-    get_fund_thesis_data, get_available_funds
+    calculate_portfolio_value_over_time, get_fund_thesis_data, get_available_funds
 )
+from performance_metrics import calculate_performance_metrics # Moved from streamlit_utils
 from research_repository import ResearchRepository
 
 logger = logging.getLogger(__name__)
+
+# Import WebAI wrapper at module level with error handling
+try:
+    from webai_wrapper import PersistentConversationSession
+    HAS_WEBAI = True
+except ImportError:
+    HAS_WEBAI = False
+    PersistentConversationSession = None
+    logger.warning("WebAI package not available. Gemini 3 Pro will be disabled.")
 
 # Page configuration
 st.set_page_config(
@@ -258,12 +267,18 @@ def calculate_context_size(
     total_tokens = system_tokens + context_tokens + history_tokens + prompt_tokens
     total_chars = len(system_prompt) + len(context_string) + len(history_text) + len(current_prompt)
 
-    # Get model context window (default to 4096 if not available)
-    client = get_ollama_client()
-    context_window = 4096  # Default
-    if client:
-        model_settings = client.get_model_settings(selected_model)
-        context_window = model_settings.get('num_ctx', 4096)
+    # Get model context window (depends on model type)
+    context_window = 4096  # Default for unknown models
+    
+    if selected_model == "gemini-3-pro":
+        # Gemini 3 Pro has a larger context window
+        context_window = 32768
+    else:
+        # For Ollama models, get from model settings
+        client = get_ollama_client()
+        if client:
+            model_settings = client.get_model_settings(selected_model)
+            context_window = model_settings.get('num_ctx', 4096)
 
     usage_percent = (total_tokens / context_window * 100) if context_window > 0 else 0
 
@@ -355,6 +370,18 @@ with col2:
     if st.button("🔄 Clear Chat", use_container_width=True):
         st.session_state.chat_messages = []
         st.session_state.suggested_prompt = None
+        # Reset webai session if it exists
+        if 'webai_session' in st.session_state:
+            try:
+                st.session_state.webai_session.reset_sync()
+            except Exception as e:
+                logger.warning(f"Error resetting webai session: {e}")
+                # Clean up broken session
+                try:
+                    del st.session_state['webai_session']
+                    del st.session_state['webai_user_id']
+                except:
+                    pass
         # Clear context items will be done after chat_context is initialized
         if 'clear_context_pending' not in st.session_state:
             st.session_state.clear_context_pending = True
@@ -364,12 +391,8 @@ with col2:
 if 'suggested_prompt' not in st.session_state:
     st.session_state.suggested_prompt = None
 
-# Check Ollama connection (cached)
+# Check Ollama connection (cached) - but don't block Gemini users yet
 ollama_available = get_cached_ollama_health()
-if not ollama_available:
-    st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
-    st.info("The AI assistant requires Ollama to be running and accessible.")
-    st.stop()
 
 # Check SearXNG connection (cached, non-blocking)
 searxng_available = get_cached_searxng_health()
@@ -390,28 +413,60 @@ with st.sidebar:
     if default_model not in available_models:
         available_models.insert(0, default_model)
 
+    # Format model names for display (show "Gemini 3 Pro" instead of "gemini-3-pro")
+    def format_model_name(model: str) -> str:
+        if model == "gemini-3-pro":
+            return "Gemini 3 Pro"
+        return model
+    
+    def get_model_value(display_name: str) -> str:
+        if display_name == "Gemini 3 Pro":
+            return "gemini-3-pro"
+        return display_name
+    
+    # Create display names for dropdown
+    display_models = [format_model_name(m) for m in available_models]
+    display_default = format_model_name(default_model) if default_model in available_models else display_models[0]
+    
     # Callback to save model preference
     def on_model_change():
-        new_model = st.session_state.ai_model_selector
+        new_display = st.session_state.ai_model_selector
+        new_model = get_model_value(new_display)
         set_user_ai_model(new_model)
-        st.toast(f"Model saved: {new_model}")
+        st.toast(f"Model saved: {format_model_name(new_model)}")
 
     # Model selection dropdown
-    selected_model = st.selectbox(
+    selected_display = st.selectbox(
         "AI Model",
-        options=available_models,
-        index=available_models.index(default_model) if default_model in available_models else 0,
+        options=display_models,
+        index=display_models.index(display_default) if display_default in display_models else 0,
         help="Select the AI model for analysis",
         key="ai_model_selector",
         on_change=on_model_change
     )
+    
+    # Convert back to internal model name
+    selected_model = get_model_value(selected_display)
 
-    # Get model description if available
-    client = get_ollama_client()
-    if client:
-        desc = client.get_model_description(selected_model)
-        if desc:
-            st.caption(f"ℹ️ {desc}")
+    # Check model-specific requirements
+    if selected_model == "gemini-3-pro":
+        st.caption("ℹ️ Gemini 3 Pro - Web-based AI model with persistent conversations")
+        # Gemini doesn't need Ollama
+        if not HAS_WEBAI:
+            st.error("❌ WebAI package not installed. Install with: pip install gemini-webapi")
+            st.stop()
+    else:
+        # Ollama models require Ollama to be running
+        if not ollama_available:
+            st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
+            st.info("💡 Tip: Try selecting 'Gemini 3 Pro' to use the web-based model instead.")
+            st.stop()
+        
+        client = get_ollama_client()
+        if client:
+            desc = client.get_model_description(selected_model)
+            if desc:
+                st.caption(f"ℹ️ {desc}")
 
     st.markdown("---")
 
@@ -1413,29 +1468,84 @@ if user_query:
         full_response = ""
 
         try:
-            client = get_ollama_client()
-            if not client:
+            # Check if using Gemini 3 Pro (webai) or Ollama
+            if selected_model == "gemini-3-pro":
+                # Use webai service with persistent conversation
+                try:
+                    if not HAS_WEBAI:
+                        status_placeholder.empty()
+                        st.error("WebAI package not available. Install with: pip install gemini-webapi")
+                        st.stop()
+                    
+                    # Get user ID for session
+                    user_id = get_user_id()
+                    if not user_id:
+                        status_placeholder.empty()
+                        st.error("User authentication required for Gemini 3 Pro")
+                        st.stop()
+                    
+                    # Check if user changed FIRST (before checking session existence)
+                    if 'webai_user_id' in st.session_state and st.session_state.webai_user_id != user_id:
+                        # User changed - close old session and create new one
+                        if 'webai_session' in st.session_state:
+                            try:
+                                st.session_state.webai_session.close_sync()
+                            except:
+                                pass
+                            del st.session_state['webai_session']
+                    
+                    # Initialize session if needed
+                    if 'webai_session' not in st.session_state:
+                        # Create new session
+                        st.session_state.webai_session = PersistentConversationSession(
+                            session_id=user_id,
+                            auto_refresh=False
+                        )
+                        st.session_state.webai_user_id = user_id
+                    
+                    # Send message and get response
+                    full_response = st.session_state.webai_session.send_sync(full_prompt)
+                    
+                    # Clear status and show final response
+                    status_placeholder.empty()
+                    message_placeholder.markdown(full_response)
+                    
+                except ValueError as e:
+                    # Missing cookies error
+                    status_placeholder.empty()
+                    st.error(f"WebAI configuration error: {e}")
+                    st.info("💡 Please configure cookies for Gemini 3 Pro. See setup documentation.")
+                    st.stop()
+                except Exception as e:
+                    status_placeholder.empty()
+                    st.error(f"Error using Gemini 3 Pro: {e}")
+                    logger.exception("WebAI error")
+                    st.stop()
+            else:
+                # Use Ollama (existing code)
+                client = get_ollama_client()
+                if not client:
+                    status_placeholder.empty()
+                    st.error("AI client not available")
+                    st.stop()
+
+                # Stream response (status remains visible during streaming)
+                # Pass None for temperature and max_tokens to let the client handle model-specific defaults
+                # Model settings come from model_config.json and database overrides
+                for chunk in client.query_ollama(
+                    prompt=full_prompt,
+                    model=selected_model,
+                    stream=True,
+                    temperature=None,  # Use model default
+                    max_tokens=None,   # Use model default
+                    system_prompt=system_prompt
+                ):
+                    full_response += chunk
+                    message_placeholder.markdown(full_response + "▌")
+
+                # Clear status and show final response
                 status_placeholder.empty()
-                st.error("AI client not available")
-                st.stop()
-
-            # Stream response (status remains visible during streaming)
-            # Pass None for temperature and max_tokens to let the client handle model-specific defaults
-            # Model settings come from model_config.json and database overrides
-            for chunk in client.query_ollama(
-                prompt=full_prompt,
-                model=selected_model,
-                stream=True,
-                temperature=None,  # Use model default
-                max_tokens=None,   # Use model default
-                system_prompt=system_prompt
-            ):
-                full_response += chunk
-                message_placeholder.markdown(full_response + "▌")
-
-            # Clear status and show final response
-            status_placeholder.empty()
-            message_placeholder.markdown(full_response)
+                message_placeholder.markdown(full_response)
 
         except Exception as e:
             st.error(f"Error getting AI response: {e}")

@@ -19,3 +19,5 @@ pypdf>=3.0.0
 python-docx>=0.8.11
 streamlit-aggrid>=0.3.4
 docker>=7.0.0
+gemini-webapi>=1.17.0
+nest-asyncio>=1.5.0

@@ -302,3 +302,13 @@ debug_output*.txt
 # URL key files for obfuscated scraper URLs (developer reference only)
 *.keys.json
 
+webai_cookies.json
+ai_service_cookies.json
+
+# Vendor/backup packages (local copies in case packages disappear)
+vendor/
+*.backup.zip
+gemini-webapi-backup.zip
+
+# WebAI conversation persistence (per-user conversations)
+data/conversations/

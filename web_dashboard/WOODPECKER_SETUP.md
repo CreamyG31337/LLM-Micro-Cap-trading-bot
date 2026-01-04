@@ -31,6 +31,17 @@ In Woodpecker, go to your repository → **Settings** → **Secrets**, and add:
   - Get your API key from: https://site.financialmodelingprep.com/developer/docs/
   - Required for `congress_trades` scheduled job to fetch congressional stock trading disclosures
   - If not set, congress trading module will be disabled (job will log error but continue)
+- **`webai_cookies_json`** - WebAI service cookies (for Gemini 3 Pro model)
+  - JSON string containing cookies: `{"__Secure-1PSID":"...","__Secure-1PSIDTS":"..."}`
+  - Alternative: Use `webai_secure_1psid` and `webai_secure_1psidts` separately
+  - Required for Gemini 3 Pro model to work in production
+  - See `web_dashboard/WEBAI_COOKIE_SETUP.md` for extraction instructions
+- **`webai_secure_1psid`** - WebAI service cookie (alternative to JSON)
+  - Individual cookie value for `__Secure-1PSID`
+  - Use with `webai_secure_1psidts` if not using `webai_cookies_json`
+- **`webai_secure_1psidts`** - WebAI service cookie timestamp (alternative to JSON)
+  - Individual cookie value for `__Secure-1PSIDTS`
+  - Use with `webai_secure_1psid` if not using `webai_cookies_json`
 
 ### Optional Secrets (if using Docker registry):
 - **`DOCKER_USERNAME`** - Docker Hub/registry username
@@ -76,6 +87,7 @@ SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 SUPABASE_SECRET_KEY=your-secret-key
 RESEARCH_DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/trading_db
 FMP_API_KEY=your-fmp-api-key-here
+WEBAI_COOKIES_JSON={"__Secure-1PSID":"...","__Secure-1PSIDTS":"..."}
 STREAMLIT_SERVER_HEADLESS=true
 STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 ```

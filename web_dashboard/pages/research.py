@@ -1038,7 +1038,7 @@ try:
             st.markdown(f"**Page {page} of {total_pages}** | Total results: **{total_count:,}** | Showing: **{len(articles)}**")
         
         with col_nav:
-            nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 1.5, 1])
+            nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 1, 0.6])
             
             with nav_col1:
                 if page > 1:
@@ -1053,16 +1053,20 @@ try:
                         st.rerun()
             
             with nav_col3:
-                # Jump to page input
-                jump_page = st.number_input(
+                # Jump to page input - using text_input to avoid auto-refresh on +/-
+                jump_page_str = st.text_input(
                     "Jump to page",
-                    min_value=1,
-                    max_value=total_pages,
-                    value=page,
-                    step=1,
+                    value=str(page),
                     key="jump_page_input",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    placeholder=f"Page (1-{total_pages})"
                 )
+                # Parse and validate
+                try:
+                    jump_page = int(jump_page_str)
+                    jump_page = max(1, min(jump_page, total_pages))  # Clamp to valid range
+                except (ValueError, TypeError):
+                    jump_page = page  # Default to current page if invalid
             
             with nav_col4:
                 if st.button("Go", use_container_width=True):

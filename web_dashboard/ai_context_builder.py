@@ -356,32 +356,24 @@ def format_fundamentals_table(positions_df: pd.DataFrame) -> str:
     for idx, row in positions_df.iterrows():
         ticker = row.get('symbol', row.get('ticker', 'N/A'))
         
-        # FIRST: Use securities data from DB (already joined in positions_df)
-        sector = "N/A"
-        industry = "N/A"
-        country = "N/A"
-        market_cap = "N/A"
+        # USE DIRECT COLUMNS from positions_df (DB view flattens securities join)
+        # Available: sector, industry, current_price, yesterday_price, etc.
+        sector = row.get('sector', 'N/A') or 'N/A'
+        industry = row.get('industry', 'N/A') or 'N/A'
+        country = row.get('country', 'N/A') or 'N/A'
         
+        # Format market cap from securities join if available
+        market_cap = "N/A"
+        raw_cap = None
         securities = row.get('securities')
         if securities:
-            logger.debug(f"[ai_context_builder.format_fundamentals_table] {ticker} securities type={type(securities)}, value={securities}")
             if isinstance(securities, dict):
-                sector = securities.get('sector', 'N/A') or 'N/A'
-                industry = securities.get('industry', 'N/A') or 'N/A'
-                country = securities.get('country', 'N/A') or 'N/A'
                 raw_cap = securities.get('market_cap')
-                if raw_cap and raw_cap != 'N/A':
-                    market_cap = _format_market_cap(raw_cap)
             elif isinstance(securities, list) and len(securities) > 0:
-                sec = securities[0] if isinstance(securities[0], dict) else {}
-                sector = sec.get('sector', 'N/A') or 'N/A'
-                industry = sec.get('industry', 'N/A') or 'N/A'
-                country = sec.get('country', 'N/A') or 'N/A'
-                raw_cap = sec.get('market_cap')
-                if raw_cap and raw_cap != 'N/A':
-                    market_cap = _format_market_cap(raw_cap)
-        else:
-            logger.debug(f"[ai_context_builder.format_fundamentals_table] {ticker} NO securities data. Row keys: {list(row.keys()) if hasattr(row, 'keys') else 'N/A'}")
+                raw_cap = securities[0].get('market_cap') if isinstance(securities[0], dict) else None
+        if raw_cap and raw_cap != 'N/A':
+            market_cap = _format_market_cap(raw_cap)
+
 
         
         # SECOND: Only fetch P/E, Div%, 52W High/Low from yfinance (not in securities table)

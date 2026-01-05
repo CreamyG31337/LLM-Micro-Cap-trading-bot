@@ -525,59 +525,13 @@ def add_trade_from_email(email_text: str, data_dir: str, fund_name: str = None) 
             else:
                 logger.warning(f"No sufficient position found for sell trade: {trade.ticker}")
 
-        # Save the trade to the repository
-        repository.save_trade(trade)
-
-        # Update portfolio position using the proper method that handles multiple trades per day
-        if trade.action == 'BUY':
-            processor._update_position_after_buy(trade, None)
-        elif trade.action == 'SELL':
-            processor._update_position_after_sell(trade)
-        else:
-            print(f"Unsupported action: {trade.action}")
-            return False
-
-        # Check if this is a backdated trade that needs targeted rebuild
-        from datetime import datetime, timezone
-        today = datetime.now(timezone.utc).date()
-        trade_date = trade.timestamp.date()
+        # Use unified trade entry function to save trade, update positions, clear caches, and handle backdated trades
+        success = processor.process_trade_entry(trade, clear_caches=True, trade_already_saved=False)
         
-        if trade_date < today:
-            print(f"📅 Backdated trade detected: {trade.ticker} on {trade_date}")
-            
-            # Check if portfolio has entries for this ticker after the trade date
-            try:
-                from pathlib import Path
-                portfolio_file = f'{data_dir}/llm_portfolio_update.csv'
-                if Path(portfolio_file).exists():
-                    import pandas as pd
-                    portfolio_df = pd.read_csv(portfolio_file)
-                    portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
-                    
-                    # Check for entries of this ticker after the trade date
-                    ticker_entries_after = portfolio_df[
-                        (portfolio_df['Ticker'] == trade.ticker.upper().strip()) &
-                        (portfolio_df['Date'].dt.date > trade_date)
-                    ]
-                    
-                    if not ticker_entries_after.empty:
-                        print(f"🔄 Found {len(ticker_entries_after)} outdated HOLD entries for {trade.ticker}")
-                        print(f"   Rebuilding {trade.ticker} from {trade_date} forward...")
-                        
-                        # Import and call the targeted rebuild function
-                        from debug.rebuild_portfolio_from_scratch import rebuild_ticker_from_date
-                        success = rebuild_ticker_from_date(trade.ticker, trade.timestamp, data_dir)
-                        
-                        if success:
-                            print(f"✅ Successfully rebuilt {trade.ticker} portfolio entries")
-                        else:
-                            print(f"❌ Failed to rebuild {trade.ticker} - manual rebuild may be needed")
-                    else:
-                        print(f"ℹ️  No outdated entries found for {trade.ticker}")
-                        
-            except Exception as e:
-                print(f"⚠️  Could not check for outdated entries: {e}")
-                print("   Manual portfolio rebuild may be needed")
+        if not success:
+            print(f"❌ Failed to process trade entry for {trade.ticker}")
+            print("   Manual portfolio rebuild may be needed")
+            return False
 
         # Check if this is a sell trade that might close the position
         if trade.action == 'SELL':

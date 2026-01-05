@@ -118,18 +118,16 @@ Examples:
                 print("ℹ️  Duplicate trade detected; skipping insert.")
                 return True
 
-            # Save the trade
-            repository.save_trade(trade_obj)
-            
-            # Update portfolio position
+            # Use unified trade entry function to save trade, update positions, clear caches, and handle backdated trades
             processor = TradeProcessor(repository)
-            if trade_obj.action == 'BUY':
-                processor._update_position_after_buy(trade_obj, None)
-            elif trade_obj.action == 'SELL':
-                processor._update_position_after_sell(trade_obj)
+            success = processor.process_trade_entry(trade_obj, clear_caches=True, trade_already_saved=False)
             
-            print(f"Successfully added trade: {trade_obj.ticker} {trade_obj.action} {trade_obj.shares} @ {trade_obj.price}")
-            return True
+            if success:
+                print(f"Successfully added trade: {trade_obj.ticker} {trade_obj.action} {trade_obj.shares} @ {trade_obj.price}")
+                return True
+            else:
+                print(f"❌ Failed to process trade entry for {trade_obj.ticker}")
+                return False
             
         except Exception as e:
             print(f"❌ Error saving trade: {e}")

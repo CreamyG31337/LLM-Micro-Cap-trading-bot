@@ -770,6 +770,74 @@ class TradeProcessor:
             logger.warning(f"Could not check for backdated trade: {e}")
             # Don't raise here as the trade was already saved successfully
     
+    def process_trade_entry(self, trade: Trade, clear_caches: bool = True, 
+                           trade_already_saved: bool = False) -> bool:
+        """Unified trade entry processing function.
+        
+        This method handles the complete trade entry workflow:
+        - Saves trade to repository (if not already saved)
+        - Updates portfolio positions immediately
+        - Clears relevant caches
+        - Handles backdated trade rebuilds
+        
+        Args:
+            trade: Trade object to process
+            clear_caches: Whether to clear caches after trade entry (default: True)
+            trade_already_saved: Whether the trade has already been saved to repository
+                                 (useful for web dashboard where trade is saved to Supabase first)
+        
+        Returns:
+            True if trade was processed successfully, False otherwise
+        """
+        try:
+            logger.info(f"Processing trade entry: {trade.ticker} {trade.action} {trade.shares} @ {trade.price}")
+            
+            # Save trade to repository if not already saved
+            if not trade_already_saved:
+                self.repository.save_trade(trade)
+                logger.info(f"Saved trade to repository: {trade.ticker}")
+            else:
+                logger.info(f"Trade already saved to repository, skipping save step: {trade.ticker}")
+            
+            # Update portfolio position immediately (for both today and backdated trades)
+            if trade.action == 'BUY':
+                self._update_position_after_buy(trade, None)
+            elif trade.action == 'SELL':
+                self._update_position_after_sell(trade)
+            else:
+                logger.warning(f"Unsupported trade action: {trade.action}")
+                return False
+            
+            # Clear caches if requested
+            if clear_caches:
+                try:
+                    from utils.cache_utils import clear_trade_related_caches
+                    # Get data directory from repository if available
+                    data_dir = getattr(self.repository, 'data_dir', None)
+                    if data_dir:
+                        from pathlib import Path
+                        data_dir_path = Path(data_dir) if isinstance(data_dir, str) else data_dir
+                    else:
+                        data_dir_path = None
+                    
+                    cache_results = clear_trade_related_caches(data_dir_path)
+                    logger.info(f"Cache clearing results: {cache_results}")
+                except Exception as e:
+                    logger.warning(f"Failed to clear caches after trade entry: {e}")
+                    # Don't fail the trade entry if cache clearing fails
+            
+            # Handle backdated trades
+            self._check_and_rebuild_backdated_trade(trade)
+            
+            logger.info(f"Successfully processed trade entry: {trade.ticker} {trade.action}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to process trade entry: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def _check_position_closure(self, trade: Trade) -> None:
         """Check if a sell trade might close the position and prompt user if needed.
         

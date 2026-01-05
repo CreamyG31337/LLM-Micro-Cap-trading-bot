@@ -26,7 +26,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth_utils import is_authenticated, is_admin, get_user_email, send_magic_link
-from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy
+from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy, CACHE_VERSION
 from supabase_client import SupabaseClient
 from supabase import create_client
 
@@ -237,6 +237,202 @@ def get_cached_contributors():
             return result.data if result.data else []
         except Exception as e:
             return []
+
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_fund_statistics_batched(fund_names: List[str], _cache_version: str = CACHE_VERSION):
+    """Get position and trade counts for multiple funds in batched queries.
+    
+    Args:
+        fund_names: List of fund names to get statistics for
+        _cache_version: Cache key version (auto-set from CACHE_VERSION constant)
+        
+    Returns:
+        Dict mapping fund_name to {"positions": int, "trades": int}
+    """
+    if not fund_names:
+        return {}
+    
+    client = get_supabase_client()
+    if not client:
+        return {fund: {"positions": 0, "trades": 0} for fund in fund_names}
+    
+    stats = {fund: {"positions": 0, "trades": 0} for fund in fund_names}
+    
+    try:
+        # Batch query 1: Get all position counts (with pagination support)
+        with perf_timer("DB: portfolio_positions.count(batched)", log_to_console=False):
+            # Fetch all positions for all funds, then group in Python
+            # Use .in_() to filter by multiple funds
+            # WE MUST PAGINATE - Supabase has a hard limit of 1000 rows per request
+            all_positions = []
+            batch_size = 1000
+            offset = 0
+            
+            while True:
+                result = client.supabase.table("portfolio_positions")\
+                    .select("fund")\
+                    .in_("fund", fund_names)\
+                    .range(offset, offset + batch_size - 1)\
+                    .execute()
+                
+                if not result.data:
+                    break
+                
+                all_positions.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_fund_statistics_batched positions pagination")
+                    break
+            
+            # Group by fund
+            if all_positions:
+                from collections import Counter
+                position_counts = Counter(pos['fund'] for pos in all_positions)
+                for fund, count in position_counts.items():
+                    if fund in stats:
+                        stats[fund]["positions"] = count
+        
+        # Batch query 2: Get all trade counts (with pagination support)
+        with perf_timer("DB: trade_log.count(batched)", log_to_console=False):
+            all_trades = []
+            batch_size = 1000
+            offset = 0
+            
+            while True:
+                result = client.supabase.table("trade_log")\
+                    .select("fund")\
+                    .in_("fund", fund_names)\
+                    .range(offset, offset + batch_size - 1)\
+                    .execute()
+                
+                if not result.data:
+                    break
+                
+                all_trades.extend(result.data)
+                
+                # If we got fewer rows than batch_size, we're done
+                if len(result.data) < batch_size:
+                    break
+                
+                offset += batch_size
+                
+                # Safety break to prevent infinite loops (e.g. max 50k rows = 50 batches)
+                if offset > 50000:
+                    logger.warning("Reached 50,000 row safety limit in get_fund_statistics_batched trades pagination")
+                    break
+            
+            # Group by fund
+            if all_trades:
+                from collections import Counter
+                trade_counts = Counter(trade['fund'] for trade in all_trades)
+                for fund, count in trade_counts.items():
+                    if fund in stats:
+                        stats[fund]["trades"] = count
+                        
+    except Exception as e:
+        logger.error(f"Error getting batched fund statistics: {e}", exc_info=True)
+    
+    return stats
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_postgres_status_cached(_cache_version: str = CACHE_VERSION):
+    """Get Postgres connection status and stats.
+    
+    Args:
+        _cache_version: Cache key version (auto-set from CACHE_VERSION constant)
+        
+    Returns:
+        Tuple of (connected: bool, stats: dict or None)
+    """
+    try:
+        from web_dashboard.postgres_client import PostgresClient
+        from web_dashboard.research_repository import ResearchRepository
+        
+        pg_client = PostgresClient()
+        if not pg_client.test_connection():
+            return False, None
+        
+        stats_result = pg_client.execute_query("SELECT COUNT(*) as count FROM research_articles")
+        recent_result = pg_client.execute_query("""
+            SELECT COUNT(*) as count 
+            FROM research_articles 
+            WHERE fetched_at >= NOW() - INTERVAL '7 days'
+        """)
+        
+        stats = {
+            "total": stats_result[0]['count'] if stats_result else 0,
+            "recent_7d": recent_result[0]['count'] if recent_result else 0
+        }
+        return True, stats
+    except ImportError:
+        return False, None
+    except Exception as e:
+        logger.error(f"Error getting Postgres status: {e}", exc_info=True)
+        return False, None
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_system_status_cached(_cache_version: str = CACHE_VERSION):
+    """Get system status information with caching.
+    
+    Args:
+        _cache_version: Cache key version (auto-set from CACHE_VERSION constant)
+    
+    Returns:
+        Dict with status information for database, exchange rates, metrics, postgres
+    """
+    client = get_supabase_client()
+    status = {
+        "supabase_connected": False,
+        "exchange_rates": None,
+        "performance_metrics": None,
+        "postgres_connected": False,
+        "postgres_stats": None,
+        "errors": []
+    }
+    
+    if not client:
+        status["errors"].append("Supabase client not available")
+        return status
+    
+    # Test Supabase connection
+    try:
+        with perf_timer("DB: user_profiles connection test (cached)", log_to_console=False):
+            test_result = client.supabase.table("user_profiles").select("user_id").limit(1).execute()
+        status["supabase_connected"] = True
+    except Exception as e:
+        status["errors"].append(f"Supabase connection error: {e}")
+    
+    # Check exchange rates
+    try:
+        with perf_timer("DB: exchange_rates.select (cached)", log_to_console=False):
+            rates_result = client.supabase.table("exchange_rates").select("timestamp")\
+                .order("timestamp", desc=True).limit(1).execute()
+        if rates_result.data:
+            status["exchange_rates"] = rates_result.data[0]['timestamp']
+    except Exception as e:
+        status["errors"].append(f"Exchange rates error: {e}")
+    
+    # Check performance metrics
+    try:
+        with perf_timer("DB: performance_metrics.select (cached)", log_to_console=False):
+            metrics_result = client.supabase.table("performance_metrics").select("date")\
+                .order("date", desc=True).limit(1).execute()
+        if metrics_result.data:
+            status["performance_metrics"] = metrics_result.data[0]['date']
+    except Exception as e:
+        status["errors"].append(f"Performance metrics error: {e}")
+    
+    # Check Postgres (separate cache with shorter TTL)
+    status["postgres_connected"], status["postgres_stats"] = get_postgres_status_cached()
+    
+    return status
 
 # Create tabs for different admin sections
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
@@ -992,30 +1188,26 @@ with tab4:
                     funds_data = get_cached_funds()
                     fund_names = [f['name'] for f in funds_data]
                     
-                    # Get statistics for each fund
+                    # Get statistics for all funds in batched queries
                     if fund_names:
+                        # Get batched statistics (replaces N+1 queries with 2 batched queries)
+                        fund_statistics = get_fund_statistics_batched(fund_names)
+                        
                         fund_stats = []
                         for fund_name in fund_names:
-                            # Get position count
-                            with perf_timer(f"DB: portfolio_positions.count({fund_name})", log_to_console=False):
-                                pos_count = client.supabase.table("portfolio_positions").select("id", count="exact").eq("fund", fund_name).execute()
-                            position_count = pos_count.count if hasattr(pos_count, 'count') else len(pos_count.data) if pos_count.data else 0
-                            
-                            # Get trade count
-                            with perf_timer(f"DB: trade_log.count({fund_name})", log_to_console=False):
-                                trade_count = client.supabase.table("trade_log").select("id", count="exact").eq("fund", fund_name).execute()
-                            trade_count_val = trade_count.count if hasattr(trade_count, 'count') else len(trade_count.data) if trade_count.data else 0
-                            
                             # Get fund details
                             fund_info = next((f for f in funds_data if f['name'] == fund_name), {})
+                            
+                            # Get statistics from batched result
+                            stats = fund_statistics.get(fund_name, {"positions": 0, "trades": 0})
                             
                             fund_stats.append({
                                 "Fund Name": fund_name,
                                 "Type": fund_info.get('fund_type', 'N/A'),
                                 "Currency": fund_info.get('currency', 'N/A'),
                                 "Production": "✅" if fund_info.get('is_production') else "❌",
-                                "Positions": position_count,
-                                "Trades": trade_count_val
+                                "Positions": stats["positions"],
+                                "Trades": stats["trades"]
                             })
                         
                         funds_df = pd.DataFrame(fund_stats)
@@ -1582,76 +1774,56 @@ with tab5:
         st.header("📊 System Status")
         st.caption("Monitor system health and status")
         
-        client = get_supabase_client()
-        if not client:
-            st.error("❌ Database: Connection Failed")
+        # Get cached system status (replaces multiple separate queries)
+        status = get_system_status_cached()
+        
+        # Database connection status
+        st.subheader("Database Status")
+        if status["supabase_connected"]:
+            st.success("✅ Database: Connected")
         else:
-            # Database connection status
-            st.subheader("Database Status")
-            try:
-                # Test connection with a simple query
-                with perf_timer("DB: user_profiles connection test", log_to_console=False):
-                    test_result = client.supabase.table("user_profiles").select("user_id").limit(1).execute()
-                st.success("✅ Database: Connected")
-            except Exception as e:
-                st.error(f"❌ Database: Connection Error - {e}")
-            
-            # Exchange rates status
-            st.subheader("Exchange Rates")
-            try:
-                with perf_timer("DB: exchange_rates.select", log_to_console=False):
-                    rates_result = client.supabase.table("exchange_rates").select("timestamp").order("timestamp", desc=True).limit(1).execute()
-                if rates_result.data:
-                    latest_rate_date = rates_result.data[0]['timestamp']
-                    st.info(f"Latest rate: {latest_rate_date}")
-                else:
-                    st.warning("No exchange rates found")
-            except Exception as e:
-                st.error(f"Error checking exchange rates: {e}")
-            
-            # Performance metrics status
-            st.subheader("Performance Metrics")
-            try:
-                with perf_timer("DB: performance_metrics.select", log_to_console=False):
-                    metrics_result = client.supabase.table("performance_metrics").select("date").order("date", desc=True).limit(1).execute()
-                if metrics_result.data:
-                    latest_metrics_date = metrics_result.data[0]['date']
-                    st.info(f"Latest metrics: {latest_metrics_date}")
-                else:
-                    st.warning("No performance metrics found")
-            except Exception as e:
-                st.error(f"Error checking performance metrics: {e}")
+            st.error("❌ Database: Connection Failed")
+            if status["errors"]:
+                for error in status["errors"]:
+                    if "Supabase connection" in error:
+                        st.error(f"❌ Database: Connection Error - {error}")
+        
+        # Exchange rates status
+        st.subheader("Exchange Rates")
+        if status["exchange_rates"]:
+            st.info(f"Latest rate: {status['exchange_rates']}")
+        else:
+            st.warning("No exchange rates found")
+            if status["errors"]:
+                for error in status["errors"]:
+                    if "Exchange rates" in error:
+                        st.error(f"Error checking exchange rates: {error}")
+        
+        # Performance metrics status
+        st.subheader("Performance Metrics")
+        if status["performance_metrics"]:
+            st.info(f"Latest metrics: {status['performance_metrics']}")
+        else:
+            st.warning("No performance metrics found")
+            if status["errors"]:
+                for error in status["errors"]:
+                    if "Performance metrics" in error:
+                        st.error(f"Error checking performance metrics: {error}")
         
         # Postgres (Research Repository) status
         st.subheader("Postgres (Research Repository)")
-        try:
-            from web_dashboard.postgres_client import PostgresClient
-            from web_dashboard.research_repository import ResearchRepository
-            
-            pg_client = PostgresClient()
-            if pg_client.test_connection():
-                st.success("✅ Postgres: Connected")
-                
-                # Get stats
-                repo = ResearchRepository(pg_client)
-                stats_result = pg_client.execute_query("SELECT COUNT(*) as count FROM research_articles")
-                total = stats_result[0]['count'] if stats_result else 0
-                st.info(f"Total research articles: {total}")
-                
-                # Recent articles
-                recent_result = pg_client.execute_query("""
-                    SELECT COUNT(*) as count 
-                    FROM research_articles 
-                    WHERE fetched_at >= NOW() - INTERVAL '7 days'
-                """)
-                recent = recent_result[0]['count'] if recent_result else 0
-                st.info(f"Articles (last 7 days): {recent}")
-            else:
-                st.error("❌ Postgres: Connection Failed")
-        except ImportError:
-            st.warning("⚠️ Postgres client not available (psycopg2 not installed)")
-        except Exception as e:
-            st.error(f"❌ Postgres: Error - {str(e)[:100]}")
+        if status["postgres_connected"]:
+            st.success("✅ Postgres: Connected")
+            if status["postgres_stats"]:
+                st.info(f"Total research articles: {status['postgres_stats']['total']}")
+                st.info(f"Articles (last 7 days): {status['postgres_stats']['recent_7d']}")
+        else:
+            st.error("❌ Postgres: Connection Failed")
+            # Check if it's an import error
+            try:
+                from web_dashboard.postgres_client import PostgresClient
+            except ImportError:
+                st.warning("⚠️ Postgres client not available (psycopg2 not installed)")
         
         # Job execution logs (from scheduler)
         st.subheader("Recent Job Executions")
@@ -1929,10 +2101,63 @@ with tab6:
                             
                             admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
-                            # Clear data caches to prevent stale data (particularly get_trade_log which is cached forever)
-                            st.cache_data.clear()
+                            # Now update portfolio positions using unified trade entry function
+                            try:
+                                # Import necessary modules
+                                from decimal import Decimal
+                                from data.models.trade import Trade
+                                from portfolio.trade_processor import TradeProcessor
+                                from data.repositories.repository_factory import RepositoryFactory
+                                
+                                # Create Trade object from form data
+                                trade = Trade(
+                                    ticker=trade_ticker,
+                                    action=trade_action,
+                                    shares=Decimal(str(trade_shares)),
+                                    price=Decimal(str(trade_price)),
+                                    timestamp=trade_datetime,
+                                    cost_basis=Decimal(str(cost_basis)),
+                                    pnl=Decimal(str(pnl)) if pnl else None,
+                                    reason=final_reason,
+                                    currency=trade_currency
+                                )
+                                
+                                # Get fund data directory (try to get from fund config)
+                                try:
+                                    # Get fund info to find data directory
+                                    fund_info_result = admin_client.supabase.table("funds").select("data_directory").eq("name", trade_fund).execute()
+                                    if fund_info_result.data and len(fund_info_result.data) > 0:
+                                        data_dir = fund_info_result.data[0].get('data_directory')
+                                    else:
+                                        # Fallback: construct data directory path
+                                        data_dir = f"trading_data/funds/{trade_fund}"
+                                except Exception:
+                                    # Fallback: construct data directory path
+                                    data_dir = f"trading_data/funds/{trade_fund}"
+                                
+                                # Create repository instance
+                                try:
+                                    repository = RepositoryFactory.create_dual_write_repository(data_dir, trade_fund)
+                                except Exception:
+                                    # Fallback to Supabase-only repository
+                                    from data.repositories.supabase_repository import SupabaseRepository
+                                    repository = SupabaseRepository(trade_fund)
+                                
+                                # Process trade entry using unified function
+                                # This will update portfolio positions immediately and clear caches
+                                processor = TradeProcessor(repository)
+                                success = processor.process_trade_entry(trade, clear_caches=True, trade_already_saved=True)
+                                
+                                if not success:
+                                    st.warning("⚠️ Trade saved but position update may have failed. Please check holdings.")
+                                
+                            except Exception as process_error:
+                                # Log error but don't fail the trade entry (trade is already saved)
+                                import logging
+                                logging.getLogger(__name__).error(f"Failed to update portfolio positions: {process_error}", exc_info=True)
+                                st.warning(f"⚠️ Trade saved but position update failed: {str(process_error)[:100]}. Please run manual rebuild.")
                             
-                            # DETECT BACKDATING AND TRIGGER REBUILD
+                            # DETECT BACKDATING AND TRIGGER REBUILD (as fallback/additional safety)
                             is_backdated = trade_datetime.date() < datetime.now().date()
                             
                             if is_backdated:
@@ -1953,7 +2178,6 @@ with tab6:
                                     job_id = trigger_background_rebuild(trade_fund, trade_datetime.date())
                                     
                                     if job_id:
-                                        st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                                         job_id_str = str(job_id)
                                         if had_running_job:
                                             st.info(f"📊 Previous rebuild cancelled. Restarting from {trade_datetime.date()}... (Job ID: {job_id_str})")
@@ -1961,18 +2185,16 @@ with tab6:
                                             st.toast(f"⏳ Rebuilding positions from {trade_date}...", icon="📊")
                                             st.info(f"📊 Position recalculation started in background. Check the Jobs page to monitor progress (Job ID: {job_id_str})")
                                     else:
-                                        st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild from Fund Management tab.")
                                     
                                 except Exception as rebuild_error:
                                     # Log error but don't fail the trade entry
                                     import logging
                                     logging.getLogger(__name__).error(f"Failed to trigger rebuild: {rebuild_error}")
-                                    st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                                     st.warning(f"⚠️ Automatic rebuild failed: {str(rebuild_error)[:100]}. Please run manual rebuild.")
-                            else:
-                                # Not backdated - just show success
-                                st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
+                            
+                            # Show success message
+                            st.success(f"✅ Trade recorded: {trade_action} {trade_shares} shares of {trade_ticker} @ ${trade_price}")
                             
                         except Exception as e:
                             st.error(f"Error recording trade: {e}")
@@ -2698,7 +2920,48 @@ Time: December 19, 2025 09:30 EST""",
 
                             admin_client.supabase.table("trade_log").insert(trade_data).execute()
                             
-                            # DETECT BACKDATING AND TRIGGER REBUILD (same as manual trade entry)
+                            # Now update portfolio positions using unified trade entry function
+                            try:
+                                # Import necessary modules
+                                from portfolio.trade_processor import TradeProcessor
+                                from data.repositories.repository_factory import RepositoryFactory
+                                
+                                # Get fund data directory (try to get from fund config)
+                                try:
+                                    # Get fund info to find data directory
+                                    fund_info_result = admin_client.supabase.table("funds").select("data_directory").eq("name", email_fund).execute()
+                                    if fund_info_result.data and len(fund_info_result.data) > 0:
+                                        data_dir = fund_info_result.data[0].get('data_directory')
+                                    else:
+                                        # Fallback: construct data directory path
+                                        data_dir = f"trading_data/funds/{email_fund}"
+                                except Exception:
+                                    # Fallback: construct data directory path
+                                    data_dir = f"trading_data/funds/{email_fund}"
+                                
+                                # Create repository instance
+                                try:
+                                    repository = RepositoryFactory.create_dual_write_repository(data_dir, email_fund)
+                                except Exception:
+                                    # Fallback to Supabase-only repository
+                                    from data.repositories.supabase_repository import SupabaseRepository
+                                    repository = SupabaseRepository(email_fund)
+                                
+                                # Process trade entry using unified function
+                                # This will update portfolio positions immediately and clear caches
+                                processor = TradeProcessor(repository)
+                                success = processor.process_trade_entry(trade, clear_caches=True, trade_already_saved=True)
+                                
+                                if not success:
+                                    st.warning("⚠️ Trade saved but position update may have failed. Please check holdings.")
+                                
+                            except Exception as process_error:
+                                # Log error but don't fail the trade entry (trade is already saved)
+                                import logging
+                                logging.getLogger(__name__).error(f"Failed to update portfolio positions: {process_error}", exc_info=True)
+                                st.warning(f"⚠️ Trade saved but position update failed: {str(process_error)[:100]}. Please run manual rebuild.")
+                            
+                            # DETECT BACKDATING AND TRIGGER REBUILD (as fallback/additional safety)
                             is_backdated = trade.timestamp.date() < datetime.now().date()
                             
                             if is_backdated:
@@ -2717,21 +2980,19 @@ Time: December 19, 2025 09:30 EST""",
                                     job_id = trigger_background_rebuild(email_fund, trade.timestamp.date())
                                     
                                     if job_id:
-                                        st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                                         if had_running_job:
                                             st.info(f"📊 Previous rebuild cancelled. Restarting from {trade.timestamp.date()}... (Job ID: {job_id})")
                                         else:
                                             st.info(f"📊 Backdated trade detected - recalculating positions from {trade.timestamp.date()}... (Job ID: {job_id})")
                                     else:
-                                        st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                                         st.warning("⚠️ Could not trigger automatic rebuild. Please run manual rebuild.")
                                 
                                 except Exception as rebuild_error:
                                     import logging
                                     logging.getLogger(__name__).error(f"Failed to trigger rebuild: {rebuild_error}")
-                                    st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
-                            else:
-                                st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
+                            
+                            # Show success message
+                            st.toast(f"✅ Trade saved: {trade.action} {trade.shares} {trade.ticker} @ ${trade.price}", icon="✅")
                             
                             # Clear the parsed trade
                             st.session_state.parsed_trade = None

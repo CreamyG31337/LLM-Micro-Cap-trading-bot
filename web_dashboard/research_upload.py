@@ -70,6 +70,15 @@ def upload_research_files_to_server(
     Returns:
         True if successful, False otherwise
     """
+    # Ensure logger has a console handler if running from console app
+    if not logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(message)s')
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+        logger.setLevel(logging.INFO)
+    
     # Convert to Path if needed (avoid scoping issues)
     from pathlib import Path as PathLib
     if not isinstance(local_research_dir, PathLib):
@@ -176,6 +185,15 @@ def _upload_with_scp(
     """Upload using scp (fallback)."""
     # Import Path locally to avoid scoping issues
     from pathlib import Path as PathLib
+    
+    # Ensure logger has a console handler if running from console app
+    if not logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(message)s')
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+        logger.setLevel(logging.INFO)
     
     try:
         pdf_files = list(local_dir.rglob("*.pdf"))

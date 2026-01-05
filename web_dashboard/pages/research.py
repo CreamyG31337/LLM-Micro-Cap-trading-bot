@@ -495,7 +495,7 @@ with st.sidebar:
                                     target_folder = research_base / fund_folder
                                 else:
                                     st.error(f"⚠️ Invalid fund: {selected_fund}. Please check research_funds_config.json")
-                                    continue
+                                    st.stop()  # Stop execution on error
                             
                             # Create folder if it doesn't exist
                             target_folder.mkdir(parents=True, exist_ok=True)

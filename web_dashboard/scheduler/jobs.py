@@ -109,12 +109,9 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
     'benchmark_refresh': {
         'name': 'Refresh Benchmark Data',
         'description': 'Fetch and cache benchmark data (S&P 500, QQQ, Russell 2000, VTI) for chart performance',
-        'default_interval_minutes': 1440,  # Once per day
+        'default_interval_minutes': 30,  # Every 30 minutes during market hours
         'enabled_by_default': True,
-        'icon': '📊',
-        'cron_triggers': [
-            {'hour': 15, 'minute': 15, 'timezone': 'America/Los_Angeles'}  # 15:15 PST / 18:15 EST - after market close
-        ]
+        'icon': '📊'
     },
     'social_sentiment': {
         'name': 'Social Sentiment Tracking',
@@ -738,15 +735,33 @@ def register_default_jobs(scheduler) -> None:
         )
         logger.info("Registered job: seeking_alpha_symbol_scrape (daily at 2:00 AM EST)")
     
-    # Benchmark refresh job - daily after market close
+    # Benchmark refresh job - every 30 minutes during market hours (weekdays 9:30 AM - 4:00 PM EST)
     if AVAILABLE_JOBS['benchmark_refresh']['enabled_by_default']:
-        cron_config = AVAILABLE_JOBS['benchmark_refresh']['cron_triggers'][0]
+        # Run every 30 minutes during market hours on weekdays
+        # Market hours: 9:30 AM - 4:00 PM EST
+        # First run at market open (9:30 AM), then every 30 minutes until market close (4:00 PM)
         scheduler.add_job(
             benchmark_refresh_job,
             trigger=CronTrigger(
-                hour=cron_config['hour'],
-                minute=cron_config['minute'],
-                timezone=cron_config['timezone']
+                day_of_week='mon-fri',
+                hour='9',  # 9 AM
+                minute='30',  # 9:30 AM (market open)
+                timezone='America/New_York'
+            ),
+            id='benchmark_refresh_open',
+            name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data (Market Open)",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        # Then every 30 minutes from 10:00 AM to 4:00 PM
+        scheduler.add_job(
+            benchmark_refresh_job,
+            trigger=CronTrigger(
+                day_of_week='mon-fri',
+                hour='10-16',  # 10 AM to 4 PM EST
+                minute='0,30',  # Every 30 minutes
+                timezone='America/New_York'
             ),
             id='benchmark_refresh',
             name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data",
@@ -754,7 +769,7 @@ def register_default_jobs(scheduler) -> None:
             max_instances=1,
             coalesce=True
         )
-        logger.info(f"Registered job: benchmark_refresh (daily at {cron_config['hour']}:{cron_config['minute']:02d} {cron_config['timezone']})")
+        logger.info("Registered job: benchmark_refresh (weekdays 9:30 AM - 4:00 PM EST, every 30 min during market hours)")
     
     # Social sentiment job - every 60 minutes (1 hour)
     if AVAILABLE_JOBS['social_sentiment']['enabled_by_default']:

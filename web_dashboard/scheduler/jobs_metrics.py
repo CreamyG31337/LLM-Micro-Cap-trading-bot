@@ -143,6 +143,14 @@ def benchmark_refresh_job() -> None:
                 logger.error(f"Error fetching {name} ({ticker}): {e}")
                 benchmarks_failed += 1
         
+        # Clear cache to ensure fresh data is used in charts
+        try:
+            from cache_version import bump_cache_version
+            bump_cache_version()
+            logger.info("🔄 Cache version bumped - charts will use fresh benchmark data")
+        except Exception as cache_error:
+            logger.warning(f"⚠️  Failed to bump cache version: {cache_error}")
+        
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Updated {benchmarks_updated} benchmarks ({total_rows_cached} rows), {benchmarks_failed} failed"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)

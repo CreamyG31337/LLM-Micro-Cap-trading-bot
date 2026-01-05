@@ -716,18 +716,13 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         # Mark job as completed successfully
         mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms, message=message)
         
-        # Bump cache version to invalidate Streamlit cache immediately
+        # Clear cache to ensure fresh data is used in charts
         try:
-            import sys
-            from pathlib import Path
-            web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-            if web_dashboard_path not in sys.path:
-                sys.path.insert(0, web_dashboard_path)
             from cache_version import bump_cache_version
             bump_cache_version()
-            logger.info("Cache version bumped - Streamlit will show fresh data")
-        except Exception as e:
-            logger.warning(f"Failed to bump cache version: {e}")
+            logger.info("🔄 Cache version bumped - charts will use fresh portfolio data")
+        except Exception as cache_error:
+            logger.warning(f"⚠️  Failed to bump cache version: {cache_error}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)

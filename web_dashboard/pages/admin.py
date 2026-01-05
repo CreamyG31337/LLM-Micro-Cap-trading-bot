@@ -25,7 +25,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, is_admin, get_user_email
+from auth_utils import is_authenticated, is_admin, get_user_email, send_magic_link
 from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy
 from supabase_client import SupabaseClient
 from supabase import create_client
@@ -288,22 +288,55 @@ with tab2:
                     users_df = pd.DataFrame(get_cached_users())
                 
                 if not users_df.empty:
-                    # Display users table (hide user_id column)
+                    # Display users in compact table with inline actions
                     st.subheader("All Users")
-                    # Select only columns to display (exclude user_id)
-                    display_columns = ["email", "full_name", "funds"]
-                    users_display_df = users_df[[col for col in display_columns if col in users_df.columns]]
-                    display_dataframe_with_copy(
-                        users_display_df,
-                        label="All Users",
-                        key_suffix="all_users",
-                        use_container_width=True,
-                        column_config={
-                            "email": "Email",
-                            "full_name": "Full Name",
-                            "funds": st.column_config.ListColumn("Assigned Funds")
-                        }
-                    )
+                    
+                    # Compact table with actions
+                    for idx, row in users_df.iterrows():
+                        col_user, col_funds, col_actions = st.columns([3, 2, 1])
+                        
+                        with col_user:
+                            full_name = row.get('full_name', 'N/A')
+                            email = row.get('email', '')
+                            st.markdown(f"**{full_name}**")
+                            st.caption(email)
+                        
+                        with col_funds:
+                            funds_list = row.get('funds', [])
+                            if funds_list:
+                                funds_str = ", ".join(funds_list)
+                                # Truncate if too long
+                                if len(funds_str) > 50:
+                                    funds_str = funds_str[:47] + "..."
+                                st.caption(funds_str)
+                            else:
+                                st.caption("None")
+                        
+                        with col_actions:
+                            # Initialize session state for invite status
+                            invite_key = f"invite_sent_{email}"
+                            if invite_key not in st.session_state:
+                                st.session_state[invite_key] = False
+                            
+                            # Show invite button
+                            if st.button("📧 Invite", key=f"resend_invite_{idx}_{email}", use_container_width=True):
+                                try:
+                                    result = send_magic_link(email)
+                                    if result and result.get('success'):
+                                        st.session_state[invite_key] = True
+                                        st.toast(f"✅ Invite sent to {email}", icon="✅")
+                                        st.rerun()
+                                    else:
+                                        error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
+                                        st.error(f"Failed: {error_msg}")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                            
+                            # Show success indicator if invite was recently sent
+                            if st.session_state.get(invite_key, False):
+                                st.caption("✅ Sent")
+                        
+                        st.divider()
                     
                     # Delete user section
                     st.subheader("Delete User")
@@ -743,7 +776,6 @@ with tab2:
                             if has_email:
                                 if st.button("📧 Send Invite", key=f"invite_{idx}"):
                                     try:
-                                        from auth_utils import send_magic_link
                                         result = send_magic_link(row['email'])
                                         if result and result.get('success'):
                                             st.success(f"Invite sent to {row['email']}")

@@ -505,8 +505,9 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     """Create a stacked bar chart showing P&L by position (unrealized + dividends)
     
     Stacking logic:
-    - Positive unrealized P&L: Show as stacked bars (green unrealized + gold dividends)
-    - Negative unrealized P&L: Show as single bar with total (dividends just offset the loss)
+    - Positive total P&L with positive unrealized: Stacked bars (green unrealized + gold dividends)
+    - Positive total P&L with negative unrealized: Single green bar (dividends overcame loss)
+    - Negative total P&L: Single red bar
     
     Args:
         positions_df: DataFrame with position data including unrealized P&L
@@ -565,47 +566,64 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
         bottom = df.tail(20)
         df = pd.concat([top, bottom]).sort_values('total_pnl', ascending=False)
     
-    # Split data into two groups for smart visualization:
-    # 1. Positive unrealized P&L -> use stacked bars (makes visual sense)
-    # 2. Negative unrealized P&L -> use single bar with total (dividends just offset loss)
+    # Split data by TOTAL P&L (not unrealized):
+    # 1. Positive total P&L -> winners (green)
+    # 2. Negative total P&L -> losers (red)
     
-    df_positive = df[df[pnl_col] >= 0].copy()
-    df_negative = df[df[pnl_col] < 0].copy()
+    df_positive_total = df[df['total_pnl'] >= 0].copy()
+    df_negative_total = df[df['total_pnl'] < 0].copy()
     
     fig = go.Figure()
     
-    # For POSITIVE unrealized P&L: Show stacked bars (unrealized + dividends on top)
-    if not df_positive.empty:
-        # Unrealized P&L bar (green)
-        fig.add_trace(go.Bar(
-            name='Unrealized P&L',
-            x=df_positive['ticker'],
-            y=df_positive[pnl_col],
-            marker_color='#10b981',
-            hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{y:,.2f}<extra></extra>',
-            showlegend=True
-        ))
+    # For POSITIVE TOTAL P&L: Check if we can use stacked bars
+    if not df_positive_total.empty:
+        # Further split: positive unrealized (stackable) vs negative unrealized (not stackable)
+        df_stackable = df_positive_total[df_positive_total[pnl_col] >= 0]
+        df_non_stackable = df_positive_total[df_positive_total[pnl_col] < 0]
         
-        # Dividends bar (gold) - only if there are any dividends
-        if (df_positive['dividends'] > 0).any():
+        # Stackable: positive unrealized + dividends on top
+        if not df_stackable.empty:
             fig.add_trace(go.Bar(
-                name='Dividends (LTM)',
-                x=df_positive['ticker'],
-                y=df_positive['dividends'],
-                marker_color='#f59e0b',
-                hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<extra></extra>',
+                name='Unrealized P&L',
+                x=df_stackable['ticker'],
+                y=df_stackable[pnl_col],
+                marker_color='#10b981',
+                hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{y:,.2f}<extra></extra>',
+                showlegend=True
+            ))
+            
+            # Dividends bar (gold) - only if there are any dividends
+            if (df_stackable['dividends'] > 0).any():
+                fig.add_trace(go.Bar(
+                    name='Dividends (LTM)',
+                    x=df_stackable['ticker'],
+                    y=df_stackable['dividends'],
+                    marker_color='#f59e0b',
+                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<extra></extra>',
+                    showlegend=True
+                ))
+        
+        # Non-stackable: negative unrealized but positive total (dividends made it positive)
+        # Show as single green bar
+        if not df_non_stackable.empty:
+            fig.add_trace(go.Bar(
+                name='Total P&L (dividends offset loss)',
+                x=df_non_stackable['ticker'],
+                y=df_non_stackable['total_pnl'],
+                marker_color='#10b981',  # Green because total is positive
+                customdata=df_non_stackable[[pnl_col, 'dividends']],
+                hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{customdata[0]:,.2f}<br>Dividends: $%{customdata[1]:,.2f}<br>Total: $%{y:,.2f}<extra></extra>',
                 showlegend=True
             ))
     
-    # For NEGATIVE unrealized P&L: Show single bar with total (no stacking - confusing)
-    if not df_negative.empty:
-        # Single bar showing total P&L (red, includes dividend offset)
+    # For NEGATIVE TOTAL P&L: Show single red bar
+    if not df_negative_total.empty:
         fig.add_trace(go.Bar(
-            name='Total P&L (incl. dividends)',
-            x=df_negative['ticker'],
-            y=df_negative['total_pnl'],
+            name='Total P&L (loss)',
+            x=df_negative_total['ticker'],
+            y=df_negative_total['total_pnl'],
             marker_color='#ef4444',
-            customdata=df_negative[[pnl_col, 'dividends']],
+            customdata=df_negative_total[[pnl_col, 'dividends']],
             hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{customdata[0]:,.2f}<br>Dividends: $%{customdata[1]:,.2f}<br>Total: $%{y:,.2f}<extra></extra>',
             showlegend=True
         ))

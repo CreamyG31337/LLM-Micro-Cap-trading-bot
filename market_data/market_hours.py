@@ -10,9 +10,16 @@ storage and future database backends.
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Any
+import sys
+from pathlib import Path
 
 import pandas as pd
 import pytz
+
+# Add project root to path for utils imports (needed when called from web_dashboard)
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from config.settings import Settings
 from display.console_output import _safe_emoji

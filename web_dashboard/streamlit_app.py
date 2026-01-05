@@ -1995,11 +1995,78 @@ def main():
                 fig = create_pnl_chart(positions_df, fund_filter, display_currency=display_currency, dividend_data=dividend_data)
                 st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             
+            
             # Currency exposure chart
             if 'currency' in positions_df.columns and 'market_value' in positions_df.columns:
                 st.markdown("#### Currency Exposure")
-                fig = create_currency_exposure_chart(positions_df, fund_filter)
-                st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+                
+                # Show current USD/CAD exchange rate and historical chart
+                try:
+                    from datetime import timedelta
+                    client = get_supabase_client()
+                    
+                    if client:
+                        # Get latest rate
+                        latest_rate = client.get_latest_exchange_rate('USD', 'CAD')
+                        
+                        # Get 90-day historical rates
+                        end_date = datetime.now(timezone.utc)
+                        start_date = end_date - timedelta(days=90)
+                        historical_rates = client.get_exchange_rates(start_date, end_date, 'USD', 'CAD')
+                        
+                        # Display in two columns: rate metric + exposure pie chart
+                        col1, col2 = st.columns([1, 2])
+                        
+                        with col1:
+                            if latest_rate:
+                                st.metric("USD/CAD Rate", f"{float(latest_rate):.4f}", help="Current exchange rate: 1 USD = X CAD")
+                            
+                            # Show historical chart
+                            if historical_rates:
+                                import plotly.graph_objects as go
+                                
+                                # Prepare data for chart
+                                dates = [pd.to_datetime(r['timestamp']) for r in historical_rates]
+                                rates = [float(r['rate']) for r in historical_rates]
+                                
+                                fig_rate = go.Figure()
+                                fig_rate.add_trace(go.Scatter(
+                                    x=dates,
+                                    y=rates,
+                                    mode='lines',
+                                    name='USD/CAD',
+                                    line=dict(color='#3b82f6', width=2),
+                                    hovertemplate='%{x|%b %d}<br>%{y:.4f}<extra></extra>'
+                                ))
+                                
+                                fig_rate.update_layout(
+                                    title='USD/CAD Rate (90 Days)',
+                                    xaxis_title='Date',
+                                    yaxis_title='Rate',
+                                    template='plotly_white',
+                                    height=300,
+                                    margin=dict(l=10, r=10, t=40, b=10),
+                                    showlegend=False
+                                )
+                                
+                                st.plotly_chart(fig_rate, use_container_width=True, key="usd_cad_rate_chart")
+                        
+                        with col2:
+                            # Show currency exposure pie chart
+                            fig = create_currency_exposure_chart(positions_df, fund_filter)
+                            st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+                    else:
+                        # Fallback if client not available
+                        fig = create_currency_exposure_chart(positions_df, fund_filter)
+                        st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
+                        
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not load exchange rate info: {e}")
+                    # Fallback to just showing currency exposure chart
+                    fig = create_currency_exposure_chart(positions_df, fund_filter)
+                    st.plotly_chart(fig, use_container_width=True, key="currency_exposure_chart")
             
             # Investment Thesis Pillars (near sectors chart)
             if fund_filter:

@@ -304,9 +304,6 @@ def create_portfolio_value_chart(
     df = portfolio_df.sort_values('date').copy()
     df['date'] = pd.to_datetime(df['date'])
     
-    # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
-    df = _adjust_to_market_close(df, 'date')
-    
     # Create the chart
     fig = go.Figure()
     
@@ -363,9 +360,9 @@ def create_portfolio_value_chart(
         start_date = df['date'].min()
         end_date = df['date'].max()
         
-        # Normalize to date-only (midnight) for comparison with benchmark data
-        # Benchmark data from Yahoo Finance uses midnight timestamps, while portfolio
-        # dates are at 13:00 (market close). Normalizing ensures same-day data is included.
+        # Both portfolio and benchmark data use midnight timestamps for consistency
+        # Portfolio data normalized to midnight in streamlit_utils.py line 925
+        # Benchmark data stored as DATE type (no time), becomes midnight when parsed
         start_date_normalized = pd.Timestamp(start_date).normalize()  # Set to 00:00:00
         end_date_normalized = pd.Timestamp(end_date).normalize() + timedelta(days=1)  # Include full end date
         
@@ -380,13 +377,12 @@ def create_portfolio_value_chart(
             logger.info(f"⏱️ create_portfolio_value_chart - Fetch benchmark {bench_key}: {bench_fetch_time:.2f}s")
             
             if bench_data is not None and not bench_data.empty:
-                # Normalize bench_data dates to midnight for comparison
-                # Handle both timezone-aware and timezone-naive datetimes safely
+                # Convert bench_data dates to datetime, preserving actual timestamps
+                # Don't normalize - use actual time from database to match portfolio data
                 bench_data['Date'] = pd.to_datetime(bench_data['Date'])
-                # Remove timezone if present, then normalize to midnight
+                # Remove timezone if present for consistency
                 if bench_data['Date'].dt.tz is not None:
                     bench_data['Date'] = bench_data['Date'].dt.tz_convert(None)
-                bench_data['Date'] = bench_data['Date'].dt.normalize()
                 
                 # Filter out any NaT values before date range filtering
                 bench_data = bench_data[bench_data['Date'].notna()].copy()

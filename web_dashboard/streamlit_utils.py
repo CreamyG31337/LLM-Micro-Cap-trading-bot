@@ -920,8 +920,9 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
         df = pd.DataFrame(all_rows)
         logger.debug(f"Loaded {len(df)} total portfolio position rows from Supabase (paginated)")
         
-        # Normalize to date-only (midnight) for consistent charting with benchmarks
-        df['date'] = pd.to_datetime(df['date']).dt.normalize()
+        # Normalize to noon (12:00) for consistent charting with benchmarks
+        # Noon is more sensible than midnight for market data
+        df['date'] = pd.to_datetime(df['date']).dt.normalize() + pd.Timedelta(hours=12)
         
         # Log date range for debugging
         if not df.empty:

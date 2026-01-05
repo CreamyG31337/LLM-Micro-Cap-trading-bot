@@ -1970,11 +1970,29 @@ def main():
         st.markdown("---")
         st.markdown("### Current Positions")
         
+        # Fetch dividend data once for use in both P&L chart and Dividend History section
+        dividend_data = []
+        if fund_filter:
+            try:
+                # Import utility locally to avoid circular imports
+                try:
+                    from utils.db_utils import fetch_dividend_log
+                except ImportError:
+                    from web_dashboard.utils.db_utils import fetch_dividend_log
+                
+                # Fetch dividend data (filtered by selected fund, last 365 days)
+                dividend_data = fetch_dividend_log(days_lookback=365, fund=fund_filter)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Could not fetch dividend data: {e}")
+        
         if not positions_df.empty:
             # P&L chart
             if 'pnl' in positions_df.columns or 'unrealized_pnl' in positions_df.columns:
                 st.markdown("#### P&L by Position")
-                fig = create_pnl_chart(positions_df, fund_filter, display_currency=display_currency)
+                st.info("💡 **Winning positions** show stacked bars (green unrealized + gold dividends). **Losing positions** show single red bars (total includes dividend offset).", icon="ℹ️")
+                fig = create_pnl_chart(positions_df, fund_filter, display_currency=display_currency, dividend_data=dividend_data)
                 st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             
             # Currency exposure chart
@@ -2721,15 +2739,7 @@ def main():
         st.markdown("### 🏦 Dividend History")
 
         try:
-            # Import utility locally to avoid circular imports
-            try:
-                from utils.db_utils import fetch_dividend_log
-            except ImportError:
-                # Fallback: if utils resolves to root utils (which has no db_utils), try full path
-                from web_dashboard.utils.db_utils import fetch_dividend_log
-            
-            # Fetch dividend data (filtered by selected fund)
-            dividend_data = fetch_dividend_log(days_lookback=365, fund=fund_filter)
+            # dividend_data already fetched earlier to avoid duplicate DB calls
             
             if dividend_data:
                 # Convert to DataFrame

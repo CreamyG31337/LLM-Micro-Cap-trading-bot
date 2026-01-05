@@ -17,13 +17,41 @@ import pandas as pd
 import pytz
 
 # Add project root to path for utils imports (needed when called from web_dashboard)
+# Do this BEFORE any other imports to avoid race conditions
 project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from config.settings import Settings
 from display.console_output import _safe_emoji
-from utils.market_holidays import MarketHolidays
+
+# Defensive import of market_holidays with explicit path setup
+try:
+    from utils.market_holidays import MarketHolidays
+except ModuleNotFoundError as e:
+    # Race condition: path wasn't set up in time
+    # Force add to path and retry
+    import os
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    # Also try adding utils directly
+    utils_path = os.path.join(project_root, 'utils')
+    if os.path.exists(utils_path) and utils_path not in sys.path:
+        sys.path.insert(0, utils_path)
+    # Retry import
+    try:
+        from utils.market_holidays import MarketHolidays
+    except ModuleNotFoundError:
+        # Last resort: try importing from parent directory
+        import importlib.util
+        utils_market_holidays_path = os.path.join(project_root, 'utils', 'market_holidays.py')
+        if os.path.exists(utils_market_holidays_path):
+            spec = importlib.util.spec_from_file_location("market_holidays", utils_market_holidays_path)
+            market_holidays_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(market_holidays_module)
+            MarketHolidays = market_holidays_module.MarketHolidays
+        else:
+            raise ImportError(f"Cannot find market_holidays module. Searched: {utils_market_holidays_path}, sys.path: {sys.path}")
 
 logger = logging.getLogger(__name__)
 

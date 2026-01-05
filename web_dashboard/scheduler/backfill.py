@@ -46,9 +46,28 @@ def startup_backfill_check() -> None:
             sys.path.insert(0, web_dashboard_path)
         
         from supabase_client import SupabaseClient
-        from utils.market_holidays import MarketHolidays
-        from scheduler.jobs import update_portfolio_prices_job
-        from utils.job_tracking import is_job_completed
+        
+        # Defensive imports with retry logic
+        try:
+            from utils.market_holidays import MarketHolidays
+        except ModuleNotFoundError:
+            if project_root_str not in sys.path:
+                sys.path.insert(0, project_root_str)
+            from utils.market_holidays import MarketHolidays
+        
+        try:
+            from scheduler.jobs import update_portfolio_prices_job
+        except ModuleNotFoundError:
+            if web_dashboard_path not in sys.path:
+                sys.path.insert(0, web_dashboard_path)
+            from scheduler.jobs import update_portfolio_prices_job
+        
+        try:
+            from utils.job_tracking import is_job_completed
+        except ModuleNotFoundError:
+            if project_root_str not in sys.path:
+                sys.path.insert(0, project_root_str)
+            from utils.job_tracking import is_job_completed
         
         # Use service role key to bypass RLS (background job needs full access)
         client = SupabaseClient(use_service_role=True)
@@ -147,8 +166,14 @@ def startup_backfill_check() -> None:
         missing_days = []
         current = checkpoint_date + timedelta(days=1)  # Start day after checkpoint
         
-        # Import market hours for market open check
-        from market_data.market_hours import MarketHours
+        # Import market hours for market open check (defensive)
+        try:
+            from market_data.market_hours import MarketHours
+        except ModuleNotFoundError:
+            if project_root_str not in sys.path:
+                sys.path.insert(0, project_root_str)
+            from market_data.market_hours import MarketHours
+        
         market_hours = MarketHours()
         
         while current <= today:

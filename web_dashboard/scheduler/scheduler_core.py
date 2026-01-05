@@ -90,7 +90,18 @@ def cleanup_stale_running_jobs() -> int:
     """
     try:
         from supabase_client import SupabaseClient
-        from utils.job_tracking import add_to_retry_queue, is_calculation_job, mark_job_failed
+        
+        # Defensive import with retry logic
+        try:
+            from utils.job_tracking import add_to_retry_queue, is_calculation_job, mark_job_failed
+        except ModuleNotFoundError:
+            # Race condition: path wasn't set up in time
+            # Force add project root to path and retry
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            # Retry import
+            from utils.job_tracking import add_to_retry_queue, is_calculation_job, mark_job_failed
+        
         from datetime import datetime
         
         client = SupabaseClient(use_service_role=True)
@@ -177,8 +188,15 @@ def start_scheduler() -> bool:
     # Clean up any stale 'running' jobs from previous container run
     cleanup_stale_running_jobs()
     
-    # Register default jobs
-    from scheduler.jobs import register_default_jobs
+    # Register default jobs (defensive import)
+    try:
+        from scheduler.jobs import register_default_jobs
+    except ModuleNotFoundError:
+        # Path issue - retry with explicit path setup
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from scheduler.jobs import register_default_jobs
+    
     register_default_jobs(scheduler)
     
     # Start scheduler
@@ -195,8 +213,14 @@ def start_scheduler() -> bool:
     logger.info("="*50)
     
     # Run backfill check once on startup (catches downtime/reboots)
-    # This runs asynchronously to not block scheduler startup
-    from scheduler.backfill import startup_backfill_check
+    # This runs asynchronously to not block scheduler startup (defensive import)
+    try:
+        from scheduler.backfill import startup_backfill_check
+    except ModuleNotFoundError:
+        # Path issue - retry with explicit path setup
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from scheduler.backfill import startup_backfill_check
     scheduler.add_job(
         startup_backfill_check,
         trigger='date',  # Run once immediately
@@ -231,7 +255,15 @@ def check_overdue_jobs() -> None:
     logger.info("🔍 Checking for overdue jobs (Smart Startup)...")
     
     try:
-        from scheduler.jobs import AVAILABLE_JOBS
+        # Defensive import
+        try:
+            from scheduler.jobs import AVAILABLE_JOBS
+        except ModuleNotFoundError:
+            # Path issue - retry with explicit path setup
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            from scheduler.jobs import AVAILABLE_JOBS
+        
         from supabase_client import SupabaseClient
         
         client = SupabaseClient(use_service_role=True)

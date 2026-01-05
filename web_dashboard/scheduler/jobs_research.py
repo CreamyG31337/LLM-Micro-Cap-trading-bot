@@ -1497,15 +1497,18 @@ def process_research_reports_job() -> None:
         failed_count = 0
         
         # Process each PDF file
-        for pdf_file in pdf_files:
+        total_files = len(pdf_files)
+        logger.info(f"Found {total_files} PDF file(s) to process")
+        
+        for idx, pdf_file in enumerate(pdf_files, 1):
             try:
                 # Check if already processed
                 if check_file_already_processed(pdf_file, research_repo):
-                    logger.debug(f"Skipping already processed: {pdf_file.name}")
+                    logger.info(f"[{idx}/{total_files}] ⏭️  Skipping already processed: {pdf_file.name}")
                     skipped_count += 1
                     continue
                 
-                logger.info(f"Processing: {pdf_file}")
+                logger.info(f"[{idx}/{total_files}] 📄 Processing: {pdf_file.name}")
                 
                 # Add date prefix if missing
                 pdf_file = add_date_prefix_to_filename(pdf_file)
@@ -1520,17 +1523,19 @@ def process_research_reports_job() -> None:
                 report_info = determine_report_type(folder_path)
                 
                 # Extract text from PDF
-                logger.info(f"  Extracting text from PDF...")
+                logger.info(f"  📖 Extracting text from PDF...")
                 with open(pdf_file, 'rb') as f:
                     text_content = parse_pdf(f)
                 
                 if not text_content or len(text_content.strip()) < 50:
-                    logger.warning(f"  No text extracted from {pdf_file.name}")
+                    logger.warning(f"  ⚠️  No text extracted from {pdf_file.name} (file may be empty or corrupted)")
                     failed_count += 1
                     continue
                 
+                logger.info(f"  ✅ Extracted {len(text_content):,} characters")
+                
                 # Generate embedding and summary
-                logger.info(f"  Generating AI summary and embedding...")
+                logger.info(f"  🤖 Generating AI summary and embedding...")
                 summary_result = {}
                 
                 try:
@@ -1564,7 +1569,9 @@ def process_research_reports_job() -> None:
                         logger.debug(f"Added folder ticker to extracted list: {folder_ticker}")
                 
                 if extracted_tickers:
-                    logger.info(f"  Extracted {len(extracted_tickers)} ticker(s): {extracted_tickers}")
+                    logger.info(f"  📊 Extracted {len(extracted_tickers)} ticker(s): {', '.join(extracted_tickers)}")
+                else:
+                    logger.info(f"  ℹ️  No tickers extracted from content")
                 
                 # Prepare article data
                 relative_path = get_relative_path(pdf_file)
@@ -1573,18 +1580,19 @@ def process_research_reports_job() -> None:
                 fund = report_info.get('fund')
                 
                 # Save to database
+                logger.info(f"  💾 Saving to database...")
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,
                     sector=None,
                     article_type="research_report",
                     title=title,
                     url=relative_path,  # Store file path as URL
-                    summary=summary_result.get('summary', "No summary available."),
+                    summary=summary_result.get('summary', "No summary available.") if isinstance(summary_result, dict) else (summary_result if isinstance(summary_result, str) else "No summary available."),
                     content=text_content,
                     source="Research Report",
                     published_at=published_at,
                     relevance_score=0.9,  # Research reports are highly relevant
-                    embedding=summary_result.get('embedding'),
+                    embedding=summary_result.get('embedding') if isinstance(summary_result, dict) else None,
                     fund=fund,
                     claims=summary_result.get("claims") if isinstance(summary_result, dict) else None,
                     fact_check=summary_result.get("fact_check") if isinstance(summary_result, dict) else None,
@@ -1595,10 +1603,10 @@ def process_research_reports_job() -> None:
                 )
                 
                 if article_id:
-                    logger.info(f"  ✅ Saved: {title}")
+                    logger.info(f"  ✅ Successfully saved: {title[:60]}...")
                     processed_count += 1
                 else:
-                    logger.warning(f"  ⚠️ Failed to save: {title}")
+                    logger.warning(f"  ⚠️  Failed to save: {title[:60]}...")
                     failed_count += 1
                     
             except Exception as e:
@@ -1616,7 +1624,17 @@ def process_research_reports_job() -> None:
                 if is_running_locally():
                     server_config = get_server_config()
                     if server_config:
-                        logger.info("Uploading processed PDFs to server...")
+                        logger.info("")
+                        logger.info("=" * 60)
+                        logger.info("📤 UPLOADING PDFs TO SERVER")
+                        logger.info("=" * 60)
+                        logger.info(f"Server: {server_config['user']}@{server_config['host']}")
+                        logger.info(f"Path: {server_config['path']}")
+                        if server_config.get('ssh_key'):
+                            logger.info(f"SSH Key: {server_config['ssh_key']}")
+                        else:
+                            logger.info("SSH Key: Using default keys or password")
+                        logger.info("")
                         upload_success = upload_research_files_to_server(
                             local_research_dir=RESEARCH_BASE_DIR,
                             server_host=server_config["host"],
@@ -1624,10 +1642,11 @@ def process_research_reports_job() -> None:
                             server_path=server_config["path"],
                             ssh_key_path=server_config.get("ssh_key")
                         )
+                        logger.info("")
                         if upload_success:
                             logger.info("✅ PDFs uploaded to server successfully")
                         else:
-                            logger.warning("⚠️ Failed to upload PDFs to server (processing still succeeded)")
+                            logger.warning("⚠️  Failed to upload PDFs to server (processing still succeeded)")
                     else:
                         logger.debug("Server config not found - skipping upload (set RESEARCH_SERVER_HOST, RESEARCH_SERVER_USER env vars)")
             except ImportError:

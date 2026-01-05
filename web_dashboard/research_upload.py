@@ -8,6 +8,7 @@ Handles uploading PDF files to server when running locally.
 
 import logging
 import os
+import platform
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -92,7 +93,12 @@ def upload_research_files_to_server(
     if rsync_available:
         return _upload_with_rsync(local_research_dir, server_host, server_user, server_path, ssh_key_path)
     else:
-        logger.warning("rsync not available, falling back to scp")
+        # On Windows, rsync is typically not installed by default
+        # scp works fine and is included with OpenSSH on Windows
+        if platform.system() == "Windows":
+            logger.info("ℹ️  rsync not available (using scp instead)")
+        else:
+            logger.info("ℹ️  rsync not available, using scp instead")
         return _upload_with_scp(local_research_dir, server_host, server_user, server_path, ssh_key_path)
 
 
@@ -115,6 +121,7 @@ def _upload_with_rsync(
     """Upload using rsync."""
     # Import Path locally to avoid scoping issues
     from pathlib import Path as PathLib
+    import os
     
     try:
         # Build rsync command
@@ -129,9 +136,19 @@ def _upload_with_rsync(
             f"{server_user}@{server_host}:{server_path}/"
         ]
         
-        if ssh_key_path and PathLib(ssh_key_path).exists():
-            cmd.insert(1, "-e")
-            cmd.insert(2, f"ssh -i {ssh_key_path}")
+        # Handle SSH key path - normalize Windows paths
+        if ssh_key_path:
+            # Convert to Path object to normalize and check existence
+            key_path = PathLib(ssh_key_path).expanduser().resolve()
+            if key_path.exists():
+                # Convert Windows path to forward slashes for SSH command
+                # On Windows, SSH/rsync can handle forward slashes even for local paths
+                key_path_str = str(key_path).replace('\\', '/')
+                cmd.insert(1, "-e")
+                cmd.insert(2, f"ssh -i {key_path_str}")
+                logger.info(f"Using SSH key: {key_path_str}")
+            else:
+                logger.warning(f"SSH key not found at: {key_path}, will use default SSH keys or prompt for password")
         
         logger.info(f"Uploading files with rsync to {server_user}@{server_host}:{server_path}...")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -141,7 +158,8 @@ def _upload_with_rsync(
         return True
         
     except subprocess.CalledProcessError as e:
-        logger.error(f"rsync failed: {e.stderr if e.stderr else 'Unknown error'}")
+        error_msg = e.stderr if e.stderr else (e.stdout if e.stdout else 'Unknown error')
+        logger.error(f"rsync failed: {error_msg}")
         return False
     except Exception as e:
         logger.error(f"Error during rsync upload: {e}")
@@ -162,42 +180,95 @@ def _upload_with_scp(
     try:
         pdf_files = list(local_dir.rglob("*.pdf"))
         
-        for pdf_file in pdf_files:
+        # Handle SSH key path - normalize Windows paths
+        key_path_str = None
+        if ssh_key_path:
+            key_path = PathLib(ssh_key_path).expanduser().resolve()
+            if key_path.exists():
+                # Convert Windows path to forward slashes for SSH (works on both Windows and Unix)
+                key_path_str = str(key_path).replace('\\', '/')
+                logger.info(f"Using SSH key: {key_path_str}")
+            else:
+                logger.warning(f"SSH key not found at: {key_path}, will use default SSH keys or prompt for password")
+        
+        logger.info(f"Found {len(pdf_files)} PDF file(s) to upload via scp")
+        logger.info(f"Destination: {server_user}@{server_host}:{server_path}")
+        logger.info("")
+        
+        for idx, pdf_file in enumerate(pdf_files, 1):
             # Get relative path to preserve folder structure
             rel_path = pdf_file.relative_to(local_dir)
-            remote_path = f"{server_path}/{rel_path}"
-            remote_dir = str(PathLib(remote_path).parent)
+            # Convert Windows path separators to forward slashes for remote path (Unix server)
+            rel_path_str = str(rel_path).replace('\\', '/')
+            remote_path = f"{server_path}/{rel_path_str}"
+            # Remote directory path must also use forward slashes (Unix server)
+            remote_dir = remote_path.rsplit('/', 1)[0] if '/' in remote_path else server_path
             
             # Build scp command
             cmd = ["scp"]
             
-            if ssh_key_path and PathLib(ssh_key_path).exists():
-                cmd.extend(["-i", ssh_key_path])
+            if key_path_str:
+                cmd.extend(["-i", key_path_str])
             
             cmd.extend([
                 str(pdf_file),
                 f"{server_user}@{server_host}:{remote_path}"
             ])
             
-            # Create remote directory first
+            # Create remote directory first (remote_dir already uses forward slashes)
+            # Ensure remote_dir uses forward slashes (Unix server path)
+            remote_dir_clean = remote_dir.replace('\\', '/')
+            
             ssh_cmd = ["ssh"]
-            if ssh_key_path and PathLib(ssh_key_path).exists():
-                ssh_cmd.extend(["-i", ssh_key_path])
+            if key_path_str:
+                ssh_cmd.extend(["-i", key_path_str])
             ssh_cmd.extend([
                 f"{server_user}@{server_host}",
-                f"mkdir -p {remote_dir}"
+                f"mkdir -p '{remote_dir_clean}'"  # Quote to handle any special characters
             ])
             
-            logger.info(f"Uploading {pdf_file.name}...")
-            subprocess.run(ssh_cmd, check=True, capture_output=True)
-            subprocess.run(cmd, check=True, capture_output=True)
-            logger.info(f"✅ Uploaded: {pdf_file.name}")
+            logger.info(f"[{idx}/{len(pdf_files)}] 📤 Uploading {pdf_file.name}...")
+            logger.info(f"    → {remote_path}")
+            try:
+                # Create directory first
+                logger.debug(f"  Creating remote directory: {remote_dir_clean}")
+                mkdir_result = subprocess.run(ssh_cmd, check=True, capture_output=True, text=True, timeout=30)
+                if mkdir_result.stderr and mkdir_result.stderr.strip():
+                    logger.debug(f"  mkdir stderr: {mkdir_result.stderr}")
+                
+                # Upload file with progress indication
+                logger.info(f"    ⏳ Transferring...")
+                scp_result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
+                logger.info(f"    ✅ Upload complete")
+            except subprocess.TimeoutExpired:
+                logger.error(f"  ❌ Timeout uploading {pdf_file.name} (exceeded 5 minutes)")
+                return False
+            except subprocess.CalledProcessError as e:
+                # Extract meaningful error information
+                error_detail = ""
+                if e.stderr:
+                    error_detail = e.stderr.strip()
+                elif e.stdout:
+                    error_detail = e.stdout.strip()
+                else:
+                    error_detail = f"Exit code {e.returncode}"
+                
+                logger.error(f"  ❌ Failed to upload {pdf_file.name}")
+                logger.error(f"     Remote path: {remote_path}")
+                if "ssh" in str(e.cmd[0] if e.cmd else ""):
+                    logger.error(f"     Failed at: Creating remote directory")
+                    logger.error(f"     Directory: {remote_dir_clean}")
+                else:
+                    logger.error(f"     Failed at: File upload")
+                logger.error(f"     Error: {error_detail[:300]}")  # Limit error message length
+                return False
         
-        logger.info("✅ All files uploaded successfully")
+        logger.info(f"✅ All {len(pdf_files)} file(s) uploaded successfully")
         return True
         
     except subprocess.CalledProcessError as e:
-        logger.error(f"scp failed: {e}")
+        error_msg = e.stderr if e.stderr else (e.stdout if e.stdout else str(e))
+        logger.error(f"scp failed: {error_msg}")
         return False
     except Exception as e:
         logger.error(f"Error during scp upload: {e}")
@@ -213,16 +284,40 @@ def get_server_config() -> Optional[dict]:
     """
     host = os.environ.get("RESEARCH_SERVER_HOST")
     user = os.environ.get("RESEARCH_SERVER_USER")
-    path = os.environ.get("RESEARCH_SERVER_PATH", "/home/lance/ai-trading/Research")
+    # Default to ai-trading-www/research to match web server path
+    path = os.environ.get("RESEARCH_SERVER_PATH", "/home/lance/ai-trading-www/research")
     key = os.environ.get("RESEARCH_SSH_KEY_PATH")
     
     if not host or not user:
+        logger.debug("Server config not found: RESEARCH_SERVER_HOST or RESEARCH_SERVER_USER not set")
         return None
+    
+    # Normalize SSH key path if provided
+    normalized_key = None
+    if key:
+        from pathlib import Path as PathLib
+        try:
+            # Expand user home directory (~) and resolve to absolute path
+            # Handle Windows paths (backslashes) properly
+            key_path = PathLib(key).expanduser().resolve()
+            if key_path.exists():
+                normalized_key = str(key_path)
+                logger.info(f"✅ SSH key found: {normalized_key}")
+            else:
+                logger.warning(f"⚠️  SSH key path not found: {key_path}")
+                logger.warning(f"   Original path from env: {key}")
+                logger.warning(f"   Will try to use default SSH keys or password authentication")
+        except Exception as e:
+            logger.warning(f"⚠️  Error resolving SSH key path '{key}': {e}")
+            logger.warning(f"   Will try to use default SSH keys or password authentication")
+    else:
+        logger.info("ℹ️  No SSH key specified (RESEARCH_SSH_KEY_PATH not set)")
+        logger.info("   Will use default SSH keys or password authentication")
     
     return {
         "host": host,
         "user": user,
         "path": path,
-        "ssh_key": key
+        "ssh_key": normalized_key if normalized_key else key  # Return original if normalization failed
     }
 

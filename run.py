@@ -1302,6 +1302,14 @@ def main() -> None:
                 if str(PROJECT_ROOT) not in sys.path:
                     sys.path.insert(0, str(PROJECT_ROOT))
                 
+                # Load environment variables (needed for server upload config)
+                try:
+                    from dotenv import load_dotenv
+                    load_dotenv()  # Load from root .env
+                    load_dotenv(Path("web_dashboard/.env"))  # Also try web_dashboard/.env
+                except ImportError:
+                    pass  # dotenv not available, will use system env vars
+                
                 # Import with explicit error handling
                 try:
                     from web_dashboard.scheduler.jobs_research import process_research_reports_job

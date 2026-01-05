@@ -340,10 +340,7 @@ def process_retry_queue() -> None:
                 
             elif job_name == 'performance_metrics':
                 from scheduler.jobs_metrics import populate_performance_metrics_job
-                # Note: populate_performance_metrics_job doesn't take target_date
-                # It processes yesterday's data. For retry, we'd need to modify it
-                # or create a version that accepts target_date. For now, just call it.
-                populate_performance_metrics_job()
+                populate_performance_metrics_job(target_date=target_date)
                 success = True
                 
             elif job_name == 'dividend_processing':

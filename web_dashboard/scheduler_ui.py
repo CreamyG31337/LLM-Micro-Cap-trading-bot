@@ -10,7 +10,7 @@ Add to your Streamlit app with:
 """
 
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 
@@ -181,7 +181,7 @@ def render_scheduler_admin():
                 status_badge = "✅ IDLE"
                 status_color = "green"
             
-            with st.expander(f"**{job['name']}** - {status_badge}", expanded=True):
+            with st.expander(f"{job['name']} - {status_badge}", expanded=True):
                 # Show running status prominently
                 if job.get('is_running'):
                     running_since = job.get('running_since')
@@ -220,93 +220,151 @@ def render_scheduler_admin():
                     # Show parameters editor in expander
                     with st.expander("⚙️ Edit Parameters", expanded=False):
                         if params:
-                            for param_name, param_info in params.items():
-                                label = param_name.replace('_', ' ').title()
-                                help_text = param_info.get('description', '')
-                                default_val = param_info.get('default')
-                                param_type = param_info.get('type', 'text')
-                                optional = param_info.get('optional', False)
+                            # Special handling for performance_metrics job with date range support
+                            if job['id'] == 'performance_metrics_populate' and 'use_date_range' in params:
+                                # Show use_date_range checkbox first
+                                use_range_key = f"param_{job['id']}_use_date_range"
+                                use_date_range = st.checkbox(
+                                    "Use Date Range",
+                                    value=params['use_date_range'].get('default', False),
+                                    help=params['use_date_range'].get('description', ''),
+                                    key=use_range_key
+                                )
                                 
-                                key = f"param_{job['id']}_{param_name}"
-                                
-                                if param_type == 'date':
-                                    # Date picker for date parameters
-                                    if default_val is None:
-                                        default_date = datetime.now().date()
-                                    elif isinstance(default_val, str):
-                                        from datetime import datetime as dt
-                                        try:
-                                            default_date = dt.fromisoformat(default_val).date()
-                                        except (ValueError, AttributeError):
-                                            default_date = datetime.now().date()
-                                    elif isinstance(default_val, date):
-                                        default_date = default_val
-                                    else:
-                                        default_date = datetime.now().date()
+                                if use_date_range:
+                                    # Show date range pickers
+                                    from_date_key = f"param_{job['id']}_from_date"
+                                    to_date_key = f"param_{job['id']}_to_date"
                                     
-                                    selected_date = st.date_input(
-                                        label, 
-                                        value=default_date, 
-                                        help=help_text, 
-                                        key=key
-                                    )
-                                    # For optional date params with None default, only include if user changed from today
-                                    if optional and default_val is None:
-                                        if selected_date != datetime.now().date():
-                                            job_params[param_name] = selected_date
-                                    else:
-                                        job_params[param_name] = selected_date
-                                elif param_type == 'number':
-                                    # Number input
-                                    if isinstance(default_val, int):
-                                        input_val = st.number_input(
-                                            label, 
-                                            value=default_val, 
-                                            step=1, 
-                                            help=help_text, 
-                                            key=key
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        from_date = st.date_input(
+                                            "From Date",
+                                            value=datetime.now().date() - timedelta(days=7),
+                                            help=params['from_date'].get('description', ''),
+                                            key=from_date_key
                                         )
-                                    else:
-                                        input_val = st.number_input(
-                                            label, 
-                                            value=default_val if default_val is not None else 0.0, 
-                                            help=help_text, 
-                                            key=key
+                                    with col2:
+                                        to_date = st.date_input(
+                                            "To Date",
+                                            value=datetime.now().date(),
+                                            help=params['to_date'].get('description', ''),
+                                            key=to_date_key
                                         )
-                                    # For optional params, only include if different from default
-                                    if optional and default_val is not None:
-                                        if input_val != default_val:
-                                            job_params[param_name] = input_val
-                                    else:
-                                        job_params[param_name] = input_val
-                                elif param_type == 'boolean':
-                                    # Checkbox for boolean parameters
-                                    input_val = st.checkbox(
-                                        label, 
-                                        value=default_val if default_val is not None else False, 
-                                        help=help_text, 
-                                        key=key
-                                    )
-                                    # For optional boolean params, only include if different from default
-                                    if optional and default_val is not None:
-                                        if input_val != default_val:
-                                            job_params[param_name] = input_val
-                                    else:
-                                        job_params[param_name] = input_val
+                                    
+                                    if from_date and to_date:
+                                        days_in_range = (to_date - from_date).days + 1
+                                        if days_in_range > 30:
+                                            st.warning(f"⚠️ Large date range: {days_in_range} days. This may take a while to process.")
+                                        elif days_in_range > 0:
+                                            st.info(f"Will process {days_in_range} day(s)")
+                                    
+                                    if use_date_range:
+                                        job_params['use_date_range'] = True
+                                        if from_date:
+                                            job_params['from_date'] = from_date
+                                        if to_date:
+                                            job_params['to_date'] = to_date
                                 else:
-                                    # Text input for string parameters
-                                    input_val = st.text_input(
-                                        label, 
-                                        value=str(default_val) if default_val is not None else '', 
-                                        help=help_text, 
-                                        key=key
+                                    # Show single date picker
+                                    target_date_key = f"param_{job['id']}_target_date"
+                                    target_date = st.date_input(
+                                        "Target Date",
+                                        value=datetime.now().date() - timedelta(days=1),
+                                        help=params['target_date'].get('description', ''),
+                                        key=target_date_key
                                     )
-                                    # For optional text params, only include if different from default
-                                    if optional and default_val is not None:
-                                        if input_val != str(default_val):
+                                    if target_date:
+                                        job_params['target_date'] = target_date
+                            else:
+                                # Standard parameter handling for other jobs
+                                for param_name, param_info in params.items():
+                                    label = param_name.replace('_', ' ').title()
+                                    help_text = param_info.get('description', '')
+                                    default_val = param_info.get('default')
+                                    param_type = param_info.get('type', 'text')
+                                    optional = param_info.get('optional', False)
+                                    
+                                    key = f"param_{job['id']}_{param_name}"
+                                    
+                                    if param_type == 'date':
+                                        # Date picker for date parameters
+                                        if default_val is None:
+                                            default_date = datetime.now().date()
+                                        elif isinstance(default_val, str):
+                                            from datetime import datetime as dt
+                                            try:
+                                                default_date = dt.fromisoformat(default_val).date()
+                                            except (ValueError, AttributeError):
+                                                default_date = datetime.now().date()
+                                        elif isinstance(default_val, date):
+                                            default_date = default_val
+                                        else:
+                                            default_date = datetime.now().date()
+                                        
+                                        selected_date = st.date_input(
+                                            label, 
+                                            value=default_date, 
+                                            help=help_text, 
+                                            key=key
+                                        )
+                                        # For optional date params with None default, only include if user changed from today
+                                        if optional and default_val is None:
+                                            if selected_date != datetime.now().date():
+                                                job_params[param_name] = selected_date
+                                        else:
+                                            job_params[param_name] = selected_date
+                                    elif param_type == 'number':
+                                        # Number input
+                                        if isinstance(default_val, int):
+                                            input_val = st.number_input(
+                                                label, 
+                                                value=default_val, 
+                                                step=1, 
+                                                help=help_text, 
+                                                key=key
+                                            )
+                                        else:
+                                            input_val = st.number_input(
+                                                label, 
+                                                value=default_val if default_val is not None else 0.0, 
+                                                help=help_text, 
+                                                key=key
+                                            )
+                                        # For optional params, only include if different from default
+                                        if optional and default_val is not None:
+                                            if input_val != default_val:
+                                                job_params[param_name] = input_val
+                                        else:
+                                            job_params[param_name] = input_val
+                                    elif param_type == 'boolean':
+                                        # Checkbox for boolean parameters
+                                        input_val = st.checkbox(
+                                            label, 
+                                            value=default_val if default_val is not None else False, 
+                                            help=help_text, 
+                                            key=key
+                                        )
+                                        # For optional boolean params, only include if different from default
+                                        if optional and default_val is not None:
+                                            if input_val != default_val:
+                                                job_params[param_name] = input_val
+                                        else:
                                             job_params[param_name] = input_val
                                     else:
-                                        job_params[param_name] = input_val
+                                        # Text input for string parameters
+                                        input_val = st.text_input(
+                                            label, 
+                                            value=str(default_val) if default_val is not None else '', 
+                                            help=help_text, 
+                                            key=key
+                                        )
+                                        # For optional text params, only include if different from default
+                                        if optional and default_val is not None:
+                                            if input_val != str(default_val):
+                                                job_params[param_name] = input_val
+                                        else:
+                                            job_params[param_name] = input_val
                         else:
                             st.info("This job has no configurable parameters.")
 
@@ -315,7 +373,19 @@ def render_scheduler_admin():
                     run_disabled = job.get('is_running', False)
                     if st.button("▶️ Run Now", key=f"run_{job['id']}", disabled=run_disabled):
                         with st.spinner("Running..."):
-                            success = run_job_now(job['id'], **job_params)
+                            # Handle date range parameters for performance_metrics job
+                            final_params = job_params.copy()
+                            if job['id'] == 'performance_metrics_populate' and 'use_date_range' in final_params:
+                                use_range = final_params.pop('use_date_range', False)
+                                if not use_range:
+                                    # Single date mode - remove range params
+                                    final_params.pop('from_date', None)
+                                    final_params.pop('to_date', None)
+                                else:
+                                    # Date range mode - remove single date param
+                                    final_params.pop('target_date', None)
+                            
+                            success = run_job_now(job['id'], **final_params)
                             if success:
                                 st.success("Job executed!")
                             else:

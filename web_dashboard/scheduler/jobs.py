@@ -61,7 +61,33 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'description': 'Aggregate daily portfolio performance into metrics table',
         'default_interval_minutes': 1440,  # Once per day
         'enabled_by_default': True,
-        'icon': '📊'
+        'icon': '📊',
+        'parameters': {
+            'target_date': {
+                'type': 'date',
+                'default': None,
+                'optional': True,
+                'description': 'Single date to recalculate (defaults to yesterday if not specified)'
+            },
+            'use_date_range': {
+                'type': 'boolean',
+                'default': False,
+                'optional': True,
+                'description': 'Process a date range instead of single date'
+            },
+            'from_date': {
+                'type': 'date',
+                'default': None,
+                'optional': True,
+                'description': 'Start date for range (only used if use_date_range is True)'
+            },
+            'to_date': {
+                'type': 'date',
+                'default': None,
+                'optional': True,
+                'description': 'End date for range (only used if use_date_range is True)'
+            }
+        }
     },
     'update_portfolio_prices': {
         'name': 'Update Portfolio Prices',

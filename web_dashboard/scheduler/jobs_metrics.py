@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta, date, time as dt_time
 from decimal import Decimal
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
 
 # Add parent directory to path if needed (standard boilerplate for these jobs)
 import sys
@@ -273,11 +274,142 @@ def refresh_exchange_rates_job() -> None:
 
 
 
-def populate_performance_metrics_job() -> None:
+def _process_performance_metrics_for_date(
+    client,
+    target_date: date,
+    fund_filter: Optional[str] = None,
+    skip_existing: bool = False
+) -> tuple[int, int, list[str]]:
+    """Process performance metrics for a single date.
+    
+    Args:
+        client: SupabaseClient instance
+        target_date: Date to process
+        fund_filter: Optional fund name to filter by
+        skip_existing: If True, skip dates that already have metrics
+    
+    Returns:
+        Tuple of (rows_inserted, rows_skipped, list of fund names processed)
+    """
+    # Get all funds that have data for target_date
+    positions_query = client.supabase.table("portfolio_positions")\
+        .select("fund, total_value, cost_basis, pnl, currency, date")\
+        .gte("date", f"{target_date}T00:00:00")\
+        .lt("date", f"{target_date}T23:59:59.999999")
+    
+    if fund_filter:
+        positions_query = positions_query.eq("fund", fund_filter)
+    
+    positions_result = positions_query.execute()
+    
+    if not positions_result.data:
+        return (0, 0, [])
+    
+    # Group by fund and aggregate
+    fund_totals = defaultdict(lambda: {
+        'total_value': Decimal('0'),
+        'cost_basis': Decimal('0'),
+        'unrealized_pnl': Decimal('0'),
+        'total_trades': 0
+    })
+    
+    # Load exchange rates if needed for USD conversion
+    from exchange_rates_utils import get_exchange_rate_for_date_from_db
+    
+    for pos in positions_result.data:
+        fund = pos['fund']
+        original_currency = pos.get('currency', 'CAD')
+        currency = original_currency
+        # Validate currency: treat 'nan', None, or empty strings as 'CAD'
+        if not currency or not isinstance(currency, str):
+            currency = 'CAD'
+            logger.warning(f"⚠️ Position in fund '{fund}' has invalid currency (None/non-string). Defaulting to CAD.")
+        else:
+            currency = currency.strip().upper()
+            if currency in ('NAN', 'NONE', 'NULL', ''):
+                logger.warning(f"⚠️ Position in fund '{fund}' ticker '{pos.get('ticker', 'unknown')}' has invalid currency '{original_currency}'. Defaulting to CAD.")
+                currency = 'CAD'
+        
+        # Convert to Decimal for precision
+        total_value = Decimal(str(pos.get('total_value', 0) or 0))
+        cost_basis = Decimal(str(pos.get('cost_basis', 0) or 0))
+        pnl = Decimal(str(pos.get('pnl', 0) or 0))
+        
+        # Convert USD to CAD if needed
+        if currency == 'USD':
+            rate = get_exchange_rate_for_date_from_db(
+                datetime.combine(target_date, dt_time(0, 0, 0)),
+                'USD',
+                'CAD'
+            )
+            if rate:
+                rate_decimal = Decimal(str(rate))
+                total_value *= rate_decimal
+                cost_basis *= rate_decimal
+                pnl *= rate_decimal
+        
+        fund_totals[fund]['total_value'] += total_value
+        fund_totals[fund]['cost_basis'] += cost_basis
+        fund_totals[fund]['unrealized_pnl'] += pnl
+        fund_totals[fund]['total_trades'] += 1
+    
+    # Insert/update performance_metrics for each fund
+    rows_inserted = 0
+    rows_skipped = 0
+    for fund, totals in fund_totals.items():
+        # Check if we should skip existing entries
+        if skip_existing:
+            existing = client.supabase.table("performance_metrics")\
+                .select("id")\
+                .eq("fund", fund)\
+                .eq("date", str(target_date))\
+                .execute()
+            
+            if existing.data:
+                rows_skipped += 1
+                continue  # This fund+date already exists, skip
+        
+        performance_pct = (
+            (float(totals['unrealized_pnl']) / float(totals['cost_basis']) * 100)
+            if totals['cost_basis'] > 0 else 0.0
+        )
+        
+        # Upsert into performance_metrics
+        client.supabase.table("performance_metrics").upsert({
+            'fund': fund,
+            'date': str(target_date),
+            'total_value': float(totals['total_value']),
+            'cost_basis': float(totals['cost_basis']),
+            'unrealized_pnl': float(totals['unrealized_pnl']),
+            'performance_pct': round(performance_pct, 2),
+            'total_trades': totals['total_trades'],
+            'winning_trades': 0,  # Not calculated in this version
+            'losing_trades': 0     # Not calculated in this version
+        }, on_conflict='fund,date').execute()
+        
+        rows_inserted += 1
+    
+    return (rows_inserted, rows_skipped, list(fund_totals.keys()))
+
+
+def populate_performance_metrics_job(
+    target_date: Optional[date] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    fund_filter: Optional[str] = None,
+    skip_existing: bool = False
+) -> None:
     """Aggregate daily portfolio performance into performance_metrics table.
     
     This pre-calculates daily metrics to speed up chart queries (90 rows vs 1338 rows).
-    Runs yesterday's data to ensure market close prices are final.
+    By default runs yesterday's data to ensure market close prices are final.
+    
+    Args:
+        target_date: Single date to process. If None, defaults to yesterday.
+        from_date: Start of date range (optional). If provided with to_date, processes range.
+        to_date: End of date range (optional). If provided with from_date, processes range.
+        fund_filter: Optional fund name to filter by. If None, processes all funds.
+        skip_existing: If True, skip dates that already have metrics. If False, always upsert.
     """
     job_id = 'performance_metrics'
     start_time = time.time()
@@ -290,108 +422,97 @@ def populate_performance_metrics_job() -> None:
         
         # Import here to avoid circular imports
         from supabase_client import SupabaseClient
-        from datetime import date
-        from decimal import Decimal
         
         # Use service role key to bypass RLS (background job needs full access)
         client = SupabaseClient(use_service_role=True)
         
-        # Process yesterday's data (today's data may still be updating)
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        # Determine which dates to process
+        dates_to_process = []
         
-        # Mark job as started in database
-        mark_job_started('performance_metrics', yesterday)
-        
-        # Get all funds that have data for yesterday
-        positions_result = client.supabase.table("portfolio_positions")\
-            .select("fund, total_value, cost_basis, pnl, currency, date")\
-            .gte("date", f"{yesterday}T00:00:00")\
-            .lt("date", f"{yesterday}T23:59:59.999999")\
-            .execute()
-        
-        if not positions_result.data:
-            duration_ms = int((time.time() - start_time) * 1000)
-            message = f"No position data found for {yesterday}"
-            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            logger.info(f"ℹ️ {message}")
-            return
-        
-        # Group by fund and aggregate
-        from collections import defaultdict
-        fund_totals = defaultdict(lambda: {
-            'total_value': Decimal('0'),
-            'cost_basis': Decimal('0'),
-            'unrealized_pnl': Decimal('0'),
-            'total_trades': 0
-        })
-        
-        # Load exchange rates if needed for USD conversion
-        from exchange_rates_utils import get_exchange_rate_for_date_from_db
-        
-        for pos in positions_result.data:
-            fund = pos['fund']
-            original_currency = pos.get('currency', 'CAD')
-            currency = original_currency
-            # Validate currency: treat 'nan', None, or empty strings as 'CAD'
-            if not currency or not isinstance(currency, str):
-                currency = 'CAD'
-                logger.warning(f"⚠️ Position in fund '{fund}' has invalid currency (None/non-string). Defaulting to CAD.")
-            else:
-                currency = currency.strip().upper()
-                if currency in ('NAN', 'NONE', 'NULL', ''):
-                    logger.warning(f"⚠️ Position in fund '{fund}' ticker '{pos.get('ticker', 'unknown')}' has invalid currency '{original_currency}'. Defaulting to CAD.")
-                    currency = 'CAD'
+        if from_date and to_date:
+            # Date range mode
+            if from_date > to_date:
+                raise ValueError(f"from_date ({from_date}) must be <= to_date ({to_date})")
             
-            # Convert to Decimal for precision
-            total_value = Decimal(str(pos.get('total_value', 0) or 0))
-            cost_basis = Decimal(str(pos.get('cost_basis', 0) or 0))
-            pnl = Decimal(str(pos.get('pnl', 0) or 0))
+            # Warn if range is large
+            days_in_range = (to_date - from_date).days + 1
+            if days_in_range > 30:
+                logger.warning(f"⚠️ Processing large date range: {days_in_range} days ({from_date} to {to_date}). This may take a while.")
             
-            # Convert USD to CAD if needed
-            if currency == 'USD':
-                rate = get_exchange_rate_for_date_from_db(
-                    datetime.combine(yesterday, dt_time(0, 0, 0)),
-                    'USD',
-                    'CAD'
+            # Generate list of dates in range
+            current_date = from_date
+            while current_date <= to_date:
+                dates_to_process.append(current_date)
+                current_date += timedelta(days=1)
+        elif target_date:
+            # Single date mode
+            dates_to_process = [target_date]
+        else:
+            # Default: yesterday
+            dates_to_process = [(datetime.now(timezone.utc) - timedelta(days=1)).date()]
+        
+        # Process each date
+        total_rows_inserted = 0
+        total_rows_skipped = 0
+        total_dates_processed = 0
+        total_dates_failed = 0
+        all_funds_processed = set()
+        
+        for process_date in dates_to_process:
+            try:
+                # Mark job as started in database
+                mark_job_started('performance_metrics', process_date)
+                
+                # Process this date
+                rows_inserted, rows_skipped, funds = _process_performance_metrics_for_date(
+                    client, process_date, fund_filter, skip_existing
                 )
-                if rate:
-                    rate_decimal = Decimal(str(rate))
-                    total_value *= rate_decimal
-                    cost_basis *= rate_decimal
-                    pnl *= rate_decimal
-            
-            fund_totals[fund]['total_value'] += total_value
-            fund_totals[fund]['cost_basis'] += cost_basis
-            fund_totals[fund]['unrealized_pnl'] += pnl
-            fund_totals[fund]['total_trades'] += 1
+                
+                if rows_inserted == 0 and rows_skipped == 0:
+                    # No data for this date
+                    logger.info(f"ℹ️ No position data found for {process_date}")
+                    continue
+                
+                total_rows_inserted += rows_inserted
+                total_rows_skipped += rows_skipped
+                all_funds_processed.update(funds)
+                total_dates_processed += 1
+                
+                # Log progress for date ranges
+                if len(dates_to_process) > 1:
+                    logger.info(f"✅ Processed {process_date}: {rows_inserted} inserted, {rows_skipped} skipped")
+                
+            except Exception as date_error:
+                total_dates_failed += 1
+                logger.error(f"❌ Error processing {process_date}: {date_error}")
+                # Continue with next date even if one fails
+                try:
+                    mark_job_failed('performance_metrics', process_date, None, str(date_error), 0)
+                except Exception:
+                    pass
         
-        # Insert/update performance_metrics for each fund
-        rows_inserted = 0
-        for fund, totals in fund_totals.items():
-            performance_pct = (
-                (float(totals['unrealized_pnl']) / float(totals['cost_basis']) * 100)
-                if totals['cost_basis'] > 0 else 0.0
-            )
-            
-            # Upsert into performance_metrics
-            client.supabase.table("performance_metrics").upsert({
-                'fund': fund,
-                'date': str(yesterday),
-                'total_value': float(totals['total_value']),
-                'cost_basis': float(totals['cost_basis']),
-                'unrealized_pnl': float(totals['unrealized_pnl']),
-                'performance_pct': round(performance_pct, 2),
-                'total_trades': totals['total_trades'],
-                'winning_trades': 0,  # Not calculated in this version
-                'losing_trades': 0     # Not calculated in this version
-            }, on_conflict='fund,date').execute()
-            
-            rows_inserted += 1
-        
+        # Final summary
         duration_ms = int((time.time() - start_time) * 1000)
-        message = f"Populated {rows_inserted} fund(s) for {yesterday}"
+        
+        if len(dates_to_process) > 1:
+            # Date range summary
+            message = f"Processed {total_dates_processed}/{len(dates_to_process)} dates: {total_rows_inserted} fund(s) inserted, {total_rows_skipped} skipped"
+            if total_dates_failed > 0:
+                message += f", {total_dates_failed} failed"
+        else:
+            # Single date summary
+            process_date = dates_to_process[0]
+            if total_rows_skipped > 0:
+                message = f"Populated {total_rows_inserted} fund(s) for {process_date} (skipped {total_rows_skipped} existing)"
+            else:
+                message = f"Populated {total_rows_inserted} fund(s) for {process_date}"
+        
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        mark_job_completed('performance_metrics', yesterday, None, list(fund_totals.keys()), duration_ms=duration_ms)
+        
+        # Mark completion for the last date processed (or first if none processed)
+        if dates_to_process:
+            mark_job_completed('performance_metrics', dates_to_process[-1], None, list(all_funds_processed), duration_ms=duration_ms)
+        
         logger.info(f"✅ {message}")
         
     except Exception as e:
@@ -400,9 +521,9 @@ def populate_performance_metrics_job() -> None:
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         try:
             from utils.job_tracking import mark_job_failed
-            yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
-            mark_job_failed('performance_metrics', yesterday, None, message, duration_ms=duration_ms)
+            error_date = target_date if target_date else (datetime.now(timezone.utc) - timedelta(days=1)).date()
+            mark_job_failed('performance_metrics', error_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
-        logger.error(f"❌ Performance metrics job failed: {e}")
+        logger.error(f"❌ Performance metrics job failed: {e}", exc_info=True)
 

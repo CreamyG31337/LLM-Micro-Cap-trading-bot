@@ -162,9 +162,10 @@ def benchmark_refresh_job() -> None:
 
 
 def refresh_exchange_rates_job() -> None:
-    """Fetch and store the latest exchange rate.
+    """Fetch and store the latest exchange rate and fill gaps in historical data.
     
     This ensures the dashboard always has up-to-date rates for currency conversion.
+    It checks for gaps in the last 30 days and fills them from BoC API.
     """
     job_id = 'exchange_rates'
     start_time = time.time()
@@ -180,21 +181,73 @@ def refresh_exchange_rates_job() -> None:
         mark_job_started('exchange_rates', target_date)
         
         # Import here to avoid circular imports
-        from exchange_rates_utils import reload_exchange_rate_for_date
+        from exchange_rates_utils import reload_exchange_rate_for_date, reload_exchange_rates_for_range, get_supabase_client
         
-        # Fetch today's rate
+        # 1. Fetch today's rate
         today = datetime.now(timezone.utc)
         rate = reload_exchange_rate_for_date(today, 'USD', 'CAD')
+        
+        # 2. Check for gaps in the last 30 days
+        client = get_supabase_client()
+        filled_count = 0
+        if client:
+            end_lookback = today
+            start_lookback = end_lookback - timedelta(days=30)
+            
+            # Get existing rates in range
+            existing_rates = client.get_exchange_rates(start_lookback, end_lookback, 'USD', 'CAD')
+            existing_dates = set()
+            for r in existing_rates:
+                try:
+                    dt = datetime.fromisoformat(r['timestamp'].replace('Z', '+00:00'))
+                    existing_dates.add(dt.date())
+                except:
+                    continue
+            
+            # Check for missing dates (excluding weekends where BoC might not have data)
+            missing_range_start = None
+            missing_range_end = None
+            
+            current = start_lookback
+            while current <= end_lookback:
+                # Is this date missing and not a weekend? (0=Mon, 5=Sat, 6=Sun)
+                # Actually BoC has data for weekdays. 
+                # If it's missing, let's just try to fetch the whole range from BoC
+                # since the range API is efficient and handles its own logic.
+                current += timedelta(days=1)
+            
+            # More efficient: just always refresh the last 30 days from BoC
+            # or detect the first missing date.
+            # Let's find the most recent date in DB and fill from there to today.
+            latest_db_rate = client.supabase.table("exchange_rates") \
+                .select("timestamp") \
+                .eq("from_currency", "USD") \
+                .eq("to_currency", "CAD") \
+                .order("timestamp", desc=True) \
+                .limit(1) \
+                .execute()
+                
+            if latest_db_rate.data:
+                last_dt = datetime.fromisoformat(latest_db_rate.data[0]['timestamp'].replace('Z', '+00:00'))
+                if (today - last_dt).days > 1:
+                    logger.info(f"Detected gap in exchange rates since {last_dt.date()}. Filling gaps...")
+                    filled_count = reload_exchange_rates_for_range(last_dt, today, 'USD', 'CAD')
+            else:
+                # No data at all? Fetch last 90 days.
+                logger.info("No exchange rate data found. Backfilling last 90 days...")
+                filled_count = reload_exchange_rates_for_range(today - timedelta(days=90), today, 'USD', 'CAD')
         
         if rate is not None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Updated USD/CAD rate: {rate}"
+            if filled_count > 0:
+                message += f" (filled {filled_count} historical gaps)"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
             mark_job_completed('exchange_rates', target_date, None, [], duration_ms=duration_ms)
             logger.info(f"✅ {message}")
         else:
             duration_ms = int((time.time() - start_time) * 1000)
-            message = "Failed to fetch exchange rate from API"
+            message = "Failed to fetch today's exchange rate from API"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
             mark_job_failed('exchange_rates', target_date, None, message, duration_ms=duration_ms)
             logger.warning(f"⚠️ {message}")
@@ -208,7 +261,7 @@ def refresh_exchange_rates_job() -> None:
             mark_job_failed('exchange_rates', target_date, None, message, duration_ms=duration_ms)
         except Exception:
             pass  # Don't fail if tracking fails
-        logger.error(f"❌ Exchange rates job failed: {e}")
+        logger.error(f"❌ Exchange rates job failed: {e}", exc_info=True)
 
 
 

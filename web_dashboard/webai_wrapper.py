@@ -11,6 +11,7 @@ import sys
 import json
 import asyncio
 import os
+import re
 import time
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -46,7 +47,7 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
     if cookies_json:
         try:
             # Clean up the JSON string - handle newlines, extra whitespace, outer quotes
-            # Strip leading/trailing whitespace and newlines
+            original = cookies_json
             cookies_json = cookies_json.strip()
             
             # Remove any leading/trailing quotes that might have been added during env var setting
@@ -62,14 +63,33 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
                     if cookies_json[1] in ['{', '[']:
                         cookies_json = cookies_json[1:-1]
             
-            # Handle literal newlines and carriage returns (not escaped ones)
-            # Remove actual newline characters that might have been inserted
-            cookies_json = cookies_json.replace('\n', '').replace('\r', '')
-            # Also handle escaped newlines that might be in the string
-            cookies_json = cookies_json.replace('\\n', '').replace('\\r', '')
+            # Handle literal newlines and carriage returns (remove actual newline chars)
+            # But preserve escaped newlines in string values
+            cookies_json = cookies_json.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+            # Collapse multiple spaces to single space
+            cookies_json = re.sub(r' +', ' ', cookies_json)
             
-            # Parse JSON (json.loads will handle escaped quotes correctly)
-            cookies = json.loads(cookies_json)
+            # Try to parse JSON - handle double-encoding (if stored as JSON string)
+            try:
+                cookies = json.loads(cookies_json)
+            except json.JSONDecodeError:
+                # Might be double-encoded (stored as JSON string in secret manager)
+                # Try parsing once more
+                try:
+                    decoded = json.loads(cookies_json)
+                    if isinstance(decoded, str):
+                        # It was a JSON-encoded string, parse it again
+                        cookies = json.loads(decoded)
+                    else:
+                        cookies = decoded
+                except (json.JSONDecodeError, TypeError):
+                    # Re-raise original error with more context
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Original value length: {len(original)}")
+                    logger.debug(f"Cleaned value (first 500 chars): {cookies_json[:500]}")
+                    raise
+            
             secure_1psid = cookies.get("__Secure-1PSID")
             secure_1psidts = cookies.get("__Secure-1PSIDTS")
             if secure_1psid:
@@ -79,17 +99,19 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning("WEBAI_COOKIES_JSON found but missing __Secure-1PSID cookie")
+                logger.debug(f"Available keys: {list(cookies.keys())}")
         except json.JSONDecodeError as e:
             # JSON parsing failed - log but continue to try other methods
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to parse WEBAI_COOKIES_JSON as JSON: {e}")
-            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {cookies_json[:200]}")
+            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {original[:200] if 'original' in locals() else cookies_json[:200]}")
+            logger.debug(f"Cleaned value (first 200 chars): {cookies_json[:200] if 'cookies_json' in locals() else 'N/A'}")
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Error processing WEBAI_COOKIES_JSON: {e}")
-            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {cookies_json[:200]}")
+            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {original[:200] if 'original' in locals() else cookies_json[:200]}")
     
     # Option 2: Individual environment variables
     secure_1psid = os.getenv("WEBAI_SECURE_1PSID")

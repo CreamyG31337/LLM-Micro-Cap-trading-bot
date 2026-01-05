@@ -574,9 +574,8 @@ class SupabaseClient:
             True if successful, False otherwise
         """
         try:
-            # Ensure date is timezone-aware
-            if date.tzinfo is None:
-                date = date.replace(tzinfo=timezone.utc)
+            # Truncate to date only (midnight UTC) to ensure one rate per day
+            date = date.replace(hour=0, minute=0, second=0, microsecond=0)
             
             rate_data = {
                 'from_currency': from_currency,
@@ -615,12 +614,22 @@ class SupabaseClient:
             for rate in rates:
                 formatted_rate = rate.copy()
                 
-                # Ensure timestamp is ISO format
+                # Ensure timestamp is ISO format and truncated to date only (midnight UTC)
                 if isinstance(formatted_rate.get('timestamp'), datetime):
                     timestamp = formatted_rate['timestamp']
                     if timestamp.tzinfo is None:
                         timestamp = timestamp.replace(tzinfo=timezone.utc)
+                    # Truncate to midnight UTC
+                    timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
                     formatted_rate['timestamp'] = timestamp.isoformat()
+                elif isinstance(formatted_rate.get('timestamp'), str):
+                    # If it's a string, try to parse and truncate
+                    try:
+                        dt = datetime.fromisoformat(formatted_rate['timestamp'].replace('Z', '+00:00'))
+                        dt = dt.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+                        formatted_rate['timestamp'] = dt.isoformat()
+                    except:
+                        pass
                 
                 # Ensure rate is float
                 if isinstance(formatted_rate.get('rate'), Decimal):

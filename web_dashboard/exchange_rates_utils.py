@@ -140,20 +140,25 @@ def reload_exchange_rate_for_date(
         # Try Bank of Canada API first (most accurate for CAD rates)
         if from_currency == 'USD' and to_currency == 'CAD':
             try:
-                url = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json"
+                # Format date for BoC Valet API (YYYY-MM-DD)
+                date_str = date.strftime('%Y-%m-%d')
+                url = f"https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?start_date={date_str}&end_date={date_str}"
                 response = requests.get(url, timeout=5)
                 
                 if response.status_code == 200:
                     data = response.json()
                     if 'observations' in data and data['observations']:
-                        # For historical dates, we'd need to query with date parameter
-                        # For now, get latest and use it
-                        latest = data['observations'][-1]
-                        if 'FXUSDCAD' in latest and 'v' in latest['FXUSDCAD']:
-                            rate = float(latest['FXUSDCAD']['v'])
-                            logger.debug(f"Using Bank of Canada rate: {rate}")
+                        # Get the specific observation for this date
+                        obs = data['observations'][0]
+                        if 'FXUSDCAD' in obs and 'v' in obs['FXUSDCAD']:
+                            rate = float(obs['FXUSDCAD']['v'])
+                            logger.debug(f"Using Bank of Canada historical rate for {date_str}: {rate}")
+                elif response.status_code == 404:
+                    # If date not found (e.g., weekend or holiday), BoC returns 404
+                    # This is expected for some dates
+                    pass
             except Exception as e:
-                logger.debug(f"Bank of Canada API failed: {e}")
+                logger.debug(f"Bank of Canada API failed for {date.date()}: {e}")
         
         # Fallback to exchangerate-api.com
         if rate is None:
@@ -204,11 +209,7 @@ def reload_exchange_rates_for_range(
     to_currency: str = 'CAD',
     use_service_role: bool = True
 ) -> int:
-    """Fetch and update exchange rates for a date range.
-    
-    Note: Most free APIs only provide current rates, not historical.
-    This function will fetch the current rate and apply it to all dates in the range.
-    For true historical rates, you would need a paid API service.
+    """Fetch and update exchange rates for a date range using actual historical data.
     
     Args:
         start_date: Start date (inclusive)
@@ -221,55 +222,53 @@ def reload_exchange_rates_for_range(
         Number of rates successfully updated
     """
     try:
-        # Fetch current rate
-        current_rate = reload_exchange_rate_for_date(
-            datetime.now(timezone.utc),
-            from_currency,
-            to_currency,
-            use_service_role
-        )
+        import requests
         
-        if current_rate is None:
-            logger.warning("Could not fetch current exchange rate")
-            return 0
-        
-        # Apply current rate to all dates in range
-        # (In a production system, you'd use a historical API)
-        client = get_supabase_client(use_service_role=use_service_role)
-        if not client:
-            return 0
-        
-        # Ensure dates are timezone-aware
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-        
-        # Generate dates in range
-        current = start_date
-        rates_to_upsert = []
-        count = 0
-        
-        while current <= end_date:
-            rates_to_upsert.append({
-                'timestamp': current.isoformat(),
-                'rate': float(current_rate),
-                'from_currency': from_currency,
-                'to_currency': to_currency
-            })
-            current += timedelta(days=1)
-            count += 1
+        # BoC Valet API handles ranges
+        if from_currency == 'USD' and to_currency == 'CAD':
+            client = get_supabase_client(use_service_role=use_service_role)
+            if not client:
+                return 0
+                
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            url = f"https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?start_date={start_str}&end_date={end_str}"
             
-            # Batch upsert every 100 records
-            if len(rates_to_upsert) >= 100:
-                client.upsert_exchange_rates(rates_to_upsert)
-                rates_to_upsert = []
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if 'observations' in data and data['observations']:
+                    rates_to_upsert = []
+                    for obs in data['observations']:
+                        if 'FXUSDCAD' in obs and 'v' in obs['FXUSDCAD']:
+                            obs_date = obs['d']
+                            rate = float(obs['FXUSDCAD']['v'])
+                            
+                            # Create timezone-aware datetime for the observation
+                            dt = datetime.strptime(obs_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                            
+                            rates_to_upsert.append({
+                                'timestamp': dt.isoformat(),
+                                'rate': rate,
+                                'from_currency': from_currency,
+                                'to_currency': to_currency
+                            })
+                    
+                    if rates_to_upsert:
+                        if client.upsert_exchange_rates(rates_to_upsert):
+                            logger.info(f"✅ Reloaded {len(rates_to_upsert)} actual historical rates from Bank of Canada")
+                            return len(rates_to_upsert)
+            
+        # Fallback to daily fetch for each date if BoC range fails or for other currencies
+        logger.info(f"Falling back to daily fetch for range {start_date.date()} to {end_date.date()}")
+        current = start_date
+        count = 0
+        while current <= end_date:
+            rate = reload_exchange_rate_for_date(current, from_currency, to_currency, use_service_role)
+            if rate:
+                count += 1
+            current += timedelta(days=1)
         
-        # Upsert remaining rates
-        if rates_to_upsert:
-            client.upsert_exchange_rates(rates_to_upsert)
-        
-        logger.info(f"✅ Reloaded {count} exchange rates for date range")
         return count
         
     except Exception as e:

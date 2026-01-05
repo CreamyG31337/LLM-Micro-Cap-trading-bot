@@ -61,7 +61,7 @@ def get_scheduler() -> BackgroundScheduler:
         job_defaults = {
             'coalesce': True,  # Combine multiple missed executions into one
             'max_instances': 1,  # Only one instance of each job at a time
-            'misfire_grace_time': 60 * 5  # 5 minute grace period for misfires
+            'misfire_grace_time': 60 * 60 * 24  # 24 hour grace period (if missed due to sleep/downtime, run it now)
         }
         
         _scheduler = BackgroundScheduler(
@@ -205,7 +205,111 @@ def start_scheduler() -> bool:
     )
     logger.info("📋 Scheduled startup backfill check")
     
+    # Run smart startup check for overdue jobs
+    # This handles the "scheduler reset on restart" issue by checking the DB
+    scheduler.add_job(
+        check_overdue_jobs,
+        trigger='date',
+        id='startup_check_overdue',
+        name='Startup Overdue Job Check'
+    )
+    logger.info("📋 Scheduled startup overdue job check")
+    
     return True
+
+
+def check_overdue_jobs() -> None:
+    """
+    Smart Startup: Checks if any jobs are overdue based on DB history.
+    
+    Since the scheduler uses MemoryJobStore, restart/redeploy resets all timers.
+    This function checks the actual 'job_executions' table to see if a job 
+    should have run while we were down/restarting.
+    
+    If overdue, it triggers ONE immediate run.
+    """
+    logger.info("🔍 Checking for overdue jobs (Smart Startup)...")
+    
+    try:
+        from scheduler.jobs import AVAILABLE_JOBS
+        from supabase_client import SupabaseClient
+        
+        client = SupabaseClient(use_service_role=True)
+        
+        # Get all registered jobs
+        scheduler = get_scheduler()
+        scheduled_jobs = {job.id: job for job in scheduler.get_jobs()}
+        
+        for job_id, job_config in AVAILABLE_JOBS.items():
+            # Skip if job is not scheduled/enabled
+            # Note: scheduler job ID usually matches key in AVAILABLE_JOBS
+            # but sometimes has suffixes. We check the base ID.
+            # Simple check: if this ID (or one starting with it) isn't in scheduled_jobs, skip
+            is_scheduled = False
+            for s_id in scheduled_jobs:
+                if s_id == job_id or s_id.startswith(f"{job_id}_"):
+                    is_scheduled = True
+                    break
+            
+            if not is_scheduled:
+                continue
+                
+            # Skip jobs without a defined interval (e.g. cron only or manual)
+            interval_mins = job_config.get('default_interval_minutes', 0)
+            if interval_mins <= 0:
+                continue
+                
+            job_name = job_config.get('name')
+            
+            # Check last successful run in DB
+            result = client.supabase.table("job_executions")\
+                .select("completed_at")\
+                .eq("job_name", job_name)\
+                .eq("status", "success")\
+                .order("completed_at", desc=True)\
+                .limit(1)\
+                .execute()
+                
+            # If never run, let the normal scheduler handle the first run
+            # (unless we want to force run on fresh install, but that might be aggressive)
+            if not result.data:
+                continue
+                
+            last_run_str = result.data[0]['completed_at']
+            if not last_run_str:
+                continue
+                
+            last_run = datetime.fromisoformat(last_run_str.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            
+            # Calculate time since last run
+            minutes_since = (now - last_run).total_seconds() / 60
+            
+            # If time since last run > interval + 5 min buffer, it's overdue
+            # Example: Interval 15m. Last run 20m ago. Overdue!
+            # Example: Interval 60m. Last run 30m ago. Not overdue.
+            if minutes_since > (interval_mins + 5):
+                logger.warning(f"⚠️  Job '{job_id}' is overdue! Last run: {minutes_since:.1f}m ago (Interval: {interval_mins}m). Triggering catch-up.")
+                
+                # Trigger immediate run
+                # We simply call the existing run_job_now which handles async scheduling
+                # Note: We need to find the correct scheduler job ID
+                target_sched_job_id = None
+                for s_id in scheduled_jobs:
+                    if s_id == job_id or s_id.startswith(f"{job_id}_"):
+                        target_sched_job_id = s_id
+                        break
+                
+                if target_sched_job_id:
+                    run_job_now(target_sched_job_id)
+                else:
+                    logger.warning(f"   Could not find scheduler ID for overdue job {job_id}")
+            else:
+                logger.info(f"   Job '{job_id}' is OK. Last run: {minutes_since:.1f}m ago.")
+                
+    except Exception as e:
+        logger.error(f"❌ Smart Startup check failed: {e}", exc_info=True)
+
 
 
 def shutdown_scheduler() -> None:

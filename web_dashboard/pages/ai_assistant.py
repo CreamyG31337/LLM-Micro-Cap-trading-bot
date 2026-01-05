@@ -53,13 +53,21 @@ except ImportError:
 try:
     from ai_service_keys import get_model_display_name, get_model_display_name_short
     HAS_MODEL_KEYS = True
-except (ImportError, FileNotFoundError, KeyError):
+except (ImportError, FileNotFoundError, KeyError, ValueError) as e:
     HAS_MODEL_KEYS = False
     # Fallback functions if keys file not available
     def get_model_display_name(model_id: str) -> str:
-        return model_id
+        # Fallback display names
+        fallback_names = {
+            "gemini-2.5-flash": "WebAI 2.5 Flash",
+            "gemini-2.5-pro": "WebAI 2.5 Pro",
+            "gemini-3.0-pro": "WebAI 3.0 Pro",
+        }
+        return fallback_names.get(model_id, model_id)
     def get_model_display_name_short() -> str:
         return "WebAI Pro"
+    # Log warning but don't crash
+    logger.debug(f"Model display keys file not available: {e}. Using fallback names.")
 
 # Page configuration
 st.set_page_config(

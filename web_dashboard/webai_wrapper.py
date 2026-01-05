@@ -105,8 +105,20 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to parse WEBAI_COOKIES_JSON as JSON: {e}")
-            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 200 chars): {original[:200] if 'original' in locals() else cookies_json[:200]}")
-            logger.debug(f"Cleaned value (first 200 chars): {cookies_json[:200] if 'cookies_json' in locals() else 'N/A'}")
+            # Log more details for debugging
+            raw_value = original[:500] if 'original' in locals() else (cookies_json[:500] if 'cookies_json' in locals() else 'N/A')
+            cleaned_value = cookies_json[:500] if 'cookies_json' in locals() else 'N/A'
+            logger.debug(f"Raw WEBAI_COOKIES_JSON value (first 500 chars): {raw_value}")
+            logger.debug(f"Cleaned value (first 500 chars): {cleaned_value}")
+            logger.debug(f"Raw value length: {len(original) if 'original' in locals() else 'N/A'}")
+            # Check for common issues
+            if 'original' in locals():
+                if '\n' in original:
+                    logger.debug("⚠️ Raw value contains newlines - this may be the issue")
+                if original.count('"') % 2 != 0:
+                    logger.debug("⚠️ Raw value has mismatched quotes")
+                if original.startswith('"') and original.endswith('"') and len(original) > 2:
+                    logger.debug("⚠️ Raw value is wrapped in quotes - may need to be unwrapped")
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

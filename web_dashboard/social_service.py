@@ -350,7 +350,7 @@ class SocialSentimentService:
                 'raw_data': None
             }
     
-    def fetch_reddit_sentiment(self, ticker: str) -> Dict[str, Any]:
+    def fetch_reddit_sentiment(self, ticker: str, max_duration: Optional[float] = None) -> Dict[str, Any]:
         """Fetch sentiment data from Reddit using public JSON endpoint
         
         Uses Reddit's public search API without authentication.
@@ -359,6 +359,7 @@ class SocialSentimentService:
         
         Args:
             ticker: Ticker symbol to fetch
+            max_duration: Optional maximum duration in seconds for this fetch (default: None, no limit)
             
         Returns:
             Dictionary with:
@@ -367,6 +368,7 @@ class SocialSentimentService:
             - sentiment_score: Numeric score mapped from label (-2.0 to 2.0)
             - raw_data: Top 3 posts/comments as JSONB
         """
+        fetch_start = time.time()
         try:
             # Rate limiting: ensure at least 2 seconds between Reddit requests
             now = time.time()
@@ -380,23 +382,23 @@ class SocialSentimentService:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             
-            # Whitelist of stock-related subreddits
+            # Whitelist of stock-related subreddits (prioritize most active ones first)
             STOCK_SUBREDDITS = [
+                'wallstreetbets',  # Most active, check first
                 'stocks',
                 'investing',
-                'wallstreetbets',
                 'StockMarket',
-                'securityanalysis',
-                'valueinvesting',
-                'options',
-                'stock_picks',
-                'robinhood',
-                'investments',
                 'pennystocks',
+                'Shortsqueeze',
+                'options',
+                'robinhood',
+                'stock_picks',
+                'investments',
                 'RobinHoodPennyStocks',
                 'microcap',
-                'Shortsqueeze',
                 'biotechplays',
+                'securityanalysis',
+                'valueinvesting',
                 'CanadianPennyStocks',
                 'Undervalued',
                 'BayStreetBets',
@@ -425,9 +427,21 @@ class SocialSentimentService:
             
             all_posts = []
             cutoff_time = datetime.now(timezone.utc) - timedelta(days=7)  # Last week
+            ENOUGH_POSTS = 10  # Early termination if we have enough posts
             
             # Search each whitelisted subreddit
             for subreddit_name in STOCK_SUBREDDITS:
+                # Check timeout before processing each subreddit
+                if max_duration:
+                    elapsed = time.time() - fetch_start
+                    if elapsed > max_duration:
+                        logger.debug(f"Reddit fetch timeout for {ticker} after {elapsed:.1f}s (found {len(all_posts)} posts)")
+                        break
+                
+                # Early termination if we have enough posts
+                if len(all_posts) >= ENOUGH_POSTS:
+                    logger.debug(f"Early termination for {ticker}: found {len(all_posts)} posts (enough for analysis)")
+                    break
                 for query in search_queries:
                     try:
                         # Search within specific subreddit using relevance sort and last week

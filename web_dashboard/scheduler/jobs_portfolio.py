@@ -120,7 +120,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         from market_data.market_hours import MarketHours
         from utils.market_holidays import MarketHolidays
         from supabase_client import SupabaseClient
-        from data.repositories.repository_factory import RepositoryFactory
+        from web_dashboard.data.repositories.repository_factory import RepositoryFactory
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
         # Initialize components
@@ -368,7 +368,7 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                 
                 # Rebuild current positions from trade log (source of truth)
                 # This ensures we have accurate positions even if database is stale
-                from data.repositories.repository_factory import RepositoryFactory
+                from web_dashboard.data.repositories.repository_factory import RepositoryFactory
                 
                 # Get data directory for this fund (try to find it)
                 # For now, we'll use Supabase repository directly

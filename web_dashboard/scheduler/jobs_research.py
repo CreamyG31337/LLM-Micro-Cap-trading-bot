@@ -148,7 +148,24 @@ def market_research_job() -> None:
         articles_skipped = 0
         articles_blacklisted = 0
         
-        for result in search_results['results']:
+        # Overall job timeout: 50 minutes (leave buffer before next run)
+        MAX_JOB_DURATION = 50 * 60  # 50 minutes in seconds
+        # Per-article timeout: 5 minutes max per article
+        MAX_ARTICLE_DURATION = 5 * 60  # 5 minutes in seconds
+        
+        total_results = len(search_results.get('results', []))
+        logger.info(f"📊 Processing {total_results} search results (max {MAX_ARTICLE_DURATION}s per article, {MAX_JOB_DURATION}s total)")
+        
+        for idx, result in enumerate(search_results['results'], 1):
+            # Check overall job timeout
+            elapsed = time.time() - start_time
+            if elapsed > MAX_JOB_DURATION:
+                remaining = total_results - idx + 1
+                logger.warning(f"⏱️  Job timeout reached ({elapsed/60:.1f}m). Skipping {remaining} remaining articles")
+                break
+            
+            article_start = time.time()
+            logger.info(f"📰 Processing article {idx}/{total_results}: {result.get('title', 'Unknown')[:50]}...")
             try:
                 url = result.get('url', '')
                 title = result.get('title', '')
@@ -172,9 +189,21 @@ def market_research_job() -> None:
                     articles_skipped += 1
                     continue
                 
+                # Check per-article timeout before expensive operations
+                article_elapsed = time.time() - article_start
+                if article_elapsed > MAX_ARTICLE_DURATION:
+                    logger.warning(f"⏱️  Article timeout ({article_elapsed:.1f}s) - skipping: {title[:50]}...")
+                    continue
+                
                 # Extract article content
-                logger.info(f"Extracting content: {title[:50]}...")
+                logger.info(f"  Extracting content: {title[:50]}...")
                 extracted = extract_article_content(url)
+                
+                # Check timeout after extraction
+                article_elapsed = time.time() - article_start
+                if article_elapsed > MAX_ARTICLE_DURATION:
+                    logger.warning(f"⏱️  Article timeout after extraction ({article_elapsed:.1f}s) - skipping AI processing: {title[:50]}...")
+                    continue
                 
                 # Check for paid subscription articles
                 if extracted.get('error') == 'paid_subscription':
@@ -236,6 +265,13 @@ def market_research_job() -> None:
                 # Record success
                 tracker.record_success(url)
                 
+                # Check timeout before AI processing (most expensive)
+                article_elapsed = time.time() - article_start
+                remaining_time = MAX_ARTICLE_DURATION - article_elapsed
+                if remaining_time < 60:  # Need at least 60s for AI processing
+                    logger.warning(f"⏱️  Not enough time for AI processing ({remaining_time:.1f}s remaining) - skipping: {title[:50]}...")
+                    continue
+                
                 # Generate summary and embedding using Ollama (if available)
                 summary = None
                 summary_data = {}
@@ -243,7 +279,7 @@ def market_research_job() -> None:
                 extracted_sector = None
                 embedding = None
                 if ollama_client:
-                    logger.info(f"Generating summary for: {title[:50]}...")
+                    logger.info(f"  Generating summary for: {title[:50]}...")
                     summary_data = ollama_client.generate_summary(content)
                     
                     # Handle backward compatibility: if old string format is returned
@@ -321,9 +357,11 @@ def market_research_job() -> None:
                     logic_check=logic_check
                 )
                 
+                article_duration = time.time() - article_start
+                
                 if article_id:
                     articles_saved += 1
-                    logger.info(f"✅ Saved article: {title[:50]}...")
+                    logger.info(f"✅ Saved article in {article_duration:.1f}s: {title[:50]}...")
                     
                     # Extract and save relationships (GraphRAG edges)
                     if isinstance(summary_data, dict) and logic_check and logic_check != "HYPE_DETECTED":
@@ -367,14 +405,17 @@ def market_research_job() -> None:
                 articles_processed += 1
                 
             except Exception as e:
-                logger.error(f"Error processing article '{title[:50]}...': {e}")
+                article_duration = time.time() - article_start
+                title_safe = result.get('title', 'Unknown')[:50] if result else 'Unknown'
+                logger.error(f"❌ Error processing article after {article_duration:.1f}s '{title_safe}...': {e}")
                 continue
         
         duration_ms = int((time.time() - start_time) * 1000)
+        duration_min = duration_ms / 60000
         message = f"Processed {articles_processed} articles: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         mark_job_completed('market_research', target_date, None, [], duration_ms=duration_ms)
-        logger.info(f"✅ {message}")
+        logger.info(f"✅ {message} in {duration_min:.1f} minutes")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)

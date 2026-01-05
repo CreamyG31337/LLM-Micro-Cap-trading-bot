@@ -92,6 +92,13 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'enabled_by_default': True,
         'icon': '🔍'
     },
+    'process_research_reports': {
+        'name': 'Process Research Reports',
+        'description': 'Process PDF research reports from Research/ folders, extract text, generate embeddings, and store in database',
+        'default_interval_minutes': 60,  # Every hour
+        'enabled_by_default': True,
+        'icon': '📄'
+    },
     'opportunity_discovery': {
         'name': 'Opportunity Discovery',
         'description': 'Hunt for new investment opportunities using targeted search queries',
@@ -312,7 +319,8 @@ from scheduler.jobs_research import (
     market_research_job,
     rss_feed_ingest_job,
     ticker_research_job,
-    archive_retry_job
+    archive_retry_job,
+    process_research_reports_job
 )
 
 # Import portfolio jobs
@@ -665,6 +673,19 @@ def register_default_jobs(scheduler) -> None:
             coalesce=True
         )
         logger.info("Registered job: ticker_research_collect (every 6 hours)")
+
+        # Process Research Reports: Every hour
+        if AVAILABLE_JOBS.get('process_research_reports', {}).get('enabled_by_default'):
+            scheduler.add_job(
+                process_research_reports_job,
+                trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['process_research_reports']['default_interval_minutes']),
+                id='process_research_reports',
+                name=f"{get_job_icon('process_research_reports')} Process Research Reports",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True
+            )
+            logger.info("Registered job: process_research_reports (every 60 minutes - 1 hour)")
 
         # Opportunity Discovery: Every 12 hours
         scheduler.add_job(

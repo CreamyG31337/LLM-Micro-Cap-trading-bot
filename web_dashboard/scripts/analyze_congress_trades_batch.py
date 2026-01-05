@@ -1162,7 +1162,7 @@ def main():
         logger.info(f"Job complete. Processed {total_processed} trades.")
         
     except Exception as e:
-        logger.critical(f"Critical error: {e}", exc_info=True)
+        logger.error(f"Critical error: {e}", exc_info=True)
         sys.exit(1)
 
 if __name__ == "__main__":

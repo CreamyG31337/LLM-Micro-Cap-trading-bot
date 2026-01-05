@@ -3114,7 +3114,7 @@ with tab8:
         with col2:
             level_filter = st.selectbox(
                 "Level",
-                options=["All", "DEBUG", "PERF", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                options=["All", "INFO + ERROR", "DEBUG", "PERF", "INFO", "WARNING", "ERROR"],
                 index=0  # Default to "All"
             )
         
@@ -3160,7 +3160,13 @@ with tab8:
         
         # Get logs with filters (with spinner for better UX)
         with st.spinner("Loading logs..."):
-            level = None if level_filter == "All" else level_filter
+            # Handle special "INFO + ERROR" filter
+            if level_filter == "All":
+                level = None
+            elif level_filter == "INFO + ERROR":
+                level = ["INFO", "ERROR"]
+            else:
+                level = level_filter
             
             # Fetch all filtered logs for pagination
             all_logs = read_logs_from_file(
@@ -3193,10 +3199,10 @@ with tab8:
         # Emoji mapping for log levels (used for display and download)
         emoji_map = {
             'DEBUG': '🔍',
+            'PERF': '⚡',
             'INFO': 'ℹ️',
             'WARNING': '⚠️',
-            'ERROR': '❌',
-            'CRITICAL': '🔥'
+            'ERROR': '❌'
         }
         
         # Display logs in a code block for better formatting

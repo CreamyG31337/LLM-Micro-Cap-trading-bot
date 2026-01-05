@@ -438,11 +438,17 @@ def fetch_congress_trades_job() -> None:
                                     conflict_score = None
                                     notes = "AI analysis error"
                             
+                            # Skip trades without politician_id (can't enforce uniqueness without it)
+                            if not politician_id:
+                                logger.warning(f"Skipping trade for {politician} {ticker}: politician_id is None (politician not in database)")
+                                errors += 1
+                                continue
+                            
                             # Prepare trade record with ALL available fields
+                            # Note: 'politician' column was dropped in migration 27 - use politician_id only
                             trade_record = {
                                 'ticker': ticker,
-                                'politician': politician,  # Text name (required for unique constraint)
-                                'politician_id': politician_id,  # FK to politicians table
+                                'politician_id': politician_id,  # FK to politicians table (required)
                                 'chamber': chamber,
                                 'party': party,  # From politicians table lookup
                                 'state': state,  # From politicians table lookup
@@ -458,13 +464,13 @@ def fetch_congress_trades_job() -> None:
                             }
                             
                             # Insert to Supabase (use upsert to handle any race conditions)
-                            # Note: Unique constraint is on (politician, ticker, transaction_date, amount, type, owner)
-                            # Using politician (text) not politician_id, as that's what the constraint uses
+                            # Note: Unique constraint should be on (politician_id, ticker, transaction_date, amount, type, owner)
+                            # After migration 27, politician (text) column was dropped, so constraint must use politician_id
                             try:
                                 result = supabase_client.supabase.table("congress_trades")\
                                     .upsert(
                                         trade_record,
-                                        on_conflict="politician,ticker,transaction_date,amount,type,owner"
+                                        on_conflict="politician_id,ticker,transaction_date,amount,type,owner"
                                     )\
                                     .execute()
                                 

@@ -133,6 +133,27 @@ steps:
       - cp web_dashboard/static/set_cookie.html /deploy_target/frontend/set_cookie.html
       - cp web_dashboard/static/login.html /deploy_target/frontend/login.html
       
+      # Deploy Research PDF files efficiently (only copy if Research folder exists and has PDFs)
+      # Only copies files that are newer than destination (incremental update)
+      - |
+        if [ -d "Research" ] && [ "$(find Research -name '*.pdf' -type f 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "Deploying Research PDF files..."
+          mkdir -p /deploy_target/Research
+          # Copy PDFs preserving directory structure, only if source is newer (efficient incremental)
+          find Research -name '*.pdf' -type f | while read pdf_file; do
+            dest_file="/deploy_target/$pdf_file"
+            dest_dir=$(dirname "$dest_file")
+            mkdir -p "$dest_dir"
+            # Only copy if source is newer or destination doesn't exist
+            if [ ! -f "$dest_file" ] || [ "$pdf_file" -nt "$dest_file" ]; then
+              cp "$pdf_file" "$dest_file"
+            fi
+          done
+          echo "✅ Research files deployed"
+        else
+          echo "ℹ️  No Research folder or PDFs found, skipping..."
+        fi
+      
       - echo "✅ Build and deployment complete!"
     when:
       event: push

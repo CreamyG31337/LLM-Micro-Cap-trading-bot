@@ -27,7 +27,7 @@ def setup_error_handlers() -> None:
             return
         
         # Log the exception
-        logger.critical(
+        logger.error(
             "Uncaught exception",
             exc_info=(exc_type, exc_value, exc_traceback)
         )

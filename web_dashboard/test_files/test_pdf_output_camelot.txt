@@ -1,0 +1,10 @@
+PDF Parsing Output: camelot
+======================================================================
+Source PDF: C:\Users\cream\OneDrive\Documents\LLM-Micro-Cap-trading-bot\Research\Researching Gain Therapeutics Drug Testing.pdf
+Extraction Time: 36.51s
+Character Count: 54
+Number of Pages: 2
+Number of Tables: 2
+======================================================================
+
+[Note: camelot-py extracts tables only, not full text]

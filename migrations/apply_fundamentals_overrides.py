@@ -74,14 +74,8 @@ def main():
         if 'country' in override_data:
             update_obj['country'] = override_data['country']
         
-        # Also update company_name from description_note if it looks like a proper name
-        if 'description_note' in override_data:
-            # Extract company name from description (text before " - ")
-            desc = override_data['description_note']
-            if ' - ' in desc:
-                company_name = desc.split(' - ')[0].strip()
-                update_obj['company_name'] = company_name
-        
+        # Note: description_note is NOT used for company_name - it's just a note
+        # Company names should be fetched from yfinance or provided explicitly
         
         if not update_obj:
             skipped += 1

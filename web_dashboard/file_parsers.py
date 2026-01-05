@@ -30,16 +30,24 @@ def extract_text_from_file(uploaded_file) -> Optional[str]:
         return None
 
 def parse_pdf(file_obj) -> Optional[str]:
-    """Extract text from a PDF file."""
+    """Extract text from a PDF file using pdfplumber (better formatting than pypdf)."""
     try:
-        import pypdf
-        reader = pypdf.PdfReader(file_obj)
+        import pdfplumber
+        
+        # Reset file pointer if it's a file-like object
+        if hasattr(file_obj, 'seek'):
+            file_obj.seek(0)
+        
         text = ""
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
-        return text
+        with pdfplumber.open(file_obj) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        
+        return text if text.strip() else None
     except ImportError:
-        logger.error("pypdf not installed. Please install it with `pip install pypdf`")
+        logger.error("pdfplumber not installed. Please install it with `pip install pdfplumber`")
         return None
     except Exception as e:
         logger.error(f"Error parsing PDF: {e}")

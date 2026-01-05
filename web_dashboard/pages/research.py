@@ -413,97 +413,149 @@ with st.sidebar:
         
         # Upload Report Section
         with st.expander("📤 Upload Report", expanded=False):
-            # Use the fund context from sidebar, but allow override
-            st.info(f"💡 **Tip:** The fund selected in the sidebar will be used for this upload. You can change it below if needed.")
+            st.info("💡 **Note:** Files are saved to organized folders. The processing job will automatically add date prefixes and process them.")
             
-            try:
-                funds = get_available_funds()
-                if funds:
-                    # Default to the fund context from sidebar
-                    default_fund = fund_context if fund_context else ""
-                    fund_options = [""] + funds
-                    default_index = fund_options.index(default_fund) if default_fund in fund_options else 0
-                    
-                    selected_fund = st.selectbox(
-                        "📊 Fund (for fund-specific reports)",
-                        options=fund_options,
-                        index=default_index,
-                        help="Select the fund this report is prepared for. Leave blank for general market news. Defaults to the fund selected in the sidebar.",
-                        key="upload_fund_selector"
-                    )
-                    upload_fund = selected_fund if selected_fund else None
+            # Report type selection
+            report_type = st.radio(
+                "Report Type",
+                options=["Ticker-specific", "News/Market", "Fund-specific"],
+                help="Select the type of research report",
+                key="upload_report_type"
+            )
+            
+            # Get ticker or fund based on type
+            ticker_input = None
+            selected_fund = None
+            
+            if report_type == "Ticker-specific":
+                ticker_input = st.text_input(
+                    "Ticker Symbol",
+                    placeholder="GANX",
+                    help="Enter the ticker symbol this report is about",
+                    key="upload_ticker"
+                ).strip().upper()
+                
+                if not ticker_input:
+                    st.warning("⚠️ Please enter a ticker symbol")
+            elif report_type == "Fund-specific":
+                try:
+                    funds = get_available_funds()
+                    if funds:
+                        # Default to the fund context from sidebar
+                        default_fund = fund_context if fund_context else ""
+                        fund_options = [""] + funds
+                        default_index = fund_options.index(default_fund) if default_fund in fund_options else 0
+                        
+                        selected_fund = st.selectbox(
+                            "📊 Fund",
+                            options=fund_options,
+                            index=default_index,
+                            help="Select the fund this report is prepared for",
+                            key="upload_fund_selector"
+                        )
+                        selected_fund = selected_fund if selected_fund else None
+                    else:
+                        st.warning("No funds available")
+                except Exception as e:
+                    logger.error(f"Error getting funds: {e}")
+                    selected_fund = None
+            
+            # File uploader - support multiple files for bulk upload
+            uploaded_files = st.file_uploader(
+                "Upload PDF(s)", 
+                type=['pdf'], 
+                accept_multiple_files=True,
+                help="Select one or multiple PDF files. You can select multiple files at once for bulk upload."
+            )
+            
+            if uploaded_files:
+                # Validate inputs
+                if report_type == "Ticker-specific" and not ticker_input:
+                    st.error("⚠️ Please enter a ticker symbol")
+                elif report_type == "Fund-specific" and not selected_fund:
+                    st.error("⚠️ Please select a fund")
                 else:
-                    st.warning("No funds available")
-                    upload_fund = None
-            except Exception as e:
-                logger.error(f"Error getting funds: {e}")
-                upload_fund = None
-            
-            uploaded_file = st.file_uploader("Upload PDF or DOCX", type=['pdf', 'docx'])
-            
-            if uploaded_file is not None:
-                if st.button("Process & Save", type="primary"):
-                    with st.spinner("Processing file..."):
+                    file_count = len(uploaded_files)
+                    upload_label = f"💾 Save {file_count} File{'s' if file_count > 1 else ''}" if file_count > 0 else "💾 Save File"
+                    
+                    if st.button(upload_label, type="primary"):
                         try:
-                            # Extract text
-                            text_content = extract_text_from_file(uploaded_file)
+                            from pathlib import Path
+                            from research_report_service import ensure_research_folder
                             
-                            if text_content and len(text_content.strip()) > 50:
-                                # Generate summary if AI is available
-                                client = get_ollama_client()
-                                summary_result = {}
+                            # Ensure Research folder exists
+                            research_base = ensure_research_folder()
+                            
+                            if report_type == "Ticker-specific":
+                                target_folder = research_base / ticker_input
+                            elif report_type == "News/Market":
+                                target_folder = research_base / "_NEWS"
+                            else:  # Fund-specific
+                                target_folder = research_base / "_FUND"
+                            
+                            # Create folder if it doesn't exist
+                            target_folder.mkdir(parents=True, exist_ok=True)
+                            
+                            # Process all uploaded files
+                            saved_files = []
+                            skipped_files = []
+                            
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            for idx, uploaded_file in enumerate(uploaded_files):
+                                try:
+                                    # Update progress
+                                    progress = (idx + 1) / len(uploaded_files)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Processing {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}")
+                                    
+                                    # Check if file already exists
+                                    file_path = target_folder / uploaded_file.name
+                                    
+                                    if file_path.exists():
+                                        skipped_files.append(uploaded_file.name)
+                                        logger.info(f"File already exists, skipping: {uploaded_file.name}")
+                                        continue
+                                    
+                                    # Save file (job will add date prefix later)
+                                    with open(file_path, "wb") as f:
+                                        f.write(uploaded_file.getbuffer())
+                                    
+                                    saved_files.append(uploaded_file.name)
+                                    
+                                except Exception as e:
+                                    logger.error(f"Error saving file {uploaded_file.name}: {e}", exc_info=True)
+                                    skipped_files.append(f"{uploaded_file.name} (error: {str(e)})")
+                            
+                            # Clear progress indicators
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            # Show results
+                            if saved_files:
+                                st.success(f"✅ Saved {len(saved_files)} file(s) to: `{target_folder.relative_to(Path(__file__).parent.parent.parent)}`")
                                 
-                                if client and check_ollama_health():
-                                    st.info("Generating AI summary...")
-                                    try:
-                                        summary_result = client.generate_summary(text_content, model=get_summarizing_model())
-                                    except Exception as e:
-                                        logger.error(f"AI summary failed: {e}")
-                                        st.warning("AI summary failed, saving without summary")
-                                
-                                # Prepare article data
-                                title = uploaded_file.name.rsplit('.', 1)[0].replace('_', ' ').replace('-', ' ').title()
-                                
-                                # Use AI extracted companies/tickers if available
-                                companies = summary_result.get('companies', [])
-                                
-                                # Extract logic_check for relationship confidence scoring
-                                logic_check = summary_result.get("logic_check") if isinstance(summary_result, dict) else None
-                                
-                                # Save to database with fund (if selected)
-                                article_id = repo.save_article(
-                                    tickers=companies if companies else None,
-                                    sector=None,
-                                    article_type="uploaded_report",
-                                    title=title,
-                                    url=f"upload://{uploaded_file.name}-{int(time.time())}",  # Unique URL
-                                    summary=summary_result.get('summary', "No summary available."),
-                                    content=text_content,
-                                    source="Uploaded File",
-                                    published_at=datetime.now(timezone.utc),
-                                    relevance_score=0.9,  # Assume uploaded reports are highly relevant
-                                    embedding=summary_result.get('embedding'),
-                                    fund=upload_fund,  # Fund-specific tag for uploaded reports
-                                    claims=summary_result.get("claims") if isinstance(summary_result, dict) else None,
-                                    fact_check=summary_result.get("fact_check") if isinstance(summary_result, dict) else None,
-                                    conclusion=summary_result.get("conclusion") if isinstance(summary_result, dict) else None,
-                                    sentiment=summary_result.get("sentiment") if isinstance(summary_result, dict) else None,
-                                    sentiment_score=summary_result.get("sentiment_score") if isinstance(summary_result, dict) else None,
-                                    logic_check=logic_check
-                                )
-                                
-                                if article_id:
-                                    st.success(f"✅ Saved: {title}")
-                                    st.session_state.refresh_key += 1
-                                    time.sleep(1)
-                                    st.rerun()
+                                if len(saved_files) <= 5:
+                                    for filename in saved_files:
+                                        st.caption(f"  • {filename}")
                                 else:
-                                    st.error("Failed to save article to database")
-                            else:
-                                st.error("Could not extract text from file. It might be empty or scanned (images).")
+                                    st.caption(f"  • {saved_files[0]} ... and {len(saved_files) - 1} more")
+                            
+                            if skipped_files:
+                                st.warning(f"⚠️ Skipped {len(skipped_files)} file(s) (already exist or errors)")
+                            
+                            if saved_files:
+                                st.info("ℹ️ The processing job will automatically add date prefixes and process these files.")
+                            
+                            # Small delay then rerun to clear uploader
+                            if saved_files:
+                                time.sleep(2)
+                                st.rerun()
+                            
                         except Exception as e:
-                            st.error(f"Error processing file: {e}")
-                            logger.error(f"Upload error: {e}")
+                            st.error(f"Error saving files: {e}")
+                            logger.error(f"Bulk upload error: {e}", exc_info=True)
         
         st.markdown("---")
         

@@ -596,33 +596,40 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Failed to batch query running jobs: {e}")
     
-    # Batch query 2: Get all last errors (most recent failed execution per job)
+    # Batch query 2: Get most recent execution status (to check for errors vs success)
     try:
         from supabase_client import SupabaseClient
         client = SupabaseClient(use_service_role=True)
         
-        # Get most recent failed execution for each job
-        # We'll get all failed executions and group in memory (Supabase doesn't support DISTINCT ON easily)
-        failed_result = client.supabase.table("job_executions")\
-            .select("job_name, error_message, completed_at")\
+        # Get most recent execution (success or failed) for each job
+        # We need to see if the *last* run was a failure
+        status_result = client.supabase.table("job_executions")\
+            .select("job_name, status, error_message, completed_at")\
             .in_("job_name", job_names_list)\
-            .eq("status", "failed")\
+            .in_("status", ["success", "failed"])\
             .order("completed_at", desc=True)\
-            .limit(100)\
-            .execute()  # Get enough to find most recent per job
+            .limit(200)\
+            .execute()
         
-        if failed_result.data:
-            # Group by job_name, keeping only the most recent for each
-            job_name_to_latest_error = {}
-            for record in failed_result.data:
+        if status_result.data:
+            # Group by job_name, keeping only the absolute most recent for each
+            job_name_to_latest_status = {}
+            for record in status_result.data:
                 job_name = record.get('job_name')
-                if job_name not in job_name_to_latest_error:
-                    job_name_to_latest_error[job_name] = record.get('error_message')
+                # Since we ordered by completed_at desc, the first one we see is the latest
+                if job_name not in job_name_to_latest_status:
+                    job_name_to_latest_status[job_name] = record
             
             # Map back to job IDs
             for job_id, job_name in job_id_to_name.items():
-                if job_name in job_name_to_latest_error:
-                    job_statuses[job_id]['last_error'] = job_name_to_latest_error[job_name]
+                if job_name in job_name_to_latest_status:
+                    latest = job_name_to_latest_status[job_name]
+                    # Only show error if the MOST RECENT execution was a failure
+                    if latest.get('status') == 'failed':
+                        job_statuses[job_id]['last_error'] = latest.get('error_message')
+                    else:
+                        # Job succeeded recently, so clear any error status
+                        job_statuses[job_id]['last_error'] = None
     except Exception as e:
         logger.warning(f"Failed to batch query last errors: {e}")
     

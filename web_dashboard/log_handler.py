@@ -86,7 +86,7 @@ class InMemoryLogHandler(logging.Handler):
         
         Args:
             n: Number of recent logs to return (None = all)
-            level: Filter by log level (e.g., 'INFO', 'ERROR')
+            level: Filter by log level (str) or list of levels (e.g., ['INFO', 'ERROR'])
             module: Filter by module name (partial match)
             search: Filter by message text (case-insensitive)
             
@@ -98,7 +98,12 @@ class InMemoryLogHandler(logging.Handler):
         
         # Apply filters
         if level:
-            logs = [log for log in logs if log['level'] == level]
+            if isinstance(level, list):
+                # Support multiple levels
+                logs = [log for log in logs if log['level'] in level]
+            else:
+                # Single level filter
+                logs = [log for log in logs if log['level'] == level]
         
         if module:
             logs = [log for log in logs if module.lower() in log['module'].lower()]
@@ -229,7 +234,7 @@ def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> Lis
     
     Args:
         n: Number of recent logs to return (ignored if return_all=True)
-        level: Filter by log level
+        level: Filter by log level (str) or list of levels (e.g., ['INFO', 'ERROR'])
         search: Filter by message text
         return_all: If True, return all filtered logs (up to reasonable limit)
         
@@ -294,7 +299,12 @@ def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> Lis
                 
         # Apply filters
         if level:
-            logs = [log for log in logs if log['level'] == level]
+            if isinstance(level, list):
+                # Support multiple levels
+                logs = [log for log in logs if log['level'] in level]
+            else:
+                # Single level filter
+                logs = [log for log in logs if log['level'] == level]
         
         if search:
             search_lower = search.lower()

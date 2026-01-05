@@ -21,6 +21,14 @@
         file_server
     }
     
+    # Serve Research PDF files (static file server)
+    handle /research/* {
+        root * /ai-trading
+        file_server
+        # Optional: Add cache headers for PDFs
+        header Cache-Control "public, max-age=3600"
+    }
+    
     # Reverse proxy everything else to Streamlit
     reverse_proxy localhost:8501 {
         # WebSocket support for Streamlit

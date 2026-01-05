@@ -1424,3 +1424,176 @@ def archive_retry_job() -> None:
             pass
         logger.error(f"❌ Archive retry job failed: {e}", exc_info=True)
 
+
+def process_research_reports_job() -> None:
+    """Process PDF research reports from Research/ folders.
+    
+    This job:
+    1. Scans Research/ directory for PDF files
+    2. Checks if files are already processed (by url path)
+    3. Adds YYYYMMDD date prefix if missing
+    4. Extracts text and tables using pdfplumber
+    5. Generates embeddings and AI summaries
+    6. Stores in research_articles database
+    """
+    job_id = 'process_research_reports'
+    start_time = time.time()
+    target_date = datetime.now(timezone.utc).date()
+    
+    try:
+        # Import job tracking
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        
+        logger.info("Starting research reports processing job...")
+        
+        # Mark job as started
+        mark_job_started('process_research_reports', target_date)
+        
+        # Import dependencies
+        try:
+            from research_report_service import (
+                scan_research_folder,
+                add_date_prefix_to_filename,
+                extract_title_from_filename,
+                determine_report_type,
+                get_relative_path,
+                check_file_already_processed,
+                parse_filename_date
+            )
+            from file_parsers import parse_pdf
+            from ollama_client import get_ollama_client
+            from research_repository import ResearchRepository
+        except ImportError as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Missing dependency: {e}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ {message}")
+            return
+        
+        # Initialize clients
+        research_repo = ResearchRepository()
+        ollama_client = get_ollama_client()
+        
+        if not ollama_client:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "Ollama client not available - cannot generate embeddings"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.warning(f"⚠️ {message}")
+            return
+        
+        # Scan for PDF files
+        pdf_files = scan_research_folder()
+        
+        if not pdf_files:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "No PDF files found in Research directory"
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed('process_research_reports', target_date, None, [], duration_ms=duration_ms)
+            logger.info(f"ℹ️ {message}")
+            return
+        
+        processed_count = 0
+        skipped_count = 0
+        failed_count = 0
+        
+        # Process each PDF file
+        for pdf_file in pdf_files:
+            try:
+                # Check if already processed
+                if check_file_already_processed(pdf_file, research_repo):
+                    logger.debug(f"Skipping already processed: {pdf_file.name}")
+                    skipped_count += 1
+                    continue
+                
+                logger.info(f"Processing: {pdf_file}")
+                
+                # Add date prefix if missing
+                pdf_file = add_date_prefix_to_filename(pdf_file)
+                
+                # Extract metadata from filename and folder
+                filename = pdf_file.name
+                title = extract_title_from_filename(filename)
+                published_at = parse_filename_date(filename) or datetime.now(timezone.utc)
+                
+                # Determine report type from folder
+                folder_path = pdf_file.parent
+                report_info = determine_report_type(folder_path)
+                
+                # Extract text from PDF
+                logger.info(f"  Extracting text from PDF...")
+                with open(pdf_file, 'rb') as f:
+                    text_content = parse_pdf(f)
+                
+                if not text_content or len(text_content.strip()) < 50:
+                    logger.warning(f"  No text extracted from {pdf_file.name}")
+                    failed_count += 1
+                    continue
+                
+                # Generate embedding and summary
+                logger.info(f"  Generating AI summary and embedding...")
+                summary_result = {}
+                
+                try:
+                    summary_result = ollama_client.generate_summary(text_content)
+                except Exception as e:
+                    logger.warning(f"  AI summary failed: {e}")
+                
+                # Prepare article data
+                relative_path = get_relative_path(pdf_file)
+                
+                # Determine fund if _FUND folder (would need additional logic to determine which fund)
+                fund = None
+                if report_info['type'] == 'fund':
+                    # For now, leave as None - could be enhanced to extract from filename or folder structure
+                    fund = None
+                
+                # Save to database
+                article_id = research_repo.save_article(
+                    tickers=[report_info['ticker']] if report_info['ticker'] else None,
+                    sector=None,
+                    article_type="research_report",
+                    title=title,
+                    url=relative_path,  # Store file path as URL
+                    summary=summary_result.get('summary', "No summary available."),
+                    content=text_content,
+                    source="Research Report",
+                    published_at=published_at,
+                    relevance_score=0.9,  # Research reports are highly relevant
+                    embedding=summary_result.get('embedding'),
+                    fund=fund,
+                    claims=summary_result.get("claims") if isinstance(summary_result, dict) else None,
+                    fact_check=summary_result.get("fact_check") if isinstance(summary_result, dict) else None,
+                    conclusion=summary_result.get("conclusion") if isinstance(summary_result, dict) else None,
+                    sentiment=summary_result.get("sentiment") if isinstance(summary_result, dict) else None,
+                    sentiment_score=summary_result.get("sentiment_score") if isinstance(summary_result, dict) else None,
+                    logic_check=summary_result.get("logic_check") if isinstance(summary_result, dict) else None
+                )
+                
+                if article_id:
+                    logger.info(f"  ✅ Saved: {title}")
+                    processed_count += 1
+                else:
+                    logger.warning(f"  ⚠️ Failed to save: {title}")
+                    failed_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Error processing {pdf_file}: {e}", exc_info=True)
+                failed_count += 1
+                continue
+        
+        # Log completion
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Processed {processed_count} reports, skipped {skipped_count} already processed, {failed_count} failed"
+        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        mark_job_completed('process_research_reports', target_date, None, [], duration_ms=duration_ms)
+        logger.info(f"✅ {message}")
+        
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        message = f"Error: {str(e)}"
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed('process_research_reports', target_date, None, message, duration_ms=duration_ms)
+        except Exception:
+            pass
+        logger.error(f"❌ Research reports processing job failed: {e}", exc_info=True)

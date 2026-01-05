@@ -1,0 +1,68 @@
+PDF Parsing Comparison Report
+======================================================================
+Generated: 2026-01-04 18:09:52
+Source PDF: C:\Users\cream\OneDrive\Documents\LLM-Micro-Cap-trading-bot\Research\Researching Gain Therapeutics Drug Testing.pdf
+======================================================================
+
+SUMMARY STATISTICS
+----------------------------------------------------------------------
+
+PYPDF:
+  Status: SUCCESS
+  Character Count: 52,274
+  Number of Pages: 20
+  Extraction Time: 4.29s
+
+PDFPLUMBER:
+  Status: SUCCESS
+  Character Count: 43,853
+  Number of Pages: 20
+  Extraction Time: 7.32s
+  Number of Tables: 2
+
+CAMELOT:
+  Status: SUCCESS
+  Character Count: 54
+  Number of Pages: 2
+  Extraction Time: 36.51s
+  Number of Tables: 2
+
+
+======================================================================
+COMPARISON
+======================================================================
+
+Text Extraction Comparison:
+----------------------------------------------------------------------
+Total Characters (including whitespace):
+  pypdf          :     52,274 chars (100.0%)
+  pdfplumber     :     43,853 chars ( 83.9%)
+
+Non-Whitespace Characters (actual content):
+  pypdf          :     38,157 chars (100.0%), 5,441 newlines
+  pdfplumber     :     38,157 chars (100.0%), 692 newlines
+
+Word Count:
+  pypdf          :      5,712 words (100.0%)
+  pdfplumber     :      5,696 words ( 99.7%)
+
+Table Extraction Comparison:
+----------------------------------------------------------------------
+  pdfplumber     : 2 tables
+  camelot        : 2 tables
+
+Performance Comparison:
+----------------------------------------------------------------------
+  pypdf          :   4.29s
+  pdfplumber     :   7.32s
+  camelot        :  36.51s
+
+
+======================================================================
+RECOMMENDATIONS
+======================================================================
+
+[OK] pdfplumber extracted tables - good for documents with tables
+[OK] pdfplumber extracted text - good text extraction quality
+[OK] pypdf extracted text - basic but reliable
+[OK] camelot extracted tables - specialized for table extraction

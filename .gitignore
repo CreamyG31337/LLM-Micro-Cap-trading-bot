@@ -312,3 +312,7 @@ gemini-webapi-backup.zip
 
 # WebAI conversation persistence (per-user conversations)
 data/conversations/
+
+# Research PDF files (ignore PDFs but keep folder structure)
+Research/**/*.pdf
+!Research/**/.gitkeep

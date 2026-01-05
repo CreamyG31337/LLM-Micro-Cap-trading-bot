@@ -120,6 +120,51 @@ def get_service_url(key: str) -> str:
     return keys[key]
 
 
+def get_model_display_name(model_id: str) -> str:
+    """
+    Get obfuscated model display name by model identifier.
+    
+    Args:
+        model_id: Model identifier (e.g., "gemini-2.5-flash")
+        
+    Returns:
+        Display name for the model (obfuscated from keys file)
+        
+    Raises:
+        KeyError: If model not found or keys file missing
+    """
+    keys = _load_keys()
+    
+    # Map model IDs to key names
+    model_key_map = {
+        "gemini-2.5-flash": "MODEL_DISPLAY_2_5_FLASH",
+        "gemini-2.5-pro": "MODEL_DISPLAY_2_5_PRO",
+        "gemini-3.0-pro": "MODEL_DISPLAY_3_0_PRO",
+    }
+    
+    key_name = model_key_map.get(model_id)
+    if not key_name:
+        # Fallback to model_id if not found
+        return model_id
+    
+    if key_name not in keys:
+        # Fallback if keys file doesn't have display names yet
+        return model_id
+    
+    return keys[key_name]
+
+
+def get_model_display_name_short() -> str:
+    """
+    Get short obfuscated model display name.
+    
+    Returns:
+        Short display name (obfuscated from keys file)
+    """
+    keys = _load_keys()
+    return keys.get("MODEL_DISPLAY_3_PRO", "WebAI Pro")
+
+
 def list_service_keys() -> Dict[str, str]:
     """
     List all available service keys (for debugging).

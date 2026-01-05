@@ -64,7 +64,7 @@ An advanced AI-powered trading bot for micro-cap stock analysis with dual curren
 ### **Simple Daily Routine**
 1. **Run the trading script**: `python trading_script.py --data-dir "trading_data/funds/TEST"`
 2. **Copy the generated prompt** (complete market analysis and portfolio report)
-3. **Paste into your preferred LLM** (ChatGPT, Claude, Gemini, etc.)
+3. **Paste into your preferred LLM** (ChatGPT, Claude, WebAI, etc.)
 4. **Execute the AI's trade recommendations** by running the script again
 5. **Repeat daily** for continuous AI-driven trading
 

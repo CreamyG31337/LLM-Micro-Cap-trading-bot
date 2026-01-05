@@ -51,6 +51,11 @@ def main():
         "API_V1": "/v1/models",
         "MODEL_NAME": "gemini-pro",  # Model identifier (obfuscated)
         "GENERATE_ENDPOINT": ":generateContent",
+        # Model display names (obfuscated for privacy)
+        "MODEL_DISPLAY_2_5_FLASH": "Gemini 2.5 Flash",
+        "MODEL_DISPLAY_2_5_PRO": "Gemini 2.5 Pro",
+        "MODEL_DISPLAY_3_0_PRO": "Gemini 3.0 Pro",
+        "MODEL_DISPLAY_3_PRO": "Gemini 3 Pro",
     }
     
     # Create obfuscated dictionary

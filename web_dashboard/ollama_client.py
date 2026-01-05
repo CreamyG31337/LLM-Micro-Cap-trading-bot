@@ -1031,23 +1031,23 @@ def list_available_models(include_hidden: bool = False) -> List[str]:
 
     By default, excludes models marked as "hidden": true in model_config.json.
     Models not in the JSON config are included (backward compatibility).
-    Also includes Gemini web-based model options.
+    Also includes WebAI web-based model options.
 
     Args:
         include_hidden: If True, include models marked as hidden
 
     Returns:
-        List of model names (filtered, includes Gemini variants)
+        List of model names (filtered, includes WebAI variants)
     """
     models = []
     client = get_ollama_client()
     if client:
         models = client.get_filtered_models(include_hidden=include_hidden)
     
-    # Add web-based Gemini model options
-    gemini_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
-    for gemini_model in gemini_models:
-        if gemini_model not in models:
-            models.append(gemini_model)
+    # Add web-based WebAI model options
+    webai_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
+    for webai_model in webai_models:
+        if webai_model not in models:
+            models.append(webai_model)
     
     return models

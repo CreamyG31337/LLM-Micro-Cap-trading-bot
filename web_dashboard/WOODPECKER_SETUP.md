@@ -31,10 +31,10 @@ In Woodpecker, go to your repository → **Settings** → **Secrets**, and add:
   - Get your API key from: https://site.financialmodelingprep.com/developer/docs/
   - Required for `congress_trades` scheduled job to fetch congressional stock trading disclosures
   - If not set, congress trading module will be disabled (job will log error but continue)
-- **`webai_cookies_json`** - WebAI service cookies (for Gemini 3 Pro model)
+- **`webai_cookies_json`** - WebAI service cookies (for WebAI Pro model)
   - JSON string containing cookies: `{"__Secure-1PSID":"...","__Secure-1PSIDTS":"..."}`
   - Alternative: Use `webai_secure_1psid` and `webai_secure_1psidts` separately
-  - Required for Gemini 3 Pro model to work in production
+  - Required for WebAI Pro model to work in production
   - See `web_dashboard/WEBAI_COOKIE_SETUP.md` for extraction instructions
 - **`webai_secure_1psid`** - WebAI service cookie (alternative to JSON)
   - Individual cookie value for `__Secure-1PSID`

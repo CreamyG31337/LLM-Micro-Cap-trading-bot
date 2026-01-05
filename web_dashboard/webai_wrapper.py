@@ -480,7 +480,7 @@ class PersistentConversationSession:
             cookies_file: Optional path to cookie file
             auto_refresh: Whether to automatically refresh cookies
             storage_dir: Directory to store session files (default: project_root/data/conversations)
-            model: Gemini model to use (e.g., "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro")
+            model: WebAI model to use (e.g., "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro")
             system_prompt: Optional system prompt (will create a custom Gem if provided)
         """
         self.session_id = session_id

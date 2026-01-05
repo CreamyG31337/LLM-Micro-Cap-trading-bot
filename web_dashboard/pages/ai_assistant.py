@@ -47,7 +47,19 @@ try:
 except ImportError:
     HAS_WEBAI = False
     PersistentConversationSession = None
-    logger.warning("WebAI package not available. Gemini 3 Pro will be disabled.")
+    logger.warning("WebAI package not available. WebAI Pro will be disabled.")
+
+# Import obfuscated model display names
+try:
+    from ai_service_keys import get_model_display_name, get_model_display_name_short
+    HAS_MODEL_KEYS = True
+except (ImportError, FileNotFoundError, KeyError):
+    HAS_MODEL_KEYS = False
+    # Fallback functions if keys file not available
+    def get_model_display_name(model_id: str) -> str:
+        return model_id
+    def get_model_display_name_short() -> str:
+        return "WebAI Pro"
 
 # Page configuration
 st.set_page_config(
@@ -271,7 +283,7 @@ def calculate_context_size(
     context_window = 4096  # Default for unknown models
     
     if selected_model.startswith("gemini-"):
-        # Gemini models have large context windows
+        # WebAI models have large context windows
         if "flash" in selected_model:
             context_window = 1048576  # 1M tokens for Flash
         else:  # Pro models (2.5-pro, 3.0-pro)
@@ -394,7 +406,7 @@ with col2:
 if 'suggested_prompt' not in st.session_state:
     st.session_state.suggested_prompt = None
 
-# Check Ollama connection (cached) - but don't block Gemini users yet
+# Check Ollama connection (cached) - but don't block WebAI users yet
 ollama_available = get_cached_ollama_health()
 
 # Check SearXNG connection (cached, non-blocking)
@@ -416,22 +428,27 @@ with st.sidebar:
     if default_model not in available_models:
         available_models.insert(0, default_model)
 
-    # Format model names for display (show "Gemini 2.5 Flash" instead of "gemini-2.5-flash")
+    # Format model names for display (show friendly names instead of technical identifiers)
     def format_model_name(model: str) -> str:
-        model_display_names = {
-            "gemini-2.5-flash": "Gemini 2.5 Flash",
-            "gemini-2.5-pro": "Gemini 2.5 Pro",
-            "gemini-3.0-pro": "Gemini 3.0 Pro"
-        }
-        return model_display_names.get(model, model)
+        """Format model name using obfuscated keys."""
+        if HAS_MODEL_KEYS and model.startswith("gemini-"):
+            try:
+                return get_model_display_name(model)
+            except (KeyError, FileNotFoundError):
+                pass
+        return model
     
     def get_model_value(display_name: str) -> str:
-        display_to_model = {
-            "Gemini 2.5 Flash": "gemini-2.5-flash",
-            "Gemini 2.5 Pro": "gemini-2.5-pro",
-            "Gemini 3.0 Pro": "gemini-3.0-pro"
-        }
-        return display_to_model.get(display_name, display_name)
+        """Get model identifier from display name (reverse lookup)."""
+        if HAS_MODEL_KEYS:
+            # Try to find matching model by checking all known models
+            for model_id in ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]:
+                try:
+                    if get_model_display_name(model_id) == display_name:
+                        return model_id
+                except (KeyError, FileNotFoundError):
+                    continue
+        return display_name
     
     # Create display names for dropdown
     display_models = [format_model_name(m) for m in available_models]
@@ -459,14 +476,29 @@ with st.sidebar:
 
     # Check model-specific requirements
     if selected_model.startswith("gemini-"):
-        # Gemini models use web-based API
-        model_descriptions = {
-            "gemini-2.5-flash": "⚡ Gemini 2.5 Flash - Fast responses with 1M token context",
-            "gemini-2.5-pro": "🧠 Gemini 2.5 Pro - Advanced reasoning with 2M token context",
-            "gemini-3.0-pro": "✨ Gemini 3.0 Pro - Latest model with 2M token context"
-        }
-        st.caption(f"ℹ️ {model_descriptions.get(selected_model, 'Web-based AI model with persistent conversations')}")
-        # Gemini doesn't need Ollama
+        # WebAI models use web-based API
+        if HAS_MODEL_KEYS:
+            try:
+                display_name = get_model_display_name(selected_model)
+                # Build description with obfuscated name
+                emoji_map = {
+                    "gemini-2.5-flash": "⚡",
+                    "gemini-2.5-pro": "🧠",
+                    "gemini-3.0-pro": "✨"
+                }
+                emoji = emoji_map.get(selected_model, "🤖")
+                context_map = {
+                    "gemini-2.5-flash": "Fast responses with 1M token context",
+                    "gemini-2.5-pro": "Advanced reasoning with 2M token context",
+                    "gemini-3.0-pro": "Latest model with 2M token context"
+                }
+                context = context_map.get(selected_model, "Web-based AI model")
+                st.caption(f"ℹ️ {emoji} {display_name} - {context}")
+            except (KeyError, FileNotFoundError):
+                st.caption(f"ℹ️ Web-based AI model with persistent conversations")
+        else:
+            st.caption(f"ℹ️ Web-based AI model with persistent conversations")
+        # WebAI doesn't need Ollama
         if not HAS_WEBAI:
             st.error("❌ WebAI package not installed. Install with: pip install gemini-webapi")
             st.stop()
@@ -474,7 +506,8 @@ with st.sidebar:
         # Ollama models require Ollama to be running
         if not ollama_available:
             st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
-            st.info("💡 Tip: Try selecting 'Gemini 3 Pro' to use the web-based model instead.")
+            model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+            st.info(f"💡 Tip: Try selecting '{model_name}' to use the web-based model instead.")
             st.stop()
         
         client = get_ollama_client()
@@ -686,8 +719,8 @@ with st.sidebar:
     # Research Knowledge section
     st.header("🧠 Research Knowledge")
 
-    # Check if Ollama is available (needed for embeddings) AND not using Gemini
-    # Gemini users might not have Ollama running
+    # Check if Ollama is available (needed for embeddings) AND not using WebAI
+    # WebAI users might not have Ollama running
     if ollama_available and not selected_model.startswith("gemini-"):
         include_repository = st.checkbox(
             "Use Research Repository",
@@ -717,7 +750,7 @@ with st.sidebar:
                     key="repository_min_similarity"
                 )
     elif selected_model.startswith("gemini-"):
-        st.info("ℹ️ Repository search requires Ollama for embeddings. Not available with Gemini models.")
+        st.info("ℹ️ Repository search requires Ollama for embeddings. Not available with WebAI models.")
         include_repository = False
         repository_max_results = 3
         repository_min_similarity = 0.6
@@ -1489,10 +1522,10 @@ if user_query:
         full_response = ""
 
         try:
-            # Check if using Gemini (webai) or Ollama
+            # Check if using WebAI or Ollama
             if selected_model.startswith("gemini-"):
                 # Use webai service with persistent conversation
-                # NOTE: Gemini via web UI has limitations:
+                # NOTE: WebAI via web UI has limitations:
                 # - No system prompts (must include instructions in user message)
                 # - Context size limited by web UI input field
                 # - No tool/function calling support
@@ -1506,7 +1539,8 @@ if user_query:
                     user_id = get_user_id()
                     if not user_id:
                         status_placeholder.empty()
-                        st.error("User authentication required for Gemini 3 Pro")
+                        model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                        st.error(f"User authentication required for {model_name}")
                         st.stop()
                     
                     # Check if user changed FIRST (before checking session existence)
@@ -1533,25 +1567,25 @@ if user_query:
                         )
                         st.session_state.webai_user_id = user_id
                     
-                    # For Gemini web UI, we need to include instructions in the message itself
+                    # For WebAI web UI, we need to include instructions in the message itself
                     # since there's no system prompt support
-                    gemini_instructions = (
+                    webai_instructions = (
                         "You are an AI portfolio assistant. Analyze the provided portfolio data, "
                         "news, and research articles to provide insights. Be concise and actionable.\n\n"
                     )
                     
-                    # Construct final message for Gemini (inline instructions + context + query)
-                    gemini_message = gemini_instructions + full_prompt
+                    # Construct final message for WebAI (inline instructions + context + query)
+                    webai_message = webai_instructions + full_prompt
                     
                     # Warn if context is very large (web UI may have limits)
-                    if len(gemini_message) > 30000:  # ~7500 tokens
+                    if len(webai_message) > 30000:  # ~7500 tokens
                         st.warning(
                             "⚠️ Large context detected. The web UI may truncate very long messages. "
                             "Consider disabling some context sources or using an Ollama model for better handling."
                         )
                     
                     # Send message and get response
-                    full_response = st.session_state.webai_session.send_sync(gemini_message)
+                    full_response = st.session_state.webai_session.send_sync(webai_message)
                     
                     # Clear status and show final response
                     status_placeholder.empty()
@@ -1561,11 +1595,13 @@ if user_query:
                     # Missing cookies error
                     status_placeholder.empty()
                     st.error(f"WebAI configuration error: {e}")
-                    st.info("💡 Please configure cookies for Gemini 3 Pro. See setup documentation.")
+                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                    st.info(f"💡 Please configure cookies for {model_name}. See setup documentation.")
                     st.stop()
                 except Exception as e:
                     status_placeholder.empty()
-                    st.error(f"Error using Gemini 3 Pro: {e}")
+                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                    st.error(f"Error using {model_name}: {e}")
                     logger.exception("WebAI error")
                     st.stop()
             else:

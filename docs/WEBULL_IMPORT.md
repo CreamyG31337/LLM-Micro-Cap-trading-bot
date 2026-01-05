@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Webull Import System allows you to import trade data from Webull's desktop application into the LLM Micro-Cap Trading Bot. Since Webull doesn't provide direct CSV export, this system is designed to work with CSV files created from Webull screenshots using AI conversion tools like Gemini.
+The Webull Import System allows you to import trade data from Webull's desktop application into the LLM Micro-Cap Trading Bot. Since Webull doesn't provide direct CSV export, this system is designed to work with CSV files created from Webull screenshots using AI conversion tools.
 
 ## Data Source
 
 The import system is designed to work with trade data from the **Webull Desktop Application**. Since Webull doesn't provide direct CSV export functionality, the data must be obtained through:
 
-**Screenshot to CSV Conversion**: Use AI tools like Gemini to convert Webull screenshots to CSV format
+**Screenshot to CSV Conversion**: Use AI tools to convert Webull screenshots to CSV format
 
 ## Screenshot to CSV Process
 
@@ -16,7 +16,7 @@ Since Webull doesn't offer direct CSV export, follow these steps:
 
 1. **Open Webull Desktop App**: Navigate to your trade history
 2. **Take Screenshots**: Capture screenshots of your trade data (you may need multiple screenshots for large datasets)
-3. **Use AI Conversion**: Upload screenshots to Gemini or similar AI tool with a prompt like:
+3. **Use AI Conversion**: Upload screenshots to an AI tool with a prompt like:
    ```
    Convert this Webull trade history screenshot to CSV format with these exact columns:
    Symbol,Side,Filled Qty,Limit Price,Order Type,Order Status,Average Filled Price,Filled Time
@@ -178,7 +178,7 @@ These warnings don't prevent import but should be reviewed.
 ### Data Preparation
 
 1. **Screenshot from Webull**: Take screenshots of your trade history from the Webull desktop app
-2. **AI Conversion**: Use Gemini or similar AI tools to convert screenshots to CSV format
+2. **AI Conversion**: Use AI tools to convert screenshots to CSV format
 3. **Format Verification**: Ensure the converted CSV matches the required format exactly
 4. **Data Validation**: Review the preview before importing
 5. **Backup Data**: Always backup existing data before large imports

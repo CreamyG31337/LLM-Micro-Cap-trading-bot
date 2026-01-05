@@ -1990,7 +1990,7 @@ def main():
             # P&L chart
             if 'pnl' in positions_df.columns or 'unrealized_pnl' in positions_df.columns:
                 st.markdown("#### P&L by Position")
-                st.info("💡 **Winning positions** show stacked bars (green unrealized + gold dividends). **Losing positions** show single red bars (total includes dividend offset).", icon="ℹ️")
+                st.info("💡 **Winning positions with gains** show grouped bars (green unrealized + gold dividends). **Winning positions with losses offset by dividends** show red bar below axis (loss) + gold bar above axis (dividends). **Losing positions** show single red bars below axis.", icon="ℹ️")
                 fig = create_pnl_chart(positions_df, fund_filter, display_currency=display_currency, dividend_data=dividend_data)
                 st.plotly_chart(fig, use_container_width=True, key="pnl_by_position_chart")
             

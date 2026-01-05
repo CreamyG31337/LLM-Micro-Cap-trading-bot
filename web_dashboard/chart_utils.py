@@ -498,12 +498,15 @@ def create_performance_by_fund_chart(funds_data: Dict[str, float], display_curre
 
 @log_execution_time()
 def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None, display_currency: Optional[str] = None, dividend_data: Optional[list] = None) -> go.Figure:
-    """Create a stacked bar chart showing P&L by position (unrealized + dividends)
+    """Create a bar chart showing P&L by position (unrealized + dividends)
     
-    Stacking logic:
-    - Positive total P&L with positive unrealized: Stacked bars (green unrealized + gold dividends)
-    - Positive total P&L with negative unrealized: Stacked bars (red |unrealized| + gold dividends) - shows dividend overcame loss
-    - Negative total P&L: Single red bar
+    Visualization logic:
+    - Positive total P&L with positive unrealized: Grouped bars (green unrealized + gold dividends, both above axis)
+    - Positive total P&L with negative unrealized: Grouped bars (red loss below axis + gold dividends above axis)
+      - Red bar shows the unrealized loss (negative value, appears below axis)
+      - Gold bar shows dividends (positive value, appears above axis)
+      - This makes it visually clear that dividends are offsetting the loss
+    - Negative total P&L: Single red bar below axis
     
     Args:
         positions_df: DataFrame with position data including unrealized P&L
@@ -573,9 +576,9 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     
     # For POSITIVE TOTAL P&L: Check if we can use stacked bars
     if not df_positive_total.empty:
-        # Further split: positive unrealized (stackable green) vs negative unrealized (stackable red+gold)
+        # Further split: positive unrealized (stackable green) vs negative unrealized (show loss below, dividends above)
         df_stackable_green = df_positive_total[df_positive_total[pnl_col] >= 0]
-        df_stackable_red = df_positive_total[df_positive_total[pnl_col] < 0]
+        df_net_positive = df_positive_total[df_positive_total[pnl_col] < 0]  # Negative unrealized but positive total
         
         # Stackable green: positive unrealized + dividends on top
         if not df_stackable_green.empty:
@@ -599,28 +602,29 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
                     showlegend=True
                 ))
         
-        # Stackable red: negative unrealized BUT positive total (dividends overcame loss)
-        # Show as stacked: red (absolute value of loss) + gold (dividends)
-        if not df_stackable_red.empty:
-            # Red bar showing absolute value of unrealized loss
+        # Negative unrealized BUT positive total (dividends overcame loss)
+        # Show red bar below axis (loss) and gold bar above axis (dividends)
+        # With grouped bars, they'll appear side by side but on opposite sides of axis
+        if not df_net_positive.empty:
+            # Red bar showing unrealized loss (negative value, appears below axis)
             fig.add_trace(go.Bar(
-                name='Unrealized P&L (loss offset by dividends)',
-                x=df_stackable_red['ticker'],
-                y=df_stackable_red[pnl_col].abs(),  # Absolute value - show as positive height
+                name='Unrealized P&L (loss)',
+                x=df_net_positive['ticker'],
+                y=df_net_positive[pnl_col],  # Negative value - will appear below axis
                 marker_color='#ef4444',
-                customdata=df_stackable_red[[pnl_col]],  # Keep original negative value for hover
-                hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{customdata[0]:,.2f}<extra></extra>',
+                hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{y:,.2f}<extra></extra>',
                 showlegend=True
             ))
             
-            # Gold bar for dividends stacked on top of red
-            if (df_stackable_red['dividends'] > 0).any():
+            # Gold bar showing dividends (positive value, appears above axis)
+            if (df_net_positive['dividends'] > 0).any():
                 fig.add_trace(go.Bar(
                     name='Dividends (LTM) - offset loss',
-                    x=df_stackable_red['ticker'],
-                    y=df_stackable_red['dividends'],
+                    x=df_net_positive['ticker'],
+                    y=df_net_positive['dividends'],  # Positive value - will appear above axis
                     marker_color='#f59e0b',
-                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<extra></extra>',
+                    customdata=df_net_positive[['total_pnl']],  # Include total for hover
+                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<br>Total P&L: $%{customdata[0]:,.2f}<extra></extra>',
                     showlegend=True
                 ))
     
@@ -636,16 +640,24 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
             showlegend=True
         ))
     
-    # Add text labels showing total P&L on top of bars
+    # Add text labels showing total P&L
     for _, row in df.iterrows():
-        # For positive total with negative unrealized, the bar height is |unrealized| + dividends
-        # But we want to show the actual total P&L in the label
+        # For positions with negative unrealized but positive total, show label at top of dividend bar
+        if row['total_pnl'] >= 0 and row[pnl_col] < 0:
+            # Label goes at top of dividend bar (above axis)
+            label_y = row['dividends']
+            yshift = 10
+        else:
+            # For other positions, label at top/bottom of total bar
+            label_y = row['total_pnl']
+            yshift = 10 if row['total_pnl'] >= 0 else -15
+        
         fig.add_annotation(
             x=row['ticker'],
-            y=abs(row[pnl_col]) + row['dividends'] if (row['total_pnl'] >= 0 and row[pnl_col] < 0) else row['total_pnl'],
+            y=label_y,
             text=f"${row['total_pnl']:,.2f}",
             showarrow=False,
-            yshift=10 if row['total_pnl'] >= 0 else -15,
+            yshift=yshift,
             font=dict(size=10, color='#374151')
         )
     
@@ -653,13 +665,17 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
     if fund_name:
         title += f" - {fund_name}"
     
+    # Use 'group' mode to show bars side by side
+    # For loss+dividend positions: red bar (negative) appears below axis, gold bar (positive) appears above axis
+    # They'll be side by side but clearly show loss below and dividends above
+    # For positive unrealized positions: green and gold bars appear side by side above axis
     fig.update_layout(
         title=title,
         xaxis_title="Ticker",
         yaxis_title=f"P&L ({display_currency})",
         template='plotly_white',
         height=500,
-        barmode='stack',
+        barmode='group',  # Group mode shows bars side by side, with negative values below axis and positive above
         xaxis={
             'tickangle': -45,
             'categoryorder': 'array',

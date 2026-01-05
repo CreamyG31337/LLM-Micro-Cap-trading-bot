@@ -1538,18 +1538,43 @@ def process_research_reports_job() -> None:
                 except Exception as e:
                     logger.warning(f"  AI summary failed: {e}")
                 
+                # Extract tickers from AI summary
+                extracted_tickers = []
+                from research_utils import validate_ticker_format, normalize_ticker
+                
+                if isinstance(summary_result, dict):
+                    ai_tickers = summary_result.get("tickers", [])
+                    for ticker in ai_tickers:
+                        # Validate format only (reject company names, invalid formats)
+                        # NOTE: We no longer check if ticker appears in content, because AI infers tickers
+                        # from company names (e.g., "Apple" -> "AAPL"). The AI marks uncertain tickers with '?'
+                        if not validate_ticker_format(ticker):
+                            logger.debug(f"Rejected invalid ticker format: {ticker} (likely company name or invalid format)")
+                            continue
+                        normalized = normalize_ticker(ticker)
+                        if normalized:
+                            extracted_tickers.append(normalized)
+                            logger.debug(f"Extracted ticker from report: {normalized}")
+                
+                # For ticker-specific reports, ensure folder ticker is included even if AI misses it
+                if report_info['ticker']:
+                    folder_ticker = normalize_ticker(report_info['ticker'])
+                    if folder_ticker and folder_ticker not in extracted_tickers:
+                        extracted_tickers.append(folder_ticker)
+                        logger.debug(f"Added folder ticker to extracted list: {folder_ticker}")
+                
+                if extracted_tickers:
+                    logger.info(f"  Extracted {len(extracted_tickers)} ticker(s): {extracted_tickers}")
+                
                 # Prepare article data
                 relative_path = get_relative_path(pdf_file)
                 
-                # Determine fund if _FUND folder (would need additional logic to determine which fund)
-                fund = None
-                if report_info['type'] == 'fund':
-                    # For now, leave as None - could be enhanced to extract from filename or folder structure
-                    fund = None
+                # Determine fund from report_info (already extracted from folder name)
+                fund = report_info.get('fund')
                 
                 # Save to database
                 article_id = research_repo.save_article(
-                    tickers=[report_info['ticker']] if report_info['ticker'] else None,
+                    tickers=extracted_tickers if extracted_tickers else None,
                     sector=None,
                     article_type="research_report",
                     title=title,
@@ -1581,9 +1606,40 @@ def process_research_reports_job() -> None:
                 failed_count += 1
                 continue
         
+        # If running locally, upload PDFs to server
+        upload_success = None
+        if processed_count > 0 or skipped_count > 0:
+            try:
+                from research_upload import upload_research_files_to_server, get_server_config, is_running_locally
+                from research_report_service import RESEARCH_BASE_DIR
+                
+                if is_running_locally():
+                    server_config = get_server_config()
+                    if server_config:
+                        logger.info("Uploading processed PDFs to server...")
+                        upload_success = upload_research_files_to_server(
+                            local_research_dir=RESEARCH_BASE_DIR,
+                            server_host=server_config["host"],
+                            server_user=server_config["user"],
+                            server_path=server_config["path"],
+                            ssh_key_path=server_config.get("ssh_key")
+                        )
+                        if upload_success:
+                            logger.info("✅ PDFs uploaded to server successfully")
+                        else:
+                            logger.warning("⚠️ Failed to upload PDFs to server (processing still succeeded)")
+                    else:
+                        logger.debug("Server config not found - skipping upload (set RESEARCH_SERVER_HOST, RESEARCH_SERVER_USER env vars)")
+            except ImportError:
+                logger.debug("Upload module not available - skipping upload")
+            except Exception as e:
+                logger.warning(f"Error uploading files to server: {e} (processing still succeeded)")
+        
         # Log completion
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Processed {processed_count} reports, skipped {skipped_count} already processed, {failed_count} failed"
+        if upload_success is not None:
+            message += f", upload: {'success' if upload_success else 'failed'}"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
         mark_job_completed('process_research_reports', target_date, None, [], duration_ms=duration_ms)
         logger.info(f"✅ {message}")

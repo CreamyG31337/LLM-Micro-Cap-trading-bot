@@ -4,10 +4,11 @@ Research Report Processing Service
 ==================================
 
 Handles scanning, parsing, and processing of PDF research reports
-stored in organized folders (Research/{TICKER}/, Research/_NEWS/, Research/_FUND/).
+stored in organized folders (Research/{TICKER}/, Research/_MARKET/, Research/_CHIMERA/, Research/_WEBULL/).
 """
 
 import logging
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
@@ -17,6 +18,128 @@ logger = logging.getLogger(__name__)
 
 # Base research directory (relative to project root)
 RESEARCH_BASE_DIR = Path(__file__).parent.parent / "Research"
+
+# Config file path
+CONFIG_FILE = Path(__file__).parent / "research_funds_config.json"
+
+
+def load_fund_config() -> Dict:
+    """
+    Load fund configuration from JSON file.
+    
+    Returns:
+        Dictionary with fund mappings and market folder name
+    """
+    default_config = {
+        "funds": {
+            "CHIMERA": {
+                "folder": "_CHIMERA",
+                "display_name": "Project Chimera"
+            },
+            "WEBULL": {
+                "folder": "_WEBULL",
+                "display_name": "Webull Fund"
+            }
+        },
+        "market_folder": "_MARKET"
+    }
+    
+    if not CONFIG_FILE.exists():
+        logger.warning(f"Config file not found: {CONFIG_FILE}, using defaults")
+        # Create default config file
+        try:
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(default_config, f, indent=2)
+            logger.info(f"Created default config file: {CONFIG_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to create config file: {e}")
+        return default_config
+    
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+        # Validate structure
+        if "funds" not in config or "market_folder" not in config:
+            logger.warning("Invalid config structure, using defaults")
+            return default_config
+        return config
+    except Exception as e:
+        logger.error(f"Failed to load config file {CONFIG_FILE}: {e}, using defaults")
+        return default_config
+
+
+def get_fund_folder(fund_abbrev: str) -> Optional[str]:
+    """
+    Get folder name for a fund abbreviation.
+    
+    Args:
+        fund_abbrev: Fund abbreviation (e.g., "CHIMERA", "WEBULL")
+        
+    Returns:
+        Folder name (e.g., "_CHIMERA") or None if not found
+    """
+    config = load_fund_config()
+    fund_info = config.get("funds", {}).get(fund_abbrev.upper())
+    if fund_info:
+        return fund_info.get("folder")
+    return None
+
+
+def get_fund_display_name(fund_abbrev: str) -> Optional[str]:
+    """
+    Get display name for a fund abbreviation.
+    
+    Args:
+        fund_abbrev: Fund abbreviation (e.g., "CHIMERA", "WEBULL")
+        
+    Returns:
+        Display name (e.g., "Project Chimera") or None if not found
+    """
+    config = load_fund_config()
+    fund_info = config.get("funds", {}).get(fund_abbrev.upper())
+    if fund_info:
+        return fund_info.get("display_name")
+    return None
+
+
+def get_available_funds() -> List[str]:
+    """
+    Get list of available fund abbreviations.
+    
+    Returns:
+        List of fund abbreviations (e.g., ["CHIMERA", "WEBULL"])
+    """
+    config = load_fund_config()
+    return list(config.get("funds", {}).keys())
+
+
+def get_market_folder() -> str:
+    """
+    Get market folder name from config.
+    
+    Returns:
+        Market folder name (default: "_MARKET")
+    """
+    config = load_fund_config()
+    return config.get("market_folder", "_MARKET")
+
+
+def get_fund_from_folder(folder_name: str) -> Optional[str]:
+    """
+    Get fund abbreviation from folder name.
+    
+    Args:
+        folder_name: Folder name (e.g., "_CHIMERA", "_WEBULL")
+        
+    Returns:
+        Fund abbreviation (e.g., "CHIMERA") or None if not found
+    """
+    config = load_fund_config()
+    for fund_abbrev, fund_info in config.get("funds", {}).items():
+        if fund_info.get("folder") == folder_name:
+            return fund_abbrev
+    return None
 
 
 def ensure_research_folder() -> Path:
@@ -125,7 +248,7 @@ def extract_title_from_filename(filename: str) -> str:
 
 def determine_report_type(folder_path: Path) -> Dict[str, Optional[str]]:
     """
-    Determine if ticker, news, or fund report from folder path.
+    Determine if ticker, market, or fund report from folder path.
     
     Args:
         folder_path: Path to the folder containing the PDF
@@ -134,26 +257,30 @@ def determine_report_type(folder_path: Path) -> Dict[str, Optional[str]]:
         Dictionary with 'type', 'ticker', and 'fund' keys
     """
     folder_name = folder_path.name
+    market_folder = get_market_folder()
     
-    if folder_name == "_NEWS":
+    if folder_name == market_folder:
         return {
-            'type': 'news',
+            'type': 'market',
             'ticker': None,
             'fund': None
         }
-    elif folder_name == "_FUND":
+    
+    # Check if it's a fund folder
+    fund_abbrev = get_fund_from_folder(folder_name)
+    if fund_abbrev:
         return {
             'type': 'fund',
             'ticker': None,
-            'fund': None  # Fund name would need to be determined separately
+            'fund': fund_abbrev
         }
-    else:
-        # Assume it's a ticker folder
-        return {
-            'type': 'ticker',
-            'ticker': folder_name.upper(),
-            'fund': None
-        }
+    
+    # Assume it's a ticker folder
+    return {
+        'type': 'ticker',
+        'ticker': folder_name.upper(),
+        'fund': None
+    }
 
 
 def extract_ticker_from_folder(folder_path: Path) -> Optional[str]:
@@ -167,8 +294,13 @@ def extract_ticker_from_folder(folder_path: Path) -> Optional[str]:
         Ticker symbol (uppercase) or None
     """
     folder_name = folder_path.name
+    market_folder = get_market_folder()
     
-    if folder_name in ["_NEWS", "_FUND"]:
+    # Check if it's market or fund folder
+    if folder_name == market_folder:
+        return None
+    
+    if get_fund_from_folder(folder_name):
         return None
     
     return folder_name.upper()

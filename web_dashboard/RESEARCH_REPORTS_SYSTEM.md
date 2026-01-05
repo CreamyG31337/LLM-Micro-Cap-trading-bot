@@ -26,9 +26,11 @@ Research reports are organized in the `Research/` directory:
 Research/
 ├── {TICKER}/          # Ticker-specific reports (e.g., GANX, NVDA)
 │   └── YYYYMMDD_filename.pdf
-├── _NEWS/             # Market/news reports
+├── _MARKET/           # Market/news reports
 │   └── YYYYMMDD_filename.pdf
-└── _FUND/             # Fund-specific reports
+├── _CHIMERA/          # Project Chimera fund reports
+│   └── YYYYMMDD_filename.pdf
+└── _WEBULL/           # Webull fund reports
     └── YYYYMMDD_filename.pdf
 ```
 
@@ -39,15 +41,17 @@ Research/
    - Example: `Research/GANX/20250115_Researching Gain Therapeutics.pdf`
    - Ticker is extracted from folder name
 
-2. **News/Market** (`Research/_NEWS/`)
+2. **Market** (`Research/_MARKET/`)
    - General market news and analysis
    - No specific ticker associated
-   - Example: `Research/_NEWS/20250115_Market Analysis Q1 2025.pdf`
+   - Example: `Research/_MARKET/20250115_Market Analysis Q1 2025.pdf`
+   - Folder name configurable in `research_funds_config.json`
 
-3. **Fund-specific** (`Research/_FUND/`)
+3. **Fund-specific** (`Research/_CHIMERA/`, `Research/_WEBULL/`)
    - Reports prepared for specific funds
-   - Example: `Research/_FUND/20250115_Project Chimera Weekly Report.pdf`
-   - Fund name can be extracted from filename or set manually
+   - Example: `Research/_CHIMERA/20250914_Portfolio Analysis and Trading Suggestions.pdf`
+   - Fund mappings configured in `research_funds_config.json`
+   - New funds can be added by updating the config file
 
 ## File Naming Convention
 
@@ -70,7 +74,7 @@ The processing job automatically adds the date prefix (current date) if missing.
 - Skips duplicate files (already exists check)
 
 **Steps**:
-1. Select report type: Ticker-specific, News/Market, or Fund-specific
+1. Select report type: Ticker-specific, Market, or Fund-specific
 2. Enter ticker symbol (for ticker reports) or select fund (for fund reports)
 3. Select one or multiple PDF files
 4. Click "Save File(s)"
@@ -230,12 +234,89 @@ Processed reports are:
 - **Displayable**: In Research page with full content
 - **Linkable**: Direct PDF links for viewing original
 
+## Configuration
+
+### Fund Mappings (`research_funds_config.json`)
+
+Fund folder mappings are stored in `web_dashboard/research_funds_config.json`:
+
+```json
+{
+  "funds": {
+    "CHIMERA": {
+      "folder": "_CHIMERA",
+      "display_name": "Project Chimera"
+    },
+    "WEBULL": {
+      "folder": "_WEBULL",
+      "display_name": "Webull Fund"
+    }
+  },
+  "market_folder": "_MARKET"
+}
+```
+
+**To add a new fund:**
+1. Edit `research_funds_config.json`
+2. Add a new entry in the `funds` object with:
+   - Fund abbreviation (key)
+   - `folder`: Folder name (must start with `_`)
+   - `display_name`: Human-readable name
+3. Create the folder in `Research/` directory
+4. No code changes needed!
+
+**To change market folder name:**
+- Update `market_folder` value in config file
+
+## Local Development & Server Upload
+
+### Running Locally
+
+The job can be run locally for testing:
+
+**Option 1: Console Menu**
+```bash
+python run.py
+# Select 'p' for "Process Research Reports"
+```
+
+**Option 2: Direct Python**
+```bash
+python -c "from web_dashboard.scheduler.jobs_research import process_research_reports_job; process_research_reports_job()"
+```
+
+### Automatic Server Upload
+
+When running locally, the job can automatically upload processed PDFs to the server:
+
+1. **Set Environment Variables** (in `.env` or system env):
+   ```bash
+   RESEARCH_SERVER_HOST=your-server.com
+   RESEARCH_SERVER_USER=your-username
+   RESEARCH_SERVER_PATH=/home/user/ai-trading/Research
+   RESEARCH_SSH_KEY_PATH=C:/path/to/ssh/key  # Optional
+   ```
+
+2. **Run the Job**: The job will automatically detect it's running locally and upload files after processing.
+
+3. **Upload Methods**:
+   - **rsync** (preferred): More efficient, incremental updates
+   - **scp** (fallback): Used if rsync is not available
+
+### Local Detection
+
+The system detects local vs server using:
+- Windows platform detection
+- Environment variables (DOCKER_CONTAINER, CI, etc.)
+- Hostname patterns (localhost, local)
+
 ## Future Enhancements
 
 - Support for DOCX files
 - HTML export for better table display
-- Automatic ticker extraction from PDF content
+- Automatic ticker extraction from PDF content (✅ Implemented)
 - Fund name extraction from filename patterns
 - ZIP file upload and extraction
 - Batch processing status tracking
+- Admin UI for managing fund config
 

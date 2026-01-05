@@ -1,0 +1,14 @@
+{
+  "funds": {
+    "CHIMERA": {
+      "folder": "_CHIMERA",
+      "display_name": "Project Chimera"
+    },
+    "WEBULL": {
+      "folder": "_WEBULL",
+      "display_name": "Webull Fund"
+    }
+  },
+  "market_folder": "_MARKET"
+}
+

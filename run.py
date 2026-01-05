@@ -202,6 +202,10 @@ def get_menu_options() -> List[Tuple[str, str, str, List[str]]]:
          "Clear all data for test funds (CSV files and database records) - runs clear_fund_data.py",
          ["--fund", "test", "--data-dir", str(data_dir_path)]),
 
+        ("p", f"{_safe_emoji('📄')} Process Research Reports",
+         "Process PDF research reports and upload to server (if configured)",
+         []),
+
         ("t", f"{_safe_emoji('🔄')} Restart",
          "Restart the application",
          []),
@@ -1282,6 +1286,45 @@ def main() -> None:
 
         elif choice == "z":
             handle_clear_test_data()
+            continue
+
+        elif choice == "p":
+            try:
+                print_colored(f"\n{_safe_emoji('📄')} Processing Research Reports...", Colors.CYAN)
+                print_colored("This will process PDFs and upload them to the server if configured.", Colors.YELLOW)
+                
+                # Add paths for imports (Path is already imported at module level)
+                web_dashboard_path = PROJECT_ROOT / "web_dashboard"
+                if str(web_dashboard_path) not in sys.path:
+                    sys.path.insert(0, str(web_dashboard_path))
+                
+                # Also add project root to path for utils imports
+                if str(PROJECT_ROOT) not in sys.path:
+                    sys.path.insert(0, str(PROJECT_ROOT))
+                
+                # Import with explicit error handling
+                try:
+                    from web_dashboard.scheduler.jobs_research import process_research_reports_job
+                except Exception as import_error:
+                    print_colored(f"{_safe_emoji('❌')} Failed to import job module: {import_error}", Colors.RED)
+                    import traceback
+                    traceback.print_exc()
+                    input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
+                    continue
+                
+                # Run the job
+                process_research_reports_job()
+                print_colored(f"{_safe_emoji('✅')} Research reports processing complete!", Colors.GREEN)
+            except ImportError as e:
+                print_colored(f"{_safe_emoji('❌')} Error importing job: {e}", Colors.RED)
+                print_colored("Make sure you're running from the project root.", Colors.YELLOW)
+                import traceback
+                traceback.print_exc()
+            except Exception as e:
+                print_colored(f"{_safe_emoji('❌')} Error processing research reports: {e}", Colors.RED)
+                import traceback
+                traceback.print_exc()
+            input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
             continue
 
         elif choice == "k":

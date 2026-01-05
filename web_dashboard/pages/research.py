@@ -418,7 +418,7 @@ with st.sidebar:
             # Report type selection
             report_type = st.radio(
                 "Report Type",
-                options=["Ticker-specific", "News/Market", "Fund-specific"],
+                options=["Ticker-specific", "Market", "Fund-specific"],
                 help="Select the type of research report",
                 key="upload_report_type"
             )
@@ -439,25 +439,21 @@ with st.sidebar:
                     st.warning("⚠️ Please enter a ticker symbol")
             elif report_type == "Fund-specific":
                 try:
-                    funds = get_available_funds()
-                    if funds:
-                        # Default to the fund context from sidebar
-                        default_fund = fund_context if fund_context else ""
-                        fund_options = [""] + funds
-                        default_index = fund_options.index(default_fund) if default_fund in fund_options else 0
-                        
+                    from research_report_service import get_available_funds
+                    available_funds = get_available_funds()
+                    if available_funds:
                         selected_fund = st.selectbox(
                             "📊 Fund",
-                            options=fund_options,
-                            index=default_index,
+                            options=available_funds,
                             help="Select the fund this report is prepared for",
                             key="upload_fund_selector"
                         )
-                        selected_fund = selected_fund if selected_fund else None
                     else:
-                        st.warning("No funds available")
+                        st.warning("⚠️ No funds configured. Please check research_funds_config.json")
+                        selected_fund = None
                 except Exception as e:
-                    logger.error(f"Error getting funds: {e}")
+                    logger.error(f"Error loading funds: {e}")
+                    st.error(f"Error loading funds: {e}")
                     selected_fund = None
             
             # File uploader - support multiple files for bulk upload
@@ -488,10 +484,18 @@ with st.sidebar:
                             
                             if report_type == "Ticker-specific":
                                 target_folder = research_base / ticker_input
-                            elif report_type == "News/Market":
-                                target_folder = research_base / "_NEWS"
+                            elif report_type == "Market":
+                                from research_report_service import get_market_folder
+                                market_folder = get_market_folder()
+                                target_folder = research_base / market_folder
                             else:  # Fund-specific
-                                target_folder = research_base / "_FUND"
+                                from research_report_service import get_fund_folder
+                                fund_folder = get_fund_folder(selected_fund)
+                                if fund_folder:
+                                    target_folder = research_base / fund_folder
+                                else:
+                                    st.error(f"⚠️ Invalid fund: {selected_fund}. Please check research_funds_config.json")
+                                    continue
                             
                             # Create folder if it doesn't exist
                             target_folder.mkdir(parents=True, exist_ok=True)

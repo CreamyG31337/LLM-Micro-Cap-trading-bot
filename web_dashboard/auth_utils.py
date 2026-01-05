@@ -139,8 +139,16 @@ def is_authenticated() -> bool:
     return "user_token" in st.session_state and st.session_state.user_token is not None
 
 
-def logout_user():
-    """Clear user session"""
+def logout_user(reason: str = "manual"):
+    """Clear user session
+    
+    Args:
+        reason: Reason for logout. Options:
+            - "manual": User clicked logout button (default)
+            - "session_expired": Token expired
+            - "refresh_failed": Token refresh failed
+            - "invalid_token": Token validation failed
+    """
     if "user_token" in st.session_state:
         del st.session_state.user_token
     if "user_id" in st.session_state:
@@ -157,8 +165,10 @@ def logout_user():
     
     # Redirect through set_cookie.html to clear the cookie
     # (Streamlit can't clear cookies directly due to iframe sandboxing)
+    import urllib.parse
+    encoded_reason = urllib.parse.quote(reason, safe='')
     st.markdown(
-        '<meta http-equiv="refresh" content="0; url=/set_cookie.html?action=clear">',
+        f'<meta http-equiv="refresh" content="0; url=/set_cookie.html?action=clear&reason={encoded_reason}">',
         unsafe_allow_html=True
     )
     st.write("Logging out...")

@@ -960,14 +960,9 @@ def main():
         try:
             refreshed = refresh_token_if_needed()
             if not refreshed:
-                # Refresh failed - token is invalid, clear session
-                # User will need to log in again
-                if "user_token" in st.session_state:
-                    del st.session_state.user_token
-                if "refresh_token" in st.session_state:
-                    del st.session_state.refresh_token
-                if "token_expires_at" in st.session_state:
-                    del st.session_state.token_expires_at
+                # Refresh failed - token is invalid or expired
+                # Log user out with appropriate reason
+                logout_user("session_expired")
         except Exception as e:
             # If refresh check fails, continue anyway (token might still be valid)
             pass

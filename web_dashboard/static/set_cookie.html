@@ -24,9 +24,41 @@
             transition: background-color 0.2s, color 0.2s;
         }
 
-        p {
-            font-size: 1.1rem;
+        .message-container {
             text-align: center;
+            max-width: 500px;
+            padding: 2rem;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .message-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .message-text {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 0.5rem;
+        }
+
+        .message-reason {
+            font-size: 0.95rem;
+            opacity: 0.8;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .error-message {
+            border-left: 4px solid #ef4444;
+        }
+
+        .success-message {
+            border-left: 4px solid #22c55e;
         }
 
         /* Dark mode styles */
@@ -35,12 +67,25 @@
                 background-color: #0E1117;
                 color: #FAFAFA;
             }
+
+            .message-container {
+                background-color: #262730;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            }
+
+            .message-reason {
+                border-top-color: rgba(255, 255, 255, 0.1);
+            }
         }
     </style>
 </head>
 
 <body>
-    <p id="status">Processing session...</p>
+    <div class="message-container" id="messageContainer">
+        <div class="message-title" id="messageTitle">Processing...</div>
+        <div class="message-text" id="messageText">Please wait...</div>
+        <div class="message-reason" id="messageReason" style="display: none;"></div>
+    </div>
     <script>
         (function () {
             // Helper function to set cookie
@@ -55,22 +100,89 @@
                 document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
             }
 
+            // Helper function to display logout message
+            function displayLogoutMessage(reason) {
+                var container = document.getElementById('messageContainer');
+                var title = document.getElementById('messageTitle');
+                var text = document.getElementById('messageText');
+                var reasonDiv = document.getElementById('messageReason');
+
+                var messages = {
+                    'manual': {
+                        title: '✓ Logged Out',
+                        text: 'You have been logged out successfully.',
+                        showReason: false,
+                        isError: false
+                    },
+                    'session_expired': {
+                        title: 'Session Expired',
+                        text: 'Your session has expired. Please log in again.',
+                        reason: 'Your authentication token expired after a period of inactivity.',
+                        showReason: true,
+                        isError: true
+                    },
+                    'refresh_failed': {
+                        title: 'Session Could Not Be Refreshed',
+                        text: 'We were unable to refresh your session. Please log in again.',
+                        reason: 'The automatic session refresh failed. This may happen after server restarts or network issues.',
+                        showReason: true,
+                        isError: true
+                    },
+                    'invalid_token': {
+                        title: 'Invalid Session',
+                        text: 'Your session is invalid. Please log in again.',
+                        reason: 'The authentication token could not be validated.',
+                        showReason: true,
+                        isError: true
+                    }
+                };
+
+                var msg = messages[reason] || {
+                    title: 'Logged Out',
+                    text: 'You have been logged out.',
+                    reason: 'Logout reason: ' + (reason || 'unknown'),
+                    showReason: true,
+                    isError: true
+                };
+
+                title.textContent = msg.title;
+                text.textContent = msg.text;
+
+                if (msg.showReason && msg.reason) {
+                    reasonDiv.textContent = msg.reason;
+                    reasonDiv.style.display = 'block';
+                }
+
+                // Add appropriate styling
+                if (msg.isError) {
+                    container.classList.add('error-message');
+                } else {
+                    container.classList.add('success-message');
+                }
+            }
+
             var params = new URLSearchParams(window.location.search);
             var action = params.get('action');
             var token = params.get('token');
             var refreshToken = params.get('refresh_token');
             var returnTo = params.get('return_to') || '/';  // Default to root if not specified
-            
+            var reason = params.get('reason') || 'manual';  // Get logout reason
+
             // Ensure returnTo starts with / to prevent open redirects
             if (!returnTo.startsWith('/')) {
                 returnTo = '/';
             }
 
             if (action === 'clear') {
-                // Clear both cookies (logout) - always go to root on logout
+                // Clear both cookies (logout) - show message then redirect
+                displayLogoutMessage(reason);
                 clearCookie('auth_token');
                 clearCookie('refresh_token');
-                window.location.replace(window.location.origin + '/');
+
+                // Redirect after 3 seconds to allow user to read the message
+                setTimeout(function () {
+                    window.location.replace(window.location.origin + '/');
+                }, 3000);
             } else if (token) {
                 // Set the cookies (login or refresh)
                 setCookie('auth_token', token, 7); // 7 days expiration
@@ -80,7 +192,7 @@
                 // Redirect back to where user was
                 window.location.replace(window.location.origin + returnTo);
             } else {
-                document.getElementById('status').textContent = 'No action specified.';
+                document.getElementById('messageText').textContent = 'No action specified.';
                 setTimeout(function () {
                     window.location.replace('/');
                 }, 1000);

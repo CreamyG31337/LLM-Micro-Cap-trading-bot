@@ -1337,7 +1337,19 @@ try:
             
             # URL links (original + archive if available)
             if article.get('url'):
-                st.link_button("🔗 Open Original Article", article['url'], use_container_width=True)
+                # Construct proper URL for research reports
+                article_url = article['url']
+                # If it's a research report, prepend /research/ to match Caddyfile route
+                if article.get('article_type') == 'Research Report' and not article_url.startswith('http'):
+                    # URL is stored as relative path from Research folder (e.g., "GANX/file.pdf")
+                    # Caddyfile serves /research/* from root /ai-trading
+                    # So /research/GANX/file.pdf maps to /ai-trading/research/GANX/file.pdf
+                    # Handle legacy URLs that might have "Research/" prefix
+                    if article_url.startswith('Research/'):
+                        article_url = article_url[9:]  # Remove "Research/" prefix
+                    article_url = f"/research/{article_url}"
+                
+                st.link_button("🔗 Open Original Article", article_url, use_container_width=True)
                 
                 # Archive status and link
                 archive_url = article.get('archive_url')

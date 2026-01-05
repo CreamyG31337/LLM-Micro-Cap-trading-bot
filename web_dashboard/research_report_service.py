@@ -200,13 +200,13 @@ def add_date_prefix_to_filename(file_path: Path) -> Path:
     """
     filename = file_path.name
     
-    # Check if filename already starts with YYYYMMDD pattern
-    date_pattern = re.compile(r'^\d{8}_')
+    # Check if filename already starts with YYYYMMDD pattern (with underscore or space)
+    date_pattern = re.compile(r'^\d{8}[_\s]')
     if date_pattern.match(filename):
         logger.debug(f"Filename already has date prefix: {filename}")
         return file_path
     
-    # Add current date prefix
+    # Add current date prefix with underscore (standard format)
     today = datetime.now(timezone.utc)
     date_prefix = today.strftime("%Y%m%d")
     
@@ -225,7 +225,7 @@ def add_date_prefix_to_filename(file_path: Path) -> Path:
 
 def extract_title_from_filename(filename: str) -> str:
     """
-    Remove YYYYMMDD_ prefix and .pdf extension to get clean title.
+    Remove YYYYMMDD prefix (with underscore or space) and .pdf extension to get clean title.
     
     Args:
         filename: Filename with optional date prefix
@@ -236,8 +236,8 @@ def extract_title_from_filename(filename: str) -> str:
     # Remove .pdf extension
     title = filename.rsplit('.', 1)[0] if '.' in filename else filename
     
-    # Remove YYYYMMDD_ prefix if present
-    date_pattern = re.compile(r'^\d{8}_')
+    # Remove YYYYMMDD prefix if present (with underscore or space)
+    date_pattern = re.compile(r'^\d{8}[_\s]')
     title = date_pattern.sub('', title)
     
     # Clean up: replace underscores and hyphens with spaces, title case
@@ -308,7 +308,7 @@ def extract_ticker_from_folder(folder_path: Path) -> Optional[str]:
 
 def parse_filename_date(filename: str) -> Optional[datetime]:
     """
-    Parse date from filename YYYYMMDD prefix.
+    Parse date from filename YYYYMMDD prefix (with underscore or space).
     
     Args:
         filename: Filename with YYYYMMDD prefix
@@ -316,7 +316,8 @@ def parse_filename_date(filename: str) -> Optional[datetime]:
     Returns:
         datetime object or None if no date found
     """
-    date_pattern = re.compile(r'^(\d{8})_')
+    # Match YYYYMMDD at start (with underscore or space)
+    date_pattern = re.compile(r'^(\d{8})[_\s]')
     match = date_pattern.match(filename)
     
     if match:
@@ -332,24 +333,33 @@ def parse_filename_date(filename: str) -> Optional[datetime]:
 
 def get_relative_path(file_path: Path) -> str:
     """
-    Get relative path from project root.
+    Get relative path from Research folder (for server storage).
     
     Args:
         file_path: Absolute path to file
         
     Returns:
-        Relative path string (e.g., "Research/GANX/20250115_report.pdf")
+        Relative path string from Research folder (e.g., "GANX/20250115_report.pdf")
+        This matches the server structure where files are at /research/GANX/...
     """
-    project_root = Path(__file__).parent.parent
-    
     try:
-        relative_path = file_path.relative_to(project_root)
+        # Get path relative to Research folder, not project root
+        relative_path = file_path.relative_to(RESEARCH_BASE_DIR)
         # Convert to forward slashes for cross-platform compatibility
         return str(relative_path).replace('\\', '/')
     except ValueError:
-        # File is not under project root, return absolute path as string
-        logger.warning(f"File {file_path} is not under project root")
-        return str(file_path)
+        # File is not under Research folder, try project root
+        project_root = Path(__file__).parent.parent
+        try:
+            relative_path = file_path.relative_to(project_root)
+            # If it starts with Research/, strip that prefix
+            path_str = str(relative_path).replace('\\', '/')
+            if path_str.startswith('Research/'):
+                return path_str[9:]  # Remove "Research/" prefix
+            return path_str
+        except ValueError:
+            logger.warning(f"File {file_path} is not under Research folder or project root")
+            return str(file_path)
 
 
 def check_file_already_processed(file_path: Path, repository) -> bool:

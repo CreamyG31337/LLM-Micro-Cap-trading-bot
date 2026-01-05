@@ -195,6 +195,14 @@ def _upload_with_scp(
         logger.addHandler(console_handler)
         logger.setLevel(logging.INFO)
     
+    def format_size(size_bytes: int) -> str:
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
+    
     try:
         pdf_files = list(local_dir.rglob("*.pdf"))
         
@@ -213,6 +221,14 @@ def _upload_with_scp(
         logger.info(f"Destination: {server_user}@{server_host}:{server_path}")
         logger.info("")
         
+        # Calculate total size for progress
+        total_size = sum(f.stat().st_size for f in pdf_files)
+        logger.info(f"Total size: {format_size(total_size)}")
+        logger.info("")
+        
+        success_count = 0
+        failed_files = []
+        
         for idx, pdf_file in enumerate(pdf_files, 1):
             # Get relative path to preserve folder structure
             rel_path = pdf_file.relative_to(local_dir)
@@ -222,11 +238,19 @@ def _upload_with_scp(
             # Remote directory path must also use forward slashes (Unix server)
             remote_dir = remote_path.rsplit('/', 1)[0] if '/' in remote_path else server_path
             
+            # Get file size
+            file_size = pdf_file.stat().st_size
+            file_size_str = format_size(file_size)
+            
             # Build scp command
             cmd = ["scp"]
             
             if key_path_str:
                 cmd.extend(["-i", key_path_str])
+            
+            # Add compression for large files
+            if file_size > 1024 * 1024:  # > 1MB
+                cmd.append("-C")  # Enable compression
             
             cmd.extend([
                 str(pdf_file),
@@ -245,44 +269,86 @@ def _upload_with_scp(
                 f"mkdir -p '{remote_dir_clean}'"  # Quote to handle any special characters
             ])
             
-            logger.info(f"[{idx}/{len(pdf_files)}] 📤 Uploading {pdf_file.name}...")
+            logger.info(f"[{idx}/{len(pdf_files)}] 📤 Uploading {pdf_file.name} ({file_size_str})...")
             logger.info(f"    → {remote_path}")
-            try:
-                # Create directory first
-                logger.debug(f"  Creating remote directory: {remote_dir_clean}")
-                mkdir_result = subprocess.run(ssh_cmd, check=True, capture_output=True, text=True, timeout=30)
-                if mkdir_result.stderr and mkdir_result.stderr.strip():
-                    logger.debug(f"  mkdir stderr: {mkdir_result.stderr}")
-                
-                # Upload file with progress indication
-                logger.info(f"    ⏳ Transferring...")
-                scp_result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
-                logger.info(f"    ✅ Upload complete")
-            except subprocess.TimeoutExpired:
-                logger.error(f"  ❌ Timeout uploading {pdf_file.name} (exceeded 5 minutes)")
-                return False
-            except subprocess.CalledProcessError as e:
-                # Extract meaningful error information
-                error_detail = ""
-                if e.stderr:
-                    error_detail = e.stderr.strip()
-                elif e.stdout:
-                    error_detail = e.stdout.strip()
-                else:
-                    error_detail = f"Exit code {e.returncode}"
-                
-                logger.error(f"  ❌ Failed to upload {pdf_file.name}")
-                logger.error(f"     Remote path: {remote_path}")
-                if "ssh" in str(e.cmd[0] if e.cmd else ""):
-                    logger.error(f"     Failed at: Creating remote directory")
-                    logger.error(f"     Directory: {remote_dir_clean}")
-                else:
-                    logger.error(f"     Failed at: File upload")
-                logger.error(f"     Error: {error_detail[:300]}")  # Limit error message length
-                return False
+            
+            # Retry logic
+            max_retries = 3
+            upload_success = False
+            
+            for attempt in range(1, max_retries + 1):
+                try:
+                    # Create directory first (only on first attempt)
+                    if attempt == 1:
+                        logger.debug(f"  Creating remote directory: {remote_dir_clean}")
+                        mkdir_result = subprocess.run(ssh_cmd, check=True, capture_output=True, text=True, timeout=30)
+                        if mkdir_result.stderr and mkdir_result.stderr.strip():
+                            logger.debug(f"  mkdir stderr: {mkdir_result.stderr}")
+                    
+                    # Upload file with progress indication
+                    # Timeout: 30 minutes for large files (1800 seconds)
+                    # Calculate timeout based on file size: 1 minute per MB, minimum 5 minutes, maximum 30 minutes
+                    timeout_seconds = max(300, min(1800, int(file_size / (1024 * 1024) * 60)))
+                    
+                    if attempt > 1:
+                        logger.info(f"    🔄 Retry {attempt}/{max_retries}...")
+                    else:
+                        logger.info(f"    ⏳ Transferring (timeout: {timeout_seconds // 60} min)...")
+                    
+                    scp_result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout_seconds)
+                    logger.info(f"    ✅ Upload complete")
+                    upload_success = True
+                    success_count += 1
+                    break
+                    
+                except subprocess.TimeoutExpired:
+                    if attempt < max_retries:
+                        logger.warning(f"    ⚠️  Timeout (attempt {attempt}/{max_retries}), retrying...")
+                        continue
+                    else:
+                        logger.error(f"  ❌ Timeout uploading {pdf_file.name} (exceeded {timeout_seconds // 60} minutes after {max_retries} attempts)")
+                        failed_files.append((pdf_file.name, "Timeout"))
+                except subprocess.CalledProcessError as e:
+                    # Extract meaningful error information
+                    error_detail = ""
+                    if e.stderr:
+                        error_detail = e.stderr.strip()
+                    elif e.stdout:
+                        error_detail = e.stdout.strip()
+                    else:
+                        error_detail = f"Exit code {e.returncode}"
+                    
+                    if attempt < max_retries:
+                        logger.warning(f"    ⚠️  Upload failed (attempt {attempt}/{max_retries}): {error_detail[:100]}")
+                        logger.info(f"    🔄 Retrying...")
+                        continue
+                    else:
+                        logger.error(f"  ❌ Failed to upload {pdf_file.name} after {max_retries} attempts")
+                        logger.error(f"     Remote path: {remote_path}")
+                        if "ssh" in str(e.cmd[0] if e.cmd else ""):
+                            logger.error(f"     Failed at: Creating remote directory")
+                            logger.error(f"     Directory: {remote_dir_clean}")
+                        else:
+                            logger.error(f"     Failed at: File upload")
+                        logger.error(f"     Error: {error_detail[:300]}")  # Limit error message length
+                        failed_files.append((pdf_file.name, error_detail[:100]))
+            
+            if not upload_success:
+                logger.info("")  # Blank line after failed file
         
-        logger.info(f"✅ All {len(pdf_files)} file(s) uploaded successfully")
-        return True
+        # Summary
+        logger.info("")
+        logger.info("=" * 70)
+        if success_count == len(pdf_files):
+            logger.info(f"✅ All {success_count} file(s) uploaded successfully")
+            return True
+        else:
+            logger.info(f"⚠️  Upload summary: {success_count}/{len(pdf_files)} file(s) succeeded")
+            if failed_files:
+                logger.info(f"   Failed files:")
+                for filename, error in failed_files:
+                    logger.info(f"     - {filename}: {error}")
+            return False
         
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr if e.stderr else (e.stdout if e.stdout else str(e))

@@ -533,6 +533,7 @@ def create_timestamp_display_component(timestamp_iso: str, is_market_open: bool,
             
             // Format the timestamp in user's timezone
             const options = {{
+                weekday: 'long',
                 month: 'short',
                 day: 'numeric',
                 hour: 'numeric',
@@ -1410,8 +1411,6 @@ def main():
                     st.markdown(thesis_data.get('overview', ''))
                     # Note: Pillars will be shown near sectors chart below
         
-        st.markdown("---")
-        
         # Metrics row
         st.markdown("### Performance Metrics")
         
@@ -2000,6 +1999,24 @@ def main():
             if 'currency' in positions_df.columns and 'market_value' in positions_df.columns:
                 st.markdown("#### Currency Exposure")
                 
+                # Load user preference for inverse rate
+                try:
+                    from user_preferences import get_user_preference, set_user_preference
+                    default_inverse = get_user_preference('inverse_exchange_rate', False)
+                except ImportError:
+                    default_inverse = False
+                
+                # Toggle for inverting exchange rate
+                inverse_rate = st.checkbox("Show CAD/USD instead of USD/CAD", value=default_inverse, key="inverse_exchange_rate")
+                
+                # Save preference if changed
+                if inverse_rate != default_inverse:
+                    try:
+                        from user_preferences import set_user_preference
+                        set_user_preference('inverse_exchange_rate', inverse_rate)
+                    except ImportError:
+                        pass
+                
                 # Show current USD/CAD exchange rate and historical chart
                 try:
                     from datetime import timedelta
@@ -2019,7 +2036,13 @@ def main():
                         
                         with col1:
                             if latest_rate:
-                                st.metric("USD/CAD Rate", f"{float(latest_rate):.4f}", help="Current exchange rate: 1 USD = X CAD")
+                                if inverse_rate:
+                                    # Show CAD/USD (inverse)
+                                    inverted = 1.0 / float(latest_rate)
+                                    st.metric("CAD/USD Rate", f"{inverted:.4f}", help="Current exchange rate: 1 CAD = X USD")
+                                else:
+                                    # Show USD/CAD (normal)
+                                    st.metric("USD/CAD Rate", f"{float(latest_rate):.4f}", help="Current exchange rate: 1 USD = X CAD")
                             
                             # Show historical chart
                             if historical_rates:
@@ -2027,20 +2050,28 @@ def main():
                                 
                                 # Prepare data for chart
                                 dates = [pd.to_datetime(r['timestamp']) for r in historical_rates]
-                                rates = [float(r['rate']) for r in historical_rates]
+                                if inverse_rate:
+                                    # Invert the rates
+                                    rates = [1.0 / float(r['rate']) for r in historical_rates]
+                                    chart_title = 'CAD/USD Rate (90 Days)'
+                                    y_label = 'CAD/USD'
+                                else:
+                                    rates = [float(r['rate']) for r in historical_rates]
+                                    chart_title = 'USD/CAD Rate (90 Days)'
+                                    y_label = 'USD/CAD'
                                 
                                 fig_rate = go.Figure()
                                 fig_rate.add_trace(go.Scatter(
                                     x=dates,
                                     y=rates,
                                     mode='lines',
-                                    name='USD/CAD',
+                                    name=y_label,
                                     line=dict(color='#3b82f6', width=2),
                                     hovertemplate='%{x|%b %d}<br>%{y:.4f}<extra></extra>'
                                 ))
                                 
                                 fig_rate.update_layout(
-                                    title='USD/CAD Rate (90 Days)',
+                                    title=chart_title,
                                     xaxis_title='Date',
                                     yaxis_title='Rate',
                                     template='plotly_white',

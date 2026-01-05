@@ -664,7 +664,11 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
         template='plotly_white',
         height=500,
         barmode='stack',
-        xaxis={'tickangle': -45},
+        xaxis={
+            'tickangle': -45,
+            'categoryorder': 'array',
+            'categoryarray': df['ticker'].tolist()  # Explicitly set order based on sorted df
+        },
         showlegend=True,
         legend=dict(
             orientation="h",

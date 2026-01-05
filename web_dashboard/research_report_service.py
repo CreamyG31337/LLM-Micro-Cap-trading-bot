@@ -142,6 +142,75 @@ def get_fund_from_folder(folder_name: str) -> Optional[str]:
     return None
 
 
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename by replacing spaces with underscores and removing special characters.
+    
+    Args:
+        filename: Original filename (may contain spaces and special chars)
+        
+    Returns:
+        Sanitized filename (spaces → underscores, special chars removed)
+    """
+    # Split filename and extension
+    if '.' in filename:
+        name_part, ext = filename.rsplit('.', 1)
+        ext = '.' + ext
+    else:
+        name_part = filename
+        ext = ''
+    
+    # Replace spaces with underscores
+    name_part = name_part.replace(' ', '_')
+    
+    # Remove special characters (keep only alphanumeric, underscores, dashes)
+    # This regex keeps: a-z, A-Z, 0-9, _, -
+    name_part = re.sub(r'[^a-zA-Z0-9_-]', '', name_part)
+    
+    # Remove multiple consecutive underscores
+    name_part = re.sub(r'_+', '_', name_part)
+    
+    # Remove leading/trailing underscores
+    name_part = name_part.strip('_')
+    
+    # If name is empty after sanitization, use a default
+    if not name_part:
+        name_part = 'file'
+    
+    return name_part + ext
+
+
+def normalize_path_for_comparison(file_path: str) -> str:
+    """
+    Normalize a file path for comparison by sanitizing the filename portion.
+    
+    This allows matching "folder/file name.pdf" with "folder/file_name.pdf"
+    when checking for duplicates.
+    
+    Args:
+        file_path: Relative path from Research folder (e.g., "GANX/file name.pdf")
+        
+    Returns:
+        Normalized path with sanitized filename (e.g., "GANX/file_name.pdf")
+    """
+    # Split path into directory and filename
+    if '/' in file_path:
+        parts = file_path.rsplit('/', 1)
+        folder = parts[0]
+        filename = parts[1] if len(parts) > 1 else file_path
+    else:
+        folder = ''
+        filename = file_path
+    
+    # Sanitize the filename portion
+    sanitized_filename = sanitize_filename(filename)
+    
+    # Reconstruct path
+    if folder:
+        return f"{folder}/{sanitized_filename}"
+    return sanitized_filename
+
+
 def ensure_research_folder() -> Path:
     """
     Ensure the Research folder exists, create it if it doesn't.
@@ -191,6 +260,7 @@ except Exception as e:
 def add_date_prefix_to_filename(file_path: Path) -> Path:
     """
     Add YYYYMMDD date prefix to filename if not present.
+    Also sanitizes the filename (spaces → underscores, removes special chars).
     
     Args:
         file_path: Path to the PDF file
@@ -199,6 +269,20 @@ def add_date_prefix_to_filename(file_path: Path) -> Path:
         New Path with date prefix (file is renamed)
     """
     filename = file_path.name
+    
+    # First, sanitize the filename
+    sanitized_filename = sanitize_filename(filename)
+    
+    # If filename changed, rename it first
+    if sanitized_filename != filename:
+        sanitized_path = file_path.parent / sanitized_filename
+        try:
+            file_path.rename(sanitized_path)
+            logger.info(f"Sanitized filename: {filename} -> {sanitized_filename}")
+            file_path = sanitized_path
+            filename = sanitized_filename
+        except Exception as e:
+            logger.warning(f"Failed to sanitize filename {file_path}: {e}, continuing with original")
     
     # Check if filename already starts with YYYYMMDD pattern (with underscore or space)
     date_pattern = re.compile(r'^\d{8}[_\s]')
@@ -365,6 +449,7 @@ def get_relative_path(file_path: Path) -> str:
 def check_file_already_processed(file_path: Path, repository) -> bool:
     """
     Check if a file has already been processed by querying database.
+    Uses normalized path comparison to match files with spaces vs underscores.
     
     Args:
         file_path: Path to the PDF file
@@ -374,12 +459,33 @@ def check_file_already_processed(file_path: Path, repository) -> bool:
         True if file already exists in database, False otherwise
     """
     relative_path = get_relative_path(file_path)
+    normalized_path = normalize_path_for_comparison(relative_path)
     
     try:
-        # Query by url field
-        query = "SELECT id FROM research_articles WHERE url = %s"
-        result = repository.client.execute_query(query, (relative_path,))
-        return len(result) > 0
+        # Query by exact URL match first (fast path)
+        query_exact = "SELECT id, url FROM research_articles WHERE url = %s"
+        result = repository.client.execute_query(query_exact, (relative_path,))
+        if len(result) > 0:
+            return True
+        
+        # If no exact match, check all Research Report entries and compare normalized paths
+        # This allows matching old entries with spaces to new sanitized filenames
+        query_all = """
+            SELECT id, url 
+            FROM research_articles 
+            WHERE article_type = 'Research Report'
+        """
+        all_results = repository.client.execute_query(query_all)
+        
+        for row in all_results:
+            db_url = row.get('url', '')
+            if db_url:
+                normalized_db_url = normalize_path_for_comparison(db_url)
+                if normalized_db_url == normalized_path:
+                    logger.debug(f"Found matching file by normalized path: {db_url} == {relative_path}")
+                    return True
+        
+        return False
     except Exception as e:
         logger.error(f"Error checking if file is processed: {e}")
         return False

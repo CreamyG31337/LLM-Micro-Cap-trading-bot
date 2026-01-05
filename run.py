@@ -1289,49 +1289,18 @@ def main() -> None:
             continue
 
         elif choice == "p":
-            try:
-                print_colored(f"\n{_safe_emoji('📄')} Processing Research Reports...", Colors.CYAN)
-                print_colored("This will process PDFs and upload them to the server if configured.", Colors.YELLOW)
-                
-                # Add paths for imports (Path is already imported at module level)
-                web_dashboard_path = PROJECT_ROOT / "web_dashboard"
-                if str(web_dashboard_path) not in sys.path:
-                    sys.path.insert(0, str(web_dashboard_path))
-                
-                # Also add project root to path for utils imports
-                if str(PROJECT_ROOT) not in sys.path:
-                    sys.path.insert(0, str(PROJECT_ROOT))
-                
-                # Load environment variables (needed for server upload config)
-                try:
-                    from dotenv import load_dotenv
-                    load_dotenv()  # Load from root .env
-                    load_dotenv(Path("web_dashboard/.env"))  # Also try web_dashboard/.env
-                except ImportError:
-                    pass  # dotenv not available, will use system env vars
-                
-                # Import with explicit error handling
-                try:
-                    from web_dashboard.scheduler.jobs_research import process_research_reports_job
-                except Exception as import_error:
-                    print_colored(f"{_safe_emoji('❌')} Failed to import job module: {import_error}", Colors.RED)
-                    import traceback
-                    traceback.print_exc()
-                    input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
-                    continue
-                
-                # Run the job
-                process_research_reports_job()
+            # Process Research Reports - use separate script for file change detection
+            script_path = PROJECT_ROOT / "process_research_reports.py"
+            print_colored(f"\n{_safe_emoji('📄')} Processing Research Reports...", Colors.CYAN)
+            print_colored("This will process PDFs and upload them to the server if configured.", Colors.YELLOW)
+            return_code = run_with_venv(script_path, [])
+            
+            print_colored("\n" + "=" * 60, Colors.BLUE)
+            if return_code == 0:
                 print_colored(f"{_safe_emoji('✅')} Research reports processing complete!", Colors.GREEN)
-            except ImportError as e:
-                print_colored(f"{_safe_emoji('❌')} Error importing job: {e}", Colors.RED)
-                print_colored("Make sure you're running from the project root.", Colors.YELLOW)
-                import traceback
-                traceback.print_exc()
-            except Exception as e:
-                print_colored(f"{_safe_emoji('❌')} Error processing research reports: {e}", Colors.RED)
-                import traceback
-                traceback.print_exc()
+            else:
+                print_colored(f"{_safe_emoji('❌')} Script exited with code: {return_code}", Colors.RED)
+            
             input(f"\n{Colors.YELLOW}Press Enter to continue...{Colors.ENDC}")
             continue
 

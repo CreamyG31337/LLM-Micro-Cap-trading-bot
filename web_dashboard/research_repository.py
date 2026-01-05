@@ -164,7 +164,25 @@ class ResearchRepository:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s,
                         %s::jsonb, %s, %s, %s, %s, %s
                     )
-                    ON CONFLICT (url) DO NOTHING
+                    ON CONFLICT (url) DO UPDATE SET
+                        tickers = EXCLUDED.tickers,
+                        sector = EXCLUDED.sector,
+                        article_type = EXCLUDED.article_type,
+                        title = EXCLUDED.title,
+                        summary = EXCLUDED.summary,
+                        content = EXCLUDED.content,
+                        source = EXCLUDED.source,
+                        published_at = EXCLUDED.published_at,
+                        relevance_score = EXCLUDED.relevance_score,
+                        embedding = EXCLUDED.embedding,
+                        fund = EXCLUDED.fund,
+                        claims = EXCLUDED.claims,
+                        fact_check = EXCLUDED.fact_check,
+                        conclusion = EXCLUDED.conclusion,
+                        sentiment = EXCLUDED.sentiment,
+                        sentiment_score = EXCLUDED.sentiment_score,
+                        logic_check = EXCLUDED.logic_check,
+                        fetched_at = CURRENT_TIMESTAMP
                     RETURNING id
                 """
                 params = (
@@ -197,7 +215,24 @@ class ResearchRepository:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, %s, %s, %s, %s, %s
                     )
-                    ON CONFLICT (url) DO NOTHING
+                    ON CONFLICT (url) DO UPDATE SET
+                        tickers = EXCLUDED.tickers,
+                        sector = EXCLUDED.sector,
+                        article_type = EXCLUDED.article_type,
+                        title = EXCLUDED.title,
+                        summary = EXCLUDED.summary,
+                        content = EXCLUDED.content,
+                        source = EXCLUDED.source,
+                        published_at = EXCLUDED.published_at,
+                        relevance_score = EXCLUDED.relevance_score,
+                        fund = EXCLUDED.fund,
+                        claims = EXCLUDED.claims,
+                        fact_check = EXCLUDED.fact_check,
+                        conclusion = EXCLUDED.conclusion,
+                        sentiment = EXCLUDED.sentiment,
+                        sentiment_score = EXCLUDED.sentiment_score,
+                        logic_check = EXCLUDED.logic_check,
+                        fetched_at = CURRENT_TIMESTAMP
                     RETURNING id
                 """
                 params = (

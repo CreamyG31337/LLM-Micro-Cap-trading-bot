@@ -477,7 +477,7 @@ with st.sidebar:
                     if st.button(upload_label, type="primary"):
                         try:
                             from pathlib import Path
-                            from research_report_service import ensure_research_folder
+                            from research_report_service import ensure_research_folder, sanitize_filename
                             
                             # Ensure Research folder exists
                             research_base = ensure_research_folder()
@@ -512,26 +512,29 @@ with st.sidebar:
                                     # Update progress
                                     progress = (idx + 1) / len(uploaded_files)
                                     progress_bar.progress(progress)
-                                    status_text.text(f"Processing {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}")
                                     
-                                    # Check if file already exists
-                                    file_path = target_folder / uploaded_file.name
+                                    # Sanitize filename before saving
+                                    sanitized_name = sanitize_filename(uploaded_file.name)
+                                    status_text.text(f"Processing {idx + 1}/{len(uploaded_files)}: {uploaded_file.name} → {sanitized_name}")
+                                    
+                                    # Check if file already exists (using sanitized name)
+                                    file_path = target_folder / sanitized_name
                                     
                                     if file_path.exists():
-                                        skipped_files.append(uploaded_file.name)
-                                        logger.info(f"File already exists, skipping: {uploaded_file.name}")
+                                        skipped_files.append(f"{uploaded_file.name} (already exists as {sanitized_name})")
+                                        logger.info(f"File already exists, skipping: {sanitized_name}")
                                         continue
                                     
-                                    # Save file (job will add date prefix later)
+                                    # Save file with sanitized name (job will add date prefix later)
                                     with open(file_path, "wb") as f:
                                         f.write(uploaded_file.getbuffer())
                                     
-                                    saved_files.append(uploaded_file.name)
+                                    saved_files.append(f"{uploaded_file.name} → {sanitized_name}")
                                     
                                 except Exception as e:
                                     logger.error(f"Error saving file {uploaded_file.name}: {e}", exc_info=True)
                                     skipped_files.append(f"{uploaded_file.name} (error: {str(e)})")
-                            
+                                
                             # Clear progress indicators
                             progress_bar.empty()
                             status_text.empty()
@@ -1436,7 +1439,49 @@ try:
             # Content (if available and different from summary)
             if article.get('content') and article.get('content') != article.get('summary'):
                 with st.expander("📄 Full Content", expanded=False):
-                    st.write(article['content'])
+                    content = article['content']
+                    chars_per_page = 5000  # Characters per page to prevent browser performance issues
+                    
+                    # Initialize page tracking in session state for this article
+                    page_key = f"content_page_{article['id']}"
+                    if page_key not in st.session_state:
+                        st.session_state[page_key] = 0
+                    
+                    current_page = st.session_state[page_key]
+                    total_pages = (len(content) + chars_per_page - 1) // chars_per_page  # Ceiling division
+                    
+                    # Show pagination info if content is long
+                    if total_pages > 1:
+                        st.info(f"📄 **Long article detected** - Content split into {total_pages} pages ({chars_per_page:,} characters per page)")
+                        
+                        # Calculate start and end indices for current page
+                        start_idx = current_page * chars_per_page
+                        end_idx = min(start_idx + chars_per_page, len(content))
+                        
+                        # Display current page content
+                        st.write(content[start_idx:end_idx])
+                        
+                        # Pagination controls
+                        st.markdown("---")
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        
+                        with col1:
+                            if current_page > 0:
+                                if st.button("◀ Previous", key=f"prev_{article['id']}", use_container_width=True):
+                                    st.session_state[page_key] = current_page - 1
+                                    st.rerun()
+                        
+                        with col2:
+                            st.markdown(f"<div style='text-align: center; padding-top: 8px;'><b>Page {current_page + 1} of {total_pages}</b><br/><small>Characters {start_idx + 1:,} - {end_idx:,} of {len(content):,}</small></div>", unsafe_allow_html=True)
+                        
+                        with col3:
+                            if current_page < total_pages - 1:
+                                if st.button("Next ▶", key=f"next_{article['id']}", use_container_width=True):
+                                    st.session_state[page_key] = current_page + 1
+                                    st.rerun()
+                    else:
+                        # Content fits on one page - display directly
+                        st.write(content)
         
         # Get owned tickers for ownership indicator (cached)
         owned_tickers = get_cached_owned_tickers(st.session_state.refresh_key)

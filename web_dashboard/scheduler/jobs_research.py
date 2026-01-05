@@ -185,7 +185,7 @@ def market_research_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=None,
                             sector=None,
-                            article_type="market_news",
+                            article_type="Market News",
                             title=title,
                             url=url,
                             summary="[Paywalled - Submitted to archive for processing]",
@@ -304,7 +304,7 @@ def market_research_job() -> None:
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,  # Use extracted tickers if available
                     sector=extracted_sector,  # Use extracted sector if available
-                    article_type="market_news",
+                    article_type="Market News",
                     title=extracted.get('title') or title,
                     url=url,
                     summary=summary,
@@ -522,7 +522,7 @@ def rss_feed_ingest_job() -> None:
                                     article_id = research_repo.save_article(
                                         tickers=None,
                                         sector=None,
-                                        article_type="market_news",
+                                        article_type="Market News",
                                         title=title,
                                         url=url,
                                         summary="[Paywalled - Submitted to archive for processing]",
@@ -595,7 +595,7 @@ def rss_feed_ingest_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=extracted_tickers if extracted_tickers else None,
                             sector=extracted_sector,
-                            article_type="market_news",  # RSS feeds are general news
+                            article_type="Market News",  # RSS feeds are general news
                             title=title,
                             url=url,
                             summary=summary,
@@ -917,7 +917,7 @@ def ticker_research_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=None,  # No specific ticker for ETF sector research
                             sector=sector,
-                            article_type="ticker_news",  # Still use ticker_news type
+                            article_type="Ticker News",  # Still use Ticker News type
                             title=extracted.get('title') or title,
                             url=url,
                             summary=summary,
@@ -1103,7 +1103,7 @@ def ticker_research_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=extracted_tickers,
                             sector=extracted_sector,  # Use extracted sector if available
-                            article_type="ticker_news",
+                            article_type="Ticker News",
                             title=extracted.get('title') or title,
                             url=url,
                             summary=summary,
@@ -1584,7 +1584,7 @@ def process_research_reports_job() -> None:
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,
                     sector=None,
-                    article_type="research_report",
+                    article_type="Research Report",
                     title=title,
                     url=relative_path,  # Store file path as URL
                     summary=summary_result.get('summary', "No summary available.") if isinstance(summary_result, dict) else (summary_result if isinstance(summary_result, str) else "No summary available."),

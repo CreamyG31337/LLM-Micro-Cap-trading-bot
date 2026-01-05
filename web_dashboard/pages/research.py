@@ -990,7 +990,7 @@ try:
             - 📰 **Market News** - General market news and updates
             - 🔍 **Ticker News** - News specific to a ticker
             - 💡 **Opportunity Discovery** - Discovered investment opportunities
-            - 📤 **Uploaded Report** - Manually uploaded research reports
+            - 📤 **Research Report** - Manually uploaded research reports
             - 💰 **Earnings** - Earnings reports and announcements
             - 📄 **General** - Other articles
             """)
@@ -1435,12 +1435,29 @@ try:
             # Job icon shows which job created the article
             article_type = article.get('article_type', '')
             job_icon_map = {
+                # New format (spaces, no underscores)
+                'Market News': '📰',
+                'Ticker News': '🔍',
+                'Opportunity Discovery': '💡',
+                'Research Report': '📤',
+                'Earnings': '💰',
+                'General': '📄',
+                'Reddit Discovery': '👽',
+                'Alpha Research': '💎',
+                'ETF Change': '📊',
+                'Seeking Alpha Symbol': '📈',
+                # Legacy support (underscores)
                 'market_news': '📰',
                 'ticker_news': '🔍',
                 'opportunity_discovery': '💡',
+                'research_report': '📤',
                 'uploaded_report': '📤',
                 'earnings': '💰',
-                'general': '📄'
+                'general': '📄',
+                'reddit_discovery': '👽',
+                'alpha_research': '💎',
+                'etf_change': '📊',
+                'seeking_alpha_symbol': '📈'
             }
             job_icon = job_icon_map.get(article_type, '📄')
             

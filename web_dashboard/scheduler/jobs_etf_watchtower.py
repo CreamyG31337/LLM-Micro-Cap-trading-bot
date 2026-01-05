@@ -446,7 +446,7 @@ def log_significant_changes(repo: ResearchRepository, changes: List[Dict], etf_t
         content=content,
         summary=f"{etf_ticker} made {len(changes)} significant changes today",
         source="ETF Watchtower",
-        article_type="etf_change",
+        article_type="ETF Change",
         confidence_score=0.9,  # High confidence (raw data)
         tickers=[c['ticker'] for c in changes[:10]]  # Top 10 tickers
     )

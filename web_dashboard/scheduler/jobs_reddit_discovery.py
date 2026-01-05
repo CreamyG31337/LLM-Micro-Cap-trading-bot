@@ -81,7 +81,7 @@ def subreddit_scanner_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=[ticker],
                             sector="Reddit Discovery",
-                            article_type="reddit_discovery",
+                            article_type="Reddit Discovery",
                             title=f"[{sub}] {item.get('title')}",
                             url=item.get('url'),
                             summary=f"AI Analysis: {item.get('reasoning')}",

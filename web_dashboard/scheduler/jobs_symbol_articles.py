@@ -207,7 +207,7 @@ def seeking_alpha_symbol_job() -> None:
                                 article_id = research_repo.save_article(
                                     tickers=[ticker.upper()],
                                     sector=None,
-                                    article_type="ticker_news",
+                                    article_type="Ticker News",
                                     title=title or "Paywalled Article",
                                     url=article_url,
                                     summary="[Paywalled - Submitted to archive for processing]",
@@ -287,7 +287,7 @@ def seeking_alpha_symbol_job() -> None:
                         article_id = research_repo.save_article(
                             tickers=extracted_tickers if extracted_tickers else None,
                             sector=extracted_sector,
-                            article_type="seeking_alpha_symbol",
+                            article_type="Seeking Alpha Symbol",
                             title=title or f"Symbol Article - {ticker}",
                             url=article_url,
                             summary=summary,

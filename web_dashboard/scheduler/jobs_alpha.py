@@ -201,7 +201,7 @@ def alpha_research_job() -> None:
                 article_id = research_repo.save_article(
                     tickers=extracted_tickers if extracted_tickers else None,
                     sector=extracted_sector,
-                    article_type="alpha_research",  # Special tag for these high-value articles
+                    article_type="Alpha Research",  # Special tag for these high-value articles
                     title=extracted.get('title') or title,
                     url=url,
                     summary=summary,

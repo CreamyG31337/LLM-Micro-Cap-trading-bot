@@ -116,6 +116,7 @@ steps:
         # Note: Secret name in Woodpecker is lowercase: webai_cookies_json
         if [ -n "$WEBAI_COOKIES_JSON" ]; then
           DOCKER_CMD="$DOCKER_CMD -e WEBAI_COOKIES_JSON=\"$WEBAI_COOKIES_JSON\""
+          echo "✅ WEBAI_COOKIES_JSON set (WebAI Pro enabled)"
         else
           echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. WebAI Pro will not be available."
           echo "   Set the 'webai_cookies_json' secret in Woodpecker to enable WebAI Pro."

@@ -335,7 +335,7 @@ def fetch_congress_trades_job() -> None:
                             if owner:
                                 owner = str(owner).strip().title()
                             else:
-                                owner = 'Not-Disclosed'
+                                owner = 'Unknown'  # Default matches migration 36
                             
                             # Extract disclosure link
                             disclosure_link = trade_data.get('link') or trade_data.get('disclosureUrl') or trade_data.get('url')
@@ -452,7 +452,7 @@ def fetch_congress_trades_job() -> None:
                                 'chamber': chamber,
                                 'party': party,  # From politicians table lookup
                                 'state': state,  # From politicians table lookup
-                                'owner': owner,  # Self/Spouse/Dependent if available
+                                'owner': owner,  # Self/Spouse/Dependent if available, defaults to 'Unknown'
                                 'transaction_date': transaction_date.isoformat(),
                                 'disclosure_date': disclosure_date.isoformat(),
                                 'type': trade_type,
@@ -463,9 +463,8 @@ def fetch_congress_trades_job() -> None:
                                 'notes': final_notes  # Includes description, capital gains, disclosure link
                             }
                             
-                            # Insert to Supabase (use upsert to handle any race conditions)
-                            # Note: Unique constraint should be on (politician_id, ticker, transaction_date, amount, type, owner)
-                            # After migration 27, politician (text) column was dropped, so constraint must use politician_id
+                            # Insert to Supabase (use upsert to handle duplicates)
+                            # Migration 36 created a proper unique constraint that supports ON CONFLICT
                             try:
                                 result = supabase_client.supabase.table("congress_trades")\
                                     .upsert(

@@ -1032,9 +1032,9 @@ with tab2:
                         with col_action:
                             if has_email:
                                 # Allow readonly_admin to send invite to themselves
-                            invite_email = row['email']
-                            can_send_invite = can_modify_data() or (invite_email == get_user_email())
-                            if st.button("📧 Send Invite", key=f"invite_{idx}", disabled=not can_send_invite):
+                                invite_email = row['email']
+                                can_send_invite = can_modify_data() or (invite_email == get_user_email())
+                                if st.button("📧 Send Invite", key=f"invite_{idx}", disabled=not can_send_invite):
                                     if not can_send_invite:
                                         st.error("❌ Read-only admin can only send invites to themselves")
                                         st.stop()

@@ -42,8 +42,19 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
         Tuple of (secure_1psid, secure_1psidts) or (None, None) if not found
     """
     # Try environment variables first (for Woodpecker secrets/production)
-    # Option 1: JSON string in single env var
-    cookies_json = os.getenv("WEBAI_COOKIES_JSON")
+    # Option 1a: Base64-encoded JSON (avoids shell quoting issues)
+    cookies_json_b64 = os.getenv("WEBAI_COOKIES_JSON_B64")
+    if cookies_json_b64:
+        try:
+            import base64
+            cookies_json = base64.b64decode(cookies_json_b64).decode('utf-8')
+        except Exception:
+            cookies_json = None
+    
+    # Option 1b: JSON string in single env var (fallback)
+    if not cookies_json:
+        cookies_json = os.getenv("WEBAI_COOKIES_JSON")
+    
     if cookies_json:
         try:
             # Clean up the JSON string - handle newlines, extra whitespace, outer quotes

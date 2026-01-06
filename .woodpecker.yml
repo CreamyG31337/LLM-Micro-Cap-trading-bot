@@ -94,6 +94,9 @@ steps:
           echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
           chmod 644 /shared/cookies/webai_cookies.json
           echo "✅ Initialized cookie file from Woodpecker secret (before main container starts)"
+          echo "   File location: /shared/cookies/webai_cookies.json"
+          echo "   File size: $(wc -c < /shared/cookies/webai_cookies.json) bytes"
+          echo "   File exists: $(test -f /shared/cookies/webai_cookies.json && echo 'YES' || echo 'NO')"
         else
           echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. Cookie file will be empty."
         fi
@@ -135,13 +138,15 @@ steps:
         
         # Add WebAI cookies as environment variable (fallback if shared volume file not available)
         # The cookie refresher sidecar writes to /shared/cookies/webai_cookies.json
-        # Main app checks shared volume first, then falls back to WEBAI_COOKIES_JSON env var
-        # Note: The file is already written above, so the app should read from /shared/cookies/webai_cookies.json
-        # This env var is just a fallback. We don't pass it to avoid shell quoting issues.
-        # The app's _load_cookies() function handles reading from the file first.
+        # Main app checks shared volume first, then falls back to WEBAI_COOKIES_JSON_B64 env var
+        # Use base64 encoding to avoid shell quoting issues with JSON
         if [ -n "$WEBAI_COOKIES_JSON" ]; then
-          echo "✅ Cookie file written to /shared/cookies/webai_cookies.json (app will read from file)"
-          echo "   (WEBAI_COOKIES_JSON env var not passed to avoid shell quoting issues)"
+          # Encode JSON as base64 to avoid shell quoting/escaping issues
+          WEBAI_COOKIES_B64=$(echo -n "$WEBAI_COOKIES_JSON" | base64 -w 0)
+          DOCKER_CMD="$DOCKER_CMD -e WEBAI_COOKIES_JSON_B64=$WEBAI_COOKIES_B64"
+          echo "✅ WEBAI_COOKIES_JSON set (base64 encoded to avoid shell quoting issues)"
+          echo "   Cookie file also written to /shared/cookies/webai_cookies.json"
+          echo "   Base64 length: ${#WEBAI_COOKIES_B64} chars"
         else
           echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. WebAI Pro may not work until sidecar writes cookies."
         fi
@@ -156,6 +161,17 @@ steps:
         
         # Execute the command
         eval $DOCKER_CMD
+        
+        # Verify cookie file is accessible in container
+        - |
+          sleep 2  # Give container a moment to start
+          if docker exec trading-dashboard test -f /shared/cookies/webai_cookies.json; then
+            echo "✅ Cookie file is accessible in container"
+            docker exec trading-dashboard head -c 100 /shared/cookies/webai_cookies.json
+            echo "..."
+          else
+            echo "⚠️  Cookie file not found in container (will use base64 env var fallback)"
+          fi
       
       # Deploy cookie refresher sidecar container (runs independently, persists across redeployments)
       - echo "Deploying cookie refresher sidecar..."

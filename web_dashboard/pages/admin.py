@@ -3940,6 +3940,109 @@ OLLAMA_ENABLED={enabled}""")
         st.subheader("🍪 WebAI Cookie Debug")
         st.caption("Debug cookie configuration for WebAI Pro model")
         
+        # Cookie Update Section
+        with st.expander("✏️ Update Cookies Manually", expanded=False):
+            st.markdown("**Update cookies without redeploying**")
+            st.caption("Paste your cookie values here. They will be saved to the shared volume file.")
+            
+            # Try to load current cookies to pre-fill the form
+            current_cookies = {}
+            try:
+                from webai_wrapper import _load_cookies
+                current_1psid, current_1psidts = _load_cookies()
+                if current_1psid:
+                    current_cookies["__Secure-1PSID"] = current_1psid
+                if current_1psidts:
+                    current_cookies["__Secure-1PSIDTS"] = current_1psidts
+            except Exception:
+                pass
+            
+            # Also try to load from file directly
+            try:
+                cookie_file = Path("/shared/cookies/webai_cookies.json")
+                if cookie_file.exists():
+                    with open(cookie_file, 'r', encoding='utf-8') as f:
+                        file_cookies = json.load(f)
+                        if file_cookies.get("__Secure-1PSID"):
+                            current_cookies["__Secure-1PSID"] = file_cookies["__Secure-1PSID"]
+                        if file_cookies.get("__Secure-1PSIDTS"):
+                            current_cookies["__Secure-1PSIDTS"] = file_cookies["__Secure-1PSIDTS"]
+            except Exception:
+                pass
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                new_secure_1psid = st.text_input(
+                    "__Secure-1PSID",
+                    value=current_cookies.get("__Secure-1PSID", ""),
+                    help="The main session cookie",
+                    type="default"
+                )
+            with col2:
+                new_secure_1psidts = st.text_input(
+                    "__Secure-1PSIDTS",
+                    value=current_cookies.get("__Secure-1PSIDTS", ""),
+                    help="The timestamp token (expires frequently)",
+                    type="default"
+                )
+            
+            # Quick action buttons
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("📋 Load Current Cookies", use_container_width=True):
+                    st.rerun()  # Reload to show current values
+            with col_btn2:
+                if st.button("🔄 Clear Form", use_container_width=True):
+                    st.session_state.clear_cookie_form = True
+                    st.rerun()
+            
+            if st.button("💾 Save Cookies", type="primary", use_container_width=True):
+                if not new_secure_1psid:
+                    st.error("❌ __Secure-1PSID is required")
+                else:
+                    try:
+                        import json
+                        from pathlib import Path
+                        
+                        # Prepare cookie data
+                        cookies = {
+                            "__Secure-1PSID": new_secure_1psid.strip(),
+                        }
+                        if new_secure_1psidts:
+                            cookies["__Secure-1PSIDTS"] = new_secure_1psidts.strip()
+                        
+                        # Write to shared volume file
+                        cookie_file = Path("/shared/cookies/webai_cookies.json")
+                        cookie_file.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        with open(cookie_file, 'w', encoding='utf-8') as f:
+                            json.dump(cookies, f, indent=2)
+                        
+                        # Set permissions (if possible)
+                        try:
+                            import os
+                            os.chmod(cookie_file, 0o644)
+                        except Exception:
+                            pass  # Permissions might not be changeable
+                        
+                        st.success("✅ Cookies saved successfully!")
+                        st.info("The app will use these cookies immediately. No restart needed.")
+                        st.caption(f"Saved to: {cookie_file}")
+                        
+                        # Clear cache so the app picks up new cookies
+                        try:
+                            from webai_wrapper import _load_cookies
+                            # Force reload by clearing any caches
+                            st.cache_data.clear()
+                        except Exception:
+                            pass
+                        
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to save cookies: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+        
         with st.expander("🔍 Cookie Configuration Status", expanded=False):
             try:
                 import json

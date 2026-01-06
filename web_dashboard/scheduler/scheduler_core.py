@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 _scheduler: Optional[BackgroundScheduler] = None
 
 # Thread lock to prevent race conditions during scheduler creation/startup
-_scheduler_lock = threading.Lock()
+# IMPORTANT: Use RLock (reentrant) because start_scheduler() acquires lock 
+# then calls get_scheduler() which also needs the lock
+_scheduler_lock = threading.RLock()
 
 # Job execution log (in-memory, last N executions)
 _job_logs: Dict[str, List[Dict[str, Any]]] = {}

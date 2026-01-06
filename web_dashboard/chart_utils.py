@@ -623,15 +623,15 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
                 width=0.6  # Narrower width for better visual distinction when overlaid
             ))
             
-            # Gold bar showing dividends (positive value, appears above axis)
+            # Gold bar showing net total (dividends minus loss, positive value, appears above axis)
             if (df_net_positive['dividends'] > 0).any():
                 fig.add_trace(go.Bar(
                     name='Dividends (LTM) - offset loss',
                     x=df_net_positive['ticker'],
-                    y=df_net_positive['dividends'],  # Positive value - will appear above axis
+                    y=df_net_positive['total_pnl'],  # Net total after offsetting loss - shows actual profit
                     marker_color='#f59e0b',
-                    customdata=df_net_positive[['total_pnl']],  # Include total for hover
-                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<br>Total P&L: $%{customdata[0]:,.2f}<extra></extra>',
+                    customdata=df_net_positive[[pnl_col, 'dividends']],  # Include both loss and dividends for hover
+                    hovertemplate='<b>%{x}</b><br>Unrealized P&L: $%{customdata[0]:,.2f}<br>Dividends: $%{customdata[1]:,.2f}<br>Total P&L: $%{y:,.2f}<extra></extra>',
                     showlegend=True,
                     width=0.6  # Narrower width for better visual distinction when overlaid
                 ))

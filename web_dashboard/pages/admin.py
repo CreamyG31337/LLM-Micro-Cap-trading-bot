@@ -30,6 +30,12 @@ from streamlit_utils import get_supabase_client, get_user_investment_metrics, ge
 from supabase_client import SupabaseClient
 from supabase import create_client
 
+# Import log_handler to register PERF logging level
+try:
+    import log_handler  # noqa: F401 - Import to register PERF level
+except ImportError:
+    pass
+
 # Performance logging setup
 logger = logging.getLogger(__name__)
 
@@ -52,7 +58,7 @@ def perf_timer(operation_name: str, log_to_console: bool = True):
         }
         st.session_state.perf_log.append(entry)
         if log_to_console:
-            logger.info(f"⏱️ {operation_name}: {entry['time_ms']}ms")
+            logger.perf(f"⏱️ {operation_name}: {entry['time_ms']}ms")
 
 # Page configuration
 st.set_page_config(page_title="Admin Dashboard", page_icon="🔧", layout="wide")
@@ -4501,4 +4507,4 @@ total_entry = {
     'timestamp': datetime.now().isoformat()
 }
 st.session_state.perf_log.append(total_entry)
-logger.info(f"⏱️ TOTAL PAGE LOAD: {total_entry['time_ms']}ms")
+logger.perf(f"⏱️ TOTAL PAGE LOAD: {total_entry['time_ms']}ms")

@@ -57,8 +57,23 @@ RETRY_DELAY = 60  # seconds
 
 
 def get_service_url() -> str:
-    """Get the web AI service URL from environment variable or keys file."""
-    # Try environment variable first (for Docker containers)
+    """Get the web AI service URL from shared config file, environment variable, or keys file."""
+    # Try shared config file first (for Docker containers - no restart needed)
+    config_file = Path("/shared/cookies/ai_service_config.json")
+    if config_file.exists():
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                url = config.get("AI_SERVICE_WEB_URL")
+                if url and not url.startswith("https://example") and "webai.google.com" not in url:
+                    logger.info(f"✅ Using service URL from shared config file: {url}")
+                    return url
+                elif url:
+                    logger.warning(f"Shared config file contains placeholder URL: {url}")
+        except Exception as e:
+            logger.debug(f"Could not load URL from config file: {e}")
+    
+    # Try environment variable (fallback for backwards compatibility)
     env_url = os.getenv("AI_SERVICE_WEB_URL")
     logger.info(f"AI_SERVICE_WEB_URL env var: {'SET' if env_url else 'NOT SET'}")
     if env_url:
@@ -73,7 +88,7 @@ def get_service_url() -> str:
         else:
             logger.warning(f"AI_SERVICE_WEB_URL is set to placeholder URL - ignoring")
     
-    # Try keys file (for local development and production) - prioritize this
+    # Try keys file (for local development and production)
     try:
         from ai_service_keys import get_service_url as get_url_from_keys
         url = get_url_from_keys("WEB_BASE_URL")
@@ -83,18 +98,11 @@ def get_service_url() -> str:
     except (ImportError, FileNotFoundError, KeyError, ValueError) as e:
         logger.debug(f"Could not load URL from keys file: {e}")
     
-    # Last resort: try environment variable even if it's the default (but warn)
-    env_url = os.getenv("AI_SERVICE_WEB_URL")
-    if env_url and not env_url.startswith("https://example") and "webai.google.com" not in env_url:
-        logger.warning(f"Using URL from environment variable (keys file not available)")
-        return env_url
-    
     # If all else fails, raise an error instead of using hardcoded URL
     raise ValueError(
-        "AI_SERVICE_WEB_URL not set correctly and keys file not available. "
-        "Set AI_SERVICE_WEB_URL environment variable to the correct URL, "
-        "or ensure ai_service.keys.json exists with WEB_BASE_URL key. "
-        "The placeholder URL is not valid. Set AI_SERVICE_WEB_URL to the correct service URL."
+        "AI_SERVICE_WEB_URL not set correctly. "
+        "Set it in /shared/cookies/ai_service_config.json, AI_SERVICE_WEB_URL environment variable, "
+        "or ensure ai_service.keys.json exists with WEB_BASE_URL key."
     )
 
 

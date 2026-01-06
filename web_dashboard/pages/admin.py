@@ -3935,6 +3935,130 @@ OLLAMA_MODEL={default_model}
 OLLAMA_TIMEOUT={timeout}
 OLLAMA_ENABLED={enabled}""")
         
+        # WebAI Cookie Debug Section
+        st.markdown("---")
+        st.subheader("🍪 WebAI Cookie Debug")
+        st.caption("Debug cookie configuration for WebAI Pro model")
+        
+        with st.expander("🔍 Cookie Configuration Status", expanded=False):
+            try:
+                import json
+                from pathlib import Path
+                
+                debug_output = []
+                
+                # Check environment variables
+                debug_output.append("=" * 60)
+                debug_output.append("1. Environment Variables:")
+                debug_output.append("=" * 60)
+                
+                webai_cookies_json = os.getenv("WEBAI_COOKIES_JSON")
+                if webai_cookies_json:
+                    debug_output.append(f"   ✅ WEBAI_COOKIES_JSON is set (length: {len(webai_cookies_json)})")
+                    try:
+                        cookies = json.loads(webai_cookies_json)
+                        debug_output.append(f"   ✅ JSON is valid")
+                        debug_output.append(f"   ✅ Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
+                        debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
+                    except Exception as e:
+                        debug_output.append(f"   ❌ JSON is invalid: {e}")
+                else:
+                    debug_output.append("   ⚠️  WEBAI_COOKIES_JSON is NOT set")
+                
+                secure_1psid = os.getenv("WEBAI_SECURE_1PSID")
+                secure_1psidts = os.getenv("WEBAI_SECURE_1PSIDTS")
+                if secure_1psid:
+                    debug_output.append(f"   ✅ WEBAI_SECURE_1PSID is set")
+                if secure_1psidts:
+                    debug_output.append(f"   ✅ WEBAI_SECURE_1PSIDTS is set")
+                
+                # Check shared volume
+                debug_output.append("\n" + "=" * 60)
+                debug_output.append("2. Shared Volume (/shared/cookies):")
+                debug_output.append("=" * 60)
+                
+                shared_cookie_file = Path("/shared/cookies/webai_cookies.json")
+                if shared_cookie_file.exists():
+                    debug_output.append(f"   ✅ Cookie file exists: {shared_cookie_file}")
+                    try:
+                        with open(shared_cookie_file, 'r') as f:
+                            cookies = json.load(f)
+                        debug_output.append(f"   ✅ File is valid JSON")
+                        debug_output.append(f"   ✅ Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
+                        debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
+                        if '__Secure-1PSID' in cookies:
+                            debug_output.append(f"   ✅ __Secure-1PSID value: {cookies['__Secure-1PSID'][:50]}...")
+                    except Exception as e:
+                        debug_output.append(f"   ❌ File exists but is invalid: {e}")
+                else:
+                    debug_output.append(f"   ❌ Cookie file does NOT exist: {shared_cookie_file}")
+                    if shared_cookie_file.parent.exists():
+                        debug_output.append(f"   ℹ️  Directory exists: {shared_cookie_file.parent}")
+                        try:
+                            contents = list(shared_cookie_file.parent.iterdir())
+                            debug_output.append(f"   ℹ️  Directory contents: {[str(c) for c in contents]}")
+                        except:
+                            pass
+                    else:
+                        debug_output.append(f"   ❌ Directory does NOT exist: {shared_cookie_file.parent}")
+                
+                # Check local cookie files
+                debug_output.append("\n" + "=" * 60)
+                debug_output.append("3. Local Cookie Files:")
+                debug_output.append("=" * 60)
+                
+                project_root = Path(__file__).parent.parent.parent
+                local_files = [
+                    project_root / "webai_cookies.json",
+                    project_root / "ai_service_cookies.json",
+                    project_root / "web_dashboard" / "webai_cookies.json",
+                    project_root / "web_dashboard" / "ai_service_cookies.json",
+                ]
+                
+                for cookie_file in local_files:
+                    if cookie_file.exists():
+                        debug_output.append(f"   ✅ Found: {cookie_file}")
+                    else:
+                        debug_output.append(f"   ⚠️  Not found: {cookie_file}")
+                
+                # Test _load_cookies
+                debug_output.append("\n" + "=" * 60)
+                debug_output.append("4. Testing _load_cookies() function:")
+                debug_output.append("=" * 60)
+                
+                try:
+                    from webai_wrapper import _load_cookies
+                    secure_1psid, secure_1psidts = _load_cookies()
+                    if secure_1psid:
+                        debug_output.append(f"   ✅ _load_cookies() returned cookies!")
+                        debug_output.append(f"   ✅ __Secure-1PSID: {secure_1psid[:50]}...")
+                        debug_output.append(f"   ✅ __Secure-1PSIDTS: {secure_1psidts[:50] if secure_1psidts else 'None'}...")
+                    else:
+                        debug_output.append(f"   ❌ _load_cookies() returned None - no cookies found")
+                except Exception as e:
+                    debug_output.append(f"   ❌ Error calling _load_cookies(): {e}")
+                    import traceback
+                    debug_output.append(traceback.format_exc())
+                
+                # Display results
+                st.code("\n".join(debug_output))
+                
+                # Summary
+                if secure_1psid:
+                    st.success("✅ Cookies are configured and accessible!")
+                else:
+                    st.error("❌ No cookies found. Check the debug output above.")
+                    st.info("💡 **Troubleshooting:**\n"
+                           "1. Ensure `webai_cookies_json` secret is set in Woodpecker\n"
+                           "2. Check if cookie refresher sidecar is running: `docker ps | grep cookie-refresher`\n"
+                           "3. Check sidecar logs: `docker logs cookie-refresher`\n"
+                           "4. Verify shared volume is mounted: `docker inspect trading-dashboard | grep -A 10 Mounts`")
+                
+            except Exception as e:
+                st.error(f"Error running debug: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+        
         # Domain Health Monitor
         st.markdown("---")
         st.markdown("##### 📊 Domain Health Monitor")

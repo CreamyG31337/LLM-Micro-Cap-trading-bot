@@ -87,6 +87,17 @@ steps:
       # Create logs directory on host with proper permissions
       - mkdir -p /home/lance/trading-dashboard-logs && chmod 777 /home/lance/trading-dashboard-logs
       
+      # Initialize shared cookies directory and file (before main container starts)
+      - mkdir -p /shared/cookies && chmod 777 /shared/cookies
+      - |
+        if [ -n "$WEBAI_COOKIES_JSON" ]; then
+          echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
+          chmod 644 /shared/cookies/webai_cookies.json
+          echo "✅ Initialized cookie file from Woodpecker secret (before main container starts)"
+        else
+          echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. Cookie file will be empty."
+        fi
+      
       # Verify secrets are set
       - |
         if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
@@ -122,9 +133,15 @@ steps:
         [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
         [ -n "$FMP_API_KEY" ] && DOCKER_CMD="$DOCKER_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
         
-        # Note: WebAI cookies are now loaded from shared volume (/shared/cookies/webai_cookies.json)
-        # The cookie refresher sidecar manages cookie refresh automatically
-        # Initial cookies are set from WEBAI_COOKIES_JSON secret when sidecar starts
+        # Add WebAI cookies (fallback - main app prefers shared volume, but env var works as backup)
+        # The cookie refresher sidecar writes to /shared/cookies/webai_cookies.json
+        # Main app checks shared volume first, then falls back to WEBAI_COOKIES_JSON env var
+        if [ -n "$WEBAI_COOKIES_JSON" ]; then
+          DOCKER_CMD="$DOCKER_CMD -e WEBAI_COOKIES_JSON=\"$WEBAI_COOKIES_JSON\""
+          echo "✅ WEBAI_COOKIES_JSON set (fallback if shared volume not available)"
+        else
+          echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. WebAI Pro may not work until sidecar writes cookies."
+        fi
         
         # Add Ollama and Streamlit settings
         DOCKER_CMD="$DOCKER_CMD -e OLLAMA_BASE_URL=\"${OLLAMA_BASE_URL:-http://host.docker.internal:11434}\""

@@ -4,7 +4,7 @@ WebAI Service Wrapper
 =====================
 
 Wrapper for web-based AI service access using cookie authentication.
-Integrates with obfuscated system and maintains privacy.
+Integrates with encoded key system and maintains privacy.
 """
 
 import sys

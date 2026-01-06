@@ -57,18 +57,18 @@ RETRY_DELAY = 60  # seconds
 
 
 def get_service_url() -> str:
-    """Get the web AI service URL from environment variable or obfuscated keys."""
+    """Get the web AI service URL from environment variable or keys file."""
     # Try environment variable first (for Docker containers)
     env_url = os.getenv("AI_SERVICE_WEB_URL")
     if env_url:
         return env_url
     
-    # Try obfuscated keys file (for local development)
+    # Try keys file (for local development)
     try:
         from ai_service_keys import get_service_url
         return get_service_url("WEB_BASE_URL")
     except (ImportError, FileNotFoundError, KeyError) as e:
-        logger.warning(f"Could not load obfuscated URL: {e}")
+        logger.warning(f"Could not load URL from keys file: {e}")
         # Fallback (should not be used in production)
         return "https://webai.google.com/app"
 

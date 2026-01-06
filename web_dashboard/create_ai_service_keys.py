@@ -3,7 +3,7 @@
 Create AI Service Keys File
 ============================
 
-Utility to create the obfuscated keys file for AI service URLs.
+Utility to create the encoded keys file for AI service URLs.
 Uses XOR encryption with a key to prevent simple base64 decoding.
 
 Usage:
@@ -49,7 +49,7 @@ def _encode_value(value: str, key: bytes) -> str:
 
 
 def main():
-    """Create the keys file with obfuscated URLs."""
+    """Create the keys file with encoded URLs."""
     project_root = Path(__file__).parent.parent
     keys_file = project_root / "ai_service.keys.json"
     
@@ -77,29 +77,29 @@ def main():
         "MODEL_DISPLAY_3_0_PRO": os.getenv("MODEL_DISPLAY_3_0_PRO", "AI Model 3.0 Pro"),
     }
     
-    # Create obfuscated dictionary
-    obfuscated = {}
+    # Create encoded dictionary
+    encoded = {}
     for key_name, url in urls.items():
-        obfuscated[key_name] = _encode_value(url, key_bytes)
+        encoded[key_name] = _encode_value(url, key_bytes)
         # Add decoded version as comment (for reference, not used by code)
-        obfuscated[f"_{key_name}_DECODED"] = url
+        encoded[f"_{key_name}_DECODED"] = url
     
     # Add metadata
-    obfuscated["_NOTE"] = "Obfuscated AI service URLs. Do not commit to git."
-    obfuscated["_KEY_SOURCE"] = "Set AI_SERVICE_KEY environment variable for production"
+    encoded["_NOTE"] = "Encoded AI service URLs. Do not commit to git."
+    encoded["_KEY_SOURCE"] = "Set AI_SERVICE_KEY environment variable for production"
     
     # Write to file
     with open(keys_file, 'w', encoding='utf-8') as f:
-        json.dump(obfuscated, f, indent=2)
+        json.dump(encoded, f, indent=2)
     
     print(f"[OK] Created keys file: {keys_file}")
-    print(f"  Added {len(urls)} obfuscated URLs")
+    print(f"  Added {len(urls)} encoded URLs")
     print(f"\n[NOTE] Add to .gitignore if not already there:")
     print(f"   ai_service.keys.json")
     if key == "default_dev_key_change_in_prod_12345":
         print(f"\n[CRITICAL] You are using the default encryption key!")
         print(f"  This key is exposed in git and provides NO security.")
-        print(f"  Anyone with repo access can decode your obfuscated values.")
+        print(f"  Anyone with repo access can decode your encoded values.")
         print(f"  Set AI_SERVICE_KEY in .env file with a secure random key.")
     else:
         print(f"\n[OK] Using custom encryption key from AI_SERVICE_KEY environment variable")

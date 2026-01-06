@@ -3,7 +3,7 @@
 AI Service Key Loader
 =====================
 
-Utility to load obfuscated URLs and keys for AI service integration.
+Utility to load encoded URLs and keys for AI service integration.
 Uses XOR encryption with a key to prevent simple base64 decoding.
 """
 
@@ -44,7 +44,7 @@ def _get_encryption_key() -> bytes:
 
 def _decode_value(encoded: str, key: bytes) -> str:
     """
-    Decode an obfuscated value.
+    Decode an encoded value.
     
     Format: base64(XOR(data, key))
     """
@@ -73,7 +73,7 @@ def _load_keys() -> Dict[str, str]:
     if not keys_file.exists():
         raise FileNotFoundError(
             f"AI service keys file not found: {keys_file}\n"
-            "Create ai_service.keys.json with obfuscated URLs."
+            "Create ai_service.keys.json with encoded URLs."
         )
     
     with open(keys_file, 'r', encoding='utf-8') as f:
@@ -122,13 +122,13 @@ def get_service_url(key: str) -> str:
 
 def get_model_display_name(model_id: str) -> str:
     """
-    Get obfuscated model display name by model identifier.
+    Get model display name by model identifier.
     
     Args:
         model_id: Model identifier (e.g., "gemini-2.5-flash")
         
     Returns:
-        Display name for the model (obfuscated from keys file, or fallback)
+        Display name for the model (from keys file, or fallback)
     """
     try:
         keys = _load_keys()
@@ -151,29 +151,29 @@ def get_model_display_name(model_id: str) -> str:
         
         return keys[key_name]
     except (FileNotFoundError, KeyError, ValueError):
-        # If keys file doesn't exist or can't be loaded, return fallback
-        # Fallback display names (will be replaced when keys file is created)
-        fallback_names = {
-            "gemini-2.5-flash": "WebAI 2.5 Flash",
-            "gemini-2.5-pro": "WebAI 2.5 Pro",
-            "gemini-3.0-pro": "WebAI 3.0 Pro",
-        }
-        return fallback_names.get(model_id, model_id)
+        # If keys file doesn't exist or can't be loaded, return model_id
+        # The actual display name should come from decoded keys, not hardcoded
+        return model_id
 
 
 def get_model_display_name_short() -> str:
     """
-    Get short obfuscated model display name.
+    Get short model display name.
     
     Returns:
-        Short display name (obfuscated from keys file, or fallback)
+        Short display name (from keys file, or fallback)
     """
     try:
         keys = _load_keys()
-        return keys.get("MODEL_DISPLAY_3_0_PRO", "WebAI Pro")
+        # Try to get the decoded display name from keys
+        display_name = keys.get("MODEL_DISPLAY_3_0_PRO")
+        if display_name:
+            return display_name
+        # If key exists but is empty, use generic fallback
+        return "AI Pro"
     except (FileNotFoundError, KeyError, ValueError):
         # Fallback if keys file doesn't exist
-        return "WebAI Pro"
+        return "AI Pro"
 
 
 def list_service_keys() -> Dict[str, str]:

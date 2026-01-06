@@ -49,7 +49,7 @@ except ImportError:
     PersistentConversationSession = None
     logger.warning("WebAI package not available. WebAI Pro will be disabled.")
 
-# Import obfuscated model display names
+# Import model display names from keys file
 try:
     from ai_service_keys import get_model_display_name, get_model_display_name_short
     HAS_MODEL_KEYS = True
@@ -57,15 +57,17 @@ except (ImportError, FileNotFoundError, KeyError, ValueError) as e:
     HAS_MODEL_KEYS = False
     # Fallback functions if keys file not available
     def get_model_display_name(model_id: str) -> str:
-        # Fallback display names
-        fallback_names = {
-            "gemini-2.5-flash": "WebAI 2.5 Flash",
-            "gemini-2.5-pro": "WebAI 2.5 Pro",
-            "gemini-3.0-pro": "WebAI 3.0 Pro",
+        # Fallback: use generic names if keys not available
+        # Never expose service name in code
+        generic_names = {
+            "gemini-2.5-flash": "AI 2.5 Flash",
+            "gemini-2.5-pro": "AI 2.5 Pro",
+            "gemini-3.0-pro": "AI 3.0 Pro",
         }
-        return fallback_names.get(model_id, model_id)
+        return generic_names.get(model_id, "AI Model")
     def get_model_display_name_short() -> str:
-        return "WebAI Pro"
+        # Fallback: use generic name if keys not available
+        return "AI Pro"
     # Log warning but don't crash
     logger.debug(f"Model display keys file not available: {e}. Using fallback names.")
 
@@ -438,7 +440,7 @@ with st.sidebar:
 
     # Format model names for display (show friendly names instead of technical identifiers)
     def format_model_name(model: str) -> str:
-        """Format model name using obfuscated keys."""
+        """Format model name using keys file."""
         if HAS_MODEL_KEYS and model.startswith("gemini-"):
             try:
                 return get_model_display_name(model)
@@ -488,7 +490,7 @@ with st.sidebar:
         if HAS_MODEL_KEYS:
             try:
                 display_name = get_model_display_name(selected_model)
-                # Build description with obfuscated name
+                # Build description with display name from keys
                 emoji_map = {
                     "gemini-2.5-flash": "⚡",
                     "gemini-2.5-pro": "🧠",
@@ -514,7 +516,7 @@ with st.sidebar:
         # Ollama models require Ollama to be running
         if not ollama_available:
             st.error("❌ Cannot connect to Ollama API. Please check if Ollama is running.")
-            model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+            model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "AI Pro"
             st.info(f"💡 Tip: Try selecting '{model_name}' to use the web-based model instead.")
             st.stop()
         
@@ -1547,7 +1549,7 @@ if user_query:
                     user_id = get_user_id()
                     if not user_id:
                         status_placeholder.empty()
-                        model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                        model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "AI Pro"
                         st.error(f"User authentication required for {model_name}")
                         st.stop()
                     
@@ -1603,12 +1605,12 @@ if user_query:
                     # Missing cookies error
                     status_placeholder.empty()
                     st.error(f"WebAI configuration error: {e}")
-                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "AI Pro"
                     st.info(f"💡 Please configure cookies for {model_name}. See setup documentation.")
                     st.stop()
                 except Exception as e:
                     status_placeholder.empty()
-                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "WebAI Pro"
+                    model_name = get_model_display_name_short() if HAS_MODEL_KEYS else "AI Pro"
                     st.error(f"Error using {model_name}: {e}")
                     logger.exception("WebAI error")
                     st.stop()

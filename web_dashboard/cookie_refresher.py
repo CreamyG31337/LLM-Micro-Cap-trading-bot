@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-REFRESH_INTERVAL = int(os.getenv("COOKIE_REFRESH_INTERVAL", "3600"))  # 1 hour default
+REFRESH_INTERVAL = int(os.getenv("COOKIE_REFRESH_INTERVAL", "1800"))  # 30 minutes default (__Secure-1PSIDTS expires frequently)
 COOKIE_OUTPUT_FILE = os.getenv("COOKIE_OUTPUT_FILE", "/shared/cookies/webai_cookies.json")
 COOKIE_INPUT_FILE = os.getenv("COOKIE_INPUT_FILE", "/shared/cookies/webai_cookies.json")  # Read existing cookies
 MAX_RETRIES = 3

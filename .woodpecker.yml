@@ -194,7 +194,7 @@ steps:
             --name cookie-refresher \
             --restart unless-stopped \
             -v /shared/cookies:/shared/cookies \
-            -e COOKIE_REFRESH_INTERVAL=3600 \
+            -e COOKIE_REFRESH_INTERVAL=1800 \
             -e COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json \
             -e COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json \
             -e AI_SERVICE_WEB_URL="${AI_SERVICE_WEB_URL:-https://webai.google.com/app}" \

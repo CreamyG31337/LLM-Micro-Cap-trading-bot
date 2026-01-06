@@ -4042,6 +4042,69 @@ OLLAMA_ENABLED={enabled}""")
                         st.error(f"❌ Failed to save cookies: {e}")
                         import traceback
                         st.code(traceback.format_exc())
+            
+            # Manual refresh trigger
+            st.markdown("---")
+            st.markdown("**🔄 Trigger Cookie Refresh**")
+            st.caption("Manually trigger the cookie refresher sidecar to refresh cookies now")
+            
+            col_refresh1, col_refresh2 = st.columns(2)
+            with col_refresh1:
+                if st.button("🔄 Refresh Cookies Now", use_container_width=True):
+                    try:
+                        import subprocess
+                        # Check if cookie-refresher container is running
+                        result = subprocess.run(
+                            ["docker", "exec", "cookie-refresher", "python", "-c", 
+                             "import sys; sys.path.insert(0, '/app'); sys.path.insert(0, '/app/web_dashboard'); "
+                             "from cookie_refresher import refresh_cookies; refresh_cookies()"],
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        if result.returncode == 0:
+                            st.success("✅ Cookie refresh triggered successfully!")
+                            st.caption("Check the cookie file status below to verify")
+                        else:
+                            st.warning(f"⚠️ Refresh command returned: {result.returncode}")
+                            st.code(result.stderr)
+                    except subprocess.TimeoutExpired:
+                        st.warning("⏱️ Refresh is taking longer than expected. Check cookie-refresher logs.")
+                    except FileNotFoundError:
+                        st.info("ℹ️ Docker not available (running locally). Cookie refresher runs in production.")
+                    except Exception as e:
+                        st.error(f"❌ Failed to trigger refresh: {e}")
+                        st.caption("Make sure the cookie-refresher sidecar container is running")
+            
+            with col_refresh2:
+                # Show refresh status and last refresh time
+                try:
+                    import subprocess
+                    # Check if container is running
+                    result = subprocess.run(
+                        ["docker", "ps", "--filter", "name=cookie-refresher", "--format", "{{.Status}}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        st.success(f"✅ Sidecar: {result.stdout.strip()}")
+                        
+                        # Try to get last refresh time from logs
+                        log_result = subprocess.run(
+                            ["docker", "logs", "--tail", "20", "cookie-refresher"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if "Cookie refresh successful" in log_result.stdout:
+                            st.caption("✅ Last refresh: Successful")
+                        elif "Starting cookie refresh" in log_result.stdout:
+                            st.caption("🔄 Last refresh: In progress or pending")
+                    else:
+                        st.warning("⚠️ Cookie refresher sidecar not running")
+                except Exception:
+                    st.info("ℹ️ Cannot check sidecar status (may be running locally)")
         
         with st.expander("🔍 Cookie Configuration Status", expanded=False):
             try:

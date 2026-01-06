@@ -60,17 +60,38 @@ def get_service_url() -> str:
     """Get the web AI service URL from environment variable or keys file."""
     # Try environment variable first (for Docker containers)
     env_url = os.getenv("AI_SERVICE_WEB_URL")
+    logger.debug(f"AI_SERVICE_WEB_URL env var: {'SET' if env_url else 'NOT SET'}")
     if env_url:
+        logger.debug(f"AI_SERVICE_WEB_URL value: {env_url[:50]}...")
+        if env_url and not env_url.startswith("https://example"):  # Ignore placeholder
+            logger.info(f"Using service URL from environment variable")
+            return env_url
+        else:
+            logger.warning(f"AI_SERVICE_WEB_URL is set to placeholder URL - ignoring")
+    
+    # Try keys file (for local development and production) - prioritize this
+    try:
+        from ai_service_keys import get_service_url as get_url_from_keys
+        url = get_url_from_keys("WEB_BASE_URL")
+        if url and not url.startswith("https://example"):  # Ignore placeholder
+            logger.info(f"Loaded service URL from keys file")
+            return url
+    except (ImportError, FileNotFoundError, KeyError, ValueError) as e:
+        logger.debug(f"Could not load URL from keys file: {e}")
+    
+    # Last resort: try environment variable even if it's the default (but warn)
+    env_url = os.getenv("AI_SERVICE_WEB_URL")
+    if env_url and env_url != "https://webai.google.com/app":  # Ignore placeholder
+        logger.warning(f"Using URL from environment variable (keys file not available)")
         return env_url
     
-    # Try keys file (for local development)
-    try:
-        from ai_service_keys import get_service_url
-        return get_service_url("WEB_BASE_URL")
-    except (ImportError, FileNotFoundError, KeyError) as e:
-        logger.warning(f"Could not load URL from keys file: {e}")
-        # Fallback (should not be used in production)
-        return "https://webai.google.com/app"
+    # If all else fails, raise an error instead of using hardcoded URL
+    raise ValueError(
+        "AI_SERVICE_WEB_URL not set correctly and keys file not available. "
+        "Set AI_SERVICE_WEB_URL environment variable to the correct URL, "
+        "or ensure ai_service.keys.json exists with WEB_BASE_URL key. "
+        "The placeholder URL is not valid. Set AI_SERVICE_WEB_URL to the correct service URL."
+    )
 
 
 def load_existing_cookies() -> Optional[Dict[str, str]]:

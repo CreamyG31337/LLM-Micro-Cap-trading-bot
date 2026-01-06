@@ -42,7 +42,7 @@ try:
 except (ImportError, FileNotFoundError, KeyError) as e:
     logger.warning(f"Could not load obfuscated URLs: {e}")
     # Fallback (should not be used in production)
-    BASE_URL = "https://webai.google.com/app"
+    BASE_URL = "https://example-ai-service.com/app"  # Placeholder - should use keys file
 
 
 class AIServiceClient:
@@ -113,15 +113,23 @@ class AIServiceClient:
             if isinstance(cookies_data, list):
                 # Format: [{"name": "...", "value": "...", "domain": "..."}, ...]
                 for cookie in cookies_data:
-                    self.session.cookies.set(
-                        cookie.get("name"),
-                        cookie.get("value"),
-                        domain=cookie.get("domain", ".google.com")
-                    )
+                    cookie_domain = cookie.get("domain", None)
+                    if cookie_domain:
+                        self.session.cookies.set(
+                            cookie.get("name"),
+                            cookie.get("value"),
+                            domain=cookie_domain
+                        )
+                    else:
+                        self.session.cookies.set(
+                            cookie.get("name"),
+                            cookie.get("value")
+                        )
             elif isinstance(cookies_data, dict):
                 # Format: {"cookie_name": "cookie_value", ...}
+                # For dict format, no domain info - let requests handle it
                 for name, value in cookies_data.items():
-                    self.session.cookies.set(name, value, domain=".google.com")
+                    self.session.cookies.set(name, value)
             
             logger.info(f"Loaded cookies from {cookie_path}")
             
@@ -131,8 +139,9 @@ class AIServiceClient:
     
     def load_cookies_from_dict(self, cookies_dict: Dict[str, str]) -> None:
         """Load cookies from a dictionary."""
+        # For dict format, no domain info - let requests handle it automatically
         for name, value in cookies_dict.items():
-            self.session.cookies.set(name, value, domain=".google.com")
+            self.session.cookies.set(name, value)
         logger.info(f"Loaded {len(cookies_dict)} cookies from dictionary")
     
     def _discover_api_endpoint(self) -> Optional[str]:

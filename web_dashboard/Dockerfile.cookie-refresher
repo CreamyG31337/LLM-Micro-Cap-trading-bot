@@ -61,8 +61,8 @@ ENV PYTHONUNBUFFERED=1
 ENV COOKIE_REFRESH_INTERVAL=3600
 ENV COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json
 ENV COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json
-# AI service URL (can be overridden via Woodpecker secret)
-ENV AI_SERVICE_WEB_URL=https://webai.google.com/app
+# AI service URL (must be set via Woodpecker secret ai_service_web_url)
+# No default - must be provided via environment variable
 
 # Run the cookie refresher
 CMD ["python", "web_dashboard/cookie_refresher.py"]

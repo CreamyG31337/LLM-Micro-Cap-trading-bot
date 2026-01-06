@@ -66,7 +66,7 @@ def main():
     # Note: All values come from environment variables to avoid hardcoding sensitive names
     # WEB_BASE_URL is the actual web interface (for cookie-based access)
     urls = {
-        "WEB_BASE_URL": os.getenv("AI_SERVICE_WEB_URL", "https://webai.google.com/app"),  # Generic fallback
+        "WEB_BASE_URL": os.getenv("AI_SERVICE_WEB_URL", "https://example-ai-service.com/app"),  # Generic fallback
         "API_V1BETA": "/v1beta/models",
         "API_V1": "/v1/models",
         "MODEL_NAME": os.getenv("AI_SERVICE_MODEL_NAME", "ai-pro"),  # Generic fallback

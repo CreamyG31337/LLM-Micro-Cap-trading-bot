@@ -3955,13 +3955,52 @@ OLLAMA_ENABLED={enabled}""")
                 webai_cookies_json = os.getenv("WEBAI_COOKIES_JSON")
                 if webai_cookies_json:
                     debug_output.append(f"   ✅ WEBAI_COOKIES_JSON is set (length: {len(webai_cookies_json)})")
+                    debug_output.append(f"   📝 First 100 chars: {repr(webai_cookies_json[:100])}")
+                    debug_output.append(f"   📝 Last 100 chars: {repr(webai_cookies_json[-100:])}")
+                    
+                    # Show character analysis
+                    debug_output.append(f"   📊 Analysis:")
+                    debug_output.append(f"      - Starts with: {repr(webai_cookies_json[0]) if webai_cookies_json else 'N/A'}")
+                    debug_output.append(f"      - Contains newlines: {'\\n' in webai_cookies_json or '\\r' in webai_cookies_json}")
+                    debug_output.append(f"      - Quote count (\"): {webai_cookies_json.count(chr(34))}")
+                    debug_output.append(f"      - Quote count ('): {webai_cookies_json.count(chr(39))}")
+                    
                     try:
                         cookies = json.loads(webai_cookies_json)
                         debug_output.append(f"   ✅ JSON is valid")
                         debug_output.append(f"   ✅ Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
                         debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
-                    except Exception as e:
+                    except json.JSONDecodeError as e:
                         debug_output.append(f"   ❌ JSON is invalid: {e}")
+                        debug_output.append(f"   💡 Error at position {e.pos if hasattr(e, 'pos') else 'unknown'}")
+                        
+                        # Try to show what's around the error
+                        if hasattr(e, 'pos') and e.pos < len(webai_cookies_json):
+                            start = max(0, e.pos - 20)
+                            end = min(len(webai_cookies_json), e.pos + 20)
+                            debug_output.append(f"   📍 Context around error: {repr(webai_cookies_json[start:end])}")
+                        
+                        # Try the same cleaning logic as webai_wrapper
+                        try:
+                            cleaned = webai_cookies_json.strip()
+                            if len(cleaned) >= 2:
+                                if cleaned.startswith('"') and cleaned.endswith('"') and cleaned[1] in ['{', '[']:
+                                    cleaned = cleaned[1:-1]
+                                elif cleaned.startswith("'") and cleaned.endswith("'") and cleaned[1] in ['{', '[']:
+                                    cleaned = cleaned[1:-1]
+                            cleaned = cleaned.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+                            import re
+                            cleaned = re.sub(r' +', ' ', cleaned)
+                            cookies = json.loads(cleaned)
+                            debug_output.append(f"   ✅ After cleaning, JSON is valid!")
+                            debug_output.append(f"   ✅ Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
+                            debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
+                        except Exception as e2:
+                            debug_output.append(f"   ❌ Still invalid after cleaning: {e2}")
+                    except Exception as e:
+                        debug_output.append(f"   ❌ Unexpected error: {e}")
+                        import traceback
+                        debug_output.append(f"   {traceback.format_exc()}")
                 else:
                     debug_output.append("   ⚠️  WEBAI_COOKIES_JSON is NOT set")
                 
@@ -4059,86 +4098,102 @@ OLLAMA_ENABLED={enabled}""")
                 import traceback
                 st.code(traceback.format_exc())
         
-        # Domain Health Monitor
+        # Test connection button
         st.markdown("---")
-        st.markdown("##### 📊 Domain Health Monitor")
-        st.caption("Track extraction success rates and identify problematic domains")
-        
-        try:
-            from research_domain_health import DomainHealthTracker
-            from settings import get_system_setting
-            
-            tracker = DomainHealthTracker()
-            unhealthy_domains = tracker.get_unhealthy_domains(min_failures=1)
-            threshold = get_system_setting("auto_blacklist_threshold", default=4)
-            
-            if unhealthy_domains:
-                # Build table data
-                health_data = []
-                for record in unhealthy_domains:
-                    domain = record.get('domain', '')
-                    total_attempts = record.get('total_attempts', 0)
-                    total_successes = record.get('total_successes', 0)
-                    consecutive_failures = record.get('consecutive_failures', 0)
-                    auto_blacklisted = record.get('auto_blacklisted', False)
-                    last_failure_reason = record.get('last_failure_reason', 'unknown')
-                    
-                    # Calculate success rate
-                    success_rate = (total_successes / total_attempts * 100) if total_attempts > 0 else 0
-                    
-                    # Determine health status
-                    if auto_blacklisted:
-                        status = "🔴 Auto-blacklisted"
-                    elif consecutive_failures >= threshold:
-                        status = "🔴 Critical"
-                    elif consecutive_failures >= threshold - 1:
-                        status = "🟡 Warning"
-                    else:
-                        status = "🟢 Monitoring"
-                    
-                    health_data.append({
-                        "Domain": domain,
-                        "Attempts": total_attempts,
-                        "Success Rate": f"{success_rate:.0f}%",
-                        "Consecutive Failures": f"{consecutive_failures}/{threshold}",
-                        "Last Failure": last_failure_reason,
-                        "Status": status
-                    })
-                
-                # Display as DataFrame
-                import pandas as pd
-                health_df = pd.DataFrame(health_data)
-                
-                st.dataframe(
-                    health_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Domain": st.column_config.TextColumn("Domain", width="medium"),
-                        "Attempts": st.column_config.NumberColumn("Attempts", width="small"),
-                        "Success Rate": st.column_config.TextColumn("Success Rate", width="small"),
-                        "Consecutive Failures": st.column_config.TextColumn("Consecutive Failures", width="small"),
-                        "Last Failure": st.column_config.TextColumn("Last Failure", width="medium"),
-                        "Status": st.column_config.TextColumn("Status", width="medium")
-                    }
-                )
-                
-                st.caption(f"ℹ️ Auto-blacklist threshold: {threshold} consecutive failures")
-                
+        if st.button("🔄 Test Connection", use_container_width=True):
+            if check_ollama_health():
+                st.success("✅ Connection successful!")
             else:
-                st.success("✅ All domains are healthy!")
-                st.caption("No domains with extraction failures found.")
+                st.error("❌ Connection failed. Check the base URL and ensure Ollama is running.")
         
-        except Exception as e:
-            st.warning(f"Could not load domain health data: {e}")
-            st.caption("Make sure the research_domain_health table exists (run migration 10_domain_health_tracking.sql)")
+    except ImportError as e:
+        st.error(f"Error importing Ollama client: {e}")
+        st.info("Make sure ollama_client.py is available.")
+    except Exception as e:
+        st.error(f"Error loading AI settings: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+    
+    # Domain Health Monitor
+    st.markdown("---")
+    st.markdown("##### 📊 Domain Health Monitor")
+    st.caption("Track extraction success rates and identify problematic domains")
+    
+    try:
+        from research_domain_health import DomainHealthTracker
+        from settings import get_system_setting
         
-        # Research Domain Blacklist Management
-        st.markdown("---")
-        st.markdown("##### 🚫 Research Domain Blacklist")
-        st.caption("Domains to skip during market research article extraction")
+        tracker = DomainHealthTracker()
+        unhealthy_domains = tracker.get_unhealthy_domains(min_failures=1)
+        threshold = get_system_setting("auto_blacklist_threshold", default=4)
         
-        try:
+        if unhealthy_domains:
+            # Build table data
+            health_data = []
+            for record in unhealthy_domains:
+                domain = record.get('domain', '')
+                total_attempts = record.get('total_attempts', 0)
+                total_successes = record.get('total_successes', 0)
+                consecutive_failures = record.get('consecutive_failures', 0)
+                auto_blacklisted = record.get('auto_blacklisted', False)
+                last_failure_reason = record.get('last_failure_reason', 'unknown')
+                
+                # Calculate success rate
+                success_rate = (total_successes / total_attempts * 100) if total_attempts > 0 else 0
+                
+                # Determine health status
+                if auto_blacklisted:
+                    status = "🔴 Auto-blacklisted"
+                elif consecutive_failures >= threshold:
+                    status = "🔴 Critical"
+                elif consecutive_failures >= threshold - 1:
+                    status = "🟡 Warning"
+                else:
+                    status = "🟢 Monitoring"
+                
+                health_data.append({
+                    "Domain": domain,
+                    "Attempts": total_attempts,
+                    "Success Rate": f"{success_rate:.0f}%",
+                    "Consecutive Failures": f"{consecutive_failures}/{threshold}",
+                    "Last Failure": last_failure_reason,
+                    "Status": status
+                })
+            
+            # Display as DataFrame
+            import pandas as pd
+            health_df = pd.DataFrame(health_data)
+            
+            st.dataframe(
+                health_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Domain": st.column_config.TextColumn("Domain", width="medium"),
+                    "Attempts": st.column_config.NumberColumn("Attempts", width="small"),
+                    "Success Rate": st.column_config.TextColumn("Success Rate", width="small"),
+                    "Consecutive Failures": st.column_config.TextColumn("Consecutive Failures", width="small"),
+                    "Last Failure": st.column_config.TextColumn("Last Failure", width="medium"),
+                    "Status": st.column_config.TextColumn("Status", width="medium")
+                }
+            )
+            
+            st.caption(f"ℹ️ Auto-blacklist threshold: {threshold} consecutive failures")
+            
+        else:
+            st.success("✅ All domains are healthy!")
+            st.caption("No domains with extraction failures found.")
+    
+    except Exception as e:
+        st.warning(f"Could not load domain health data: {e}")
+        st.caption("Make sure the research_domain_health table exists (run migration 10_domain_health_tracking.sql)")
+    
+    # Research Domain Blacklist Management
+    st.markdown("---")
+    st.markdown("##### 🚫 Research Domain Blacklist")
+    st.caption("Domains to skip during market research article extraction")
+    
+    try:
             from settings import get_research_domain_blacklist, set_system_setting
             
             current_blacklist = get_research_domain_blacklist()
@@ -4215,25 +4270,9 @@ OLLAMA_ENABLED={enabled}""")
                             st.caption(f"📊 Last run: {message}")
             except Exception:
                 pass  # Don't fail if stats unavailable
-        
-        except Exception as e:
-            st.error(f"Error loading blacklist settings: {e}")
-        
-        # Test connection button
-        st.markdown("---")
-        if st.button("🔄 Test Connection", use_container_width=True):
-            if check_ollama_health():
-                st.success("✅ Connection successful!")
-            else:
-                st.error("❌ Connection failed. Check the base URL and ensure Ollama is running.")
-        
-    except ImportError as e:
-        st.error(f"Error importing Ollama client: {e}")
-        st.info("Make sure ollama_client.py is available.")
+    
     except Exception as e:
-        st.error(f"Error loading AI settings: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+        st.error(f"Error loading blacklist settings: {e}")
 
 # Display Streamlit version at the bottom of the page
 st.markdown("---")

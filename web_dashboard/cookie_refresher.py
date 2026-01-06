@@ -11,6 +11,12 @@ This service:
 2. Uses Playwright to visit the web AI service with existing cookies
 3. Extracts fresh cookies (especially __Secure-1PSIDTS which expires frequently)
 4. Writes cookies to a shared volume for the main app to use
+
+Security Note:
+- Uses existing cookies to maintain session continuity
+- Runs from the same IP address as the original login (reduces 2FA risk)
+- Uses stealth browser fingerprinting to appear as a real browser
+- Detects and logs security challenges if they occur
 """
 
 import sys
@@ -134,19 +140,59 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
     
     with sync_playwright() as p:
         try:
-            # Launch browser in headless mode
+            # Launch browser in headless mode with stealth options
+            # Use more realistic browser fingerprinting to avoid detection
             browser = p.chromium.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for Docker
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-blink-features=AutomationControlled',  # Hide automation
+                    '--disable-dev-shm-usage',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                ]
             )
             
-            # Create context with existing cookies if available
+            # Create context with realistic browser fingerprinting
+            # This makes the browser look more like a real user session
             context_options = {
                 "viewport": {"width": 1920, "height": 1080},
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "locale": "en-US",
+                "timezone_id": "America/Los_Angeles",
+                "permissions": ["geolocation"],
+                "geolocation": {"latitude": 37.7749, "longitude": -122.4194},  # San Francisco
+                "color_scheme": "light",
+                "extra_http_headers": {
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                }
             }
             
             context = browser.new_context(**context_options)
+            
+            # Add script to hide webdriver property (common bot detection)
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                // Override plugins to look more realistic
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                // Override languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+            """)
             
             # Add existing cookies if we have them
             if existing_cookies:
@@ -175,18 +221,53 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
             
             # Create page and navigate
             page = context.new_page()
+            detected_challenges = []  # Initialize for later use
             
             logger.info(f"Navigating to {service_url}...")
             try:
+                # Navigate with realistic timing
                 page.goto(service_url, wait_until="networkidle", timeout=30000)
             except PlaywrightTimeout:
                 logger.warning("Navigation timeout, but continuing...")
                 # Wait a bit for page to load
                 time.sleep(3)
             
+            # Check for 2FA or security challenges
+            try:
+                page_content = page.content()
+                page_url = page.url
+                
+                # Detect common 2FA/security challenge indicators
+                security_indicators = [
+                    "verify", "verification", "two-factor", "2fa", "2-step",
+                    "security check", "unusual activity", "suspicious",
+                    "confirm your identity", "enter code", "send code"
+                ]
+                
+                page_text_lower = page_content.lower()
+                detected_challenges = [indicator for indicator in security_indicators if indicator in page_text_lower]
+                
+                if detected_challenges:
+                    logger.warning(f"⚠️  Security challenge detected: {', '.join(detected_challenges)}")
+                    logger.warning("The service may require manual verification. Cookie refresh may fail.")
+                    logger.warning(f"Current URL: {page_url}")
+                    # Continue anyway - might still get cookies
+            except Exception as e:
+                logger.debug(f"Could not check for security challenges: {e}")
+            
             # Wait for page to fully load and cookies to be set
             logger.info("Waiting for page to load and cookies to be set...")
-            time.sleep(5)
+            # Simulate human-like behavior: small random delay
+            import random
+            time.sleep(3 + random.uniform(0, 2))
+            
+            # Try to interact with page naturally (scroll, mouse movement simulation)
+            try:
+                page.evaluate("window.scrollTo(0, 100)")
+                time.sleep(0.5)
+                page.evaluate("window.scrollTo(0, 0)")
+            except:
+                pass  # Ignore if page doesn't support scrolling
             
             # Extract all cookies from the context
             all_cookies = context.cookies()
@@ -200,11 +281,16 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
             # Check if we got the required cookies
             if "__Secure-1PSID" not in cookies_dict:
                 logger.error("Failed to get __Secure-1PSID cookie")
+                if detected_challenges:
+                    logger.error("⚠️  This may be due to a security challenge (2FA/verification required)")
+                    logger.error("   You may need to manually extract fresh cookies and update the Woodpecker secret")
                 browser.close()
                 return None
             
             if "__Secure-1PSIDTS" not in cookies_dict:
-                logger.warning("__Secure-1PSIDTS not found - may need manual login")
+                logger.warning("__Secure-1PSIDTS not found - may need manual login or security challenge")
+                if detected_challenges:
+                    logger.warning("⚠️  Security challenge detected - cookies may not refresh automatically")
                 # Continue anyway, as __Secure-1PSID might be enough
             
             browser.close()

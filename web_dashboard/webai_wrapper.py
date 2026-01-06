@@ -101,6 +101,35 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
                 logger.warning("WEBAI_COOKIES_JSON found but missing __Secure-1PSID cookie")
                 logger.debug(f"Available keys: {list(cookies.keys())}")
         except json.JSONDecodeError as e:
+            # JSON parsing failed - try to fix malformed JSON (missing quotes)
+            # Format: {__Secure-1PSID: value, __Secure-1PSIDTS: value}
+            try:
+                fixed = cookies_json.strip()
+                if fixed.startswith('{') and fixed.endswith('}'):
+                    fixed = fixed[1:-1].strip()
+                
+                # Parse manually: key: value pairs
+                cookies_dict = {}
+                pattern = r'(__Secure-1PSID(?:TS)?):\s*([^,}]+?)(?=\s*[,}]|$)'
+                matches = re.findall(pattern, fixed)
+                
+                if matches:
+                    for key, value in matches:
+                        cookies_dict[key.strip()] = value.strip()
+                    
+                    if cookies_dict and "__Secure-1PSID" in cookies_dict:
+                        secure_1psid = cookies_dict.get("__Secure-1PSID")
+                        secure_1psidts = cookies_dict.get("__Secure-1PSIDTS")
+                        if secure_1psid:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning("⚠️ WEBAI_COOKIES_JSON contains malformed JSON (missing quotes). Fixed automatically.")
+                            logger.warning("⚠️ Please update Woodpecker secret 'webai_cookies_json' to valid JSON format:")
+                            logger.warning("   {\"__Secure-1PSID\":\"...\",\"__Secure-1PSIDTS\":\"...\"}")
+                            return (secure_1psid, secure_1psidts)
+            except Exception:
+                pass  # Fall through to original error handling
+            
             # JSON parsing failed - log but continue to try other methods
             import logging
             logger = logging.getLogger(__name__)

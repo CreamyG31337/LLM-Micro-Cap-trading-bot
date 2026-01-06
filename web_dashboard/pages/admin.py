@@ -3998,6 +3998,44 @@ OLLAMA_ENABLED={enabled}""")
                             debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
                         except Exception as e2:
                             debug_output.append(f"   ❌ Still invalid after cleaning: {e2}")
+                            
+                            # Try to fix malformed JSON (missing quotes around keys/values)
+                            # Format: {__Secure-1PSID: value, __Secure-1PSIDTS: value}
+                            # Should be: {"__Secure-1PSID": "value", "__Secure-1PSIDTS": "value"}
+                            try:
+                                import re
+                                fixed = cleaned.strip()
+                                # Remove outer braces if present
+                                if fixed.startswith('{') and fixed.endswith('}'):
+                                    fixed = fixed[1:-1].strip()
+                                
+                                # Split by comma, but be careful with commas in values
+                                # Simple approach: split on ": " pattern followed by key pattern
+                                # Parse manually: key: value pairs
+                                cookies_dict = {}
+                                # Pattern: __Secure-1PSID: value, __Secure-1PSIDTS: value}
+                                # Match: (key): (value)
+                                pattern = r'(__Secure-1PSID(?:TS)?):\s*([^,}]+?)(?=\s*[,}]|$)'
+                                matches = re.findall(pattern, fixed)
+                                
+                                if matches:
+                                    for key, value in matches:
+                                        cookies_dict[key.strip()] = value.strip()
+                                    
+                                    if cookies_dict:
+                                        cookies = cookies_dict
+                                        debug_output.append(f"   ✅ After fixing malformed JSON, it's valid!")
+                                        debug_output.append(f"   ✅ Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
+                                        debug_output.append(f"   ✅ Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
+                                        debug_output.append("   ⚠️  NOTE: The Woodpecker secret 'webai_cookies_json' contains malformed JSON!")
+                                        debug_output.append('   ⚠️  It should be: {"__Secure-1PSID":"...","__Secure-1PSIDTS":"..."}')
+                                        debug_output.append("   ⚠️  Currently it's: {__Secure-1PSID:..., __Secure-1PSIDTS:...}")
+                                    else:
+                                        raise ValueError("No cookies found in malformed JSON")
+                                else:
+                                    raise ValueError("Could not parse malformed JSON format")
+                            except Exception as e3:
+                                debug_output.append(f"   ❌ Could not fix malformed JSON: {e3}")
                     except Exception as e:
                         debug_output.append(f"   ❌ Unexpected error: {e}")
                         import traceback

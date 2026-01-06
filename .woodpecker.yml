@@ -133,12 +133,15 @@ steps:
         [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
         [ -n "$FMP_API_KEY" ] && DOCKER_CMD="$DOCKER_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
         
-        # Add WebAI cookies (fallback - main app prefers shared volume, but env var works as backup)
+        # Add WebAI cookies as environment variable (fallback if shared volume file not available)
         # The cookie refresher sidecar writes to /shared/cookies/webai_cookies.json
         # Main app checks shared volume first, then falls back to WEBAI_COOKIES_JSON env var
+        # Note: The file is already written above, so the app should read from /shared/cookies/webai_cookies.json
+        # This env var is just a fallback. We don't pass it to avoid shell quoting issues.
+        # The app's _load_cookies() function handles reading from the file first.
         if [ -n "$WEBAI_COOKIES_JSON" ]; then
-          DOCKER_CMD="$DOCKER_CMD -e WEBAI_COOKIES_JSON=\"$WEBAI_COOKIES_JSON\""
-          echo "✅ WEBAI_COOKIES_JSON set (fallback if shared volume not available)"
+          echo "✅ Cookie file written to /shared/cookies/webai_cookies.json (app will read from file)"
+          echo "   (WEBAI_COOKIES_JSON env var not passed to avoid shell quoting issues)"
         else
           echo "⚠️  WARNING: WEBAI_COOKIES_JSON not set. WebAI Pro may not work until sidecar writes cookies."
         fi

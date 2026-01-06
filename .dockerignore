@@ -81,7 +81,3 @@ Research/
 .gitignore
 .woodpecker.yml
 
-# Documentation and configs
-*.md
-!schema/README.md
-

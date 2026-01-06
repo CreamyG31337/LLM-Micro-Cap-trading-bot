@@ -76,19 +76,25 @@ steps:
           export BUILD_TIMESTAMP=$(date -u "+%Y-%m-%d %H:%M UTC")
         fi
       
-      # Build Docker image from web_dashboard/Dockerfile
-      - docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest .
-      - docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
+      # Create all required directories once at the start
+      - mkdir -p /home/lance/trading-dashboard-logs /shared/cookies /deploy_target/frontend
+      - chmod 777 /home/lance/trading-dashboard-logs /shared/cookies
+      
+      # Build both Docker images in parallel for faster deployment
+      - |
+        echo "Building Docker images in parallel..."
+        (docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest . &)
+        (docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . &)
+        wait  # Wait for both builds to complete
+        docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
+        docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
+        echo "✅ Both images built and tagged"
       
       # Stop and remove existing container if it exists
       - docker stop trading-dashboard || true
       - docker rm trading-dashboard || true
       
-      # Create logs directory on host with proper permissions
-      - mkdir -p /home/lance/trading-dashboard-logs && chmod 777 /home/lance/trading-dashboard-logs
-      
       # Initialize shared cookies directory and file (before main container starts)
-      - mkdir -p /shared/cookies && chmod 777 /shared/cookies
       - |
         if [ -n "$WEBAI_COOKIES_JSON" ]; then
           echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
@@ -162,23 +168,26 @@ steps:
         # Execute the command
         eval $DOCKER_CMD
       
-      # Verify cookie file is accessible in container
+      # Verify cookie file is accessible in container (retry loop instead of fixed sleep)
       - |
-        sleep 2  # Give container a moment to start
-        if docker exec trading-dashboard test -f /shared/cookies/webai_cookies.json; then
-          echo "✅ Cookie file is accessible in container"
-          docker exec trading-dashboard head -c 100 /shared/cookies/webai_cookies.json
-          echo "..."
-        else
-          echo "⚠️  Cookie file not found in container (will use base64 env var fallback)"
-        fi
+        i=1
+        while [ $i -le 5 ]; do
+          if docker exec trading-dashboard test -f /shared/cookies/webai_cookies.json 2>/dev/null; then
+            echo "✅ Cookie file is accessible in container"
+            docker exec trading-dashboard head -c 100 /shared/cookies/webai_cookies.json
+            echo "..."
+            break
+          fi
+          if [ $i -lt 5 ]; then
+            sleep 0.5
+          else
+            echo "⚠️  Cookie file not found in container after 5 attempts (will use base64 env var fallback)"
+          fi
+          i=$((i + 1))
+        done
       
       # Deploy cookie refresher sidecar container (runs independently, persists across redeployments)
       - echo "Deploying cookie refresher sidecar..."
-      - mkdir -p /shared/cookies && chmod 777 /shared/cookies
-      # Build cookie refresher image (only rebuilds if Dockerfile changed)
-      - docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest .
-      - docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
       # Stop and remove existing container to pick up new environment variables (secrets)
       - |
         if docker ps -a --format '{{.Names}}' | grep -q '^cookie-refresher$'; then
@@ -189,15 +198,13 @@ steps:
       # Start the sidecar container with latest secrets
       - |
         echo "Starting cookie refresher sidecar container..."
-        # Debug: Show what AI_SERVICE_WEB_URL is set to (first 50 chars only for security)
-        if [ -n "$AI_SERVICE_WEB_URL" ]; then
-          echo "✅ AI_SERVICE_WEB_URL is set (length: ${#AI_SERVICE_WEB_URL})"
-          echo "   First 50 chars: ${AI_SERVICE_WEB_URL:0:50}..."
-        else
+        # Verify AI_SERVICE_WEB_URL is set (required for cookie refresher)
+        if [ -z "$AI_SERVICE_WEB_URL" ]; then
           echo "❌ ERROR: AI_SERVICE_WEB_URL is NOT SET"
           echo "   Make sure Woodpecker secret 'ai_service_web_url' is configured"
           exit 1
         fi
+        echo "✅ AI_SERVICE_WEB_URL is configured"
         # Copy initial cookies from Woodpecker secret if available
         if [ -n "$WEBAI_COOKIES_JSON" ]; then
           echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
@@ -216,10 +223,6 @@ steps:
           -e "AI_SERVICE_WEB_URL=$AI_SERVICE_WEB_URL" \
           cookie-refresher:latest
         echo "✅ Cookie refresher sidecar started"
-        # Verify the env var was passed correctly
-        echo "Verifying AI_SERVICE_WEB_URL in container..."
-        docker exec cookie-refresher printenv AI_SERVICE_WEB_URL | head -c 50
-        echo "..."
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

@@ -486,3 +486,70 @@ def is_admin() -> bool:
         logger.error(f"is_admin(): Error checking admin status for user_id {user_id}: {e}", exc_info=True)
         return False
 
+
+def has_admin_access() -> bool:
+    """
+    Check if current user has admin access (admin or readonly_admin role).
+    This allows access to admin pages for viewing/testing.
+    
+    Returns:
+        bool: True if user has admin or readonly_admin role, False otherwise
+    """
+    # After SQL migration, is_admin() SQL function checks for both roles
+    # So we can use the same function for page access
+    return is_admin()
+
+
+def can_modify_data() -> bool:
+    """
+    Check if current user can modify data (admin role only).
+    readonly_admin users can view but cannot modify data.
+    
+    Returns:
+        bool: True if user has admin role, False otherwise
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    user_id = get_user_id()
+    if not user_id:
+        logger.debug("can_modify_data(): No user_id in session state")
+        return False
+    
+    try:
+        from streamlit_utils import get_supabase_client
+        client = get_supabase_client()
+        if not client:
+            logger.warning(f"can_modify_data(): Failed to get Supabase client for user_id: {user_id}")
+            return False
+        
+        # Verify client has user token set
+        user_token = get_user_token()
+        if not user_token:
+            logger.warning(f"can_modify_data(): No user token available for user_id: {user_id}")
+        
+        # Call the can_modify_data SQL function
+        # Note: RPC functions returning scalar BOOLEAN return the value directly in result.data
+        # (not wrapped in a list) in supabase>=2.3.4
+        result = client.supabase.rpc('can_modify_data', {'user_uuid': user_id}).execute()
+        
+        # Handle both scalar boolean (newer supabase-py) and list (older versions)
+        if result.data is not None:
+            # If result.data is a boolean (scalar), return it directly
+            if isinstance(result.data, bool):
+                logger.debug(f"can_modify_data(): RPC returned boolean {result.data} for user_id: {user_id}")
+                return result.data
+            # If result.data is a list (older versions), get first element
+            elif isinstance(result.data, list) and len(result.data) > 0:
+                can_modify = bool(result.data[0])
+                logger.debug(f"can_modify_data(): RPC returned list, first element: {can_modify} for user_id: {user_id}")
+                return can_modify
+            else:
+                logger.warning(f"can_modify_data(): Unexpected RPC result format for user_id: {user_id}, result.data: {result.data}")
+        
+        logger.debug(f"can_modify_data(): RPC returned None for user_id: {user_id}")
+        return False
+    except Exception as e:
+        logger.error(f"can_modify_data(): Error checking modify permission for user_id {user_id}: {e}", exc_info=True)
+        return False
+

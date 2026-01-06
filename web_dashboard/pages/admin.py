@@ -25,7 +25,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, is_admin, get_user_email, send_magic_link
+from auth_utils import is_authenticated, is_admin, has_admin_access, can_modify_data, get_user_email, send_magic_link
 from streamlit_utils import get_supabase_client, get_user_investment_metrics, get_historical_fund_values, get_current_positions, display_dataframe_with_copy, CACHE_VERSION
 from supabase_client import SupabaseClient
 from supabase import create_client
@@ -72,8 +72,8 @@ if not refresh_token_if_needed():
     st.switch_page("streamlit_app.py")
     st.stop()
 
-# Check admin status
-if not is_admin():
+# Check admin access (allows both admin and readonly_admin)
+if not has_admin_access():
     st.error("❌ Access Denied: Admin privileges required")
     st.info("Only administrators can access this page.")
     st.stop()
@@ -471,7 +471,7 @@ with tab1:
 # Tab 2: User Management
 with tab2:
     st.header("👥 User Management")
-    st.caption("Manage users and their fund assignments")
+    st.caption("Manage users, roles, and fund assignments")
     
     client = get_supabase_client()
     if not client:
@@ -484,187 +484,245 @@ with tab2:
                     users_df = pd.DataFrame(get_cached_users())
                 
                 if not users_df.empty:
-                    # Display users in compact table with inline actions
-                    st.subheader("All Users")
+                    # Get available funds from cache for use in action menus
+                    available_funds = get_cached_fund_names()
+                    current_user_email = get_user_email()
                     
-                    # Compact table with actions
+                    # Display users in consolidated table with inline actions
+                    st.subheader("All Users")
+                    st.caption(f"{len(users_df)} registered users")
+                    
+                    # Table with actions for each user
                     for idx, row in users_df.iterrows():
-                        col_user, col_funds, col_actions = st.columns([3, 2, 1])
+                        email = row.get('email', '')
+                        full_name = row.get('full_name', 'N/A')
+                        role = row.get('role', 'user')
+                        funds_list = row.get('funds', [])
                         
-                        with col_user:
-                            full_name = row.get('full_name', 'N/A')
-                            email = row.get('email', '')
+                        # User info and role badge
+                        col_info, col_role, col_funds, col_actions = st.columns([3, 1, 2, 2])
+                        
+                        with col_info:
                             st.markdown(f"**{full_name}**")
                             st.caption(email)
                         
+                        with col_role:
+                            if role == 'admin':
+                                st.markdown("🔑 **Admin**")
+                            else:
+                                st.caption("👤 User")
+                        
                         with col_funds:
-                            funds_list = row.get('funds', [])
                             if funds_list:
                                 funds_str = ", ".join(funds_list)
-                                # Truncate if too long
-                                if len(funds_str) > 50:
-                                    funds_str = funds_str[:47] + "..."
-                                st.caption(funds_str)
+                                if len(funds_str) > 30:
+                                    funds_str = funds_str[:27] + "..."
+                                st.caption(f"📊 {funds_str}")
                             else:
-                                st.caption("None")
+                                st.caption("📊 No funds")
                         
                         with col_actions:
-                            # Initialize session state for invite status
-                            invite_key = f"invite_sent_{email}"
-                            if invite_key not in st.session_state:
-                                st.session_state[invite_key] = False
-                            
-                            # Show invite button
-                            if st.button("📧 Invite", key=f"resend_invite_{idx}_{email}", use_container_width=True):
-                                try:
-                                    result = send_magic_link(email)
-                                    if result and result.get('success'):
-                                        st.session_state[invite_key] = True
-                                        st.toast(f"✅ Invite sent to {email}", icon="✅")
-                                        st.rerun()
+                            # Use popover for actions menu
+                            with st.popover("⚙️ Actions", use_container_width=True):
+                                st.markdown(f"**Actions for {full_name}**")
+                                st.divider()
+                                
+                                # Admin role management
+                                st.markdown("**🔑 Admin Role**")
+                                is_self = (email == current_user_email)
+                                
+                                if role == 'admin':
+                                    # Revoke admin button
+                                    if is_self:
+                                        st.caption("⚠️ Cannot remove your own admin role")
                                     else:
-                                        error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
-                                        st.error(f"Failed: {error_msg}")
-                                except Exception as e:
-                                    st.error(f"Error: {e}")
-                            
-                            # Show success indicator if invite was recently sent
-                            if st.session_state.get(invite_key, False):
-                                st.caption("✅ Sent")
+                                        if st.button("Revoke Admin", key=f"revoke_admin_{idx}_{email}", use_container_width=True, disabled=not can_modify_data()):
+                                            if not can_modify_data():
+                                                st.error("❌ Read-only admin cannot modify user roles")
+                                                st.stop()
+                                            try:
+                                                result = client.supabase.rpc(
+                                                    'revoke_admin_role',
+                                                    {'user_email': email}
+                                                ).execute()
+                                                
+                                                result_data = result.data
+                                                if isinstance(result_data, list) and len(result_data) > 0:
+                                                    result_data = result_data[0]
+                                                
+                                                if result_data and result_data.get('success'):
+                                                    st.cache_data.clear()
+                                                    st.toast(f"✅ {result_data.get('message')}", icon="✅")
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"❌ {result_data.get('message')}")
+                                            except Exception as e:
+                                                st.error(f"Error: {e}")
+                                else:
+                                    # Grant admin button
+                                    if st.button("Grant Admin", key=f"grant_admin_{idx}_{email}", use_container_width=True, disabled=not can_modify_data()):
+                                        if not can_modify_data():
+                                            st.error("❌ Read-only admin cannot modify user roles")
+                                            st.stop()
+                                        try:
+                                            result = client.supabase.rpc(
+                                                'grant_admin_role',
+                                                {'user_email': email}
+                                            ).execute()
+                                            
+                                            result_data = result.data
+                                            if isinstance(result_data, list) and len(result_data) > 0:
+                                                result_data = result_data[0]
+                                            
+                                            if result_data and result_data.get('success'):
+                                                st.cache_data.clear()
+                                                st.toast(f"✅ {result_data.get('message')}", icon="✅")
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ {result_data.get('message')}")
+                                        except Exception as e:
+                                            st.error(f"Error: {e}")
+                                
+                                st.divider()
+                                
+                                # Fund management
+                                st.markdown("**📊 Fund Management**")
+                                
+                                # Assign fund
+                                assign_fund = st.selectbox(
+                                    "Assign Fund",
+                                    options=[""] + available_funds,
+                                    key=f"assign_fund_select_{idx}_{email}"
+                                )
+                                if st.button("➕ Assign", key=f"assign_fund_btn_{idx}_{email}", disabled=(not assign_fund or not can_modify_data()), use_container_width=True):
+                                    if not can_modify_data():
+                                        st.error("❌ Read-only admin cannot assign funds to users")
+                                        st.stop()
+                                    try:
+                                        result = client.supabase.rpc(
+                                            'assign_fund_to_user',
+                                            {'user_email': email, 'fund_name': assign_fund}
+                                        ).execute()
+                                        
+                                        result_data = result.data
+                                        if isinstance(result_data, list) and len(result_data) > 0:
+                                            result_data = result_data[0]
+                                        
+                                        if result_data and result_data.get('success'):
+                                            st.cache_data.clear()
+                                            st.toast(f"✅ {result_data.get('message')}", icon="✅")
+                                            st.rerun()
+                                        elif result_data and result_data.get('already_assigned'):
+                                            st.warning(f"⚠️ {result_data.get('message')}")
+                                        else:
+                                            st.error(f"❌ {result_data.get('message', 'Failed to assign fund')}")
+                                    except Exception as e:
+                                        st.error(f"Error: {e}")
+                                
+                                # Remove fund
+                                if funds_list:
+                                    remove_fund = st.selectbox(
+                                        "Remove Fund",
+                                        options=[""] + funds_list,
+                                        key=f"remove_fund_select_{idx}_{email}"
+                                    )
+                                    if st.button("➖ Remove", key=f"remove_fund_btn_{idx}_{email}", disabled=(not remove_fund or not can_modify_data()), use_container_width=True):
+                                        if not can_modify_data():
+                                            st.error("❌ Read-only admin cannot remove funds from users")
+                                            st.stop()
+                                        try:
+                                            result = client.supabase.rpc(
+                                                'remove_fund_from_user',
+                                                {'user_email': email, 'fund_name': remove_fund}
+                                            ).execute()
+                                            
+                                            if result.data:
+                                                st.cache_data.clear()
+                                                st.toast(f"✅ Removed {remove_fund} from {email}", icon="✅")
+                                                st.rerun()
+                                            else:
+                                                st.warning("No assignment found")
+                                        except Exception as e:
+                                            st.error(f"Error: {e}")
+                                else:
+                                    st.caption("_No funds assigned_")
+                                
+                                st.divider()
+                                
+                                # Other actions
+                                st.markdown("**📧 Other Actions**")
+                                
+                                # Send invite - allow if inviting self, block if inviting others
+                                can_send_invite = can_modify_data() or (email == get_user_email())
+                                if st.button("📧 Send Invite", key=f"invite_btn_{idx}_{email}", disabled=not can_send_invite, use_container_width=True):
+                                    if not can_send_invite:
+                                        st.error("❌ Read-only admin can only send invites to themselves")
+                                        st.stop()
+                                    try:
+                                        result = send_magic_link(email)
+                                        if result and result.get('success'):
+                                            st.toast(f"✅ Invite sent to {email}", icon="✅")
+                                        else:
+                                            error_msg = result.get('error', 'Unknown error') if result else 'Failed to send'
+                                            st.error(f"Failed: {error_msg}")
+                                    except Exception as e:
+                                        st.error(f"Error: {e}")
+                                
+                                st.divider()
+                                
+                                # Delete user (with confirmation)
+                                st.markdown("**🗑️ Delete User**")
+                                st.caption("⚠️ Cannot undo. Contributors cannot be deleted.")
+                                
+                                delete_confirm_key = f"delete_confirm_{idx}_{email}"
+                                if delete_confirm_key not in st.session_state:
+                                    st.session_state[delete_confirm_key] = False
+                                
+                                if not st.session_state[delete_confirm_key]:
+                                    if st.button("🗑️ Delete User", key=f"delete_init_{idx}_{email}", type="secondary", use_container_width=True, disabled=not can_modify_data()):
+                                        if not can_modify_data():
+                                            st.error("❌ Read-only admin cannot delete users")
+                                            st.stop()
+                                        st.session_state[delete_confirm_key] = True
+                                        st.rerun()
+                                else:
+                                    st.warning(f"Confirm delete {email}?")
+                                    col_yes, col_no = st.columns(2)
+                                    with col_yes:
+                                        if st.button("✓ Yes", key=f"delete_yes_{idx}_{email}", type="primary", disabled=not can_modify_data()):
+                                            if not can_modify_data():
+                                                st.error("❌ Read-only admin cannot delete users")
+                                                st.stop()
+                                            try:
+                                                result = client.supabase.rpc(
+                                                    'delete_user_safe',
+                                                    {'user_email': email}
+                                                ).execute()
+                                                
+                                                if result.data:
+                                                    if result.data.get('success'):
+                                                        st.cache_data.clear()
+                                                        st.toast(f"✅ {result.data.get('message')}", icon="✅")
+                                                        st.session_state[delete_confirm_key] = False
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(f"🚫 {result.data.get('message')}")
+                                                        st.session_state[delete_confirm_key] = False
+                                                else:
+                                                    st.error("Failed to delete user")
+                                            except Exception as e:
+                                                st.error(f"Error: {e}")
+                                                st.session_state[delete_confirm_key] = False
+                                    with col_no:
+                                        if st.button("✗ No", key=f"delete_no_{idx}_{email}"):
+                                            st.session_state[delete_confirm_key] = False
+                                            st.rerun()
                         
                         st.divider()
                     
-                    # Delete user section
-                    st.subheader("Delete User")
-                    st.warning("⚠️ This action cannot be undone. Contributors (users with fund contributions) cannot be deleted.")
-                    
-                    col_del1, col_del2 = st.columns(2)
-                    with col_del1:
-                        delete_email = st.selectbox(
-                            "Select User to Delete",
-                            options=[""] + users_df['email'].tolist(),
-                            key="delete_user_select"
-                        )
-                    
-                    with col_del2:
-                        confirm_email = st.text_input(
-                            "Type email to confirm",
-                            key="confirm_delete_email",
-                            placeholder="Type the email exactly to confirm"
-                        )
-                    
-                    if st.button("🗑️ Delete User", type="secondary"):
-                        if not delete_email:
-                            st.error("Please select a user to delete")
-                        elif confirm_email != delete_email:
-                            st.error("Confirmation email does not match. Please type the email exactly.")
-                        else:
-                            try:
-                                delete_result = client.supabase.rpc(
-                                    'delete_user_safe',
-                                    {'user_email': delete_email}
-                                ).execute()
-                                
-                                if delete_result.data:
-                                    result_data = delete_result.data
-                                    if result_data.get('success'):
-                                        st.cache_data.clear()  # Clear cache after deletion
-                                        st.toast(f"✅ {result_data.get('message')}", icon="✅")
-                                        st.rerun()
-                                    else:
-                                        if result_data.get('is_contributor'):
-                                            st.error(f"🚫 {result_data.get('message')}")
-                                        else:
-                                            st.error(result_data.get('message'))
-                                else:
-                                    st.error("Failed to delete user")
-                            except Exception as e:
-                                st.error(f"Error deleting user: {e}")
-                    
                     st.divider()
                     
-                    # Fund assignment section
-                    st.subheader("Assign Fund to User")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # Get user emails from the users dataframe
-                        user_emails = users_df['email'].tolist() if not users_df.empty else []
-                        user_email = st.selectbox("User Email", options=[""] + user_emails, key="assign_user_email")
-                    
-                    # Get available funds from cache
-                    available_funds = get_cached_fund_names()
-                    
-                    with col2:
-                        fund_name = st.selectbox("Fund Name", options=[""] + available_funds, key="assign_fund_name")
-                    
-                    if st.button("Assign Fund", type="primary"):
-                        if user_email and fund_name:
-                            try:
-                                assign_result = client.supabase.rpc(
-                                    'assign_fund_to_user',
-                                    {'user_email': user_email, 'fund_name': fund_name}
-                                ).execute()
-                                
-                                # Handle JSON response - Supabase RPC returns JSON directly or wrapped in array
-                                result_data = assign_result.data
-                                if isinstance(result_data, list) and len(result_data) > 0:
-                                    result_data = result_data[0]
-                                
-                                if result_data and isinstance(result_data, dict):
-                                    if result_data.get('success'):
-                                        st.toast(f"✅ {result_data.get('message', f'Assigned {fund_name} to {user_email}')}", icon="✅")
-                                        st.rerun()
-                                    elif result_data.get('already_assigned'):
-                                        st.warning(f"⚠️ {result_data.get('message', f'Fund {fund_name} is already assigned to {user_email}')}")
-                                    else:
-                                        st.error(f"❌ {result_data.get('message', 'Failed to assign fund')}")
-                                else:
-                                    st.error("Failed to assign fund - invalid response")
-                            except Exception as e:
-                                st.error(f"Error assigning fund: {e}")
-                        else:
-                            st.warning("Please enter both email and fund name")
-                    
-                    # Remove fund assignment
-                    st.subheader("Remove Fund Assignment")
-                    col3, col4 = st.columns(2)
-                    
-                    with col3:
-                        # Get user emails from the users dataframe
-                        remove_user_emails = users_df['email'].tolist() if not users_df.empty else []
-                        remove_email = st.selectbox("User Email", options=[""] + remove_user_emails, key="remove_email")
-                    
-                    with col4:
-                        # Use the same funds list from funds table
-                        remove_fund = st.selectbox("Fund Name", options=[""] + available_funds, key="remove_fund")
-                    
-                    if st.button("Remove Assignment", type="secondary"):
-                        if remove_email and remove_fund:
-                            try:
-                                # Use RPC function that queries auth.users (same as assign_fund_to_user)
-                                # This ensures consistency - both assign and remove use the same user lookup
-                                remove_result = client.supabase.rpc(
-                                    'remove_fund_from_user',
-                                    {'user_email': remove_email, 'fund_name': remove_fund}
-                                ).execute()
-                                # Handle boolean result properly (False is valid, None is error)
-                                if remove_result.data is not None:
-                                    if remove_result.data:
-                                        st.toast(f"✅ Removed {remove_fund} from {remove_email}", icon="✅")
-                                        st.rerun()
-                                    else:
-                                        st.warning(f"No assignment found for {remove_email} → {remove_fund}")
-                                else:
-                                    st.error("Failed to remove fund assignment")
-                            except Exception as e:
-                                st.error(f"Error removing assignment: {e}")
-                        else:
-                            st.warning("Please enter both email and fund name")
-                    
-                    st.divider()
-                    
-                    # Update contributor email section
+                    # Update contributor email section (keep this separate)
                     st.subheader("Update Contributor Email")
                     st.caption("Change a contributor's email address (updates contributors table and fund_contributions records)")
                     
@@ -833,7 +891,10 @@ with tab2:
                             disabled=not selected_contributor
                         )
                     
-                    if st.button("✏️ Update Email", type="primary"):
+                    if st.button("✏️ Update Email", type="primary", disabled=not can_modify_data()):
+                        if not can_modify_data():
+                            st.error("❌ Read-only admin cannot update contributor emails")
+                            st.stop()
                         if not selected_contributor:
                             st.error("Please select a contributor/user to update")
                         elif not new_user_email:
@@ -970,9 +1031,15 @@ with tab2:
                         
                         with col_action:
                             if has_email:
-                                if st.button("📧 Send Invite", key=f"invite_{idx}"):
+                                # Allow readonly_admin to send invite to themselves
+                            invite_email = row['email']
+                            can_send_invite = can_modify_data() or (invite_email == get_user_email())
+                            if st.button("📧 Send Invite", key=f"invite_{idx}", disabled=not can_send_invite):
+                                    if not can_send_invite:
+                                        st.error("❌ Read-only admin can only send invites to themselves")
+                                        st.stop()
                                     try:
-                                        result = send_magic_link(row['email'])
+                                        result = send_magic_link(invite_email)
                                         if result and result.get('success'):
                                             st.success(f"Invite sent to {row['email']}")
                                         else:
@@ -1281,8 +1348,8 @@ with tab4:
                             label_visibility="collapsed"
                         )
                         
-                        # Update if changed
-                        if new_status != is_prod:
+                        # Update if changed (only if can modify)
+                        if new_status != is_prod and can_modify_data():
                             try:
                                 client.supabase.table("funds")\
                                     .update({"is_production": new_status})\
@@ -1336,7 +1403,10 @@ with tab4:
                 type_index = type_options.index(current_type) if current_type in type_options else 0
                 new_type = st.selectbox("Fund Type (Set to 'rrsp' for tax exemption)", options=type_options, index=type_index, key="edit_fund_type")
                 
-            if st.button("💾 Save Changes", type="primary", disabled=not edit_fund):
+            if st.button("💾 Save Changes", type="primary", disabled=(not edit_fund or not can_modify_data())):
+                if not can_modify_data():
+                    st.error("❌ Read-only admin cannot modify fund details")
+                    st.stop()
                 try:
                     client.supabase.table("funds").update({
                         "description": new_desc,
@@ -1363,7 +1433,10 @@ with tab4:
                 new_fund_description = st.text_input("Description", placeholder="Description of the fund", key="new_fund_desc")
                 new_fund_currency = st.selectbox("Currency", options=["CAD", "USD"], key="new_fund_currency")
             
-            if st.button("➕ Create Fund", type="primary"):
+            if st.button("➕ Create Fund", type="primary", disabled=not can_modify_data()):
+                if not can_modify_data():
+                    st.error("❌ Read-only admin cannot create funds")
+                    st.stop()
                 if not new_fund_name:
                     st.error("Please enter a fund name")
                 elif new_fund_name in fund_names:
@@ -1401,7 +1474,10 @@ with tab4:
             with col_ren2:
                 new_name = st.text_input("New Fund Name", key="rename_new_name")
             
-            if st.button("✏️ Rename Fund", type="primary"):
+            if st.button("✏️ Rename Fund", type="primary", disabled=not can_modify_data()):
+                if not can_modify_data():
+                    st.error("❌ Read-only admin cannot rename funds")
+                    st.stop()
                 if not rename_fund:
                     st.error("Please select a fund to rename")
                 elif not new_name:
@@ -1431,7 +1507,10 @@ with tab4:
                 confirm_wipe_name = st.text_input("Type fund name to confirm", key="confirm_wipe_name", 
                                                    placeholder="Type the fund name exactly")
             
-            if st.button("🧹 Wipe Fund Data", type="secondary"):
+            if st.button("🧹 Wipe Fund Data", type="secondary", disabled=not can_modify_data()):
+                    if not can_modify_data():
+                        st.error("❌ Read-only admin cannot wipe fund data")
+                        st.stop()
                     if not wipe_fund:
                         st.error("Please select a fund")
                     elif confirm_wipe_name != wipe_fund:
@@ -1469,7 +1548,10 @@ with tab4:
             with st.expander("Wipe portfolio positions only", expanded=False):
                 wipe_pos_fund = st.selectbox("Select Fund", options=[""] + fund_names, key="wipe_pos_fund_select")
                 
-                if st.button("🔄 Wipe Portfolio Positions Only", type="primary"):
+                if st.button("🔄 Wipe Portfolio Positions Only", type="primary", disabled=not can_modify_data()):
+                    if not can_modify_data():
+                        st.error("❌ Read-only admin cannot wipe portfolio positions")
+                        st.stop()
                     if not wipe_pos_fund:
                         st.error("Please select a fund")
                     else:
@@ -1526,7 +1608,10 @@ with tab4:
                     else:
                         st.error(f"❌ No trades found in database for {rebuild_fund}")
                 
-                if st.button("🔧 Rebuild Portfolio", type="primary"):
+                if st.button("🔧 Rebuild Portfolio", type="primary", disabled=not can_modify_data()):
+                    if not can_modify_data():
+                        st.error("❌ Read-only admin cannot rebuild portfolios")
+                        st.stop()
                     if not rebuild_fund:
                         st.error("Please select a fund")
                     else:
@@ -1739,7 +1824,10 @@ with tab4:
                     
                     st.info(f"📊 Records to delete: {pos_val} positions, {trade_val} trades, {contrib_val} contributions")
                 
-                if st.button("🗑️ Delete Fund Permanently", type="secondary"):
+                if st.button("🗑️ Delete Fund Permanently", type="secondary", disabled=not can_modify_data()):
+                    if not can_modify_data():
+                        st.error("❌ Read-only admin cannot delete funds")
+                        st.stop()
                     if not delete_fund:
                         st.error("Please select a fund")
                     elif confirm_delete_name != delete_fund:
@@ -1982,7 +2070,10 @@ with tab6:
                 total_value = trade_shares * trade_price
                 st.info(f"💵 Total Value: ${total_value:,.2f} {trade_currency}")
                 
-                if st.button("📈 Submit Trade", type="primary"):
+                if st.button("📈 Submit Trade", type="primary", disabled=not can_modify_data()):
+                    if not can_modify_data():
+                        st.error("❌ Read-only admin cannot submit trades")
+                        st.stop()
                     if not trade_ticker:
                         st.error("Please enter a ticker symbol")
                     elif trade_shares <= 0:
@@ -2409,7 +2500,10 @@ with tab6:
                             col_save, col_delete = st.columns(2)
                             
                             with col_save:
-                                if st.button("💾 Save Changes", type="primary"):
+                                if st.button("💾 Save Changes", type="primary", disabled=not can_modify_data()):
+                                    if not can_modify_data():
+                                        st.error("❌ Read-only admin cannot edit trades")
+                                        st.stop()
                                     try:
                                         admin_client = SupabaseClient(use_service_role=True)
                                         
@@ -2550,7 +2644,10 @@ with tab6:
                                         st.error(f"Error updating trade: {e}")
                             
                             with col_delete:
-                                if st.button("🗑️ Delete Trade", type="secondary"):
+                                if st.button("🗑️ Delete Trade", type="secondary", disabled=not can_modify_data()):
+                                    if not can_modify_data():
+                                        st.error("❌ Read-only admin cannot delete trades")
+                                        st.stop()
                                     try:
                                         admin_client = SupabaseClient(use_service_role=True)
                                         
@@ -2802,7 +2899,10 @@ Time: December 19, 2025 09:30 EST""",
                     )
                     
                     # Confirm and save button
-                    if st.button("✅ Confirm & Save Trade", type="primary"):
+                    if st.button("✅ Confirm & Save Trade", type="primary", disabled=not can_modify_data()):
+                        if not can_modify_data():
+                            st.error("❌ Read-only admin cannot save trades")
+                            st.stop()
                         try:
                             # Use override currency if changed
                             final_currency = override_currency
@@ -3096,7 +3196,10 @@ with tab7:
                         )
                         
                         # Save Changes Button
-                        if st.button("💾 Save Changes", type="primary", key=f"save_{selected_fund}_{selected_contributor}"):
+                        if st.button("💾 Save Changes", type="primary", key=f"save_{selected_fund}_{selected_contributor}", disabled=not can_modify_data()):
+                            if not can_modify_data():
+                                st.error("❌ Read-only admin cannot update fund contributions")
+                                st.stop()
                             # Handle state changes from data_editor
                             editor_key = f"editor_{selected_fund}_{selected_contributor}"
                             state = st.session_state.get(editor_key)
@@ -3339,7 +3442,10 @@ with tab7:
                     )
                     
                     # Save button for notes updates
-                    if st.button("💾 Save Changes", key=f"save_all_notes_{view_all_fund}"):
+                    if st.button("💾 Save Changes", key=f"save_all_notes_{view_all_fund}", disabled=not can_modify_data()):
+                        if not can_modify_data():
+                            st.error("❌ Read-only admin cannot update fund contributions")
+                            st.stop()
                         editor_state = st.session_state.get(f"all_contribs_editor_{view_all_fund}")
                         if editor_state and isinstance(editor_state, dict):
                             edits = editor_state.get("edited_rows", {})

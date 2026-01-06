@@ -95,7 +95,11 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
     
     # Admin section (moved to end of menu)
-    admin_status = is_admin()
+    try:
+        from auth_utils import has_admin_access
+        admin_status = has_admin_access()
+    except ImportError:
+        admin_status = is_admin()
     user_email = get_user_email()
     
     if user_email:
@@ -116,7 +120,13 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                     profile_result = client.supabase.table("user_profiles").select("role").eq("user_id", get_user_id()).execute()
                     if profile_result.data:
                         role = profile_result.data[0].get('role', 'user')
-                        if role != 'admin':
+                        if role == 'readonly_admin':
+                            # Modern badge for readonly admin role
+                            st.sidebar.markdown(
+                                '<div class="nav-badge nav-badge-role">👁️ Role: Read-Only Admin</div>',
+                                unsafe_allow_html=True
+                            )
+                        elif role != 'admin':
                             # Modern badge for user role
                             st.sidebar.markdown(
                                 f'<div class="nav-badge nav-badge-role">👤 Role: {role.title()}</div>',

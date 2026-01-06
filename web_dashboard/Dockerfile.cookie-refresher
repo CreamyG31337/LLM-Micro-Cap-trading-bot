@@ -1,0 +1,69 @@
+# Cookie Refresher Sidecar Container
+# ====================================
+# 
+# This container runs independently to refresh WebAI cookies using Playwright.
+# It writes refreshed cookies to a shared volume that the main app can read.
+#
+# Build: docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest .
+# Run: docker run -d --name cookie-refresher --restart unless-stopped -v /shared/cookies:/shared/cookies cookie-refresher:latest
+
+FROM python:3.11-slim
+
+# Install system dependencies for Playwright
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libwayland-client0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first (for better caching)
+COPY requirements.txt* ./
+COPY web_dashboard/requirements.txt* ./web_dashboard/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi && \
+    if [ -f web_dashboard/requirements.txt ]; then pip install --no-cache-dir -r web_dashboard/requirements.txt; fi && \
+    pip install --no-cache-dir playwright && \
+    playwright install chromium && \
+    playwright install-deps chromium
+
+# Copy application code
+COPY . .
+
+# Set Python path
+ENV PYTHONPATH=/app:/app/web_dashboard
+ENV PYTHONUNBUFFERED=1
+
+# Default environment variables
+ENV COOKIE_REFRESH_INTERVAL=3600
+ENV COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json
+ENV COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json
+# AI service URL (can be overridden via Woodpecker secret)
+ENV AI_SERVICE_WEB_URL=https://webai.google.com/app
+
+# Run the cookie refresher
+CMD ["python", "web_dashboard/cookie_refresher.py"]
+

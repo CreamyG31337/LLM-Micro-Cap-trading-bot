@@ -26,6 +26,8 @@
 #                       Format: {"__Secure-1PSID":"value","__Secure-1PSIDTS":"value"}
 #                       Extract using: python web_dashboard/extract_ai_cookies.py --browser manual
 #                       Required for WebAI Pro model in AI Assistant
+#                       Note: A cookie refresher sidecar container automatically refreshes cookies
+#                       and writes them to /shared/cookies/webai_cookies.json
 # - ollama_base_url: (optional) Ollama API URL (default: http://host.docker.internal:11434)
 # - ollama_model: (optional) Default AI model (default: mistral-nemo:12b)
 # - ollama_enabled: (optional) Enable AI assistant (default: true)
@@ -100,6 +102,8 @@ steps:
         DOCKER_CMD="$DOCKER_CMD -v /home/lance/trading-dashboard-logs:/app/web_dashboard/logs"
         # Mount Ollama logs directory (host logs -> container logs/server)
         DOCKER_CMD="$DOCKER_CMD -v /home/lance/ollama-logs:/app/web_dashboard/logs/server"
+        # Mount shared cookies directory (for cookie refresher sidecar)
+        DOCKER_CMD="$DOCKER_CMD -v /shared/cookies:/shared/cookies"
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_URL=\"$SUPABASE_URL\""
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_PUBLISHABLE_KEY=\"$SUPABASE_PUBLISHABLE_KEY\""
         DOCKER_CMD="$DOCKER_CMD -e SUPABASE_SECRET_KEY=\"$SUPABASE_SECRET_KEY\""
@@ -132,6 +136,37 @@ steps:
         
         # Execute the command
         eval $DOCKER_CMD
+      
+      # Deploy cookie refresher sidecar container (runs independently, persists across redeployments)
+      - echo "Deploying cookie refresher sidecar..."
+      - mkdir -p /shared/cookies && chmod 777 /shared/cookies
+      # Build cookie refresher image (only rebuilds if Dockerfile changed)
+      - docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest .
+      - docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
+      # Only start container if it doesn't exist (idempotent - won't restart on redeploy)
+      - |
+        if ! docker ps -a --format '{{.Names}}' | grep -q '^cookie-refresher$'; then
+          echo "Starting cookie refresher sidecar container..."
+          # Copy initial cookies from Woodpecker secret if available
+          if [ -n "$WEBAI_COOKIES_JSON" ]; then
+            echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
+            echo "✅ Initialized cookie file from Woodpecker secret"
+          fi
+          # Start the sidecar container (persists across main app redeployments)
+          # Note: AI_SERVICE_WEB_URL can be set via Woodpecker secret if needed
+          docker run -d \
+            --name cookie-refresher \
+            --restart unless-stopped \
+            -v /shared/cookies:/shared/cookies \
+            -e COOKIE_REFRESH_INTERVAL=3600 \
+            -e COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json \
+            -e COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json \
+            -e AI_SERVICE_WEB_URL="${AI_SERVICE_WEB_URL:-https://webai.google.com/app}" \
+            cookie-refresher:latest
+          echo "✅ Cookie refresher sidecar started"
+        else
+          echo "ℹ️  Cookie refresher sidecar already running (skipping start)"
+        fi
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

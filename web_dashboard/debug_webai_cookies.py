@@ -57,14 +57,14 @@ def debug_cookies():
             # Try to parse
             try:
                 parsed = json.loads(cleaned)
-                print(f"\n   ✅ JSON parsing: SUCCESS")
+                print(f"\n   [OK] JSON parsing: SUCCESS")
                 print(f"   Has __Secure-1PSID: {'__Secure-1PSID' in parsed}")
                 print(f"   Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in parsed}")
                 if '__Secure-1PSID' in parsed:
                     print(f"   __Secure-1PSID length: {len(parsed['__Secure-1PSID'])}")
                     print(f"   __Secure-1PSID starts with: {parsed['__Secure-1PSID'][:20]}...")
             except json.JSONDecodeError as e:
-                print(f"\n   ❌ JSON parsing: FAILED")
+                print(f"\n   [ERROR] JSON parsing: FAILED")
                 print(f"   Error: {e}")
                 print(f"   Error position: {e.pos if hasattr(e, 'pos') else 'unknown'}")
                 
@@ -72,15 +72,15 @@ def debug_cookies():
                 try:
                     decoded = json.loads(cleaned)
                     if isinstance(decoded, str):
-                        print(f"   ⚠️  Value appears to be double-encoded (JSON string)")
+                        print(f"   [WARN] Value appears to be double-encoded (JSON string)")
                         print(f"   Trying to decode again...")
                         parsed2 = json.loads(decoded)
-                        print(f"   ✅ Double-decoding: SUCCESS")
+                        print(f"   [OK] Double-decoding: SUCCESS")
                         print(f"   Has __Secure-1PSID: {'__Secure-1PSID' in parsed2}")
                 except:
                     pass
         except Exception as e:
-            print(f"   ❌ Error: {e}")
+            print(f"   [ERROR] Error: {e}")
     
     # Check individual env vars
     print(f"\n2. Individual environment variables:")
@@ -103,12 +103,12 @@ def debug_cookies():
                 try:
                     with open(cookie_file, 'r', encoding='utf-8') as f:
                         cookies = json.load(f)
-                    print(f"     ✅ Valid JSON")
+                    print(f"     [OK] Valid JSON")
                     print(f"     Has __Secure-1PSID: {'__Secure-1PSID' in cookies}")
                     print(f"     Has __Secure-1PSIDTS: {'__Secure-1PSIDTS' in cookies}")
                     break
                 except Exception as e:
-                    print(f"     ❌ Error reading: {e}")
+                    print(f"     [ERROR] Error reading: {e}")
     
     # Test the actual _load_cookies function
     print(f"\n4. Testing _load_cookies() function:")
@@ -117,13 +117,71 @@ def debug_cookies():
         
         secure_1psid, secure_1psidts = _load_cookies()
         if secure_1psid:
-            print(f"   ✅ Cookies loaded successfully!")
+            print(f"   [OK] Cookies loaded successfully!")
             print(f"   __Secure-1PSID: {secure_1psid[:50]}...")
             print(f"   __Secure-1PSIDTS: {secure_1psidts[:50] if secure_1psidts else 'None'}...")
         else:
-            print(f"   ❌ No cookies found")
+            print(f"   [ERROR] No cookies found")
     except Exception as e:
-        print(f"   ❌ Error: {e}")
+        print(f"   [ERROR] Error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Test actual API call with cookies
+    print(f"\n5. Testing actual API call with cookies:")
+    try:
+        from webai_wrapper import PersistentConversationSession
+        
+        # Find cookie file
+        cookie_file = None
+        cookie_names = ["webai_cookies.json", "ai_service_cookies.json"]
+        for name in cookie_names:
+            root_cookie = project_root / name
+            web_cookie = project_root / "web_dashboard" / name
+            if root_cookie.exists():
+                cookie_file = str(root_cookie)
+                break
+            elif web_cookie.exists():
+                cookie_file = str(web_cookie)
+                break
+        
+        if not cookie_file:
+            print(f"   [SKIP] No cookie file found to test API call")
+        else:
+            print(f"   Using cookie file: {cookie_file}")
+            print(f"   Creating session...")
+            
+            session = PersistentConversationSession(
+                session_id="debug_test_session",
+                cookies_file=cookie_file,
+                model="gemini-2.5-flash"
+            )
+            
+            print(f"   [OK] Session created, sending test query...")
+            response = session.send_sync("Say 'Hello, cookies work!' if you can read this.")
+            
+            if response:
+                print(f"   [OK] API call successful!")
+                print(f"   Response (first 200 chars): {response[:200]}...")
+            else:
+                print(f"   [ERROR] API call returned empty response")
+                print(f"   This may indicate cookies are expired or invalid")
+            
+            # Clean up
+            try:
+                session.close_sync()
+            except:
+                pass
+                
+    except ValueError as e:
+        error_msg = str(e)
+        if "No cookies found" in error_msg or "cookies" in error_msg.lower():
+            print(f"   [ERROR] Cookie error: {e}")
+            print(f"   [TIP] Cookies may be expired or invalid - extract fresh ones")
+        else:
+            print(f"   [ERROR] Error: {e}")
+    except Exception as e:
+        print(f"   [ERROR] Unexpected error during API call: {e}")
         import traceback
         traceback.print_exc()
     

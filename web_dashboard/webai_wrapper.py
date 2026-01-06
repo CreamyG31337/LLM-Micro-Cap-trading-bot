@@ -131,26 +131,29 @@ def _load_cookies() -> Tuple[Optional[str], Optional[str]]:
     if secure_1psid:
         return (secure_1psid, secure_1psidts)
     
-    # Fallback: Try cookie files (for local development)
-    cookie_names = ["webai_cookies.json", "ai_service_cookies.json"]
+    # Fallback: Try cookie files (for local development and shared volume)
+    # Priority: shared volume (from sidecar) > project root > web_dashboard
+    cookie_locations = [
+        Path("/shared/cookies/webai_cookies.json"),  # Shared volume from sidecar container
+        project_root / "webai_cookies.json",
+        project_root / "ai_service_cookies.json",
+        project_root / "web_dashboard" / "webai_cookies.json",
+        project_root / "web_dashboard" / "ai_service_cookies.json",
+    ]
     
-    for name in cookie_names:
-        root_cookie = project_root / name
-        web_cookie = project_root / "web_dashboard" / name
-        
-        for cookie_file in [root_cookie, web_cookie]:
-            if cookie_file.exists():
-                try:
-                    with open(cookie_file, 'r', encoding='utf-8') as f:
-                        cookies = json.load(f)
-                    
-                    secure_1psid = cookies.get("__Secure-1PSID")
-                    secure_1psidts = cookies.get("__Secure-1PSIDTS")
-                    
-                    if secure_1psid:
-                        return (secure_1psid, secure_1psidts)
-                except Exception as e:
-                    continue
+    for cookie_file in cookie_locations:
+        if cookie_file.exists():
+            try:
+                with open(cookie_file, 'r', encoding='utf-8') as f:
+                    cookies = json.load(f)
+                
+                secure_1psid = cookies.get("__Secure-1PSID")
+                secure_1psidts = cookies.get("__Secure-1PSIDTS")
+                
+                if secure_1psid:
+                    return (secure_1psid, secure_1psidts)
+            except Exception as e:
+                continue
     
     return (None, None)
 

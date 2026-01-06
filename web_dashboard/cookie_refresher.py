@@ -60,11 +60,15 @@ def get_service_url() -> str:
     """Get the web AI service URL from environment variable or keys file."""
     # Try environment variable first (for Docker containers)
     env_url = os.getenv("AI_SERVICE_WEB_URL")
-    logger.debug(f"AI_SERVICE_WEB_URL env var: {'SET' if env_url else 'NOT SET'}")
+    logger.info(f"AI_SERVICE_WEB_URL env var: {'SET' if env_url else 'NOT SET'}")
     if env_url:
-        logger.debug(f"AI_SERVICE_WEB_URL value: {env_url[:50]}...")
-        if env_url and not env_url.startswith("https://example"):  # Ignore placeholder
-            logger.info(f"Using service URL from environment variable")
+        logger.info(f"AI_SERVICE_WEB_URL value: {env_url}")
+        # Reject placeholders (both old and new)
+        if "webai.google.com" in env_url or env_url.startswith("https://example"):
+            logger.error(f"AI_SERVICE_WEB_URL is set to placeholder URL: {env_url}")
+            logger.error("  → Update Woodpecker secret 'ai_service_web_url' to the actual service URL")
+        elif env_url and not env_url.startswith("https://example"):  # Ignore placeholder
+            logger.info(f"✅ Using service URL from environment variable: {env_url}")
             return env_url
         else:
             logger.warning(f"AI_SERVICE_WEB_URL is set to placeholder URL - ignoring")
@@ -81,7 +85,7 @@ def get_service_url() -> str:
     
     # Last resort: try environment variable even if it's the default (but warn)
     env_url = os.getenv("AI_SERVICE_WEB_URL")
-    if env_url and env_url != "https://webai.google.com/app":  # Ignore placeholder
+    if env_url and not env_url.startswith("https://example") and "webai.google.com" not in env_url:
         logger.warning(f"Using URL from environment variable (keys file not available)")
         return env_url
     

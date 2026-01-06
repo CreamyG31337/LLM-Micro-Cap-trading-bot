@@ -161,17 +161,17 @@ steps:
         
         # Execute the command
         eval $DOCKER_CMD
-        
-        # Verify cookie file is accessible in container
-        - |
-          sleep 2  # Give container a moment to start
-          if docker exec trading-dashboard test -f /shared/cookies/webai_cookies.json; then
-            echo "✅ Cookie file is accessible in container"
-            docker exec trading-dashboard head -c 100 /shared/cookies/webai_cookies.json
-            echo "..."
-          else
-            echo "⚠️  Cookie file not found in container (will use base64 env var fallback)"
-          fi
+      
+      # Verify cookie file is accessible in container
+      - |
+        sleep 2  # Give container a moment to start
+        if docker exec trading-dashboard test -f /shared/cookies/webai_cookies.json; then
+          echo "✅ Cookie file is accessible in container"
+          docker exec trading-dashboard head -c 100 /shared/cookies/webai_cookies.json
+          echo "..."
+        else
+          echo "⚠️  Cookie file not found in container (will use base64 env var fallback)"
+        fi
       
       # Deploy cookie refresher sidecar container (runs independently, persists across redeployments)
       - echo "Deploying cookie refresher sidecar..."
@@ -179,30 +179,47 @@ steps:
       # Build cookie refresher image (only rebuilds if Dockerfile changed)
       - docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest .
       - docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
-      # Only start container if it doesn't exist (idempotent - won't restart on redeploy)
+      # Stop and remove existing container to pick up new environment variables (secrets)
       - |
-        if ! docker ps -a --format '{{.Names}}' | grep -q '^cookie-refresher$'; then
-          echo "Starting cookie refresher sidecar container..."
-          # Copy initial cookies from Woodpecker secret if available
-          if [ -n "$WEBAI_COOKIES_JSON" ]; then
-            echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
-            echo "✅ Initialized cookie file from Woodpecker secret"
-          fi
-          # Start the sidecar container (persists across main app redeployments)
-          # AI_SERVICE_WEB_URL is loaded from Woodpecker secret (obfuscated URL)
-          docker run -d \
-            --name cookie-refresher \
-            --restart unless-stopped \
-            -v /shared/cookies:/shared/cookies \
-            -e COOKIE_REFRESH_INTERVAL=1800 \
-            -e COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json \
-            -e COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json \
-            -e AI_SERVICE_WEB_URL="${AI_SERVICE_WEB_URL}" \
-            cookie-refresher:latest
-          echo "✅ Cookie refresher sidecar started"
-        else
-          echo "ℹ️  Cookie refresher sidecar already running (skipping start)"
+        if docker ps -a --format '{{.Names}}' | grep -q '^cookie-refresher$'; then
+          echo "Stopping existing cookie refresher container to pick up new secrets..."
+          docker stop cookie-refresher || true
+          docker rm cookie-refresher || true
         fi
+      # Start the sidecar container with latest secrets
+      - |
+        echo "Starting cookie refresher sidecar container..."
+        # Debug: Show what AI_SERVICE_WEB_URL is set to (first 50 chars only for security)
+        if [ -n "$AI_SERVICE_WEB_URL" ]; then
+          echo "✅ AI_SERVICE_WEB_URL is set (length: ${#AI_SERVICE_WEB_URL})"
+          echo "   First 50 chars: ${AI_SERVICE_WEB_URL:0:50}..."
+        else
+          echo "❌ ERROR: AI_SERVICE_WEB_URL is NOT SET"
+          echo "   Make sure Woodpecker secret 'ai_service_web_url' is configured"
+          exit 1
+        fi
+        # Copy initial cookies from Woodpecker secret if available
+        if [ -n "$WEBAI_COOKIES_JSON" ]; then
+          echo "$WEBAI_COOKIES_JSON" > /shared/cookies/webai_cookies.json
+          echo "✅ Initialized cookie file from Woodpecker secret"
+        fi
+        # Start the sidecar container (restarts on each deploy to pick up secret changes)
+        # AI_SERVICE_WEB_URL is loaded from Woodpecker secret (encoded URL)
+        # IMPORTANT: Use single quotes around the env var to prevent shell interpretation of special chars
+        docker run -d \
+          --name cookie-refresher \
+          --restart unless-stopped \
+          -v /shared/cookies:/shared/cookies \
+          -e COOKIE_REFRESH_INTERVAL=1800 \
+          -e COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json \
+          -e COOKIE_INPUT_FILE=/shared/cookies/webai_cookies.json \
+          -e "AI_SERVICE_WEB_URL=$AI_SERVICE_WEB_URL" \
+          cookie-refresher:latest
+        echo "✅ Cookie refresher sidecar started"
+        # Verify the env var was passed correctly
+        echo "Verifying AI_SERVICE_WEB_URL in container..."
+        docker exec cookie-refresher printenv AI_SERVICE_WEB_URL | head -c 50
+        echo "..."
       
       # Deploy static files (auth callback HTML, cookie setting page, and login form)
       - echo "Deploying static files..."

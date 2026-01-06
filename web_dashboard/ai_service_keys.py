@@ -170,7 +170,7 @@ def get_model_display_name_short() -> str:
     """
     try:
         keys = _load_keys()
-        return keys.get("MODEL_DISPLAY_3_PRO", "WebAI Pro")
+        return keys.get("MODEL_DISPLAY_3_0_PRO", "WebAI Pro")
     except (FileNotFoundError, KeyError, ValueError):
         # Fallback if keys file doesn't exist
         return "WebAI Pro"

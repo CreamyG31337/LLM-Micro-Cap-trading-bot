@@ -15,6 +15,22 @@ import base64
 import os
 from pathlib import Path
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Try web_dashboard/.env first, then project root .env
+    project_root = Path(__file__).parent.parent
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+    elif (project_root / ".env").exists():
+        load_dotenv(project_root / ".env")
+    else:
+        load_dotenv()  # Fallback to current directory
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
+
 
 def _xor_encrypt(data: bytes, key: bytes) -> bytes:
     """XOR encrypt data with key."""
@@ -39,23 +55,26 @@ def main():
     
     # Get encryption key (use environment variable or default)
     key = os.getenv("AI_SERVICE_KEY", "default_dev_key_change_in_prod_12345")
+    if key == "default_dev_key_change_in_prod_12345":
+        print("\n[WARNING] Using default encryption key - this is INSECURE!")
+        print("  The default key is exposed in git and provides no security.")
+        print("  Set AI_SERVICE_KEY environment variable with a secure random key.")
+        print("  Example: python -c \"import secrets; print(secrets.token_urlsafe(32))\"")
     key_bytes = key.encode('utf-8')[:32].ljust(32, b'0')
     
     # URLs to obfuscate (AI service endpoints)
-    # Note: WEB_BASE_URL is the actual web interface (for cookie-based access)
-    # BASE_URL is the API endpoint (requires API key, which Pro accounts don't have)
+    # Note: All values come from environment variables to avoid hardcoding sensitive names
+    # WEB_BASE_URL is the actual web interface (for cookie-based access)
     urls = {
-        "BASE_URL": "https://generativelanguage.googleapis.com",  # API endpoint (not used without API key)
-        "WEB_BASE_URL": "https://gemini.google.com/app",  # Web interface URL (will be obfuscated)
+        "WEB_BASE_URL": os.getenv("AI_SERVICE_WEB_URL", "https://webai.google.com/app"),  # Generic fallback
         "API_V1BETA": "/v1beta/models",
         "API_V1": "/v1/models",
-        "MODEL_NAME": "gemini-pro",  # Model identifier (obfuscated)
+        "MODEL_NAME": os.getenv("AI_SERVICE_MODEL_NAME", "ai-pro"),  # Generic fallback
         "GENERATE_ENDPOINT": ":generateContent",
-        # Model display names (obfuscated for privacy)
-        "MODEL_DISPLAY_2_5_FLASH": "Gemini 2.5 Flash",
-        "MODEL_DISPLAY_2_5_PRO": "Gemini 2.5 Pro",
-        "MODEL_DISPLAY_3_0_PRO": "Gemini 3.0 Pro",
-        "MODEL_DISPLAY_3_PRO": "Gemini 3 Pro",
+        # Model display names (from environment variables, generic fallbacks if not set)
+        "MODEL_DISPLAY_2_5_FLASH": os.getenv("MODEL_DISPLAY_2_5_FLASH", "AI Model 2.5 Flash"),
+        "MODEL_DISPLAY_2_5_PRO": os.getenv("MODEL_DISPLAY_2_5_PRO", "AI Model 2.5 Pro"),
+        "MODEL_DISPLAY_3_0_PRO": os.getenv("MODEL_DISPLAY_3_0_PRO", "AI Model 3.0 Pro"),
     }
     
     # Create obfuscated dictionary
@@ -77,7 +96,17 @@ def main():
     print(f"  Added {len(urls)} obfuscated URLs")
     print(f"\n[NOTE] Add to .gitignore if not already there:")
     print(f"   ai_service.keys.json")
-    print(f"\n[WARNING] Set AI_SERVICE_KEY environment variable in production!")
+    if key == "default_dev_key_change_in_prod_12345":
+        print(f"\n[CRITICAL] You are using the default encryption key!")
+        print(f"  This key is exposed in git and provides NO security.")
+        print(f"  Anyone with repo access can decode your obfuscated values.")
+        print(f"  Set AI_SERVICE_KEY in .env file with a secure random key.")
+    else:
+        print(f"\n[OK] Using custom encryption key from AI_SERVICE_KEY environment variable")
+    print(f"\n[INFO] To customize display names and URLs, set these environment variables:")
+    print(f"   AI_SERVICE_WEB_URL, AI_SERVICE_MODEL_NAME")
+    print(f"   MODEL_DISPLAY_2_5_FLASH, MODEL_DISPLAY_2_5_PRO, MODEL_DISPLAY_3_0_PRO")
+    print(f"   See .env.example for details")
 
 
 if __name__ == "__main__":

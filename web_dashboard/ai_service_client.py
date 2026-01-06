@@ -39,12 +39,10 @@ logger = logging.getLogger(__name__)
 try:
     from ai_service_keys import get_service_url
     BASE_URL = get_service_url("WEB_BASE_URL")
-    API_BASE = get_service_url("BASE_URL")
 except (ImportError, FileNotFoundError, KeyError) as e:
     logger.warning(f"Could not load obfuscated URLs: {e}")
     # Fallback (should not be used in production)
-    BASE_URL = "https://generativelanguage.googleapis.com"
-    API_BASE = "https://generativelanguage.googleapis.com"
+    BASE_URL = "https://webai.google.com/app"
 
 
 class AIServiceClient:
@@ -245,9 +243,6 @@ class AIServiceClient:
             f"{BASE_URL}/api/generate",
             f"{BASE_URL}/_/api/chat",
             f"{BASE_URL}/_/api/stream",
-            # Direct API endpoints (will fail without API key, but try as last resort)
-            f"{API_BASE}{api_v1beta}/{model}{generate_endpoint}",
-            f"{API_BASE}{api_v1}/{model}{generate_endpoint}",
         ]
         
         payload = {

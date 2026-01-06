@@ -83,12 +83,19 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
     if not acquired:
         duration_ms = int((time.time() - start_time) * 1000)
         message = "Job already running - skipped (lock not acquired)"
-        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        # Log as failed to indicate this was a skipped execution, not a successful run
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        # Also mark in database as failed with clear skipped message
+        try:
+            from utils.job_tracking import mark_job_failed
+            fallback_date = date.today() if target_date is None else target_date
+            mark_job_failed('update_portfolio_prices', fallback_date, None, message, duration_ms=duration_ms)
+        except Exception:
+            pass  # Don't fail if tracking fails
         logger.warning(f"⚠️ {message}")
         return
     
     try:
-        
         # CRITICAL: Add project root to path FIRST, before any imports
         import sys
         import os
@@ -189,8 +196,15 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                 if target_date is None:
                     duration_ms = int((time.time() - start_time) * 1000)
                     message = f"No trading day found in last 7 days - skipping update"
-                    log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-                    logger.info(f"ℹ️ {message}")
+                    # Log as failed to indicate this was a skipped execution
+                    log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                    # Also mark in database as failed with clear skipped message
+                    try:
+                        from utils.job_tracking import mark_job_failed
+                        mark_job_failed('update_portfolio_prices', date.today(), None, message, duration_ms=duration_ms)
+                    except Exception:
+                        pass  # Don't fail if tracking fails
+                    logger.warning(f"⚠️ {message}")
                     return
         
         # Log the target date with timezone info for debugging
@@ -207,8 +221,15 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         if not market_holidays.is_trading_day(target_date, market="any"):
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Target date {target_date} is not a trading day - skipping update"
-            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            logger.info(f"ℹ️ {message}")
+            # Log as failed to indicate this was a skipped execution
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            # Also mark in database as failed with clear skipped message
+            try:
+                from utils.job_tracking import mark_job_failed
+                mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
+            except Exception:
+                pass  # Don't fail if tracking fails
+            logger.warning(f"⚠️ {message}")
             return
         
         # Get all production funds from database (skip test/dev funds)
@@ -219,9 +240,16 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
             
         if not funds_result.data:
             duration_ms = int((time.time() - start_time) * 1000)
-            message = "No production funds found in database"
-            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-            logger.info(f"ℹ️ {message}")
+            message = "No production funds found in database - skipping update"
+            # Log as failed to indicate this was a skipped execution
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            # Also mark in database as failed with clear skipped message
+            try:
+                from utils.job_tracking import mark_job_failed
+                mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
+            except Exception:
+                pass  # Don't fail if tracking fails
+            logger.warning(f"⚠️ {message}")
             return
         
         # Build list of production funds with their base currency settings
@@ -344,7 +372,15 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
                     acquired = _update_prices_lock.acquire(blocking=False)
                     if not acquired:
                         # Another process got the lock - that's okay, we already backfilled
-                        logger.info("Lock not available after backfill - another process may be updating")
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        message = "Lock not available after backfill - another process may be updating"
+                        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                        try:
+                            from utils.job_tracking import mark_job_failed
+                            mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
+                        except Exception:
+                            pass
+                        logger.warning(f"⚠️ {message}")
                         return
                 else:
                     logger.info("No missing dates found - data is continuous")
@@ -732,8 +768,11 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         
         # Mark job as failed in database
         # If target_date not defined (early crash), use today as fallback
-        fallback_date = date.today() if 'target_date' not in locals() else target_date
-        mark_job_failed('update_portfolio_prices', fallback_date, None, str(e), duration_ms=duration_ms)
+        try:
+            fallback_date = date.today() if 'target_date' not in locals() or target_date is None else target_date
+            mark_job_failed('update_portfolio_prices', fallback_date, None, str(e), duration_ms=duration_ms)
+        except Exception as tracking_error:
+            logger.error(f"Failed to mark job as failed in database: {tracking_error}", exc_info=True)
     finally:
         # Always release the lock, even if job fails
         _update_prices_lock.release()
@@ -763,7 +802,8 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
     if not acquired:
         duration_ms = int((time.time() - start_time) * 1000)
         message = "Job already running - skipped (lock not acquired)"
-        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        # Log as failed to indicate this was a skipped execution
+        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.warning(f"⚠️ {message}")
         return
 
@@ -1333,6 +1373,13 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
         logger.error(f"❌ Batch backfill failed: {e}", exc_info=True)
+        
+        # Mark job as failed in database
+        try:
+            from utils.job_tracking import mark_job_failed
+            mark_job_failed('backfill_portfolio_prices_range', start_date, None, str(e), duration_ms=duration_ms)
+        except Exception as tracking_error:
+            logger.error(f"Failed to mark backfill job as failed in database: {tracking_error}", exc_info=True)
     finally:
         # Always release the lock
         _update_prices_lock.release()

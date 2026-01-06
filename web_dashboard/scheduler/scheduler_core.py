@@ -7,6 +7,8 @@ Provides the background scheduler instance and management functions.
 
 import logging
 import sys
+import threading
+import time
 from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from typing import Dict, List, Optional, Any
@@ -42,38 +44,162 @@ logger = logging.getLogger(__name__)
 # Global scheduler instance
 _scheduler: Optional[BackgroundScheduler] = None
 
+# Thread lock to prevent race conditions during scheduler creation/startup
+_scheduler_lock = threading.Lock()
+
 # Job execution log (in-memory, last N executions)
 _job_logs: Dict[str, List[Dict[str, Any]]] = {}
 MAX_LOG_ENTRIES = 50
 
+# Track scheduler health
+_scheduler_last_health_check: Optional[datetime] = None
+_scheduler_restart_count = 0
+_scheduler_intentional_shutdown = False
+MAX_RESTART_ATTEMPTS = 5
+
 
 def get_scheduler() -> BackgroundScheduler:
-    """Get or create the scheduler instance."""
+    """Get or create the scheduler instance (thread-safe)."""
     global _scheduler
     
+    # Double-checked locking pattern to prevent race conditions
     if _scheduler is None:
-        jobstores = {
-            'default': MemoryJobStore()
-        }
-        executors = {
-            'default': ThreadPoolExecutor(max_workers=3)
-        }
-        job_defaults = {
-            'coalesce': True,  # Combine multiple missed executions into one
-            'max_instances': 1,  # Only one instance of each job at a time
-            'misfire_grace_time': 60 * 60 * 24  # 24 hour grace period (if missed due to sleep/downtime, run it now)
-        }
-        
-        _scheduler = BackgroundScheduler(
-            jobstores=jobstores,
-            executors=executors,
-            job_defaults=job_defaults,
-            timezone='America/Los_Angeles'  # Pacific Time
-        )
-        
-        logger.info("Created new BackgroundScheduler instance")
+        with _scheduler_lock:
+            # Check again after acquiring lock (another thread may have created it)
+            if _scheduler is None:
+                jobstores = {
+                    'default': MemoryJobStore()
+                }
+                executors = {
+                    'default': ThreadPoolExecutor(max_workers=3)
+                }
+                job_defaults = {
+                    'coalesce': True,  # Combine multiple missed executions into one
+                    'max_instances': 1,  # Only one instance of each job at a time
+                    'misfire_grace_time': 60 * 60 * 24  # 24 hour grace period (if missed due to sleep/downtime, run it now)
+                }
+                
+                _scheduler = BackgroundScheduler(
+                    jobstores=jobstores,
+                    executors=executors,
+                    job_defaults=job_defaults,
+                    timezone='America/Los_Angeles'  # Pacific Time
+                )
+                
+                # Add event listeners to catch errors and shutdowns
+                _scheduler.add_listener(_scheduler_event_listener, 
+                                       mask=0xFFFFFFFF)  # Listen to all events
+                
+                logger.info("Created new BackgroundScheduler instance with event listeners")
     
     return _scheduler
+
+
+def _scheduler_event_listener(event) -> None:
+    """Event listener for scheduler events - catches errors and shutdowns."""
+    try:
+        from apscheduler.events import (
+            EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED,
+            EVENT_SCHEDULER_STARTED, EVENT_SCHEDULER_SHUTDOWN,
+            EVENT_SCHEDULER_PAUSED, EVENT_SCHEDULER_RESUMED
+        )
+        
+        if event.code == EVENT_JOB_ERROR:
+            logger.error(
+                f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}",
+                exc_info=event.exception
+            )
+        elif event.code == EVENT_JOB_MISSED:
+            logger.warning(f"⚠️ SCHEDULER EVENT: Job {event.job_id} missed execution time")
+        elif event.code == EVENT_SCHEDULER_SHUTDOWN:
+            logger.error("❌ SCHEDULER EVENT: Scheduler shutdown detected!")
+            # Only restart if this was an unexpected shutdown (not intentional)
+            if not _scheduler_intentional_shutdown:
+                logger.warning("⚠️ Unexpected scheduler shutdown detected - will attempt restart")
+                _attempt_scheduler_restart()
+            else:
+                logger.info("ℹ️ Scheduler shutdown was intentional - not restarting")
+        elif event.code == EVENT_SCHEDULER_STARTED:
+            logger.info("✅ SCHEDULER EVENT: Scheduler started")
+        elif event.code == EVENT_SCHEDULER_PAUSED:
+            logger.warning("⚠️ SCHEDULER EVENT: Scheduler paused")
+        elif event.code == EVENT_SCHEDULER_RESUMED:
+            logger.info("✅ SCHEDULER EVENT: Scheduler resumed")
+    except Exception as e:
+        logger.error(f"Error in scheduler event listener: {e}", exc_info=True)
+
+
+def _attempt_scheduler_restart() -> None:
+    """Attempt to restart the scheduler if it stopped unexpectedly."""
+    global _scheduler, _scheduler_restart_count
+    
+    if _scheduler_restart_count >= MAX_RESTART_ATTEMPTS:
+        logger.error(
+            f"❌ Scheduler restart limit reached ({MAX_RESTART_ATTEMPTS} attempts). "
+            "Manual intervention required. Check logs for root cause."
+        )
+        return
+    
+    try:
+        logger.warning(f"🔄 Attempting to restart scheduler (attempt {_scheduler_restart_count + 1}/{MAX_RESTART_ATTEMPTS})...")
+        
+        # Check if scheduler exists and is not running
+        if _scheduler and not _scheduler.running:
+            _scheduler_restart_count += 1
+            
+            # Try to restart
+            with _scheduler_lock:
+                # Double-check after acquiring lock
+                if _scheduler and not _scheduler.running:
+                    try:
+                        # Don't re-register jobs - they should still be in the jobstore
+                        # Just restart the scheduler
+                        _scheduler.start()
+                        # Wait briefly to verify it started
+                        time.sleep(0.5)
+                        if _scheduler.running:
+                            logger.info("✅ Scheduler restarted successfully after unexpected shutdown")
+                            _scheduler_restart_count = 0  # Reset counter on success
+                        else:
+                            logger.error("❌ Scheduler restart failed - not running after start()")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to restart scheduler: {e}", exc_info=True)
+        else:
+            # Scheduler is already running or doesn't exist
+            if _scheduler and _scheduler.running:
+                logger.info("ℹ️ Scheduler is already running - no restart needed")
+                _scheduler_restart_count = 0  # Reset counter
+    except Exception as e:
+        logger.error(f"Error attempting scheduler restart: {e}", exc_info=True)
+
+
+def check_scheduler_health() -> bool:
+    """Check if scheduler is running and restart if needed.
+    
+    Returns True if scheduler is healthy, False otherwise.
+    """
+    global _scheduler, _scheduler_last_health_check
+    
+    try:
+        scheduler = get_scheduler()
+        _scheduler_last_health_check = datetime.now(timezone.utc)
+        
+        if not scheduler.running:
+            logger.error("❌ SCHEDULER HEALTH CHECK: Scheduler is not running!")
+            _attempt_scheduler_restart()
+            return False
+        
+        # Verify scheduler is actually functioning by checking if it has jobs
+        jobs = scheduler.get_jobs()
+        if len(jobs) == 0:
+            logger.warning("⚠️ SCHEDULER HEALTH CHECK: Scheduler running but no jobs registered")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ SCHEDULER HEALTH CHECK failed: {e}", exc_info=True)
+        return False
 
 
 def cleanup_stale_running_jobs() -> int:
@@ -174,72 +300,108 @@ def cleanup_stale_running_jobs() -> int:
 
 
 def start_scheduler() -> bool:
-    """Start the scheduler and register default jobs.
+    """Start the scheduler and register default jobs (thread-safe).
     
     Returns True if started successfully, False if already running.
     """
     global _scheduler
-    scheduler = get_scheduler()
     
-    if scheduler.running:
-        logger.info("Scheduler already running")
-        return False
-    
-    # Clean up any stale 'running' jobs from previous container run
-    cleanup_stale_running_jobs()
-    
-    # Register default jobs (defensive import)
-    try:
-        from scheduler.jobs import register_default_jobs
-    except ModuleNotFoundError:
-        # Path issue - retry with explicit path setup
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        from scheduler.jobs import register_default_jobs
-    
-    register_default_jobs(scheduler)
-    
-    # Start scheduler
-    scheduler.start()
-    logger.info("✅ Background scheduler started")
-    
-    # Log startup summary with all registered jobs
-    jobs = scheduler.get_jobs()
-    logger.info("="*50)
-    logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
-    for job in jobs:
-        next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
-        logger.info(f"   📋 {job.id}: {next_run}")
-    logger.info("="*50)
-    
-    # Run backfill check once on startup (catches downtime/reboots)
-    # This runs asynchronously to not block scheduler startup (defensive import)
-    try:
-        from scheduler.backfill import startup_backfill_check
-    except ModuleNotFoundError:
-        # Path issue - retry with explicit path setup
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        from scheduler.backfill import startup_backfill_check
-    scheduler.add_job(
-        startup_backfill_check,
-        trigger='date',  # Run once immediately
-        id='startup_backfill',
-        name='Startup Backfill Check'
-    )
-    logger.info("📋 Scheduled startup backfill check")
-    
-    # Run smart startup check for overdue jobs
-    # This handles the "scheduler reset on restart" issue by checking the DB
-    scheduler.add_job(
-        check_overdue_jobs,
-        trigger='date',
-        id='startup_check_overdue',
-        name='Startup Overdue Job Check'
-    )
-    logger.info("📋 Scheduled startup overdue job check")
-    
-    return True
+    # Use lock to prevent race conditions during startup
+    with _scheduler_lock:
+        scheduler = get_scheduler()
+        
+        # Check if already running (double-check after acquiring lock)
+        if scheduler.running:
+            logger.info("Scheduler already running")
+            return False
+        
+        # Clean up any stale 'running' jobs from previous container run
+        cleanup_stale_running_jobs()
+        
+        # Register default jobs (defensive import)
+        try:
+            from scheduler.jobs import register_default_jobs
+        except ModuleNotFoundError:
+            # Path issue - retry with explicit path setup
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            from scheduler.jobs import register_default_jobs
+        
+        register_default_jobs(scheduler)
+        
+        # Start scheduler
+        try:
+            scheduler.start()
+            logger.info("✅ Background scheduler start() called")
+        except Exception as e:
+            logger.error(f"❌ Failed to start scheduler: {e}", exc_info=True)
+            raise
+        
+        # Verify scheduler actually started (APScheduler.start() is async)
+        # Wait up to 2 seconds for scheduler to become running
+        max_wait = 2.0
+        wait_interval = 0.1
+        waited = 0.0
+        while not scheduler.running and waited < max_wait:
+            time.sleep(wait_interval)
+            waited += wait_interval
+        
+        if not scheduler.running:
+            logger.error("❌ Scheduler start() was called but scheduler is not running after wait period")
+            raise RuntimeError("Scheduler failed to start - not running after start() call")
+        
+        logger.info("✅ Background scheduler started and verified running")
+        
+        # Log startup summary with all registered jobs
+        jobs = scheduler.get_jobs()
+        logger.info("="*50)
+        logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
+        for job in jobs:
+            next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
+            logger.info(f"   📋 {job.id}: {next_run}")
+        logger.info("="*50)
+        
+        # Run backfill check once on startup (catches downtime/reboots)
+        # This runs asynchronously to not block scheduler startup (defensive import)
+        try:
+            from scheduler.backfill import startup_backfill_check
+        except ModuleNotFoundError:
+            # Path issue - retry with explicit path setup
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            from scheduler.backfill import startup_backfill_check
+        scheduler.add_job(
+            startup_backfill_check,
+            trigger='date',  # Run once immediately
+            id='startup_backfill',
+            name='Startup Backfill Check'
+        )
+        logger.info("📋 Scheduled startup backfill check")
+        
+        # Run smart startup check for overdue jobs
+        # This handles the "scheduler reset on restart" issue by checking the DB
+        scheduler.add_job(
+            check_overdue_jobs,
+            trigger='date',
+            id='startup_check_overdue',
+            name='Startup Overdue Job Check'
+        )
+        logger.info("📋 Scheduled startup overdue job check")
+        
+        # Schedule health check job - runs every 5 minutes to detect crashes
+        from apscheduler.triggers.interval import IntervalTrigger
+        scheduler.add_job(
+            check_scheduler_health,
+            trigger=IntervalTrigger(minutes=5),
+            id='scheduler_health_check',
+            name='Scheduler Health Check',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("📋 Scheduled scheduler health check (every 5 minutes)")
+        
+        return True
 
 
 def check_overdue_jobs() -> None:
@@ -346,11 +508,15 @@ def check_overdue_jobs() -> None:
 
 def shutdown_scheduler() -> None:
     """Gracefully shutdown the scheduler."""
-    global _scheduler
+    global _scheduler, _scheduler_intentional_shutdown
     
     if _scheduler and _scheduler.running:
-        _scheduler.shutdown(wait=True)
-        logger.info("Scheduler shutdown complete")
+        _scheduler_intentional_shutdown = True
+        try:
+            _scheduler.shutdown(wait=True)
+            logger.info("Scheduler shutdown complete")
+        finally:
+            _scheduler_intentional_shutdown = False
 
 
 def log_job_execution(job_id: str, success: bool, message: str, duration_ms: int = 0) -> None:

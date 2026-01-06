@@ -99,11 +99,25 @@ def get_service_url() -> str:
         logger.debug(f"Could not load URL from keys file: {e}")
     
     # If all else fails, raise an error instead of using hardcoded URL
-    raise ValueError(
+    error_msg = (
         "AI_SERVICE_WEB_URL not set correctly. "
         "Set it in /shared/cookies/ai_service_config.json, AI_SERVICE_WEB_URL environment variable, "
         "or ensure ai_service.keys.json exists with WEB_BASE_URL key."
     )
+    raise ValueError(error_msg)
+
+
+def validate_service_url(url: str) -> None:
+    """Validate that the service URL is properly formatted and secure."""
+    if not url:
+        raise ValueError("Service URL cannot be empty")
+    
+    if not url.startswith("https://"):
+        raise ValueError(f"Service URL must use HTTPS: {url}")
+    
+    # Check for placeholder URLs
+    if "example.com" in url.lower() or "webai.google.com" in url:
+        raise ValueError(f"Service URL appears to be a placeholder: {url}")
 
 
 def load_existing_cookies() -> Optional[Dict[str, str]]:
@@ -130,21 +144,23 @@ def load_existing_cookies() -> Optional[Dict[str, str]]:
 
 
 def save_cookies(cookies: Dict[str, str]) -> bool:
-    """Save cookies to the shared volume."""
+    """Save cookies to the shared volume with timestamp metadata."""
     cookie_path = Path(COOKIE_OUTPUT_FILE)
     
     # Ensure directory exists
     cookie_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        # Only save the cookies we need
+        # Only save the cookies we need + metadata
         output = {
             "__Secure-1PSID": cookies.get("__Secure-1PSID", ""),
             "__Secure-1PSIDTS": cookies.get("__Secure-1PSIDTS", ""),
+            "_refreshed_at": datetime.utcnow().isoformat() + "Z",
+            "_refresh_count": cookies.get("_refresh_count", 0) + 1
         }
         
-        # Remove empty values
-        output = {k: v for k, v in output.items() if v}
+        # Remove empty cookie values (keep metadata)
+        output = {k: v for k, v in output.items() if v or k.startswith("_")}
         
         with open(cookie_path, 'w', encoding='utf-8') as f:
             json.dump(output, f, indent=2)
@@ -169,9 +185,18 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
         Dictionary of refreshed cookies, or None if failed
     """
     service_url = get_service_url()
+    
+    # Validate URL format and security
+    try:
+        validate_service_url(service_url)
+    except ValueError as e:
+        logger.error(f"Invalid service URL: {e}")
+        return None
+    
     logger.info(f"Refreshing cookies by visiting {service_url}")
     
     with sync_playwright() as p:
+        browser = None
         try:
             # Launch browser in headless mode with stealth options
             # Use more realistic browser fingerprinting to avoid detection
@@ -229,19 +254,29 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
             
             # Add existing cookies if we have them
             if existing_cookies:
-                # Extract domain from URL
+                # Extract domain from URL and format with leading dot
                 from urllib.parse import urlparse
                 parsed = urlparse(service_url)
-                domain = parsed.netloc
                 
-                # Add cookies to context
+                # Use leading dot for domain to ensure cookies work across subdomains
+                # e.g., ".google.com" instead of "gemini.google.com"
+                base_domain = ".".join(parsed.netloc.split(".")[-2:])
+                domain = f".{base_domain}"
+                
+                logger.debug(f"Setting cookies with domain: {domain}")
+                
+                # Add cookies to context (skip metadata fields)
                 cookie_list = []
                 for name, value in existing_cookies.items():
+                    # Skip metadata fields
+                    if name.startswith("_"):
+                        continue
+                    
                     if name.startswith("__Secure-") or "PSID" in name:
                         cookie_list.append({
                             "name": name,
                             "value": value,
-                            "domain": domain,
+                            "domain": domain,  # Now uses .google.com format
                             "path": "/",
                             "secure": True,
                             "httpOnly": True,
@@ -317,7 +352,6 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
                 if detected_challenges:
                     logger.error("⚠️  This may be due to a security challenge (2FA/verification required)")
                     logger.error("   You may need to manually extract fresh cookies and update the Woodpecker secret")
-                browser.close()
                 return None
             
             if "__Secure-1PSIDTS" not in cookies_dict:
@@ -326,7 +360,10 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
                     logger.warning("⚠️  Security challenge detected - cookies may not refresh automatically")
                 # Continue anyway, as __Secure-1PSID might be enough
             
-            browser.close()
+            # Preserve metadata from existing cookies if present
+            if existing_cookies and "_refresh_count" in existing_cookies:
+                cookies_dict["_refresh_count"] = existing_cookies["_refresh_count"]
+            
             return cookies_dict
             
         except Exception as e:
@@ -334,28 +371,35 @@ def refresh_cookies_with_browser(existing_cookies: Optional[Dict[str, str]]) -> 
             import traceback
             traceback.print_exc()
             return None
+        finally:
+            # Always close browser to prevent resource leaks
+            if browser:
+                try:
+                    browser.close()
+                except Exception as e:
+                    logger.warning(f"Error closing browser: {e}")
 
 
 def refresh_cookies() -> bool:
     """
-    Main function to refresh cookies.
+    Main function to refresh cookies with retry logic.
     
     Returns:
         True if successful, False otherwise
     """
     logger.info("Starting cookie refresh...")
     
-    # Load existing cookies
-    existing_cookies = load_existing_cookies()
-    
-    if not existing_cookies:
-        logger.error("No existing cookies found. Cannot refresh without initial cookies.")
-        logger.error("Please set initial cookies manually or via Woodpecker secret.")
-        return False
-    
-    # Try to refresh with browser
+    # Try to refresh with browser (reload cookies on each attempt)
     for attempt in range(MAX_RETRIES):
         logger.info(f"Refresh attempt {attempt + 1}/{MAX_RETRIES}")
+        
+        # Reload existing cookies on each attempt for freshness
+        existing_cookies = load_existing_cookies()
+        
+        if not existing_cookies:
+            logger.error("No existing cookies found. Cannot refresh without initial cookies.")
+            logger.error("Please set initial cookies manually or via Woodpecker secret.")
+            return False
         
         refreshed_cookies = refresh_cookies_with_browser(existing_cookies)
         

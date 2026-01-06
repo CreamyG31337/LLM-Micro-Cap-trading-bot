@@ -241,6 +241,86 @@ def check_cookie_config() -> dict:
     return status
 
 
+def test_webai_connection(cookies_file: Optional[str] = None) -> dict:
+    """
+    Test WebAI connection and cookie validity.
+    
+    Args:
+        cookies_file: Optional path to cookie file
+        
+    Returns:
+        Dictionary with test results:
+        - success (bool): Whether test passed
+        - message (str): Status message
+        - details (dict): Additional diagnostic information
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    result = {
+        "success": False,
+        "message": "",
+        "details": {}
+    }
+    
+    try:
+        # Step 1: Check if cookies are available
+        if cookies_file:
+            with open(cookies_file, 'r', encoding='utf-8') as f:
+                cookies = json.load(f)
+            secure_1psid = cookies.get("__Secure-1PSID")
+            secure_1psidts = cookies.get("__Secure-1PSIDTS")
+        else:
+            secure_1psid, secure_1psidts = _load_cookies()
+        
+        if not secure_1psid:
+            result["message"] = "No cookies found"
+            result["details"]["error_type"] = "missing_cookies"
+            return result
+        
+        result["details"]["has_1psid"] = True
+        result["details"]["has_1psidts"] = bool(secure_1psidts)
+        
+        # Step 2: Try to initialize client
+        logger.info("Testing WebAI connection with simple query...")
+        
+        async def _test():
+            client = WebAIClient(cookies_file=cookies_file, auto_refresh=False)
+            try:
+                await client._init_client()
+                result["details"]["client_init"] = "success"
+                
+                # Step 3: Send a simple test query
+                response = await client.query("Hello")
+                
+                if response and len(response) > 0:
+                    result["success"] = True
+                    result["message"] = "Connection test successful"
+                    result["details"]["response_received"] = True
+                    result["details"]["response_length"] = len(response)
+                else:
+                    result["message"] = "Client initialized but no response received"
+                    result["details"]["response_received"] = False
+                
+            except Exception as e:
+                result["message"] = f"Connection test failed: {str(e)}"
+                result["details"]["error"] = str(e)
+                result["details"]["error_type"] = type(e).__name__
+            finally:
+                await client.close()
+        
+        asyncio.run(_test())
+        
+    except Exception as e:
+        result["message"] = f"Test error: {str(e)}"
+        result["details"]["error"] = str(e)
+        result["details"]["error_type"] = type(e).__name__
+        logger.error(f"WebAI connection test failed: {e}", exc_info=True)
+    
+    return result
+
+
+
 class WebAIClient:
     """
     Wrapper for web-based AI service access using cookie authentication.
@@ -269,11 +349,14 @@ class WebAIClient:
         self._initialized = False
     
     async def _init_client(self) -> None:
-        """Initialize the web AI client with cookies."""
+        """Initialize the web AI client with cookies (single attempt, fresh load)."""
         if self._initialized:
             return
         
-        # Load cookies
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Load cookies fresh from disk (in case they were recently refreshed)
         if self.cookies_file:
             # Load from specified file
             with open(self.cookies_file, 'r', encoding='utf-8') as f:
@@ -281,7 +364,7 @@ class WebAIClient:
             secure_1psid = cookies.get("__Secure-1PSID")
             secure_1psidts = cookies.get("__Secure-1PSIDTS")
         else:
-            # Auto-detect cookie file
+            # Auto-detect cookie file (loads from disk for freshness)
             secure_1psid, secure_1psidts = _load_cookies()
         
         if not secure_1psid:
@@ -316,13 +399,14 @@ class WebAIClient:
             )
         else:
             # Try with just __Secure-1PSID (may work but less stable)
-            print("WARNING: Only __Secure-1PSID found. __Secure-1PSIDTS recommended for better stability.")
+            logger.warning("Only __Secure-1PSID found. __Secure-1PSIDTS recommended for better stability.")
             self._client = WebAPIClient(
                 secure_1psid=secure_1psid
             )
         
         # Initialize the client (this handles cookie refresh, etc.)
         # Note: auto_refresh=False by default to avoid invalidating browser sessions
+        # Single attempt only - no retries to avoid triggering anti-bot detection
         await self._client.init(
             timeout=30,
             auto_close=False,

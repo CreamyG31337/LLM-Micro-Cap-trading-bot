@@ -3961,7 +3961,8 @@ OLLAMA_ENABLED={enabled}""")
                     # Show character analysis
                     debug_output.append(f"   📊 Analysis:")
                     debug_output.append(f"      - Starts with: {repr(webai_cookies_json[0]) if webai_cookies_json else 'N/A'}")
-                    debug_output.append(f"      - Contains newlines: {'\\n' in webai_cookies_json or '\\r' in webai_cookies_json}")
+                    has_newlines = '\n' in webai_cookies_json or '\r' in webai_cookies_json
+                    debug_output.append(f"      - Contains newlines: {has_newlines}")
                     debug_output.append(f"      - Quote count (\"): {webai_cookies_json.count(chr(34))}")
                     debug_output.append(f"      - Quote count ('): {webai_cookies_json.count(chr(39))}")
                     

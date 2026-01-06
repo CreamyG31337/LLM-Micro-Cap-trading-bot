@@ -6,6 +6,7 @@ Provides the background scheduler instance and management functions.
 """
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -303,42 +304,69 @@ def start_scheduler() -> bool:
     """Start the scheduler and register default jobs (thread-safe).
     
     Returns True if started successfully, False if already running.
+    
+    IMPORTANT: This function is designed to minimize lock hold time to prevent
+    deadlocks in Streamlit's multi-worker environment.
     """
     global _scheduler
     
-    # Use lock to prevent race conditions during startup
+    import threading
+    start_time = time.time()
+    
+    logger.info("="*60)
+    logger.info("SCHEDULER START_SCHEDULER() CALLED")
+    logger.info(f"  Process ID: {os.getpid() if hasattr(os, 'getpid') else 'N/A'}")
+    logger.info(f"  Thread: {threading.current_thread().name} ({threading.current_thread().ident})")
+    logger.info("="*60)
+    
+    # PHASE 1: Check if already running (quick lock)
+    logger.info("[PHASE 1] Checking if scheduler is already running...")
     with _scheduler_lock:
         scheduler = get_scheduler()
-        
-        # Check if already running (double-check after acquiring lock)
         if scheduler.running:
-            logger.info("Scheduler already running")
+            logger.info("  → Scheduler already running, returning False")
             return False
-        
-        # Clean up any stale 'running' jobs from previous container run
+        logger.info("  → Scheduler not running, proceeding with startup")
+    
+    # PHASE 2: Cleanup stale jobs OUTSIDE lock (DB operation, may be slow)
+    logger.info("[PHASE 2] Cleaning up stale running jobs (outside lock)...")
+    try:
         cleanup_stale_running_jobs()
+        logger.info(f"  → Cleanup completed in {time.time() - start_time:.2f}s")
+    except Exception as e:
+        logger.error(f"  ❌ Cleanup failed (non-fatal): {e}")
+        # Continue - cleanup failure shouldn't prevent scheduler start
+    
+    # PHASE 3: Start scheduler under lock (critical section)
+    logger.info("[PHASE 3] Starting scheduler (in lock)...")
+    phase3_start = time.time()
+    
+    with _scheduler_lock:
+        # Double-check no one else started it while we were cleaning up
+        if scheduler.running:
+            logger.info("  → Scheduler was started by another thread, returning False")
+            return False
         
         # Register default jobs (defensive import)
         try:
             from scheduler.jobs import register_default_jobs
         except ModuleNotFoundError:
-            # Path issue - retry with explicit path setup
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
             from scheduler.jobs import register_default_jobs
         
+        logger.info("  → Registering default jobs...")
         register_default_jobs(scheduler)
         
         # Start scheduler
         try:
             scheduler.start()
-            logger.info("✅ Background scheduler start() called")
+            logger.info("  → scheduler.start() called")
         except Exception as e:
-            logger.error(f"❌ Failed to start scheduler: {e}", exc_info=True)
+            logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
             raise
         
         # Verify scheduler actually started (APScheduler.start() is async)
-        # Wait up to 2 seconds for scheduler to become running
         max_wait = 2.0
         wait_interval = 0.1
         waited = 0.0
@@ -347,48 +375,58 @@ def start_scheduler() -> bool:
             waited += wait_interval
         
         if not scheduler.running:
-            logger.error("❌ Scheduler start() was called but scheduler is not running after wait period")
+            logger.error("  ❌ Scheduler not running after start()")
             raise RuntimeError("Scheduler failed to start - not running after start() call")
         
-        logger.info("✅ Background scheduler started and verified running")
-        
-        # Log startup summary with all registered jobs
-        jobs = scheduler.get_jobs()
-        logger.info("="*50)
-        logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
-        for job in jobs:
-            next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
-            logger.info(f"   📋 {job.id}: {next_run}")
-        logger.info("="*50)
-        
-        # Run backfill check once on startup (catches downtime/reboots)
-        # This runs asynchronously to not block scheduler startup (defensive import)
-        try:
-            from scheduler.backfill import startup_backfill_check
-        except ModuleNotFoundError:
-            # Path issue - retry with explicit path setup
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-            from scheduler.backfill import startup_backfill_check
+        logger.info(f"  ✅ Scheduler running (verified in {waited:.2f}s)")
+    
+    logger.info(f"  → Phase 3 completed in {time.time() - phase3_start:.2f}s")
+    
+    # PHASE 4: Add startup jobs OUTSIDE lock (scheduler is already running)
+    logger.info("[PHASE 4] Adding startup jobs (outside lock)...")
+    
+    # Log startup summary
+    jobs = scheduler.get_jobs()
+    logger.info("="*50)
+    logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
+    for job in jobs:
+        next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
+        logger.info(f"   📋 {job.id}: {next_run}")
+    logger.info("="*50)
+    
+    # Add startup jobs (wrapped in try/catch - non-fatal if they fail)
+    try:
+        from scheduler.backfill import startup_backfill_check
+    except ModuleNotFoundError:
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from scheduler.backfill import startup_backfill_check
+    
+    try:
         scheduler.add_job(
             startup_backfill_check,
-            trigger='date',  # Run once immediately
+            trigger='date',
             id='startup_backfill',
-            name='Startup Backfill Check'
+            name='Startup Backfill Check',
+            replace_existing=True
         )
-        logger.info("📋 Scheduled startup backfill check")
-        
-        # Run smart startup check for overdue jobs
-        # This handles the "scheduler reset on restart" issue by checking the DB
+        logger.info("  📋 Scheduled startup backfill check")
+    except Exception as e:
+        logger.warning(f"  ⚠️ Failed to schedule backfill check: {e}")
+    
+    try:
         scheduler.add_job(
             check_overdue_jobs,
             trigger='date',
             id='startup_check_overdue',
-            name='Startup Overdue Job Check'
+            name='Startup Overdue Job Check',
+            replace_existing=True
         )
-        logger.info("📋 Scheduled startup overdue job check")
-        
-        # Schedule health check job - runs every 5 minutes to detect crashes
+        logger.info("  📋 Scheduled startup overdue job check")
+    except Exception as e:
+        logger.warning(f"  ⚠️ Failed to schedule overdue check: {e}")
+    
+    try:
         from apscheduler.triggers.interval import IntervalTrigger
         scheduler.add_job(
             check_scheduler_health,
@@ -399,9 +437,16 @@ def start_scheduler() -> bool:
             max_instances=1,
             coalesce=True
         )
-        logger.info("📋 Scheduled scheduler health check (every 5 minutes)")
-        
-        return True
+        logger.info("  📋 Scheduled scheduler health check (every 5 minutes)")
+    except Exception as e:
+        logger.warning(f"  ⚠️ Failed to schedule health check: {e}")
+    
+    total_time = time.time() - start_time
+    logger.info(f"✅ SCHEDULER STARTUP COMPLETE in {total_time:.2f}s")
+    
+    return True
+
+
 
 
 def check_overdue_jobs() -> None:

@@ -22,38 +22,99 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Initialize scheduler once per Streamlit worker process (lazy initialization)
 _logger = logging.getLogger(__name__)
 _postgres_checked = False
+_scheduler_init_timeout = 30  # seconds
+
+
+def _start_scheduler_with_result(result_holder: dict):
+    """Helper function to run scheduler start in a thread and store result."""
+    try:
+        from scheduler import start_scheduler
+        started = start_scheduler()
+        result_holder["started"] = started
+        result_holder["success"] = True
+    except Exception as e:
+        import traceback
+        result_holder["success"] = False
+        result_holder["error"] = str(e)
+        result_holder["traceback"] = traceback.format_exc()
 
 
 # Use @st.cache_resource to ensure scheduler starts exactly once per process
 # This is Streamlit's recommended pattern for singletons
 @st.cache_resource
 def _get_scheduler_singleton():
-    """Initialize scheduler once per Streamlit process."""
-    from scheduler import start_scheduler
+    """Initialize scheduler once per Streamlit process with timeout protection."""
+    import threading
     
-    _logger.info("="*50)
-    _logger.info("SCHEDULER INITIALIZATION")
-    _logger.info("="*50)
+    _logger.info("="*60)
+    _logger.info("SCHEDULER INITIALIZATION STARTING")
+    _logger.info(f"  Process ID: {os.getpid()}")
+    _logger.info(f"  Thread ID: {threading.current_thread().ident}")
+    _logger.info(f"  Timeout: {_scheduler_init_timeout}s")
+    _logger.info("="*60)
+    
+    # Use a thread with timeout to prevent indefinite hangs
+    result_holder = {"success": False, "started": False, "error": None, "traceback": None}
+    
+    init_thread = threading.Thread(
+        target=_start_scheduler_with_result,
+        args=(result_holder,),
+        name="SchedulerInitThread",
+        daemon=True  # Don't block process exit
+    )
     
     try:
-        started = start_scheduler()
-        if started:
-            _logger.info("✅ Scheduler started successfully")
+        _logger.info("  → Starting scheduler init thread...")
+        init_thread.start()
+        init_thread.join(timeout=_scheduler_init_timeout)
+        
+        if init_thread.is_alive():
+            # Timeout occurred - thread is still running
+            _logger.error(f"❌ SCHEDULER INIT TIMEOUT after {_scheduler_init_timeout}s!")
+            _logger.error("   The scheduler initialization is stuck (likely DB query or lock).")
+            _logger.error("   Dashboard will continue without scheduler features.")
+            return {"status": "timeout", "error": f"Initialization timed out after {_scheduler_init_timeout}s"}
+        
+        # Thread completed - check result
+        if result_holder["success"]:
+            if result_holder["started"]:
+                _logger.info("✅ Scheduler started successfully")
+            else:
+                _logger.info("ℹ️ Scheduler already running (reused)")
+            return {"status": "running", "error": None}
         else:
-            _logger.info("ℹ️ Scheduler already running (reused)")
-        return {"status": "running", "error": None}
+            _logger.error(f"❌ Scheduler failed to start: {result_holder['error']}")
+            if result_holder["traceback"]:
+                _logger.error(f"Traceback:\n{result_holder['traceback']}")
+            return {"status": "failed", "error": result_holder["error"]}
+            
     except Exception as e:
         import traceback
-        _logger.error(f"❌ Scheduler failed to start: {e}")
+        _logger.error(f"❌ Unexpected error during scheduler init: {e}")
         _logger.error(f"Traceback:\n{traceback.format_exc()}")
         return {"status": "failed", "error": str(e)}
 
 
 def _init_scheduler():
-    """Initialize scheduler - wrapper for compatibility."""
+    """Initialize scheduler - wrapper for compatibility with graceful degradation."""
     # This will use the cached result if available, or run once if not
-    result = _get_scheduler_singleton()
-    return result["status"] == "running"
+    try:
+        result = _get_scheduler_singleton()
+        status = result.get("status", "unknown")
+        
+        if status == "running":
+            return True
+        elif status == "timeout":
+            _logger.warning("⚠️ Scheduler timed out - dashboard running without scheduler")
+            return False
+        else:
+            _logger.warning(f"⚠️ Scheduler status: {status} - some features may be unavailable")
+            return False
+    except Exception as e:
+        _logger.error(f"❌ Exception in _init_scheduler: {e}")
+        return False
+
+
 
 def _check_postgres_connection():
     """Check Postgres connection on startup and log status."""

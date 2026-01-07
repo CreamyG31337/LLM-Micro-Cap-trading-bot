@@ -2387,7 +2387,8 @@ with tab6:
                         original_trades = {}  # Store original trade data by ID for comparison
                         
                         for t in edit_trades.data:
-                            trade_id = t['id']
+                            # Trade ID is a UUID - store as string for consistency
+                            trade_id = str(t['id'])
                             trade_date = pd.to_datetime(t['date'])
                             action = get_trade_action(t)
                             
@@ -2512,7 +2513,8 @@ with tab6:
                         rebuild_from_date = None
                         
                         for _, row in edited_df.iterrows():
-                            trade_id = int(row['id'])
+                            # Trade ID is a UUID string, not an integer
+                            trade_id = str(row['id'])
                             original = st.session_state[session_key].get(trade_id)
                             
                             if not original:
@@ -2686,16 +2688,16 @@ with tab6:
                                             .update(update_data)\
                                             .eq("id", update['id'])\
                                             .execute()
-                                    
+                                        
                                     # Process deletes
                                     for delete_info in trades_to_delete:
                                         admin_client.supabase.table("trade_log")\
                                             .delete()\
                                             .eq("id", delete_info['id'])\
                                             .execute()
-                                    
-                                    st.cache_data.clear()
-                                    
+                                        
+                                        st.cache_data.clear()
+                                        
                                     # Trigger rebuild if needed
                                     if needs_rebuild and rebuild_from_date:
                                         try:
@@ -2718,7 +2720,7 @@ with tab6:
                                             st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
                                     else:
                                         st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
-                                    
+                                        
                                     # Clear session state and rerun
                                     if session_key in st.session_state:
                                         del st.session_state[session_key]

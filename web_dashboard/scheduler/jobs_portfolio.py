@@ -136,7 +136,6 @@ def update_portfolio_prices_job(
         from market_data.market_hours import MarketHours
         from utils.market_holidays import MarketHolidays
         from supabase_client import SupabaseClient
-        from data.repositories.repository_factory import RepositoryFactory
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         from exchange_rates_utils import get_exchange_rate_for_date_from_db
         
@@ -460,17 +459,6 @@ def update_portfolio_prices_job(
                 
                 # Rebuild current positions from trade log (source of truth)
                 # This ensures we have accurate positions even if database is stale
-                
-                # Get data directory for this fund (try to find it)
-                # For now, we'll use Supabase repository directly
-                try:
-                    repository = RepositoryFactory.create_repository(
-                        repository_type='supabase',
-                        fund_name=fund_name
-                    )
-                except Exception as e:
-                    logger.warning(f"  Could not create repository for {fund_name}: {e}")
-                    continue
                 
                 # Get all trades for this fund
                 trades_result = client.supabase.table("trade_log")\

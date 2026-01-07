@@ -120,14 +120,22 @@ def _scheduler_event_listener(event) -> None:
             EVENT_JOB_SUBMITTED
         )
         
-        # Only log important events to stderr (not routine job add/remove/modify)
+        # Only log important events to stderr (not routine job add/remove/modify/execute)
         # Routine events are logged at debug level only
-        should_log_stderr = event.code not in (EVENT_JOB_ADDED, EVENT_JOB_REMOVED, EVENT_JOB_MODIFIED)
+        should_log_stderr = event.code not in (EVENT_JOB_ADDED, EVENT_JOB_REMOVED, EVENT_JOB_MODIFIED, EVENT_JOB_EXECUTED, EVENT_JOB_SUBMITTED)
         if should_log_stderr:
             event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job ID: {getattr(event, 'job_id', 'N/A')}"
             print(event_msg, file=sys.stderr, flush=True)
         
-        if event.code == EVENT_JOB_ERROR:
+        if event.code == EVENT_JOB_EXECUTED:
+            # Normal event - job completed successfully
+            # Only log at debug level to reduce noise
+            try:
+                logger.debug(f"Job executed: {getattr(event, 'job_id', 'N/A')}")
+            except:
+                pass
+                
+        elif event.code == EVENT_JOB_ERROR:
             error_msg = f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}"
             print(error_msg, file=sys.stderr, flush=True)
             if hasattr(event, 'exception') and event.exception:

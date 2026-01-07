@@ -58,19 +58,50 @@ def _ensure_sys_path_setup() -> None:
     Safe to call multiple times - idempotent.
     """
     try:
+        # Use print as fallback - always works even if logging is broken
+        print(f"[{__name__}] _ensure_sys_path_setup() called")
+        try:
+            logger.debug("_ensure_sys_path_setup() called")
+        except:
+            pass  # Logger might not be ready
+        
         import sys
         from pathlib import Path
+        
+        # Safely get __file__ - it might not be available in all contexts
+        try:
+            current_file = __file__
+            print(f"[{__name__}] Using __file__: {current_file}")
+        except NameError:
+            # __file__ not available - use module location as fallback
+            print(f"[{__name__}] WARNING: __file__ not available")
+            try:
+                logger.warning("Warning: __file__ not available, using module path")
+            except:
+                pass
+            import os
+            current_file = os.path.abspath(__file__ if '__file__' in globals() else 'jobs_portfolio.py')
         
         # Get absolute path to project root
         # __file__ is scheduler/jobs_portfolio.py
         # parent is scheduler/, parent.parent is web_dashboard/, parent.parent.parent is project root
-        project_root = Path(__file__).resolve().parent.parent.parent
-        project_root_str = str(project_root)
+        try:
+            project_root = Path(current_file).resolve().parent.parent.parent
+            project_root_str = str(project_root)
+            print(f"[{__name__}] Project root: {project_root_str}")
+        except Exception as path_error:
+            print(f"[{__name__}] ERROR: Failed to resolve project root: {path_error}")
+            try:
+                logger.warning(f"Warning: Failed to resolve project root path: {path_error}")
+            except:
+                pass
+            return  # Can't proceed without valid path
         
         # CRITICAL: Project root must be FIRST in sys.path to ensure utils.job_tracking
         # is found from the project root, not from web_dashboard/utils
         if project_root_str not in sys.path:
             sys.path.insert(0, project_root_str)
+            print(f"[{__name__}] Added project root to sys.path[0]")
         elif sys.path[0] != project_root_str:
             # If it is in path but not first, move it to front
             try:
@@ -79,18 +110,34 @@ def _ensure_sys_path_setup() -> None:
                 # Item not in list - shouldn't happen but handle gracefully
                 pass
             sys.path.insert(0, project_root_str)
+            print(f"[{__name__}] Moved project root to sys.path[0]")
         
         # Also ensure web_dashboard is in path for supabase_client imports
         # (but AFTER project root so it doesn't shadow utils)
-        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-        if web_dashboard_path not in sys.path:
-            # Insert at index 1, after project_root (or at 0 if project_root wasn't added)
-            insert_index = 1 if project_root_str in sys.path and sys.path[0] == project_root_str else 0
-            sys.path.insert(insert_index, web_dashboard_path)
+        try:
+            web_dashboard_path = str(Path(current_file).resolve().parent.parent)
+            if web_dashboard_path not in sys.path:
+                # Insert at index 1, after project_root (or at 0 if project_root wasn't added)
+                insert_index = 1 if project_root_str in sys.path and sys.path[0] == project_root_str else 0
+                sys.path.insert(insert_index, web_dashboard_path)
+                print(f"[{__name__}] Added web_dashboard to sys.path[{insert_index}]")
+        except Exception as path_error:
+            print(f"[{__name__}] WARNING: Failed to resolve web_dashboard path: {path_error}")
+            try:
+                logger.warning(f"Warning: Failed to resolve web_dashboard path: {path_error}")
+            except:
+                pass
+            # Continue - project_root is more important
     except Exception as e:
         # Don't let path setup failures crash the job - log and continue
         # The top-level path setup should have already handled this
-        logger.warning(f"Warning: Failed to ensure sys.path setup: {e}")
+        print(f"[{__name__}] CRITICAL ERROR in _ensure_sys_path_setup: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        try:
+            logger.warning(f"Warning: Failed to ensure sys.path setup: {e}", exc_info=True)
+        except:
+            pass  # Even logging failed
 
 
 def update_portfolio_prices_job(
@@ -124,36 +171,49 @@ def update_portfolio_prices_job(
     - Skips failed tickers but continues with successful ones
     - Handles partial failures gracefully
     """
-    # CRITICAL: Ensure sys.path is set up FIRST, before any imports
-    _ensure_sys_path_setup()
-    
-    # Initialize job tracking first (before lock check so we can log lock failures)
-    job_id = 'update_portfolio_prices'
-    start_time = time.time()
-    
-    # Check if this is date range mode - if so, we'll handle it differently (backfill function has its own lock)
-    is_date_range_mode = use_date_range and from_date and to_date
-    
-    # Acquire lock with non-blocking check - if another thread is already running, skip
-    # Skip lock for date range mode since backfill_portfolio_prices_range has its own lock
-    if not is_date_range_mode:
-        acquired = _update_prices_lock.acquire(blocking=False)
-        if not acquired:
-            duration_ms = int((time.time() - start_time) * 1000)
-            message = "Job already running - skipped (lock not acquired)"
-            # Log as failed to indicate this was a skipped execution, not a successful run
-            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-            # Also mark in database as failed with clear skipped message
-            try:
-                from utils.job_tracking import mark_job_failed
-                fallback_date = date.today() if target_date is None else target_date
-                mark_job_failed('update_portfolio_prices', fallback_date, None, message, duration_ms=duration_ms)
-            except Exception:
-                pass  # Don't fail if tracking fails
-            logger.warning(f"⚠️ {message}")
-            return
-    
+    # IMMEDIATE logging - use print() as fallback since it always works
+    import sys
+    print(f"[{__name__}] update_portfolio_prices_job() STARTED", file=sys.stderr, flush=True)
     try:
+        logger.info("update_portfolio_prices_job() started")
+    except:
+        pass  # Logger might not be ready yet
+    
+    # Wrap everything in try/except to prevent scheduler crashes
+    try:
+        print(f"[{__name__}] Setting up sys.path...", file=sys.stderr, flush=True)
+        # CRITICAL: Ensure sys.path is set up FIRST, before any imports
+        _ensure_sys_path_setup()
+        print(f"[{__name__}] sys.path setup complete", file=sys.stderr, flush=True)
+        
+        # Initialize job tracking first (before lock check so we can log lock failures)
+        job_id = 'update_portfolio_prices'
+        start_time = time.time()
+        print(f"[{__name__}] Job ID: {job_id}, start_time: {start_time}", file=sys.stderr, flush=True)
+        
+        # Check if this is date range mode - if so, we'll handle it differently (backfill function has its own lock)
+        is_date_range_mode = use_date_range and from_date and to_date
+        
+        # Acquire lock with non-blocking check - if another thread is already running, skip
+        # Skip lock for date range mode since backfill_portfolio_prices_range has its own lock
+        if not is_date_range_mode:
+            acquired = _update_prices_lock.acquire(blocking=False)
+            if not acquired:
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = "Job already running - skipped (lock not acquired)"
+                # Log as failed to indicate this was a skipped execution, not a successful run
+                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                # Also mark in database as failed with clear skipped message
+                try:
+                    from utils.job_tracking import mark_job_failed
+                    fallback_date = date.today() if target_date is None else target_date
+                    mark_job_failed('update_portfolio_prices', fallback_date, None, message, duration_ms=duration_ms)
+                except Exception:
+                    pass  # Don't fail if tracking fails
+                logger.warning(f"⚠️ {message}")
+                return
+        
+        try:
         
         # Import dependencies (after sys.path is set up)
         from market_data.data_fetcher import MarketDataFetcher
@@ -828,22 +888,39 @@ def update_portfolio_prices_job(
         except Exception as cache_error:
             logger.warning(f"⚠️  Failed to bump cache version: {cache_error}")
         
-    except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
-        message = f"Error: {str(e)}"
-        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        logger.error(f"❌ Portfolio price update job failed: {e}", exc_info=True)
-        
-        # Mark job as failed in database
-        # If target_date not defined (early crash), use today as fallback
+        except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = f"Error: {str(e)}"
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.error(f"❌ Portfolio price update job failed: {e}", exc_info=True)
+            
+            # Mark job as failed in database
+            # If target_date not defined (early crash), use today as fallback
+            try:
+                fallback_date = date.today() if 'target_date' not in locals() or target_date is None else target_date
+                mark_job_failed('update_portfolio_prices', fallback_date, None, str(e), duration_ms=duration_ms)
+            except Exception as tracking_error:
+                logger.error(f"Failed to mark job as failed in database: {tracking_error}", exc_info=True)
+        finally:
+            # Always release the lock, even if job fails (only if we acquired it)
+            if not is_date_range_mode and _update_prices_lock.locked():
+                _update_prices_lock.release()
+    
+    except Exception as outer_error:
+        # Catch any errors that happen before the inner try block (path setup, etc.)
+        # This prevents the scheduler from crashing
+        import traceback
+        error_msg = f"❌ CRITICAL: Portfolio price update job crashed before main execution: {outer_error}"
+        print(f"[{__name__}] {error_msg}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
         try:
-            fallback_date = date.today() if 'target_date' not in locals() or target_date is None else target_date
-            mark_job_failed('update_portfolio_prices', fallback_date, None, str(e), duration_ms=duration_ms)
-        except Exception as tracking_error:
-            logger.error(f"Failed to mark job as failed in database: {tracking_error}", exc_info=True)
-    finally:
-        # Always release the lock, even if job fails
-        _update_prices_lock.release()
+            logger.error(error_msg, exc_info=True)
+        except:
+            pass  # Logger might not work
+        try:
+            log_job_execution('update_portfolio_prices', success=False, message=f"Critical error: {str(outer_error)}", duration_ms=0)
+        except Exception as log_err:
+            print(f"[{__name__}] Failed to log job execution: {log_err}", file=sys.stderr, flush=True)
 
 
 def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
@@ -861,24 +938,37 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
     Performance: O(Tickers) API calls instead of O(Days * Tickers)
     Correctness: Only includes trades up to each snapshot date
     """
-    # CRITICAL: Ensure sys.path is set up FIRST, before any imports
-    _ensure_sys_path_setup()
-    
-    job_id = 'backfill_portfolio_prices_range'
-    start_time = time.time()
-    
-    # Acquire lock with non-blocking check - if another thread is already running, skip
-    # This prevents backfill from running effectively concurrently with scheduled updates
-    acquired = _update_prices_lock.acquire(blocking=False)
-    if not acquired:
-        duration_ms = int((time.time() - start_time) * 1000)
-        message = "Job already running - skipped (lock not acquired)"
-        # Log as failed to indicate this was a skipped execution
-        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        logger.warning(f"⚠️ {message}")
-        return
-
+    # IMMEDIATE logging - use print() as fallback since it always works
+    import sys
+    print(f"[{__name__}] backfill_portfolio_prices_range() STARTED", file=sys.stderr, flush=True)
     try:
+        logger.info(f"backfill_portfolio_prices_range() started: {start_date} to {end_date}")
+    except:
+        pass  # Logger might not be ready yet
+    
+    # Wrap everything in try/except to prevent scheduler crashes
+    try:
+        print(f"[{__name__}] Setting up sys.path...", file=sys.stderr, flush=True)
+        # CRITICAL: Ensure sys.path is set up FIRST, before any imports
+        _ensure_sys_path_setup()
+        print(f"[{__name__}] sys.path setup complete", file=sys.stderr, flush=True)
+        
+        job_id = 'backfill_portfolio_prices_range'
+        start_time = time.time()
+        print(f"[{__name__}] Job ID: {job_id}, start_time: {start_time}", file=sys.stderr, flush=True)
+        
+        # Acquire lock with non-blocking check - if another thread is already running, skip
+        # This prevents backfill from running effectively concurrently with scheduled updates
+        acquired = _update_prices_lock.acquire(blocking=False)
+        if not acquired:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "Job already running - skipped (lock not acquired)"
+            # Log as failed to indicate this was a skipped execution
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            logger.warning(f"⚠️ {message}")
+            return
+
+        try:
         
         logger.info(f"Starting batch backfill for date range: {start_date} to {end_date}")
         
@@ -1438,7 +1528,24 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
             mark_job_failed('backfill_portfolio_prices_range', start_date, None, str(e), duration_ms=duration_ms)
         except Exception as tracking_error:
             logger.error(f"Failed to mark backfill job as failed in database: {tracking_error}", exc_info=True)
-    finally:
-        # Always release the lock
-        _update_prices_lock.release()
+        finally:
+            # Always release the lock (only if we acquired it)
+            if _update_prices_lock.locked():
+                _update_prices_lock.release()
+    
+    except Exception as outer_error:
+        # Catch any errors that happen before the inner try block (path setup, etc.)
+        # This prevents the scheduler from crashing
+        import traceback
+        error_msg = f"❌ CRITICAL: Backfill job crashed before main execution: {outer_error}"
+        print(f"[{__name__}] {error_msg}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        try:
+            logger.error(error_msg, exc_info=True)
+        except:
+            pass  # Logger might not work
+        try:
+            log_job_execution('backfill_portfolio_prices_range', success=False, message=f"Critical error: {str(outer_error)}", duration_ms=0)
+        except Exception as log_err:
+            print(f"[{__name__}] Failed to log job execution: {log_err}", file=sys.stderr, flush=True)
 

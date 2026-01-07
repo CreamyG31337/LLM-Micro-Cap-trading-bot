@@ -115,12 +115,17 @@ def _scheduler_event_listener(event) -> None:
         from apscheduler.events import (
             EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED,
             EVENT_SCHEDULER_STARTED, EVENT_SCHEDULER_SHUTDOWN,
-            EVENT_SCHEDULER_PAUSED, EVENT_SCHEDULER_RESUMED
+            EVENT_SCHEDULER_PAUSED, EVENT_SCHEDULER_RESUMED,
+            EVENT_JOB_ADDED, EVENT_JOB_REMOVED, EVENT_JOB_MODIFIED,
+            EVENT_JOB_SUBMITTED
         )
         
-        # Log all events with print() fallback
-        event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job ID: {getattr(event, 'job_id', 'N/A')}"
-        print(event_msg, file=sys.stderr, flush=True)
+        # Only log important events to stderr (not routine job add/remove/modify)
+        # Routine events are logged at debug level only
+        should_log_stderr = event.code not in (EVENT_JOB_ADDED, EVENT_JOB_REMOVED, EVENT_JOB_MODIFIED)
+        if should_log_stderr:
+            event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job ID: {getattr(event, 'job_id', 'N/A')}"
+            print(event_msg, file=sys.stderr, flush=True)
         
         if event.code == EVENT_JOB_ERROR:
             error_msg = f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}"
@@ -143,6 +148,13 @@ def _scheduler_event_listener(event) -> None:
         elif event.code == EVENT_SCHEDULER_SHUTDOWN:
             shutdown_msg = "❌ SCHEDULER EVENT: Scheduler shutdown detected!"
             print(shutdown_msg, file=sys.stderr, flush=True)
+            # Log additional context
+            try:
+                import traceback
+                print(f"[scheduler_core] Shutdown context - intentional: {_scheduler_intentional_shutdown}", file=sys.stderr, flush=True)
+                print(f"[scheduler_core] Scheduler state: {getattr(_scheduler, 'state', 'unknown') if _scheduler else 'None'}", file=sys.stderr, flush=True)
+            except:
+                pass
             try:
                 logger.error(shutdown_msg)
             except:
@@ -187,8 +199,41 @@ def _scheduler_event_listener(event) -> None:
                 logger.info(msg)
             except:
                 pass
+                
+        elif event.code == EVENT_JOB_ADDED:
+            # Normal event - job was added to scheduler
+            # Only log at debug level to reduce noise
+            try:
+                logger.debug(f"Job added: {getattr(event, 'job_id', 'N/A')}")
+            except:
+                pass
+                
+        elif event.code == EVENT_JOB_REMOVED:
+            # Normal event - job was removed from scheduler
+            # Only log at debug level to reduce noise
+            try:
+                logger.debug(f"Job removed: {getattr(event, 'job_id', 'N/A')}")
+            except:
+                pass
+                
+        elif event.code == EVENT_JOB_MODIFIED:
+            # Normal event - job was modified in scheduler
+            # Only log at debug level to reduce noise
+            try:
+                logger.debug(f"Job modified: {getattr(event, 'job_id', 'N/A')}")
+            except:
+                pass
+                
+        elif event.code == EVENT_JOB_SUBMITTED:
+            # Normal event - job was submitted to executor
+            # Only log at debug level to reduce noise
+            try:
+                logger.debug(f"Job submitted: {getattr(event, 'job_id', 'N/A')}")
+            except:
+                pass
+                
         else:
-            # Unknown event code
+            # Truly unknown event code - log it
             msg = f"ℹ️ SCHEDULER EVENT: Unknown event code {event.code}"
             print(msg, file=sys.stderr, flush=True)
             try:
@@ -257,13 +302,21 @@ def check_scheduler_health() -> bool:
     Returns True if scheduler is healthy, False otherwise.
     """
     global _scheduler, _scheduler_last_health_check
+    import sys
     
     try:
         scheduler = get_scheduler()
         _scheduler_last_health_check = datetime.now(timezone.utc)
         
         if not scheduler.running:
-            logger.error("❌ SCHEDULER HEALTH CHECK: Scheduler is not running!")
+            error_msg = "❌ SCHEDULER HEALTH CHECK: Scheduler is not running!"
+            print(f"[scheduler_core] {error_msg}", file=sys.stderr, flush=True)
+            logger.error(error_msg)
+            # Log scheduler state for debugging
+            try:
+                print(f"[scheduler_core] Scheduler state: running={scheduler.running}, state={getattr(scheduler, 'state', 'unknown')}", file=sys.stderr, flush=True)
+            except:
+                pass
             _attempt_scheduler_restart()
             return False
         

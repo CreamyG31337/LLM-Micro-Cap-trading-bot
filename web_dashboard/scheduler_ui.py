@@ -116,11 +116,21 @@ def render_scheduler_admin():
         # Ensure scheduler is running
         scheduler = get_scheduler()
         if not scheduler.running:
+            # Check if scheduler was running recently (might have just crashed)
+            import sys
+            st.error("❌ **Scheduler is not running**")
+            st.info("The scheduler may have crashed. Check the logs for errors.")
             if st.button("🚀 Start Scheduler"):
-                start_scheduler()
-                st.success("Scheduler started!")
-                st.rerun()
-            st.warning("Scheduler is not running. Click above to start.")
+                try:
+                    result = start_scheduler()
+                    if result:
+                        st.success("✅ Scheduler started!")
+                    else:
+                        st.warning("⚠️ Scheduler was already running (or failed to start)")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to start scheduler: {e}")
+                    st.exception(e)
             return
         
         # Get all jobs (using cached version for performance)

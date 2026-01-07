@@ -27,6 +27,16 @@ def opportunity_discovery_job() -> None:
     job_id = 'opportunity_discovery'
     start_time = time.time()
     
+    # Import job tracking at the start
+    from datetime import datetime, timezone
+    target_date = datetime.now(timezone.utc).date()
+    
+    try:
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        mark_job_started(job_id, target_date)
+    except Exception as e:
+        logger.warning(f"Could not mark job started: {e}")
+    
     try:
         logger.info("Starting opportunity discovery job...")
         
@@ -41,6 +51,10 @@ def opportunity_discovery_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = f"Missing dependency: {e}"
             log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            try:
+                mark_job_failed(job_id, target_date, None, message, duration_ms=duration_ms)
+            except:
+                pass
             logger.error(f"❌ {message}")
             return
         
@@ -49,6 +63,10 @@ def opportunity_discovery_job() -> None:
             duration_ms = int((time.time() - start_time) * 1000)
             message = "SearXNG is not available - skipping opportunity discovery"
             log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            try:
+                mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
+            except:
+                pass
             logger.info(f"ℹ️ {message}")
             return
         
@@ -251,12 +269,20 @@ def opportunity_discovery_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Query: '{selected_query[:50]}...' - Processed {articles_processed}: {articles_saved} saved, {articles_skipped} skipped, {articles_blacklisted} blacklisted"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
+        except:
+            pass
         logger.info(f"✅ {message}")
         
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Error: {str(e)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_failed(job_id, target_date, None, message, duration_ms=duration_ms)
+        except:
+            pass
         logger.error(f"❌ Opportunity discovery job failed: {e}", exc_info=True)
 
 

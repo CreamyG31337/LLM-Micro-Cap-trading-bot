@@ -462,6 +462,16 @@ def process_dividends_job(lookback_days: int = 7) -> None:
     job_id = 'dividend_processing'
     start_time = time.time()
     
+    # Import job tracking at the start
+    from datetime import timezone
+    target_date = datetime.now(timezone.utc).date()
+    
+    try:
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        mark_job_started(job_id, target_date)
+    except Exception as e:
+        logger.warning(f"Could not mark job started: {e}")
+    
     try:
         from supabase_client import SupabaseClient
         client = SupabaseClient(use_service_role=True)
@@ -470,7 +480,12 @@ def process_dividends_job(lookback_days: int = 7) -> None:
         
         holdings = get_unique_holdings(client)
         if not holdings:
-            log_job_execution(job_id, True, "No active holdings", int((time.time()-start_time)*1000))
+            duration_ms = int((time.time()-start_time)*1000)
+            log_job_execution(job_id, True, "No active holdings", duration_ms)
+            try:
+                mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
+            except:
+                pass
             return
             
         # Get already processed dividends (key: fund, ticker, pay_date)
@@ -524,10 +539,18 @@ def process_dividends_job(lookback_days: int = 7) -> None:
         duration = int((time.time() - start_time) * 1000)
         msg = f"Processed {stats['processed']}, Skipped {stats['skipped']}, Errors {stats['errors']}"
         log_job_execution(job_id, True, msg, duration)
+        try:
+            mark_job_completed(job_id, target_date, None, [], duration_ms=duration)
+        except:
+            pass
         logger.info(f"✅ {msg}")
         
     except Exception as e:
         duration = int((time.time() - start_time) * 1000)
-        log_job_execution(job_id, False, str(e), duration) 
+        log_job_execution(job_id, False, str(e), duration)
+        try:
+            mark_job_failed(job_id, target_date, None, str(e), duration_ms=duration)
+        except:
+            pass
         logger.error(f"❌ Job Failed: {e}")
 

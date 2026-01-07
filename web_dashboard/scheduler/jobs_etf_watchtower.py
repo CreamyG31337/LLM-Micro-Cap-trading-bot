@@ -456,6 +456,18 @@ def log_significant_changes(repo: ResearchRepository, changes: List[Dict], etf_t
 
 def etf_watchtower_job():
     """Main ETF Watchtower job - run daily after market close."""
+    job_id = 'etf_watchtower'
+    start_time = __import__('time').time()
+    
+    # Import job tracking at the start
+    target_date = datetime.now(timezone.utc).date()
+    
+    try:
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        mark_job_started(job_id, target_date)
+    except Exception as e:
+        logger.warning(f"Could not mark job started: {e}")
+    
     logger.info("🏛️ Starting ETF Watchtower Job...")
     
     db = SupabaseClient(use_service_role=True)  # Use service role for writes
@@ -464,50 +476,71 @@ def etf_watchtower_job():
     
     total_changes = 0
     
-    for etf_ticker, config in ETF_CONFIGS.items():
-        try:
-            logger.info(f"\n{'='*60}")
-            logger.info(f"Processing {etf_ticker} ({config['provider']})")
-            logger.info(f"{'='*60}")
-            
-            # 1. Download today's holdings
-            if config['provider'] == 'ARK':
-                today_holdings = fetch_ark_holdings(etf_ticker, config['url'])
-            elif config['provider'] == 'iShares':
-                today_holdings = fetch_ishares_holdings(etf_ticker, config['url'])
-            else:
-                logger.warning(f"⚠️ Provider {config['provider']} not yet implemented")
-                continue
-            
-            if today_holdings is None or today_holdings.empty:
-                logger.warning(f"⚠️ No holdings data for {etf_ticker}, skipping")
-                continue
-            
-            # 2. Get yesterday's holdings
-            yesterday_holdings = get_previous_holdings(db, etf_ticker, today)
-            
-            # 3. Calculate diff (only if we have previous data)
-            if not yesterday_holdings.empty:
-                changes = calculate_diff(today_holdings, yesterday_holdings, etf_ticker)
+    try:
+        for etf_ticker, config in ETF_CONFIGS.items():
+            try:
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Processing {etf_ticker} ({config['provider']})")
+                logger.info(f"{'='*60}")
                 
-                if changes:
-                    log_significant_changes(repo, changes, etf_ticker)
-                    total_changes += len(changes)
-            else:
-                logger.info(f"ℹ️  No previous data for {etf_ticker} - this is the first snapshot")
+                # 1. Download today's holdings
+                if config['provider'] == 'ARK':
+                    today_holdings = fetch_ark_holdings(etf_ticker, config['url'])
+                elif config['provider'] == 'iShares':
+                    today_holdings = fetch_ishares_holdings(etf_ticker, config['url'])
+                else:
+                    logger.warning(f"⚠️ Provider {config['provider']} not yet implemented")
+                    continue
+                
+                if today_holdings is None or today_holdings.empty:
+                    logger.warning(f"⚠️ No holdings data for {etf_ticker}, skipping")
+                    continue
+                
+                # 2. Get yesterday's holdings
+                yesterday_holdings = get_previous_holdings(db, etf_ticker, today)
+                
+                # 3. Calculate diff (only if we have previous data)
+                if not yesterday_holdings.empty:
+                    changes = calculate_diff(today_holdings, yesterday_holdings, etf_ticker)
+                    
+                    if changes:
+                        log_significant_changes(repo, changes, etf_ticker)
+                        total_changes += len(changes)
+                else:
+                    logger.info(f"ℹ️  No previous data for {etf_ticker} - this is the first snapshot")
+                
+                # 4. Upsert ETF metadata (the ETF itself)
+                upsert_etf_metadata(db, etf_ticker, config['provider'])
+                
+                # 5. Upsert holdings metadata & Save snapshot
+                upsert_securities_metadata(db, today_holdings, config['provider'])
+                save_holdings_snapshot(db, etf_ticker, today_holdings, today)
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing {etf_ticker}: {e}", exc_info=True)
+                continue
+        
+        duration_ms = int((__import__('time').time() - start_time) * 1000)
+        message = f"ETF Watchtower completed: {total_changes} total changes detected"
+        logger.info(f"\n✅ {message}")
+        
+        try:
+            from scheduler.scheduler_core import log_job_execution
+            log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+            mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
+        except:
+            pass
             
-            # 4. Upsert ETF metadata (the ETF itself)
-            upsert_etf_metadata(db, etf_ticker, config['provider'])
-            
-            # 5. Upsert holdings metadata & Save snapshot
-            upsert_securities_metadata(db, today_holdings, config['provider'])
-            save_holdings_snapshot(db, etf_ticker, today_holdings, today)
-            
-        except Exception as e:
-            logger.error(f"❌ Error processing {etf_ticker}: {e}", exc_info=True)
-            continue
-    
-    logger.info(f"\n✅ ETF Watchtower completed: {total_changes} total changes detected")
+    except Exception as e:
+        duration_ms = int((__import__('time').time() - start_time) * 1000)
+        message = f"ETF Watchtower failed: {str(e)}"
+        logger.error(f"❌ {message}", exc_info=True)
+        try:
+            from scheduler.scheduler_core import log_job_execution
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            mark_job_failed(job_id, target_date, None, message, duration_ms=duration_ms)
+        except:
+            pass
 
 
 if __name__ == "__main__":

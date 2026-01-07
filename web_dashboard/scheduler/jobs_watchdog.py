@@ -115,6 +115,16 @@ def watchdog_job() -> None:
     job_id = 'watchdog'
     start_time = time.time()
     
+    # Import job tracking at the start
+    from datetime import timezone
+    target_date = datetime.now(timezone.utc).date()
+    
+    try:
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed as tracking_mark_failed
+        mark_job_started(job_id, target_date)
+    except Exception as e:
+        logger.warning(f"Could not mark job started: {e}")
+    
     try:
         logger.info("🔍 Starting watchdog job check...")
         
@@ -133,12 +143,20 @@ def watchdog_job() -> None:
         duration_ms = int((time.time() - start_time) * 1000)
         message = "Watchdog check complete"
         log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+        try:
+            mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
+        except:
+            pass
         logger.info(f"✅ {message} in {duration_ms}ms")
         
     except Exception as error:
         duration_ms = int((time.time() - start_time) * 1000)
         message = f"Watchdog job failed: {str(error)}"
         log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+        try:
+            tracking_mark_failed(job_id, target_date, None, message, duration_ms=duration_ms)
+        except:
+            pass
         logger.error(f"❌ {message}", exc_info=True)
 
 

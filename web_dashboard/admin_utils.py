@@ -30,14 +30,14 @@ except ImportError:
 # Performance logging setup
 logger = logging.getLogger(__name__)
 
-# Initialize performance tracking in session state
-if 'perf_log' not in st.session_state:
-    st.session_state.perf_log = []
-
 
 @contextmanager
 def perf_timer(operation_name: str, log_to_console: bool = True):
     """Context manager for timing operations."""
+    # Initialize performance tracking in session state if needed
+    if 'perf_log' not in st.session_state:
+        st.session_state.perf_log = []
+    
     start_time = time.perf_counter()
     try:
         yield

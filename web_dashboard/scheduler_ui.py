@@ -142,6 +142,7 @@ def render_scheduler_admin():
         
         # Consolidate jobs by base ID (e.g., update_portfolio_prices and update_portfolio_prices_close -> update_portfolio_prices)
         # This avoids showing multiple entries for the same logical job
+        # IMPORTANT: We preserve the actual job ID for execution while consolidating for display
         consolidated_jobs = {}
         for job in jobs:
             job_id = job['id']
@@ -154,9 +155,12 @@ def render_scheduler_admin():
             
             # Keep only one entry per base job (prefer the main one without suffix, or the first one seen)
             if base_id not in consolidated_jobs:
+                # Store the job but remember to use the ACTUAL job ID for execution
+                job['actual_job_id'] = job_id  # Preserve the real ID
                 consolidated_jobs[base_id] = job
             elif job_id == base_id:
                 # This is the main job (no suffix), prefer it
+                job['actual_job_id'] = job_id  # Preserve the real ID
                 consolidated_jobs[base_id] = job
         
         jobs = list(consolidated_jobs.values())
@@ -395,7 +399,9 @@ def render_scheduler_admin():
                                     # Date range mode - keep use_date_range=True and remove single date param
                                     final_params.pop('target_date', None)
                             
-                            success = run_job_now(job['id'], **final_params)
+                            # IMPORTANT: Use actual_job_id for execution, not the consolidated base ID
+                            actual_id = job.get('actual_job_id', job['id'])
+                            success = run_job_now(actual_id, **final_params)
                             if success:
                                 st.success("Job executed!")
                             else:

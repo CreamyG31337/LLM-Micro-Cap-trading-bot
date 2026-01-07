@@ -1255,6 +1255,25 @@ def get_all_jobs_status() -> List[Dict[str, Any]]:
     return get_all_jobs_status_batched()
 
 
+def _safe_job_wrapper(job_func, job_id: str, **kwargs):
+    """Wrapper that catches all exceptions from manually triggered jobs.
+    
+    This prevents manual job failures from crashing the scheduler thread pool.
+    """
+    try:
+        logger.info(f"Executing manual job: {job_id}")
+        job_func(**kwargs)
+        logger.info(f"Manual job completed: {job_id}")
+    except Exception as e:
+        # Log the error but don't re-raise - this prevents scheduler crashes
+        logger.error(f"Manual job {job_id} failed with exception: {e}", exc_info=True)
+        try:
+            # Try to log to job_executions if possible
+            log_job_execution(job_id, success=False, message=f"Manual execution failed: {str(e)}", duration_ms=0)
+        except:
+            pass  # Best effort logging
+
+
 def run_job_now(job_id: str, **kwargs) -> bool:
     """Trigger a job to run immediately in the background.
     
@@ -1267,32 +1286,54 @@ def run_job_now(job_id: str, **kwargs) -> bool:
     
     Returns True if job was scheduled, False if job not found.
     """
-    scheduler = get_scheduler()
-    job = scheduler.get_job(job_id)
-    
-    if not job:
-        logger.warning(f"Job not found: {job_id}")
-        return False
-    
-    # Schedule the job to run ASYNCHRONOUSLY via the scheduler
-    # This prevents blocking the main thread (and the UI)
     try:
-        logger.info(f"Scheduling job for immediate async execution: {job_id} (args: {kwargs})")
+        scheduler = get_scheduler()
+        if not scheduler:
+            logger.error("Scheduler not available")
+            return False
+            
+        if not scheduler.running:
+            logger.error("Scheduler is not running")
+            return False
         
-        # Use add_job with trigger='date' to run once, immediately, in background thread
-        scheduler.add_job(
-            job.func,
-            trigger='date',  # Run once at a specific datetime (now)
-            kwargs=kwargs,   # Pass keyword arguments to function
-            id=f"{job_id}_manual_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
-            name=f"Manual: {job.name or job_id}",
-            replace_existing=False  # Allow multiple manual runs
-        )
+        job = scheduler.get_job(job_id)
         
-        logger.info(f"Job {job_id} scheduled for async execution")
-        return True
+        if not job:
+            logger.warning(f"Job not found: {job_id}")
+            return False
+        
+        if not job.func:
+            logger.error(f"Job {job_id} has no function attached")
+            return False
+        
+        # Schedule the job to run ASYNCHRONOUSLY via the scheduler
+        # This prevents blocking the main thread (and the UI)
+        try:
+            logger.info(f"Scheduling job for immediate async execution: {job_id} (args: {kwargs})")
+            
+            # Generate unique ID for manual run
+            manual_id = f"{job_id}_manual_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+            
+            # IMPORTANT: Wrap the job function to prevent exceptions from crashing the scheduler
+            # Use add_job with trigger='date' to run once, immediately, in background thread
+            scheduler.add_job(
+                _safe_job_wrapper,  # Use wrapper instead of direct job.func
+                trigger='date',  # Run once at a specific datetime (now)
+                args=(job.func, job_id),  # Pass the actual function and ID as args
+                kwargs=kwargs,   # Pass keyword arguments to the wrapped function
+                id=manual_id,
+                name=f"Manual: {job.name or job_id}",
+                replace_existing=False,  # Allow multiple manual runs
+                misfire_grace_time=None  # Don't skip manual jobs if delayed
+            )
+            
+            logger.info(f"Job {job_id} scheduled for async execution as {manual_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding job {job_id} to scheduler: {e}", exc_info=True)
+            return False
     except Exception as e:
-        logger.error(f"Error scheduling job {job_id}: {e}")
+        logger.error(f"Unexpected error in run_job_now for {job_id}: {e}", exc_info=True)
         return False
 
 

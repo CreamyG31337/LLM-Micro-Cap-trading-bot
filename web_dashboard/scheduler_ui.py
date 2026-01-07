@@ -238,8 +238,8 @@ def render_scheduler_admin():
                     if job_id_base in AVAILABLE_JOBS and 'parameters' in AVAILABLE_JOBS[job_id_base]:
                         params = AVAILABLE_JOBS[job_id_base]['parameters']
                     
-                    # Show parameters editor in expander with STABLE KEY
-                    with st.expander("⚙️ Edit Parameters", expanded=False, key=f"params_expander_{widget_key_base}"):
+                    # Show parameters editor in expander
+                    with st.expander("⚙️ Edit Parameters", expanded=False):
                         if params:
                             # Special handling for jobs with date range support
                             if 'use_date_range' in params:

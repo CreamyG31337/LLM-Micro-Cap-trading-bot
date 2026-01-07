@@ -1115,135 +1115,135 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                             'cost': Decimal('0'),
                             'currency': 'USD'
                         })
-                    
-                    for trade in trades_up_to_date:
-                        ticker = trade['ticker']
-                        shares = Decimal(str(trade.get('shares', 0) or 0))
-                        price = Decimal(str(trade.get('price', 0) or 0))
-                        cost = shares * price
-                        reason = str(trade.get('reason', '')).upper()
                         
-                        if 'SELL' in reason:
-                            if running_positions[ticker]['shares'] > 0:
-                                cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
-                                running_positions[ticker]['shares'] -= shares
-                                running_positions[ticker]['cost'] -= shares * cost_per_share
-                                if running_positions[ticker]['shares'] < 0:
-                                    running_positions[ticker]['shares'] = Decimal('0')
-                                if running_positions[ticker]['cost'] < 0:
-                                    running_positions[ticker]['cost'] = Decimal('0')
-                        else:
-                            running_positions[ticker]['shares'] += shares
-                            running_positions[ticker]['cost'] += cost
-                            currency = trade.get('currency', 'USD')
-                            if currency and isinstance(currency, str):
-                                currency_upper = currency.strip().upper()
-                                if currency_upper and currency_upper not in ('NAN', 'NONE', 'NULL', ''):
-                                    running_positions[ticker]['currency'] = currency_upper
-                    
-                    # Filter to only positions with shares > 0
-                    current_holdings = {
-                        ticker: pos for ticker, pos in running_positions.items()
-                        if pos['shares'] > 0
-                    }
-                    
-                    if not current_holdings:
-                        # ISSUE #3: Better logging for edge cases
-                        logger.debug(f"  {target_date}: No active positions for {fund_name} (no trades yet or all sold)")
-                        continue
-                    
-                    # Get exchange rate for this date
-                    exchange_rate = Decimal('1.0')
-                    if base_currency != 'USD':
-                        rate = get_exchange_rate_for_date_from_db(
-                            datetime.combine(target_date, dt_time(0, 0, 0)),
-                            'USD',
-                            base_currency
-                        )
-                        if rate is not None:
-                            exchange_rate = Decimal(str(rate))
-                        else:
-                            exchange_rate = Decimal('1.35')  # Fallback
-                    
-                    # Create position records for this date
-                    et_tz = pytz.timezone('America/New_York')
-                    et_datetime = et_tz.localize(datetime.combine(target_date, dt_time(16, 0)))
-                    utc_datetime = et_datetime.astimezone(pytz.UTC)
-                    
-                    for ticker, holding in current_holdings.items():
-                        if ticker in failed_tickers:
-                            continue  # Skip tickers with no price data
-                        
-                        # Lookup price for this specific date
-                        price_df = ticker_price_data.get(ticker)
-                        if price_df is None:
-                            continue
-                        
-                        # Find price for target_date
-                        try:
-                            # Normalize target_date to match DataFrame index timezone
-                            target_ts = pd.Timestamp(target_date)
-                            # Make timezone-aware if the index is timezone-aware
-                            if price_df.index.tz is not None and target_ts.tz is None:
-                                target_ts = target_ts.tz_localize(price_df.index.tz)
+                            for trade in trades_up_to_date:
+                            ticker = trade['ticker']
+                            shares = Decimal(str(trade.get('shares', 0) or 0))
+                            price = Decimal(str(trade.get('price', 0) or 0))
+                            cost = shares * price
+                            reason = str(trade.get('reason', '')).upper()
                             
-                            # Try exact match first
-                            if target_ts in price_df.index:
-                                current_price = Decimal(str(price_df.loc[target_ts, 'Close']))
+                            if 'SELL' in reason:
+                                if running_positions[ticker]['shares'] > 0:
+                                    cost_per_share = running_positions[ticker]['cost'] / running_positions[ticker]['shares']
+                                    running_positions[ticker]['shares'] -= shares
+                                    running_positions[ticker]['cost'] -= shares * cost_per_share
+                                    if running_positions[ticker]['shares'] < 0:
+                                        running_positions[ticker]['shares'] = Decimal('0')
+                                    if running_positions[ticker]['cost'] < 0:
+                                        running_positions[ticker]['cost'] = Decimal('0')
                             else:
-                                # Find nearest date (forward fill - use last known price)
-                                valid_dates = price_df.index[price_df.index <= target_ts]
-                                if len(valid_dates) == 0:
-                                    # ISSUE #3: Better logging - track why day was skipped
-                                    logger.debug(f"  {target_date} {ticker}: No price data available (skipping)")
-                                    continue
-                                nearest_date = valid_dates[-1]
-                                current_price = Decimal(str(price_df.loc[nearest_date, 'Close']))
-                        except Exception as e:
-                            # ISSUE #3: Better logging for failures
-                            logger.debug(f"  {target_date} {ticker}: Price lookup error: {e}")
+                                running_positions[ticker]['shares'] += shares
+                                running_positions[ticker]['cost'] += cost
+                                currency = trade.get('currency', 'USD')
+                                if currency and isinstance(currency, str):
+                                    currency_upper = currency.strip().upper()
+                                    if currency_upper and currency_upper not in ('NAN', 'NONE', 'NULL', ''):
+                                        running_positions[ticker]['currency'] = currency_upper
+                        
+                        # Filter to only positions with shares > 0
+                        current_holdings = {
+                            ticker: pos for ticker, pos in running_positions.items()
+                            if pos['shares'] > 0
+                        }
+                        
+                            if not current_holdings:
+                            # ISSUE #3: Better logging for edge cases
+                            logger.debug(f"  {target_date}: No active positions for {fund_name} (no trades yet or all sold)")
                             continue
                         
-                        shares = holding['shares']
-                        cost_basis = holding['cost']
-                        market_value = shares * current_price
-                        unrealized_pnl = market_value - cost_basis
+                        # Get exchange rate for this date
+                        exchange_rate = Decimal('1.0')
+                        if base_currency != 'USD':
+                            rate = get_exchange_rate_for_date_from_db(
+                                datetime.combine(target_date, dt_time(0, 0, 0)),
+                                'USD',
+                                base_currency
+                            )
+                            if rate is not None:
+                                exchange_rate = Decimal(str(rate))
+                            else:
+                                exchange_rate = Decimal('1.35')  # Fallback
                         
-                        # Convert to base currency
-                        position_currency = holding['currency']
-                        if position_currency == 'USD' and base_currency != 'USD':
-                            market_value_base = market_value * exchange_rate
-                            cost_basis_base = cost_basis * exchange_rate
-                            pnl_base = unrealized_pnl * exchange_rate
-                            conversion_rate = exchange_rate
-                        elif position_currency == base_currency:
-                            market_value_base = market_value
-                            cost_basis_base = cost_basis
-                            pnl_base = unrealized_pnl
-                            conversion_rate = Decimal('1.0')
-                        else:
-                            market_value_base = market_value
-                            cost_basis_base = cost_basis
-                            pnl_base = unrealized_pnl
-                            conversion_rate = Decimal('1.0')
+                        # Create position records for this date
+                        et_tz = pytz.timezone('America/New_York')
+                        et_datetime = et_tz.localize(datetime.combine(target_date, dt_time(16, 0)))
+                        utc_datetime = et_datetime.astimezone(pytz.UTC)
                         
-                        all_positions.append({
-                            'fund': fund_name,
-                            'ticker': ticker,
-                            'shares': float(shares),
-                            'price': float(current_price),
-                            'cost_basis': float(cost_basis),
-                            'pnl': float(unrealized_pnl),
-                            'currency': holding['currency'],
-                            'date': utc_datetime.isoformat(),
-                            'base_currency': base_currency,
-                            'total_value_base': float(market_value_base),
-                            'cost_basis_base': float(cost_basis_base),
-                            'pnl_base': float(pnl_base),
-                            'exchange_rate': float(conversion_rate)
-                        })
-                        # BUG FIX: Track that this day has positions
-                        positions_per_day[target_date] = positions_per_day.get(target_date, 0) + 1
+                        for ticker, holding in current_holdings.items():
+                            if ticker in failed_tickers:
+                                continue  # Skip tickers with no price data
+                            
+                            # Lookup price for this specific date
+                            price_df = ticker_price_data.get(ticker)
+                            if price_df is None:
+                                continue
+                            
+                            # Find price for target_date
+                            try:
+                                # Normalize target_date to match DataFrame index timezone
+                                target_ts = pd.Timestamp(target_date)
+                                # Make timezone-aware if the index is timezone-aware
+                                if price_df.index.tz is not None and target_ts.tz is None:
+                                    target_ts = target_ts.tz_localize(price_df.index.tz)
+                                
+                                # Try exact match first
+                                if target_ts in price_df.index:
+                                    current_price = Decimal(str(price_df.loc[target_ts, 'Close']))
+                                else:
+                                    # Find nearest date (forward fill - use last known price)
+                                    valid_dates = price_df.index[price_df.index <= target_ts]
+                                    if len(valid_dates) == 0:
+                                        # ISSUE #3: Better logging - track why day was skipped
+                                        logger.debug(f"  {target_date} {ticker}: No price data available (skipping)")
+                                        continue
+                                    nearest_date = valid_dates[-1]
+                                    current_price = Decimal(str(price_df.loc[nearest_date, 'Close']))
+                            except Exception as e:
+                                # ISSUE #3: Better logging for failures
+                                logger.debug(f"  {target_date} {ticker}: Price lookup error: {e}")
+                                continue
+                            
+                            shares = holding['shares']
+                            cost_basis = holding['cost']
+                            market_value = shares * current_price
+                            unrealized_pnl = market_value - cost_basis
+                            
+                            # Convert to base currency
+                            position_currency = holding['currency']
+                            if position_currency == 'USD' and base_currency != 'USD':
+                                market_value_base = market_value * exchange_rate
+                                cost_basis_base = cost_basis * exchange_rate
+                                pnl_base = unrealized_pnl * exchange_rate
+                                conversion_rate = exchange_rate
+                            elif position_currency == base_currency:
+                                market_value_base = market_value
+                                cost_basis_base = cost_basis
+                                pnl_base = unrealized_pnl
+                                conversion_rate = Decimal('1.0')
+                            else:
+                                market_value_base = market_value
+                                cost_basis_base = cost_basis
+                                pnl_base = unrealized_pnl
+                                conversion_rate = Decimal('1.0')
+                            
+                            all_positions.append({
+                                'fund': fund_name,
+                                'ticker': ticker,
+                                'shares': float(shares),
+                                'price': float(current_price),
+                                'cost_basis': float(cost_basis),
+                                'pnl': float(unrealized_pnl),
+                                'currency': holding['currency'],
+                                'date': utc_datetime.isoformat(),
+                                'base_currency': base_currency,
+                                'total_value_base': float(market_value_base),
+                                'cost_basis_base': float(cost_basis_base),
+                                'pnl_base': float(pnl_base),
+                                'exchange_rate': float(conversion_rate)
+                            })
+                            # BUG FIX: Track that this day has positions
+                            positions_per_day[target_date] = positions_per_day.get(target_date, 0) + 1
                 
                     if not all_positions:
                         logger.info(f"  No positions to backfill for {fund_name}")

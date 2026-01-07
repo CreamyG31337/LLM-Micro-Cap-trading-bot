@@ -598,13 +598,16 @@ def create_pnl_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None
             ))
             
             # Dividends bar (gold) - only if there are any dividends
+            # Stack on top of unrealized P&L by setting base to unrealized P&L value
             if (df_stackable_green['dividends'] > 0).any():
                 fig.add_trace(go.Bar(
                     name='Dividends (LTM)',
                     x=df_stackable_green['ticker'],
                     y=df_stackable_green['dividends'],
+                    base=df_stackable_green[pnl_col],  # Stack on top of unrealized P&L
                     marker_color='#f59e0b',
-                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<extra></extra>',
+                    hovertemplate='<b>%{x}</b><br>Dividends: $%{y:,.2f}<br>Total P&L: $%{customdata[0]:,.2f}<extra></extra>',
+                    customdata=df_stackable_green[['total_pnl']],  # Include total for hover
                     showlegend=True
                 ))
         

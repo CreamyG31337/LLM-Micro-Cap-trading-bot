@@ -2391,6 +2391,9 @@ with tab6:
                             trade_date = pd.to_datetime(t['date'])
                             action = get_trade_action(t)
                             
+                            # Format date as string for display/editing (YYYY-MM-DD HH:MM)
+                            date_str = trade_date.strftime('%Y-%m-%d %H:%M')
+                            
                             # Store original trade data
                             original_trades[trade_id] = {
                                 'id': trade_id,
@@ -2406,7 +2409,7 @@ with tab6:
                             
                             trades_for_table.append({
                                 'id': trade_id,
-                                'date': trade_date,
+                                'date': date_str,  # Store as string for easier editing
                                 'action': action,
                                 'ticker': t['ticker'],
                                 'shares': float(t['shares']),
@@ -2430,12 +2433,11 @@ with tab6:
                         gb = GridOptionsBuilder.from_dataframe(trades_df)
                         
                         # Configure editable columns
+                        # Date column - editable text field (format: YYYY-MM-DD HH:MM)
                         gb.configure_column("date", 
-                                          editable=True, 
-                                          cellEditor="agDateCellEditor",
-                                          cellEditorParams={"min": "2000-01-01", "max": "2100-12-31"},
-                                          valueFormatter="params.value ? new Date(params.value).toLocaleDateString() : ''",
-                                          width=120)
+                                          editable=True,
+                                          cellEditor="agTextCellEditor",
+                                          width=150)
                         
                         gb.configure_column("action", 
                                           editable=True, 
@@ -2483,16 +2485,22 @@ with tab6:
                                                 rowHeight=35)
                         
                         # Display AgGrid
-                        grid_response = AgGrid(
-                            trades_df,
-                            gridOptions=gb.build(),
-                            update_mode=GridUpdateMode.MODEL_UPDATE,
-                            allow_unsafe_jscode=True,
-                            height=400,
-                            theme='streamlit',
-                            key="edit_trades_grid",
-                            fit_columns_on_grid_load=True
-                        )
+                        try:
+                            grid_response = AgGrid(
+                                trades_df,
+                                gridOptions=gb.build(),
+                                update_mode=GridUpdateMode.VALUE_CHANGED | GridUpdateMode.SELECTION_CHANGED,
+                                allow_unsafe_jscode=True,
+                                height=400,
+                                theme='streamlit',
+                                key="edit_trades_grid",
+                                fit_columns_on_grid_load=True
+                            )
+                        except Exception as grid_error:
+                            st.error(f"Error displaying trade editor: {grid_error}")
+                            import traceback
+                            st.code(traceback.format_exc())
+                            st.stop()
                         
                         # Get edited data
                         edited_df = grid_response['data']
@@ -2523,7 +2531,14 @@ with tab6:
                                 continue
                             
                             # Check if any field changed
-                            new_date = pd.to_datetime(row['date'])
+                            # Parse date string (format: YYYY-MM-DD HH:MM)
+                            try:
+                                new_date = pd.to_datetime(row['date'])
+                            except (ValueError, TypeError):
+                                # If date parsing fails, skip this row
+                                st.warning(f"⚠️ Invalid date format for trade {trade_id}: {row['date']}. Please use YYYY-MM-DD HH:MM format.")
+                                continue
+                            
                             new_action = str(row['action']).upper()
                             new_ticker = str(row['ticker']).strip().upper()
                             new_shares = float(row['shares'])

@@ -135,6 +135,7 @@ render_navigation(show_ai_assistant=True, show_settings=True)
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 🔗 Admin Pages")
+    st.page_link("pages/admin_scheduler.py", label="⏰ Scheduler Admin", icon="⏰")
     st.page_link("pages/admin_users.py", label="👥 User & Access Management", icon="👥")
     st.page_link("pages/admin_system.py", label="📊 System Monitoring", icon="📊")
     st.page_link("pages/admin_funds.py", label="🏦 Fund Management", icon="🏦")

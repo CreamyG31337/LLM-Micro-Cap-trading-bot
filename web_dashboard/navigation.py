@@ -110,7 +110,8 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 unsafe_allow_html=True
             )
             # Admin pages (only visible to admins)
-            st.sidebar.page_link("pages/admin.py", label="Jobs", icon="🔨")
+            st.sidebar.page_link("pages/admin.py", label="Dashboard", icon="🔨")
+            st.sidebar.page_link("pages/admin_scheduler.py", label="Scheduler", icon="⏰")
             st.sidebar.page_link("pages/admin_users.py", label="User & Access", icon="👥")
             st.sidebar.page_link("pages/admin_funds.py", label="Fund Management", icon="🏦")
             st.sidebar.page_link("pages/admin_trade_entry.py", label="Trade Entry", icon="📈")

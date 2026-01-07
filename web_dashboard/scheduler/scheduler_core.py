@@ -93,13 +93,24 @@ def get_scheduler() -> BackgroundScheduler:
                 _scheduler.add_listener(_scheduler_event_listener, 
                                        mask=0xFFFFFFFF)  # Listen to all events
                 
-                logger.info("Created new BackgroundScheduler instance with event listeners")
+                # Log with print() fallback
+                import sys
+                msg = "Created new BackgroundScheduler instance with event listeners"
+                print(f"[scheduler_core] {msg}", file=sys.stderr, flush=True)
+                try:
+                    logger.info(msg)
+                except:
+                    pass
     
     return _scheduler
 
 
 def _scheduler_event_listener(event) -> None:
     """Event listener for scheduler events - catches errors and shutdowns."""
+    # Use print() as fallback - always works even if logging is broken
+    import sys
+    import traceback
+    
     try:
         from apscheduler.events import (
             EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED,
@@ -107,29 +118,93 @@ def _scheduler_event_listener(event) -> None:
             EVENT_SCHEDULER_PAUSED, EVENT_SCHEDULER_RESUMED
         )
         
+        # Log all events with print() fallback
+        event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job ID: {getattr(event, 'job_id', 'N/A')}"
+        print(event_msg, file=sys.stderr, flush=True)
+        
         if event.code == EVENT_JOB_ERROR:
-            logger.error(
-                f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}",
-                exc_info=event.exception
-            )
+            error_msg = f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}"
+            print(error_msg, file=sys.stderr, flush=True)
+            if hasattr(event, 'exception') and event.exception:
+                traceback.print_exception(type(event.exception), event.exception, event.exception.__traceback__, file=sys.stderr)
+            try:
+                logger.error(error_msg, exc_info=event.exception)
+            except:
+                pass  # Logger might not work
+                
         elif event.code == EVENT_JOB_MISSED:
-            logger.warning(f"⚠️ SCHEDULER EVENT: Job {event.job_id} missed execution time")
+            msg = f"⚠️ SCHEDULER EVENT: Job {event.job_id} missed execution time"
+            print(msg, file=sys.stderr, flush=True)
+            try:
+                logger.warning(msg)
+            except:
+                pass
+                
         elif event.code == EVENT_SCHEDULER_SHUTDOWN:
-            logger.error("❌ SCHEDULER EVENT: Scheduler shutdown detected!")
+            shutdown_msg = "❌ SCHEDULER EVENT: Scheduler shutdown detected!"
+            print(shutdown_msg, file=sys.stderr, flush=True)
+            try:
+                logger.error(shutdown_msg)
+            except:
+                pass
             # Only restart if this was an unexpected shutdown (not intentional)
             if not _scheduler_intentional_shutdown:
-                logger.warning("⚠️ Unexpected scheduler shutdown detected - will attempt restart")
+                restart_msg = "⚠️ Unexpected scheduler shutdown detected - will attempt restart"
+                print(restart_msg, file=sys.stderr, flush=True)
+                try:
+                    logger.warning(restart_msg)
+                except:
+                    pass
                 _attempt_scheduler_restart()
             else:
-                logger.info("ℹ️ Scheduler shutdown was intentional - not restarting")
+                msg = "ℹ️ Scheduler shutdown was intentional - not restarting"
+                print(msg, file=sys.stderr, flush=True)
+                try:
+                    logger.info(msg)
+                except:
+                    pass
+                    
         elif event.code == EVENT_SCHEDULER_STARTED:
-            logger.info("✅ SCHEDULER EVENT: Scheduler started")
+            msg = "✅ SCHEDULER EVENT: Scheduler started"
+            print(msg, file=sys.stderr, flush=True)
+            try:
+                logger.info(msg)
+            except:
+                pass
+                
         elif event.code == EVENT_SCHEDULER_PAUSED:
-            logger.warning("⚠️ SCHEDULER EVENT: Scheduler paused")
+            msg = "⚠️ SCHEDULER EVENT: Scheduler paused"
+            print(msg, file=sys.stderr, flush=True)
+            try:
+                logger.warning(msg)
+            except:
+                pass
+                
         elif event.code == EVENT_SCHEDULER_RESUMED:
-            logger.info("✅ SCHEDULER EVENT: Scheduler resumed")
+            msg = "✅ SCHEDULER EVENT: Scheduler resumed"
+            print(msg, file=sys.stderr, flush=True)
+            try:
+                logger.info(msg)
+            except:
+                pass
+        else:
+            # Unknown event code
+            msg = f"ℹ️ SCHEDULER EVENT: Unknown event code {event.code}"
+            print(msg, file=sys.stderr, flush=True)
+            try:
+                logger.info(msg)
+            except:
+                pass
+                
     except Exception as e:
-        logger.error(f"Error in scheduler event listener: {e}", exc_info=True)
+        # Critical: Log event listener errors with print() since logger might be broken
+        error_msg = f"❌ CRITICAL: Error in scheduler event listener: {e}"
+        print(error_msg, file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        try:
+            logger.error(error_msg, exc_info=True)
+        except:
+            pass  # Even logger failed - at least print() worked
 
 
 def _attempt_scheduler_restart() -> None:

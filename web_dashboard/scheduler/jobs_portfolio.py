@@ -179,6 +179,10 @@ def update_portfolio_prices_job(
     except:
         pass  # Logger might not be ready yet
     
+    # Initialize variables that finally block needs (before any try blocks)
+    is_date_range_mode = use_date_range and from_date and to_date if (use_date_range and from_date and to_date) else False
+    lock_acquired = False  # Track if we actually acquired the lock
+    
     # Wrap everything in try/except to prevent scheduler crashes
     try:
         print(f"[{__name__}] Setting up sys.path...", file=sys.stderr, flush=True)
@@ -198,6 +202,7 @@ def update_portfolio_prices_job(
         # Skip lock for date range mode since backfill_portfolio_prices_range has its own lock
         if not is_date_range_mode:
             acquired = _update_prices_lock.acquire(blocking=False)
+            lock_acquired = acquired
             if not acquired:
                 duration_ms = int((time.time() - start_time) * 1000)
                 message = "Job already running - skipped (lock not acquired)"
@@ -901,9 +906,19 @@ def update_portfolio_prices_job(
             except Exception as tracking_error:
                 logger.error(f"Failed to mark job as failed in database: {tracking_error}", exc_info=True)
         finally:
-            # Always release the lock, even if job fails (only if we acquired it)
-            if not is_date_range_mode and _update_prices_lock.locked():
-                _update_prices_lock.release()
+            # Always release the lock, even if job fails (only if we actually acquired it)
+            try:
+                # Only release if we actually acquired the lock (not date range mode, and lock was acquired)
+                if not is_date_range_mode and lock_acquired and _update_prices_lock.locked():
+                    _update_prices_lock.release()
+                    print(f"[{__name__}] Lock released", file=sys.stderr, flush=True)
+            except Exception as lock_error:
+                # Don't let lock release errors crash the scheduler
+                print(f"[{__name__}] WARNING: Error releasing lock: {lock_error}", file=sys.stderr, flush=True)
+                try:
+                    logger.warning(f"Error releasing lock: {lock_error}")
+                except:
+                    pass
     
     except Exception as outer_error:
         # Catch any errors that happen before the inner try block (path setup, etc.)

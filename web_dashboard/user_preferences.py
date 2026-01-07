@@ -332,6 +332,30 @@ def set_user_theme(theme: str) -> bool:
     return set_user_preference('theme', theme)
 
 
+def get_user_selected_fund() -> Optional[str]:
+    """Get user's preferred selected fund.
+    
+    Returns:
+        Fund name (e.g., 'Project Chimera') or None
+    """
+    return get_user_preference('selected_fund', default=None)
+
+
+def set_user_selected_fund(fund: str) -> bool:
+    """Set user's preferred selected fund.
+    
+    Args:
+        fund: Fund name (e.g., 'Project Chimera')
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not fund or not isinstance(fund, str):
+        logger.warning(f"Invalid fund: {fund}")
+        return False
+    return set_user_preference('selected_fund', fund)
+
+
 def apply_user_theme() -> None:
     """Apply user's theme preference using CSS injection.
     

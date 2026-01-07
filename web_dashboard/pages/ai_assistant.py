@@ -30,7 +30,7 @@ from ai_context_builder import (
     format_cash_balances
 )
 from ai_prompts import get_system_prompt
-from user_preferences import get_user_ai_model, set_user_ai_model
+from user_preferences import get_user_ai_model, set_user_ai_model, get_user_selected_fund, set_user_selected_fund
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
     calculate_portfolio_value_over_time, get_fund_thesis_data, get_available_funds,
@@ -532,8 +532,9 @@ with st.sidebar:
     st.header("📊 Data Source")
     funds = get_available_funds()
     if funds:
-        # Get the current fund from session state, or default to first fund
-        current_fund = st.session_state.get('previous_fund', funds[0])
+        # Get the current fund from user preference, session state, or default to first fund
+        saved_fund = get_user_selected_fund()
+        current_fund = st.session_state.get('previous_fund', saved_fund or funds[0])
         # Ensure current_fund is in the list (handles case where fund was removed)
         fund_index = funds.index(current_fund) if current_fund in funds else 0
 
@@ -544,6 +545,10 @@ with st.sidebar:
             help="Select fund for AI analysis",
             key="fund_selector"
         )
+
+        # Save fund preference when it changes
+        if selected_fund != saved_fund:
+            set_user_selected_fund(selected_fund)
 
         # Clear chat when fund changes
         if 'previous_fund' not in st.session_state:

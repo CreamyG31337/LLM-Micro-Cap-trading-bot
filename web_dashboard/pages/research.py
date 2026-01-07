@@ -40,6 +40,7 @@ from file_parsers import extract_text_from_file
 from streamlit_utils import get_available_funds
 from ticker_utils import render_ticker_link
 from research_utils import normalize_ticker
+from user_preferences import get_user_selected_fund, set_user_selected_fund
 
 logger = logging.getLogger(__name__)
 
@@ -325,15 +326,29 @@ with st.sidebar:
     try:
         available_funds = get_available_funds()
         if available_funds:
-            # Default to first fund (index 1, since index 0 is the empty string)
+            # Get saved fund preference
+            saved_fund = get_user_selected_fund()
+            
+            # Determine initial index (prefer saved fund, otherwise first fund)
+            # Index 0 is empty string, so add 1 for actual funds
+            if saved_fund and saved_fund in available_funds:
+                initial_index = available_funds.index(saved_fund) + 1
+            else:
+                initial_index = 1  # Default to first fund instead of blank
+            
             selected_fund_context = st.selectbox(
                 "Active Fund",
                 options=[""] + available_funds,
-                index=1,  # Default to first fund instead of blank
+                index=initial_index,
                 help="Select the fund you're working with. This will be used when uploading reports.",
                 key="fund_context_selector"
             )
             fund_context = selected_fund_context if selected_fund_context else None
+            
+            # Save fund preference when a fund is selected (not empty)
+            if fund_context and fund_context != saved_fund:
+                set_user_selected_fund(fund_context)
+            
             if fund_context:
                 st.info(f"📊 Working with: **{fund_context}**")
         else:

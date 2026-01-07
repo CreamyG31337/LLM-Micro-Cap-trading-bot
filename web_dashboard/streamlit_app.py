@@ -1354,11 +1354,26 @@ def main():
         st.sidebar.error(f"❌ Error loading funds: {e}")
         st.stop()
     
+    # Load saved fund preference
+    from user_preferences import get_user_selected_fund, set_user_selected_fund
+    saved_fund = get_user_selected_fund()
+    
+    # Determine initial fund index
+    # Prefer saved fund if it exists in the list, otherwise default to first fund
+    if saved_fund and saved_fund in funds:
+        initial_index = funds.index(saved_fund)
+    else:
+        initial_index = 0
+    
     selected_fund = st.sidebar.selectbox(
         "Select Fund",
         funds,
-        index=0  # Default to first available fund
+        index=initial_index
     )
+    
+    # Save fund preference when it changes
+    if selected_fund != saved_fund:
+        set_user_selected_fund(selected_fund)
     
     # Simple time range selector (for performance when data grows)
     time_range = st.sidebar.radio(

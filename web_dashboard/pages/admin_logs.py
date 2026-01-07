@@ -54,7 +54,7 @@ with tab_app:
             level_filter = st.selectbox(
                 "Level",
                 options=["All", "INFO + ERROR", "DEBUG", "PERF", "INFO", "WARNING", "ERROR"],
-                index=0  # Default to "All"
+                index=1  # Default to "INFO + ERROR"
             )
         
         with col3:

@@ -386,13 +386,14 @@ def render_scheduler_admin():
                             # Handle date range parameters for jobs that support it
                             final_params = job_params.copy()
                             if 'use_date_range' in final_params:
-                                use_range = final_params.pop('use_date_range', False)
+                                use_range = final_params.get('use_date_range', False)
                                 if not use_range:
-                                    # Single date mode - remove range params
+                                    # Single date mode - remove range params and the flag
+                                    final_params.pop('use_date_range', None)
                                     final_params.pop('from_date', None)
                                     final_params.pop('to_date', None)
                                 else:
-                                    # Date range mode - remove single date param
+                                    # Date range mode - keep use_date_range=True and remove single date param
                                     final_params.pop('target_date', None)
                             
                             success = run_job_now(job['id'], **final_params)

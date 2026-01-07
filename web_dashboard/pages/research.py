@@ -39,7 +39,7 @@ from settings import get_summarizing_model
 from file_parsers import extract_text_from_file
 from streamlit_utils import get_available_funds, render_sidebar_fund_selector
 from ticker_utils import render_ticker_link
-from research_utils import normalize_ticker
+from research_utils import normalize_ticker, escape_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -1391,7 +1391,9 @@ try:
             if article.get('summary'):
                 header = "🧠 AI Analysis & Reasoning" if article.get('article_type') == 'reddit_discovery' else "Summary"
                 st.subheader(header)
-                st.write(article['summary'])
+                # Escape special characters to prevent Streamlit from interpreting them as Markdown/LaTeX
+                summary_text = escape_markdown(article['summary'])
+                st.write(summary_text)
             
             # Chain of Thought Analysis (if available)
             if article.get('claims') or article.get('fact_check') or article.get('conclusion'):

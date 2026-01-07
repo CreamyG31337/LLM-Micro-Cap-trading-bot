@@ -37,6 +37,7 @@ from streamlit_utils import (
     calculate_performance_metrics, render_sidebar_fund_selector
 )
 from research_repository import ResearchRepository
+from research_utils import escape_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -1398,7 +1399,8 @@ if user_query:
                             for i, article in enumerate(repository_articles, 1):
                                 similarity = article.get('similarity', 0)
                                 title = article.get('title', 'Untitled')
-                                summary = article.get('summary', article.get('content', '')[:300])
+                                # Escape special characters to prevent Streamlit/Markdown rendering issues in context display
+                                summary = escape_markdown(article.get('summary', article.get('content', '')[:300]))
                                 source = article.get('source', 'Unknown')
                                 published = article.get('published_at', '')
 

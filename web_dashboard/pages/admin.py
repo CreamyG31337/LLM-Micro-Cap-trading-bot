@@ -2361,12 +2361,8 @@ with tab6:
                 # ===== EDIT/DELETE TRADE =====
                 st.divider()
                 st.subheader("✏️ Edit or Delete Trade")
-                with st.expander("Modify existing trade", expanded=False):
-                    st.caption("Select a trade from the table below to edit or delete. Automatic rebuild will trigger if dates or action changes.")
-                    
-                    # Initialize selected trade ID in session state
-                    if 'selected_trade_id' not in st.session_state:
-                        st.session_state.selected_trade_id = None
+                with st.expander("Modify existing trade", expanded=True):
+                    st.caption("Edit trades directly in the table below. Click on any cell to edit. Automatic rebuild will trigger if dates or actions change.")
                     
                     # Get editable trades (last 50, excluding DRIP)
                     edit_trades = client.supabase.table("trade_log")\
@@ -2386,104 +2382,209 @@ with tab6:
                                 return 'SELL'
                             return 'BUY'  # Default to BUY
                         
-                        # Prepare data for table display
+                        # Prepare data for AgGrid with all necessary fields
                         trades_for_table = []
-                        trade_id_map = {}  # Map row index to trade ID
-                        for idx, t in enumerate(edit_trades.data):
-                            trade_date = pd.to_datetime(t['date']).strftime('%Y-%m-%d %H:%M')
+                        original_trades = {}  # Store original trade data by ID for comparison
+                        
+                        for t in edit_trades.data:
+                            trade_id = t['id']
+                            trade_date = pd.to_datetime(t['date'])
                             action = get_trade_action(t)
-                            trades_for_table.append({
+                            
+                            # Store original trade data
+                            original_trades[trade_id] = {
+                                'id': trade_id,
                                 'date': trade_date,
                                 'action': action,
                                 'ticker': t['ticker'],
-                                'shares': t['shares'],
-                                'price': f"${t['price']:.2f}",
-                                'currency': t.get('currency', 'USD')
+                                'shares': float(t['shares']),
+                                'price': float(t['price']),
+                                'currency': t.get('currency', 'USD'),
+                                'fund': t['fund'],
+                                'reason': t.get('reason', '')
+                            }
+                            
+                            trades_for_table.append({
+                                'id': trade_id,
+                                'date': trade_date,
+                                'action': action,
+                                'ticker': t['ticker'],
+                                'shares': float(t['shares']),
+                                'price': float(t['price']),
+                                'currency': t.get('currency', 'USD'),
+                                '_delete': False  # Checkbox for delete
                             })
-                            trade_id_map[idx] = t['id']
                         
+                        # Initialize session state for tracking original data
+                        session_key = 'edit_trades_original_data'
+                        if session_key not in st.session_state:
+                            st.session_state[session_key] = original_trades.copy()
+                        
+                        # Create DataFrame
                         trades_df = pd.DataFrame(trades_for_table)
                         
-                        # Display table
-                        st.markdown("**Select a trade from the table below:**")
-                        display_dataframe_with_copy(trades_df, label="Trades", key_suffix="edit_trades_table", use_container_width=True)
+                        # Import AgGrid components
+                        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
                         
-                        # Use selectbox to select by row (references the table)
-                        if len(trades_df) > 0:
-                            row_options = []
-                            for idx, row in trades_df.iterrows():
-                                row_options.append(f"{row['date']} | {row['action']} {row['shares']} {row['ticker']} @ {row['price']}")
+                        # Configure AgGrid with editable columns
+                        gb = GridOptionsBuilder.from_dataframe(trades_df)
+                        
+                        # Configure editable columns
+                        gb.configure_column("date", 
+                                          editable=True, 
+                                          cellEditor="agDateCellEditor",
+                                          cellEditorParams={"min": "2000-01-01", "max": "2100-12-31"},
+                                          valueFormatter="params.value ? new Date(params.value).toLocaleDateString() : ''",
+                                          width=120)
+                        
+                        gb.configure_column("action", 
+                                          editable=True, 
+                                          cellEditor="agSelectCellEditor",
+                                          cellEditorParams={"values": ["BUY", "SELL"]},
+                                          width=80)
+                        
+                        gb.configure_column("ticker", 
+                                          editable=True,
+                                          width=100)
+                        
+                        gb.configure_column("shares", 
+                                          editable=True, 
+                                          type=["numericColumn"],
+                                          valueFormatter="params.value ? params.value.toFixed(6) : ''",
+                                          width=120)
+                        
+                        gb.configure_column("price", 
+                                          editable=True, 
+                                          type=["numericColumn"],
+                                          valueFormatter="params.value ? '$' + params.value.toFixed(2) : ''",
+                                          width=100)
+                        
+                        gb.configure_column("currency", 
+                                          editable=True, 
+                                          cellEditor="agSelectCellEditor",
+                                          cellEditorParams={"values": ["USD", "CAD"]},
+                                          width=80)
+                        
+                        # Hide ID column but keep it for tracking
+                        gb.configure_column("id", hide=True)
+                        
+                        # Add delete checkbox column
+                        gb.configure_column("_delete", 
+                                          headerName="Delete", 
+                                          editable=True,
+                                          cellEditor="agCheckboxCellEditor",
+                                          cellRenderer="agCheckboxCellRenderer",
+                                          width=80)
+                        
+                        # Enable row selection and editing
+                        gb.configure_selection('single')
+                        gb.configure_grid_options(enableRangeSelection=False, 
+                                                suppressRowClickSelection=False,
+                                                rowHeight=35)
+                        
+                        # Display AgGrid
+                        grid_response = AgGrid(
+                            trades_df,
+                            gridOptions=gb.build(),
+                            update_mode=GridUpdateMode.MODEL_UPDATE,
+                            allow_unsafe_jscode=True,
+                            height=400,
+                            theme='streamlit',
+                            key="edit_trades_grid",
+                            fit_columns_on_grid_load=True
+                        )
+                        
+                        # Get edited data
+                        edited_df = grid_response['data']
+                        
+                        # Track changes and prepare updates/deletes
+                        trades_to_update = []
+                        trades_to_delete = []
+                        needs_rebuild = False
+                        rebuild_from_date = None
+                        
+                        for _, row in edited_df.iterrows():
+                            trade_id = int(row['id'])
+                            original = st.session_state[session_key].get(trade_id)
                             
-                            selected_row_str = st.selectbox(
-                                "Select trade to edit",
-                                options=[""] + row_options,
-                                key="edit_trade_row_select"
-                            )
+                            if not original:
+                                continue
                             
-                            # Get selected trade
-                            selected_trade = None
-                            if selected_row_str:
-                                # Find the row index
+                            # Check if marked for deletion
+                            if row.get('_delete', False):
+                                trades_to_delete.append({
+                                    'id': trade_id,
+                                    'fund': original['fund'],
+                                    'date': original['date']
+                                })
+                                # Track earliest delete date for rebuild
+                                if rebuild_from_date is None or original['date'].date() < rebuild_from_date:
+                                    rebuild_from_date = original['date'].date()
+                                continue
+                            
+                            # Check if any field changed
+                            new_date = pd.to_datetime(row['date'])
+                            new_action = str(row['action']).upper()
+                            new_ticker = str(row['ticker']).strip().upper()
+                            new_shares = float(row['shares'])
+                            new_price = float(row['price'])
+                            new_currency = str(row['currency']).upper()
+                            
+                            # Compare with original
+                            date_changed = new_date.date() != original['date'].date()
+                            action_changed = new_action != original['action']
+                            ticker_changed = new_ticker != original['ticker']
+                            shares_changed = abs(new_shares - original['shares']) > 0.000001
+                            price_changed = abs(new_price - original['price']) > 0.01
+                            currency_changed = new_currency != original['currency']
+                            
+                            if date_changed or action_changed or ticker_changed or shares_changed or price_changed or currency_changed:
+                                # Track rebuild needs
+                                if date_changed or action_changed:
+                                    needs_rebuild = True
+                                    if rebuild_from_date is None or new_date.date() < rebuild_from_date:
+                                        rebuild_from_date = min(new_date.date(), original['date'].date())
+                                
+                                trades_to_update.append({
+                                    'id': trade_id,
+                                    'original': original,
+                                    'new_date': new_date,
+                                    'new_action': new_action,
+                                    'new_ticker': new_ticker,
+                                    'new_shares': new_shares,
+                                    'new_price': new_price,
+                                    'new_currency': new_currency,
+                                    'date_changed': date_changed,
+                                    'action_changed': action_changed
+                                })
+                        
+                        # Show summary of changes
+                        if trades_to_update or trades_to_delete:
+                            st.markdown("---")
+                            if trades_to_update:
+                                st.info(f"📝 {len(trades_to_update)} trade(s) modified")
+                            if trades_to_delete:
+                                st.warning(f"🗑️ {len(trades_to_delete)} trade(s) marked for deletion")
+                            
+                            # Save All Changes button
+                            if st.button("💾 Save All Changes", type="primary", disabled=not can_modify_data(), use_container_width=True):
+                                if not can_modify_data():
+                                    st.error("❌ Read-only admin cannot edit trades")
+                                    st.stop()
+                                
                                 try:
-                                    row_idx = row_options.index(selected_row_str)
-                                    selected_trade_id = trade_id_map[row_idx]
+                                    admin_client = SupabaseClient(use_service_role=True)
+                                    from collections import deque
+                                    from decimal import Decimal
                                     
-                                    # Find the full trade data
-                                    for t in edit_trades.data:
-                                        if t['id'] == selected_trade_id:
-                                            selected_trade = t
-                                            break
-                                except (ValueError, IndexError, KeyError):
-                                    pass
-                        else:
-                            selected_trade = None
-                        
-                        if selected_trade:
-                            
-                            col_edit1, col_edit2 = st.columns(2)
-                            
-                            with col_edit1:
-                                edit_ticker = st.text_input("Ticker", value=selected_trade['ticker'], key="edit_ticker")
-                                trade_action = get_trade_action(selected_trade)
-                                edit_action = st.selectbox("Action", options=["BUY", "SELL"], 
-                                                          index=0 if trade_action == 'BUY' else 1, 
-                                                          key="edit_action")
-                                edit_shares = st.number_input("Shares", value=float(selected_trade['shares']), 
-                                                             min_value=0.000001, step=1.0, format="%.6f", key="edit_shares")
-                            
-                            with col_edit2:
-                                edit_price = st.number_input("Price", value=float(selected_trade['price']), 
-                                                            min_value=0.01, step=0.01, format="%.2f", key="edit_price")
-                                trade_currency = selected_trade.get('currency', 'USD')
-                                edit_currency = st.selectbox("Currency", options=["USD", "CAD"], 
-                                                            index=0 if trade_currency == 'USD' else 1,
-                                                            key="edit_currency")
-                                original_date = pd.to_datetime(selected_trade['date'])
-                                edit_date = st.date_input("Trade Date", value=original_date.date(), key="edit_date")
-                            
-                            col_save, col_delete = st.columns(2)
-                            
-                            with col_save:
-                                if st.button("💾 Save Changes", type="primary", disabled=not can_modify_data()):
-                                    if not can_modify_data():
-                                        st.error("❌ Read-only admin cannot edit trades")
-                                        st.stop()
-                                    try:
-                                        admin_client = SupabaseClient(use_service_role=True)
+                                    # Process updates
+                                    for update in trades_to_update:
+                                        original = update['original']
                                         
-                                        # Detect date change
-                                        new_date = datetime.combine(edit_date, original_date.time())
-                                        date_changed = new_date.date() != original_date.date()
-                                        
-                                        # Detect action change
-                                        original_action = get_trade_action(selected_trade)
-                                        action_changed = edit_action != original_action
-                                        
-                                        # Update reason to properly reflect the new action
-                                        original_reason = selected_trade.get('reason', '').strip()
-                                        
-                                        # Clean the reason by removing action indicators
+                                        # Build new reason with proper action
+                                        original_reason = original['reason'].strip()
                                         cleaned_reason = original_reason
+                                        
                                         # Remove action suffixes
                                         for suffix in [' - BUY', ' - SELL', ' BUY', ' SELL', '- BUY', '- SELL']:
                                             if cleaned_reason.endswith(suffix):
@@ -2495,30 +2596,25 @@ with tab6:
                                         if cleaned_reason.lower() in [p.lower() for p in action_only_patterns]:
                                             cleaned_reason = ''
                                         
-                                        # Build new reason with proper action
+                                        # Build new reason
                                         if cleaned_reason:
-                                            # Keep the cleaned reason and append action
-                                            new_reason = f"{cleaned_reason} - {edit_action}"
+                                            new_reason = f"{cleaned_reason} - {update['new_action']}"
                                         else:
-                                            # No meaningful reason, use default
-                                            new_reason = f"{edit_action} order"
+                                            new_reason = f"{update['new_action']} order"
                                         
                                         # Calculate cost_basis and P&L
-                                        cost_basis = float(edit_shares * edit_price)
+                                        cost_basis = float(update['new_shares'] * update['new_price'])
                                         pnl = 0.0
                                         
                                         # For SELL trades, calculate P&L using FIFO
-                                        if edit_action == "SELL":
+                                        if update['new_action'] == "SELL":
                                             try:
-                                                from collections import deque
-                                                from decimal import Decimal
-                                                
                                                 # Get existing trades for this ticker (FIFO order, excluding current trade)
                                                 existing_trades = admin_client.supabase.table("trade_log") \
                                                     .select("shares, price, reason, date") \
-                                                    .eq("fund", selected_trade['fund']) \
-                                                    .eq("ticker", edit_ticker) \
-                                                    .neq("id", selected_trade['id']) \
+                                                    .eq("fund", original['fund']) \
+                                                    .eq("ticker", update['new_ticker']) \
+                                                    .neq("id", update['id']) \
                                                     .order("date") \
                                                     .execute()
                                                 
@@ -2533,24 +2629,22 @@ with tab6:
                                                         })
                                                 
                                                 # Calculate P&L for the sell
-                                                shares_to_sell = Decimal(str(edit_shares))
-                                                sell_price = Decimal(str(edit_price))
+                                                shares_to_sell = Decimal(str(update['new_shares']))
+                                                sell_price = Decimal(str(update['new_price']))
                                                 total_cost_basis = Decimal('0')
                                                 
                                                 while shares_to_sell > 0 and lots:
                                                     lot = lots[0]
                                                     if lot['shares'] <= shares_to_sell:
-                                                        # Use entire lot
                                                         total_cost_basis += lot['shares'] * lot['price']
                                                         shares_to_sell -= lot['shares']
                                                         lots.popleft()
                                                     else:
-                                                        # Use partial lot
                                                         total_cost_basis += shares_to_sell * lot['price']
                                                         lot['shares'] -= shares_to_sell
                                                         shares_to_sell = Decimal('0')
                                                 
-                                                proceeds = Decimal(str(edit_shares)) * sell_price
+                                                proceeds = Decimal(str(update['new_shares'])) * sell_price
                                                 pnl = float(proceeds - total_cost_basis)
                                                 cost_basis = float(total_cost_basis)
                                                 
@@ -2558,72 +2652,37 @@ with tab6:
                                                 import logging
                                                 logging.getLogger(__name__).warning(f"Could not calculate P&L for SELL: {calc_error}")
                                                 pnl = 0
-                                                cost_basis = float(edit_shares * edit_price)
+                                                cost_basis = float(update['new_shares'] * update['new_price'])
                                         
+                                        # Prepare update data
                                         update_data = {
-                                            'ticker': edit_ticker,
-                                            'shares': float(edit_shares),
-                                            'price': float(edit_price),
-                                            'currency': edit_currency,
+                                            'ticker': update['new_ticker'],
+                                            'shares': update['new_shares'],
+                                            'price': update['new_price'],
+                                            'currency': update['new_currency'],
                                             'cost_basis': cost_basis,
                                             'pnl': pnl,
                                             'reason': new_reason,
-                                            'date': new_date.isoformat()
+                                            'date': update['new_date'].isoformat()
                                         }
                                         
+                                        # Update trade
                                         admin_client.supabase.table("trade_log")\
                                             .update(update_data)\
-                                            .eq("id", selected_trade['id'])\
+                                            .eq("id", update['id'])\
                                             .execute()
-                                        
-                                        st.cache_data.clear()
-                                        
-                                        # Trigger rebuild if date or action changed
-                                        if date_changed or action_changed:
-                                            try:
-                                                from pathlib import Path
-                                                project_root = Path(__file__).parent.parent.parent
-                                                if str(project_root) not in sys.path:
-                                                    sys.path.insert(0, str(project_root))
-                                                
-                                                from web_dashboard.utils.background_rebuild import trigger_background_rebuild
-                                                
-                                                # Rebuild from earliest affected date
-                                                rebuild_from = min(new_date.date(), original_date.date())
-                                                job_id = trigger_background_rebuild(selected_trade['fund'], rebuild_from)
-                                                
-                                                st.success("✅ Trade updated successfully!")
-                                                change_type = "Action and date" if (date_changed and action_changed) else ("Action" if action_changed else "Date")
-                                                if job_id:
-                                                    st.info(f"📊 {change_type} changed - recalculating positions from {rebuild_from}... (Job ID: {job_id})")
-                                            except Exception as e:
-                                                st.success("✅ Trade updated successfully!")
-                                                st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
-                                        else:
-                                            st.success("✅ Trade updated successfully!")
-                                        
-                                        st.rerun()
-                                        
-                                    except Exception as e:
-                                        st.error(f"Error updating trade: {e}")
-                            
-                            with col_delete:
-                                if st.button("🗑️ Delete Trade", type="secondary", disabled=not can_modify_data()):
-                                    if not can_modify_data():
-                                        st.error("❌ Read-only admin cannot delete trades")
-                                        st.stop()
-                                    try:
-                                        admin_client = SupabaseClient(use_service_role=True)
-                                        
-                                        # Delete the trade
+                                    
+                                    # Process deletes
+                                    for delete_info in trades_to_delete:
                                         admin_client.supabase.table("trade_log")\
                                             .delete()\
-                                            .eq("id", selected_trade['id'])\
+                                            .eq("id", delete_info['id'])\
                                             .execute()
-                                        
-                                        st.cache_data.clear()
-                                        
-                                        # Trigger rebuild from deleted trade date
+                                    
+                                    st.cache_data.clear()
+                                    
+                                    # Trigger rebuild if needed
+                                    if needs_rebuild and rebuild_from_date:
                                         try:
                                             from pathlib import Path
                                             project_root = Path(__file__).parent.parent.parent
@@ -2632,20 +2691,30 @@ with tab6:
                                             
                                             from web_dashboard.utils.background_rebuild import trigger_background_rebuild
                                             
-                                            job_id = trigger_background_rebuild(selected_trade['fund'], original_date.date())
+                                            # Use the fund from first trade (all should be same fund)
+                                            fund_name = trades_to_update[0]['original']['fund'] if trades_to_update else trades_to_delete[0]['fund']
+                                            job_id = trigger_background_rebuild(fund_name, rebuild_from_date)
                                             
-                                            st.success("✅ Trade deleted successfully!")
+                                            st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
                                             if job_id:
-                                                st.info(f"📊 Recalculating positions from {original_date.date()}... (Job ID: {job_id})")
-                                                
+                                                st.info(f"📊 Recalculating positions from {rebuild_from_date}... (Job ID: {job_id})")
                                         except Exception as e:
-                                            st.success("✅ Trade deleted successfully!")
+                                            st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
                                             st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
-                                        
-                                        st.rerun()
-                                        
-                                    except Exception as e:
-                                        st.error(f"Error deleting trade: {e}")
+                                    else:
+                                        st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
+                                    
+                                    # Clear session state and rerun
+                                    if session_key in st.session_state:
+                                        del st.session_state[session_key]
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    st.error(f"Error saving changes: {e}")
+                                    import traceback
+                                    st.code(traceback.format_exc())
+                        else:
+                            st.caption("💡 Make changes in the table above and click 'Save All Changes' when ready.")
                     else:
                         st.info("No trades found for this fund")
                 

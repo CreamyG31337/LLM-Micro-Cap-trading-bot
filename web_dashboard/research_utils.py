@@ -437,3 +437,44 @@ def normalize_relationship(source: str, target: str, rel_type: str) -> Tuple[str
     # SUPPLIER relationships: already in correct direction (Supplier -> Buyer)
     # Other types (COMPETITOR, PARTNER, LITIGATION, PARENT, SUBSIDIARY): keep as-is
     return (source_upper, target_upper, rel_type_upper)
+
+
+def escape_markdown(text: str) -> str:
+    """Escape markdown special characters to prevent formatting issues in Streamlit.
+    
+    Escapes:
+    - $ (LaTeX math)
+    - * (Bold/Italic)
+    - _ (Italic)
+    - ` (Code)
+    - [ ] (Links)
+    
+    Args:
+        text: Input text
+        
+    Returns:
+        Escaped text safe for display
+    """
+    if not text:
+        return ""
+        
+    # Order matters: replace backslash first if we were escaping backslashes (but we aren't here)
+    # We mainly want to prevent unintended formatting
+    
+    # Simple replacements
+    chars_to_escape = {
+        '$': '\\$',
+        '*': '\\*',
+        '_': '\\_',
+        '`': '\\`',
+        '[': '\\[',
+        ']': '\\]',
+    }
+    
+    # Use a loop or simple replacements
+    # For a small set of characters, simple replace is fine and readable
+    escaped = text
+    for char, replacement in chars_to_escape.items():
+        escaped = escaped.replace(char, replacement)
+        
+    return escaped

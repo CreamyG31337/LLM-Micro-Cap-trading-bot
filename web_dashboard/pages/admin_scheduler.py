@@ -47,15 +47,15 @@ if not has_admin_access():
 render_navigation(show_ai_assistant=True, show_settings=True)
 
 # Main Content
-st.title("⏰ Scheduler Administration")
+st.title("⏰ Jobs")
 st.caption(f"Logged in as: {get_user_email()}")
 
 # Add quick links to sidebar manually (since they seem to be manual in other pages)
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 🔗 Admin Pages")
-    st.page_link("pages/admin.py", label="🔧 Admin Dashboard", icon="🔧")
-    st.page_link("pages/admin_scheduler.py", label="⏰ Scheduler Admin", icon="⏰")
+    st.page_link("pages/admin.py", label="Admin Overview", icon="🔧")
+    st.page_link("pages/admin_scheduler.py", label="Jobs", icon="⏰")
     st.page_link("pages/admin_users.py", label="👥 User & Access Management", icon="👥")
     st.page_link("pages/admin_system.py", label="📊 System Monitoring", icon="📊")
     st.page_link("pages/admin_funds.py", label="🏦 Fund Management", icon="🏦")

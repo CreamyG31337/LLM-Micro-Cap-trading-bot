@@ -86,6 +86,18 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
                 'default': None,
                 'optional': True,
                 'description': 'End date for range (only used if use_date_range is True)'
+            },
+            'fund_filter': {
+                'type': 'text',
+                'default': None,
+                'optional': True,
+                'description': 'Filter by specific fund name (optional)'
+            },
+            'skip_existing': {
+                'type': 'boolean',
+                'default': False,
+                'optional': True,
+                'description': 'Skip dates where metrics already exist'
             }
         }
     },

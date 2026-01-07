@@ -140,40 +140,39 @@ def render_scheduler_admin():
             st.info("No scheduled jobs configured.")
             return
         
-        # Sort option
-        col_sort1, col_sort2 = st.columns([1, 4])
-        with col_sort1:
-            sort_by = st.selectbox(
-                "Sort by:",
-                ["Scheduled Time", "Job Name"],
-                key="job_sort_order"
-            )
-        
-        # Sort jobs based on selection
-        if sort_by == "Job Name":
-            # Strip emoji and leading whitespace for sorting to get proper alphabetical order
-            def get_sort_key(job_name: str) -> str:
-                """Extract sortable name by removing emoji and leading whitespace."""
-                name = job_name.strip()
-                # Remove first character if it's not alphanumeric (likely an emoji)
-                if name and not name[0].isalnum():
-                    # Check if first char is emoji (not ASCII)
-                    if ord(name[0]) > 127:
-                        name = name[1:].lstrip()
-                return name.lower()
+        # Consolidate jobs by base ID (e.g., update_portfolio_prices and update_portfolio_prices_close -> update_portfolio_prices)
+        # This avoids showing multiple entries for the same logical job
+        consolidated_jobs = {}
+        for job in jobs:
+            job_id = job['id']
+            # Get base job ID by removing common suffixes
+            base_id = job_id
+            for suffix in ['_close', '_open', '_premarket', '_midmorning', '_powerhour', '_postmarket', '_refresh', '_populate', '_collect', '_scan', '_fetch', '_cleanup', '_scrape']:
+                if job_id.endswith(suffix):
+                    base_id = job_id[:-len(suffix)]
+                    break
             
-            jobs = sorted(jobs, key=lambda x: get_sort_key(x.get('name', '')))
-        else:
-            # Sort by scheduled time (next_run), with None (paused) jobs at the end
-            from datetime import timezone
-            max_datetime = datetime.max.replace(tzinfo=timezone.utc)
-            jobs = sorted(
-                jobs, 
-                key=lambda x: (
-                    x.get('next_run') is None,  # Paused jobs (None) go to end (True sorts after False)
-                    x.get('next_run') if x.get('next_run') is not None else max_datetime
-                )
-            )
+            # Keep only one entry per base job (prefer the main one without suffix, or the first one seen)
+            if base_id not in consolidated_jobs:
+                consolidated_jobs[base_id] = job
+            elif job_id == base_id:
+                # This is the main job (no suffix), prefer it
+                consolidated_jobs[base_id] = job
+        
+        jobs = list(consolidated_jobs.values())
+        
+        # Sort jobs alphabetically by name (strip emoji for proper sorting)
+        def get_sort_key(job_name: str) -> str:
+            """Extract sortable name by removing emoji and leading whitespace."""
+            name = job_name.strip()
+            # Remove first character if it's not alphanumeric (likely an emoji)
+            if name and not name[0].isalnum():
+                # Check if first char is emoji (not ASCII)
+                if ord(name[0]) > 127:
+                    name = name[1:].lstrip()
+            return name.lower()
+        
+        jobs = sorted(jobs, key=lambda x: get_sort_key(x.get('name', '')))
         
         # Display each job
         for job in jobs:

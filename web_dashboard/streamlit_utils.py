@@ -325,6 +325,62 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
 
 
 @log_execution_time()
+def render_sidebar_fund_selector(label: str = "Select Fund", key: str = "fund_selector", help_text: Optional[str] = None) -> Optional[str]:
+    """Render a standardized fund selector in the sidebar.
+    
+    This function provides a consistent fund selector across all pages that:
+    - Uses the user's saved fund preference
+    - Automatically saves the preference when changed
+    - Falls back to first available fund if preference doesn't exist
+    
+    Args:
+        label: Label for the selectbox (default: "Select Fund")
+        key: Unique key for the selectbox widget (default: "fund_selector")
+        help_text: Optional help text to display
+        
+    Returns:
+        Selected fund name, or None if no funds available
+    """
+    if st is None:
+        return None
+    
+    try:
+        from user_preferences import get_user_selected_fund, set_user_selected_fund
+        
+        funds = get_available_funds()
+        if not funds:
+            st.sidebar.warning("⚠️ No funds found in database")
+            return None
+        
+        # Load saved fund preference
+        saved_fund = get_user_selected_fund()
+        
+        # Determine initial fund index
+        # Prefer saved fund if it exists in the list, otherwise default to first fund
+        if saved_fund and saved_fund in funds:
+            initial_index = funds.index(saved_fund)
+        else:
+            initial_index = 0
+        
+        selected_fund = st.sidebar.selectbox(
+            label,
+            funds,
+            index=initial_index,
+            key=key,
+            help=help_text
+        )
+        
+        # Save fund preference when it changes
+        if selected_fund != saved_fund:
+            set_user_selected_fund(selected_fund)
+        
+        return selected_fund
+        
+    except Exception as e:
+        st.sidebar.error(f"❌ Error loading funds: {e}")
+        return None
+
+
 def get_available_funds() -> List[str]:
     """Get list of available funds from Supabase
     

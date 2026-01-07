@@ -160,6 +160,7 @@ def _check_postgres_connection():
 
 
 from streamlit_utils import (
+    render_sidebar_fund_selector,
     get_available_funds,
     get_current_positions,
     get_trade_log,
@@ -1344,36 +1345,10 @@ def main():
     
     st.sidebar.title("Filters")
     
-    # Get available funds (no "All Funds" option - default to first fund user has access to)
-    try:
-        funds = get_available_funds()
-        if not funds:
-            st.sidebar.warning("⚠️ No funds found in database")
-            st.stop()
-    except Exception as e:
-        st.sidebar.error(f"❌ Error loading funds: {e}")
+    # Use standardized sidebar fund selector
+    selected_fund = render_sidebar_fund_selector()
+    if selected_fund is None:
         st.stop()
-    
-    # Load saved fund preference
-    from user_preferences import get_user_selected_fund, set_user_selected_fund
-    saved_fund = get_user_selected_fund()
-    
-    # Determine initial fund index
-    # Prefer saved fund if it exists in the list, otherwise default to first fund
-    if saved_fund and saved_fund in funds:
-        initial_index = funds.index(saved_fund)
-    else:
-        initial_index = 0
-    
-    selected_fund = st.sidebar.selectbox(
-        "Select Fund",
-        funds,
-        index=initial_index
-    )
-    
-    # Save fund preference when it changes
-    if selected_fund != saved_fund:
-        set_user_selected_fund(selected_fund)
     
     # Simple time range selector (for performance when data grows)
     time_range = st.sidebar.radio(

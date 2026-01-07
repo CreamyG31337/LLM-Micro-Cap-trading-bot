@@ -161,6 +161,13 @@ else:
 from navigation import render_navigation
 render_navigation(show_ai_assistant=True, show_settings=True)
 
+# Standardized sidebar fund selector
+from streamlit_utils import render_sidebar_fund_selector
+with st.sidebar:
+    st.markdown("---")
+    st.header("📊 Fund Selection")
+    global_selected_fund = render_sidebar_fund_selector()
+
 # ===== CACHED HELPER FUNCTIONS FOR PERFORMANCE =====
 # These functions cache frequently accessed data to reduce database queries
 
@@ -1898,14 +1905,21 @@ with tab6:
             
             if not fund_names:
                 st.warning("No funds available. Create a fund first in Fund Management.")
+            elif global_selected_fund is None:
+                st.warning("Please select a fund from the sidebar.")
             else:
                 # Trade form
                 st.subheader("Enter Trade")
                 
+                # Use the fund from sidebar
+                trade_fund = global_selected_fund
+                
+                # Display selected fund
+                st.info(f"📊 Selected Fund: **{trade_fund}**")
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    trade_fund = st.selectbox("Fund", options=fund_names, key="trade_fund")
                     trade_action = st.selectbox("Action", options=["BUY", "SELL"], key="trade_action")
                     trade_ticker = st.text_input("Ticker Symbol", placeholder="e.g., AAPL, MSFT", key="trade_ticker").upper()
                 
@@ -3070,11 +3084,17 @@ with tab7:
             
             if not fund_names:
                 st.warning("No funds available. Create a fund first in Fund Management.")
+            elif global_selected_fund is None:
+                st.warning("Please select a fund from the sidebar.")
             else:
+                # Use the fund from sidebar
+                selected_fund = global_selected_fund
+                
+                # Display selected fund
+                st.info(f"📊 Selected Fund: **{selected_fund}**")
+                
                 # 1. Global Selectors
                 col_ctrl1, col_ctrl2 = st.columns([1, 2])
-                with col_ctrl1:
-                    selected_fund = st.selectbox("Select Fund", options=fund_names, key="main_contrib_fund")
                 
                 # Get existing contributors for this fund
                 contributors_query = client.supabase.table("fund_contributions").select("contributor").eq("fund", selected_fund).execute()

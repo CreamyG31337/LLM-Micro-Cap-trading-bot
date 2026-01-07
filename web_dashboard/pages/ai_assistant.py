@@ -30,11 +30,11 @@ from ai_context_builder import (
     format_cash_balances
 )
 from ai_prompts import get_system_prompt
-from user_preferences import get_user_ai_model, set_user_ai_model, get_user_selected_fund, set_user_selected_fund
+from user_preferences import get_user_ai_model, set_user_ai_model
 from streamlit_utils import (
     get_current_positions, get_trade_log, get_cash_balances,
     calculate_portfolio_value_over_time, get_fund_thesis_data, get_available_funds,
-    calculate_performance_metrics
+    calculate_performance_metrics, render_sidebar_fund_selector
 )
 from research_repository import ResearchRepository
 
@@ -527,40 +527,27 @@ with st.sidebar:
                 st.caption(f"ℹ️ {desc}")
 
     st.markdown("---")
-
-    # Fund selection
+    
+    # Fund selection in sidebar
     st.header("📊 Data Source")
-    funds = get_available_funds()
-    if funds:
-        # Get the current fund from user preference, session state, or default to first fund
-        saved_fund = get_user_selected_fund()
-        current_fund = st.session_state.get('previous_fund', saved_fund or funds[0])
-        # Ensure current_fund is in the list (handles case where fund was removed)
-        fund_index = funds.index(current_fund) if current_fund in funds else 0
-
-        selected_fund = st.selectbox(
-            "Fund",
-            options=funds,
-            index=fund_index,
-            help="Select fund for AI analysis",
-            key="fund_selector"
-        )
-
-        # Save fund preference when it changes
-        if selected_fund != saved_fund:
-            set_user_selected_fund(selected_fund)
-
-        # Clear chat when fund changes
-        if 'previous_fund' not in st.session_state:
-            st.session_state.previous_fund = selected_fund
-        elif st.session_state.previous_fund != selected_fund:
-            st.session_state.chat_messages = []
-            st.session_state.suggested_prompt = None
-            st.session_state.previous_fund = selected_fund
-            st.rerun()
-    else:
-        selected_fund = None
+    selected_fund = render_sidebar_fund_selector(
+        label="Fund",
+        key="fund_selector",
+        help_text="Select fund for AI analysis"
+    )
+    
+    if selected_fund is None:
         st.warning("No funds available")
+        st.stop()
+    
+    # Clear chat when fund changes
+    if 'previous_fund' not in st.session_state:
+        st.session_state.previous_fund = selected_fund
+    elif st.session_state.previous_fund != selected_fund:
+        st.session_state.chat_messages = []
+        st.session_state.suggested_prompt = None
+        st.session_state.previous_fund = selected_fund
+        st.rerun()
 
     st.markdown("---")
 

@@ -350,15 +350,6 @@ def update_portfolio_prices_job(
                     logger.warning(f"⚠️ {message}")
                     return
         
-                    # Log the target date with timezone info for debugging
-                    from datetime import datetime as dt
-                    import pytz
-                    et_tz = pytz.timezone('America/New_York')
-                    now_et = dt.now(et_tz)
-                    logger.info(f"Target date for price update: {target_date}")
-                    logger.info(f"Current time: {now_et.strftime('%Y-%m-%d %I:%M %p %Z')} (ET)")
-                    logger.info(f"Server time: {datetime.now()} (local)")
-        
             # CRITICAL: Double-check that target_date is actually a trading day
             # This prevents the job from running on holidays/weekends even if cron triggers it
             if not market_holidays.is_trading_day(target_date, market="any"):

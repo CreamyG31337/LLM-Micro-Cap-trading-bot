@@ -11,6 +11,8 @@ from pathlib import Path
 from datetime import date, datetime, timezone
 from typing import Optional
 import logging
+import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,8 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int
         job_id (integer) for tracking, or None if failed to launch
     """
     try:
+        logger.info(f"Triggering background rebuild: fund={fund_name}, start_date={start_date}")
+        
         # Check for running rebuild jobs for this fund
         running_jobs = find_running_rebuild_jobs(fund_name)
         
@@ -98,14 +102,20 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int
                 job_id_to_cancel = job.get("id")
                 if job_id_to_cancel:
                     reason = f"New backdated trade entered (date: {start_date}). Restarting rebuild from {optimal_start_date}."
+                    logger.info(f"Cancelling running rebuild job {job_id_to_cancel}: {reason}")
                     if cancel_rebuild_job(job_id_to_cancel, reason):
                         cancelled_jobs.append(job_id_to_cancel)
+                        logger.info(f"Successfully cancelled rebuild job {job_id_to_cancel}")
+                    else:
+                        logger.warning(f"Failed to cancel rebuild job {job_id_to_cancel}")
         
         # Create job execution record with optimal start_date
+        logger.info(f"Creating job execution record for {fund_name} from {optimal_start_date}")
         job_id = create_rebuild_job_record(fund_name, optimal_start_date)
         if not job_id:
             logger.error("Failed to create job record, cannot launch rebuild")
             return None
+        logger.info(f"Created job execution record: {job_id}")
         
         # Get path to rebuild script
         script_path = Path(__file__).parent / "rebuild_from_date.py"
@@ -122,6 +132,8 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int
             '--job-id', str(job_id)  # Convert to string for command line
         ]
         
+        logger.info(f"Launching rebuild subprocess: Command={' '.join(cmd)}")
+        
         # Launch subprocess (detached)
         # On Windows: use CREATE_NEW_PROCESS_GROUP
         # On Unix: use start_new_session
@@ -133,7 +145,8 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                cwd=str(Path(__file__).parent.parent.parent)
+                cwd=str(Path(__file__).parent.parent.parent),
+                text=True
             )
         else:
             # Unix/Linux/Docker
@@ -142,10 +155,20 @@ def trigger_background_rebuild(fund_name: str, start_date: date) -> Optional[int
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
-                cwd=str(Path(__file__).parent.parent.parent)
+                cwd=str(Path(__file__).parent.parent.parent),
+                text=True
             )
         
-        logger.info(f"Launched rebuild subprocess (PID: {process.pid}, Job ID: {job_id})")
+        logger.info(f"Launched rebuild subprocess: PID={process.pid}, Job ID={job_id}, Command={' '.join(cmd)}")
+        
+        # Start thread to capture subprocess output
+        import threading
+        output_thread = threading.Thread(
+            target=_capture_subprocess_output,
+            args=(process, job_id, fund_name),
+            daemon=True
+        )
+        output_thread.start()
         
         return job_id
         
@@ -214,6 +237,77 @@ def find_running_rebuild_jobs(fund_name: str) -> list:
     except Exception as e:
         logger.error(f"Failed to find running rebuild jobs: {e}")
         return []
+
+
+def _capture_subprocess_output(process: subprocess.Popen, job_id: int, fund_name: str):
+    """
+    Capture and log subprocess output in a background thread.
+    
+    Args:
+        process: The subprocess Popen object
+        job_id: Job execution ID for context
+        fund_name: Fund name for context
+    """
+    try:
+        full_output = []
+        last_log_time = time.time()
+        
+        # Read stdout line by line
+        for line in iter(process.stdout.readline, ''):
+            if not line:
+                break
+            clean_line = line.strip()
+            full_output.append(clean_line)
+            
+            # Log significant lines to main logger immediately
+            if clean_line:
+                # Log important messages
+                if any(x in clean_line for x in [
+                    "Starting incremental rebuild",
+                    "Step ",
+                    "Rebuild complete",
+                    "Rebuild failed",
+                    "Error",
+                    "Traceback",
+                    "Exception",
+                    "Failed",
+                    "Deleted",
+                    "Loaded",
+                    "Rebuilding",
+                    "Saving"
+                ]):
+                    logger.info(f"[Rebuild Job {job_id}] {clean_line}")
+                # Log progress every 60 seconds regardless of content
+                elif time.time() - last_log_time > 60:
+                    logger.info(f"[Rebuild Job {job_id}] {clean_line}")
+                    last_log_time = time.time()
+        
+        # Read stderr
+        for line in iter(process.stderr.readline, ''):
+            if not line:
+                break
+            clean_line = line.strip()
+            if clean_line:
+                logger.warning(f"[Rebuild Job {job_id}] {clean_line}")
+        
+        # Wait for process to complete
+        return_code = process.wait()
+        
+        if return_code == 0:
+            logger.info(f"[Rebuild Job {job_id}] Subprocess completed successfully")
+        else:
+            logger.error(f"[Rebuild Job {job_id}] Subprocess failed with return code {return_code}")
+            # Log last few lines for debugging
+            if full_output:
+                logger.error(f"[Rebuild Job {job_id}] Last 10 lines of output:")
+                for line in full_output[-10:]:
+                    logger.error(f"[Rebuild Job {job_id}]   {line}")
+        
+        process.stdout.close()
+        process.stderr.close()
+        
+    except Exception as e:
+        logger.error(f"[Rebuild Job {job_id}] Error capturing subprocess output: {e}", exc_info=True)
 
 
 def cancel_rebuild_job(job_id: str, reason: str) -> bool:

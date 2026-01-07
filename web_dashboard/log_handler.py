@@ -200,6 +200,9 @@ def setup_logging(level=logging.INFO):
         'ollama_client',  # AI integration
         '__main__',
         'web_dashboard',
+        'web_dashboard.utils.background_rebuild',  # Background rebuild logging
+        'web_dashboard.utils',  # Rebuild from date and other utils
+        'web_dashboard.pages.admin',  # Admin page logging
     ]
     
     # Attach handler to each app module logger

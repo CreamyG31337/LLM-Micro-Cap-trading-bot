@@ -2561,6 +2561,13 @@ with tab6:
                                     needs_rebuild = True
                                     if rebuild_from_date is None or new_date.date() < rebuild_from_date:
                                         rebuild_from_date = min(new_date.date(), original['date'].date())
+                                    
+                                    # Log rebuild decision
+                                    if action_changed:
+                                        logger.info(f"Rebuild needed: action changed from {original['action']} to {new_action} for trade {trade_id}")
+                                    if date_changed:
+                                        logger.info(f"Rebuild needed: date changed from {original['date'].date()} to {new_date.date()} for trade {trade_id}")
+                                    logger.info(f"Rebuild will start from {rebuild_from_date}")
                                 
                                 trades_to_update.append({
                                     'id': trade_id,
@@ -2710,15 +2717,34 @@ with tab6:
                                             
                                             # Use the fund from first trade (all should be same fund)
                                             fund_name = trades_to_update[0]['original']['fund'] if trades_to_update else trades_to_delete[0]['fund']
+                                            
+                                            # Build reason for logging
+                                            reasons = []
+                                            for update in trades_to_update:
+                                                if update.get('action_changed'):
+                                                    reasons.append(f"action changed to {update['new_action']}")
+                                                if update.get('date_changed'):
+                                                    reasons.append(f"date changed to {update['new_date'].date()}")
+                                            reason_str = ", ".join(reasons) if reasons else "trade edited"
+                                            
+                                            logger.info(f"Triggering rebuild for {fund_name} from {rebuild_from_date} (reason: {reason_str})")
                                             job_id = trigger_background_rebuild(fund_name, rebuild_from_date)
                                             
                                             st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
                                             if job_id:
+                                                logger.info(f"Rebuild triggered successfully: Job ID {job_id} for {fund_name} from {rebuild_from_date}")
                                                 st.info(f"📊 Recalculating positions from {rebuild_from_date}... (Job ID: {job_id})")
+                                            else:
+                                                logger.warning(f"Rebuild trigger returned None for {fund_name} from {rebuild_from_date}")
                                         except Exception as e:
+                                            logger.error(f"Failed to trigger rebuild for {fund_name} from {rebuild_from_date}: {e}", exc_info=True)
                                             st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
                                             st.warning(f"⚠️ Could not trigger rebuild: {str(e)[:100]}")
                                     else:
+                                        if not needs_rebuild:
+                                            logger.info(f"No rebuild needed: only non-rebuild fields changed (ticker/shares/price/currency)")
+                                        elif not rebuild_from_date:
+                                            logger.warning(f"Rebuild needed but rebuild_from_date is None - this should not happen")
                                         st.success(f"✅ {len(trades_to_update)} trade(s) updated, {len(trades_to_delete)} trade(s) deleted!")
                                         
                                     # Clear session state and rerun

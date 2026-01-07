@@ -23,12 +23,26 @@ sys.path.insert(0, str(project_root))
 from dotenv import load_dotenv
 load_dotenv(project_root / 'web_dashboard' / '.env')
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Setup logging - use proper file handler setup
+# Try to use the log handler setup if available, otherwise fall back to basicConfig
+try:
+    from web_dashboard.log_handler import setup_logging
+    setup_logging(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    # Ensure this module's logger is configured
+    if not logger.handlers:
+        # If setup_logging didn't attach handlers, use basicConfig as fallback
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+except Exception:
+    # Fallback to basicConfig if log_handler setup fails
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
 
 def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None) -> dict:
@@ -63,7 +77,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         
         # Update job status if job_id provided
         if job_id:
-            _update_job_status(job_id, 'running', f'Starting rebuild from {start_date}')
+            _update_job_status(job_id, 'running', f'Step 1 of 5: Starting rebuild from {start_date}')
         
         # Initialize Supabase client (service role for admin operations)
         client = SupabaseClient(use_service_role=True)
@@ -72,7 +86,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         # Step 1: Delete stale data
         logger.info(f"Step 1: Deleting stale positions from {start_date} onwards...")
         if job_id:
-            _update_job_status(job_id, 'running', f'Deleting stale positions from {start_date}')
+            _update_job_status(job_id, 'running', f'Step 1 of 5: Deleting stale positions from {start_date}')
         
         delete_count_pos = 0
         delete_count_metrics = 0
@@ -99,7 +113,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         # Step 2: Get all trades for fund (from beginning)
         logger.info("Step 2: Loading trade log...")
         if job_id:
-            _update_job_status(job_id, 'running', 'Loading trade history from database')
+            _update_job_status(job_id, 'running', 'Step 2 of 5: Loading trade history from database')
         
         repository = SupabaseRepository(fund_name=fund_name)
         trades = repository.get_trade_history()
@@ -108,7 +122,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
             msg = f"No trades found for fund {fund_name}"
             logger.warning(msg)
             if job_id:
-                _update_job_status(job_id, 'completed', msg)
+                _update_job_status(job_id, 'success', msg)
             return {
                 'success': True,
                 'dates_rebuilt': 0,
@@ -133,7 +147,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         # Step 3: Rebuild positions using FIFO
         logger.info(f"Step 3: Rebuilding positions from {start_date}...")
         if job_id:
-            _update_job_status(job_id, 'running', f'Calculating positions for {len(trades)} trades')
+            _update_job_status(job_id, 'running', f'Step 3 of 5: Calculating positions for {len(trades)} trades')
         
         # Get trading days from start_date onwards
         market_hours = MarketHours()
@@ -221,7 +235,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         # Step 4: Fetch current prices for positions we need to rebuild
         logger.info("Step 4: Fetching current prices...")
         if job_id:
-            _update_job_status(job_id, 'running', 'Fetching market prices')
+            _update_job_status(job_id, 'running', f'Step 4 of 5: Fetching market prices for {len(tickers_to_price)} tickers')
         
         # Get unique tickers that have positions in rebuild period
         tickers_to_price = set()
@@ -255,7 +269,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         # Step 5: Save snapshots for rebuild dates (TRADING DAYS ONLY)
         logger.info("Step 5: Saving updated snapshots...")
         if job_id:
-            _update_job_status(job_id, 'running', f'Saving {len(trading_days_to_rebuild)} snapshots')
+            _update_job_status(job_id, 'running', f'Step 5 of 5: Saving {len(trading_days_to_rebuild)} snapshots')
         
         positions_created = 0
         trading_tz = get_trading_timezone()
@@ -273,6 +287,10 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
                         'positions_updated': positions_created,
                         'message': msg
                     }
+                # Update progress every 10 days
+                if idx > 0 and idx % 10 == 0:
+                    progress_pct = int((idx / len(trading_days_to_rebuild)) * 100)
+                    _update_job_status(job_id, 'running', f'Step 5 of 5: Saving snapshots ({idx}/{len(trading_days_to_rebuild)}, {progress_pct}%)')
             
             if trading_day not in date_positions:
                 continue
@@ -336,7 +354,7 @@ def rebuild_fund_from_date(fund_name: str, start_date: date, job_id: str = None)
         logger.info(f"✅ Rebuild complete: {msg}")
         
         if job_id:
-            _update_job_status(job_id, 'completed', msg)
+            _update_job_status(job_id, 'success', msg)
         
         return {
             'success': True,

@@ -274,9 +274,7 @@ supabase_credentials.txt
 .env.local
 .env.production
 .env.staging
-*admin*.py
-!web_dashboard/pages/admin.py
-!web_dashboard/pages/admin_logs.py
+
 *credentials*.txt
 *secrets*.txt
 # Debug and test output files

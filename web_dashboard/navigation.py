@@ -109,9 +109,15 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 '<div class="nav-badge nav-badge-admin">✅ Admin Access</div>',
                 unsafe_allow_html=True
             )
-            # Admin page link (only visible to admins)
-            st.sidebar.page_link("pages/admin.py", label="Admin Panel", icon="🔧")
-            st.sidebar.page_link("pages/admin_logs.py", label="System Logs", icon="📜")
+            # Admin pages (only visible to admins)
+            st.sidebar.page_link("pages/admin.py", label="Admin Dashboard", icon="🔧")
+            with st.sidebar.expander("🔧 Admin Management", expanded=False):
+                st.sidebar.page_link("pages/admin_users.py", label="👥 User & Access", icon="👥")
+                st.sidebar.page_link("pages/admin_system.py", label="📊 System Monitoring", icon="📊")
+                st.sidebar.page_link("pages/admin_funds.py", label="🏦 Fund Management", icon="🏦")
+                st.sidebar.page_link("pages/admin_trade_entry.py", label="📈 Trade Entry", icon="📈")
+                st.sidebar.page_link("pages/admin_contributions.py", label="💰 Contributions", icon="💰")
+                st.sidebar.page_link("pages/admin_ai_settings.py", label="🤖 AI Settings", icon="🤖")
         else:
             # Check if user profile exists and show role
             try:

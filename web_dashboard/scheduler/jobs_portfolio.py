@@ -51,11 +51,19 @@ logger = logging.getLogger(__name__)
 _update_prices_lock = threading.Lock()
 
 
-def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
-    """Update portfolio positions with current market prices for a specific date.
+def update_portfolio_prices_job(
+    target_date: Optional[date] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    use_date_range: bool = False
+) -> None:
+    """Update portfolio positions with current market prices for a specific date or date range.
     
     Args:
-        target_date: Date to update. If None, auto-determines (today or last trading day).
+        target_date: Single date to update. If None, auto-determines (today or last trading day).
+        from_date: Start date for range (only used if use_date_range is True).
+        to_date: End date for range (only used if use_date_range is True).
+        use_date_range: If True, process date range from from_date to to_date instead of single target_date.
     
     This job:
     1. Gets current positions from the latest snapshot (or rebuilds from trade log)
@@ -78,22 +86,27 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
     job_id = 'update_portfolio_prices'
     start_time = time.time()
     
+    # Check if this is date range mode - if so, we'll handle it differently (backfill function has its own lock)
+    is_date_range_mode = use_date_range and from_date and to_date
+    
     # Acquire lock with non-blocking check - if another thread is already running, skip
-    acquired = _update_prices_lock.acquire(blocking=False)
-    if not acquired:
-        duration_ms = int((time.time() - start_time) * 1000)
-        message = "Job already running - skipped (lock not acquired)"
-        # Log as failed to indicate this was a skipped execution, not a successful run
-        log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-        # Also mark in database as failed with clear skipped message
-        try:
-            from utils.job_tracking import mark_job_failed
-            fallback_date = date.today() if target_date is None else target_date
-            mark_job_failed('update_portfolio_prices', fallback_date, None, message, duration_ms=duration_ms)
-        except Exception:
-            pass  # Don't fail if tracking fails
-        logger.warning(f"⚠️ {message}")
-        return
+    # Skip lock for date range mode since backfill_portfolio_prices_range has its own lock
+    if not is_date_range_mode:
+        acquired = _update_prices_lock.acquire(blocking=False)
+        if not acquired:
+            duration_ms = int((time.time() - start_time) * 1000)
+            message = "Job already running - skipped (lock not acquired)"
+            # Log as failed to indicate this was a skipped execution, not a successful run
+            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            # Also mark in database as failed with clear skipped message
+            try:
+                from utils.job_tracking import mark_job_failed
+                fallback_date = date.today() if target_date is None else target_date
+                mark_job_failed('update_portfolio_prices', fallback_date, None, message, duration_ms=duration_ms)
+            except Exception:
+                pass  # Don't fail if tracking fails
+            logger.warning(f"⚠️ {message}")
+            return
     
     try:
         # CRITICAL: Add project root to path FIRST, before any imports
@@ -117,10 +130,6 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
             sys.path.insert(0, web_dashboard_path)
             logger.debug(f"Added web_dashboard to sys.path: {web_dashboard_path}")
         
-        # Determine if this is a manual or automatic execution
-        execution_mode = "manual" if target_date is not None else "automatic"
-        logger.info(f"Starting portfolio price update job... (mode: {execution_mode}, target_date: {target_date})")
-        
         # Import dependencies (after sys.path is set up)
         from market_data.data_fetcher import MarketDataFetcher
         from market_data.price_cache import PriceCache
@@ -138,6 +147,52 @@ def update_portfolio_prices_job(target_date: Optional[date] = None) -> None:
         market_holidays = MarketHolidays()
         # Use service role key to bypass RLS (background job needs full access)
         client = SupabaseClient(use_service_role=True)
+        
+        # Handle date range mode
+        if use_date_range and from_date and to_date:
+            # Date range mode - use optimized backfill function
+            if from_date > to_date:
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = f"Invalid date range: from_date ({from_date}) must be <= to_date ({to_date})"
+                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                try:
+                    mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
+                except Exception:
+                    pass
+                logger.error(f"❌ {message}")
+                return
+            
+            # Warn if range is large
+            days_in_range = (to_date - from_date).days + 1
+            if days_in_range > 30:
+                logger.warning(f"⚠️ Processing large date range: {days_in_range} days ({from_date} to {to_date}). This may take a while.")
+            
+            logger.info(f"Starting portfolio price update job in date range mode: {from_date} to {to_date}")
+            
+            # Use the optimized backfill function for date ranges
+            try:
+                backfill_portfolio_prices_range(from_date, to_date)
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = f"Updated prices for date range {from_date} to {to_date} ({days_in_range} day(s))"
+                log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+                mark_job_completed('update_portfolio_prices', to_date, None, [], duration_ms=duration_ms, message=message)
+                logger.info(f"✅ {message}")
+            except Exception as e:
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = f"Error processing date range: {str(e)}"
+                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                try:
+                    mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
+                except Exception:
+                    pass
+                logger.error(f"❌ {message}", exc_info=True)
+            # Note: backfill_portfolio_prices_range manages its own lock, so we don't release here
+            return
+        
+        # Single date mode (existing logic)
+        # Determine if this is a manual or automatic execution
+        execution_mode = "manual" if target_date is not None else "automatic"
+        logger.info(f"Starting portfolio price update job... (mode: {execution_mode}, target_date: {target_date})")
         
         # Determine target date if not specified
         if target_date is None:

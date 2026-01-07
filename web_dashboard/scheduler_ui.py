@@ -220,8 +220,8 @@ def render_scheduler_admin():
                     # Show parameters editor in expander
                     with st.expander("⚙️ Edit Parameters", expanded=False):
                         if params:
-                            # Special handling for performance_metrics job with date range support
-                            if job['id'] == 'performance_metrics_populate' and 'use_date_range' in params:
+                            # Special handling for jobs with date range support
+                            if 'use_date_range' in params:
                                 # Show use_date_range checkbox first
                                 use_range_key = f"param_{job['id']}_use_date_range"
                                 use_date_range = st.checkbox(
@@ -373,9 +373,9 @@ def render_scheduler_admin():
                     run_disabled = job.get('is_running', False)
                     if st.button("▶️ Run Now", key=f"run_{job['id']}", disabled=run_disabled):
                         with st.spinner("Running..."):
-                            # Handle date range parameters for performance_metrics job
+                            # Handle date range parameters for jobs that support it
                             final_params = job_params.copy()
-                            if job['id'] == 'performance_metrics_populate' and 'use_date_range' in final_params:
+                            if 'use_date_range' in final_params:
                                 use_range = final_params.pop('use_date_range', False)
                                 if not use_range:
                                     # Single date mode - remove range params
@@ -413,7 +413,7 @@ def render_scheduler_admin():
                         time_str = format_datetime_local(log['timestamp'])
                         duration_str = format_duration(log.get('duration_ms'))
                         duration = f"({duration_str})" if duration_str else ""
-                        st.text(f"{status_icon} {time_str} {duration} - {log['message'][:50]}")
+                        st.text(f"{status_icon} {time_str} {duration} - {log['message']}")
                 else:
                     st.text("No recent executions")
         

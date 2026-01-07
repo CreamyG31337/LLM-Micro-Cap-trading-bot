@@ -50,14 +50,14 @@ if web_dashboard_path not in sys.path:
 # Job definitions with metadata
 AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
     'exchange_rates': {
-        'name': 'Refresh Exchange Rates',
+        'name': 'Exchange Rate Refresh',
         'description': 'Fetch latest USD/CAD exchange rate and store in database',
         'default_interval_minutes': 120,  # Every 2 hours
         'enabled_by_default': True,
         'icon': '💰'
     },
     'performance_metrics': {
-        'name': 'Populate Performance Metrics',
+        'name': 'Performance Metrics Population',
         'description': 'Aggregate daily portfolio performance into metrics table',
         'default_interval_minutes': 1440,  # Once per day
         'enabled_by_default': True,
@@ -90,7 +90,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         }
     },
     'update_portfolio_prices': {
-        'name': 'Update Portfolio Prices',
+        'name': 'Portfolio Price Update',
         'description': 'Fetch current stock prices and update portfolio positions for today',
         'default_interval_minutes': 15,  # Every 15 minutes during market hours
         'enabled_by_default': True,
@@ -100,7 +100,25 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
                 'type': 'date',
                 'default': None,  # None means use today
                 'optional': True,
-                'description': 'Target date for price update (defaults to today if not specified)'
+                'description': 'Single date to update (defaults to today if not specified)'
+            },
+            'use_date_range': {
+                'type': 'boolean',
+                'default': False,
+                'optional': True,
+                'description': 'Process a date range instead of single date'
+            },
+            'from_date': {
+                'type': 'date',
+                'default': None,
+                'optional': True,
+                'description': 'Start date for range (only used if use_date_range is True)'
+            },
+            'to_date': {
+                'type': 'date',
+                'default': None,
+                'optional': True,
+                'description': 'End date for range (only used if use_date_range is True)'
             }
         }
     },
@@ -119,7 +137,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '🔍'
     },
     'process_research_reports': {
-        'name': 'Process Research Reports',
+        'name': 'Research Report Processing',
         'description': 'Process PDF research reports from Research/ folders, extract text, generate embeddings, and store in database',
         'default_interval_minutes': 60,  # Every hour
         'enabled_by_default': True,
@@ -133,7 +151,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '🔍'
     },
     'benchmark_refresh': {
-        'name': 'Refresh Benchmark Data',
+        'name': 'Benchmark Data Refresh',
         'description': 'Fetch and cache benchmark data (S&P 500, QQQ, Russell 2000, VTI) for chart performance',
         'default_interval_minutes': 30,  # Every 30 minutes during market hours
         'enabled_by_default': True,
@@ -161,14 +179,14 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '🤖'
     },
     'congress_trades': {
-        'name': 'Fetch Congress Trades',
+        'name': 'Congress Trade Fetch',
         'description': 'Fetch and analyze congressional stock trades from FMP API',
         'default_interval_minutes': 360,  # 6 hours (but uses cron triggers)
         'enabled_by_default': True,
         'icon': '🏛️'
     },
     'analyze_congress_trades': {
-        'name': 'Analyze Congress Trades',
+        'name': 'Congress Trade Analysis',
         'description': 'Calculate conflict scores for unscored congress trades using committee data',
         'default_interval_minutes': 30,  # Every 30 minutes
         'enabled_by_default': False,  # DISABLED during session backfill - re-enable after
@@ -203,7 +221,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '📑'
     },
     'dividend_processing': {
-        'name': 'Process Dividend Reinvestments',
+        'name': 'Dividend Reinvestment Processing',
         'description': 'Detect dividends and create DRIP transactions',
         'default_interval_minutes': 1440,  # Daily
         'enabled_by_default': True,
@@ -232,7 +250,7 @@ AVAILABLE_JOBS: Dict[str, Dict[str, Any]] = {
         'icon': '🔄'
     },
     'process_retry_queue': {
-        'name': 'Process Retry Queue',
+        'name': 'Retry Queue Processing',
         'description': 'Automatically retry failed jobs from the retry queue',
         'default_interval_minutes': 15,  # Every 15 minutes
         'enabled_by_default': True,
@@ -549,7 +567,7 @@ def register_default_jobs(scheduler) -> None:
             refresh_exchange_rates_job,
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['exchange_rates']['default_interval_minutes']),
             id='exchange_rates_refresh',
-            name=f"{get_job_icon('exchange_rates')} Refresh Exchange Rates",
+            name=f"{get_job_icon('exchange_rates')} Exchange Rate Refresh",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -562,7 +580,7 @@ def register_default_jobs(scheduler) -> None:
             populate_performance_metrics_job,
             trigger=CronTrigger(hour=17, minute=0, timezone='America/New_York'),
             id='performance_metrics_populate',
-            name=f"{get_job_icon('performance_metrics')} Populate Performance Metrics",
+            name=f"{get_job_icon('performance_metrics')} Performance Metrics Population",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -584,7 +602,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='update_portfolio_prices',
-            name=f"{get_job_icon('update_portfolio_prices')} Update Portfolio Prices",
+            name=f"{get_job_icon('update_portfolio_prices')} Portfolio Price Update",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -603,7 +621,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='update_portfolio_prices_close',
-            name=f"{get_job_icon('update_portfolio_prices_close')} Update Portfolio Prices (Market Close)",
+            name=f"{get_job_icon('update_portfolio_prices_close')} Portfolio Price Update (Market Close)",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -697,13 +715,13 @@ def register_default_jobs(scheduler) -> None:
         )
         logger.info("Registered job: ticker_research_collect (every 6 hours)")
 
-        # Process Research Reports: Every hour
+        # Research Report Processing: Every hour
         if AVAILABLE_JOBS.get('process_research_reports', {}).get('enabled_by_default'):
             scheduler.add_job(
                 process_research_reports_job,
                 trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['process_research_reports']['default_interval_minutes']),
                 id='process_research_reports',
-                name=f"{get_job_icon('process_research_reports')} Process Research Reports",
+                name=f"{get_job_icon('process_research_reports')} Research Report Processing",
                 replace_existing=True,
                 max_instances=1,
                 coalesce=True
@@ -775,7 +793,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='benchmark_refresh_open',
-            name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data (Market Open)",
+            name=f"{get_job_icon('benchmark_refresh')} Benchmark Data Refresh (Market Open)",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -790,7 +808,7 @@ def register_default_jobs(scheduler) -> None:
                 timezone='America/New_York'
             ),
             id='benchmark_refresh',
-            name=f"{get_job_icon('benchmark_refresh')} Refresh Benchmark Data",
+            name=f"{get_job_icon('benchmark_refresh')} Benchmark Data Refresh",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -877,7 +895,7 @@ def register_default_jobs(scheduler) -> None:
             fetch_congress_trades_job,
             trigger=IntervalTrigger(minutes=12),
             id='congress_trades_fetch',
-            name=f"{get_job_icon('congress_trades')} Fetch Congress Trades",
+            name=f"{get_job_icon('congress_trades')} Congress Trade Fetch",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -890,7 +908,7 @@ def register_default_jobs(scheduler) -> None:
             analyze_congress_trades_job,
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['analyze_congress_trades']['default_interval_minutes']),
             id='analyze_congress_trades',
-            name=f"{get_job_icon('analyze_congress_trades')} Analyze Congress Trades",
+            name=f"{get_job_icon('analyze_congress_trades')} Congress Trade Analysis",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -903,7 +921,7 @@ def register_default_jobs(scheduler) -> None:
             process_dividends_job,
             trigger=CronTrigger(hour=2, minute=0, timezone='America/Los_Angeles'),
             id='dividend_processing',
-            name=f"{get_job_icon('dividend_processing')} Process Dividend Reinvestments",
+            name=f"{get_job_icon('dividend_processing')} Dividend Reinvestment Processing",
             replace_existing=True,
             max_instances=1,
             coalesce=True
@@ -929,7 +947,7 @@ def register_default_jobs(scheduler) -> None:
             process_retry_queue_job,
             trigger=IntervalTrigger(minutes=AVAILABLE_JOBS['process_retry_queue']['default_interval_minutes']),
             id='process_retry_queue',
-            name=f"{get_job_icon('process_retry_queue')} Process Retry Queue",
+            name=f"{get_job_icon('process_retry_queue')} Retry Queue Processing",
             replace_existing=True,
             max_instances=1,
             coalesce=True

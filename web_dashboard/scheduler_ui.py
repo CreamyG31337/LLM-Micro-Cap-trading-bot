@@ -146,7 +146,7 @@ def render_scheduler_admin():
         consolidated_jobs = {}
         for job in jobs:
             job_id = job['id']
-            # Get base job ID by removing common suffixes and patterns
+            # Get base job ID by removing common suffixes
             base_id = job_id
             
             # Remove time-based suffixes (e.g., _close, _open, _premarket, etc.)
@@ -155,19 +155,10 @@ def render_scheduler_admin():
                     base_id = job_id[:-len(suffix)]
                     break
             
-            # Also check for reversed patterns (e.g., benchmark_refresh vs refresh_benchmark)
-            # Normalize to alphabetically first pattern
-            parts = base_id.split('_')
-            if len(parts) == 2:
-                normalized = '_'.join(sorted(parts))
-                # But only use normalized if another job with that pattern exists
-                # This prevents false positives
-                base_id = normalized
-            
             # Keep only one entry per base job (prefer the main one without suffix, or the first one seen)
             if base_id not in consolidated_jobs:
-                # Store the job but remember to use the ACTUAL job ID for execution
-                job['actual_job_id'] = job_id  # Preserve the real ID
+                # Store the job but remember to use the ACTUAL job ID for execution and widget keys
+                job['actual_job_id'] = job_id  # Preserve the real ID for stable keys
                 consolidated_jobs[base_id] = job
             elif job_id == base_id:
                 # This is the main job (no suffix), prefer it
@@ -238,20 +229,22 @@ def render_scheduler_admin():
                 with col2:
                     # Always show parameters editor for manual runs
                     job_params = {}
-                    job_id_base = job['id']
+                    # CRITICAL: Use actual_job_id for stable widget keys, not the consolidated ID
+                    widget_key_base = job.get('actual_job_id', job['id'])
+                    job_id_base = widget_key_base
                     
                     # Get parameter definitions (check both job_id and base job_id for variants)
                     params = {}
                     if job_id_base in AVAILABLE_JOBS and 'parameters' in AVAILABLE_JOBS[job_id_base]:
                         params = AVAILABLE_JOBS[job_id_base]['parameters']
                     
-                    # Show parameters editor in expander
-                    with st.expander("⚙️ Edit Parameters", expanded=False):
+                    # Show parameters editor in expander with STABLE KEY
+                    with st.expander("⚙️ Edit Parameters", expanded=False, key=f"params_expander_{widget_key_base}"):
                         if params:
                             # Special handling for jobs with date range support
                             if 'use_date_range' in params:
                                 # Show use_date_range checkbox first
-                                use_range_key = f"param_{job['id']}_use_date_range"
+                                use_range_key = f"param_{widget_key_base}_use_date_range"
                                 use_date_range = st.checkbox(
                                     "Use Date Range",
                                     value=params['use_date_range'].get('default', False),
@@ -261,8 +254,8 @@ def render_scheduler_admin():
                                 
                                 if use_date_range:
                                     # Show date range pickers
-                                    from_date_key = f"param_{job['id']}_from_date"
-                                    to_date_key = f"param_{job['id']}_to_date"
+                                    from_date_key = f"param_{widget_key_base}_from_date"
+                                    to_date_key = f"param_{widget_key_base}_to_date"
                                     
                                     col1, col2 = st.columns(2)
                                     with col1:
@@ -295,7 +288,7 @@ def render_scheduler_admin():
                                             job_params['to_date'] = to_date
                                 else:
                                     # Show single date picker
-                                    target_date_key = f"param_{job['id']}_target_date"
+                                    target_date_key = f"param_{widget_key_base}_target_date"
                                     target_date = st.date_input(
                                         "Target Date",
                                         value=datetime.now().date() - timedelta(days=1),
@@ -313,7 +306,7 @@ def render_scheduler_admin():
                                     param_type = param_info.get('type', 'text')
                                     optional = param_info.get('optional', False)
                                     
-                                    key = f"param_{job['id']}_{param_name}"
+                                    key = f"param_{widget_key_base}_{param_name}"
                                     
                                     if param_type == 'date':
                                         # Date picker for date parameters
@@ -399,7 +392,7 @@ def render_scheduler_admin():
                     # Action buttons
                     # Disable run button if already running
                     run_disabled = job.get('is_running', False)
-                    if st.button("▶️ Run Now", key=f"run_{job['id']}", disabled=run_disabled):
+                    if st.button("▶️ Run Now", key=f"run_{widget_key_base}", disabled=run_disabled):
                         with st.spinner("Running..."):
                             # Handle date range parameters for jobs that support it
                             final_params = job_params.copy()
@@ -425,13 +418,15 @@ def render_scheduler_admin():
                     if run_disabled:
                         st.caption("⚠️ Job is currently running")
                     
+                    # Use actual_job_id for pause/resume operations too
+                    actual_id = job.get('actual_job_id', job['id'])
                     if job['is_paused']:
-                        if st.button("▶️ Resume", key=f"resume_{job['id']}"):
-                            resume_job(job['id'])
+                        if st.button("▶️ Resume", key=f"resume_{widget_key_base}"):
+                            resume_job(actual_id)
                             st.rerun()
                     else:
-                        if st.button("⏸️ Pause", key=f"pause_{job['id']}"):
-                            pause_job(job['id'])
+                        if st.button("⏸️ Pause", key=f"pause_{widget_key_base}"):
+                            pause_job(actual_id)
                             st.rerun()
                 
                 # Recent execution logs (already included in job status from batched query)

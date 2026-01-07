@@ -21,7 +21,7 @@ from navigation import render_navigation
 from admin_utils import perf_timer
 
 # Page configuration
-st.set_page_config(page_title="Scheduler Admin", page_icon="⏰", layout="wide")
+st.set_page_config(page_title="Jobs", page_icon="🔨", layout="wide")
 
 # Check authentication - redirect to main page if not logged in
 if not is_authenticated():
@@ -47,21 +47,8 @@ if not has_admin_access():
 render_navigation(show_ai_assistant=True, show_settings=True)
 
 # Main Content
-st.title("⏰ Jobs")
+st.title("🔨 Jobs")
 st.caption(f"Logged in as: {get_user_email()}")
-
-# Add quick links to sidebar manually (since they seem to be manual in other pages)
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### 🔗 Admin Pages")
-    st.page_link("pages/admin.py", label="Admin Overview", icon="🔧")
-    st.page_link("pages/admin_scheduler.py", label="Jobs", icon="⏰")
-    st.page_link("pages/admin_users.py", label="👥 User & Access Management", icon="👥")
-    st.page_link("pages/admin_system.py", label="📊 System Monitoring", icon="📊")
-    st.page_link("pages/admin_funds.py", label="🏦 Fund Management", icon="🏦")
-    st.page_link("pages/admin_trade_entry.py", label="📈 Trade Entry", icon="📈")
-    st.page_link("pages/admin_contributions.py", label="💰 Contributions", icon="💰")
-    st.page_link("pages/admin_ai_settings.py", label="🤖 AI Settings", icon="🤖")
 
 with perf_timer("Scheduler UI"):
     try:

@@ -214,83 +214,82 @@ def update_portfolio_prices_job(
                 return
         
         try:
-        
-        # Import dependencies (after sys.path is set up)
-        from market_data.data_fetcher import MarketDataFetcher
-        from market_data.price_cache import PriceCache
-        from market_data.market_hours import MarketHours
-        from utils.market_holidays import MarketHolidays
-        from supabase_client import SupabaseClient
-        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
-        from exchange_rates_utils import get_exchange_rate_for_date_from_db
-        
-        # Initialize components
-        market_fetcher = MarketDataFetcher()
-        price_cache = PriceCache()
-        market_hours = MarketHours()
-        market_holidays = MarketHolidays()
-        # Use service role key to bypass RLS (background job needs full access)
-        client = SupabaseClient(use_service_role=True)
-        
-        # Handle date range mode
-        if use_date_range and from_date and to_date:
-            # Date range mode - use optimized backfill function
-            if from_date > to_date:
-                duration_ms = int((time.time() - start_time) * 1000)
-                message = f"Invalid date range: from_date ({from_date}) must be <= to_date ({to_date})"
-                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+            # Import dependencies (after sys.path is set up)
+            from market_data.data_fetcher import MarketDataFetcher
+            from market_data.price_cache import PriceCache
+            from market_data.market_hours import MarketHours
+            from utils.market_holidays import MarketHolidays
+            from supabase_client import SupabaseClient
+            from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+            from exchange_rates_utils import get_exchange_rate_for_date_from_db
+            
+            # Initialize components
+            market_fetcher = MarketDataFetcher()
+            price_cache = PriceCache()
+            market_hours = MarketHours()
+            market_holidays = MarketHolidays()
+            # Use service role key to bypass RLS (background job needs full access)
+            client = SupabaseClient(use_service_role=True)
+            
+            # Handle date range mode
+            if use_date_range and from_date and to_date:
+                # Date range mode - use optimized backfill function
+                if from_date > to_date:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    message = f"Invalid date range: from_date ({from_date}) must be <= to_date ({to_date})"
+                    log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                    try:
+                        mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
+                    except Exception:
+                        pass
+                    logger.error(f"❌ {message}")
+                    return
+                
+                # Warn if range is large
+                days_in_range = (to_date - from_date).days + 1
+                if days_in_range > 30:
+                    logger.warning(f"⚠️ Processing large date range: {days_in_range} days ({from_date} to {to_date}). This may take a while.")
+                
+                logger.info(f"Starting portfolio price update job in date range mode: {from_date} to {to_date}")
+                
+                # Use the optimized backfill function for date ranges
                 try:
-                    mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
-                except Exception:
-                    pass
-                logger.error(f"❌ {message}")
+                    backfill_portfolio_prices_range(from_date, to_date)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    message = f"Updated prices for date range {from_date} to {to_date} ({days_in_range} day(s))"
+                    log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+                    mark_job_completed('update_portfolio_prices', to_date, None, [], duration_ms=duration_ms, message=message)
+                    logger.info(f"✅ {message}")
+                except Exception as e:
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    message = f"Error processing date range: {str(e)}"
+                    log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                    try:
+                        mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
+                    except Exception:
+                        pass
+                    logger.error(f"❌ {message}", exc_info=True)
+                # Note: backfill_portfolio_prices_range manages its own lock, so we don't release here
                 return
             
-            # Warn if range is large
-            days_in_range = (to_date - from_date).days + 1
-            if days_in_range > 30:
-                logger.warning(f"⚠️ Processing large date range: {days_in_range} days ({from_date} to {to_date}). This may take a while.")
+            # Single date mode (existing logic)
+            # Determine if this is a manual or automatic execution
+            execution_mode = "manual" if target_date is not None else "automatic"
+            logger.info(f"Starting portfolio price update job... (mode: {execution_mode}, target_date: {target_date})")
             
-            logger.info(f"Starting portfolio price update job in date range mode: {from_date} to {to_date}")
-            
-            # Use the optimized backfill function for date ranges
-            try:
-                backfill_portfolio_prices_range(from_date, to_date)
-                duration_ms = int((time.time() - start_time) * 1000)
-                message = f"Updated prices for date range {from_date} to {to_date} ({days_in_range} day(s))"
-                log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-                mark_job_completed('update_portfolio_prices', to_date, None, [], duration_ms=duration_ms, message=message)
-                logger.info(f"✅ {message}")
-            except Exception as e:
-                duration_ms = int((time.time() - start_time) * 1000)
-                message = f"Error processing date range: {str(e)}"
-                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-                try:
-                    mark_job_failed('update_portfolio_prices', from_date, None, message, duration_ms=duration_ms)
-                except Exception:
-                    pass
-                logger.error(f"❌ {message}", exc_info=True)
-            # Note: backfill_portfolio_prices_range manages its own lock, so we don't release here
-            return
-        
-        # Single date mode (existing logic)
-        # Determine if this is a manual or automatic execution
-        execution_mode = "manual" if target_date is not None else "automatic"
-        logger.info(f"Starting portfolio price update job... (mode: {execution_mode}, target_date: {target_date})")
-        
-        # Determine target date if not specified
-        if target_date is None:
-            # Auto-detect based on time of day and market hours
-            # This matches the logic in utils/portfolio_update_logic.py from console app
-            # Key principle: 
-            # - Before 9:30 AM ET: Use yesterday (market hasn't opened yet)
-            # - After 4:00 PM ET: Use today (market has closed)
-            # - Between 9:30 AM - 4:00 PM: Use today if trading day (for live prices)
-            
-            # CRITICAL: Get current time in ET FIRST, then derive 'today' from ET time
-            # Using server time (UTC) for 'today' causes wrong date selection
-            from datetime import datetime as dt
-            import pytz
+            # Determine target date if not specified
+            if target_date is None:
+                # Auto-detect based on time of day and market hours
+                # This matches the logic in utils/portfolio_update_logic.py from console app
+                # Key principle: 
+                # - Before 9:30 AM ET: Use yesterday (market hasn't opened yet)
+                # - After 4:00 PM ET: Use today (market has closed)
+                # - Between 9:30 AM - 4:00 PM: Use today if trading day (for live prices)
+                
+                # CRITICAL: Get current time in ET FIRST, then derive 'today' from ET time
+                # Using server time (UTC) for 'today' causes wrong date selection
+                from datetime import datetime as dt
+                import pytz
             
             et = pytz.timezone('America/New_York')
             now_et = dt.now(et)
@@ -346,63 +345,63 @@ def update_portfolio_prices_job(
                     logger.warning(f"⚠️ {message}")
                     return
         
-        # Log the target date with timezone info for debugging
-        from datetime import datetime as dt
-        import pytz
-        et_tz = pytz.timezone('America/New_York')
-        now_et = dt.now(et_tz)
-        logger.info(f"Target date for price update: {target_date}")
-        logger.info(f"Current time: {now_et.strftime('%Y-%m-%d %I:%M %p %Z')} (ET)")
-        logger.info(f"Server time: {datetime.now()} (local)")
+                    # Log the target date with timezone info for debugging
+                    from datetime import datetime as dt
+                    import pytz
+                    et_tz = pytz.timezone('America/New_York')
+                    now_et = dt.now(et_tz)
+                    logger.info(f"Target date for price update: {target_date}")
+                    logger.info(f"Current time: {now_et.strftime('%Y-%m-%d %I:%M %p %Z')} (ET)")
+                    logger.info(f"Server time: {datetime.now()} (local)")
         
-        # CRITICAL: Double-check that target_date is actually a trading day
-        # This prevents the job from running on holidays/weekends even if cron triggers it
-        if not market_holidays.is_trading_day(target_date, market="any"):
-            duration_ms = int((time.time() - start_time) * 1000)
-            message = f"Target date {target_date} is not a trading day - skipping update"
-            # Log as failed to indicate this was a skipped execution
-            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-            # Also mark in database as failed with clear skipped message
-            try:
-                from utils.job_tracking import mark_job_failed
-                mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
-            except Exception:
-                pass  # Don't fail if tracking fails
-            logger.warning(f"⚠️ {message}")
-            return
-        
-        # Get all production funds from database (skip test/dev funds)
-        funds_result = client.supabase.table("funds")\
-            .select("name, base_currency")\
-            .eq("is_production", True)\
-            .execute()
+            # CRITICAL: Double-check that target_date is actually a trading day
+            # This prevents the job from running on holidays/weekends even if cron triggers it
+            if not market_holidays.is_trading_day(target_date, market="any"):
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = f"Target date {target_date} is not a trading day - skipping update"
+                # Log as failed to indicate this was a skipped execution
+                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                # Also mark in database as failed with clear skipped message
+                try:
+                    from utils.job_tracking import mark_job_failed
+                    mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
+                except Exception:
+                    pass  # Don't fail if tracking fails
+                logger.warning(f"⚠️ {message}")
+                return
             
-        if not funds_result.data:
-            duration_ms = int((time.time() - start_time) * 1000)
-            message = "No production funds found in database - skipping update"
-            # Log as failed to indicate this was a skipped execution
-            log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
-            # Also mark in database as failed with clear skipped message
-            try:
-                from utils.job_tracking import mark_job_failed
-                mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
-            except Exception:
-                pass  # Don't fail if tracking fails
-            logger.warning(f"⚠️ {message}")
-            return
-        
-        # Build list of production funds with their base currency settings
-        funds = [(f['name'], f.get('base_currency', 'CAD')) for f in funds_result.data]
-        logger.info(f"Processing {len(funds)} production funds")
-        
-        # AUTO-BACKFILL: Check for missing dates per fund and backfill if needed
-        # This ensures we don't have gaps in the data
-        logger.info("Checking for missing dates that need backfill...")
-        try:
-            # Check each fund individually for missing dates
-            funds_needing_backfill = []
+            # Get all production funds from database (skip test/dev funds)
+            funds_result = client.supabase.table("funds")\
+                .select("name, base_currency")\
+                .eq("is_production", True)\
+                .execute()
+                
+            if not funds_result.data:
+                duration_ms = int((time.time() - start_time) * 1000)
+                message = "No production funds found in database - skipping update"
+                # Log as failed to indicate this was a skipped execution
+                log_job_execution(job_id, success=False, message=message, duration_ms=duration_ms)
+                # Also mark in database as failed with clear skipped message
+                try:
+                    from utils.job_tracking import mark_job_failed
+                    mark_job_failed('update_portfolio_prices', target_date, None, message, duration_ms=duration_ms)
+                except Exception:
+                    pass  # Don't fail if tracking fails
+                logger.warning(f"⚠️ {message}")
+                return
             
-            for fund_name, _ in funds:
+            # Build list of production funds with their base currency settings
+            funds = [(f['name'], f.get('base_currency', 'CAD')) for f in funds_result.data]
+            logger.info(f"Processing {len(funds)} production funds")
+            
+            # AUTO-BACKFILL: Check for missing dates per fund and backfill if needed
+            # This ensures we don't have gaps in the data
+            logger.info("Checking for missing dates that need backfill...")
+            try:
+                # Check each fund individually for missing dates
+                funds_needing_backfill = []
+                
+                for fund_name, _ in funds:
                 # Find the latest date with data for THIS fund
                 latest_date_result = client.supabase.table("portfolio_positions")\
                     .select("date")\
@@ -531,14 +530,14 @@ def update_portfolio_prices_job(
             logger.debug(traceback.format_exc())
             # Continue with regular update anyway
         
-        # Mark job as started (for completion tracking)
-        mark_job_started('update_portfolio_prices', target_date)
+                    # Mark job as started (for completion tracking)
+                    mark_job_started('update_portfolio_prices', target_date)
         
-        total_positions_updated = 0
-        total_funds_processed = 0
-        funds_completed = []  # Track which funds completed successfully
+                    total_positions_updated = 0
+                    total_funds_processed = 0
+                    funds_completed = []  # Track which funds completed successfully
         
-        for fund_name, base_currency in funds:
+                    for fund_name, base_currency in funds:
             try:
                 logger.info(f"Processing fund: {fund_name} (base_currency: {base_currency})")
                 
@@ -872,16 +871,16 @@ def update_portfolio_prices_job(
                 logger.error(f"  ❌ Error processing fund {fund_name}: {e}", exc_info=True)
                 continue
         
-        duration_ms = int((time.time() - start_time) * 1000)
-        message = f"Updated {total_positions_updated} positions across {total_funds_processed} fund(s) for {target_date}"
-        log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
-        logger.info(f"✅ {message}")
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    message = f"Updated {total_positions_updated} positions across {total_funds_processed} fund(s) for {target_date}"
+                    log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)
+                    logger.info(f"✅ {message}")
         
-        # Mark job as completed successfully
-        mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms, message=message)
+                    # Mark job as completed successfully
+                    mark_job_completed('update_portfolio_prices', target_date, None, funds_completed, duration_ms=duration_ms, message=message)
         
-        # Clear cache to ensure fresh data is used in charts
-        try:
+                    # Clear cache to ensure fresh data is used in charts
+                    try:
             from cache_version import bump_cache_version
             bump_cache_version()
             logger.info("🔄 Cache version bumped - charts will use fresh portfolio data")

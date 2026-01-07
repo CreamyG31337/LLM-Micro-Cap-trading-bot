@@ -51,6 +51,48 @@ logger = logging.getLogger(__name__)
 _update_prices_lock = threading.Lock()
 
 
+def _ensure_sys_path_setup() -> None:
+    """Ensure project root and web_dashboard are in sys.path for imports.
+    
+    This must be called at the start of any function that imports utils modules.
+    Safe to call multiple times - idempotent.
+    """
+    try:
+        import sys
+        from pathlib import Path
+        
+        # Get absolute path to project root
+        # __file__ is scheduler/jobs_portfolio.py
+        # parent is scheduler/, parent.parent is web_dashboard/, parent.parent.parent is project root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        project_root_str = str(project_root)
+        
+        # CRITICAL: Project root must be FIRST in sys.path to ensure utils.job_tracking
+        # is found from the project root, not from web_dashboard/utils
+        if project_root_str not in sys.path:
+            sys.path.insert(0, project_root_str)
+        elif sys.path[0] != project_root_str:
+            # If it is in path but not first, move it to front
+            try:
+                sys.path.remove(project_root_str)
+            except ValueError:
+                # Item not in list - shouldn't happen but handle gracefully
+                pass
+            sys.path.insert(0, project_root_str)
+        
+        # Also ensure web_dashboard is in path for supabase_client imports
+        # (but AFTER project root so it doesn't shadow utils)
+        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+        if web_dashboard_path not in sys.path:
+            # Insert at index 1, after project_root (or at 0 if project_root wasn't added)
+            insert_index = 1 if project_root_str in sys.path and sys.path[0] == project_root_str else 0
+            sys.path.insert(insert_index, web_dashboard_path)
+    except Exception as e:
+        # Don't let path setup failures crash the job - log and continue
+        # The top-level path setup should have already handled this
+        logger.warning(f"Warning: Failed to ensure sys.path setup: {e}")
+
+
 def update_portfolio_prices_job(
     target_date: Optional[date] = None,
     from_date: Optional[date] = None,
@@ -82,6 +124,9 @@ def update_portfolio_prices_job(
     - Skips failed tickers but continues with successful ones
     - Handles partial failures gracefully
     """
+    # CRITICAL: Ensure sys.path is set up FIRST, before any imports
+    _ensure_sys_path_setup()
+    
     # Initialize job tracking first (before lock check so we can log lock failures)
     job_id = 'update_portfolio_prices'
     start_time = time.time()
@@ -109,26 +154,6 @@ def update_portfolio_prices_job(
             return
     
     try:
-        # CRITICAL: Add project root to path FIRST, before any imports
-        import sys
-        import os
-        from pathlib import Path
-        
-        # Get absolute path to project root
-        # __file__ is scheduler/jobs_portfolio.py
-        # parent is scheduler/, parent.parent is web_dashboard/, parent.parent.parent is project root
-        project_root = Path(__file__).resolve().parent.parent.parent
-        project_root_str = str(project_root)
-        
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-            logger.debug(f"Added project root to sys.path: {project_root_str}")
-        
-        # Also ensure web_dashboard is in path for supabase_client imports
-        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-        if web_dashboard_path not in sys.path:
-            sys.path.insert(0, web_dashboard_path)
-            logger.debug(f"Added web_dashboard to sys.path: {web_dashboard_path}")
         
         # Import dependencies (after sys.path is set up)
         from market_data.data_fetcher import MarketDataFetcher
@@ -836,6 +861,9 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
     Performance: O(Tickers) API calls instead of O(Days * Tickers)
     Correctness: Only includes trades up to each snapshot date
     """
+    # CRITICAL: Ensure sys.path is set up FIRST, before any imports
+    _ensure_sys_path_setup()
+    
     job_id = 'backfill_portfolio_prices_range'
     start_time = time.time()
     
@@ -851,19 +879,6 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
         return
 
     try:
-        # CRITICAL: Add project root to path FIRST
-        import sys
-        from pathlib import Path
-        
-        project_root = Path(__file__).resolve().parent.parent.parent
-        project_root_str = str(project_root)
-        
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-        
-        web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-        if web_dashboard_path not in sys.path:
-            sys.path.insert(0, web_dashboard_path)
         
         logger.info(f"Starting batch backfill for date range: {start_date} to {end_date}")
         

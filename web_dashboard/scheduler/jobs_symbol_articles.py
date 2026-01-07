@@ -54,7 +54,8 @@ def seeking_alpha_symbol_job() -> None:
     start_time = time.time()
     
     try:
-        from utils.job_tracking import log_job_execution, mark_job_started, mark_job_completed, mark_job_failed
+        from scheduler.scheduler_core import log_job_execution
+        from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
         # Mark started
         target_date = datetime.now(timezone.utc).date()

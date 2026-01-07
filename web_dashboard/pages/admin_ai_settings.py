@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from auth_utils import is_authenticated, has_admin_access, can_modify_data, get_user_email
 from streamlit_utils import get_supabase_client
 from navigation import render_navigation
+from supabase_client import SupabaseClient
 
 # Import shared utilities
 from admin_utils import perf_timer
@@ -135,15 +136,19 @@ else:
         
         try:
             # Check if research_domain_health table exists
-            health_result = client.supabase.table("research_domain_health").select("*").order("failure_count", desc=True).limit(20).execute()
+            health_result = client.supabase.table("research_domain_health").select("*").order("consecutive_failures", desc=True).limit(20).execute()
             
             if health_result.data:
                 import pandas as pd
                 health_df = pd.DataFrame(health_result.data)
                 
                 # Format for display
-                if 'last_failure' in health_df.columns:
-                    health_df['last_failure'] = pd.to_datetime(health_df['last_failure']).dt.strftime('%Y-%m-%d %H:%M')
+                if 'last_attempt_at' in health_df.columns:
+                    health_df['last_attempt_at'] = pd.to_datetime(health_df['last_attempt_at']).dt.strftime('%Y-%m-%d %H:%M')
+                if 'last_success_at' in health_df.columns:
+                    health_df['last_success_at'] = pd.to_datetime(health_df['last_success_at']).dt.strftime('%Y-%m-%d %H:%M')
+                if 'auto_blacklisted_at' in health_df.columns:
+                    health_df['auto_blacklisted_at'] = pd.to_datetime(health_df['auto_blacklisted_at']).dt.strftime('%Y-%m-%d %H:%M')
                 
                 st.dataframe(health_df, use_container_width=True)
                 
@@ -160,12 +165,17 @@ else:
                             st.error("Please enter a domain")
                         else:
                             try:
+                                # Use service role client for modifications (required by RLS policy)
+                                admin_client = SupabaseClient(use_service_role=True)
                                 # Update or insert blacklist entry
-                                client.supabase.table("research_domain_health").upsert({
+                                now = datetime.now().isoformat()
+                                admin_client.supabase.table("research_domain_health").upsert({
                                     "domain": blacklist_domain,
-                                    "is_blacklisted": True,
-                                    "failure_count": 999,  # High count to ensure it's blacklisted
-                                    "last_failure": datetime.now().isoformat()
+                                    "auto_blacklisted": True,
+                                    "consecutive_failures": 999,  # High count to ensure it's blacklisted
+                                    "auto_blacklisted_at": now,
+                                    "last_attempt_at": now,
+                                    "updated_at": now
                                 }).execute()
                                 
                                 st.success(f"✅ {blacklist_domain} added to blacklist")
@@ -176,7 +186,7 @@ else:
                 with col_blacklist2:
                     remove_domain = st.selectbox(
                         "Domain to Remove from Blacklist",
-                        options=[""] + [d['domain'] for d in health_result.data if d.get('is_blacklisted')],
+                        options=[""] + [d['domain'] for d in health_result.data if d.get('auto_blacklisted')],
                         key="remove_blacklist_domain"
                     )
                     if st.button("✅ Remove from Blacklist", disabled=(not remove_domain or not can_modify_data())):
@@ -186,9 +196,13 @@ else:
                             st.error("Please select a domain")
                         else:
                             try:
-                                client.supabase.table("research_domain_health").update({
-                                    "is_blacklisted": False,
-                                    "failure_count": 0
+                                # Use service role client for modifications (required by RLS policy)
+                                admin_client = SupabaseClient(use_service_role=True)
+                                now = datetime.now().isoformat()
+                                admin_client.supabase.table("research_domain_health").update({
+                                    "auto_blacklisted": False,
+                                    "consecutive_failures": 0,
+                                    "updated_at": now
                                 }).eq("domain", remove_domain).execute()
                                 
                                 st.success(f"✅ {remove_domain} removed from blacklist")

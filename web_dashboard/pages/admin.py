@@ -142,23 +142,9 @@ with st.sidebar:
     st.page_link("pages/admin_contributions.py", label="💰 Contributions", icon="💰")
     st.page_link("pages/admin_ai_settings.py", label="🤖 AI Settings", icon="🤖")
 
-# Scheduled Tasks
-with perf_timer("Scheduled Tasks"):
-    st.header("⏰ Scheduled Tasks")
-    st.caption("Manage background jobs running in this container")
-    
-    try:
-        # Import from parent directory
-        parent_dir = Path(__file__).parent.parent
-        if str(parent_dir) not in sys.path:
-            sys.path.insert(0, str(parent_dir))
-        from scheduler_ui import render_scheduler_admin
-        render_scheduler_admin()
-    except ImportError as e:
-        st.warning(f"Scheduler UI not available: {e}")
-        st.info("The scheduler module may not be running in this environment.")
-    except Exception as e:
-        st.error(f"Error loading scheduler: {e}")
+# Scheduler has moved to dedicated admin pages
+# See admin pages sidebar for scheduler management
+st.info("ℹ️ The scheduler has been moved to dedicated admin pages for better organization.")
 
 # Calculate and log total page load time
 page_load_time = (time.perf_counter() - page_start_time) * 1000

@@ -290,11 +290,12 @@ def update_portfolio_prices_job(
                 # - Before 9:30 AM ET: Use yesterday (market hasn't opened yet)
                 # - After 4:00 PM ET: Use today (market has closed)
                 # - Between 9:30 AM - 4:00 PM: Use today if trading day (for live prices)
-                
-                # CRITICAL: Get current time in ET FIRST, then derive 'today' from ET time
-                # Using server time (UTC) for 'today' causes wrong date selection
-                from datetime import datetime as dt
-                import pytz
+                pass
+
+            # CRITICAL: Get current time in ET FIRST, then derive 'today' from ET time
+            # Using server time (UTC) for 'today' causes wrong date selection
+            from datetime import datetime as dt
+            import pytz
             
             et = pytz.timezone('America/New_York')
             now_et = dt.now(et)

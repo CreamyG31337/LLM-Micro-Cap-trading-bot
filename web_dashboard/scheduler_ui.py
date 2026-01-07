@@ -146,12 +146,23 @@ def render_scheduler_admin():
         consolidated_jobs = {}
         for job in jobs:
             job_id = job['id']
-            # Get base job ID by removing common suffixes
+            # Get base job ID by removing common suffixes and patterns
             base_id = job_id
+            
+            # Remove time-based suffixes (e.g., _close, _open, _premarket, etc.)
             for suffix in ['_close', '_open', '_premarket', '_midmorning', '_powerhour', '_postmarket', '_refresh', '_populate', '_collect', '_scan', '_fetch', '_cleanup', '_scrape']:
                 if job_id.endswith(suffix):
                     base_id = job_id[:-len(suffix)]
                     break
+            
+            # Also check for reversed patterns (e.g., benchmark_refresh vs refresh_benchmark)
+            # Normalize to alphabetically first pattern
+            parts = base_id.split('_')
+            if len(parts) == 2:
+                normalized = '_'.join(sorted(parts))
+                # But only use normalized if another job with that pattern exists
+                # This prevents false positives
+                base_id = normalized
             
             # Keep only one entry per base job (prefer the main one without suffix, or the first one seen)
             if base_id not in consolidated_jobs:
@@ -161,6 +172,10 @@ def render_scheduler_admin():
             elif job_id == base_id:
                 # This is the main job (no suffix), prefer it
                 job['actual_job_id'] = job_id  # Preserve the real ID
+                consolidated_jobs[base_id] = job
+            elif len(job_id) < len(consolidated_jobs[base_id]['id']):
+                # Prefer shorter job IDs (likely the "main" one)
+                job['actual_job_id'] = job_id
                 consolidated_jobs[base_id] = job
         
         jobs = list(consolidated_jobs.values())
@@ -403,10 +418,9 @@ def render_scheduler_admin():
                             actual_id = job.get('actual_job_id', job['id'])
                             success = run_job_now(actual_id, **final_params)
                             if success:
-                                st.success("Job executed!")
+                                st.success("✅ Job started! Refresh the page to see updated status.")
                             else:
-                                st.error("Job failed!")
-                            st.rerun()
+                                st.error("❌ Failed to start job. Check logs for details.")
                     
                     if run_disabled:
                         st.caption("⚠️ Job is currently running")

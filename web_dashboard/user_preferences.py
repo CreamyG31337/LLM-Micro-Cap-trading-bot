@@ -253,6 +253,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         # Call the RPC function to set preference
         # Note: Supabase will convert the JSON string to JSONB
+        rpc_success = False
         try:
             logger.info(f"Calling RPC set_user_preference with key='{key}', value='{json_value[:50]}...' (truncated)")
             result = client.supabase.rpc('set_user_preference', {
@@ -267,42 +268,73 @@ def set_user_preference(key: str, value: Any) -> bool:
             # Handle different response formats
             if result.data is None:
                 logger.warning(f"RPC set_user_preference returned None for key '{key}'")
-                return False
-            
-            # Check if it's a boolean False
-            if result.data is False:
+            elif result.data is False:
                 logger.warning(f"RPC set_user_preference returned False for key '{key}'")
-                return False
-            
-            # Check if it's a list with False
-            if isinstance(result.data, list) and len(result.data) > 0:
-                if result.data[0] is False:
-                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
-                    return False
-                # If it's a list with True, that's success
+            elif result.data is True:
+                rpc_success = True
+            elif isinstance(result.data, list) and len(result.data) > 0:
                 if result.data[0] is True:
-                    logger.info(f"RPC set_user_preference returned [True] for key '{key}'")
+                    rpc_success = True
+                elif result.data[0] is False:
+                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
                 else:
                     logger.warning(f"RPC set_user_preference returned unexpected list value: {result.data}")
-                    return False
-            
-            # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
-            # This is more robust as it forces a fresh DB read on next access,
-            # preventing stale cache state if the session cookie update fails.
-            cache = _get_cache()
-            cache_key = f"_pref_{key}"
-            if cache_key in cache:
-                del cache[cache_key]
-            
-            logger.info(f"Successfully set preference '{key}' = {value}")
-            return True
+            else:
+                logger.warning(f"RPC set_user_preference returned unexpected value: {result.data}")
         except Exception as rpc_error:
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}")
-            logger.error(f"Full traceback: {error_details}")
+            logger.warning(f"RPC call via Supabase client failed: {rpc_error}, trying HTTP fallback")
+            rpc_success = False
+        
+        # Fallback to direct HTTP request if RPC client call failed
+        if not rpc_success and user_token:
+            try:
+                import requests
+                import os
+                supabase_url = os.getenv("SUPABASE_URL")
+                supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                
+                if supabase_url and supabase_anon_key:
+                    logger.info(f"Trying HTTP fallback for set_user_preference with key='{key}'")
+                    response = requests.post(
+                        f"{supabase_url}/rest/v1/rpc/set_user_preference",
+                        headers={
+                            "apikey": supabase_anon_key,
+                            "Authorization": f"Bearer {user_token}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "pref_key": key,
+                            "pref_value": json_value
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        result_data = response.json()
+                        logger.info(f"HTTP fallback RPC result: {result_data}, type: {type(result_data)}")
+                        if result_data is True or (isinstance(result_data, list) and len(result_data) > 0 and result_data[0] is True):
+                            rpc_success = True
+                        else:
+                            logger.warning(f"HTTP fallback returned False: {result_data}")
+                    else:
+                        logger.error(f"HTTP fallback failed with status {response.status_code}: {response.text}")
+            except Exception as http_error:
+                logger.error(f"HTTP fallback also failed: {http_error}", exc_info=True)
+        
+        if not rpc_success:
+            logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}'")
             return False
         
+        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
+        # This is more robust as it forces a fresh DB read on next access,
+        # preventing stale cache state if the session cookie update fails.
+        cache = _get_cache()
+        cache_key = f"_pref_{key}"
+        if cache_key in cache:
+            del cache[cache_key]
+        
+        logger.info(f"Successfully set preference '{key}' = {value}")
+        return True
+
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False

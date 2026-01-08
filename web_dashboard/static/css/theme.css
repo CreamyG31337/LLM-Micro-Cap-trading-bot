@@ -3,7 +3,8 @@
  */
 
 /* Light Mode Variables */
-:root[data-theme="light"], :root {
+[data-theme="light"],
+:root {
     --bg-primary: #ffffff;
     --bg-secondary: #f9fafb;
     --bg-tertiary: #f3f4f6;
@@ -14,12 +15,12 @@
     --border-hover: #d1d5db;
     --gradient-from: #667eea;
     --gradient-to: #764ba2;
-    
+
     /* Component colors */
     --log-line-hover: #f9fafb;
     --code-bg: #ffffff;
     --code-border: #e5e7eb;
-    
+
     /* Log level colors (light mode) */
     --log-debug: #6b7280;
     --log-perf: #8b5cf6;
@@ -29,7 +30,7 @@
 }
 
 /* Dark Mode Variables */
-:root[data-theme="dark"] {
+[data-theme="dark"] {
     --bg-primary: #1f2937;
     --bg-secondary: #111827;
     --bg-tertiary: #374151;
@@ -40,12 +41,12 @@
     --border-hover: #4b5563;
     --gradient-from: #4f46e5;
     --gradient-to: #7c3aed;
-    
+
     /* Component colors */
     --log-line-hover: #374151;
     --code-bg: #1f2937;
     --code-border: #374151;
-    
+
     /* Log level colors (dark mode - slightly brighter for visibility) */
     --log-debug: #9ca3af;
     --log-perf: #a78bfa;
@@ -56,7 +57,7 @@
 
 /* System Theme - Use browser/OS preference */
 @media (prefers-color-scheme: dark) {
-    :root[data-theme="system"] {
+    [data-theme="system"] {
         --bg-primary: #1f2937;
         --bg-secondary: #111827;
         --bg-tertiary: #374151;
@@ -103,7 +104,8 @@ body {
     color: var(--text-primary) !important;
 }
 
-.text-gray-600, .text-gray-700 {
+.text-gray-600,
+.text-gray-700 {
     color: var(--text-secondary) !important;
 }
 
@@ -121,13 +123,17 @@ body {
 }
 
 /* Inputs */
-input, select, textarea {
+input,
+select,
+textarea {
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
     border-color: var(--border-color) !important;
 }
 
-input:hover, select:hover, textarea:hover {
+input:hover,
+select:hover,
+textarea:hover {
     border-color: var(--border-hover) !important;
 }
 
@@ -151,11 +157,25 @@ input:hover, select:hover, textarea:hover {
 }
 
 /* Log level colors */
-.log-DEBUG { color: var(--log-debug); }
-.log-PERF { color: var(--log-perf); }
-.log-INFO { color: var(--log-info); }
-.log-WARNING { color: var(--log-warning); }
-.log-ERROR { color: var(--log-error); }
+.log-DEBUG {
+    color: var(--log-debug);
+}
+
+.log-PERF {
+    color: var(--log-perf);
+}
+
+.log-INFO {
+    color: var(--log-info);
+}
+
+.log-WARNING {
+    color: var(--log-warning);
+}
+
+.log-ERROR {
+    color: var(--log-error);
+}
 
 /* Buttons remain colorful in both modes */
 .bg-blue-600:hover {

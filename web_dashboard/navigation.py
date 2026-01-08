@@ -128,6 +128,19 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             st.sidebar.page_link("pages/admin_contributions.py", label="Contributions", icon="💰")
             st.sidebar.page_link("pages/admin_ai_settings.py", label="AI Settings", icon="⚙️")
             st.sidebar.page_link("pages/admin_system.py", label="System Monitoring", icon="📊")
+            
+            # Logs link - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_page_migrated('admin_logs'):
+                    # Use markdown link for Flask route
+                    logs_url = get_page_url('admin_logs')
+                    st.sidebar.markdown(f'<a href="{logs_url}" target="_self" style="text-decoration: none; color: inherit;">📜 Logs</a>', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_logs.py", label="Logs", icon="📜")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_logs.py", label="Logs", icon="📜")
         else:
             # Check if user profile exists and show role
             try:

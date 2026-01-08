@@ -263,6 +263,14 @@ def set_user_preference(key: str, value: Any) -> bool:
             
             # Check if the RPC call succeeded
             # The function returns a boolean, but Supabase might wrap it
+            logger.info(f"RPC RAW RESULT OBJECT: {result}")
+            logger.info(f"RPC RAW RESULT DATA: {result.data}")
+            logger.info(f"RPC RAW RESULT DATA TYPE: {type(result.data)}")
+            
+            # Additional debug for list/dict types
+            if hasattr(result, 'count'):
+                logger.info(f"RPC RESULT COUNT: {result.count}")
+            
             logger.info(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
             
             # Handle different response formats

@@ -1551,14 +1551,23 @@ def update_v2_enabled():
         
         user_id = get_user_id_flask()
         logger.info(f"Updating v2_enabled for user {user_id} to {enabled}")
+        
+        # Debug: capture any exception from set_user_preference
+        try:
+            result = set_user_preference('v2_enabled', enabled)
+            logger.info(f"set_user_preference returned: {result} (type: {type(result)})")
+        except Exception as pref_error:
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"set_user_preference raised exception: {pref_error}\n{tb}")
+            return jsonify({"success": False, "error": f"Preference error: {str(pref_error)}", "traceback": tb}), 500
             
-        result = set_user_preference('v2_enabled', enabled)
         if result:
             logger.info(f"Successfully updated v2_enabled to {enabled}")
             return jsonify({"success": True})
         else:
             logger.error(f"Failed to update v2_enabled - set_user_preference returned False")
-            return jsonify({"success": False, "error": "Failed to update preference"}), 500
+            return jsonify({"success": False, "error": "set_user_preference returned False - check server logs"}), 500
     except Exception as e:
         logger.error(f"Error updating v2 enabled: {e}", exc_info=True)
         import traceback

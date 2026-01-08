@@ -20,8 +20,12 @@ class AuthManager:
     
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
-        self.supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
+        self.supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         self.jwt_secret = os.getenv("JWT_SECRET", "your-secret-key-change-this")
+        
+        # Debug logging
+        if not self.supabase_anon_key:
+            logger.warning("AuthManager: No Supabase anon key found in environment (checked SUPABASE_PUBLISHABLE_KEY and SUPABASE_ANON_KEY)")
         
     def get_user_funds(self, user_id: str) -> List[str]:
         """Get funds assigned to a user"""

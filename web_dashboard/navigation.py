@@ -19,13 +19,10 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         show_settings: Whether to show Settings link (default: True)
     """
     # CRITICAL: Restore session from cookies FIRST before any preference checks
-    # This ensures we have valid auth context when checking v2_enabled
-    session_was_restored = False
+    # This ensures we have valid auth context when checking preferences
     try:
         from auth_utils import ensure_session_restored
-        if ensure_session_restored():
-            # Session was restored - mark for preference reload
-            session_was_restored = True
+        ensure_session_restored()
     except Exception:
         pass  # Continue with navigation even if restoration fails
     
@@ -37,34 +34,16 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         def get_user_preference(key, default=None): return default
         def set_user_preference(*args): return False
     
-    # V2 preference: Load from database only on first load or after auth restoration
-    # This ensures it persists after auth failures/redirects without causing refresh loops
+    # V2 preference: Just read from database (no caching, no toggle widget here)
+    # The toggle is now on the settings page to avoid refresh loops
     try:
-        # Check if we're authenticated first
         from auth_utils import is_authenticated
         if is_authenticated():
-            # Only reload from DB if:
-            # 1. Not in session state (first load), OR
-            # 2. Session was just restored (after auth failure/redirect)
-            if '_v2_enabled' not in st.session_state:
-                # First load: get from database
-                db_value = get_user_preference('v2_enabled', default=False)
-                st.session_state._v2_enabled = db_value
-            elif session_was_restored:
-                # Session was restored - reload from DB to get saved preference
-                db_value = get_user_preference('v2_enabled', default=False)
-                st.session_state._v2_enabled = db_value
-            # Otherwise, use existing session state value (prevents refresh loops after toggle)
+            is_v2_enabled = get_user_preference('v2_enabled', default=False)
         else:
-            # Not authenticated - use session state if exists, otherwise default to False
-            if '_v2_enabled' not in st.session_state:
-                st.session_state._v2_enabled = False
+            is_v2_enabled = False
     except Exception:
-        # Fallback: use session state if exists
-        if '_v2_enabled' not in st.session_state:
-            st.session_state._v2_enabled = False
-    
-    is_v2_enabled = st.session_state._v2_enabled
+        is_v2_enabled = False
     
     try:
         from auth_utils import is_admin, get_user_email, get_user_id
@@ -314,22 +293,4 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # Modern divider
     st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)
-
-    # V2 Beta Toggle - uses session state as source of truth
-    v2_current = st.sidebar.toggle(
-        "🚀 Try v2 Beta", 
-        value=st.session_state._v2_enabled,
-        key="v2_beta_toggle",
-        help="Enable new Flask-based pages (faster, better UI)"
-    )
-    
-    # Save when value changes
-    if v2_current != st.session_state._v2_enabled:
-        st.session_state._v2_enabled = v2_current  # Update session state IMMEDIATELY
-        try:
-            from user_preferences import set_user_preference
-            set_user_preference('v2_enabled', v2_current)  # Save to DB for persistence across sessions
-        except Exception:
-            pass  # Session state is already updated, DB save is best-effort
-        st.rerun()  # Rerun to update navigation links with new preference
 

@@ -268,6 +268,39 @@ render_theme_settings()
 
 st.divider()
 
+# V2 Beta Features Toggle
+st.subheader("🚀 Beta Features")
+
+@st.fragment
+def render_v2_settings():
+    """V2 beta features toggle fragment - prevents full page reload on save"""
+    from user_preferences import get_user_preference, set_user_preference
+    
+    # Get current v2 enabled state
+    current_v2_enabled = get_user_preference('v2_enabled', default=False)
+    
+    st.markdown("**Use Cloud Pages (Flask)**")
+    st.caption("Enable new, faster page implementations for Settings, Logs, and Ticker Details.")
+    
+    # V2 toggle
+    v2_enabled = st.toggle(
+        "Enable v2 Beta Pages",
+        value=current_v2_enabled,
+        help="When enabled, migrated pages (Settings, Logs, Ticker Details) will use the new Flask-based implementation with better performance."
+    )
+    
+    # Save button
+    if st.button("💾 Save Beta Settings", type="primary", key="save_v2"):
+        if set_user_preference('v2_enabled', v2_enabled):
+            st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+            st.info("🔄 Refresh the page or navigate to see the changes take effect")
+        else:
+            st.error("❌ Failed to save beta settings. Please try again.")
+
+render_v2_settings()
+
+st.divider()
+
 # Show all preferences (for debugging)
 if st.checkbox("Show all preferences (debug)"):
     prefs = get_all_user_preferences()

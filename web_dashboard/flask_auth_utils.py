@@ -10,7 +10,7 @@ Shares the same cookie format as Streamlit auth system.
 import base64
 import json
 import logging
-from typing import Optional
+from typing import Optional, Dict
 from flask import request
 
 logger = logging.getLogger(__name__)

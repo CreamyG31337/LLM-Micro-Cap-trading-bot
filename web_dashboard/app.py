@@ -39,7 +39,10 @@ from flask_cors import CORS
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+# Initialize Flask app with template and static folders
+app = Flask(__name__, 
+            template_folder='templates',
+            static_folder='static')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
 # Configure CORS to allow credentials from Vercel deployment

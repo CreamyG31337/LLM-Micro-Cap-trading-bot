@@ -182,14 +182,14 @@ steps:
       # Stop and remove existing containers if they exist (parallel stops for speed)
       - |
         echo "Stopping existing containers in parallel..."
-        (docker stop trading-dashboard || true) &
-        (docker stop trading-dashboard-flask || true) &
+        (docker stop trading-dashboard 2>/dev/null || true) &
+        (docker stop trading-dashboard-flask 2>/dev/null || true) &
         wait
         echo "Removing stopped containers..."
-        (docker rm trading-dashboard || true) &
-        (docker rm trading-dashboard-flask || true) &
+        (docker rm trading-dashboard 2>/dev/null || true) &
+        (docker rm trading-dashboard-flask 2>/dev/null || true) &
         wait
-        echo "✅ Containers stopped and removed"
+        echo "✅ Containers stopped and removed (some may not have existed, which is fine)"
       
       # Initialize shared cookies directory and file (before main container starts)
       - |

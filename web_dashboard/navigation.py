@@ -96,9 +96,9 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         try:
             from shared_navigation import is_page_migrated, get_page_url
             if is_page_migrated('settings'):
-                # Use markdown link for Flask route
+                # Use markdown link for Flask route (opens in same window)
                 settings_url = get_page_url('settings')
-                st.sidebar.markdown(f'<a href="{settings_url}" style="text-decoration: none; color: inherit;">👤 User Preferences</a>', unsafe_allow_html=True)
+                st.sidebar.markdown(f'<a href="{settings_url}" target="_self" style="text-decoration: none; color: inherit;">👤 User Preferences</a>', unsafe_allow_html=True)
             else:
                 st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
         except ImportError:

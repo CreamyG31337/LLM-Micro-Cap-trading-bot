@@ -23,3 +23,5 @@ streamlit-aggrid>=0.3.4
 docker>=7.0.0
 gemini-webapi>=1.17.0
 nest-asyncio>=1.5.0
+flask>=3.0.0
+flask-cors>=4.0.0

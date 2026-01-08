@@ -457,6 +457,29 @@ def start_scheduler() -> bool:
     logger.info(f"  Thread: {threading.current_thread().name} ({threading.current_thread().ident})")
     logger.info("="*60)
     
+    # PHASE 0: Ensure logs are captured (both file and unhandled exceptions)
+    try:
+        # 1. Setup file logging if not already set
+        try:
+            from log_handler import setup_logging
+            setup_logging()
+            logger.info("  → Log handler configured (logs will appear in Web UI)")
+        except ImportError:
+            logger.warning("  ⚠️ Could not import log_handler.setup_logging")
+
+        # 2. Install global exception handler to catch crashes
+        def handle_exception(exc_type, exc_value, exc_traceback):
+            if issubclass(exc_type, KeyboardInterrupt):
+                sys.__excepthook__(exc_type, exc_value, exc_traceback)
+                return
+            logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        
+        sys.excepthook = handle_exception
+        logger.info("  → Global exception handler installed")
+        
+    except Exception as e:
+        logger.error(f"  ❌ Failed to setup extended logging: {e}")
+
     # PHASE 1: Check if already running (quick lock)
     logger.info("[PHASE 1] Checking if scheduler is already running...")
     with _scheduler_lock:

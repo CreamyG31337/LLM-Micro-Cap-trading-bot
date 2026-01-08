@@ -34,10 +34,24 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         def get_user_preference(key, default=None): return default
         def set_user_preference(*args): return False
     
-    # V2 preference: Use session state as THE source of truth (persists across page navigation)
-    # Only load from database ONCE per session (when key doesn't exist)
-    if '_v2_enabled' not in st.session_state:
-        st.session_state._v2_enabled = get_user_preference('v2_enabled', default=False)
+    # V2 preference: Always reload from database if authenticated
+    # This ensures it persists even after auth failures/redirects
+    try:
+        # Check if we're authenticated first
+        from auth_utils import is_authenticated
+        if is_authenticated():
+            # Always reload from DB to get latest value (survives session resets)
+            db_value = get_user_preference('v2_enabled', default=False)
+            # Update session state to match DB
+            st.session_state._v2_enabled = db_value
+        else:
+            # Not authenticated - use session state if exists, otherwise default to False
+            if '_v2_enabled' not in st.session_state:
+                st.session_state._v2_enabled = False
+    except Exception:
+        # Fallback: use session state if exists
+        if '_v2_enabled' not in st.session_state:
+            st.session_state._v2_enabled = False
     
     is_v2_enabled = st.session_state._v2_enabled
     
@@ -66,28 +80,32 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             .v2-nav-link {
                 display: flex;
                 align-items: center;
-                padding: 0.4rem 0.5rem;
+                padding: 0.35rem 0.75rem;
                 border-radius: 0.5rem;
                 text-decoration: none;
                 color: inherit;
-                transition: background-color 0.1s;
+                transition: background-color 0.15s ease;
                 margin: 0.1rem 0;
                 cursor: pointer;
+                border: 1px solid transparent;
             }
             .v2-nav-link:hover {
-                background-color: rgba(151, 166, 195, 0.15);
+                background-color: rgba(151, 166, 195, 0.1);
+                border-color: rgba(128, 128, 128, 0.1);
             }
             .v2-nav-icon {
-                margin-right: 0.8rem;
-                font-size: 1.2rem;
+                margin-right: 0.75rem;
+                font-size: 1.1rem;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                width: 1.4rem;
-                min-width: 1.4rem;
+                width: 1.25rem;
+                min-width: 1.25rem;
             }
             .v2-nav-label {
                 font-size: 0.875rem;
+                font-weight: 400;
+                line-height: 1.5;
             }
             .nav-divider {
                 margin: 1rem 0;

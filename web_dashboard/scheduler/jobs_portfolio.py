@@ -267,7 +267,10 @@ def update_portfolio_prices_job(
             
             # Initialize components
             market_fetcher = MarketDataFetcher()
-            price_cache = PriceCache()
+            # Create Settings with data_dir to avoid "No data directory" error
+            from config.settings import Settings
+            cache_settings = Settings(data_dir=str(Path.home() / '.trading_bot_cache'))
+            price_cache = PriceCache(settings=cache_settings)
             market_hours = MarketHours()
             market_holidays = MarketHolidays()
             # Use service role key to bypass RLS (background job needs full access)

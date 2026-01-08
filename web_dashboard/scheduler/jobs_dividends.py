@@ -459,8 +459,16 @@ def insert_drip_transaction(
 
 def process_dividends_job(lookback_days: int = 7) -> None:
     """Daily job to detect and process dividend reinvestments."""
+    import sys
     job_id = 'dividend_processing'
     start_time = time.time()
+    
+    # IMMEDIATE logging - use print() as fallback since it always works
+    print(f"[{__name__}] process_dividends_job() STARTED (lookback_days={lookback_days})", file=sys.stderr, flush=True)
+    try:
+        logger.info(f"process_dividends_job() started (lookback_days={lookback_days})")
+    except:
+        pass  # Logger might not be ready yet
     
     # Import job tracking at the start
     from datetime import timezone
@@ -468,14 +476,18 @@ def process_dividends_job(lookback_days: int = 7) -> None:
     
     try:
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
+        print(f"[{__name__}] Marking job as started in database...", file=sys.stderr, flush=True)
         mark_job_started(job_id, target_date)
+        print(f"[{__name__}] Job marked as started successfully", file=sys.stderr, flush=True)
     except Exception as e:
+        print(f"[{__name__}] WARNING: Could not mark job started: {e}", file=sys.stderr, flush=True)
         logger.warning(f"Could not mark job started: {e}")
     
     try:
         from supabase_client import SupabaseClient
         client = SupabaseClient(use_service_role=True)
         
+        print(f"[{__name__}] Starting dividend processing job (3-Layer Strategy, lookback={lookback_days}d)...", file=sys.stderr, flush=True)
         logger.info(f"Starting dividend processing job (3-Layer Strategy, lookback={lookback_days}d)...")
         
         holdings = get_unique_holdings(client)
@@ -484,8 +496,16 @@ def process_dividends_job(lookback_days: int = 7) -> None:
             log_job_execution(job_id, True, "No active holdings", duration_ms)
             try:
                 mark_job_completed(job_id, target_date, None, [], duration_ms=duration_ms)
-            except:
-                pass
+                logger.debug(f"Marked job as completed in database (no holdings)")
+            except Exception as db_error:
+                # CRITICAL: Log this prominently - if this fails, executions won't show in UI
+                logger.error(f"❌ CRITICAL: Failed to mark job as completed in database: {db_error}")
+                logger.error(f"  Job executed successfully but execution won't appear in UI")
+                logger.error(f"  Error type: {type(db_error).__name__}")
+                logger.error(f"  Error details: {str(db_error)[:500]}")
+                import traceback
+                logger.error(f"  Full traceback:\n{traceback.format_exc()}")
+                # Don't re-raise - job succeeded, just logging failed
             return
             
         # Get already processed dividends (key: fund, ticker, pay_date)
@@ -538,11 +558,25 @@ def process_dividends_job(lookback_days: int = 7) -> None:
                 
         duration = int((time.time() - start_time) * 1000)
         msg = f"Processed {stats['processed']}, Skipped {stats['skipped']}, Errors {stats['errors']}"
+        print(f"[{__name__}] Job completed: {msg} (duration: {duration}ms)", file=sys.stderr, flush=True)
         log_job_execution(job_id, True, msg, duration)
         try:
+            print(f"[{__name__}] Marking job as completed in database...", file=sys.stderr, flush=True)
             mark_job_completed(job_id, target_date, None, [], duration_ms=duration)
-        except:
-            pass
+            print(f"[{__name__}] Job marked as completed in database successfully", file=sys.stderr, flush=True)
+            logger.debug(f"Marked job as completed in database")
+        except Exception as db_error:
+            # CRITICAL: Log this prominently - if this fails, executions won't show in UI
+            error_msg = f"CRITICAL: Failed to mark job as completed in database: {db_error}"
+            print(f"[{__name__}] ❌ {error_msg}", file=sys.stderr, flush=True)
+            logger.error(f"❌ CRITICAL: Failed to mark job as completed in database: {db_error}")
+            logger.error(f"  Job executed successfully but execution won't appear in UI")
+            logger.error(f"  Error type: {type(db_error).__name__}")
+            logger.error(f"  Error details: {str(db_error)[:500]}")
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            logger.error(f"  Full traceback:\n{traceback.format_exc()}")
+            # Don't re-raise - job succeeded, just logging failed
         logger.info(f"✅ {msg}")
         
     except Exception as e:
@@ -550,7 +584,10 @@ def process_dividends_job(lookback_days: int = 7) -> None:
         log_job_execution(job_id, False, str(e), duration)
         try:
             mark_job_failed(job_id, target_date, None, str(e), duration_ms=duration)
-        except:
-            pass
+            logger.debug(f"Marked job as failed in database")
+        except Exception as db_error:
+            logger.error(f"Failed to mark job as failed in database: {db_error}")
+            logger.error(f"  This means the execution won't appear in the UI. Error details: {str(db_error)[:300]}")
+            # Don't re-raise here - the original error is more important
         logger.error(f"❌ Job Failed: {e}")
 

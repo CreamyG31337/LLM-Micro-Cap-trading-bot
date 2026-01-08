@@ -266,29 +266,19 @@ def update_portfolio_prices_job(
             from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
             
             # Initialize components
-            print("[scheduler.jobs_portfolio] DEBUG: Creating MarketDataFetcher...", flush=True)
             market_fetcher = MarketDataFetcher()
-            print("[scheduler.jobs_portfolio] DEBUG: MarketDataFetcher created", flush=True)
             
             # Create Settings with data_dir to avoid "No data directory" error
             from config.settings import Settings
-            print("[scheduler.jobs_portfolio] DEBUG: Creating Settings...", flush=True)
             cache_settings = Settings()
-            print("[scheduler.jobs_portfolio] DEBUG: Settings created, setting data_dir...", flush=True)
             # Set data directory explicitly in config
             cache_settings.set('repository.csv.data_directory', str(Path.home() / '.trading_bot_cache'))
-            print("[scheduler.jobs_portfolio] DEBUG: Creating PriceCache...", flush=True)
             price_cache = PriceCache(settings=cache_settings)
-            print("[scheduler.jobs_portfolio] DEBUG: PriceCache created", flush=True)
             
-            print("[scheduler.jobs_portfolio] DEBUG: Creating MarketHours...", flush=True)
             market_hours = MarketHours()
-            print("[scheduler.jobs_portfolio] DEBUG: Creating MarketHolidays...", flush=True)
             market_holidays = MarketHolidays()
-            print("[scheduler.jobs_portfolio] DEBUG: Creating SupabaseClient...", flush=True)
             # Use service role key to bypass RLS (background job needs full access)
             client = SupabaseClient(use_service_role=True)
-            print("[scheduler.jobs_portfolio] DEBUG: All components initialized!", flush=True)
             
             # Handle date range mode
             if use_date_range and from_date and to_date:

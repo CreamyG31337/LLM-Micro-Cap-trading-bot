@@ -255,51 +255,33 @@ def set_user_preference(key: str, value: Any) -> bool:
         # Note: Supabase will convert the JSON string to JSONB
         rpc_success = False
         try:
-            logger.info(f"Calling RPC set_user_preference with key='{key}', value='{json_value[:50]}...' (truncated)")
+            logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
             result = client.supabase.rpc('set_user_preference', {
                 'pref_key': key,
-                'pref_value': json_value
+                'pref_value': json_value,
+                'user_uuid': user_id  # Pass user ID explicitly (like is_admin does)
             }).execute()
             
             # Check if the RPC call succeeded
             # The function returns a boolean, but Supabase might wrap it
-            logger.info(f"RPC RAW RESULT OBJECT: {result}")
-            logger.info(f"RPC RAW RESULT DATA: {result.data}")
-            logger.info(f"RPC RAW RESULT DATA TYPE: {type(result.data)}")
-            
-            # Additional debug for list/dict types
-            if hasattr(result, 'count'):
-                logger.info(f"RPC RESULT COUNT: {result.count}")
-            
             logger.info(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
             
             # Handle different response formats
-            # Supabase can return: True, [True], "true", 1, etc.
             if result.data is None:
                 logger.warning(f"RPC set_user_preference returned None for key '{key}'")
-            elif result.data is False or result.data == 'false' or result.data == 0:
+            elif result.data is False:
                 logger.warning(f"RPC set_user_preference returned False for key '{key}'")
-            elif result.data is True or result.data == 'true' or result.data == 1:
+            elif result.data is True:
                 rpc_success = True
-                logger.info(f"RPC set_user_preference succeeded with result: {result.data}")
-            elif isinstance(result.data, list):
-                if len(result.data) > 0:
-                    first = result.data[0]
-                    if first is True or first == 'true' or first == 1 or (first and first not in [False, 'false', 0]):
-                        rpc_success = True
-                        logger.info(f"RPC set_user_preference succeeded with list result: {result.data}")
-                    else:
-                        logger.warning(f"RPC set_user_preference returned list with falsy first element: {result.data}")
-                else:
-                    # Empty list - might still be success (void return)
-                    logger.info(f"RPC set_user_preference returned empty list - treating as success")
+            elif isinstance(result.data, list) and len(result.data) > 0:
+                if result.data[0] is True:
                     rpc_success = True
-            elif result.data:
-                # Any other truthy value - treat as success
-                rpc_success = True
-                logger.info(f"RPC set_user_preference got truthy result: {result.data} (type: {type(result.data).__name__})")
+                elif result.data[0] is False:
+                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
+                else:
+                    logger.warning(f"RPC set_user_preference returned unexpected list value: {result.data}")
             else:
-                logger.warning(f"RPC set_user_preference returned unexpected falsy value: {result.data}")
+                logger.warning(f"RPC set_user_preference returned unexpected value: {result.data}")
         except Exception as rpc_error:
             logger.warning(f"RPC call via Supabase client failed: {rpc_error}, trying HTTP fallback")
             rpc_success = False
@@ -323,7 +305,8 @@ def set_user_preference(key: str, value: Any) -> bool:
                         },
                         json={
                             "pref_key": key,
-                            "pref_value": json_value
+                            "pref_value": json_value,
+                            "user_uuid": user_id  # Pass user ID explicitly
                         }
                     )
                     
@@ -339,12 +322,11 @@ def set_user_preference(key: str, value: Any) -> bool:
             except Exception as http_error:
                 logger.error(f"HTTP fallback also failed: {http_error}", exc_info=True)
         
-        # Check final result and handle accordingly
         if not rpc_success:
             logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}'")
             return False
         
-        # Success! Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
+        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
         # This is more robust as it forces a fresh DB read on next access,
         # preventing stale cache state if the session cookie update fails.
         cache = _get_cache()
@@ -354,7 +336,52 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         logger.info(f"Successfully set preference '{key}' = {value}")
         return True
-    
+        except Exception as rpc_error:
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}")
+            logger.error(f"Full traceback: {error_details}")
+            
+            # Try HTTP fallback on exception too
+            if user_token:
+                try:
+                    import requests
+                    import os
+                    supabase_url = os.getenv("SUPABASE_URL")
+                    supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                    
+                    if supabase_url and supabase_anon_key:
+                        logger.info(f"Trying HTTP fallback after exception for set_user_preference with key='{key}'")
+                        response = requests.post(
+                            f"{supabase_url}/rest/v1/rpc/set_user_preference",
+                            headers={
+                                "apikey": supabase_anon_key,
+                                "Authorization": f"Bearer {user_token}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "pref_key": key,
+                                "pref_value": json_value
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            result_data = response.json()
+                            if result_data is True or (isinstance(result_data, list) and len(result_data) > 0 and result_data[0] is True):
+                                # Update cache
+                                cache = _get_cache()
+                                cache_key = f"_pref_{key}"
+                                if cache_key in cache:
+                                    del cache[cache_key]
+                                logger.info(f"HTTP fallback succeeded for preference '{key}'")
+                                return True
+                        else:
+                            logger.error(f"HTTP fallback failed with status {response.status_code}: {response.text}")
+                except Exception as http_error:
+                    logger.error(f"HTTP fallback also failed: {http_error}")
+            
+            return False
+        
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False

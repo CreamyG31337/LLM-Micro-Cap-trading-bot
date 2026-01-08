@@ -191,6 +191,7 @@ def setup_logging(level=logging.INFO):
         'streamlit_utils',
         'chart_utils', 
         'auth_utils',
+        'user_preferences',
         'supabase_client',
         'exchange_rates_utils',
         'scheduler',

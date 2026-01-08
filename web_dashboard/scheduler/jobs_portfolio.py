@@ -269,7 +269,9 @@ def update_portfolio_prices_job(
             market_fetcher = MarketDataFetcher()
             # Create Settings with data_dir to avoid "No data directory" error
             from config.settings import Settings
-            cache_settings = Settings(data_dir=str(Path.home() / '.trading_bot_cache'))
+            cache_settings = Settings()
+            # Set data directory explicitly in config
+            cache_settings.set('repository.csv.data_directory', str(Path.home() / '.trading_bot_cache'))
             price_cache = PriceCache(settings=cache_settings)
             market_hours = MarketHours()
             market_holidays = MarketHolidays()

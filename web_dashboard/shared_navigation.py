@@ -15,7 +15,6 @@ Tracks which pages have been migrated to Flask.
 MIGRATED_PAGES = {
     'settings': '/v2/settings',  # Routed to Flask via Caddy /v2/* handler
     'admin_logs': '/v2/logs',    # Admin logs viewer
-    'ticker_details': '/v2/ticker',  # Ticker details page
 }
 
 

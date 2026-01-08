@@ -63,7 +63,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             # Ticker Lookup - check if migrated to Flask
             try:
                 from shared_navigation import is_page_migrated, get_page_url
-                if is_page_migrated('ticker_details'):
+                if is_v2_enabled and is_page_migrated('ticker_details'):
                     # Use markdown link for Flask route (opens in same window)
                     ticker_url = get_page_url('ticker_details')
                     st.sidebar.markdown(f'<a href="{ticker_url}" target="_self" style="text-decoration: none; color: inherit;">🔍 Ticker Lookup</a>', unsafe_allow_html=True)

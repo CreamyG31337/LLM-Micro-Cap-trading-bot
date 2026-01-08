@@ -57,6 +57,32 @@ CORS(app,
 # Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
 
+# Global error handler to expose tracebacks in response
+@app.errorhandler(500)
+def internal_server_error(e):
+    import traceback
+    return jsonify({
+        "error": "Internal Server Error",
+        "message": str(e),
+        "traceback": traceback.format_exc()
+    }), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP errors
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    
+    # Handle non-HTTP exceptions (like 500s)
+    import traceback
+    logger.error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
+    return jsonify({
+        "error": "Unhandled Exception",
+        "message": str(e),
+        "traceback": traceback.format_exc()
+    }), 500
+
 # Import Supabase client, auth, and repository system
 try:
     from supabase_client import SupabaseClient
@@ -1733,7 +1759,7 @@ def api_ticker_external_links():
         return jsonify(links)
     except Exception as e:
         logger.error(f"Error fetching external links for {ticker}: {e}")
-        return jsonify({\"error\": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 # ============================================================================
 # TEST ROUTE - Minimal navigation test page

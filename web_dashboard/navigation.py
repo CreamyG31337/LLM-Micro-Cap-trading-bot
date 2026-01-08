@@ -20,9 +20,12 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     """
     # CRITICAL: Restore session from cookies FIRST before any preference checks
     # This ensures we have valid auth context when checking v2_enabled
+    session_was_restored = False
     try:
         from auth_utils import ensure_session_restored
-        ensure_session_restored()
+        if ensure_session_restored():
+            # Session was restored - mark for preference reload
+            session_was_restored = True
     except Exception:
         pass  # Continue with navigation even if restoration fails
     
@@ -34,16 +37,24 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         def get_user_preference(key, default=None): return default
         def set_user_preference(*args): return False
     
-    # V2 preference: Always reload from database if authenticated
-    # This ensures it persists even after auth failures/redirects
+    # V2 preference: Load from database only on first load or after auth restoration
+    # This ensures it persists after auth failures/redirects without causing refresh loops
     try:
         # Check if we're authenticated first
         from auth_utils import is_authenticated
         if is_authenticated():
-            # Always reload from DB to get latest value (survives session resets)
-            db_value = get_user_preference('v2_enabled', default=False)
-            # Update session state to match DB
-            st.session_state._v2_enabled = db_value
+            # Only reload from DB if:
+            # 1. Not in session state (first load), OR
+            # 2. Session was just restored (after auth failure/redirect)
+            if '_v2_enabled' not in st.session_state:
+                # First load: get from database
+                db_value = get_user_preference('v2_enabled', default=False)
+                st.session_state._v2_enabled = db_value
+            elif session_was_restored:
+                # Session was restored - reload from DB to get saved preference
+                db_value = get_user_preference('v2_enabled', default=False)
+                st.session_state._v2_enabled = db_value
+            # Otherwise, use existing session state value (prevents refresh loops after toggle)
         else:
             # Not authenticated - use session state if exists, otherwise default to False
             if '_v2_enabled' not in st.session_state:
@@ -80,32 +91,41 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             .v2-nav-link {
                 display: flex;
                 align-items: center;
-                padding: 0.35rem 0.75rem;
+                padding: 0.4rem 0.75rem;
                 border-radius: 0.5rem;
                 text-decoration: none;
                 color: inherit;
-                transition: background-color 0.15s ease;
+                font-family: inherit;
+                transition: background-color 0.2s, transform 0.1s;
                 margin: 0.1rem 0;
                 cursor: pointer;
                 border: 1px solid transparent;
             }
             .v2-nav-link:hover {
-                background-color: rgba(151, 166, 195, 0.1);
-                border-color: rgba(128, 128, 128, 0.1);
+                background-color: rgba(151, 166, 195, 0.15);
+                border-color: rgba(151, 166, 195, 0.1);
+            }
+            .v2-nav-link:active {
+                transform: scale(0.98);
             }
             .v2-nav-icon {
                 margin-right: 0.75rem;
-                font-size: 1.1rem;
+                font-size: 1.15rem;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 width: 1.25rem;
                 min-width: 1.25rem;
+                opacity: 0.9;
             }
             .v2-nav-label {
                 font-size: 0.875rem;
                 font-weight: 400;
-                line-height: 1.5;
+                line-height: inherit;
+                letter-spacing: normal;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
             .nav-divider {
                 margin: 1rem 0;

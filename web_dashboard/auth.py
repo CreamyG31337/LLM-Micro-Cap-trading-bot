@@ -124,7 +124,7 @@ def require_auth(f):
                 return jsonify({"error": "Authentication required"}), 401
             else:
                 from flask import redirect, url_for
-                return redirect(url_for('auth_page'))
+                return redirect('/')
         
         # Try to verify with auth_manager (for session_token format)
         user_data = auth_manager.verify_session(token)
@@ -157,7 +157,7 @@ def require_auth(f):
                 return jsonify({"error": "Invalid or expired session"}), 401
             else:
                 from flask import redirect, url_for
-                return redirect(url_for('auth_page'))
+                return redirect('/')
         
         # Add user data to request context
         request.user_id = user_data.get("user_id") or user_data.get("sub")

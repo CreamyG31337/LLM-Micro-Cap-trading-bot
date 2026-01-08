@@ -1103,6 +1103,92 @@ def export_cash():
         logger.error(f"Cash export error: {e}")
         return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
+@app.route('/v2/logs')
+@require_admin
+def logs_page():
+    """Admin logs viewer page (Flask v2)"""
+    try:
+        from user_preferences import get_user_theme
+        user_theme = get_user_theme() or 'system'
+    except Exception:
+        user_theme = 'system'
+    return render_template('logs.html', user_theme=user_theme)
+
+@app.route('/api/logs/application')
+@require_admin
+def api_logs_application():
+    """Get application logs with filtering"""
+    try:
+        from log_handler import read_logs_from_file
+        
+        # Get query parameters
+        level = request.args.get('level', 'INFO + ERROR')
+        limit = int(request.args.get('limit', 100))
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        
+        # Handle special "INFO + ERROR" filter
+        if level == "All":
+            level_filter = None
+        elif level == "INFO + ERROR":
+            level_filter = ["INFO", "ERROR"]
+        else:
+            level_filter = level
+        
+        # Get all filtered logs
+        all_logs = read_logs_from_file(
+            n=None,
+            level=level_filter,
+            search=search if search else None,
+            return_all=True
+        )
+        
+        # Reverse for newest first
+        all_logs = list(reversed(all_logs))
+        
+        # Pagination
+        total = len(all_logs)
+        start = (page - 1) * limit
+        end = start + limit
+        logs = all_logs[start:end]
+        
+        # Format logs for JSON
+        formatted_logs = []
+        for log in logs:
+            formatted_logs.append({
+                'timestamp': log['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                'level': log['level'],
+                'module': log['module'],
+                'message': log['message']
+            })
+        
+        return jsonify({
+            'logs': formatted_logs,
+            'total': total,
+            'page': page,
+            'pages': (total + limit - 1) // limit if total > 0 else 1
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching logs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/logs/clear', methods=['POST'])
+@require_admin
+def api_logs_clear():
+    """Clear application logs"""
+    try:
+        import os
+        log_file = os.path.join(os.path.dirname(__file__), 'logs', 'app.log')
+        if os.path.exists(log_file):
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.write("")
+            return jsonify({'success': True, 'message': 'Logs cleared'})
+        return jsonify({'success': False, 'error': 'Log file not found'}), 404
+    except Exception as e:
+        logger.error(f"Error clearing logs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/v2/settings')
 @require_auth
 def settings_page():
@@ -1120,7 +1206,8 @@ def settings_page():
                              user_email=user_email,
                              current_timezone=current_timezone,
                              current_currency=current_currency,
-                             current_theme=current_theme)
+                             current_theme=current_theme,
+                             user_theme=current_theme)
     except Exception as e:
         logger.error(f"Error loading settings page: {e}")
         return jsonify({"error": "Failed to load settings page"}), 500

@@ -14,6 +14,7 @@ Tracks which pages have been migrated to Flask.
 #   - everything else → Streamlit (port 8501)
 MIGRATED_PAGES = {
     'settings': '/v2/settings',  # Routed to Flask via Caddy /v2/* handler
+    'admin_logs': '/v2/logs',    # Admin logs viewer
 }
 
 

@@ -1,0 +1,171 @@
+/* Theme System for Flask Pages
+ * Supports: light, dark, and system (follows OS preference)
+ */
+
+/* Light Mode Variables */
+:root[data-theme="light"], :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --text-tertiary: #9ca3af;
+    --border-color: #e5e7eb;
+    --border-hover: #d1d5db;
+    --gradient-from: #667eea;
+    --gradient-to: #764ba2;
+    
+    /* Component colors */
+    --log-line-hover: #f9fafb;
+    --code-bg: #ffffff;
+    --code-border: #e5e7eb;
+    
+    /* Log level colors (light mode) */
+    --log-debug: #6b7280;
+    --log-perf: #8b5cf6;
+    --log-info: #3b82f6;
+    --log-warning: #f59e0b;
+    --log-error: #ef4444;
+}
+
+/* Dark Mode Variables */
+:root[data-theme="dark"] {
+    --bg-primary: #1f2937;
+    --bg-secondary: #111827;
+    --bg-tertiary: #374151;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-tertiary: #9ca3af;
+    --border-color: #374151;
+    --border-hover: #4b5563;
+    --gradient-from: #4f46e5;
+    --gradient-to: #7c3aed;
+    
+    /* Component colors */
+    --log-line-hover: #374151;
+    --code-bg: #1f2937;
+    --code-border: #374151;
+    
+    /* Log level colors (dark mode - slightly brighter for visibility) */
+    --log-debug: #9ca3af;
+    --log-perf: #a78bfa;
+    --log-info: #60a5fa;
+    --log-warning: #fbbf24;
+    --log-error: #f87171;
+}
+
+/* System Theme - Use browser/OS preference */
+@media (prefers-color-scheme: dark) {
+    :root[data-theme="system"] {
+        --bg-primary: #1f2937;
+        --bg-secondary: #111827;
+        --bg-tertiary: #374151;
+        --text-primary: #f9fafb;
+        --text-secondary: #d1d5db;
+        --text-tertiary: #9ca3af;
+        --border-color: #374151;
+        --border-hover: #4b5563;
+        --gradient-from: #4f46e5;
+        --gradient-to: #7c3aed;
+        --log-line-hover: #374151;
+        --code-bg: #1f2937;
+        --code-border: #374151;
+        --log-debug: #9ca3af;
+        --log-perf: #a78bfa;
+        --log-info: #60a5fa;
+        --log-warning: #fbbf24;
+        --log-error: #f87171;
+    }
+}
+
+/* Apply theme to body and main elements */
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards and containers */
+.bg-white {
+    background-color: var(--bg-primary) !important;
+}
+
+.bg-gray-100 {
+    background-color: var(--bg-secondary) !important;
+}
+
+.bg-gray-50 {
+    background-color: var(--bg-tertiary) !important;
+}
+
+/* Text colors */
+.text-gray-900 {
+    color: var(--text-primary) !important;
+}
+
+.text-gray-600, .text-gray-700 {
+    color: var(--text-secondary) !important;
+}
+
+.text-gray-500 {
+    color: var(--text-tertiary) !important;
+}
+
+/* Borders */
+.border-gray-300 {
+    border-color: var(--border-color) !important;
+}
+
+.border-gray-200 {
+    border-color: var(--border-color) !important;
+}
+
+/* Inputs */
+input, select, textarea {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+input:hover, select:hover, textarea:hover {
+    border-color: var(--border-hover) !important;
+}
+
+/* Gradient backgrounds */
+.gradient-bg {
+    background: linear-gradient(135deg, var(--gradient-from) 0%, var(--gradient-to) 100%) !important;
+}
+
+/* Log-specific styling */
+.log-line {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-line:hover {
+    background-color: var(--log-line-hover);
+}
+
+.log-container {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+}
+
+/* Log level colors */
+.log-DEBUG { color: var(--log-debug); }
+.log-PERF { color: var(--log-perf); }
+.log-INFO { color: var(--log-info); }
+.log-WARNING { color: var(--log-warning); }
+.log-ERROR { color: var(--log-error); }
+
+/* Buttons remain colorful in both modes */
+.bg-blue-600:hover {
+    background-color: #2563eb !important;
+}
+
+.bg-red-600:hover {
+    background-color: #dc2626 !important;
+}
+
+.bg-gray-200:hover {
+    background-color: var(--bg-tertiary) !important;
+}

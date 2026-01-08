@@ -89,6 +89,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        // Apply theme immediately by updating data-theme attribute
+                        document.documentElement.setAttribute('data-theme', theme);
                         showSuccess('theme-success');
                     } else {
                         showError('theme-error');

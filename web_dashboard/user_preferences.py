@@ -120,17 +120,32 @@ def get_user_preference(key: str, default: Any = None) -> Any:
             return default
         
         # Get Supabase client (works in both contexts)
+        client = None
         try:
             from streamlit_utils import get_supabase_client
+            # Try to get token from Streamlit context
+            try:
+                from auth_utils import get_user_token
+                user_token = get_user_token()
+                client = get_supabase_client(user_token=user_token)
+            except ImportError:
+                client = get_supabase_client()
         except ImportError:
+            # Flask context - need to get token from Flask request
             try:
                 from supabase_client import SupabaseClient
-                def get_supabase_client():
-                    return SupabaseClient()
+                from flask_auth_utils import get_auth_token
+                from flask import has_request_context
+                
+                if has_request_context():
+                    # Get token from Flask cookies
+                    user_token = get_auth_token()
+                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
+                else:
+                    client = SupabaseClient()
             except ImportError:
                 return default
         
-        client = get_supabase_client()
         if not client:
             return default
         
@@ -189,18 +204,33 @@ def set_user_preference(key: str, value: Any) -> bool:
             return False
         
         # Get Supabase client (works in both contexts)
+        client = None
         try:
             from streamlit_utils import get_supabase_client
+            # Try to get token from Streamlit context
+            try:
+                from auth_utils import get_user_token
+                user_token = get_user_token()
+                client = get_supabase_client(user_token=user_token)
+            except ImportError:
+                client = get_supabase_client()
         except ImportError:
+            # Flask context - need to get token from Flask request
             try:
                 from supabase_client import SupabaseClient
-                def get_supabase_client():
-                    return SupabaseClient()
+                from flask_auth_utils import get_auth_token
+                from flask import has_request_context
+                
+                if has_request_context():
+                    # Get token from Flask cookies
+                    user_token = get_auth_token()
+                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
+                else:
+                    client = SupabaseClient()
             except ImportError:
                 logger.warning("Cannot set preference: no Supabase client available")
                 return False
         
-        client = get_supabase_client()
         if not client:
             logger.warning("Cannot set preference: no Supabase client")
             return False
@@ -269,17 +299,32 @@ def get_all_user_preferences() -> Dict[str, Any]:
             return {}
         
         # Get Supabase client (works in both contexts)
+        client = None
         try:
             from streamlit_utils import get_supabase_client
+            # Try to get token from Streamlit context
+            try:
+                from auth_utils import get_user_token
+                user_token = get_user_token()
+                client = get_supabase_client(user_token=user_token)
+            except ImportError:
+                client = get_supabase_client()
         except ImportError:
+            # Flask context - need to get token from Flask request
             try:
                 from supabase_client import SupabaseClient
-                def get_supabase_client():
-                    return SupabaseClient()
+                from flask_auth_utils import get_auth_token
+                from flask import has_request_context
+                
+                if has_request_context():
+                    # Get token from Flask cookies
+                    user_token = get_auth_token()
+                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
+                else:
+                    client = SupabaseClient()
             except ImportError:
                 return {}
         
-        client = get_supabase_client()
         if not client:
             return {}
         

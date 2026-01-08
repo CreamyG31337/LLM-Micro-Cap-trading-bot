@@ -19,12 +19,12 @@ sys.path.insert(0, str(web_dashboard_path))
 from scheduler.jobs_portfolio import backfill_portfolio_prices_range
 
 if __name__ == "__main__":
-    print("🔍 Debug: Running portfolio price backfill job locally")
+    print("Debug: Running portfolio price backfill job locally")
     print("=" * 60)
     
-    # Use the same date range from the logs
+    # Run for about 2 weeks: Dec 17, 2025 to Jan 1, 2026
     from_date = date(2025, 12, 17)
-    to_date = date(2026, 1, 7)
+    to_date = date(2026, 1, 1)  # About 2 weeks of trading days
     
     print(f"Date range: {from_date} to {to_date}")
     print(f"Starting backfill...")
@@ -34,9 +34,9 @@ if __name__ == "__main__":
         # Call the exact same function the scheduler calls
         backfill_portfolio_prices_range(from_date, to_date)
         print("\n" + "=" * 60)
-        print("✅ Backfill completed - check output above for details")
+        print("Backfill completed - check output above for details")
     except Exception as e:
         print("\n" + "=" * 60)
-        print(f"❌ Error occurred: {e}")
+        print(f"Error occurred: {e}")
         import traceback
         traceback.print_exc()

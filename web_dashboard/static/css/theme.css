@@ -189,3 +189,10 @@ textarea:hover {
 .bg-gray-200:hover {
     background-color: var(--bg-tertiary) !important;
 }
+
+/* FIX: Sidebar visibility overlap issue */
+@media (min-width: 768px) {
+    #sidebar {
+        transform: none !important;
+    }
+}

@@ -100,10 +100,20 @@ class AuthManager:
             )
             
             if response.status_code == 200:
-                return response.json()
+                result = response.json()
+                # Handle both boolean and list responses
+                if isinstance(result, bool):
+                    return result
+                elif isinstance(result, list) and len(result) > 0:
+                    return bool(result[0])
+                else:
+                    logger.warning(f"Unexpected is_admin response format: {result}")
+                    return False
+            else:
+                logger.warning(f"is_admin RPC returned status {response.status_code}: {response.text}")
             return False
         except Exception as e:
-            logger.error(f"Error checking admin status: {e}")
+            logger.error(f"Error checking admin status for user_id {user_id}: {e}")
             return False
 
 # Global auth manager instance
@@ -241,8 +251,42 @@ def require_admin(f):
         request.user_id = user_data.get("user_id") or user_data.get("sub")
         request.user_email = user_data.get("email")
         
-        # Now check admin status
-        if not auth_manager.is_admin(request.user_id):
+        # Now check admin status - use user's token for RPC call
+        is_user_admin = False
+        try:
+            # Try with user's JWT token first (more reliable with RLS)
+            if token and len(token.split('.')) == 3:
+                try:
+                    import requests
+                    response = requests.post(
+                        f"{auth_manager.supabase_url}/rest/v1/rpc/is_admin",
+                        headers={
+                            "apikey": auth_manager.supabase_anon_key,
+                            "Authorization": f"Bearer {token}",  # Use user's token
+                            "Content-Type": "application/json"
+                        },
+                        json={"user_uuid": request.user_id}
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if isinstance(result, bool):
+                            is_user_admin = result
+                        elif isinstance(result, list) and len(result) > 0:
+                            is_user_admin = bool(result[0])
+                        else:
+                            logger.warning(f"Unexpected is_admin response: {result}")
+                except Exception as e:
+                    logger.debug(f"Error checking admin with user token: {e}")
+            
+            # Fallback to auth_manager method (uses anon key)
+            if not is_user_admin:
+                is_user_admin = auth_manager.is_admin(request.user_id)
+        except Exception as e:
+            logger.error(f"Error checking admin status: {e}")
+        
+        if not is_user_admin:
+            logger.warning(f"Admin check failed for user_id: {request.user_id}, email: {request.user_email}")
             if request.path.startswith('/api/'):
                 return jsonify({"error": "Admin privileges required"}), 403
             else:

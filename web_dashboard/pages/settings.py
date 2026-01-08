@@ -111,6 +111,11 @@ def render_timezone_settings():
     # Get current timezone
     current_tz = get_user_timezone()
     
+    # Also try getting it directly via get_user_preference for debugging
+    from user_preferences import get_user_preference
+    direct_tz = get_user_preference('timezone', default=None)
+    st.caption(f"🔍 DEBUG: Direct get_user_preference('timezone') = {repr(direct_tz)}, type = {type(direct_tz).__name__}")
+    
     # Debug output
     tz_options = list(COMMON_TIMEZONES.keys())
     st.caption(f"🔍 DEBUG: current_tz = {repr(current_tz)}, type = {type(current_tz).__name__}")

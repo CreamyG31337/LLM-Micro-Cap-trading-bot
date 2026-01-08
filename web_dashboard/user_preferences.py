@@ -108,7 +108,14 @@ def get_user_preference(key: str, default: Any = None) -> Any:
     cache_key = f"_pref_{key}"
     # v2_enabled controls navigation and must always be read fresh from database
     if key != 'v2_enabled' and cache_key in cache:
-        return cache[cache_key]
+        cached_value = cache[cache_key]
+        logger.debug(f"[PREF] Cache hit for '{key}': {cached_value} (type: {type(cached_value).__name__})")
+        # If cache has None but we know the value exists (from get_all_user_preferences),
+        # bypass cache and read from DB
+        if cached_value is None:
+            logger.debug(f"[PREF] Cache has None for '{key}', bypassing cache to check DB")
+        else:
+            return cached_value
     
     # Try to get from database
     try:
@@ -152,27 +159,49 @@ def get_user_preference(key: str, default: Any = None) -> Any:
         # Call the RPC function to get preference
         result = client.supabase.rpc('get_user_preference', {'pref_key': key}).execute()
         
+        # Debug logging
+        logger.debug(f"[PREF] RPC result for '{key}': data={result.data}, type={type(result.data).__name__}")
+        
         if result.data is not None:
             # Handle both scalar and list responses
             if isinstance(result.data, list) and len(result.data) > 0:
                 value = result.data[0]
+                logger.debug(f"[PREF] Extracted from list: value={value}, type={type(value).__name__}")
             else:
                 value = result.data
+                logger.debug(f"[PREF] Using direct value: value={value}, type={type(value).__name__}")
             
             # JSONB values from Supabase can be returned in different formats:
             # 1. Already decoded Python types (str, int, bool, None, dict, list)
             # 2. JSON-encoded strings that need parsing
             # 3. None/null values
+            # 4. Dict/object structures that need unwrapping
             
             # Handle None/null values first
             if value is None:
+                logger.debug(f"[PREF] Value is None for '{key}', returning default")
                 return default
+            
+            # If it's a dict, it might be a wrapped JSONB object - try to extract the value
+            # Some Supabase clients return JSONB as {"value": "actual_value"} or similar
+            if isinstance(value, dict):
+                logger.debug(f"[PREF] Value is dict for '{key}': {value}")
+                # Try common keys that might contain the actual value
+                if 'value' in value:
+                    value = value['value']
+                    logger.debug(f"[PREF] Extracted 'value' key: {value}")
+                elif len(value) == 1:
+                    # If dict has only one key, use that value
+                    value = list(value.values())[0]
+                    logger.debug(f"[PREF] Extracted single dict value: {value}")
+                # Otherwise, keep the dict as-is (might be intentional)
             
             # If it's a string, check if it's JSON-encoded
             if isinstance(value, str):
                 # Check if it's a JSON-encoded string (starts/ends with quotes or is valid JSON)
                 value_stripped = value.strip()
                 if value_stripped.lower() == 'null':
+                    logger.debug(f"[PREF] Value is 'null' string for '{key}', returning default")
                     return default
                 # Try to parse as JSON (handles JSON-encoded strings like "\"value\"")
                 try:
@@ -181,18 +210,24 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                     # (avoids double-parsing already decoded values)
                     # But if parsed is a string, use it (it was JSON-encoded)
                     if isinstance(parsed, str) or parsed != value:
+                        logger.debug(f"[PREF] Parsed JSON string for '{key}': {parsed}")
                         value = parsed
                 except (json.JSONDecodeError, TypeError):
                     # Not JSON-encoded, use as-is
+                    logger.debug(f"[PREF] Value is plain string for '{key}': {value}")
                     pass
             
             # Handle boolean JSONB values that might be strings
             if isinstance(value, str) and value.lower() in ('true', 'false'):
                 value = value.lower() == 'true'
+                logger.debug(f"[PREF] Converted string boolean for '{key}': {value}")
             
             # Handle None after parsing
             if value is None or (isinstance(value, str) and value.lower() == 'null'):
+                logger.debug(f"[PREF] Value is None/null after parsing for '{key}', returning default")
                 return default
+            
+            logger.debug(f"[PREF] Final value for '{key}': {value} (type: {type(value).__name__})")
             
             # Cache in session (but skip v2_enabled to ensure fresh reads)
             if value is not None and key != 'v2_enabled':
@@ -201,6 +236,7 @@ def get_user_preference(key: str, default: Any = None) -> Any:
             elif value is not None:
                 return value
         
+        logger.debug(f"[PREF] No value found for '{key}', returning default")
         return default
         
     except Exception as e:

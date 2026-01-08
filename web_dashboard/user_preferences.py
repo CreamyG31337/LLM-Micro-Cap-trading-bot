@@ -151,9 +151,11 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                 except (json.JSONDecodeError, TypeError):
                     pass  # Keep as string if not valid JSON
             
-            # Cache in session
-            if value is not None:
+            # Cache in session (but skip v2_enabled to ensure fresh reads)
+            if value is not None and key != 'v2_enabled':
                 cache[cache_key] = value
+                return value
+            elif value is not None:
                 return value
         
         return default
@@ -214,10 +216,15 @@ def set_user_preference(key: str, value: Any) -> bool:
             'pref_value': json_value
         }).execute()
         
-        # Update session cache
+        # Update session cache (but skip v2_enabled to ensure fresh reads)
         cache = _get_cache()
         cache_key = f"_pref_{key}"
-        cache[cache_key] = value
+        if key == 'v2_enabled':
+            # Actively clear any existing cached value for v2_enabled
+            if cache_key in cache:
+                del cache[cache_key]
+        else:
+            cache[cache_key] = value
         
         return True
         

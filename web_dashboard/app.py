@@ -1219,16 +1219,57 @@ def logs_debug():
     try:
         from flask_auth_utils import get_user_email_flask, get_user_id_flask
         from auth import is_admin
+        from supabase_client import SupabaseClient
         
         user_email = get_user_email_flask()
         user_id = get_user_id_flask()
+        request_user_id = getattr(request, 'user_id', None)
         admin_status = is_admin() if hasattr(request, 'user_id') else False
+        
+        # Check user profile directly in database
+        profile_role = None
+        profile_error = None
+        try:
+            token = request.cookies.get('auth_token') or request.cookies.get('session_token')
+            if token:
+                client = SupabaseClient()
+                if len(token.split('.')) == 3:
+                    client.supabase.auth.set_session(token)
+                
+                # Query user_profiles table directly
+                result = client.supabase.table('user_profiles').select('role, email').eq('user_id', request_user_id).execute()
+                if result.data and len(result.data) > 0:
+                    profile_role = result.data[0].get('role')
+                else:
+                    profile_error = "No profile found"
+        except Exception as e:
+            profile_error = str(e)
+            logger.error(f"Error querying user_profiles: {e}", exc_info=True)
+        
+        # Try RPC call directly
+        rpc_result = None
+        rpc_error = None
+        try:
+            token = request.cookies.get('auth_token') or request.cookies.get('session_token')
+            if token and request_user_id:
+                client = SupabaseClient()
+                if len(token.split('.')) == 3:
+                    client.supabase.auth.set_session(token)
+                rpc_response = client.supabase.rpc('is_admin', {'user_uuid': request_user_id}).execute()
+                rpc_result = rpc_response.data
+        except Exception as e:
+            rpc_error = str(e)
+            logger.error(f"Error calling is_admin RPC: {e}", exc_info=True)
         
         return jsonify({
             "user_email": user_email,
             "user_id": user_id,
-            "request_user_id": getattr(request, 'user_id', None),
+            "request_user_id": request_user_id,
             "is_admin": admin_status,
+            "profile_role": profile_role,
+            "profile_error": profile_error,
+            "rpc_result": rpc_result,
+            "rpc_error": rpc_error,
             "auth_token_present": bool(request.cookies.get('auth_token')),
             "session_token_present": bool(request.cookies.get('session_token'))
         })

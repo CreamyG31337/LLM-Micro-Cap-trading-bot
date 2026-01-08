@@ -336,55 +336,12 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         logger.info(f"Successfully set preference '{key}' = {value}")
         return True
-        except Exception as rpc_error:
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}")
-            logger.error(f"Full traceback: {error_details}")
-            
-            # Try HTTP fallback on exception too
-            if user_token:
-                try:
-                    import requests
-                    import os
-                    supabase_url = os.getenv("SUPABASE_URL")
-                    supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-                    
-                    if supabase_url and supabase_anon_key:
-                        logger.info(f"Trying HTTP fallback after exception for set_user_preference with key='{key}'")
-                        response = requests.post(
-                            f"{supabase_url}/rest/v1/rpc/set_user_preference",
-                            headers={
-                                "apikey": supabase_anon_key,
-                                "Authorization": f"Bearer {user_token}",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "pref_key": key,
-                                "pref_value": json_value
-                            }
-                        )
-                        
-                        if response.status_code == 200:
-                            result_data = response.json()
-                            if result_data is True or (isinstance(result_data, list) and len(result_data) > 0 and result_data[0] is True):
-                                # Update cache
-                                cache = _get_cache()
-                                cache_key = f"_pref_{key}"
-                                if cache_key in cache:
-                                    del cache[cache_key]
-                                logger.info(f"HTTP fallback succeeded for preference '{key}'")
-                                return True
-                        else:
-                            logger.error(f"HTTP fallback failed with status {response.status_code}: {response.text}")
-                except Exception as http_error:
-                    logger.error(f"HTTP fallback also failed: {http_error}")
-            
-            return False
+        
         
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False
+
 
 
 def get_user_timezone() -> Optional[str]:

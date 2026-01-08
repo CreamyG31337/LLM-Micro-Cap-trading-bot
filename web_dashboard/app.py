@@ -1212,6 +1212,30 @@ def export_cash():
         logger.error(f"Cash export error: {e}")
         return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
+@app.route('/v2/logs/debug')
+@require_auth
+def logs_debug():
+    """Debug endpoint to check admin status without requiring admin"""
+    try:
+        from flask_auth_utils import get_user_email_flask, get_user_id_flask
+        from auth import is_admin
+        
+        user_email = get_user_email_flask()
+        user_id = get_user_id_flask()
+        admin_status = is_admin() if hasattr(request, 'user_id') else False
+        
+        return jsonify({
+            "user_email": user_email,
+            "user_id": user_id,
+            "request_user_id": getattr(request, 'user_id', None),
+            "is_admin": admin_status,
+            "auth_token_present": bool(request.cookies.get('auth_token')),
+            "session_token_present": bool(request.cookies.get('session_token'))
+        })
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/v2/logs')
 @require_admin
 def logs_page():
@@ -1226,11 +1250,14 @@ def logs_page():
         # Get navigation context
         nav_context = get_navigation_context(current_page='admin_logs')
         
+        logger.info(f"Rendering logs page for user: {user_email}")
+        
         return render_template('logs.html', 
                              user_email=user_email,
                              user_theme=user_theme,
                              **nav_context)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error rendering logs page: {e}", exc_info=True)
         user_theme = 'system'
         nav_context = get_navigation_context(current_page='admin_logs')
         return render_template('logs.html', 

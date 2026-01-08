@@ -38,11 +38,18 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     # The toggle is now on the settings page to avoid refresh loops
     try:
         from auth_utils import is_authenticated
+        import logging
+        nav_logger = logging.getLogger(__name__)
         if is_authenticated():
             is_v2_enabled = get_user_preference('v2_enabled', default=False)
+            nav_logger.info(f"[NAV DEBUG] v2_enabled loaded = {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
         else:
             is_v2_enabled = False
-    except Exception:
+            nav_logger.info("[NAV DEBUG] User not authenticated, v2_enabled = False")
+    except Exception as e:
+        import logging
+        nav_logger = logging.getLogger(__name__)
+        nav_logger.warning(f"[NAV DEBUG] Exception loading v2_enabled: {e}")
         is_v2_enabled = False
     
     try:

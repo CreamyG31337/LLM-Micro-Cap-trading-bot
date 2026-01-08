@@ -103,10 +103,11 @@ def get_user_preference(key: str, default: Any = None) -> Any:
     Returns:
         Preference value or default
     """
-    # Check cache first
+    # Check cache first (but skip cache for v2_enabled to ensure fresh reads)
     cache = _get_cache()
     cache_key = f"_pref_{key}"
-    if cache_key in cache:
+    # v2_enabled controls navigation and must always be read fresh from database
+    if key != 'v2_enabled' and cache_key in cache:
         return cache[cache_key]
     
     # Try to get from database

@@ -251,22 +251,51 @@ def require_admin(f):
         request.user_id = user_data.get("user_id") or user_data.get("sub")
         request.user_email = user_data.get("email")
         
-        # Now check admin status - use user's token for RPC call
+        # Now check admin status - try using Supabase client (like Streamlit does)
         is_user_admin = False
+        admin_check_error = None
         try:
-            # Try with user's JWT token first (more reliable with RLS)
+            # Try using Supabase client with user's token (same approach as Streamlit)
             if token and len(token.split('.')) == 3:
+                try:
+                    from supabase_client import SupabaseClient
+                    import os
+                    # Create Supabase client
+                    client = SupabaseClient()
+                    # Set the user's auth token
+                    client.supabase.auth.set_session(token)
+                    # Call RPC function (same way Streamlit does it)
+                    result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
+                    
+                    logger.info(f"Admin check RPC result: {result.data}, type: {type(result.data)}")
+                    
+                    if result.data is not None:
+                        if isinstance(result.data, bool):
+                            is_user_admin = result.data
+                        elif isinstance(result.data, list) and len(result.data) > 0:
+                            is_user_admin = bool(result.data[0])
+                        else:
+                            logger.warning(f"Unexpected is_admin response format: {result.data} (type: {type(result.data)})")
+                except Exception as e:
+                    admin_check_error = str(e)
+                    logger.debug(f"Error checking admin with Supabase client: {e}", exc_info=True)
+            
+            # Fallback to HTTP request method
+            if not is_user_admin:
+                logger.info(f"Trying HTTP request admin check for user_id: {request.user_id}")
                 try:
                     import requests
                     response = requests.post(
                         f"{auth_manager.supabase_url}/rest/v1/rpc/is_admin",
                         headers={
                             "apikey": auth_manager.supabase_anon_key,
-                            "Authorization": f"Bearer {token}",  # Use user's token
+                            "Authorization": f"Bearer {token}" if token else f"Bearer {auth_manager.supabase_anon_key}",
                             "Content-Type": "application/json"
                         },
                         json={"user_uuid": request.user_id}
                     )
+                    
+                    logger.info(f"Admin check HTTP response: status={response.status_code}, body={response.text[:200]}")
                     
                     if response.status_code == 200:
                         result = response.json()
@@ -274,21 +303,26 @@ def require_admin(f):
                             is_user_admin = result
                         elif isinstance(result, list) and len(result) > 0:
                             is_user_admin = bool(result[0])
-                        else:
-                            logger.warning(f"Unexpected is_admin response: {result}")
                 except Exception as e:
-                    logger.debug(f"Error checking admin with user token: {e}")
+                    admin_check_error = str(e)
+                    logger.debug(f"Error checking admin with HTTP request: {e}")
             
-            # Fallback to auth_manager method (uses anon key)
+            # Final fallback to auth_manager method
             if not is_user_admin:
+                logger.info(f"Trying final fallback admin check for user_id: {request.user_id}")
                 is_user_admin = auth_manager.is_admin(request.user_id)
+                logger.info(f"Final fallback admin check result: {is_user_admin}")
         except Exception as e:
-            logger.error(f"Error checking admin status: {e}")
+            admin_check_error = str(e)
+            logger.error(f"Error checking admin status: {e}", exc_info=True)
         
         if not is_user_admin:
-            logger.warning(f"Admin check failed for user_id: {request.user_id}, email: {request.user_email}")
+            error_msg = f"Admin check failed for user_id: {request.user_id}, email: {request.user_email}"
+            if admin_check_error:
+                error_msg += f", error: {admin_check_error}"
+            logger.warning(error_msg)
             if request.path.startswith('/api/'):
-                return jsonify({"error": "Admin privileges required"}), 403
+                return jsonify({"error": "Admin privileges required", "details": admin_check_error}), 403
             else:
                 from flask import redirect
                 return redirect('/')

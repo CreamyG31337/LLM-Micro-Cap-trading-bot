@@ -266,21 +266,32 @@ def set_user_preference(key: str, value: Any) -> bool:
             logger.info(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
             
             # Handle different response formats
+            # Supabase can return: True, [True], "true", 1, etc.
             if result.data is None:
                 logger.warning(f"RPC set_user_preference returned None for key '{key}'")
-            elif result.data is False:
+            elif result.data is False or result.data == 'false' or result.data == 0:
                 logger.warning(f"RPC set_user_preference returned False for key '{key}'")
-            elif result.data is True:
+            elif result.data is True or result.data == 'true' or result.data == 1:
                 rpc_success = True
-            elif isinstance(result.data, list) and len(result.data) > 0:
-                if result.data[0] is True:
-                    rpc_success = True
-                elif result.data[0] is False:
-                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
+                logger.info(f"RPC set_user_preference succeeded with result: {result.data}")
+            elif isinstance(result.data, list):
+                if len(result.data) > 0:
+                    first = result.data[0]
+                    if first is True or first == 'true' or first == 1 or (first and first not in [False, 'false', 0]):
+                        rpc_success = True
+                        logger.info(f"RPC set_user_preference succeeded with list result: {result.data}")
+                    else:
+                        logger.warning(f"RPC set_user_preference returned list with falsy first element: {result.data}")
                 else:
-                    logger.warning(f"RPC set_user_preference returned unexpected list value: {result.data}")
+                    # Empty list - might still be success (void return)
+                    logger.info(f"RPC set_user_preference returned empty list - treating as success")
+                    rpc_success = True
+            elif result.data:
+                # Any other truthy value - treat as success
+                rpc_success = True
+                logger.info(f"RPC set_user_preference got truthy result: {result.data} (type: {type(result.data).__name__})")
             else:
-                logger.warning(f"RPC set_user_preference returned unexpected value: {result.data}")
+                logger.warning(f"RPC set_user_preference returned unexpected falsy value: {result.data}")
         except Exception as rpc_error:
             logger.warning(f"RPC call via Supabase client failed: {rpc_error}, trying HTTP fallback")
             rpc_success = False
@@ -320,11 +331,12 @@ def set_user_preference(key: str, value: Any) -> bool:
             except Exception as http_error:
                 logger.error(f"HTTP fallback also failed: {http_error}", exc_info=True)
         
+        # Check final result and handle accordingly
         if not rpc_success:
             logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}'")
             return False
         
-        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
+        # Success! Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
         # This is more robust as it forces a fresh DB read on next access,
         # preventing stale cache state if the session cookie update fails.
         cache = _get_cache()
@@ -334,7 +346,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         logger.info(f"Successfully set preference '{key}' = {value}")
         return True
-
+    
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False

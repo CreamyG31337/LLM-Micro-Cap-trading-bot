@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigation Test</title>
+    <!-- Tailwind CSS Play CDN - includes ALL utilities -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100">
+    <!-- SIMPLE FIXED SIDEBAR - Always visible on desktop -->
+    <aside class="fixed top-0 left-0 w-64 h-screen bg-white border-r border-gray-200 shadow-lg">
+        <div class="p-4">
+            <h2 class="text-xl font-bold text-gray-800 mb-6">Navigation</h2>
+            <nav>
+                <ul class="space-y-2">
+                    <li>
+                        <a href="/" class="flex items-center px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100">
+                            <span class="mr-3">📊</span>Dashboard
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/v2/settings"
+                            class="flex items-center px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100">
+                            <span class="mr-3">⚙️</span>Settings
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/v2/ticker"
+                            class="flex items-center px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100">
+                            <span class="mr-3">🔍</span>Ticker Lookup
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/v2/logs"
+                            class="flex items-center px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100">
+                            <span class="mr-3">📜</span>Logs
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT - Offset by sidebar width -->
+    <main class="ml-64 min-h-screen">
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6">
+            <h1 class="text-2xl font-bold">Test Page</h1>
+            <p class="text-purple-100">This is a minimal test page with a working sidebar</p>
+        </header>
+
+        <!-- Content -->
+        <div class="p-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Sidebar Test</h2>
+                <p class="text-gray-600 mb-4">
+                    If you can see the sidebar on the left, the navigation is working correctly.
+                </p>
+                <p class="text-gray-600">
+                    The sidebar uses a simple fixed position with no transform animations.
+                    This ensures it's always visible on desktop.
+                </p>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>

@@ -19,11 +19,17 @@ st.set_page_config(
     layout="wide"
 )
 
-# Redirect to Flask version if available
+# Redirect to Flask version if available AND enabled
 try:
-    from shared_navigation import is_page_migrated
-    if is_page_migrated('settings'):
-        st.markdown('<meta http-equiv="refresh" content="0; url=/settings">', unsafe_allow_html=True)
+    from shared_navigation import is_page_migrated, get_page_url
+    from user_preferences import get_user_preference
+    
+    # Only redirect if V2 is enabled AND page is migrated
+    is_v2_enabled = get_user_preference('v2_enabled', default=False)
+    
+    if is_v2_enabled and is_page_migrated('settings'):
+        url = get_page_url('settings')
+        st.markdown(f'<meta http-equiv="refresh" content="0; url={url}">', unsafe_allow_html=True)
         st.write("Redirecting to new settings page...")
         st.stop()
 except ImportError:

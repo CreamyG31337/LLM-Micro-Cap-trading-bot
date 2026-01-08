@@ -40,9 +40,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app with template and static folders
+# serving static files at /assets to avoid conflict with Streamlit's /static
 app = Flask(__name__, 
             template_folder='templates',
-            static_folder='static')
+            static_folder='static',
+            static_url_path='/assets')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
 # Configure CORS to allow credentials from Vercel deployment
@@ -86,6 +88,10 @@ def get_supabase_client() -> Optional[SupabaseClient]:
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
         return None
+
+
+
+
 
 
 
@@ -506,6 +512,8 @@ def logout():
     """Handle user logout"""
     response = jsonify({"message": "Logged out successfully"})
     is_production = request.host != 'localhost:5000' and not request.host.startswith('127.0.0.1')
+    
+    # Clear session_token (Flask login)
     response.set_cookie(
         'session_token', 
         '', 
@@ -513,6 +521,16 @@ def logout():
         secure=is_production,
         samesite='None' if is_production else 'Lax'
     )
+    
+    # Clear auth_token (Streamlit login) to prevent auto-login loop
+    response.set_cookie(
+        'auth_token', 
+        '', 
+        expires=0,
+        secure=is_production,
+        samesite='None' if is_production else 'Lax'
+    )
+    
     return response
 
 # =====================================================

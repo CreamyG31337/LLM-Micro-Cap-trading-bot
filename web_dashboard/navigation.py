@@ -18,6 +18,14 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         show_ai_assistant: Whether to show AI Assistant link (default: True)
         show_settings: Whether to show Settings link (default: True)
     """
+    # CRITICAL: Restore session from cookies FIRST before any preference checks
+    # This ensures we have valid auth context when checking v2_enabled
+    try:
+        from auth_utils import ensure_session_restored
+        ensure_session_restored()
+    except Exception:
+        pass  # Continue with navigation even if restoration fails
+    
     # Apply user's theme preference (dark/light mode override)
     try:
         from user_preferences import apply_user_theme, get_user_preference, set_user_preference
@@ -43,6 +51,71 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         st.sidebar.page_link("streamlit_app.py", label="Dashboard", icon="📈")
         return
     
+    # Inject custom CSS for consistent navigation styling
+    st.sidebar.markdown("""
+        <style>
+            .nav-section-title {
+                color: rgba(128, 128, 128, 0.8);
+                font-size: 0.75rem;
+                font-weight: 600;
+                margin: 1.25rem 0 0.5rem 0;
+                text-transform: uppercase;
+                letter-spacing: 0.05rem;
+                padding-left: 0.5rem;
+            }
+            .v2-nav-link {
+                display: flex;
+                align-items: center;
+                padding: 0.4rem 0.5rem;
+                border-radius: 0.5rem;
+                text-decoration: none;
+                color: inherit;
+                transition: background-color 0.1s;
+                margin: 0.1rem 0;
+                cursor: pointer;
+            }
+            .v2-nav-link:hover {
+                background-color: rgba(151, 166, 195, 0.15);
+            }
+            .v2-nav-icon {
+                margin-right: 0.8rem;
+                font-size: 1.2rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.4rem;
+                min-width: 1.4rem;
+            }
+            .v2-nav-label {
+                font-size: 0.875rem;
+            }
+            .nav-divider {
+                margin: 1rem 0;
+                border: none;
+                border-top: 1px solid rgba(128, 128, 128, 0.2);
+            }
+            .nav-badge {
+                padding: 0.15rem 0.5rem;
+                border-radius: 0.5rem;
+                font-size: 0.7rem;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                display: inline-block;
+                width: fit-content;
+            }
+            .nav-badge-admin { 
+                background-color: rgba(46, 204, 113, 0.15); 
+                color: #2ecc71; 
+                border: 1px solid rgba(46, 204, 113, 0.2); 
+            }
+            .nav-badge-role { 
+                background-color: rgba(52, 152, 219, 0.15); 
+                color: #3498db; 
+                border: 1px solid rgba(52, 152, 219, 0.2); 
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     # Navigation title with modern styling
     st.sidebar.title("Navigation")
     
@@ -70,9 +143,14 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             try:
                 from shared_navigation import is_page_migrated, get_page_url
                 if is_v2_enabled and is_page_migrated('ticker_details'):
-                    # Use markdown link for Flask route (opens in same window)
+                    # Use markdown link for Flask route with matching Streamlit styling
                     ticker_url = get_page_url('ticker_details')
-                    st.sidebar.markdown(f'<a href="{ticker_url}" target="_self" style="text-decoration: none; color: inherit;">🔍 Ticker Lookup</a>', unsafe_allow_html=True)
+                    st.sidebar.markdown(f'''
+                        <a href="{ticker_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">🔍</span>
+                            <span class="v2-nav-label">Ticker Lookup</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
                 else:
                     st.sidebar.page_link("pages/ticker_details.py", label="Ticker Lookup", icon="🔍")
             except ImportError:
@@ -114,9 +192,14 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         try:
             from shared_navigation import is_page_migrated, get_page_url
             if is_v2_enabled and is_page_migrated('settings'):
-                # Use markdown link for Flask route (opens in same window)
+                # Use markdown link for Flask route with matching Streamlit styling
                 settings_url = get_page_url('settings')
-                st.sidebar.markdown(f'<a href="{settings_url}" target="_self" style="text-decoration: none; color: inherit;">👤 User Preferences</a>', unsafe_allow_html=True)
+                st.sidebar.markdown(f'''
+                    <a href="{settings_url}" target="_self" class="v2-nav-link">
+                        <span class="v2-nav-icon">👤</span>
+                        <span class="v2-nav-label">User Preferences</span>
+                    </a>
+                ''', unsafe_allow_html=True)
             else:
                 st.sidebar.page_link("pages/settings.py", label="User Preferences", icon="👤")
         except ImportError:
@@ -151,9 +234,14 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             try:
                 from shared_navigation import is_page_migrated, get_page_url
                 if is_v2_enabled and is_page_migrated('admin_logs'):
-                    # Use markdown link for Flask route
+                    # Use markdown link for Flask route with matching Streamlit styling
                     logs_url = get_page_url('admin_logs')
-                    st.sidebar.markdown(f'<a href="{logs_url}" target="_self" style="text-decoration: none; color: inherit;">📜 Logs</a>', unsafe_allow_html=True)
+                    st.sidebar.markdown(f'''
+                        <a href="{logs_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">📜</span>
+                            <span class="v2-nav-label">Logs</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
                 else:
                     st.sidebar.page_link("pages/admin_logs.py", label="Logs", icon="📜")
             except ImportError:

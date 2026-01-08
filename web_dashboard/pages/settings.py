@@ -19,6 +19,13 @@ st.set_page_config(
     layout="wide"
 )
 
+# CRITICAL: Restore session from cookies before checking preferences
+try:
+    from auth_utils import ensure_session_restored
+    ensure_session_restored()
+except Exception:
+    pass
+
 # Redirect to Flask version if available AND enabled
 try:
     from shared_navigation import is_page_migrated, get_page_url

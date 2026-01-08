@@ -553,3 +553,48 @@ def can_modify_data() -> bool:
         logger.error(f"can_modify_data(): Error checking modify permission for user_id {user_id}: {e}", exc_info=True)
         return False
 
+
+def ensure_session_restored() -> bool:
+    """Ensure user session is restored from cookies if not already authenticated.
+    
+    This function should be called at the start of every Streamlit page to ensure
+    the user session is loaded from cookies before any preference checks or navigation
+    rendering occurs. This prevents race conditions where preferences are checked
+    before authentication is established.
+    
+    Returns:
+        True if user is authenticated (either already or after restoration), False otherwise
+    """
+    # If already authenticated, nothing to do
+    if is_authenticated():
+        return True
+    
+    # Try to restore session from cookie
+    try:
+        # st.context.cookies is available in Streamlit 1.37+
+        cookies = st.context.cookies
+        auth_token = cookies.get("auth_token")
+        cookie_refresh_token = cookies.get("refresh_token")
+        
+        if auth_token:
+            # Validate token
+            token_parts = auth_token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                exp = user_data.get("exp", 0)
+                
+                current_time = int(time.time())
+                
+                if exp > current_time:
+                    # Token valid, restore session (skip redirect since we're restoring from cookie)
+                    set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp,
+                                    refresh_token=cookie_refresh_token)
+                    return True
+    except Exception:
+        # If restoration fails, that's okay - user just isn't authenticated
+        pass
+    
+    return False

@@ -8,13 +8,14 @@ Tracks which pages have been migrated to Flask.
 """
 
 # Registry of migrated pages (Flask routes)
+# NOTE: Caddy reverse proxy handles routing:
+#   - /v2/* → Flask (port 5001) - All new Flask pages under /v2 prefix
+#   - /api/* → Flask (port 5001) - API endpoints
+#   - everything else → Streamlit (port 8501)
 MIGRATED_PAGES = {
-    'settings': '/settings',  # Flask route
-    # Future migrations will be added here:
-    # 'dashboard': '/',
-    # 'research': '/research',
-    # etc.
+    'settings': '/v2/settings',  # Routed to Flask via Caddy /v2/* handler
 }
+
 
 
 def is_page_migrated(page_name: str) -> bool:

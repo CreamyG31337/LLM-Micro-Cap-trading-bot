@@ -59,7 +59,6 @@ os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this"
 try:
     from supabase_client import SupabaseClient
     from auth import auth_manager, require_auth, require_admin, get_user_funds, is_admin
-    from data.repositories.repository_factory import RepositoryFactory
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     logger.error(f"Failed to import required modules: {e}")
@@ -67,6 +66,15 @@ except ImportError as e:
     logger.error("   PowerShell: & '..\\venv\\Scripts\\Activate.ps1'")
     logger.error("   Then run: python app.py")
     SUPABASE_AVAILABLE = False
+
+# Import repository system (optional - only needed for portfolio routes)
+try:
+    from data.repositories.repository_factory import RepositoryFactory
+    REPOSITORY_AVAILABLE = True
+except ImportError:
+    RepositoryFactory = None
+    REPOSITORY_AVAILABLE = False
+    logger.debug("Repository system not available (optional for Settings page)")
 
 def get_supabase_client() -> Optional[SupabaseClient]:
     """Get Supabase client instance"""
@@ -79,160 +87,69 @@ def get_supabase_client() -> Optional[SupabaseClient]:
         logger.error(f"Failed to initialize Supabase client: {e}")
         return None
 
-def load_csv_portfolio_data(fund_name=None) -> Dict:
-    """Load portfolio data from CSV files as fallback when Supabase is not available"""
+
+
+def load_portfolio_data(fund_name=None) -> Dict:
+    """Load and process portfolio data from Supabase (web app only - no CSV fallback)"""
+    if not REPOSITORY_AVAILABLE:
+        logger.error("Repository system not available - cannot load portfolio data")
+        return {
+            "portfolio": pd.DataFrame(),
+            "trades": pd.DataFrame(),
+            "cash_balances": {"CAD": 0.0, "USD": 0.0},
+            "available_funds": [],
+            "current_fund": None,
+            "error": "Repository system not available. Please check data.repositories module."
+        }
+    
     try:
-        # Load repository config
-        config_file = Path("../repository_config.json")
-        if config_file.exists():
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-            web_config = config.get("web_dashboard", {})
-            available_funds = web_config.get("available_funds", [])
-            default_fund = web_config.get("default_fund", "Project Chimera")
-        else:
-            available_funds = ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]
-            default_fund = "Project Chimera"
-        
-        # Use specified fund or default
-        current_fund = fund_name if fund_name and fund_name in available_funds else default_fund
-        
-        # Load CSV data from the specified fund directory
-        fund_dir = Path(f"../trading_data/funds/{current_fund}")
-        
-        # Load portfolio data
-        portfolio_file = fund_dir / "llm_portfolio_update.csv"
-        portfolio_df = pd.DataFrame()
-        if portfolio_file.exists():
-            portfolio_df = pd.read_csv(portfolio_file)
-            if 'Date' in portfolio_df.columns:
-                portfolio_df['Date'] = pd.to_datetime(portfolio_df['Date'])
-        
-        # Load trade log
-        trade_file = fund_dir / "llm_trade_log.csv"
-        trades_df = pd.DataFrame()
-        if trade_file.exists():
-            trades_df = pd.read_csv(trade_file)
-            if 'Date' in trades_df.columns:
-                trades_df['Date'] = pd.to_datetime(trades_df['Date'])
-        
-        # Load cash balances
-        cash_file = fund_dir / "cash_balances.json"
-        cash_balances = {"CAD": 0.0, "USD": 0.0}
-        if cash_file.exists():
-            with open(cash_file, 'r') as f:
-                cash_balances.update(json.load(f))
-        
-        logger.info(f"Loaded CSV data for fund: {current_fund}")
+        # Use repository system to load from Supabase
+        repository = RepositoryFactory.create_repository(
+            'supabase',
+            url=os.getenv("SUPABASE_URL"),
+            key=os.getenv("SUPABASE_ANON_KEY"),
+            fund=fund_name
+        )
+
+        # Get available funds
+        available_funds = repository.get_available_funds()
+        if fund_name and fund_name not in available_funds:
+            logger.warning(f"Fund '{fund_name}' not found in Supabase")
+            return {
+                "portfolio": pd.DataFrame(),
+                "trades": pd.DataFrame(),
+                "cash_balances": {"CAD": 0.0, "USD": 0.0},
+                "available_funds": available_funds,
+                "current_fund": None,
+                "error": f"Fund '{fund_name}' not found"
+            }
+
+        # Get data from Supabase using repository (filtered by fund if specified)
+        positions = repository.get_current_positions(fund=fund_name)
+        trades = repository.get_trade_log(limit=1000, fund=fund_name)
+        cash_balances = repository.get_cash_balances()
+
+        # Convert to DataFrames for compatibility with existing code
+        portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
+        trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
+
         return {
             "portfolio": portfolio_df,
             "trades": trades_df,
             "cash_balances": cash_balances,
             "available_funds": available_funds,
-            "current_fund": current_fund
+            "current_fund": fund_name
         }
     except Exception as e:
-        logger.error(f"Error loading CSV portfolio data: {e}")
-        return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": [], "current_fund": None}
-
-def get_data_source_config() -> str:
-    """Get the configured data source from repository config"""
-    try:
-        config_file = Path("../repository_config.json")
-        if config_file.exists():
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-            return config.get("web_dashboard", {}).get("data_source", "hybrid")
-    except Exception:
-        pass
-    return "hybrid"  # Default fallback
-
-def load_portfolio_data(fund_name=None) -> Dict:
-    """Load and process portfolio data based on configured data source"""
-    try:
-        data_source = get_data_source_config()
-        logger.info(f"Using data source: {data_source}")
-        
-        if data_source == "csv":
-            logger.info("Configured for CSV-only mode")
-            return load_csv_portfolio_data(fund_name)
-        
-        elif data_source == "supabase":
-            logger.info("Configured for Supabase-only mode")
-            try:
-                # Use repository system for consistency
-                repository = RepositoryFactory.create_repository(
-                    'supabase',
-                    url=os.getenv("SUPABASE_URL"),
-                    key=os.getenv("SUPABASE_ANON_KEY"),
-                    fund=fund_name
-                )
-
-                # Get available funds
-                available_funds = repository.get_available_funds()
-                if fund_name and fund_name not in available_funds:
-                    logger.warning(f"Fund '{fund_name}' not found in Supabase")
-                    return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": available_funds, "current_fund": None, "error": f"Fund '{fund_name}' not found"}
-
-                # Get data from Supabase using repository (filtered by fund if specified)
-                positions = repository.get_current_positions(fund=fund_name)
-                trades = repository.get_trade_log(limit=1000, fund=fund_name)
-                cash_balances = repository.get_cash_balances()
-
-                # Convert to DataFrames for compatibility with existing code
-                portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-                trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
-
-                return {
-                    "portfolio": portfolio_df,
-                    "trades": trades_df,
-                    "cash_balances": cash_balances,
-                    "available_funds": available_funds,
-                    "current_fund": fund_name
-                }
-            except Exception as e:
-                logger.error(f"Error using Supabase repository: {e}")
-                return {"portfolio": pd.DataFrame(), "trades": pd.DataFrame(), "cash_balances": {"CAD": 0.0, "USD": 0.0}, "available_funds": [], "current_fund": None, "error": f"Supabase error: {e}"}
-        
-        else:  # hybrid mode (default)
-            logger.info("Configured for hybrid mode (Supabase with CSV fallback)")
-            try:
-                # Try to use repository system first
-                repository = RepositoryFactory.create_repository(
-                    'supabase',
-                    url=os.getenv("SUPABASE_URL"),
-                    key=os.getenv("SUPABASE_ANON_KEY"),
-                    fund=fund_name
-                )
-
-                # Get available funds
-                available_funds = repository.get_available_funds()
-                if fund_name and fund_name not in available_funds:
-                    logger.warning(f"Fund '{fund_name}' not found in Supabase, falling back to CSV")
-                    return load_csv_portfolio_data(fund_name)
-
-                # Get data from Supabase using repository (filtered by fund if specified)
-                positions = repository.get_current_positions(fund=fund_name)
-                trades = repository.get_trade_log(limit=1000, fund=fund_name)
-                cash_balances = repository.get_cash_balances()
-
-                # Convert to DataFrames for compatibility with existing code
-                portfolio_df = pd.DataFrame(positions) if positions else pd.DataFrame()
-                trades_df = pd.DataFrame(trades) if trades else pd.DataFrame()
-
-                return {
-                    "portfolio": portfolio_df,
-                    "trades": trades_df,
-                    "cash_balances": cash_balances,
-                    "available_funds": available_funds,
-                    "current_fund": fund_name
-                }
-            except Exception as e:
-                logger.warning(f"Supabase repository error, falling back to CSV data: {e}")
-                return load_csv_portfolio_data(fund_name)
-    except Exception as e:
-        logger.error(f"Error loading portfolio data from Supabase, falling back to CSV: {e}")
-        return load_csv_portfolio_data(fund_name)
+        logger.error(f"Error loading portfolio data from Supabase: {e}")
+        return {
+            "portfolio": pd.DataFrame(),
+            "trades": pd.DataFrame(),
+            "cash_balances": {"CAD": 0.0, "USD": 0.0},
+            "available_funds": [],
+            "current_fund": None,
+            "error": f"Failed to load data from Supabase: {str(e)}"
+        }
 
 def calculate_performance_metrics(portfolio_df: pd.DataFrame, trade_df: pd.DataFrame, fund_name=None) -> Dict:
     """Calculate key performance metrics for a specific fund or all funds"""
@@ -1186,10 +1103,10 @@ def export_cash():
         logger.error(f"Cash export error: {e}")
         return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
-@app.route('/settings')
+@app.route('/v2/settings')
 @require_auth
 def settings_page():
-    """User preferences/settings page"""
+    """User preferences/settings page (Flask v2)"""
     try:
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_timezone, get_user_currency, get_user_theme

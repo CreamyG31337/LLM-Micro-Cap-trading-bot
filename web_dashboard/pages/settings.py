@@ -190,10 +190,28 @@ def render_timezone_settings():
 
     # Save button
     if st.button("💾 Save Timezone", type="primary"):
-        if set_user_timezone(selected_tz):
-            st.success(f"✅ Timezone saved as {selected_tz}")
-        else:
-            st.error("❌ Failed to save timezone. Please try again.")
+        try:
+            # Access cache through streamlit session state
+            cache = st.session_state
+            # Clear any previous error
+            if "_pref_error_timezone" in cache:
+                del cache["_pref_error_timezone"]
+            
+            st.caption(f"🔍 DEBUG: Attempting to save timezone: {selected_tz}")
+            result = set_user_timezone(selected_tz)
+            st.caption(f"🔍 DEBUG: set_user_timezone returned: {result} (type: {type(result).__name__})")
+            
+            if result:
+                st.success(f"✅ Timezone saved as {selected_tz}")
+                st.rerun()  # Refresh to show updated value
+            else:
+                # Get error details if available
+                error_msg = cache.get("_pref_error_timezone", "Unknown error - RPC call returned False")
+                st.error(f"❌ Failed to save timezone: {error_msg}")
+                st.caption("Check the application console/logs for more details.")
+        except Exception as e:
+            st.error(f"❌ Exception saving timezone: {type(e).__name__}: {str(e)}")
+            st.exception(e)
 
 render_timezone_settings()
 
@@ -267,10 +285,28 @@ def render_currency_settings():
 
     # Save button (same pattern as timezone)
     if st.button("💾 Save Currency", type="primary", key="save_currency"):
-        if set_user_currency(selected_currency):
-            st.success(f"✅ Currency saved as {selected_currency}")
-        else:
-            st.error("❌ Failed to save currency. Please try again.")
+        try:
+            # Access cache through streamlit session state
+            cache = st.session_state
+            # Clear any previous error
+            if "_pref_error_currency" in cache:
+                del cache["_pref_error_currency"]
+            
+            st.caption(f"🔍 DEBUG: Attempting to save currency: {selected_currency}")
+            result = set_user_currency(selected_currency)
+            st.caption(f"🔍 DEBUG: set_user_currency returned: {result} (type: {type(result).__name__})")
+            
+            if result:
+                st.success(f"✅ Currency saved as {selected_currency}")
+                st.rerun()  # Refresh to show updated value
+            else:
+                # Get error details if available
+                error_msg = cache.get("_pref_error_currency", "Unknown error - RPC call returned False")
+                st.error(f"❌ Failed to save currency: {error_msg}")
+                st.caption("Check the application console/logs for more details.")
+        except Exception as e:
+            st.error(f"❌ Exception saving currency: {type(e).__name__}: {str(e)}")
+            st.exception(e)
 
 render_currency_settings()
 
@@ -337,11 +373,26 @@ def render_theme_settings():
     
     # Save button
     if st.button("💾 Save Theme", type="primary", key="save_theme"):
-        if set_user_theme(selected_theme):
-            st.success(f"✅ Theme saved as {THEME_OPTIONS[selected_theme]}")
-            st.info("🔄 Refresh the page to apply the theme change")
-        else:
-            st.error("❌ Failed to save theme. Please try again.")
+        try:
+            # Access cache through streamlit session state
+            cache = st.session_state
+            # Clear any previous error
+            if "_pref_error_theme" in cache:
+                del cache["_pref_error_theme"]
+            
+            result = set_user_theme(selected_theme)
+            if result:
+                st.success(f"✅ Theme saved as {THEME_OPTIONS[selected_theme]}")
+                st.info("🔄 Refresh the page to apply the theme change")
+                st.rerun()  # Refresh to show updated value
+            else:
+                # Get error details if available
+                error_msg = cache.get("_pref_error_theme", "Unknown error - RPC call returned False")
+                st.error(f"❌ Failed to save theme: {error_msg}")
+                st.caption("Check the application console/logs for more details.")
+        except Exception as e:
+            st.error(f"❌ Exception saving theme: {type(e).__name__}: {str(e)}")
+            st.exception(e)
 
 render_theme_settings()
 
@@ -374,15 +425,24 @@ def render_v2_settings():
     # Save button
     if st.button("💾 Save Beta Settings", type="primary", key="save_v2"):
         try:
+            # Access cache through streamlit session state
+            cache = st.session_state
+            # Clear any previous error
+            if "_pref_error_v2_enabled" in cache:
+                del cache["_pref_error_v2_enabled"]
+            
             result = set_user_preference('v2_enabled', v2_enabled)
             if result:
                 st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
                 st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                st.rerun()  # Refresh to show updated value
             else:
-                st.error("❌ Failed to save preference")
-                st.caption("Check application logs for details")
+                # Get error details if available
+                error_msg = cache.get("_pref_error_v2_enabled", "Unknown error - RPC call returned False")
+                st.error(f"❌ Failed to save preference: {error_msg}")
+                st.caption("Check the application console/logs for more details.")
         except Exception as e:
-            st.error(f"❌ Error saving preference: {type(e).__name__}")
+            st.error(f"❌ Exception saving preference: {type(e).__name__}: {str(e)}")
             st.exception(e)  # Shows full stack trace
 
 render_v2_settings()

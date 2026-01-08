@@ -318,6 +318,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         # Call the RPC function to set preference
         # Note: Supabase will convert the JSON string to JSONB
         rpc_success = False
+        rpc_error_msg = None
         try:
             logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
             result = client.supabase.rpc('set_user_preference', {
@@ -331,22 +332,28 @@ def set_user_preference(key: str, value: Any) -> bool:
             
             # Handle different response formats
             if result.data is None:
-                logger.warning(f"RPC set_user_preference returned None for key '{key}'")
+                rpc_error_msg = f"RPC returned None for key '{key}'"
+                logger.warning(rpc_error_msg)
             elif result.data is False:
-                logger.warning(f"RPC set_user_preference returned False for key '{key}'")
+                rpc_error_msg = f"RPC returned False for key '{key}'"
+                logger.warning(rpc_error_msg)
             elif result.data is True:
                 rpc_success = True
             elif isinstance(result.data, list) and len(result.data) > 0:
                 if result.data[0] is True:
                     rpc_success = True
                 elif result.data[0] is False:
-                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
+                    rpc_error_msg = f"RPC returned [False] for key '{key}'"
+                    logger.warning(rpc_error_msg)
                 else:
-                    logger.warning(f"RPC set_user_preference returned unexpected list value: {result.data}")
+                    rpc_error_msg = f"RPC returned unexpected list value: {result.data}"
+                    logger.warning(rpc_error_msg)
             else:
-                logger.warning(f"RPC set_user_preference returned unexpected value: {result.data}")
+                rpc_error_msg = f"RPC returned unexpected value: {result.data}"
+                logger.warning(rpc_error_msg)
         except Exception as rpc_error:
-            logger.warning(f"RPC call via Supabase client failed: {rpc_error}, trying HTTP fallback")
+            rpc_error_msg = f"RPC call failed: {str(rpc_error)}"
+            logger.warning(f"{rpc_error_msg}, trying HTTP fallback", exc_info=True)
             rpc_success = False
         
         # Fallback to direct HTTP request if RPC client call failed
@@ -385,7 +392,13 @@ def set_user_preference(key: str, value: Any) -> bool:
                 logger.error(f"HTTP fallback also failed: {http_error}", exc_info=True)
         
         if not rpc_success:
-            logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}'")
+            error_details = rpc_error_msg or "Unknown error"
+            if user_token:
+                error_details += " (HTTP fallback also attempted)"
+            logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}': {error_details}")
+            # Store error in cache so UI can display it
+            cache = _get_cache()
+            cache[f"_pref_error_{key}"] = error_details
             return False
         
         # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
@@ -411,7 +424,32 @@ def get_user_timezone() -> Optional[str]:
     Returns:
         Timezone string (e.g., 'America/Los_Angeles') or None
     """
-    return get_user_preference('timezone', default=None)
+    # Try direct preference lookup first
+    timezone = get_user_preference('timezone', default=None)
+    
+    # Fallback: if direct lookup returns None but we know preferences exist,
+    # try getting all preferences and extracting timezone from there
+    # This works around issues where the RPC might return None for specific keys
+    if timezone is None:
+        try:
+            all_prefs = get_all_user_preferences()
+            if isinstance(all_prefs, dict) and 'timezone' in all_prefs:
+                timezone = all_prefs['timezone']
+                # Ensure it's a string (handle any JSONB wrapping)
+                if isinstance(timezone, str):
+                    timezone = timezone.strip()
+                elif timezone is not None:
+                    timezone = str(timezone).strip()
+                logger.debug(f"[PREF] Retrieved timezone from get_all_user_preferences(): {timezone}")
+                # Cache it for future use
+                cache = _get_cache()
+                cache_key = "_pref_timezone"
+                if timezone:
+                    cache[cache_key] = timezone
+        except Exception as e:
+            logger.warning(f"Error getting timezone from all preferences: {e}")
+    
+    return timezone if timezone else None
 
 
 def set_user_timezone(timezone: str) -> bool:

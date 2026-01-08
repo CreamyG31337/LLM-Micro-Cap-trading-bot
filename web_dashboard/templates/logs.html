@@ -1,306 +1,273 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin: Logs - Portfolio Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="/assets/css/theme.css" rel="stylesheet">
-    <style>
-        .log-line {
-            font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
-            padding: 0.5rem;
-            border-bottom: 1px solid var(--border-color);
-        }
+{% block title %}Admin: Logs - Portfolio Dashboard{% endblock %}
 
-        .log-line:hover {
-            background-color: var(--log-line-hover);
-        }
+{% block page_title %}📜 Application Logs{% endblock %}
+{% block page_subtitle %}View and filter application logs{% endblock %}
 
-        .log-container {
-            max-height: 70vh;
-            overflow-y: auto;
-            background: var(--code-bg);
-            border: 1px solid var(--code-border);
-            border-radius: 0.5rem;
-        }
-    </style>
-</head>
+{% block extra_head %}
+<style>
+    .log-line {
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
 
-<body class="bg-gray-100 min-h-screen" data-theme="{{ user_theme }}">
-    <!-- Header -->
-    <header class="gradient-bg text-white shadow-lg">
-        <div class="container mx-auto px-4 py-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold">📜 Application Logs</h1>
-                    <p class="text-blue-100 mt-2">View and filter application logs</p>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <a href="/"
-                        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
-                        <i class="fas fa-home mr-2"></i>Dashboard
-                    </a>
-                    <button id="logout-btn"
-                        class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition duration-200">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                    </button>
-                </div>
-            </div>
+    .log-line:hover {
+        background-color: var(--log-line-hover);
+    }
+
+    .log-container {
+        max-height: 70vh;
+        overflow-y: auto;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Controls -->
+<div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Level Filter</label>
+            <select id="level-filter"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="All">All Levels</option>
+                <option value="INFO + ERROR" selected>INFO + ERROR</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="PERF">PERF</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+            </select>
         </div>
-    </header>
-
-    <!-- Main Content -->
-    <div class="container mx-auto px-4 py-8">
-        <!-- Controls -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Level Filter</label>
-                    <select id="level-filter"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="All">All Levels</option>
-                        <option value="INFO + ERROR" selected>INFO + ERROR</option>
-                        <option value="DEBUG">DEBUG</option>
-                        <option value="PERF">PERF</option>
-                        <option value="INFO">INFO</option>
-                        <option value="WARNING">WARNING</option>
-                        <option value="ERROR">ERROR</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Show</label>
-                    <select id="limit-select"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="50">50</option>
-                        <option value="100" selected>100</option>
-                        <option value="200">200</option>
-                        <option value="500">500</option>
-                        <option value="1000">1000</option>
-                    </select>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
-                    <input type="text" id="search-input" placeholder="Filter by text..."
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div class="flex items-end space-x-2">
-                    <button id="refresh-btn"
-                        class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
-                        <i class="fas fa-sync-alt mr-2"></i>Refresh
-                    </button>
-                    <button id="clear-btn"
-                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition duration-200">
-                        <i class="fas fa-trash mr-2"></i>Clear
-                    </button>
-                </div>
-            </div>
-            <div class="mt-4 flex items-center">
-                <label class="inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="auto-refresh" class="form-checkbox h-5 w-5 text-blue-600">
-                    <span class="ml-2 text-sm text-gray-700">Auto-refresh every 5s</span>
-                </label>
-            </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Show</label>
+            <select id="limit-select"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+            </select>
         </div>
-
-        <!-- Stats -->
-        <div class="bg-white rounded-lg shadow-lg p-4 mb-6">
-            <div class="flex items-center justify-between">
-                <div id="stats-text" class="text-sm text-gray-600">Loading...</div>
-                <div id="pagination-controls" class="flex items-center space-x-2">
-                    <button id="prev-btn"
-                        class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="fas fa-chevron-left"></i> Previous
-                    </button>
-                    <span id="page-info" class="text-sm text-gray-600">Page 1 of 1</span>
-                    <button id="next-btn"
-                        class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Next <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-            </div>
+        <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <input type="text" id="search-input" placeholder="Filter by text..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
         </div>
-
-        <!-- Logs Display -->
-        <div class="bg-white rounded-lg shadow-lg p-6">
-            <div id="loading" class="text-center py-8 text-gray-500">
-                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                <p>Loading logs...</p>
-            </div>
-            <div id="logs-container" class="log-container hidden"></div>
-            <div id="error-message" class="hidden text-center py-8 text-red-500">
-                <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
-                <p id="error-text"></p>
-            </div>
+        <div class="flex items-end space-x-2">
+            <button id="refresh-btn"
+                class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
+                <i class="fas fa-sync-alt mr-2"></i>Refresh
+            </button>
+            <button id="clear-btn"
+                class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition duration-200">
+                <i class="fas fa-trash mr-2"></i>Clear
+            </button>
         </div>
     </div>
+    <div class="mt-4 flex items-center">
+        <label class="inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="auto-refresh" class="form-checkbox h-5 w-5 text-blue-600">
+            <span class="ml-2 text-sm text-gray-700">Auto-refresh every 5s</span>
+        </label>
+    </div>
+</div>
 
-    <script>
-        let currentPage = 1;
-        let autoRefreshInterval = null;
+<!-- Stats -->
+<div class="bg-white rounded-lg shadow-lg p-4 mb-6">
+    <div class="flex items-center justify-between">
+        <div id="stats-text" class="text-sm text-gray-600">Loading...</div>
+        <div id="pagination-controls" class="flex items-center space-x-2">
+            <button id="prev-btn"
+                class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            <span id="page-info" class="text-sm text-gray-600">Page 1 of 1</span>
+            <button id="next-btn"
+                class="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                Next <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
 
-        const emojiMap = {
-            'DEBUG': '🔍',
-            'PERF': '⚡',
-            'INFO': 'ℹ️',
-            'WARNING': '⚠️',
-            'ERROR': '❌'
-        };
+<!-- Logs Display -->
+<div class="bg-white rounded-lg shadow-lg p-6">
+    <div id="loading" class="text-center py-8 text-gray-500">
+        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+        <p>Loading logs...</p>
+    </div>
+    <div id="logs-container" class="log-container hidden"></div>
+    <div id="error-message" class="hidden text-center py-8 text-red-500">
+        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+        <p id="error-text"></p>
+    </div>
+</div>
+{% endblock %}
 
-        async function fetchLogs() {
-            const level = document.getElementById('level-filter').value;
-            const limit = document.getElementById('limit-select').value;
-            const search = document.getElementById('search-input').value;
+{% block extra_scripts %}
+<script>
+    let currentPage = 1;
+    let autoRefreshInterval = null;
 
-            const url = `/api/logs/application?level=${encodeURIComponent(level)}&limit=${limit}&search=${encodeURIComponent(search)}&page=${currentPage}`;
+    const emojiMap = {
+        'DEBUG': '🔍',
+        'PERF': '⚡',
+        'INFO': 'ℹ️',
+        'WARNING': '⚠️',
+        'ERROR': '❌'
+    };
 
-            try {
-                document.getElementById('loading').classList.remove('hidden');
-                document.getElementById('logs-container').classList.add('hidden');
-                document.getElementById('error-message').classList.add('hidden');
+    async function fetchLogs() {
+        const level = document.getElementById('level-filter').value;
+        const limit = document.getElementById('limit-select').value;
+        const search = document.getElementById('search-input').value;
 
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Failed to fetch logs');
+        const url = `/api/logs/application?level=${encodeURIComponent(level)}&limit=${limit}&search=${encodeURIComponent(search)}&page=${currentPage}`;
 
-                const data = await response.json();
-                displayLogs(data);
+        try {
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('logs-container').classList.add('hidden');
+            document.getElementById('error-message').classList.add('hidden');
 
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('logs-container').classList.remove('hidden');
-            } catch (error) {
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('error-message').classList.remove('hidden');
-                document.getElementById('error-text').textContent = error.message;
-            }
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Failed to fetch logs');
+
+            const data = await response.json();
+            displayLogs(data);
+
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('logs-container').classList.remove('hidden');
+        } catch (error) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error-message').classList.remove('hidden');
+            document.getElementById('error-text').textContent = error.message;
+        }
+    }
+
+    function displayLogs(data) {
+        const container = document.getElementById('logs-container');
+        container.innerHTML = '';
+
+        if (!data.logs || data.logs.length === 0) {
+            container.innerHTML = '<div class="text-center py-8 text-gray-500">No logs found matching the filters</div>';
+            return;
         }
 
-        function displayLogs(data) {
-            const container = document.getElementById('logs-container');
-            container.innerHTML = '';
+        data.logs.forEach(log => {
+            const line = document.createElement('div');
+            line.className = `log-line log-${log.level}`;
 
-            if (!data.logs || data.logs.length === 0) {
-                container.innerHTML = '<div class="text-center py-8 text-gray-500">No logs found matching the filters</div>';
-                return;
-            }
+            const emoji = emojiMap[log.level] || '•';
+            const module = log.module.substring(0, 30).padEnd(30, ' ');
 
-            data.logs.forEach(log => {
-                const line = document.createElement('div');
-                line.className = `log-line log-${log.level}`;
-
-                const emoji = emojiMap[log.level] || '•';
-                const module = log.module.substring(0, 30).padEnd(30, ' ');
-
-                line.textContent = `${emoji} ${log.timestamp} | ${log.level.padEnd(8, ' ')} | ${module} | ${log.message}`;
-                container.appendChild(line);
-            });
-
-            // Update stats
-            const start = (currentPage - 1) * parseInt(document.getElementById('limit-select').value) + 1;
-            const end = Math.min(start + data.logs.length - 1, data.total);
-            document.getElementById('stats-text').textContent = `Showing ${start}-${end} of ${data.total} log entries`;
-
-            // Update pagination
-            document.getElementById('page-info').textContent = `Page ${data.page} of ${data.pages}`;
-            document.getElementById('prev-btn').disabled = data.page <= 1;
-            document.getElementById('next-btn').disabled = data.page >= data.pages;
-        }
-
-        async function clearLogs() {
-            if (!confirm('Are you sure you want to clear all logs? This cannot be undone.')) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/logs/clear', { method: 'POST' });
-                const data = await response.json();
-
-                if (data.success) {
-                    alert('✅ Logs cleared successfully');
-                    currentPage = 1;
-                    fetchLogs();
-                } else {
-                    alert('❌ Failed to clear logs: ' + (data.error || 'Unknown error'));
-                }
-            } catch (error) {
-                alert('❌ Error: ' + error.message);
-            }
-        }
-
-        function setupAutoRefresh() {
-            const checkbox = document.getElementById('auto-refresh');
-
-            if (checkbox.checked) {
-                autoRefreshInterval = setInterval(fetchLogs, 5000);
-            } else {
-                if (autoRefreshInterval) {
-                    clearInterval(autoRefreshInterval);
-                    autoRefreshInterval = null;
-                }
-            }
-        }
-
-        // Event listeners
-        document.getElementById('refresh-btn').addEventListener('click', () => {
-            currentPage = 1;
-            fetchLogs();
+            line.textContent = `${emoji} ${log.timestamp} | ${log.level.padEnd(8, ' ')} | ${module} | ${log.message}`;
+            container.appendChild(line);
         });
 
-        document.getElementById('clear-btn').addEventListener('click', clearLogs);
+        // Update stats
+        const start = (currentPage - 1) * parseInt(document.getElementById('limit-select').value) + 1;
+        const end = Math.min(start + data.logs.length - 1, data.total);
+        document.getElementById('stats-text').textContent = `Showing ${start}-${end} of ${data.total} log entries`;
 
-        document.getElementById('level-filter').addEventListener('change', () => {
-            currentPage = 1;
-            fetchLogs();
-        });
+        // Update pagination
+        document.getElementById('page-info').textContent = `Page ${data.page} of ${data.pages}`;
+        document.getElementById('prev-btn').disabled = data.page <= 1;
+        document.getElementById('next-btn').disabled = data.page >= data.pages;
+    }
 
-        document.getElementById('limit-select').addEventListener('change', () => {
-            currentPage = 1;
-            fetchLogs();
-        });
+    async function clearLogs() {
+        if (!confirm('Are you sure you want to clear all logs? This cannot be undone.')) {
+            return;
+        }
 
-        document.getElementById('search-input').addEventListener('input', debounce(() => {
-            currentPage = 1;
-            fetchLogs();
-        }, 500));
+        try {
+            const response = await fetch('/api/logs/clear', { method: 'POST' });
+            const data = await response.json();
 
-        document.getElementById('auto-refresh').addEventListener('change', setupAutoRefresh);
-
-        document.getElementById('prev-btn').addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
+            if (data.success) {
+                alert('✅ Logs cleared successfully');
+                currentPage = 1;
                 fetchLogs();
+            } else {
+                alert('❌ Failed to clear logs: ' + (data.error || 'Unknown error'));
             }
-        });
-
-        document.getElementById('next-btn').addEventListener('click', () => {
-            currentPage++;
-            fetchLogs();
-        });
-
-        document.getElementById('logout-btn').addEventListener('click', () => {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '/api/auth/logout';
-            }
-        });
-
-        // Debounce helper
-        function debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
-                clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
-            };
+        } catch (error) {
+            alert('❌ Error: ' + error.message);
         }
+    }
 
-        // Initial load
+    function setupAutoRefresh() {
+        const checkbox = document.getElementById('auto-refresh');
+
+        if (checkbox.checked) {
+            autoRefreshInterval = setInterval(fetchLogs, 5000);
+        } else {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+    }
+
+    // Event listeners
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+        currentPage = 1;
         fetchLogs();
-    </script>
-</body>
+    });
 
-</html>
+    document.getElementById('clear-btn').addEventListener('click', clearLogs);
+
+    document.getElementById('level-filter').addEventListener('change', () => {
+        currentPage = 1;
+        fetchLogs();
+    });
+
+    document.getElementById('limit-select').addEventListener('change', () => {
+        currentPage = 1;
+        fetchLogs();
+    });
+
+    document.getElementById('search-input').addEventListener('input', debounce(() => {
+        currentPage = 1;
+        fetchLogs();
+    }, 500));
+
+    document.getElementById('auto-refresh').addEventListener('change', setupAutoRefresh);
+
+    document.getElementById('prev-btn').addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            fetchLogs();
+        }
+    });
+
+    document.getElementById('next-btn').addEventListener('click', () => {
+        currentPage++;
+        fetchLogs();
+    });
+
+    // Debounce helper
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Initial load
+    fetchLogs();
+</script>
+{% endblock %}

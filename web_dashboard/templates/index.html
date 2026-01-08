@@ -1,619 +1,544 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio Performance Dashboard</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .card-hover:hover {
-            transform: translateY(-2px);
-            transition: transform 0.2s ease-in-out;
-        }
-        .metric-card {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        .performance-positive {
-            color: #10b981;
-        }
-        .performance-negative {
-            color: #ef4444;
-        }
-    </style>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <!-- Header -->
-    <header class="gradient-bg text-white shadow-lg">
-        <div class="container mx-auto px-4 py-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold">📈 Portfolio Performance Dashboard</h1>
-                    <p class="text-blue-100 mt-2">Real-time trading bot performance tracking</p>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <div>
-                        <label for="fund-select" class="text-sm text-blue-100 block">Select Fund</label>
-                        <select id="fund-select" class="bg-white text-gray-900 border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Select Fund</option>
-                        </select>
-                    </div>
-                <div class="flex space-x-3">
-                    <a href="/admin" id="admin-link" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition duration-200 hidden">
-                        <i class="fas fa-crown mr-2"></i>Admin
-                    </a>
-                    <button id="logout-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                    </button>
-                </div>
-                </div>
-                <div class="text-right">
-                    <div class="text-sm text-blue-100">Last Updated</div>
-                    <div id="last-updated" class="font-mono text-lg">Loading...</div>
-                </div>
+{% extends "base.html" %}
+
+{% block title %}Portfolio Performance Dashboard{% endblock %}
+
+{% block page_title %}📈 Portfolio Performance Dashboard{% endblock %}
+{% block page_subtitle %}Real-time trading bot performance tracking{% endblock %}
+
+{% block header_extra %}
+<div class="hidden md:flex items-center space-x-4">
+    <div>
+        <label for="fund-select" class="text-sm text-blue-100 block">Select Fund</label>
+        <select id="fund-select" class="bg-white text-gray-900 border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Select Fund</option>
+        </select>
+    </div>
+    <div class="text-right">
+        <div class="text-sm text-blue-100">Last Updated</div>
+        <div id="last-updated" class="font-mono text-lg">Loading...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .card-hover:hover {
+        transform: translateY(-2px);
+        transition: transform 0.2s ease-in-out;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    .performance-positive {
+        color: #10b981;
+    }
+    .performance-negative {
+        color: #ef4444;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Performance Metrics Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                <i class="fas fa-dollar-sign text-2xl"></i>
             </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <div class="container mx-auto px-4 py-8">
-        <!-- Performance Metrics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
-                        <i class="fas fa-dollar-sign text-2xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Total Value</p>
-                        <p class="text-2xl font-bold text-gray-900" id="total-value">$0.00</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-green-100 text-green-600">
-                        <i class="fas fa-chart-line text-2xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Performance</p>
-                        <p class="text-2xl font-bold" id="performance-pct">0.00%</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-purple-100 text-purple-600">
-                        <i class="fas fa-coins text-2xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Unrealized P&L</p>
-                        <p class="text-2xl font-bold" id="unrealized-pnl">$0.00</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-orange-100 text-orange-600">
-                        <i class="fas fa-exchange-alt text-2xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Total Trades</p>
-                        <p class="text-2xl font-bold text-gray-900" id="total-trades">0</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Performance Chart -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-2xl font-bold text-gray-900 mb-4">📊 Performance Over Time</h2>
-            <div id="performance-chart" style="height: 500px;"></div>
-        </div>
-
-        <!-- Current Positions and Recent Trades -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Current Positions -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-2xl font-bold text-gray-900 mb-4">💼 Current Positions</h2>
-                <div id="positions-container">
-                    <div class="text-center text-gray-500 py-8">
-                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                        <p>Loading positions...</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recent Trades -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-2xl font-bold text-gray-900 mb-4">📋 Recent Trades</h2>
-                <div id="trades-container">
-                    <div class="text-center text-gray-500 py-8">
-                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                        <p>Loading trades...</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Cash Balances -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mt-8">
-            <h2 class="text-2xl font-bold text-gray-900 mb-4">💰 Cash Balances</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-blue-50 rounded-lg p-4">
-                    <div class="flex items-center justify-between">
-                        <span class="text-lg font-medium text-gray-700">CAD Balance</span>
-                        <span class="text-2xl font-bold text-blue-600" id="cad-balance">$0.00</span>
-                    </div>
-                </div>
-                <div class="bg-green-50 rounded-lg p-4">
-                    <div class="flex items-center justify-between">
-                        <span class="text-lg font-medium text-gray-700">USD Balance</span>
-                        <span class="text-2xl font-bold text-green-600" id="usd-balance">$0.00</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Fund Contributors/Holders -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mt-8">
-            <h2 class="text-2xl font-bold text-gray-900 mb-4">👥 Fund Contributors</h2>
-            <div id="contributors-container">
-                <div class="text-center text-gray-500 py-8">
-                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                    <p>Loading contributors...</p>
-                </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Value</p>
+                <p class="text-2xl font-bold text-gray-900" id="total-value">$0.00</p>
             </div>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-8 mt-12">
-        <div class="container mx-auto px-4 text-center">
-            <p class="text-gray-400">Powered by LLM Micro-Cap Trading Bot</p>
-            <p class="text-sm text-gray-500 mt-2">Data updates automatically from your trading bot</p>
+    <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-green-100 text-green-600">
+                <i class="fas fa-chart-line text-2xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Performance</p>
+                <p class="text-2xl font-bold" id="performance-pct">0.00%</p>
+            </div>
         </div>
-    </footer>
+    </div>
 
-    <script>
-        // Global variables
-        let portfolioData = {};
-        let performanceChart = null;
+    <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                <i class="fas fa-coins text-2xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Unrealized P&L</p>
+                <p class="text-2xl font-bold" id="unrealized-pnl">$0.00</p>
+            </div>
+        </div>
+    </div>
 
-        // Load portfolio data
-        async function loadPortfolioData() {
-            try {
-                const fundSelect = document.getElementById('fund-select');
-                const fund = fundSelect ? fundSelect.value : '';
-                const url = `/api/portfolio?fund=${encodeURIComponent(fund)}`;
-                const response = await fetch(url, { credentials: 'include' });
-                
-                if (response.status === 401) {
-                    // Redirect to login if not authenticated
-                    window.location.href = '/auth';
-                    return;
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                portfolioData = await response.json();
-                updateDashboard();
-            } catch (error) {
-                console.error('Error loading portfolio data:', error);
-                showError('Failed to load portfolio data');
+    <div class="bg-white rounded-lg shadow-lg p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-orange-100 text-orange-600">
+                <i class="fas fa-exchange-alt text-2xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Trades</p>
+                <p class="text-2xl font-bold text-gray-900" id="total-trades">0</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Chart -->
+<div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4">📊 Performance Over Time</h2>
+    <div class="mb-2 text-sm text-gray-500 md:hidden">
+        💡 Tip: Rotate your device for better viewing
+    </div>
+    <div id="performance-chart" style="height: 500px;" class="overflow-x-auto"></div>
+</div>
+
+<!-- Current Positions and Recent Trades -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- Current Positions -->
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">💼 Current Positions</h2>
+        <div id="positions-container">
+            <div class="text-center text-gray-500 py-8">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Loading positions...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">📋 Recent Trades</h2>
+        <div id="trades-container">
+            <div class="text-center text-gray-500 py-8">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Loading trades...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cash Balances -->
+<div class="bg-white rounded-lg shadow-lg p-6 mt-8">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4">💰 Cash Balances</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-blue-50 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+                <span class="text-lg font-medium text-gray-700">CAD Balance</span>
+                <span class="text-2xl font-bold text-blue-600" id="cad-balance">$0.00</span>
+            </div>
+        </div>
+        <div class="bg-green-50 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+                <span class="text-lg font-medium text-gray-700">USD Balance</span>
+                <span class="text-2xl font-bold text-green-600" id="usd-balance">$0.00</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fund Contributors/Holders -->
+<div class="bg-white rounded-lg shadow-lg p-6 mt-8">
+    <h2 class="text-2xl font-bold text-gray-900 mb-4">👥 Fund Contributors</h2>
+    <div id="contributors-container">
+        <div class="text-center text-gray-500 py-8">
+            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+            <p>Loading contributors...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Global variables
+    let portfolioData = {};
+    let performanceChart = null;
+
+    // Load portfolio data
+    async function loadPortfolioData() {
+        try {
+            const fundSelect = document.getElementById('fund-select');
+            const fund = fundSelect ? fundSelect.value : '';
+            const url = `/api/portfolio?fund=${encodeURIComponent(fund)}`;
+            const response = await fetch(url, { credentials: 'include' });
+            
+            if (response.status === 401) {
+                // Redirect to login if not authenticated
+                window.location.href = '/auth';
+                return;
             }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            portfolioData = await response.json();
+            updateDashboard();
+        } catch (error) {
+            console.error('Error loading portfolio data:', error);
+            showError('Failed to load portfolio data');
         }
+    }
 
-        // Load performance chart
-        async function loadPerformanceChart() {
-            try {
-                const fundSelect = document.getElementById('fund-select');
-                const fund = fundSelect ? fundSelect.value : '';
-                // Always include fund parameter, even if empty (for "All Funds")
-                const url = `/api/performance-chart?fund=${encodeURIComponent(fund)}`;
-                const response = await fetch(url, { credentials: 'include' });
-                const chartData = await response.json();
-                
-                if (chartData && chartData.data) {
-                    Plotly.newPlot('performance-chart', chartData.data, chartData.layout, {responsive: true});
-                } else {
-                    document.getElementById('performance-chart').innerHTML = 
-                        '<div class="text-center text-gray-500 py-8"><p>No performance data available</p></div>';
-                }
-            } catch (error) {
-                console.error('Error loading performance chart:', error);
+    // Load performance chart
+    async function loadPerformanceChart() {
+        try {
+            const fundSelect = document.getElementById('fund-select');
+            const fund = fundSelect ? fundSelect.value : '';
+            // Always include fund parameter, even if empty (for "All Funds")
+            const url = `/api/performance-chart?fund=${encodeURIComponent(fund)}`;
+            const response = await fetch(url, { credentials: 'include' });
+            const chartData = await response.json();
+            
+            if (chartData && chartData.data) {
+                Plotly.newPlot('performance-chart', chartData.data, chartData.layout, {responsive: true});
+            } else {
                 document.getElementById('performance-chart').innerHTML = 
-                    '<div class="text-center text-red-500 py-8"><p>Error loading chart</p></div>';
+                    '<div class="text-center text-gray-500 py-8"><p>No performance data available</p></div>';
             }
+        } catch (error) {
+            console.error('Error loading performance chart:', error);
+            document.getElementById('performance-chart').innerHTML = 
+                '<div class="text-center text-red-500 py-8"><p>Error loading chart</p></div>';
         }
+    }
 
-        // Load recent trades
-        async function loadRecentTrades() {
-            try {
-                const fundSelect = document.getElementById('fund-select');
-                const fund = fundSelect ? fundSelect.value : '';
-                // Always include fund parameter, even if empty (for "All Funds")
-                const url = `/api/recent-trades?fund=${encodeURIComponent(fund)}`;
-                const response = await fetch(url, { credentials: 'include' });
-                const trades = await response.json();
-                displayRecentTrades(trades);
-            } catch (error) {
-                console.error('Error loading recent trades:', error);
-                document.getElementById('trades-container').innerHTML =
-                    '<div class="text-center text-red-500 py-8"><p>Error loading trades</p></div>';
-            }
+    // Load recent trades
+    async function loadRecentTrades() {
+        try {
+            const fundSelect = document.getElementById('fund-select');
+            const fund = fundSelect ? fundSelect.value : '';
+            // Always include fund parameter, even if empty (for "All Funds")
+            const url = `/api/recent-trades?fund=${encodeURIComponent(fund)}`;
+            const response = await fetch(url, { credentials: 'include' });
+            const trades = await response.json();
+            displayRecentTrades(trades);
+        } catch (error) {
+            console.error('Error loading recent trades:', error);
+            document.getElementById('trades-container').innerHTML =
+                '<div class="text-center text-red-500 py-8"><p>Error loading trades</p></div>';
         }
+    }
 
-        // Load contributors
-        async function loadContributors() {
-            try {
-                const fundSelect = document.getElementById('fund-select');
-                const fund = fundSelect ? fundSelect.value : '';
-                
-                if (!fund) {
-                    document.getElementById('contributors-container').innerHTML =
-                        '<div class="text-center text-gray-500 py-8"><p>Select a fund to view contributors</p></div>';
-                    return;
-                }
-                
-                const url = `/api/contributors?fund=${encodeURIComponent(fund)}`;
-                const response = await fetch(url, { credentials: 'include' });
-                
-                if (response.status === 401) {
-                    window.location.href = '/auth';
-                    return;
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                displayContributors(data);
-            } catch (error) {
-                console.error('Error loading contributors:', error);
+    // Load contributors
+    async function loadContributors() {
+        try {
+            const fundSelect = document.getElementById('fund-select');
+            const fund = fundSelect ? fundSelect.value : '';
+            
+            if (!fund) {
                 document.getElementById('contributors-container').innerHTML =
-                    '<div class="text-center text-red-500 py-8"><p>Error loading contributors</p></div>';
-            }
-        }
-
-        // Update dashboard with loaded data
-        function updateDashboard() {
-            const metrics = portfolioData.metrics || {};
-            const positions = portfolioData.positions || [];
-            const cashBalances = portfolioData.cash_balances || {};
-            const availableFunds = portfolioData.available_funds || [];
-            const currentFund = portfolioData.current_fund;
-
-            // Update page title to show current fund
-            const titleElement = document.querySelector('h1');
-            if (currentFund) {
-                titleElement.textContent = `📈 Portfolio Performance Dashboard - ${currentFund}`;
-            } else if (availableFunds.length > 0) {
-                titleElement.textContent = `📈 Portfolio Performance Dashboard - All Funds`;
-            } else {
-                titleElement.textContent = `📈 Portfolio Performance Dashboard`;
-            }
-
-            // Update metrics
-            document.getElementById('total-value').textContent = `$${(metrics.total_value || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-            document.getElementById('performance-pct').textContent = `${metrics.performance_pct?.toFixed(2) || '0.00'}%`;
-            document.getElementById('unrealized-pnl').textContent = `$${(metrics.unrealized_pnl || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-            document.getElementById('total-trades').textContent = metrics.total_trades || '0';
-
-            // Update performance percentage color
-            const perfElement = document.getElementById('performance-pct');
-            if (metrics.performance_pct > 0) {
-                perfElement.className = 'text-2xl font-bold performance-positive';
-            } else if (metrics.performance_pct < 0) {
-                perfElement.className = 'text-2xl font-bold performance-negative';
-            } else {
-                perfElement.className = 'text-2xl font-bold text-gray-900';
-            }
-
-            // Update unrealized P&L color
-            const pnlElement = document.getElementById('unrealized-pnl');
-            if (metrics.unrealized_pnl > 0) {
-                pnlElement.className = 'text-2xl font-bold performance-positive';
-            } else if (metrics.unrealized_pnl < 0) {
-                pnlElement.className = 'text-2xl font-bold performance-negative';
-            } else {
-                pnlElement.className = 'text-2xl font-bold text-gray-900';
-            }
-
-            // Update cash balances
-            document.getElementById('cad-balance').textContent = `$${cashBalances.CAD?.toFixed(2) || '0.00'}`;
-            document.getElementById('usd-balance').textContent = `$${cashBalances.USD?.toFixed(2) || '0.00'}`;
-
-            // Update last updated time
-            document.getElementById('last-updated').textContent = new Date().toLocaleString();
-
-            // Display positions
-            displayPositions(positions);
-        }
-
-        // Display current positions
-        function displayPositions(positions) {
-            const container = document.getElementById('positions-container');
-            
-            if (positions.length === 0) {
-                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No current positions</p></div>';
+                    '<div class="text-center text-gray-500 py-8"><p>Select a fund to view contributors</p></div>';
                 return;
             }
-
-            let html = '<div class="space-y-3">';
-            positions.forEach(position => {
-                const pnlClass = position.pnl >= 0 ? 'text-green-600' : 'text-red-600';
-                const pnlPctClass = position.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600';
-                
-                html += `
-                    <div class="border rounded-lg p-4 hover:bg-gray-50">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-lg">${position.ticker}</h3>
-                                <p class="text-sm text-gray-600">${position.shares} shares @ $${position.price}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold">$${position.market_value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
-                                <p class="text-sm ${pnlClass}">${position.pnl >= 0 ? '+' : ''}$${position.pnl.toFixed(2)}</p>
-                                <p class="text-xs ${pnlPctClass}">${position.pnl_pct >= 0 ? '+' : ''}${position.pnl_pct.toFixed(2)}%</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        }
-
-        // Display recent trades
-        function displayRecentTrades(trades) {
-            const container = document.getElementById('trades-container');
             
-            if (trades.length === 0) {
-                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No recent trades</p></div>';
+            const url = `/api/contributors?fund=${encodeURIComponent(fund)}`;
+            const response = await fetch(url, { credentials: 'include' });
+            
+            if (response.status === 401) {
+                window.location.href = '/auth';
                 return;
             }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            displayContributors(data);
+        } catch (error) {
+            console.error('Error loading contributors:', error);
+            document.getElementById('contributors-container').innerHTML =
+                '<div class="text-center text-red-500 py-8"><p>Error loading contributors</p></div>';
+        }
+    }
 
-            let html = '<div class="space-y-3">';
-            trades.forEach(trade => {
-                const pnlClass = trade.pnl >= 0 ? 'text-green-600' : 'text-red-600';
-                const actionClass = trade.reason.includes('BUY') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                
-                html += `
-                    <div class="border rounded-lg p-4 hover:bg-gray-50">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold">${trade.ticker}</h3>
-                                <p class="text-sm text-gray-600">${trade.date}</p>
-                                <p class="text-xs ${actionClass} px-2 py-1 rounded-full inline-block mt-1">${trade.reason}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-sm">${trade.shares} @ $${trade.price}</p>
-                                <p class="font-bold">$${trade.cost_basis.toFixed(2)}</p>
-                                ${trade.pnl !== 0 ? `<p class="text-sm ${pnlClass}">${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}</p>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
+    // Update dashboard with loaded data
+    function updateDashboard() {
+        const metrics = portfolioData.metrics || {};
+        const positions = portfolioData.positions || [];
+        const cashBalances = portfolioData.cash_balances || {};
+        const availableFunds = portfolioData.available_funds || [];
+        const currentFund = portfolioData.current_fund;
+
+        // Update metrics
+        document.getElementById('total-value').textContent = `$${(metrics.total_value || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+        document.getElementById('performance-pct').textContent = `${metrics.performance_pct?.toFixed(2) || '0.00'}%`;
+        document.getElementById('unrealized-pnl').textContent = `$${(metrics.unrealized_pnl || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+        document.getElementById('total-trades').textContent = metrics.total_trades || '0';
+
+        // Update performance percentage color
+        const perfElement = document.getElementById('performance-pct');
+        if (metrics.performance_pct > 0) {
+            perfElement.className = 'text-2xl font-bold performance-positive';
+        } else if (metrics.performance_pct < 0) {
+            perfElement.className = 'text-2xl font-bold performance-negative';
+        } else {
+            perfElement.className = 'text-2xl font-bold text-gray-900';
         }
 
-        function displayContributors(data) {
-            const container = document.getElementById('contributors-container');
-            
-            if (!data.contributors || data.contributors.length === 0) {
-                container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No contributors found</p></div>';
-                return;
-            }
+        // Update unrealized P&L color
+        const pnlElement = document.getElementById('unrealized-pnl');
+        if (metrics.unrealized_pnl > 0) {
+            pnlElement.className = 'text-2xl font-bold performance-positive';
+        } else if (metrics.unrealized_pnl < 0) {
+            pnlElement.className = 'text-2xl font-bold performance-negative';
+        } else {
+            pnlElement.className = 'text-2xl font-bold text-gray-900';
+        }
 
-            let html = `
-                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+        // Update cash balances
+        document.getElementById('cad-balance').textContent = `$${cashBalances.CAD?.toFixed(2) || '0.00'}`;
+        document.getElementById('usd-balance').textContent = `$${cashBalances.USD?.toFixed(2) || '0.00'}`;
+
+        // Update last updated time
+        document.getElementById('last-updated').textContent = new Date().toLocaleString();
+
+        // Display positions
+        displayPositions(positions);
+    }
+
+    // Display current positions
+    function displayPositions(positions) {
+        const container = document.getElementById('positions-container');
+        
+        if (positions.length === 0) {
+            container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No current positions</p></div>';
+            return;
+        }
+
+        let html = '<div class="space-y-3">';
+        positions.forEach(position => {
+            const pnlClass = position.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+            const pnlPctClass = position.pnl_pct >= 0 ? 'text-green-600' : 'text-red-600';
+            
+            html += `
+                <div class="border rounded-lg p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
                         <div>
-                            <p class="text-sm text-gray-600">Total Contributors</p>
-                            <p class="text-2xl font-bold text-blue-600">${data.total_contributors}</p>
+                            <h3 class="font-bold text-lg">${position.ticker}</h3>
+                            <p class="text-sm text-gray-600">${position.shares} shares @ $${position.price}</p>
                         </div>
-                        <div>
-                            <p class="text-sm text-gray-600">Total Contributions</p>
-                            <p class="text-2xl font-bold text-green-600">$${data.total_net_contributions.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-600">Average per Contributor</p>
-                            <p class="text-2xl font-bold text-purple-600">$${(data.total_net_contributions / data.total_contributors).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
+                        <div class="text-right">
+                            <p class="font-bold">$${position.market_value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
+                            <p class="text-sm ${pnlClass}">${position.pnl >= 0 ? '+' : ''}$${position.pnl.toFixed(2)}</p>
+                            <p class="text-xs ${pnlPctClass}">${position.pnl_pct >= 0 ? '+' : ''}${position.pnl_pct.toFixed(2)}%</p>
                         </div>
                     </div>
                 </div>
-                <div class="space-y-3">
             `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
 
-            data.contributors.forEach((contributor, index) => {
-                const rankClass = index === 0 ? 'bg-yellow-50 border-yellow-200' : 
-                                 index === 1 ? 'bg-gray-50 border-gray-200' : 
-                                 index === 2 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200';
-                
-                html += `
-                    <div class="border rounded-lg p-4 hover:bg-gray-50 ${rankClass}">
-                        <div class="flex justify-between items-start">
-                            <div class="flex-1">
-                                <div class="flex items-center space-x-2">
-                                    <h3 class="font-bold text-lg">${contributor.contributor}</h3>
-                                    ${index < 3 ? `<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">#${index + 1}</span>` : ''}
+    // Display recent trades
+    function displayRecentTrades(trades) {
+        const container = document.getElementById('trades-container');
+        
+        if (trades.length === 0) {
+            container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No recent trades</p></div>';
+            return;
+        }
+
+        let html = '<div class="space-y-3">';
+        trades.forEach(trade => {
+            const pnlClass = trade.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+            const actionClass = trade.reason.includes('BUY') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+            
+            html += `
+                <div class="border rounded-lg p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold">${trade.ticker}</h3>
+                            <p class="text-sm text-gray-600">${trade.date}</p>
+                            <p class="text-xs ${actionClass} px-2 py-1 rounded-full inline-block mt-1">${trade.reason}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm">${trade.shares} @ $${trade.price}</p>
+                            <p class="font-bold">$${trade.cost_basis.toFixed(2)}</p>
+                            ${trade.pnl !== 0 ? `<p class="text-sm ${pnlClass}">${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}</p>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function displayContributors(data) {
+        const container = document.getElementById('contributors-container');
+        
+        if (!data.contributors || data.contributors.length === 0) {
+            container.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No contributors found</p></div>';
+            return;
+        }
+
+        let html = `
+            <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div>
+                        <p class="text-sm text-gray-600">Total Contributors</p>
+                        <p class="text-2xl font-bold text-blue-600">${data.total_contributors}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Total Contributions</p>
+                        <p class="text-2xl font-bold text-green-600">$${data.total_net_contributions.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Average per Contributor</p>
+                        <p class="text-2xl font-bold text-purple-600">$${(data.total_net_contributions / data.total_contributors).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="space-y-3">
+        `;
+
+        data.contributors.forEach((contributor, index) => {
+            const rankClass = index === 0 ? 'bg-yellow-50 border-yellow-200' : 
+                             index === 1 ? 'bg-gray-50 border-gray-200' : 
+                             index === 2 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-200';
+            
+            html += `
+                <div class="border rounded-lg p-4 hover:bg-gray-50 ${rankClass}">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center space-x-2">
+                                <h3 class="font-bold text-lg">${contributor.contributor}</h3>
+                                ${index < 3 ? `<span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">#${index + 1}</span>` : ''}
+                            </div>
+                            ${contributor.email ? `<p class="text-sm text-gray-600">${contributor.email}</p>` : ''}
+                            <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                <div>
+                                    <p class="text-gray-500">Net Contribution</p>
+                                    <p class="font-bold text-green-600">$${contributor.net_contribution.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
                                 </div>
-                                ${contributor.email ? `<p class="text-sm text-gray-600">${contributor.email}</p>` : ''}
-                                <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                    <div>
-                                        <p class="text-gray-500">Net Contribution</p>
-                                        <p class="font-bold text-green-600">$${contributor.net_contribution.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-gray-500">Ownership</p>
-                                        <p class="font-bold text-blue-600">${contributor.ownership_percentage}%</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-gray-500">Transactions</p>
-                                        <p class="font-bold">${contributor.transaction_count}</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-gray-500">First Contribution</p>
-                                        <p class="text-xs">${new Date(contributor.first_contribution).toLocaleDateString()}</p>
-                                    </div>
+                                <div>
+                                    <p class="text-gray-500">Ownership</p>
+                                    <p class="font-bold text-blue-600">${contributor.ownership_percentage}%</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">Transactions</p>
+                                    <p class="font-bold">${contributor.transaction_count}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500">First Contribution</p>
+                                    <p class="text-xs">${new Date(contributor.first_contribution).toLocaleDateString()}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `;
-            });
-            
-            html += '</div>';
-            container.innerHTML = html;
-        }
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
 
-        // Load available funds
-        async function loadFunds() {
-            try {
-                const response = await fetch('/api/funds', { credentials: 'include' });
-                const data = await response.json();
-                const fundSelect = document.getElementById('fund-select');
-
-                // Clear existing options
-                fundSelect.innerHTML = '<option value="">Select Fund</option>';
-
-                // Add fund options
-                data.funds.forEach(fund => {
-                    const option = document.createElement('option');
-                    option.value = fund;
-                    option.textContent = fund;
-                    fundSelect.appendChild(option);
-                });
-
-                // Set selected fund if provided in URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const selectedFund = urlParams.get('fund');
-                if (selectedFund) {
-                    fundSelect.value = selectedFund;
-                }
-
-            } catch (error) {
-                console.error('Error loading funds:', error);
-            }
-        }
-
-        // Check if user is admin and show admin link
-        async function checkAdminStatus() {
-            try {
-                const response = await fetch('/api/admin/users', { credentials: 'include' });
-                if (response.status === 200) {
-                    // User has admin access
-                    document.getElementById('admin-link').classList.remove('hidden');
-                } else if (response.status === 403) {
-                    // User is not admin
-                    document.getElementById('admin-link').classList.add('hidden');
-                }
-            } catch (error) {
-                // Hide admin link on error
-                document.getElementById('admin-link').classList.add('hidden');
-            }
-        }
-
-        // Handle fund selection change
-        function setupFundSelection() {
+    // Load available funds
+    async function loadFunds() {
+        try {
+            const response = await fetch('/api/funds', { credentials: 'include' });
+            const data = await response.json();
             const fundSelect = document.getElementById('fund-select');
-            console.log('Setting up fund selection listener');
-            
-            fundSelect.addEventListener('change', function() {
-                const selectedFund = this.value;
-                console.log('Fund changed to:', selectedFund);
 
-                // Update URL
-                const url = new URL(window.location);
-                if (selectedFund) {
-                    url.searchParams.set('fund', selectedFund);
-                } else {
-                    url.searchParams.delete('fund');
-                }
-                window.history.pushState({}, '', url);
+            // Clear existing options
+            fundSelect.innerHTML = '<option value="">Select Fund</option>';
 
-                // Reload dashboard data (don't reload funds)
-                reloadDashboardData();
+            // Add fund options
+            data.funds.forEach(fund => {
+                const option = document.createElement('option');
+                option.value = fund;
+                option.textContent = fund;
+                fundSelect.appendChild(option);
             });
-        }
 
-        // Reload dashboard data without reloading funds list
-        async function reloadDashboardData() {
-            console.log('Reloading dashboard data for selected fund...');
-            await Promise.all([
-                loadPortfolioData(),
-                loadPerformanceChart(),
-                loadRecentTrades(),
-                loadContributors()
-            ]);
-        }
-
-        // Show error message
-        function showError(message) {
-            console.error(message);
-            // You could add a toast notification here
-        }
-
-        // Initialize dashboard
-        async function initDashboard() {
-            console.log('Initializing dashboard...');
-            // Load funds first (needed for dropdown to work)
-            await loadFunds();
-            
-            // Then load everything else in parallel
-            await Promise.all([
-                loadPortfolioData(),
-                loadPerformanceChart(),
-                loadRecentTrades(),
-                loadContributors(),
-                checkAdminStatus()
-            ]);
-            console.log('Dashboard initialized successfully');
-        }
-
-        // Auto-refresh every 5 minutes
-        setInterval(initDashboard, 5 * 60 * 1000);
-
-        // Logout functionality
-        document.getElementById('logout-btn').addEventListener('click', async function() {
-            try {
-                const response = await fetch('/api/auth/logout', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                if (response.ok) {
-                    window.location.href = '/auth';
-                } else {
-                    console.error('Logout failed');
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
+            // Set selected fund if provided in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const selectedFund = urlParams.get('fund');
+            if (selectedFund) {
+                fundSelect.value = selectedFund;
             }
-        });
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            setupFundSelection();
-            initDashboard();
+        } catch (error) {
+            console.error('Error loading funds:', error);
+        }
+    }
+
+    // Handle fund selection change
+    function setupFundSelection() {
+        const fundSelect = document.getElementById('fund-select');
+        console.log('Setting up fund selection listener');
+        
+        fundSelect.addEventListener('change', function() {
+            const selectedFund = this.value;
+            console.log('Fund changed to:', selectedFund);
+
+            // Update URL
+            const url = new URL(window.location);
+            if (selectedFund) {
+                url.searchParams.set('fund', selectedFund);
+            } else {
+                url.searchParams.delete('fund');
+            }
+            window.history.pushState({}, '', url);
+
+            // Reload dashboard data (don't reload funds)
+            reloadDashboardData();
         });
-    </script>
-</body>
-</html>
+    }
+
+    // Reload dashboard data without reloading funds list
+    async function reloadDashboardData() {
+        console.log('Reloading dashboard data for selected fund...');
+        await Promise.all([
+            loadPortfolioData(),
+            loadPerformanceChart(),
+            loadRecentTrades(),
+            loadContributors()
+        ]);
+    }
+
+    // Show error message
+    function showError(message) {
+        console.error(message);
+        // You could add a toast notification here
+    }
+
+    // Initialize dashboard
+    async function initDashboard() {
+        console.log('Initializing dashboard...');
+        // Load funds first (needed for dropdown to work)
+        await loadFunds();
+        
+        // Then load everything else in parallel
+        await Promise.all([
+            loadPortfolioData(),
+            loadPerformanceChart(),
+            loadRecentTrades(),
+            loadContributors()
+        ]);
+        console.log('Dashboard initialized successfully');
+    }
+
+    // Auto-refresh every 5 minutes
+    setInterval(initDashboard, 5 * 60 * 1000);
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        setupFundSelection();
+        initDashboard();
+    });
+</script>
+{% endblock %}

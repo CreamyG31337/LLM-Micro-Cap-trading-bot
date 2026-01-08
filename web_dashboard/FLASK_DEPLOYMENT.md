@@ -4,6 +4,17 @@ Since port 5000 is already used by the NFT calculator Flask app, the Trading Das
 
 **Note**: This app is deployed as a Docker container via Woodpecker CI/CD. The container is automatically built and deployed when you push to the main branch.
 
+## UI Framework: Flowbite
+
+All Flask templates use **Flowbite** (Tailwind CSS component library) for mobile-responsive navigation and UI components:
+
+- **Mobile Navigation** - Hamburger menu with collapsible sidebar
+- **User Menu** - Dropdown in top-right header (Settings, Logout)
+- **Responsive Design** - Works on phones, tablets, and desktops
+- **Pre-built Components** - Dropdowns, modals, drawers, etc.
+
+Flowbite is loaded via CDN (no Python package required). See [FLOWBITE_GUIDE.md](FLOWBITE_GUIDE.md) for component usage and examples.
+
 ## Automatic Deployment (Recommended)
 
 The Flask app is automatically deployed via Woodpecker CI/CD when you push to the main branch. The `.woodpecker.yml` file builds and deploys:

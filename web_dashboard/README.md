@@ -50,7 +50,11 @@ web_dashboard/
 │   ├── 03_sample_data.sql     # Test data (optional)
 │   └── README.md             # Detailed schema documentation
 ├── templates/                 # 🎨 HTML templates
+│   ├── base.html             # Base template with Flowbite navigation
 │   ├── index.html            # Main dashboard
+│   ├── settings.html         # User preferences (Flask v2)
+│   ├── ticker_details.html  # Ticker details page (Flask v2)
+│   ├── logs.html             # Admin logs viewer (Flask v2)
 │   └── auth.html             # Login/register page
 ├── app.py                    # 🚀 Flask application
 ├── auth.py                   # 🔐 Authentication system
@@ -106,6 +110,13 @@ Anon Key: your-anon-key-here
 - **User Management** - List and manage users
 - **Data Migration** - Import from CSV files
 - **Scheduled Tasks** - Background job management
+
+### UI Framework (Flask Pages)
+- **Flowbite Integration** - Mobile-responsive UI components
+- **Hamburger Navigation** - Collapsible sidebar on mobile devices
+- **User Menu Dropdown** - Quick access to Settings and Logout
+- **Mobile-First Design** - Optimized for phones and tablets
+- See [FLOWBITE_GUIDE.md](FLOWBITE_GUIDE.md) for component usage
 
 ### Multi-Investor Features
 - **NAV-Based Tracking** - Accurate per-investor returns using Net Asset Value

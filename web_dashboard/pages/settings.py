@@ -316,13 +316,19 @@ def render_v2_settings():
                 client = None
             
             if client:
-                # Try the actual save
-                result = set_user_preference('v2_enabled', v2_enabled)
-                if result:
-                    st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
-                    st.info("🔄 Refresh the page or navigate to see the changes take effect")
-                else:
-                    st.error("❌ **Save Failed**: RPC call or database error. Check browser console.")
+                # Try the actual save with detailed error capture
+                try:
+                    result = set_user_preference('v2_enabled', v2_enabled)
+                    if result:
+                        st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+                        st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                    else:
+                        st.error("❌ **Save Failed**: RPC call returned False but no exception was raised.")
+                        st.code("This usually means the RPC executed but returned an error status. Check application logs.")
+                except Exception as save_error:
+                    st.error(f"❌ **Save Exception**: {type(save_error).__name__}")
+                    st.code(str(save_error))
+                    st.info("💡 **Possible causes:**\n- RPC function `set_user_preference` doesn't exist in database\n- Row Level Security (RLS) blocking the write\n- Invalid parameter format")
             else:
                 st.error("❌ Cannot save: Supabase client not available")
 

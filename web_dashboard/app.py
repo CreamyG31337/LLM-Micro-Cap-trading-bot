@@ -439,8 +439,32 @@ def index():
     if not user_data:
         return redirect(url_for('auth_page'))
     
-    fund = request.args.get('fund')
-    return render_template('index.html', selected_fund=fund)
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        fund = request.args.get('fund')
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='dashboard')
+        
+        return render_template('index.html', 
+                             selected_fund=fund,
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error loading dashboard: {e}")
+        fund = request.args.get('fund')
+        # Fallback with minimal context
+        nav_context = get_navigation_context(current_page='dashboard')
+        return render_template('index.html', 
+                             selected_fund=fund,
+                             user_email='User',
+                             user_theme='system',
+                             **nav_context)
 
 @app.route('/auth')
 def auth_page():

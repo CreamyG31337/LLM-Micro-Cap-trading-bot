@@ -92,11 +92,12 @@ document.addEventListener('DOMContentLoaded', function () {
     // Theme auto-save on change
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
-        // Store original theme for error recovery
-        const originalTheme = document.documentElement.getAttribute('data-theme') || 'system';
+        // Store original theme for error recovery (use let so we can update it)
+        let originalTheme = document.documentElement.getAttribute('data-theme') || 'system';
         
         themeSelect.addEventListener('change', function () {
             const theme = this.value;
+            const selectElement = this; // Capture 'this' for use in callbacks
             
             // Apply theme immediately (optimistic update)
             document.documentElement.setAttribute('data-theme', theme);
@@ -126,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         console.error('Theme save failed:', data.error);
                         // Revert on error
                         document.documentElement.setAttribute('data-theme', originalTheme);
-                        this.value = originalTheme;
+                        selectElement.value = originalTheme;
                         showError('theme-error');
                     }
                 })
@@ -134,7 +135,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     console.error('Error saving theme:', error);
                     // Revert on error
                     document.documentElement.setAttribute('data-theme', originalTheme);
-                    this.value = originalTheme;
+                    selectElement.value = originalTheme;
                     showError('theme-error');
                 });
         });

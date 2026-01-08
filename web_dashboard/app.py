@@ -1532,10 +1532,13 @@ def update_v2_enabled():
         from flask_auth_utils import get_user_id_flask
         
         data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "Missing request body"}), 400
+            
         enabled = data.get('enabled')
         
         if enabled is None:
-            return jsonify({"error": "Missing enabled parameter"}), 400
+            return jsonify({"success": False, "error": "Missing enabled parameter"}), 400
         
         user_id = get_user_id_flask()
         logger.info(f"Updating v2_enabled for user {user_id} to {enabled}")
@@ -1546,10 +1549,10 @@ def update_v2_enabled():
             return jsonify({"success": True})
         else:
             logger.error(f"Failed to update v2_enabled - set_user_preference returned False")
-            return jsonify({"error": "Failed to update preference"}), 500
+            return jsonify({"success": False, "error": "Failed to update preference"}), 500
     except Exception as e:
         logger.error(f"Error updating v2 enabled: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/settings/debug', methods=['GET'])
 @require_auth

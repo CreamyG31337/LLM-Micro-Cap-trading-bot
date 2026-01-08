@@ -258,8 +258,7 @@ def set_user_preference(key: str, value: Any) -> bool:
             logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
             result = client.supabase.rpc('set_user_preference', {
                 'pref_key': key,
-                'pref_value': json_value,
-                'user_uuid': user_id  # Pass user ID explicitly (like is_admin does)
+                'pref_value': json_value
             }).execute()
             
             # Check if the RPC call succeeded
@@ -305,8 +304,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                         },
                         json={
                             "pref_key": key,
-                            "pref_value": json_value,
-                            "user_uuid": user_id  # Pass user ID explicitly
+                            "pref_value": json_value
                         }
                     )
                     
@@ -336,12 +334,11 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         logger.info(f"Successfully set preference '{key}' = {value}")
         return True
-        
+
         
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False
-
 
 
 def get_user_timezone() -> Optional[str]:

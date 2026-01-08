@@ -1231,11 +1231,9 @@ def logs_debug():
         profile_error = None
         try:
             token = request.cookies.get('auth_token') or request.cookies.get('session_token')
-            if token:
-                client = SupabaseClient()
-                if len(token.split('.')) == 3:
-                    client.supabase.auth.set_session(token)
-                
+            if token and len(token.split('.')) == 3:
+                # Use SupabaseClient with user token (handles auth properly)
+                client = SupabaseClient(user_token=token)
                 # Query user_profiles table directly
                 result = client.supabase.table('user_profiles').select('role, email').eq('user_id', request_user_id).execute()
                 if result.data and len(result.data) > 0:
@@ -1251,10 +1249,9 @@ def logs_debug():
         rpc_error = None
         try:
             token = request.cookies.get('auth_token') or request.cookies.get('session_token')
-            if token and request_user_id:
-                client = SupabaseClient()
-                if len(token.split('.')) == 3:
-                    client.supabase.auth.set_session(token)
+            if token and request_user_id and len(token.split('.')) == 3:
+                # Use SupabaseClient with user token (handles auth properly)
+                client = SupabaseClient(user_token=token)
                 rpc_response = client.supabase.rpc('is_admin', {'user_uuid': request_user_id}).execute()
                 rpc_result = rpc_response.data
         except Exception as e:

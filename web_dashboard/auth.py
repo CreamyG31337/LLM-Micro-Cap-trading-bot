@@ -259,11 +259,8 @@ def require_admin(f):
             if token and len(token.split('.')) == 3:
                 try:
                     from supabase_client import SupabaseClient
-                    import os
-                    # Create Supabase client
-                    client = SupabaseClient()
-                    # Set the user's auth token
-                    client.supabase.auth.set_session(token)
+                    # Create Supabase client with user token (handles auth header properly)
+                    client = SupabaseClient(user_token=token)
                     # Call RPC function (same way Streamlit does it)
                     result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                     

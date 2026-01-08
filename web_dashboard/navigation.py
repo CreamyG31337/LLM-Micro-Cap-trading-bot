@@ -22,10 +22,16 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     try:
         from user_preferences import apply_user_theme, get_user_preference, set_user_preference
         apply_user_theme()
-        is_v2_enabled = get_user_preference('v2_enabled', default=False)
     except Exception:
-        is_v2_enabled = False
-        def set_user_preference(*args): pass
+        def get_user_preference(key, default=None): return default
+        def set_user_preference(*args): return False
+    
+    # V2 preference: Use session state as THE source of truth (persists across page navigation)
+    # Only load from database ONCE per session (when key doesn't exist)
+    if '_v2_enabled' not in st.session_state:
+        st.session_state._v2_enabled = get_user_preference('v2_enabled', default=False)
+    
+    is_v2_enabled = st.session_state._v2_enabled
     
     try:
         from auth_utils import is_admin, get_user_email, get_user_id
@@ -183,26 +189,21 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     # Modern divider
     st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)
 
-    # v2 Beta Toggle - Use explicit save pattern (more reliable than on_change)
-    # Initialize session state for v2 toggle from database (only on first run)
-    if '_v2_db_value' not in st.session_state:
-        st.session_state._v2_db_value = is_v2_enabled
-    
-    # Render toggle using session state
+    # V2 Beta Toggle - uses session state as source of truth
     v2_current = st.sidebar.toggle(
         "🚀 Try v2 Beta", 
-        value=st.session_state._v2_db_value,
+        value=st.session_state._v2_enabled,
         key="v2_beta_toggle",
         help="Enable new Flask-based pages (faster, better UI)"
     )
     
-    # Save to database when value changes (compare to last known DB value)
-    if v2_current != st.session_state._v2_db_value:
+    # Save when value changes
+    if v2_current != st.session_state._v2_enabled:
+        st.session_state._v2_enabled = v2_current  # Update session state IMMEDIATELY
         try:
-            from user_preferences import set_user_preference as save_pref
-            if save_pref('v2_enabled', v2_current):
-                st.session_state._v2_db_value = v2_current  # Update our cached DB value
-                st.rerun()  # Rerun to reflect the change throughout the page
-        except Exception as e:
-            st.sidebar.error(f"Failed to save preference")
+            from user_preferences import set_user_preference
+            set_user_preference('v2_enabled', v2_current)  # Save to DB for persistence across sessions
+        except Exception:
+            pass  # Session state is already updated, DB save is best-effort
+        st.rerun()  # Rerun to update navigation links with new preference
 

@@ -216,15 +216,13 @@ def set_user_preference(key: str, value: Any) -> bool:
             'pref_value': json_value
         }).execute()
         
-        # Update session cache (but skip v2_enabled to ensure fresh reads)
+        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
+        # This is more robust as it forces a fresh DB read on next access,
+        # preventing stale cache state if the session cookie update fails.
         cache = _get_cache()
         cache_key = f"_pref_{key}"
-        if key == 'v2_enabled':
-            # Actively clear any existing cached value for v2_enabled
-            if cache_key in cache:
-                del cache[cache_key]
-        else:
-            cache[cache_key] = value
+        if cache_key in cache:
+            del cache[cache_key]
         
         return True
         

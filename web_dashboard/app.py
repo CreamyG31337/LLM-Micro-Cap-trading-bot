@@ -1761,14 +1761,6 @@ def api_ticker_external_links():
         logger.error(f"Error fetching external links for {ticker}: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ============================================================================
-# TEST ROUTE - Minimal navigation test page
-# ============================================================================
-@app.route('/v2/test-nav')
-def test_nav_page():
-    """Minimal test page with working sidebar - for debugging navigation issues"""
-    return render_template('test_nav.html')
-
 if __name__ == '__main__':
     # Run the app
     # Use port 5001 to avoid conflict with NFT calculator app on port 5000

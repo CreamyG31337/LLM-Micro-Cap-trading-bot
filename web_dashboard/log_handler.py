@@ -204,9 +204,16 @@ def setup_logging(level=logging.INFO):
         'web_dashboard.utils.background_rebuild',  # Background rebuild logging
         'web_dashboard.utils',  # Rebuild from date and other utils
         'web_dashboard.pages.admin',  # Admin page logging
+        'web_dashboard.pages',  # All pages
+        'pages',  # Top level pages if imported that way
         'market_data',  # Price fetching and caching
         'utils',  # Root utils (job_tracking, market_holidays)
         'config',  # Settings logging
+        'admin_utils',
+        'social_service',
+        'research_report_service',
+        'ai_service_client',
+        'archive_service',
     ]
     
     # Attach handler to each app module logger

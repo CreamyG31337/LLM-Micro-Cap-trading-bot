@@ -205,6 +205,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         # Get Supabase client (works in both contexts)
         client = None
+        user_token = None
         try:
             from streamlit_utils import get_supabase_client
             # Try to get token from Streamlit context
@@ -224,8 +225,19 @@ def set_user_preference(key: str, value: Any) -> bool:
                 if has_request_context():
                     # Get token from Flask cookies
                     user_token = get_auth_token()
-                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
+                    if user_token:
+                        logger.info(f"[PREF] Creating SupabaseClient with token (length: {len(user_token)}) for preference '{key}'")
+                        client = SupabaseClient(user_token=user_token)
+                        # Verify the client has the token set
+                        if hasattr(client, '_user_token') and client._user_token:
+                            logger.info(f"[PREF] Client token verified: {client._user_token[:20]}...")
+                        else:
+                            logger.warning(f"[PREF] Client created but _user_token not set!")
+                    else:
+                        logger.warning(f"[PREF] No token available for preference '{key}' - creating client without token")
+                        client = SupabaseClient()
                 else:
+                    logger.warning(f"[PREF] No Flask request context for preference '{key}' - creating client without token")
                     client = SupabaseClient()
             except ImportError:
                 logger.warning("Cannot set preference: no Supabase client available")
@@ -242,6 +254,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         # Call the RPC function to set preference
         # Note: Supabase will convert the JSON string to JSONB
         try:
+            logger.info(f"Calling RPC set_user_preference with key='{key}', value='{json_value[:50]}...' (truncated)")
             result = client.supabase.rpc('set_user_preference', {
                 'pref_key': key,
                 'pref_value': json_value
@@ -249,7 +262,7 @@ def set_user_preference(key: str, value: Any) -> bool:
             
             # Check if the RPC call succeeded
             # The function returns a boolean, but Supabase might wrap it
-            logger.debug(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
+            logger.info(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
             
             # Handle different response formats
             if result.data is None:

@@ -331,4 +331,35 @@ def is_admin():
     """Check if current user is admin"""
     if not hasattr(request, 'user_id'):
         return False
+        
+    # Attempt to perform a robust check similar to require_admin decorator
+    try:
+        token = (request.cookies.get('auth_token') or 
+                 request.cookies.get('session_token') or 
+                 request.headers.get('Authorization', '').replace('Bearer ', ''))
+                 
+        if token:
+            # Try using Supabase client with user's token
+            # This is critical because RPC often returns false/error for Anon key
+            try:
+                from supabase_client import SupabaseClient
+                client = SupabaseClient(user_token=token)
+                result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
+                
+                if result.data is not None:
+                    if isinstance(result.data, bool):
+                        return result.data
+                    elif isinstance(result.data, list) and len(result.data) > 0:
+                        return bool(result.data[0])
+            except Exception as e:
+                logger.debug(f"is_admin helper: Supabase client check failed: {e}")
+                
+            # Fallback to HTTP request if client method fails
+            # (Though if client failed, this uses Anon key which likely also fails)
+            return auth_manager.is_admin(request.user_id)
+            
+    except Exception as e:
+        logger.error(f"Error in is_admin helper: {e}")
+        
+    # Final fallback
     return auth_manager.is_admin(request.user_id)

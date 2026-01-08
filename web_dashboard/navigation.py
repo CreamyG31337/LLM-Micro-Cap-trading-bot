@@ -183,18 +183,26 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     # Modern divider
     st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)
 
-    # v2 Beta Toggle
-    if 'set_user_preference' in locals() and set_user_preference:
-        def on_v2_toggle_change():
-            new_val = st.session_state.v2_beta_toggle
-            set_user_preference('v2_enabled', new_val)
-            # No need to manual rerun, Streamlit handles it
-            
-        st.sidebar.toggle(
-            "🚀 Try v2 Beta", 
-            value=is_v2_enabled, 
-            key="v2_beta_toggle", 
-            on_change=on_v2_toggle_change,
-            help="Enable new Flask-based pages (faster, better UI)"
-        )
+    # v2 Beta Toggle - Use explicit save pattern (more reliable than on_change)
+    # Initialize session state for v2 toggle from database (only on first run)
+    if '_v2_db_value' not in st.session_state:
+        st.session_state._v2_db_value = is_v2_enabled
+    
+    # Render toggle using session state
+    v2_current = st.sidebar.toggle(
+        "🚀 Try v2 Beta", 
+        value=st.session_state._v2_db_value,
+        key="v2_beta_toggle",
+        help="Enable new Flask-based pages (faster, better UI)"
+    )
+    
+    # Save to database when value changes (compare to last known DB value)
+    if v2_current != st.session_state._v2_db_value:
+        try:
+            from user_preferences import set_user_preference as save_pref
+            if save_pref('v2_enabled', v2_current):
+                st.session_state._v2_db_value = v2_current  # Update our cached DB value
+                st.rerun()  # Rerun to reflect the change throughout the page
+        except Exception as e:
+            st.sidebar.error(f"Failed to save preference")
 

@@ -316,19 +316,39 @@ def render_v2_settings():
                 client = None
             
             if client:
-                # Try the actual save with detailed error capture
-                try:
-                    result = set_user_preference('v2_enabled', v2_enabled)
-                    if result:
-                        st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
-                        st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                # Manually trace through set_user_preference to find the silent failure
+                st.write("🔎 **Step-by-step trace:**")
+                
+                # Step 1: Check authentication (mimics _is_authenticated)
+                from user_preferences import _is_authenticated, _get_user_id
+                auth_check = _is_authenticated()
+                st.write(f"1. Auth check: {auth_check}")
+                
+                if not auth_check:
+                    st.error("❌ Failed at auth check!")
+                else:
+                    # Step 2: Get user ID
+                    user_id_check = _get_user_id()
+                    st.write(f"2. User ID: {user_id_check if user_id_check else 'NONE'}")
+                    
+                    if not user_id_check:
+                        st.error("❌ Failed at user_id check!")
                     else:
-                        st.error("❌ **Save Failed**: RPC call returned False but no exception was raised.")
-                        st.code("This usually means the RPC executed but returned an error status. Check application logs.")
-                except Exception as save_error:
-                    st.error(f"❌ **Save Exception**: {type(save_error).__name__}")
-                    st.code(str(save_error))
-                    st.info("💡 **Possible causes:**\n- RPC function `set_user_preference` doesn't exist in database\n- Row Level Security (RLS) blocking the write\n- Invalid parameter format")
+                        # Step 3: Try to call the actual function
+                        st.write("3. Calling set_user_preference...")
+                        try:
+                            result = set_user_preference('v2_enabled', v2_enabled)
+                            st.write(f"4. Result: {result}")
+                            
+                            if result:
+                                st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+                                st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                            else:
+                                st.error("❌ **set_user_preference returned False**")
+                                st.info("💡 The function executed but returned False. This means either:\n- The RPC function doesn't exist in Supabase\n- RLS is blocking the write\n- The RPC returned NULL or an error\n\nCheck Supabase logs for RPC errors.")
+                        except Exception as save_error:
+                            st.error(f"❌ **Exception**: {type(save_error).__name__}")
+                            st.code(str(save_error))
             else:
                 st.error("❌ Cannot save: Supabase client not available")
 

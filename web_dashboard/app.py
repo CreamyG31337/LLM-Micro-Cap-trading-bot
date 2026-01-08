@@ -541,7 +541,7 @@ def login():
                 }
             })
             
-            # Set the session token as a cookie
+            # Set the session token as a cookie (Flask legacy)
             # Use secure cookies for production (Vercel), allow non-secure for local dev
             is_production = request.host != 'localhost:5000' and not request.host.startswith('127.0.0.1')
             response.set_cookie(
@@ -552,6 +552,31 @@ def login():
                 secure=is_production,  # True for HTTPS (Vercel), False for localhost
                 samesite='None' if is_production else 'Lax'  # None required for cross-origin cookies
             )
+
+            # Set the auth token as a cookie (Streamlit/Supabase compatible)
+            # This is the REAL Supabase access token required for RLS and auth.uid()
+            if "access_token" in auth_data:
+                # Default Supabase expiry is 3600s (1 hour)
+                expires_in = auth_data.get("expires_in", 3600)
+                response.set_cookie(
+                    'auth_token', 
+                    auth_data["access_token"], 
+                    max_age=expires_in, 
+                    httponly=True, 
+                    secure=is_production,
+                    samesite='None' if is_production else 'Lax'
+                )
+                
+                # Also set refresh token if available so client can refresh if needed
+                if "refresh_token" in auth_data:
+                    response.set_cookie(
+                        'refresh_token', 
+                        auth_data["refresh_token"], 
+                        max_age=86400 * 30, # 30 days usually
+                        httponly=True, 
+                        secure=is_production,
+                        samesite='None' if is_production else 'Lax'
+                    )
             
             return response
         else:
@@ -642,6 +667,15 @@ def logout():
     # Clear auth_token (Streamlit login) to prevent auto-login loop
     response.set_cookie(
         'auth_token', 
+        '', 
+        expires=0,
+        secure=is_production,
+        samesite='None' if is_production else 'Lax'
+    )
+    
+    # Clear refresh_token
+    response.set_cookie(
+        'refresh_token', 
         '', 
         expires=0,
         secure=is_production,

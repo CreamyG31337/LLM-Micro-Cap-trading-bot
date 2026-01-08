@@ -159,12 +159,40 @@ def get_user_preference(key: str, default: Any = None) -> Any:
             else:
                 value = result.data
             
-            # Parse JSONB string if needed
+            # JSONB values from Supabase can be returned in different formats:
+            # 1. Already decoded Python types (str, int, bool, None, dict, list)
+            # 2. JSON-encoded strings that need parsing
+            # 3. None/null values
+            
+            # Handle None/null values first
+            if value is None:
+                return default
+            
+            # If it's a string, check if it's JSON-encoded
             if isinstance(value, str):
+                # Check if it's a JSON-encoded string (starts/ends with quotes or is valid JSON)
+                value_stripped = value.strip()
+                if value_stripped.lower() == 'null':
+                    return default
+                # Try to parse as JSON (handles JSON-encoded strings like "\"value\"")
                 try:
-                    value = json.loads(value)
+                    parsed = json.loads(value)
+                    # Only use parsed value if it's different from original
+                    # (avoids double-parsing already decoded values)
+                    # But if parsed is a string, use it (it was JSON-encoded)
+                    if isinstance(parsed, str) or parsed != value:
+                        value = parsed
                 except (json.JSONDecodeError, TypeError):
-                    pass  # Keep as string if not valid JSON
+                    # Not JSON-encoded, use as-is
+                    pass
+            
+            # Handle boolean JSONB values that might be strings
+            if isinstance(value, str) and value.lower() in ('true', 'false'):
+                value = value.lower() == 'true'
+            
+            # Handle None after parsing
+            if value is None or (isinstance(value, str) and value.lower() == 'null'):
+                return default
             
             # Cache in session (but skip v2_enabled to ensure fresh reads)
             if value is not None and key != 'v2_enabled':

@@ -110,6 +110,15 @@ def render_timezone_settings():
 
     # Get current timezone
     current_tz = get_user_timezone()
+    
+    # Debug output
+    tz_options = list(COMMON_TIMEZONES.keys())
+    st.caption(f"🔍 DEBUG: current_tz = {repr(current_tz)}, type = {type(current_tz).__name__}")
+    st.caption(f"🔍 DEBUG: current_tz in tz_options = {current_tz in tz_options if current_tz else False}")
+    if current_tz:
+        st.caption(f"🔍 DEBUG: tz_options contains 'America/Vancouver' = {'America/Vancouver' in tz_options}")
+        st.caption(f"🔍 DEBUG: First few options: {tz_options[:3]}")
+    
     if not current_tz:
         # Default to PST (Pacific Time) when no preference is set
         try:
@@ -131,14 +140,28 @@ def render_timezone_settings():
             # Default to PST if detection fails
             current_tz = "America/Los_Angeles"
 
-    # Find current index
-    tz_options = list(COMMON_TIMEZONES.keys())
+    # Find current index (tz_options already created above for debug)
     tz_labels = [f"{tz} - {COMMON_TIMEZONES[tz]}" for tz in tz_options]
 
+    # Normalize current_tz for comparison (ensure it's a string, strip whitespace)
+    if current_tz:
+        current_tz_normalized = str(current_tz).strip()
+    else:
+        current_tz_normalized = None
+
     try:
-        current_index = tz_options.index(current_tz) if current_tz in tz_options else 0
-    except ValueError:
+        if current_tz_normalized and current_tz_normalized in tz_options:
+            current_index = tz_options.index(current_tz_normalized)
+            st.caption(f"🔍 DEBUG: Found index = {current_index}")
+        else:
+            current_index = 0
+            if current_tz_normalized:
+                st.caption(f"🔍 DEBUG: current_tz '{current_tz_normalized}' not in options, using index 0")
+            else:
+                st.caption(f"🔍 DEBUG: current_tz is None/empty, using index 0")
+    except ValueError as e:
         current_index = 0
+        st.caption(f"🔍 DEBUG: ValueError in index lookup: {e}")
 
     # Timezone selector
     selected_tz_label = st.selectbox(
@@ -192,11 +215,40 @@ def render_currency_settings():
         currency_options = ['CAD', 'USD']
         currency_labels = ['CAD - Canadian Dollar', 'USD - US Dollar']
 
+    # Debug output
+    st.caption(f"🔍 DEBUG: current_currency = {repr(current_currency)}, type = {type(current_currency).__name__}")
+    st.caption(f"🔍 DEBUG: current_currency in currency_options = {current_currency in currency_options if current_currency else False}")
+    st.caption(f"🔍 DEBUG: currency_options = {currency_options}")
+
+    # Normalize current_currency for comparison (options are already uppercase)
+    if current_currency:
+        current_currency_normalized = str(current_currency).strip().upper()
+        # Also create normalized options list for case-insensitive comparison
+        currency_options_normalized = [opt.upper() for opt in currency_options]
+    else:
+        current_currency_normalized = None
+        currency_options_normalized = currency_options
+
     # Find current index
     try:
-        current_index = currency_options.index(current_currency) if current_currency in currency_options else 0
-    except ValueError:
+        if current_currency_normalized:
+            # Try exact match first (case-sensitive)
+            if current_currency_normalized in currency_options:
+                current_index = currency_options.index(current_currency_normalized)
+                st.caption(f"🔍 DEBUG: Found index = {current_index} (exact match)")
+            # Try case-insensitive match
+            elif current_currency_normalized in currency_options_normalized:
+                current_index = currency_options_normalized.index(current_currency_normalized)
+                st.caption(f"🔍 DEBUG: Found index = {current_index} (case-insensitive match)")
+            else:
+                current_index = 0
+                st.caption(f"🔍 DEBUG: current_currency '{current_currency_normalized}' not in options, using index 0")
+        else:
+            current_index = 0
+            st.caption(f"🔍 DEBUG: current_currency is None/empty, using index 0")
+    except ValueError as e:
         current_index = 0
+        st.caption(f"🔍 DEBUG: ValueError in index lookup: {e}")
 
     # Currency selector (same pattern as timezone)
     selected_currency_label = st.selectbox(
@@ -232,11 +284,33 @@ def render_theme_settings():
     theme_options = list(THEME_OPTIONS.keys())
     theme_labels = [f"{THEME_OPTIONS[key]}" for key in theme_options]
     
+    # Debug output
+    st.caption(f"🔍 DEBUG: current_theme = {repr(current_theme)}, type = {type(current_theme).__name__}")
+    st.caption(f"🔍 DEBUG: current_theme in theme_options = {current_theme in theme_options if current_theme else False}")
+    st.caption(f"🔍 DEBUG: theme_options = {theme_options}")
+    
+    # Normalize current_theme for comparison
+    if current_theme:
+        current_theme_normalized = str(current_theme).strip().lower()
+    else:
+        current_theme_normalized = None
+
     # Find current index
     try:
-        current_index = theme_options.index(current_theme) if current_theme in theme_options else 0
-    except ValueError:
+        # Compare normalized theme to normalized options
+        theme_options_normalized = [opt.lower() for opt in theme_options]
+        if current_theme_normalized and current_theme_normalized in theme_options_normalized:
+            current_index = theme_options_normalized.index(current_theme_normalized)
+            st.caption(f"🔍 DEBUG: Found index = {current_index}")
+        else:
+            current_index = 0
+            if current_theme_normalized:
+                st.caption(f"🔍 DEBUG: current_theme '{current_theme_normalized}' not in options, using index 0")
+            else:
+                st.caption(f"🔍 DEBUG: current_theme is None/empty, using index 0")
+    except ValueError as e:
         current_index = 0
+        st.caption(f"🔍 DEBUG: ValueError in index lookup: {e}")
     
     # Theme selector
     selected_theme_label = st.selectbox(

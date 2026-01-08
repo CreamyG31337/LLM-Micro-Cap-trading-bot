@@ -31,6 +31,15 @@ handle /api/settings/* {
         # Add your Cloudflare IP ranges here if using Cloudflare
     }
 }
+
+# Flask static assets - route /assets/* to Flask (port 5001)
+# Flask uses /assets for static files, Streamlit uses /static
+handle /assets/* {
+    reverse_proxy localhost:5001 {
+        trusted_proxies private_ranges
+        # Add your Cloudflare IP ranges here if using Cloudflare
+    }
+}
 ```
 
 ### Complete Example Caddyfile
@@ -57,6 +66,15 @@ your-domain.com {
     
     # Trading Dashboard API endpoints - route to Flask (port 5001)
     handle /api/settings/* {
+        reverse_proxy localhost:5001 {
+            trusted_proxies private_ranges
+            # Add your Cloudflare IP ranges here if using Cloudflare
+        }
+    }
+    
+    # Flask static assets - route /assets/* to Flask (port 5001)
+    # Flask uses /assets for static files, Streamlit uses /static
+    handle /assets/* {
         reverse_proxy localhost:5001 {
             trusted_proxies private_ranges
             # Add your Cloudflare IP ranges here if using Cloudflare

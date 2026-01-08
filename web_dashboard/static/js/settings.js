@@ -1,4 +1,5 @@
 // Settings page AJAX handlers
+console.log('Settings.js loaded successfully');
 
 function showSuccess(elementId) {
     const element = document.getElementById(elementId);

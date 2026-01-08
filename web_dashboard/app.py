@@ -1458,12 +1458,15 @@ def update_timezone():
             logger.info(f"Successfully updated timezone to {timezone}")
             return jsonify({"success": True})
         else:
-            logger.error(f"Failed to update timezone - set_user_timezone returned False")
-            return jsonify({"success": False, "error": "Failed to save timezone"}), 500
+            logger.error(f"Failed to update timezone - set_user_timezone returned False for user {user_id}")
+            return jsonify({"success": False, "error": "Failed to save timezone. Check server logs for details."}), 500
             
     except Exception as e:
         logger.error(f"Error updating timezone: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Full traceback: {error_details}")
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/settings/currency', methods=['POST'])
 @require_auth
@@ -1487,12 +1490,15 @@ def update_currency():
             logger.info(f"Successfully updated currency to {currency}")
             return jsonify({"success": True})
         else:
-            logger.error(f"Failed to update currency - set_user_currency returned False")
-            return jsonify({"success": False, "error": "Failed to save currency"}), 500
+            logger.error(f"Failed to update currency - set_user_currency returned False for user {user_id}")
+            return jsonify({"success": False, "error": "Failed to save currency. Check server logs for details."}), 500
             
     except Exception as e:
         logger.error(f"Error updating currency: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Full traceback: {error_details}")
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/settings/theme', methods=['POST'])
 @require_auth
@@ -1516,12 +1522,15 @@ def update_theme():
             logger.info(f"Successfully updated theme to {theme}")
             return jsonify({"success": True})
         else:
-            logger.error(f"Failed to update theme - set_user_theme returned False")
-            return jsonify({"success": False, "error": "Failed to save theme"}), 500
+            logger.error(f"Failed to update theme - set_user_theme returned False for user {user_id}")
+            return jsonify({"success": False, "error": "Failed to save theme. Check server logs for details."}), 500
             
     except Exception as e:
         logger.error(f"Error updating theme: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Full traceback: {error_details}")
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/settings/v2_enabled', methods=['POST'])
 @require_auth
@@ -1552,7 +1561,10 @@ def update_v2_enabled():
             return jsonify({"success": False, "error": "Failed to update preference"}), 500
     except Exception as e:
         logger.error(f"Error updating v2 enabled: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Full traceback: {error_details}")
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/settings/debug', methods=['GET'])
 @require_auth

@@ -248,10 +248,30 @@ def set_user_preference(key: str, value: Any) -> bool:
             }).execute()
             
             # Check if the RPC call succeeded
-            # The function returns a boolean, but Supabase wraps it
+            # The function returns a boolean, but Supabase might wrap it
+            logger.debug(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
+            
+            # Handle different response formats
+            if result.data is None:
+                logger.warning(f"RPC set_user_preference returned None for key '{key}'")
+                return False
+            
+            # Check if it's a boolean False
             if result.data is False:
                 logger.warning(f"RPC set_user_preference returned False for key '{key}'")
                 return False
+            
+            # Check if it's a list with False
+            if isinstance(result.data, list) and len(result.data) > 0:
+                if result.data[0] is False:
+                    logger.warning(f"RPC set_user_preference returned [False] for key '{key}'")
+                    return False
+                # If it's a list with True, that's success
+                if result.data[0] is True:
+                    logger.info(f"RPC set_user_preference returned [True] for key '{key}'")
+                else:
+                    logger.warning(f"RPC set_user_preference returned unexpected list value: {result.data}")
+                    return False
             
             # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
             # This is more robust as it forces a fresh DB read on next access,
@@ -264,7 +284,10 @@ def set_user_preference(key: str, value: Any) -> bool:
             logger.info(f"Successfully set preference '{key}' = {value}")
             return True
         except Exception as rpc_error:
-            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}", exc_info=True)
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}")
+            logger.error(f"Full traceback: {error_details}")
             return False
         
     except Exception as e:

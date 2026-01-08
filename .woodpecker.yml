@@ -87,14 +87,96 @@ steps:
         export COMPOSE_DOCKER_CLI_BUILD=1
         echo "Building Docker images in parallel with BuildKit..."
         echo "This may take a few minutes on first build, but subsequent builds will be faster with caching..."
-        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . &)
-        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . &)
-        (docker build --progress=plain -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . &)
-        wait  # Wait for all builds to complete
+        
+        # Build images in parallel with proper error handling
+        echo "Starting parallel builds..."
+        
+        # Create temporary files to capture build outputs and exit codes
+        STREAMLIT_LOG=$(mktemp)
+        FLASK_LOG=$(mktemp)
+        COOKIE_LOG=$(mktemp)
+        
+        # Build Streamlit image (capture both stdout and stderr)
+        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "${STREAMLIT_LOG}.exit") &
+        STREAMLIT_PID=$!
+        
+        # Build Flask image (capture both stdout and stderr)
+        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "${FLASK_LOG}.exit") &
+        FLASK_PID=$!
+        
+        # Build Cookie refresher image (capture both stdout and stderr)
+        (docker build --progress=plain -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . > "$COOKIE_LOG" 2>&1; echo $? > "${COOKIE_LOG}.exit") &
+        COOKIE_PID=$!
+        
+        # Wait for all builds to complete
+        wait $STREAMLIT_PID
+        wait $FLASK_PID
+        wait $COOKIE_PID
+        
+        # Read exit codes
+        STREAMLIT_EXIT=$(cat "${STREAMLIT_LOG}.exit" 2>/dev/null || echo "1")
+        FLASK_EXIT=$(cat "${FLASK_LOG}.exit" 2>/dev/null || echo "1")
+        COOKIE_EXIT=$(cat "${COOKIE_LOG}.exit" 2>/dev/null || echo "1")
+        
+        # Check results and show errors
+        BUILD_ERRORS=0
+        if [ "$STREAMLIT_EXIT" != "0" ]; then
+          echo "❌ ERROR: Streamlit build failed (exit code: $STREAMLIT_EXIT)"
+          echo "Streamlit build output:"
+          tail -50 "$STREAMLIT_LOG" || echo "No log available"
+          BUILD_ERRORS=$((BUILD_ERRORS + 1))
+        else
+          echo "✅ Streamlit build succeeded"
+        fi
+        
+        if [ "$FLASK_EXIT" != "0" ]; then
+          echo "❌ ERROR: Flask build failed (exit code: $FLASK_EXIT)"
+          echo "Flask build output:"
+          tail -50 "$FLASK_LOG" || echo "No log available"
+          BUILD_ERRORS=$((BUILD_ERRORS + 1))
+        else
+          echo "✅ Flask build succeeded"
+        fi
+        
+        if [ "$COOKIE_EXIT" != "0" ]; then
+          echo "❌ ERROR: Cookie refresher build failed (exit code: $COOKIE_EXIT)"
+          echo "Cookie refresher build output:"
+          tail -50 "$COOKIE_LOG" || echo "No log available"
+          BUILD_ERRORS=$((BUILD_ERRORS + 1))
+        else
+          echo "✅ Cookie refresher build succeeded"
+        fi
+        
+        # Clean up log files
+        rm -f "$STREAMLIT_LOG" "${STREAMLIT_LOG}.exit" "$FLASK_LOG" "${FLASK_LOG}.exit" "$COOKIE_LOG" "${COOKIE_LOG}.exit"
+        
+        if [ $BUILD_ERRORS -gt 0 ]; then
+          echo "❌ ERROR: $BUILD_ERRORS build(s) failed"
+          echo "Checking which images were built successfully..."
+          docker images | grep -E "(trading-dashboard|cookie-refresher)" || echo "No images found"
+          exit 1
+        fi
+        
+        # Verify images exist before tagging
+        echo "Verifying images exist..."
+        if ! docker images trading-dashboard:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "trading-dashboard:latest"; then
+          echo "❌ Streamlit image not found after build"
+          exit 1
+        fi
+        if ! docker images trading-dashboard-flask:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "trading-dashboard-flask:latest"; then
+          echo "❌ Flask image not found after build"
+          exit 1
+        fi
+        if ! docker images cookie-refresher:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "cookie-refresher:latest"; then
+          echo "❌ Cookie refresher image not found after build"
+          exit 1
+        fi
+        
+        echo "✅ All builds completed successfully"
         echo "Tagging images with commit SHA..."
-        docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
-        docker tag trading-dashboard-flask:latest trading-dashboard-flask:${CI_COMMIT_SHA}
-        docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
+        docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA} || { echo "❌ Failed to tag Streamlit image"; exit 1; }
+        docker tag trading-dashboard-flask:latest trading-dashboard-flask:${CI_COMMIT_SHA} || { echo "❌ Failed to tag Flask image"; exit 1; }
+        docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA} || { echo "❌ Failed to tag cookie-refresher image"; exit 1; }
         echo "✅ All images built and tagged"
       
       # Stop and remove existing containers if they exist (parallel stops for speed)

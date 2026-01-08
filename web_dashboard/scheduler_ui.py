@@ -108,16 +108,15 @@ def render_scheduler_admin():
             run_job_now, 
             pause_job, 
             resume_job,
-            start_scheduler
+            start_scheduler,
+            is_scheduler_running
         )
         
         from scheduler.jobs import AVAILABLE_JOBS
         
-        # Ensure scheduler is running
-        scheduler = get_scheduler()
-        if not scheduler.running:
-            # Check if scheduler was running recently (might have just crashed)
-            import sys
+        # Check scheduler status using cross-process safe method (heartbeat file)
+        # This avoids creating a new scheduler instance in each Streamlit worker
+        if not is_scheduler_running():
             st.error("❌ **Scheduler is not running**")
             st.info("The scheduler may have crashed. Check the logs for errors.")
             if st.button("🚀 Start Scheduler"):

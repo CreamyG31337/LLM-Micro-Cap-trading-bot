@@ -60,10 +60,52 @@ _scheduler_restart_count = 0
 _scheduler_intentional_shutdown = False
 MAX_RESTART_ATTEMPTS = 5
 
+# Heartbeat file to detect scheduler status across processes
+# This allows Streamlit workers to check if scheduler is running without creating a new one
+_HEARTBEAT_FILE = Path(__file__).parent.parent / 'logs' / '.scheduler_heartbeat'
+_HEARTBEAT_INTERVAL = 10  # seconds between heartbeat updates
+_HEARTBEAT_TIMEOUT = 30  # seconds before considering scheduler dead
 
-def get_scheduler() -> BackgroundScheduler:
-    """Get or create the scheduler instance (thread-safe)."""
+
+def _update_heartbeat():
+    """Update the heartbeat file with current timestamp."""
+    try:
+        _HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _HEARTBEAT_FILE.write_text(str(time.time()))
+    except Exception:
+        pass  # Non-fatal - heartbeat is just for status checking
+
+
+def _check_heartbeat() -> bool:
+    """Check if scheduler is alive based on heartbeat file.
+    
+    Returns True if heartbeat is recent (within timeout), False otherwise.
+    """
+    try:
+        if not _HEARTBEAT_FILE.exists():
+            return False
+        last_beat = float(_HEARTBEAT_FILE.read_text().strip())
+        return (time.time() - last_beat) < _HEARTBEAT_TIMEOUT
+    except Exception:
+        return False
+
+
+def get_scheduler(create=True) -> Optional[BackgroundScheduler]:
+    """Get or create the scheduler instance (thread-safe).
+    
+    Args:
+        create: If True, create new instance if one doesn't exist.
+                If False, return None if one doesn't exist.
+    """
     global _scheduler
+    
+    # Fast path if already exists
+    if _scheduler is not None:
+        return _scheduler
+        
+    # If not creating, return None
+    if not create:
+        return None
     
     # Double-checked locking pattern to prevent race conditions
     if _scheduler is None:
@@ -602,6 +644,24 @@ def start_scheduler() -> bool:
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule health check: {e}")
     
+    # Add heartbeat job to update status file for cross-process detection
+    try:
+        from apscheduler.triggers.interval import IntervalTrigger
+        scheduler.add_job(
+            _update_heartbeat,
+            trigger=IntervalTrigger(seconds=_HEARTBEAT_INTERVAL),
+            id='scheduler_heartbeat',
+            name='Scheduler Heartbeat',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        # Also do an immediate heartbeat update
+        _update_heartbeat()
+        logger.info(f"  💓 Heartbeat job registered (every {_HEARTBEAT_INTERVAL}s)")
+    except Exception as e:
+        logger.warning(f"  ⚠️ Failed to schedule heartbeat: {e}")
+    
     total_time = time.time() - start_time
     logger.info(f"✅ SCHEDULER STARTUP COMPLETE in {total_time:.2f}s")
     
@@ -709,6 +769,23 @@ def check_overdue_jobs() -> None:
                 
     except Exception as e:
         logger.error(f"❌ Smart Startup check failed: {e}", exc_info=True)
+
+
+def is_scheduler_running() -> bool:
+    """Check if the scheduler is running (cross-process safe).
+    
+    Uses heartbeat file to detect scheduler status, which works across
+    Streamlit workers that don't share memory.
+    
+    Returns:
+        True if scheduler is running (heartbeat is recent), False otherwise.
+    """
+    # First check in-process scheduler (if we're in the same process that started it)
+    if _scheduler is not None and _scheduler.running:
+        return True
+    
+    # Cross-process check: use heartbeat file
+    return _check_heartbeat()
 
 
 
@@ -1021,9 +1098,38 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     import time
     start_time = time.perf_counter()
     
-    scheduler = get_scheduler()
-    jobs = scheduler.get_jobs()
+    import time
+    start_time = time.perf_counter()
     
+    # Use create=False to avoid creating a new scheduler instance if one doesn't exist
+    # This prevents "Duplicate scheduler created" logs from UI workers
+    scheduler = get_scheduler(create=False)
+    
+    if scheduler:
+        # If we have a live scheduler (main process), use it
+        jobs = scheduler.get_jobs()
+    else:
+        # If no local scheduler (worker process), we can't get current next_run times
+        # from MemoryJobStore. But we can still show job existence from AVAILABLE_JOBS
+        # and execution history from DB.
+        from scheduler.jobs import AVAILABLE_JOBS
+        
+        # Create dummy job objects for the UI
+        class DummyJob:
+            def __init__(self, id, name, trigger):
+                self.id = id
+                self.name = name
+                self.trigger = trigger
+                self.next_run_time = None  # Can't know next run across processes with MemoryJobStore
+        
+        jobs = []
+        for job_id, config in AVAILABLE_JOBS.items():
+            jobs.append(DummyJob(
+                id=job_id,
+                name=config.get('name', job_id),
+                trigger=config.get('trigger', 'unknown')
+            ))
+
     if not jobs:
         return []
     

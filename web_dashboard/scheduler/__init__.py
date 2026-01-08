@@ -51,7 +51,8 @@ from scheduler.scheduler_core import (
     run_job_now,
     pause_job,
     resume_job,
-    get_all_jobs_status
+    get_all_jobs_status,
+    is_scheduler_running
 )
 
 from scheduler.jobs import (
@@ -69,6 +70,7 @@ __all__ = [
     'pause_job',
     'resume_job',
     'get_all_jobs_status',
+    'is_scheduler_running',
     'AVAILABLE_JOBS',
     'refresh_exchange_rates_job',
     'social_sentiment_ai_job',

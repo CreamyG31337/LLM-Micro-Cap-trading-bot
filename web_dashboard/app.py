@@ -1327,6 +1327,9 @@ def settings_page():
         current_theme = get_user_theme() or 'system'
         is_v2_enabled = get_user_preference('v2_enabled', default=False)
         
+        # Debug logging
+        logger.info(f"[SETTINGS DEBUG] Loaded v2_enabled = {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
+        
         # Get navigation context
         nav_context = get_navigation_context(current_page='settings')
         

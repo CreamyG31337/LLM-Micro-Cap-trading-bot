@@ -279,6 +279,9 @@ def render_v2_settings():
     # Get current v2 enabled state
     current_v2_enabled = get_user_preference('v2_enabled', default=False)
     
+    # Debug: Show what was loaded
+    st.caption(f"🔍 Debug: Loaded v2_enabled = {current_v2_enabled} (type: {type(current_v2_enabled).__name__})")
+    
     st.markdown("**Use Cloud Pages (Flask)**")
     st.caption("Enable new, faster page implementations for Settings, Logs, and Ticker Details.")
     
@@ -289,68 +292,19 @@ def render_v2_settings():
         help="When enabled, migrated pages (Settings, Logs, Ticker Details) will use the new Flask-based implementation with better performance."
     )
     
-    # Save button with detailed diagnostics
+    # Save button
     if st.button("💾 Save Beta Settings", type="primary", key="save_v2"):
-        # Debug: Check authentication state
-        from auth_utils import is_authenticated, get_user_id, get_user_token
-        auth_status = is_authenticated()
-        user_id = get_user_id()
-        user_token = get_user_token()
-        
-        st.write(f"🔍 **Debug Info:**")
-        st.write(f"- Authenticated: {auth_status}")
-        st.write(f"- User ID: {user_id if user_id else 'NOT FOUND'}")
-        st.write(f"- Has Token: {bool(user_token)}")
-        
-        if not auth_status or not user_id:
-            st.error("❌ **Authentication Issue**: Session not properly loaded!")
-            st.info("Try refreshing the page or logging out and back in.")
-        else:
-            # Try to get Supabase client
-            try:
-                from streamlit_utils import get_supabase_client
-                client = get_supabase_client()
-                st.write(f"- Supabase Client: {'✅ Connected' if client else '❌ Failed'}")
-            except Exception as client_error:
-                st.error(f"❌ **Supabase Client Error**: {client_error}")
-                client = None
-            
-            if client:
-                # Manually trace through set_user_preference to find the silent failure
-                st.write("🔎 **Step-by-step trace:**")
-                
-                # Step 1: Check authentication (mimics _is_authenticated)
-                from user_preferences import _is_authenticated, _get_user_id
-                auth_check = _is_authenticated()
-                st.write(f"1. Auth check: {auth_check}")
-                
-                if not auth_check:
-                    st.error("❌ Failed at auth check!")
-                else:
-                    # Step 2: Get user ID
-                    user_id_check = _get_user_id()
-                    st.write(f"2. User ID: {user_id_check if user_id_check else 'NONE'}")
-                    
-                    if not user_id_check:
-                        st.error("❌ Failed at user_id check!")
-                    else:
-                        # Step 3: Try to call the actual function
-                        st.write("3. Calling set_user_preference...")
-                        try:
-                            result = set_user_preference('v2_enabled', v2_enabled)
-                            st.write(f"4. Result: {result}")
-                            
-                            if result:
-                                st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
-                                st.info("🔄 Refresh the page or navigate to see the changes take effect")
-                            else:
-                                st.error("❌ **set_user_preference returned False**")
-                                st.info("💡 The function executed but returned False. This means either:\n- The RPC function doesn't exist in Supabase\n- RLS is blocking the write\n- The RPC returned NULL or an error\n\nCheck Supabase logs for RPC errors.")
-                        except Exception as save_error:
-                            st.error(f"❌ **Exception**: {type(save_error).__name__}")
-                            st.code(str(save_error))
+        try:
+            result = set_user_preference('v2_enabled', v2_enabled)
+            if result:
+                st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+                st.info("🔄 Refresh the page or navigate to see the changes take effect")
             else:
-                st.error("❌ Cannot save: Supabase client not available")
+                st.error("❌ Failed to save preference")
+                st.caption("Check application logs for details")
+        except Exception as e:
+            st.error(f"❌ Error saving preference: {type(e).__name__}")
+            st.exception(e)  # Shows full stack trace
 
 render_v2_settings()
 

@@ -46,6 +46,16 @@ from scheduler.scheduler_core import log_job_execution
 # Initialize logger
 logger = logging.getLogger(__name__)
 
+# Lazy import helper for exchange rates (imported inside functions to avoid scheduler crashes)
+def _get_exchange_rate_for_date(date_obj, from_curr, to_curr):
+    """Lazy import wrapper for exchange rate function."""
+    try:
+        from exchange_rates_utils import get_exchange_rate_for_date_from_db
+        return get_exchange_rate_for_date_from_db(date_obj, from_curr, to_curr)
+    except ImportError as e:
+        logger.error(f"Failed to import exchange_rates_utils: {e}")
+        return None
+
 # Thread-safe lock to prevent concurrent execution
 # A simple boolean was causing race conditions when backfill and scheduled jobs ran simultaneously
 _update_prices_lock = threading.Lock()
@@ -254,7 +264,6 @@ def update_portfolio_prices_job(
             from utils.market_holidays import MarketHolidays
             from supabase_client import SupabaseClient
             from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
-            from exchange_rates_utils import get_exchange_rate_for_date_from_db
             
             # Initialize components
             market_fetcher = MarketDataFetcher()
@@ -635,11 +644,9 @@ def update_portfolio_prices_job(
                     logger.info(f"  Found {len(current_holdings)} active positions")
                     
                     # Get exchange rate for target date (for USD→base_currency conversion)
-                    from exchange_rates_utils import get_exchange_rate_for_date_from_db
-                    
                     exchange_rate = Decimal('1.0')  # Default for same currency or no conversion needed
                     if base_currency != 'USD':  # Only fetch rate if converting TO non-USD currency
-                        rate = get_exchange_rate_for_date_from_db(
+                        rate = _get_exchange_rate_for_date(
                             datetime.combine(target_date, dt_time(0, 0, 0)),
                             'USD',
                             base_currency
@@ -1009,7 +1016,6 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
             from market_data.data_fetcher import MarketDataFetcher
             from utils.market_holidays import MarketHolidays
             from supabase_client import SupabaseClient
-            from exchange_rates_utils import get_exchange_rate_for_date_from_db
             from utils.job_tracking import mark_job_completed, add_to_retry_queue
             from cache_version import bump_cache_version
             import pytz
@@ -1237,7 +1243,7 @@ def backfill_portfolio_prices_range(start_date: date, end_date: date) -> None:
                             return exchange_rate_cache[cache_key]
                         
                         # Fetch from database and cache
-                        rate = get_exchange_rate_for_date_from_db(
+                        rate = _get_exchange_rate_for_date(
                             datetime.combine(cache_key[0], dt_time(0, 0, 0)),
                             from_curr,
                             to_curr

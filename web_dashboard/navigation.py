@@ -20,10 +20,12 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     """
     # Apply user's theme preference (dark/light mode override)
     try:
-        from user_preferences import apply_user_theme
+        from user_preferences import apply_user_theme, get_user_preference, set_user_preference
         apply_user_theme()
+        is_v2_enabled = get_user_preference('v2_enabled', default=False)
     except Exception:
-        pass  # Silently fail if theme can't be applied
+        is_v2_enabled = False
+        def set_user_preference(*args): pass
     
     try:
         from auth_utils import is_admin, get_user_email, get_user_id
@@ -58,8 +60,18 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         client = get_supabase_client()
         if client and client.test_connection():
             st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
-            # Ticker Lookup - always available if we have database access
-            st.sidebar.page_link("pages/ticker_details.py", label="Ticker Lookup", icon="🔍")
+            # Ticker Lookup - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_page_migrated('ticker_details'):
+                    # Use markdown link for Flask route (opens in same window)
+                    ticker_url = get_page_url('ticker_details')
+                    st.sidebar.markdown(f'<a href="{ticker_url}" target="_self" style="text-decoration: none; color: inherit;">🔍 Ticker Lookup</a>', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/ticker_details.py", label="Ticker Lookup", icon="🔍")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/ticker_details.py", label="Ticker Lookup", icon="🔍")
     except Exception:
         pass  # Silently fail if Supabase not available
     
@@ -95,7 +107,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         # Check if settings page is migrated to Flask
         try:
             from shared_navigation import is_page_migrated, get_page_url
-            if is_page_migrated('settings'):
+            if is_v2_enabled and is_page_migrated('settings'):
                 # Use markdown link for Flask route (opens in same window)
                 settings_url = get_page_url('settings')
                 st.sidebar.markdown(f'<a href="{settings_url}" target="_self" style="text-decoration: none; color: inherit;">👤 User Preferences</a>', unsafe_allow_html=True)
@@ -132,7 +144,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             # Logs link - check if migrated to Flask
             try:
                 from shared_navigation import is_page_migrated, get_page_url
-                if is_page_migrated('admin_logs'):
+                if is_v2_enabled and is_page_migrated('admin_logs'):
                     # Use markdown link for Flask route
                     logs_url = get_page_url('admin_logs')
                     st.sidebar.markdown(f'<a href="{logs_url}" target="_self" style="text-decoration: none; color: inherit;">📜 Logs</a>', unsafe_allow_html=True)
@@ -170,4 +182,19 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # Modern divider
     st.sidebar.markdown('<hr class="nav-divider">', unsafe_allow_html=True)
+
+    # v2 Beta Toggle
+    if 'set_user_preference' in locals() and set_user_preference:
+        def on_v2_toggle_change():
+            new_val = st.session_state.v2_beta_toggle
+            set_user_preference('v2_enabled', new_val)
+            # No need to manual rerun, Streamlit handles it
+            
+        st.sidebar.toggle(
+            "🚀 Try v2 Beta", 
+            value=is_v2_enabled, 
+            key="v2_beta_toggle", 
+            on_change=on_v2_toggle_change,
+            help="Enable new Flask-based pages (faster, better UI)"
+        )
 

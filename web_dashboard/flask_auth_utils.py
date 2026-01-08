@@ -101,3 +101,17 @@ def is_authenticated_flask() -> bool:
     except Exception as e:
         logger.warning(f"Error validating token: {e}")
         return False
+
+
+def _decode_jwt_token(token: str) -> Optional[Dict]:
+    """Decode JWT token without verification (for extracting user_id/email/access_token)"""
+    try:
+        token_parts = token.split('.')
+        if len(token_parts) >= 2:
+            payload = token_parts[1]
+            payload += '=' * (4 - len(payload) % 4)  # Add padding if needed
+            decoded = base64.urlsafe_b64decode(payload)
+            return json.loads(decoded)
+    except Exception as e:
+        logger.debug(f"Failed to decode JWT token: {e}")
+    return None

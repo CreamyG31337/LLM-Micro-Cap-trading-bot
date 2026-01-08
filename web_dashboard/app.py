@@ -25,12 +25,12 @@ except ImportError:
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 import yfinance as yf
 import plotly.graph_objs as go
 import plotly.utils
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import logging
 import requests
 from flask_cors import CORS
@@ -1195,19 +1195,21 @@ def settings_page():
     """User preferences/settings page (Flask v2)"""
     try:
         from flask_auth_utils import get_user_email_flask
-        from user_preferences import get_user_timezone, get_user_currency, get_user_theme
+        from user_preferences import get_user_timezone, get_user_currency, get_user_theme, get_user_preference
         
         user_email = get_user_email_flask()
         current_timezone = get_user_timezone() or 'America/Los_Angeles'
         current_currency = get_user_currency() or 'CAD'
         current_theme = get_user_theme() or 'system'
+        is_v2_enabled = get_user_preference('v2_enabled', default=False)
         
         return render_template('settings.html',
                              user_email=user_email,
                              current_timezone=current_timezone,
                              current_currency=current_currency,
                              current_theme=current_theme,
-                             user_theme=current_theme)
+                             user_theme=current_theme,
+                             is_v2_enabled=is_v2_enabled)
     except Exception as e:
         logger.error(f"Error loading settings page: {e}")
         return jsonify({"error": "Failed to load settings page"}), 500
@@ -1277,6 +1279,261 @@ def update_theme():
     except Exception as e:
         logger.error(f"Error updating theme: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/settings/v2_enabled', methods=['POST'])
+@require_auth
+def update_v2_enabled():
+    """Update v2 beta enabled preference"""
+    try:
+        data = request.get_json()
+        enabled = data.get('enabled')
+        
+        if enabled is None:
+            return jsonify({"error": "Missing enabled parameter"}), 400
+            
+        from user_preferences import set_user_preference
+        if set_user_preference('v2_enabled', enabled):
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "Failed to update preference"}), 500
+    except Exception as e:
+        logger.error(f"Error updating v2 enabled: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# Ticker Details Page (Flask v2)
+# ============================================================================
+
+@app.route('/v2/ticker')
+@require_auth
+def ticker_details_page():
+    """Ticker details page (Flask v2)"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        ticker = request.args.get('ticker', '').upper().strip()
+        user_theme = get_user_theme() or 'system'
+        
+        return render_template('ticker_details.html',
+                             user_email=user_email,
+                             ticker=ticker,
+                             user_theme=user_theme)
+    except Exception as e:
+        logger.error(f"Error loading ticker details page: {e}")
+        return jsonify({"error": "Failed to load ticker details page"}), 500
+
+@app.route('/api/v2/ticker/list')
+@require_auth
+def api_ticker_list():
+    """Get list of all available tickers for dropdown"""
+    try:
+        # Simple caching with module-level dict
+        import time
+        if not hasattr(api_ticker_list, '_cache') or not hasattr(api_ticker_list, '_cache_time'):
+            api_ticker_list._cache = None
+            api_ticker_list._cache_time = 0
+        
+        # Check cache (60s TTL)
+        current_time = time.time()
+        if api_ticker_list._cache and (current_time - api_ticker_list._cache_time) < 60:
+            return jsonify({"tickers": api_ticker_list._cache})
+        
+        # Import and fetch tickers
+        try:
+            from utils.db_utils import get_all_unique_tickers
+            tickers = get_all_unique_tickers()
+        except (ImportError, ModuleNotFoundError):
+            # Fallback if utils.db_utils not available
+            logger.warning("utils.db_utils not available, returning empty ticker list")
+            tickers = []
+        
+        # Sort and cache
+        tickers = sorted(tickers) if tickers else []
+        api_ticker_list._cache = tickers
+        api_ticker_list._cache_time = current_time
+        
+        return jsonify({"tickers": tickers})
+    except Exception as e:
+        logger.error(f"Error fetching ticker list: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ticker/info')
+@require_auth
+def api_ticker_info():
+    """Get comprehensive ticker information"""
+    try:
+        ticker = request.args.get('ticker', '').upper().strip()
+        if not ticker:
+            return jsonify({"error": "Ticker symbol is required"}), 400
+        
+        # Initialize clients with role-based access
+        from postgres_client import PostgresClient
+        from supabase_client import SupabaseClient
+        from flask_auth_utils import get_user_id_flask
+        from auth import is_admin
+        
+        # Check if user is admin
+        user_is_admin = is_admin()
+        
+        # Initialize Supabase client with appropriate access
+        if user_is_admin:
+            supabase_client = SupabaseClient(use_service_role=True)
+        else:
+            # For regular users, use auth_token from cookie (it IS the access token)
+            auth_token = request.cookies.get('auth_token')
+            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+        
+        # Initialize Postgres client
+        try:
+            postgres_client = PostgresClient()
+        except Exception as e:
+            logger.warning(f"PostgresClient initialization failed: {e}")
+            postgres_client = None
+        
+        if not supabase_client and not postgres_client:
+            return jsonify({"error": "Unable to connect to databases"}), 500
+        
+        # Get ticker info
+        from ticker_utils import get_ticker_info
+        ticker_data = get_ticker_info(ticker, supabase_client, postgres_client)
+        
+        # Convert datetime objects to ISO strings for JSON serialization
+        def serialize_datetime(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            elif isinstance(obj, pd.Timestamp):
+                return obj.isoformat()
+            elif isinstance(obj, date):
+                return obj.isoformat()
+            return obj
+        
+        # Recursively serialize the response
+        import json as json_lib
+        ticker_data_str = json_lib.dumps(ticker_data, default=serialize_datetime)
+        ticker_data = json_lib.loads(ticker_data_str)
+        
+        return jsonify(ticker_data)
+    except Exception as e:
+        logger.error(f"Error fetching ticker info for {ticker}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ticker/price-history')
+@require_auth
+def api_ticker_price_history():
+    """Get price history for a ticker"""
+    try:
+        ticker = request.args.get('ticker', '').upper().strip()
+        if not ticker:
+            return jsonify({"error": "Ticker symbol is required"}), 400
+        
+        days = int(request.args.get('days', 90))
+        
+        # Initialize Supabase client with role-based access
+        from supabase_client import SupabaseClient
+        from auth import is_admin
+        
+        if is_admin():
+            supabase_client = SupabaseClient(use_service_role=True)
+        else:
+            # For regular users, use auth_token from cookie (it IS the access token)
+            auth_token = request.cookies.get('auth_token')
+            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+        
+        if not supabase_client:
+            return jsonify({"error": "Unable to connect to database"}), 500
+        
+        # Get price history
+        from ticker_utils import get_ticker_price_history
+        price_df = get_ticker_price_history(ticker, supabase_client, days=days)
+        
+        # Convert DataFrame to JSON
+        if price_df.empty:
+            return jsonify({"data": []})
+        
+        # Convert dates to ISO strings
+        price_df = price_df.copy()
+        if 'date' in price_df.columns:
+            price_df['date'] = price_df['date'].apply(lambda x: x.isoformat() if hasattr(x, 'isoformat') else str(x))
+        
+        return jsonify({"data": price_df.to_dict('records')})
+    except Exception as e:
+        logger.error(f"Error fetching price history for {ticker}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ticker/chart')
+@require_auth
+def api_ticker_chart():
+    """Get Plotly chart JSON for ticker price history"""
+    try:
+        ticker = request.args.get('ticker', '').upper().strip()
+        if not ticker:
+            return jsonify({"error": "Ticker symbol is required"}), 400
+        
+        use_solid = request.args.get('use_solid', 'false').lower() == 'true'
+        
+        # Initialize Supabase client
+        from supabase_client import SupabaseClient
+        from auth import is_admin
+        
+        if is_admin():
+            supabase_client = SupabaseClient(use_service_role=True)
+        else:
+            # For regular users, use auth_token from cookie (it IS the access token)
+            auth_token = request.cookies.get('auth_token')
+            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+        
+        if not supabase_client:
+            return jsonify({"error": "Unable to connect to database"}), 500
+        
+        # Get price history
+        from ticker_utils import get_ticker_price_history
+        price_df = get_ticker_price_history(ticker, supabase_client, days=90)
+        
+        if price_df.empty:
+            return jsonify({"error": "No price data available"}), 404
+        
+        # Create chart
+        from chart_utils import create_ticker_price_chart
+        all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
+        fig = create_ticker_price_chart(
+            price_df,
+            ticker,
+            show_benchmarks=all_benchmarks,
+            show_weekend_shading=True,
+            use_solid_lines=use_solid
+        )
+        
+        # Convert Plotly figure to JSON
+        import plotly.utils
+        graph_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        
+        # Return as JSON response
+        from flask import Response
+        return Response(graph_json, mimetype='application/json')
+    except Exception as e:
+        logger.error(f"Error generating chart for {ticker}: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ticker/external-links')
+@require_auth
+def api_ticker_external_links():
+    """Get external links for a ticker"""
+    try:
+        ticker = request.args.get('ticker', '').upper().strip()
+        if not ticker:
+            return jsonify({"error": "Ticker symbol is required"}), 400
+        
+        exchange = request.args.get('exchange', None)
+        
+        from ticker_utils import get_ticker_external_links
+        links = get_ticker_external_links(ticker, exchange=exchange)
+        
+        return jsonify(links)
+    except Exception as e:
+        logger.error(f"Error fetching external links for {ticker}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # Run the app

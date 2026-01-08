@@ -60,6 +60,18 @@ st.set_page_config(
     layout="wide"
 )
 
+# Redirect to Flask version if available
+try:
+    from shared_navigation import is_page_migrated
+    if is_page_migrated('ticker_details'):
+        ticker = st.query_params.get("ticker", "")
+        redirect_url = f"/v2/ticker?ticker={ticker}" if ticker else "/v2/ticker"
+        st.markdown(f'<meta http-equiv="refresh" content="0; url={redirect_url}">', unsafe_allow_html=True)
+        st.write("Redirecting to new ticker details page...")
+        st.stop()
+except ImportError:
+    pass  # Continue with Streamlit version if shared_navigation not available
+
 # Check authentication
 if not is_authenticated():
     st.switch_page("streamlit_app.py")

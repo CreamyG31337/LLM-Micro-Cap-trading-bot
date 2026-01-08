@@ -271,7 +271,7 @@ st.divider()
 # V2 Beta Features Toggle
 st.subheader("🚀 Beta Features")
 
-@st.fragment
+# @st.fragment
 def render_v2_settings():
     """V2 beta features toggle fragment - prevents full page reload on save"""
     from user_preferences import get_user_preference, set_user_preference

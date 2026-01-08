@@ -1442,6 +1442,7 @@ def update_timezone():
     """Update user timezone preference"""
     try:
         from user_preferences import set_user_timezone
+        from flask_auth_utils import get_user_id_flask
         
         data = request.get_json()
         timezone = data.get('timezone')
@@ -1449,13 +1450,19 @@ def update_timezone():
         if not timezone:
             return jsonify({"success": False, "error": "Timezone is required"}), 400
         
-        if set_user_timezone(timezone):
+        user_id = get_user_id_flask()
+        logger.info(f"Updating timezone for user {user_id} to {timezone}")
+        
+        result = set_user_timezone(timezone)
+        if result:
+            logger.info(f"Successfully updated timezone to {timezone}")
             return jsonify({"success": True})
         else:
+            logger.error(f"Failed to update timezone - set_user_timezone returned False")
             return jsonify({"success": False, "error": "Failed to save timezone"}), 500
             
     except Exception as e:
-        logger.error(f"Error updating timezone: {e}")
+        logger.error(f"Error updating timezone: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/settings/currency', methods=['POST'])
@@ -1464,6 +1471,7 @@ def update_currency():
     """Update user currency preference"""
     try:
         from user_preferences import set_user_currency
+        from flask_auth_utils import get_user_id_flask
         
         data = request.get_json()
         currency = data.get('currency')
@@ -1471,13 +1479,19 @@ def update_currency():
         if not currency:
             return jsonify({"success": False, "error": "Currency is required"}), 400
         
-        if set_user_currency(currency):
+        user_id = get_user_id_flask()
+        logger.info(f"Updating currency for user {user_id} to {currency}")
+        
+        result = set_user_currency(currency)
+        if result:
+            logger.info(f"Successfully updated currency to {currency}")
             return jsonify({"success": True})
         else:
+            logger.error(f"Failed to update currency - set_user_currency returned False")
             return jsonify({"success": False, "error": "Failed to save currency"}), 500
             
     except Exception as e:
-        logger.error(f"Error updating currency: {e}")
+        logger.error(f"Error updating currency: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/settings/theme', methods=['POST'])
@@ -1486,6 +1500,7 @@ def update_theme():
     """Update user theme preference"""
     try:
         from user_preferences import set_user_theme
+        from flask_auth_utils import get_user_id_flask
         
         data = request.get_json()
         theme = data.get('theme')
@@ -1493,13 +1508,19 @@ def update_theme():
         if not theme:
             return jsonify({"success": False, "error": "Theme is required"}), 400
         
-        if set_user_theme(theme):
+        user_id = get_user_id_flask()
+        logger.info(f"Updating theme for user {user_id} to {theme}")
+        
+        result = set_user_theme(theme)
+        if result:
+            logger.info(f"Successfully updated theme to {theme}")
             return jsonify({"success": True})
         else:
+            logger.error(f"Failed to update theme - set_user_theme returned False")
             return jsonify({"success": False, "error": "Failed to save theme"}), 500
             
     except Exception as e:
-        logger.error(f"Error updating theme: {e}")
+        logger.error(f"Error updating theme: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/settings/v2_enabled', methods=['POST'])
@@ -1507,19 +1528,77 @@ def update_theme():
 def update_v2_enabled():
     """Update v2 beta enabled preference"""
     try:
+        from user_preferences import set_user_preference
+        from flask_auth_utils import get_user_id_flask
+        
         data = request.get_json()
         enabled = data.get('enabled')
         
         if enabled is None:
             return jsonify({"error": "Missing enabled parameter"}), 400
+        
+        user_id = get_user_id_flask()
+        logger.info(f"Updating v2_enabled for user {user_id} to {enabled}")
             
-        from user_preferences import set_user_preference
-        if set_user_preference('v2_enabled', enabled):
+        result = set_user_preference('v2_enabled', enabled)
+        if result:
+            logger.info(f"Successfully updated v2_enabled to {enabled}")
             return jsonify({"success": True})
         else:
+            logger.error(f"Failed to update v2_enabled - set_user_preference returned False")
             return jsonify({"error": "Failed to update preference"}), 500
     except Exception as e:
-        logger.error(f"Error updating v2 enabled: {e}")
+        logger.error(f"Error updating v2 enabled: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/settings/debug', methods=['GET'])
+@require_auth
+def settings_debug():
+    """Debug endpoint to test preference saving"""
+    try:
+        from user_preferences import set_user_preference, get_user_preference, _get_user_id, _is_authenticated
+        from flask_auth_utils import get_user_id_flask, get_auth_token
+        from supabase_client import SupabaseClient
+        
+        user_id = get_user_id_flask()
+        token = get_auth_token()
+        is_authenticated = _is_authenticated()
+        
+        # Test creating client
+        client = None
+        client_error = None
+        try:
+            client = SupabaseClient(user_token=token) if token else SupabaseClient()
+        except Exception as e:
+            client_error = str(e)
+        
+        # Test RPC call
+        rpc_result = None
+        rpc_error = None
+        if client:
+            try:
+                # Test with a simple preference
+                test_result = client.supabase.rpc('set_user_preference', {
+                    'pref_key': 'test_key',
+                    'pref_value': json.dumps('test_value')
+                }).execute()
+                rpc_result = test_result.data
+            except Exception as e:
+                rpc_error = str(e)
+                logger.error(f"RPC test failed: {e}", exc_info=True)
+        
+        return jsonify({
+            "user_id": user_id,
+            "token_present": bool(token),
+            "token_length": len(token) if token else 0,
+            "is_authenticated": is_authenticated,
+            "client_created": client is not None,
+            "client_error": client_error,
+            "rpc_result": rpc_result,
+            "rpc_error": rpc_error
+        })
+    except Exception as e:
+        logger.error(f"Error in settings debug: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 # ============================================================================

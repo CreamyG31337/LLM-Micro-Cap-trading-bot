@@ -241,20 +241,31 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         # Call the RPC function to set preference
         # Note: Supabase will convert the JSON string to JSONB
-        result = client.supabase.rpc('set_user_preference', {
-            'pref_key': key,
-            'pref_value': json_value
-        }).execute()
-        
-        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
-        # This is more robust as it forces a fresh DB read on next access,
-        # preventing stale cache state if the session cookie update fails.
-        cache = _get_cache()
-        cache_key = f"_pref_{key}"
-        if cache_key in cache:
-            del cache[cache_key]
-        
-        return True
+        try:
+            result = client.supabase.rpc('set_user_preference', {
+                'pref_key': key,
+                'pref_value': json_value
+            }).execute()
+            
+            # Check if the RPC call succeeded
+            # The function returns a boolean, but Supabase wraps it
+            if result.data is False:
+                logger.warning(f"RPC set_user_preference returned False for key '{key}'")
+                return False
+            
+            # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
+            # This is more robust as it forces a fresh DB read on next access,
+            # preventing stale cache state if the session cookie update fails.
+            cache = _get_cache()
+            cache_key = f"_pref_{key}"
+            if cache_key in cache:
+                del cache[cache_key]
+            
+            logger.info(f"Successfully set preference '{key}' = {value}")
+            return True
+        except Exception as rpc_error:
+            logger.error(f"RPC call failed for set_user_preference('{key}', '{json_value}'): {rpc_error}", exc_info=True)
+            return False
         
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")

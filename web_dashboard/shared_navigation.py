@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""
+Shared Navigation Component
+============================
+
+Provides navigation that works in both Flask and Streamlit contexts.
+Tracks which pages have been migrated to Flask.
+"""
+
+# Registry of migrated pages (Flask routes)
+MIGRATED_PAGES = {
+    'settings': '/settings',  # Flask route
+    # Future migrations will be added here:
+    # 'dashboard': '/',
+    # 'research': '/research',
+    # etc.
+}
+
+
+def is_page_migrated(page_name: str) -> bool:
+    """Check if a page has been migrated to Flask"""
+    return page_name in MIGRATED_PAGES
+
+
+def get_page_url(page_name: str) -> str:
+    """Get the URL for a page (Flask route if migrated, Streamlit route otherwise)"""
+    if is_page_migrated(page_name):
+        return MIGRATED_PAGES[page_name]
+    else:
+        # Streamlit page route
+        if page_name == 'dashboard':
+            return '/'
+        else:
+            return f'/pages/{page_name}.py'
+
+
+def get_navigation_links() -> list:
+    """Get list of navigation links with their URLs"""
+    links = [
+        {'name': 'Dashboard', 'page': 'dashboard', 'icon': '📈'},
+        {'name': 'Research Repository', 'page': 'research', 'icon': '📚'},
+        {'name': 'Social Sentiment', 'page': 'social_sentiment', 'icon': '💬'},
+        {'name': 'ETF Holdings', 'page': 'etf_holdings', 'icon': '💼'},
+        {'name': 'Congress Trades', 'page': 'congress_trades', 'icon': '🏛️'},
+        {'name': 'Ticker Lookup', 'page': 'ticker_details', 'icon': '🔍'},
+        {'name': 'AI Assistant', 'page': 'ai_assistant', 'icon': '🧠'},
+        {'name': 'User Preferences', 'page': 'settings', 'icon': '👤'},
+    ]
+    
+    # Add URLs based on migration status
+    for link in links:
+        link['url'] = get_page_url(link['page'])
+        link['is_migrated'] = is_page_migrated(link['page'])
+    
+    return links

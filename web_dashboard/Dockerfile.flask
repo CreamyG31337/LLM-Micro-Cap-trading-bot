@@ -1,0 +1,45 @@
+# Trading Dashboard Flask App Dockerfile
+# Separate container for Flask routes (Settings page, API endpoints)
+# Runs on port 5001 to avoid conflict with NFT calculator on port 5000
+# Optimized for fast builds with layer caching
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies and uv (faster Python package installer)
+# Combined into single layer for better caching
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && test -f /root/.local/bin/uv || (echo "uv installation failed" && exit 1) \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add uv to PATH
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copy requirements FIRST (for better layer caching - this layer only rebuilds if requirements change)
+COPY web_dashboard/requirements.txt ./requirements.txt
+
+# Install Python dependencies with uv (cached layer - only rebuilds if requirements.txt changes)
+RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
+
+# Set environment variables before copying code (for better caching)
+ENV PYTHONPATH=/app:/app/web_dashboard
+ENV FLASK_PORT=5001
+
+# Copy entire project (needed for imports)
+# This layer rebuilds on every code change, but dependencies are cached above
+COPY . /app
+
+# Expose Flask port
+EXPOSE 5001
+
+# Health check (check if Flask process is running, not endpoint - faster and doesn't require auth)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(1); result=s.connect_ex(('127.0.0.1', 5001)); s.close(); exit(0 if result == 0 else 1)"
+
+# Run Flask app
+CMD ["python", "web_dashboard/app.py"]

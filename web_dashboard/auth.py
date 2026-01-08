@@ -113,19 +113,55 @@ def require_auth(f):
     """Decorator to require authentication for routes"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check for session token in cookies or headers
-        token = request.cookies.get('session_token') or request.headers.get('Authorization', '').replace('Bearer ', '')
+        # Check for auth_token (Streamlit) or session_token (Flask legacy) in cookies or headers
+        token = (request.cookies.get('auth_token') or 
+                 request.cookies.get('session_token') or 
+                 request.headers.get('Authorization', '').replace('Bearer ', ''))
         
         if not token:
-            return jsonify({"error": "Authentication required"}), 401
+            # For HTML pages, redirect to login; for API, return JSON error
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Authentication required"}), 401
+            else:
+                from flask import redirect, url_for
+                return redirect(url_for('auth_page'))
         
+        # Try to verify with auth_manager (for session_token format)
         user_data = auth_manager.verify_session(token)
+        
+        # If that fails, try parsing as JWT (for auth_token format from Streamlit)
         if not user_data:
-            return jsonify({"error": "Invalid or expired session"}), 401
+            try:
+                from flask_auth_utils import get_user_id_flask, get_user_email_flask, is_authenticated_flask
+                if is_authenticated_flask():
+                    # Extract user data from token
+                    import base64
+                    import json as json_lib
+                    token_parts = token.split('.')
+                    if len(token_parts) >= 2:
+                        payload = token_parts[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        decoded = base64.urlsafe_b64decode(payload)
+                        user_data = json_lib.loads(decoded)
+                        # Convert to format expected by request context
+                        user_data = {
+                            "user_id": user_data.get("sub"),
+                            "email": user_data.get("email")
+                        }
+            except Exception:
+                pass
+        
+        if not user_data:
+            # For HTML pages, redirect to login; for API, return JSON error
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Invalid or expired session"}), 401
+            else:
+                from flask import redirect, url_for
+                return redirect(url_for('auth_page'))
         
         # Add user data to request context
-        request.user_id = user_data["user_id"]
-        request.user_email = user_data["email"]
+        request.user_id = user_data.get("user_id") or user_data.get("sub")
+        request.user_email = user_data.get("email")
         
         return f(*args, **kwargs)
     return decorated_function

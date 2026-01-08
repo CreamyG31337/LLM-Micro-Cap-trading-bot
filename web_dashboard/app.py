@@ -1183,6 +1183,96 @@ def export_cash():
         logger.error(f"Cash export error: {e}")
         return jsonify({"error": f"Export failed: {str(e)}"}), 500
 
+@app.route('/settings')
+@require_auth
+def settings_page():
+    """User preferences/settings page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_timezone, get_user_currency, get_user_theme
+        
+        user_email = get_user_email_flask()
+        current_timezone = get_user_timezone() or 'America/Los_Angeles'
+        current_currency = get_user_currency() or 'CAD'
+        current_theme = get_user_theme() or 'system'
+        
+        return render_template('settings.html',
+                             user_email=user_email,
+                             current_timezone=current_timezone,
+                             current_currency=current_currency,
+                             current_theme=current_theme)
+    except Exception as e:
+        logger.error(f"Error loading settings page: {e}")
+        return jsonify({"error": "Failed to load settings page"}), 500
+
+@app.route('/api/settings/timezone', methods=['POST'])
+@require_auth
+def update_timezone():
+    """Update user timezone preference"""
+    try:
+        from user_preferences import set_user_timezone
+        
+        data = request.get_json()
+        timezone = data.get('timezone')
+        
+        if not timezone:
+            return jsonify({"success": False, "error": "Timezone is required"}), 400
+        
+        if set_user_timezone(timezone):
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Failed to save timezone"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating timezone: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/settings/currency', methods=['POST'])
+@require_auth
+def update_currency():
+    """Update user currency preference"""
+    try:
+        from user_preferences import set_user_currency
+        
+        data = request.get_json()
+        currency = data.get('currency')
+        
+        if not currency:
+            return jsonify({"success": False, "error": "Currency is required"}), 400
+        
+        if set_user_currency(currency):
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Failed to save currency"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating currency: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/settings/theme', methods=['POST'])
+@require_auth
+def update_theme():
+    """Update user theme preference"""
+    try:
+        from user_preferences import set_user_theme
+        
+        data = request.get_json()
+        theme = data.get('theme')
+        
+        if not theme:
+            return jsonify({"success": False, "error": "Theme is required"}), 400
+        
+        if set_user_theme(theme):
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Failed to save theme"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating theme: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == '__main__':
     # Run the app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Use port 5001 to avoid conflict with NFT calculator app on port 5000
+    port = int(os.getenv('FLASK_PORT', '5001'))
+    app.run(debug=True, host='0.0.0.0', port=port)

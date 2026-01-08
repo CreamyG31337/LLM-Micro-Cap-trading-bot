@@ -80,19 +80,34 @@ steps:
       - mkdir -p /home/lance/trading-dashboard-logs /shared/cookies /deploy_target/frontend
       - chmod 777 /home/lance/trading-dashboard-logs /shared/cookies
       
-      # Build both Docker images in parallel for faster deployment
+      # Build all Docker images in parallel for faster deployment
+      # Using BuildKit for better caching and parallel builds
       - |
-        echo "Building Docker images in parallel..."
-        (docker build -f web_dashboard/Dockerfile -t trading-dashboard:latest . &)
-        (docker build -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . &)
-        wait  # Wait for both builds to complete
+        export DOCKER_BUILDKIT=1
+        export COMPOSE_DOCKER_CLI_BUILD=1
+        echo "Building Docker images in parallel with BuildKit..."
+        echo "This may take a few minutes on first build, but subsequent builds will be faster with caching..."
+        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . &)
+        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . &)
+        (docker build --progress=plain -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . &)
+        wait  # Wait for all builds to complete
+        echo "Tagging images with commit SHA..."
         docker tag trading-dashboard:latest trading-dashboard:${CI_COMMIT_SHA}
+        docker tag trading-dashboard-flask:latest trading-dashboard-flask:${CI_COMMIT_SHA}
         docker tag cookie-refresher:latest cookie-refresher:${CI_COMMIT_SHA}
-        echo "✅ Both images built and tagged"
+        echo "✅ All images built and tagged"
       
-      # Stop and remove existing container if it exists
-      - docker stop trading-dashboard || true
-      - docker rm trading-dashboard || true
+      # Stop and remove existing containers if they exist (parallel stops for speed)
+      - |
+        echo "Stopping existing containers in parallel..."
+        (docker stop trading-dashboard || true) &
+        (docker stop trading-dashboard-flask || true) &
+        wait
+        echo "Removing stopped containers..."
+        (docker rm trading-dashboard || true) &
+        (docker rm trading-dashboard-flask || true) &
+        wait
+        echo "✅ Containers stopped and removed"
       
       # Initialize shared cookies directory and file (before main container starts)
       - |
@@ -165,8 +180,50 @@ steps:
         DOCKER_CMD="$DOCKER_CMD -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false"
         DOCKER_CMD="$DOCKER_CMD trading-dashboard:latest"
         
+        # Start Streamlit container in background (parallel with Flask deployment)
+        eval $DOCKER_CMD &
+        STREAMLIT_PID=$!
+        echo "✅ Trading Dashboard Streamlit container starting (PID: $STREAMLIT_PID)"
+      
+      # Deploy Flask container (Trading Dashboard Flask app on port 5001)
+      # Deploy in parallel with Streamlit for faster deployment
+      - |
+        echo "Deploying Trading Dashboard Flask container in parallel..."
+        # Build base docker run command for Flask
+        FLASK_CMD="docker run -d --name trading-dashboard-flask --restart unless-stopped -p 5001:5001 --add-host=host.docker.internal:host-gateway"
+        # Mount application logs directory (shared with Streamlit container)
+        FLASK_CMD="$FLASK_CMD -v /home/lance/trading-dashboard-logs:/app/web_dashboard/logs"
+        # Mount shared cookies directory
+        FLASK_CMD="$FLASK_CMD -v /shared/cookies:/shared/cookies"
+        FLASK_CMD="$FLASK_CMD -e SUPABASE_URL=\"$SUPABASE_URL\""
+        FLASK_CMD="$FLASK_CMD -e SUPABASE_PUBLISHABLE_KEY=\"$SUPABASE_PUBLISHABLE_KEY\""
+        FLASK_CMD="$FLASK_CMD -e SUPABASE_SECRET_KEY=\"$SUPABASE_SECRET_KEY\""
+        FLASK_CMD="$FLASK_CMD -e BUILD_TIMESTAMP=\"$BUILD_TIMESTAMP\""
+        FLASK_CMD="$FLASK_CMD -e FLASK_PORT=5001"
+        
+        # Add APP_DOMAIN (required for auth callbacks and cookie domain)
+        [ -n "$APP_DOMAIN" ] && FLASK_CMD="$FLASK_CMD -e APP_DOMAIN=\"$APP_DOMAIN\""
+        
+        # Add optional environment variables if set
+        [ -n "$RESEARCH_DATABASE_URL" ] && FLASK_CMD="$FLASK_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
+        [ -n "$FMP_API_KEY" ] && FLASK_CMD="$FLASK_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
+        
+        # Add WebAI cookies (same as Streamlit container)
+        if [ -n "$WEBAI_COOKIES_JSON" ]; then
+          WEBAI_COOKIES_B64=$(echo -n "$WEBAI_COOKIES_JSON" | base64 -w 0)
+          FLASK_CMD="$FLASK_CMD -e WEBAI_COOKIES_JSON_B64=$WEBAI_COOKIES_B64"
+        fi
+        
+        FLASK_CMD="$FLASK_CMD trading-dashboard-flask:latest"
+        
         # Execute the command
-        eval $DOCKER_CMD
+        eval $FLASK_CMD
+        echo "✅ Trading Dashboard Flask container deployed on port 5001"
+      
+      # Wait for Streamlit container to finish starting
+      - |
+        wait $STREAMLIT_PID 2>/dev/null || true
+        echo "✅ All containers deployed successfully"
       
       # Verify cookie file is accessible in container (retry loop instead of fixed sleep)
       - |
@@ -252,8 +309,9 @@ steps:
       
       # Clean up old Docker images (keep last 5 versions)
       # This prevents disk space issues from accumulating old image versions
-      - echo "Cleaning up old trading-dashboard images (keeping last 5)..."
+      - echo "Cleaning up old Docker images (keeping last 5)..."
       - docker images -q trading-dashboard | tail -n +6 | xargs -r docker rmi > /dev/null 2>&1 || true
+      - docker images -q trading-dashboard-flask | tail -n +6 | xargs -r docker rmi > /dev/null 2>&1 || true
       
       - echo "✅ Build and deployment complete!"
     when:

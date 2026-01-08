@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+Flask Authentication Utilities
+==============================
+
+Helper functions for Flask routes to extract user information from auth_token cookie.
+Shares the same cookie format as Streamlit auth system.
+"""
+
+import base64
+import json
+import logging
+from typing import Optional
+from flask import request
+
+logger = logging.getLogger(__name__)
+
+
+def get_auth_token() -> Optional[str]:
+    """Get auth_token from cookies (same cookie name as Streamlit uses)"""
+    return request.cookies.get('auth_token')
+
+
+def get_user_id_flask() -> Optional[str]:
+    """Extract user ID from auth_token cookie (Flask context)"""
+    token = get_auth_token()
+    if not token:
+        return None
+    
+    try:
+        # Parse JWT token (same format as Streamlit)
+        token_parts = token.split('.')
+        if len(token_parts) < 2:
+            return None
+        
+        # Decode payload
+        payload = token_parts[1]
+        # Add padding if needed
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload)
+        user_data = json.loads(decoded)
+        
+        # Extract user ID (Supabase uses 'sub' field)
+        user_id = user_data.get('sub')
+        return user_id
+    except Exception as e:
+        logger.warning(f"Error extracting user ID from token: {e}")
+        return None
+
+
+def get_user_email_flask() -> Optional[str]:
+    """Extract user email from auth_token cookie (Flask context)"""
+    token = get_auth_token()
+    if not token:
+        return None
+    
+    try:
+        # Parse JWT token
+        token_parts = token.split('.')
+        if len(token_parts) < 2:
+            return None
+        
+        # Decode payload
+        payload = token_parts[1]
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload)
+        user_data = json.loads(decoded)
+        
+        # Extract email
+        email = user_data.get('email')
+        return email
+    except Exception as e:
+        logger.warning(f"Error extracting email from token: {e}")
+        return None
+
+
+def is_authenticated_flask() -> bool:
+    """Check if user is authenticated (Flask context)"""
+    token = get_auth_token()
+    if not token:
+        return False
+    
+    try:
+        # Parse and validate token expiration
+        token_parts = token.split('.')
+        if len(token_parts) < 2:
+            return False
+        
+        payload = token_parts[1]
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(payload)
+        user_data = json.loads(decoded)
+        
+        # Check expiration
+        exp = user_data.get('exp', 0)
+        import time
+        if exp > 0 and exp < time.time():
+            return False
+        
+        return True
+    except Exception as e:
+        logger.warning(f"Error validating token: {e}")
+        return False

@@ -4,10 +4,13 @@ User Settings Page
 ==================
 
 Allows users to configure their preferences like timezone.
+
+NOTE: This page has been migrated to Flask. This file redirects to the Flask version.
 """
 
 import streamlit as st
 from datetime import datetime
+import os
 
 # Page config
 st.set_page_config(
@@ -15,6 +18,16 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide"
 )
+
+# Redirect to Flask version if available
+try:
+    from shared_navigation import is_page_migrated
+    if is_page_migrated('settings'):
+        st.markdown('<meta http-equiv="refresh" content="0; url=/settings">', unsafe_allow_html=True)
+        st.write("Redirecting to new settings page...")
+        st.stop()
+except ImportError:
+    pass  # Continue with Streamlit version if shared_navigation not available
 
 # Check authentication
 try:

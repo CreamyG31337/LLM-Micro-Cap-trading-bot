@@ -7,7 +7,6 @@ Functions for getting and setting user preferences in the database.
 Uses session state as a cache for performance.
 """
 
-import streamlit as st
 from typing import Optional, Any, Dict
 import logging
 import json
@@ -16,12 +15,86 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Try to import streamlit, but don't fail if not available (Flask context)
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except (ImportError, RuntimeError):
+    STREAMLIT_AVAILABLE = False
+    st = None
+
+
+def _get_cache():
+    """Get appropriate cache (Flask session or Streamlit session state)"""
+    try:
+        from flask import session
+        # Check if we're in a Flask request context
+        from flask import has_request_context
+        if has_request_context():
+            return session
+    except (ImportError, RuntimeError):
+        pass
+    
+    # Fall back to Streamlit if available
+    if STREAMLIT_AVAILABLE and st is not None:
+        return st.session_state
+    
+    # No cache available (shouldn't happen in normal usage)
+    return {}
+
+
+def _get_user_id():
+    """Get user ID from either Flask or Streamlit context"""
+    # Try Flask first
+    try:
+        from flask_auth_utils import get_user_id_flask
+        from flask import has_request_context
+        if has_request_context():
+            user_id = get_user_id_flask()
+            if user_id:
+                return user_id
+    except (ImportError, RuntimeError):
+        pass
+    
+    # Fall back to Streamlit
+    if STREAMLIT_AVAILABLE and st is not None:
+        try:
+            from auth_utils import get_user_id, is_authenticated
+            if is_authenticated():
+                return get_user_id()
+        except ImportError:
+            pass
+    
+    return None
+
+
+def _is_authenticated():
+    """Check authentication in either Flask or Streamlit context"""
+    # Try Flask first
+    try:
+        from flask_auth_utils import is_authenticated_flask
+        from flask import has_request_context
+        if has_request_context():
+            return is_authenticated_flask()
+    except (ImportError, RuntimeError):
+        pass
+    
+    # Fall back to Streamlit
+    if STREAMLIT_AVAILABLE and st is not None:
+        try:
+            from auth_utils import is_authenticated
+            return is_authenticated()
+        except ImportError:
+            pass
+    
+    return False
+
 
 def get_user_preference(key: str, default: Any = None) -> Any:
     """Get a user preference value.
     
-    Checks session state cache first, then falls back to database.
-    Caches the result in session state for performance.
+    Checks session cache first, then falls back to database.
+    Works in both Flask and Streamlit contexts.
     
     Args:
         key: Preference key (e.g., 'timezone')
@@ -30,22 +103,31 @@ def get_user_preference(key: str, default: Any = None) -> Any:
     Returns:
         Preference value or default
     """
-    # Check session state cache first
+    # Check cache first
+    cache = _get_cache()
     cache_key = f"_pref_{key}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
+    if cache_key in cache:
+        return cache[cache_key]
     
     # Try to get from database
     try:
-        from auth_utils import get_user_id, is_authenticated
-        from streamlit_utils import get_supabase_client
-        
-        if not is_authenticated():
+        if not _is_authenticated():
             return default
         
-        user_id = get_user_id()
+        user_id = _get_user_id()
         if not user_id:
             return default
+        
+        # Get Supabase client (works in both contexts)
+        try:
+            from streamlit_utils import get_supabase_client
+        except ImportError:
+            try:
+                from supabase_client import SupabaseClient
+                def get_supabase_client():
+                    return SupabaseClient()
+            except ImportError:
+                return default
         
         client = get_supabase_client()
         if not client:
@@ -68,9 +150,9 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                 except (json.JSONDecodeError, TypeError):
                     pass  # Keep as string if not valid JSON
             
-            # Cache in session state
+            # Cache in session
             if value is not None:
-                st.session_state[cache_key] = value
+                cache[cache_key] = value
                 return value
         
         return default
@@ -83,7 +165,8 @@ def get_user_preference(key: str, default: Any = None) -> Any:
 def set_user_preference(key: str, value: Any) -> bool:
     """Set a user preference value.
     
-    Updates both database and session state cache.
+    Updates both database and session cache.
+    Works in both Flask and Streamlit contexts.
     
     Args:
         key: Preference key (e.g., 'timezone')
@@ -93,17 +176,26 @@ def set_user_preference(key: str, value: Any) -> bool:
         True if successful, False otherwise
     """
     try:
-        from auth_utils import get_user_id, is_authenticated
-        from streamlit_utils import get_supabase_client
-        
-        if not is_authenticated():
+        if not _is_authenticated():
             logger.warning("Cannot set preference: user not authenticated")
             return False
         
-        user_id = get_user_id()
+        user_id = _get_user_id()
         if not user_id:
             logger.warning("Cannot set preference: no user_id")
             return False
+        
+        # Get Supabase client (works in both contexts)
+        try:
+            from streamlit_utils import get_supabase_client
+        except ImportError:
+            try:
+                from supabase_client import SupabaseClient
+                def get_supabase_client():
+                    return SupabaseClient()
+            except ImportError:
+                logger.warning("Cannot set preference: no Supabase client available")
+                return False
         
         client = get_supabase_client()
         if not client:
@@ -121,9 +213,10 @@ def set_user_preference(key: str, value: Any) -> bool:
             'pref_value': json_value
         }).execute()
         
-        # Update session state cache
+        # Update session cache
+        cache = _get_cache()
         cache_key = f"_pref_{key}"
-        st.session_state[cache_key] = value
+        cache[cache_key] = value
         
         return True
         
@@ -156,19 +249,29 @@ def set_user_timezone(timezone: str) -> bool:
 def get_all_user_preferences() -> Dict[str, Any]:
     """Get all user preferences.
     
+    Works in both Flask and Streamlit contexts.
+    
     Returns:
         Dictionary of all preferences
     """
     try:
-        from auth_utils import get_user_id, is_authenticated
-        from streamlit_utils import get_supabase_client
-        
-        if not is_authenticated():
+        if not _is_authenticated():
             return {}
         
-        user_id = get_user_id()
+        user_id = _get_user_id()
         if not user_id:
             return {}
+        
+        # Get Supabase client (works in both contexts)
+        try:
+            from streamlit_utils import get_supabase_client
+        except ImportError:
+            try:
+                from supabase_client import SupabaseClient
+                def get_supabase_client():
+                    return SupabaseClient()
+            except ImportError:
+                return {}
         
         client = get_supabase_client()
         if not client:
@@ -238,10 +341,11 @@ def set_user_currency(currency: str) -> bool:
 
 
 def clear_preference_cache():
-    """Clear all preference caches from session state."""
-    keys_to_remove = [key for key in st.session_state.keys() if key.startswith("_pref_")]
+    """Clear all preference caches from session (Flask or Streamlit)."""
+    cache = _get_cache()
+    keys_to_remove = [key for key in cache.keys() if key.startswith("_pref_")]
     for key in keys_to_remove:
-        del st.session_state[key]
+        del cache[key]
 
 
 def get_user_ai_model() -> Optional[str]:
@@ -360,8 +464,11 @@ def apply_user_theme() -> None:
     """Apply user's theme preference using CSS injection.
     
     Call this early in each page to override browser dark mode detection.
-    Uses CSS color-scheme property and custom CSS variables.
+    Works in Streamlit context only (Flask templates handle theme differently).
     """
+    if not STREAMLIT_AVAILABLE or st is None:
+        return  # Only works in Streamlit
+    
     theme = get_user_theme()
     
     if theme == 'system':

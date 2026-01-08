@@ -289,13 +289,42 @@ def render_v2_settings():
         help="When enabled, migrated pages (Settings, Logs, Ticker Details) will use the new Flask-based implementation with better performance."
     )
     
-    # Save button
+    # Save button with detailed diagnostics
     if st.button("💾 Save Beta Settings", type="primary", key="save_v2"):
-        if set_user_preference('v2_enabled', v2_enabled):
-            st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
-            st.info("🔄 Refresh the page or navigate to see the changes take effect")
+        # Debug: Check authentication state
+        from auth_utils import is_authenticated, get_user_id, get_user_token
+        auth_status = is_authenticated()
+        user_id = get_user_id()
+        user_token = get_user_token()
+        
+        st.write(f"🔍 **Debug Info:**")
+        st.write(f"- Authenticated: {auth_status}")
+        st.write(f"- User ID: {user_id if user_id else 'NOT FOUND'}")
+        st.write(f"- Has Token: {bool(user_token)}")
+        
+        if not auth_status or not user_id:
+            st.error("❌ **Authentication Issue**: Session not properly loaded!")
+            st.info("Try refreshing the page or logging out and back in.")
         else:
-            st.error("❌ Failed to save beta settings. Please try again.")
+            # Try to get Supabase client
+            try:
+                from streamlit_utils import get_supabase_client
+                client = get_supabase_client()
+                st.write(f"- Supabase Client: {'✅ Connected' if client else '❌ Failed'}")
+            except Exception as client_error:
+                st.error(f"❌ **Supabase Client Error**: {client_error}")
+                client = None
+            
+            if client:
+                # Try the actual save
+                result = set_user_preference('v2_enabled', v2_enabled)
+                if result:
+                    st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+                    st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                else:
+                    st.error("❌ **Save Failed**: RPC call or database error. Check browser console.")
+            else:
+                st.error("❌ Cannot save: Supabase client not available")
 
 render_v2_settings()
 

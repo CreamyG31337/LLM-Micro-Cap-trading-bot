@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ user_theme|default('system') }}">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Portfolio Dashboard{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Theme CSS -->
+    <link href="/assets/css/theme.css" rel="stylesheet">
+    
+    <!-- Flowbite CSS (required for components) -->
+    <link href="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.css" rel="stylesheet" />
+    
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header with hamburger menu and user dropdown -->
+    <header class="gradient-bg text-white shadow-lg sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <!-- Hamburger menu (mobile only) -->
+                <button id="sidebar-toggle" data-drawer-target="sidebar" data-drawer-toggle="sidebar" 
+                        class="md:hidden p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                
+                <!-- Page title (hidden on mobile when sidebar is open) -->
+                <div class="flex-1 md:flex-none">
+                    <h1 class="text-xl md:text-2xl font-bold">{% block page_title %}Dashboard{% endblock %}</h1>
+                    <p class="text-blue-100 text-sm hidden md:block mt-1">{% block page_subtitle %}{% endblock %}</p>
+                </div>
+                
+                <!-- User menu (top-right) -->
+                <div class="flex items-center space-x-3">
+                    <!-- User email (hidden on mobile) -->
+                    <div class="hidden md:block text-sm text-blue-100">
+                        <span class="font-semibold">{{ user_email|default('User') }}</span>
+                    </div>
+                    
+                    <!-- User dropdown menu -->
+                    <div class="relative">
+                        <button id="user-menu-button" data-dropdown-toggle="user-menu" 
+                                class="flex items-center p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
+                            <i class="fas fa-user-circle text-2xl"></i>
+                        </button>
+                        <div id="user-menu" class="hidden z-50 absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 border border-gray-200">
+                            <a href="/v2/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-cog mr-2"></i>Settings
+                            </a>
+                            <a href="/" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <i class="fas fa-home mr-2"></i>Dashboard
+                            </a>
+                            <hr class="my-1">
+                            <a href="/api/auth/logout" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex">
+        <!-- Sidebar Navigation (Flowbite drawer) -->
+        <aside id="sidebar" 
+               class="fixed top-0 left-0 z-40 w-64 h-screen transition-transform -translate-x-full md:translate-x-0 bg-white border-r border-gray-200">
+            <div class="h-full px-3 py-4 overflow-y-auto">
+                <div class="mb-4">
+                    <h2 class="text-lg font-bold text-gray-900 px-2">Navigation</h2>
+                </div>
+                
+                <!-- Navigation links -->
+                <ul class="space-y-1">
+                    {% for link in navigation_links %}
+                        {% if link.show %}
+                            <li>
+                                <a href="{{ link.url }}" 
+                                   class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 {% if link.active %}bg-blue-50 text-blue-700{% endif %}">
+                                    <span class="mr-3 text-lg">{{ link.icon }}</span>
+                                    <span>{{ link.name }}</span>
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+                
+                <!-- Admin section (if admin) -->
+                {% if is_admin %}
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <div class="px-3 mb-2">
+                        <span class="text-xs font-semibold text-gray-500 uppercase">Admin</span>
+                    </div>
+                    <ul class="space-y-1">
+                        <li>
+                            <a href="/v2/logs" 
+                               class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
+                                <span class="mr-3 text-lg">📜</span>
+                                <span>Application Logs</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </aside>
+        
+        <!-- Overlay for mobile sidebar -->
+        <div id="sidebar-overlay" 
+             class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-30 md:hidden"
+             data-drawer-backdrop="sidebar"></div>
+
+        <!-- Main content area -->
+        <main class="flex-1 md:ml-64 min-h-screen">
+            <div class="container mx-auto px-4 py-6 md:py-8">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-4 mt-auto">
+        <div class="container mx-auto px-4 text-center text-sm">
+            <p>&copy; 2024 Portfolio Dashboard. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- Flowbite JavaScript (required for interactive components) -->
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.js"></script>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+
+</html>

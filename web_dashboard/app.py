@@ -90,6 +90,73 @@ def get_supabase_client() -> Optional[SupabaseClient]:
         return None
 
 
+def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
+    """Get navigation context for Flask templates"""
+    try:
+        from shared_navigation import get_navigation_links, is_page_migrated
+        from user_preferences import get_user_preference
+        from flask_auth_utils import get_user_email_flask
+        
+        # Get navigation links
+        links = get_navigation_links()
+        is_v2_enabled = get_user_preference('v2_enabled', default=False)
+        
+        # Build navigation context
+        nav_links = []
+        for link in links:
+            # Determine if link should be shown
+            show = True
+            
+            # Check if page is migrated and v2 is enabled
+            if is_page_migrated(link['page']) and not is_v2_enabled:
+                # Don't show migrated pages if v2 is disabled
+                show = False
+            
+            # Check service availability for specific pages
+            if link['page'] == 'research' or link['page'] == 'social_sentiment' or link['page'] == 'etf_holdings':
+                # These require Postgres
+                try:
+                    from postgres_client import PostgresClient
+                    client = PostgresClient()
+                    if not client.test_connection():
+                        show = False
+                except Exception:
+                    show = False
+            
+            if link['page'] == 'ai_assistant':
+                # Check Ollama availability
+                try:
+                    from ollama_client import check_ollama_health
+                    if not check_ollama_health():
+                        show = False
+                except Exception:
+                    show = False
+            
+            # Determine URL (use Flask route if migrated and v2 enabled)
+            url = link['url']
+            if is_page_migrated(link['page']) and is_v2_enabled:
+                url = link['url']  # Already points to Flask route
+            
+            nav_links.append({
+                'name': link['name'],
+                'url': url,
+                'icon': link['icon'],
+                'show': show,
+                'active': current_page == link['page']
+            })
+        
+        return {
+            'navigation_links': nav_links,
+            'is_admin': is_admin() if hasattr(request, 'user_id') else False
+        }
+    except Exception as e:
+        logger.warning(f"Error building navigation context: {e}")
+        return {
+            'navigation_links': [],
+            'is_admin': False
+        }
+
+
 
 
 
@@ -1126,11 +1193,26 @@ def export_cash():
 def logs_page():
     """Admin logs viewer page (Flask v2)"""
     try:
+        from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='admin_logs')
+        
+        return render_template('logs.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
     except Exception:
         user_theme = 'system'
-    return render_template('logs.html', user_theme=user_theme)
+        nav_context = get_navigation_context(current_page='admin_logs')
+        return render_template('logs.html', 
+                             user_email='Admin',
+                             user_theme=user_theme,
+                             **nav_context)
 
 @app.route('/api/logs/application')
 @require_admin
@@ -1221,13 +1303,17 @@ def settings_page():
         current_theme = get_user_theme() or 'system'
         is_v2_enabled = get_user_preference('v2_enabled', default=False)
         
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='settings')
+        
         return render_template('settings.html',
                              user_email=user_email,
                              current_timezone=current_timezone,
                              current_currency=current_currency,
                              current_theme=current_theme,
                              user_theme=current_theme,
-                             is_v2_enabled=is_v2_enabled)
+                             is_v2_enabled=is_v2_enabled,
+                             **nav_context)
     except Exception as e:
         logger.error(f"Error loading settings page: {e}")
         return jsonify({"error": "Failed to load settings page"}), 500
@@ -1334,10 +1420,14 @@ def ticker_details_page():
         ticker = request.args.get('ticker', '').upper().strip()
         user_theme = get_user_theme() or 'system'
         
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='ticker_details')
+        
         return render_template('ticker_details.html',
                              user_email=user_email,
                              ticker=ticker,
-                             user_theme=user_theme)
+                             user_theme=user_theme,
+                             **nav_context)
     except Exception as e:
         logger.error(f"Error loading ticker details page: {e}")
         return jsonify({"error": "Failed to load ticker details page"}), 500

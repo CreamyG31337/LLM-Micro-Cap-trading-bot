@@ -188,14 +188,66 @@ def get_user_funds():
     return auth_manager.get_user_funds(request.user_id)
 
 def require_admin(f):
-    """Decorator to require admin privileges"""
+    """Decorator to require admin privileges (also requires authentication)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not hasattr(request, 'user_id'):
-            return jsonify({"error": "Authentication required"}), 401
+        # First, authenticate the user (similar to require_auth)
+        token = (request.cookies.get('auth_token') or 
+                 request.cookies.get('session_token') or 
+                 request.headers.get('Authorization', '').replace('Bearer ', ''))
         
+        if not token:
+            # For HTML pages, redirect to login; for API, return JSON error
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Authentication required"}), 401
+            else:
+                from flask import redirect, url_for
+                return redirect('/')
+        
+        # Try to verify with auth_manager (for session_token format)
+        user_data = auth_manager.verify_session(token)
+        
+        # If that fails, try parsing as JWT (for auth_token format from Streamlit)
+        if not user_data:
+            try:
+                from flask_auth_utils import is_authenticated_flask
+                if is_authenticated_flask():
+                    # Extract user data from token
+                    import base64
+                    import json as json_lib
+                    token_parts = token.split('.')
+                    if len(token_parts) >= 2:
+                        payload = token_parts[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        decoded = base64.urlsafe_b64decode(payload)
+                        user_data = json_lib.loads(decoded)
+                        # Convert to format expected by request context
+                        user_data = {
+                            "user_id": user_data.get("sub"),
+                            "email": user_data.get("email")
+                        }
+            except Exception:
+                pass
+        
+        if not user_data:
+            # For HTML pages, redirect to login; for API, return JSON error
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Invalid or expired session"}), 401
+            else:
+                from flask import redirect, url_for
+                return redirect('/')
+        
+        # Add user data to request context
+        request.user_id = user_data.get("user_id") or user_data.get("sub")
+        request.user_email = user_data.get("email")
+        
+        # Now check admin status
         if not auth_manager.is_admin(request.user_id):
-            return jsonify({"error": "Admin privileges required"}), 403
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Admin privileges required"}), 403
+            else:
+                from flask import redirect
+                return redirect('/')
         
         return f(*args, **kwargs)
     return decorated_function

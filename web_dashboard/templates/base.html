@@ -5,25 +5,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Portfolio Dashboard{% endblock %}</title>
-    
+
     <!-- Tailwind CSS -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    
+
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
+
     <!-- Theme CSS -->
     <link href="/assets/css/theme.css" rel="stylesheet">
-    
+
     <!-- Flowbite CSS (required for components) -->
     <link href="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.css" rel="stylesheet" />
-    
+
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
     </style>
-    
+
     {% block extra_head %}{% endblock %}
 </head>
 
@@ -33,20 +33,20 @@
         <div class="container mx-auto px-4 py-4">
             <div class="flex items-center justify-between">
                 <!-- Hamburger menu (mobile only) -->
-                <button id="sidebar-toggle" data-drawer-target="sidebar" data-drawer-toggle="sidebar" 
-                        class="md:hidden p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
+                <button id="sidebar-toggle" data-drawer-target="sidebar" data-drawer-toggle="sidebar"
+                    class="md:hidden p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
                     <i class="fas fa-bars text-xl"></i>
                 </button>
-                
+
                 <!-- Page title (hidden on mobile when sidebar is open) -->
                 <div class="flex-1 md:flex-none">
                     <h1 class="text-xl md:text-2xl font-bold">{% block page_title %}Dashboard{% endblock %}</h1>
                     <p class="text-blue-100 text-sm hidden md:block mt-1">{% block page_subtitle %}{% endblock %}</p>
                 </div>
-                
+
                 <!-- Custom header content (e.g., fund selector, last updated) -->
                 {% block header_extra %}{% endblock %}
-                
+
                 <!-- User menu (top-right) -->
                 <div class="flex items-center space-x-3">
                     <!-- User email (hidden on mobile) -->
@@ -55,14 +55,15 @@
                         <span class="font-semibold">{{ user_email }}</span>
                     </div>
                     {% endif %}
-                    
+
                     <!-- User dropdown menu -->
                     <div class="relative">
-                        <button id="user-menu-button" data-dropdown-toggle="user-menu" 
-                                class="flex items-center p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
+                        <button id="user-menu-button" data-dropdown-toggle="user-menu"
+                            class="flex items-center p-2 rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50">
                             <i class="fas fa-user-circle text-2xl"></i>
                         </button>
-                        <div id="user-menu" class="hidden z-50 absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 border border-gray-200">
+                        <div id="user-menu"
+                            class="hidden z-50 absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 border border-gray-200">
                             <a href="/v2/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <i class="fas fa-cog mr-2"></i>Settings
                             </a>
@@ -82,38 +83,39 @@
 
     <div class="flex">
         <!-- Sidebar Navigation (Flowbite drawer) -->
-        <aside id="sidebar" 
-               class="fixed top-0 left-0 z-40 w-64 h-screen transition-transform -translate-x-full md:translate-x-0 bg-white border-r border-gray-200"
-               aria-label="Sidebar">
-            <div class="h-full px-3 py-4 overflow-y-auto bg-white">
+        <aside id="sidebar"
+            class="fixed top-0 left-0 z-40 w-64 h-screen transition-transform -translate-x-full md:translate-x-0 bg-white border-r border-gray-200"
+            aria-label="Sidebar">
+            <div class="h-full px-3 pb-4 pt-20 overflow-y-auto bg-white">
                 <div class="mb-4">
                     <h2 class="text-lg font-bold text-gray-900 px-2">Navigation</h2>
                 </div>
-                
+
                 <!-- Navigation links -->
                 <ul class="space-y-1">
                     {% if navigation_links %}
-                        {% for link in navigation_links %}
-                            {% if link.show %}
-                                <li>
-                                    <a href="{{ link.url }}" 
-                                       class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 {% if link.active %}bg-blue-50 text-blue-700{% endif %}">
-                                        <span class="mr-3 text-lg">{{ link.icon }}</span>
-                                        <span>{{ link.name }}</span>
-                                    </a>
-                                </li>
-                            {% endif %}
-                        {% endfor %}
+                    {% for link in navigation_links %}
+                    {% if link.show %}
+                    <li>
+                        <a href="{{ link.url }}"
+                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 {% if link.active %}bg-blue-50 text-blue-700{% endif %}">
+                            <span class="mr-3 text-lg">{{ link.icon }}</span>
+                            <span>{{ link.name }}</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
                     {% else %}
-                        <li>
-                            <a href="/" class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
-                                <span class="mr-3 text-lg">📈</span>
-                                <span>Dashboard</span>
-                            </a>
-                        </li>
+                    <li>
+                        <a href="/"
+                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
+                            <span class="mr-3 text-lg">📈</span>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
                     {% endif %}
                 </ul>
-                
+
                 <!-- Admin section (if admin) -->
                 {% if is_admin|default(false) %}
                 <div class="mt-6 pt-6 border-t border-gray-200">
@@ -122,8 +124,8 @@
                     </div>
                     <ul class="space-y-1">
                         <li>
-                            <a href="/v2/logs" 
-                               class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
+                            <a href="/v2/logs"
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">📜</span>
                                 <span>Application Logs</span>
                             </a>
@@ -133,7 +135,7 @@
                 {% endif %}
             </div>
         </aside>
-        
+
 
         <!-- Main content area -->
         <main class="flex-1 md:ml-64 min-h-screen">
@@ -152,7 +154,7 @@
 
     <!-- Flowbite JavaScript (required for interactive components) -->
     <script src="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.js"></script>
-    
+
     {% block extra_scripts %}{% endblock %}
 </body>
 

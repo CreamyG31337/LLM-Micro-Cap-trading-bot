@@ -17,20 +17,24 @@ logger = logging.getLogger(__name__)
 
 
 def get_auth_token() -> Optional[str]:
-    """Get auth_token from cookies (same cookie name as Streamlit uses)"""
-    return request.cookies.get('auth_token')
+    """Get auth_token or session_token from cookies"""
+    return request.cookies.get('auth_token') or request.cookies.get('session_token')
 
 
 def get_user_id_flask() -> Optional[str]:
-    """Extract user ID from auth_token cookie (Flask context)"""
+    """Extract user ID from auth_token/session_token cookie (Flask context)"""
     token = get_auth_token()
     if not token:
         return None
     
     try:
-        # Parse JWT token (same format as Streamlit)
+        # Parse JWT token
+        # Handle simple encoding (no header) or full JWT
         token_parts = token.split('.')
+        
         if len(token_parts) < 2:
+            # Try to decode as raw payload if it's not a full JWT
+            # session_token might be full JWT, auth_token definitely is
             return None
         
         # Decode payload
@@ -40,8 +44,8 @@ def get_user_id_flask() -> Optional[str]:
         decoded = base64.urlsafe_b64decode(payload)
         user_data = json.loads(decoded)
         
-        # Extract user ID (Supabase uses 'sub' field)
-        user_id = user_data.get('sub')
+        # Extract user ID (Supabase uses 'sub', our session uses 'user_id')
+        user_id = user_data.get('sub') or user_data.get('user_id')
         return user_id
     except Exception as e:
         logger.warning(f"Error extracting user ID from token: {e}")

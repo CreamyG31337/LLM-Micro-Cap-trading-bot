@@ -160,24 +160,29 @@ def get_user_preference(key: str, default: Any = None) -> Any:
         result = client.supabase.rpc('get_user_preference', {'pref_key': key}).execute()
         
         # Debug logging
-        logger.debug(f"[PREF] RPC result for '{key}': data={result.data}, type={type(result.data).__name__}")
+        logger.debug(f"[PREF] RPC result for '{key}': data={result.data}, type={type(result.data).__name__}, raw={repr(result.data)}")
+        
+        # The RPC function returns JSONB, which Supabase returns as:
+        # - None if the key doesn't exist or value is NULL
+        # - The actual value (str, bool, int, etc.) if it's a scalar JSONB
+        # - A dict/list if it's a complex JSONB
+        # - Sometimes wrapped in a list
         
         if result.data is not None:
             # Handle both scalar and list responses
-            if isinstance(result.data, list) and len(result.data) > 0:
+            if isinstance(result.data, list):
+                if len(result.data) == 0:
+                    # Empty list means no value
+                    logger.debug(f"[PREF] Empty list returned for '{key}', returning default")
+                    return default
+                # Extract first element (Supabase sometimes wraps in list)
                 value = result.data[0]
                 logger.debug(f"[PREF] Extracted from list: value={value}, type={type(value).__name__}")
             else:
                 value = result.data
                 logger.debug(f"[PREF] Using direct value: value={value}, type={type(value).__name__}")
             
-            # JSONB values from Supabase can be returned in different formats:
-            # 1. Already decoded Python types (str, int, bool, None, dict, list)
-            # 2. JSON-encoded strings that need parsing
-            # 3. None/null values
-            # 4. Dict/object structures that need unwrapping
-            
-            # Handle None/null values first
+            # Handle None/null values
             if value is None:
                 logger.debug(f"[PREF] Value is None for '{key}', returning default")
                 return default
@@ -217,10 +222,20 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                     logger.debug(f"[PREF] Value is plain string for '{key}': {value}")
                     pass
             
-            # Handle boolean JSONB values that might be strings
-            if isinstance(value, str) and value.lower() in ('true', 'false'):
+            # Handle boolean JSONB values - they might come as:
+            # - Python bool (True/False) - already correct
+            # - String "true"/"false" - need conversion
+            # - JSONB true/false - Supabase should convert to Python bool, but check anyway
+            if isinstance(value, bool):
+                # Already a boolean, use as-is
+                pass
+            elif isinstance(value, str) and value.lower() in ('true', 'false'):
                 value = value.lower() == 'true'
                 logger.debug(f"[PREF] Converted string boolean for '{key}': {value}")
+            elif value in (True, False, 1, 0, '1', '0'):
+                # Handle other truthy/falsy representations
+                value = bool(value) if not isinstance(value, bool) else value
+                logger.debug(f"[PREF] Normalized boolean for '{key}': {value}")
             
             # Handle None after parsing
             if value is None or (isinstance(value, str) and value.lower() == 'null'):
@@ -229,11 +244,10 @@ def get_user_preference(key: str, default: Any = None) -> Any:
             
             logger.debug(f"[PREF] Final value for '{key}': {value} (type: {type(value).__name__})")
             
-            # Cache in session (but skip v2_enabled to ensure fresh reads)
-            if value is not None and key != 'v2_enabled':
-                cache[cache_key] = value
-                return value
-            elif value is not None:
+            # Return the value (don't cache v2_enabled to ensure fresh reads)
+            if value is not None:
+                if key != 'v2_enabled':
+                    cache[cache_key] = value
                 return value
         
         logger.debug(f"[PREF] No value found for '{key}', returning default")
@@ -543,7 +557,29 @@ def get_user_currency() -> Optional[str]:
         # Fallback if import fails
         SUPPORTED_CURRENCIES = {'CAD': 'Canadian Dollar', 'USD': 'US Dollar'}
     
+    # Try direct preference lookup first
     currency = get_user_preference('currency', default=None)
+    
+    # Fallback: if direct lookup returns None, try getting all preferences
+    if currency is None:
+        try:
+            all_prefs = get_all_user_preferences()
+            if isinstance(all_prefs, dict) and 'currency' in all_prefs:
+                currency = all_prefs['currency']
+                # Ensure it's a string
+                if isinstance(currency, str):
+                    currency = currency.strip().upper()
+                elif currency is not None:
+                    currency = str(currency).strip().upper()
+                logger.debug(f"[PREF] Retrieved currency from get_all_user_preferences(): {currency}")
+                # Cache it for future use
+                cache = _get_cache()
+                cache_key = "_pref_currency"
+                if currency:
+                    cache[cache_key] = currency
+        except Exception as e:
+            logger.warning(f"Error getting currency from all preferences: {e}")
+    
     # Validate against supported currencies
     if currency and currency in SUPPORTED_CURRENCIES:
         return currency
@@ -648,7 +684,29 @@ def get_user_theme() -> str:
     Returns:
         Theme preference: 'system', 'dark', or 'light'
     """
+    # Try direct preference lookup first
     theme = get_user_preference('theme', default=None)
+    
+    # Fallback: if direct lookup returns None, try getting all preferences
+    if theme is None:
+        try:
+            all_prefs = get_all_user_preferences()
+            if isinstance(all_prefs, dict) and 'theme' in all_prefs:
+                theme = all_prefs['theme']
+                # Ensure it's a string
+                if isinstance(theme, str):
+                    theme = theme.strip().lower()
+                elif theme is not None:
+                    theme = str(theme).strip().lower()
+                logger.debug(f"[PREF] Retrieved theme from get_all_user_preferences(): {theme}")
+                # Cache it for future use
+                cache = _get_cache()
+                cache_key = "_pref_theme"
+                if theme:
+                    cache[cache_key] = theme
+        except Exception as e:
+            logger.warning(f"Error getting theme from all preferences: {e}")
+    
     if theme and theme in THEME_OPTIONS:
         return theme
     return 'system'  # Default to system

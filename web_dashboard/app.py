@@ -1450,10 +1450,27 @@ def settings_page():
         current_timezone = get_user_timezone() or 'America/Los_Angeles'
         current_currency = get_user_currency() or 'CAD'
         current_theme = get_user_theme() or 'system'
+        
+        # Get v2_enabled with fallback
         is_v2_enabled = get_user_preference('v2_enabled', default=False)
+        if is_v2_enabled is False:
+            # Fallback: try getting from all preferences
+            try:
+                from user_preferences import get_all_user_preferences
+                all_prefs = get_all_user_preferences()
+                if isinstance(all_prefs, dict) and 'v2_enabled' in all_prefs:
+                    fallback_value = all_prefs['v2_enabled']
+                    if isinstance(fallback_value, bool):
+                        is_v2_enabled = fallback_value
+                    elif isinstance(fallback_value, str) and fallback_value.lower() in ('true', 'false'):
+                        is_v2_enabled = fallback_value.lower() == 'true'
+                    elif fallback_value:
+                        is_v2_enabled = bool(fallback_value)
+            except Exception:
+                pass
         
         # Debug logging
-        logger.info(f"[SETTINGS DEBUG] Loaded v2_enabled = {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
+        logger.info(f"[SETTINGS DEBUG] Loaded preferences - timezone: {current_timezone}, currency: {current_currency}, theme: {current_theme}, v2_enabled: {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
         
         # Get navigation context
         nav_context = get_navigation_context(current_page='settings')

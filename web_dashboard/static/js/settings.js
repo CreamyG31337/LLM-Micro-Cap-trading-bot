@@ -9,12 +9,18 @@ function showSuccess(elementId) {
     }, 3000);
 }
 
-function showError(elementId) {
+function showError(elementId, errorMessage) {
     const element = document.getElementById(elementId);
-    element.style.display = 'block';
-    setTimeout(() => {
-        element.style.display = 'none';
-    }, 5000);
+    if (element) {
+        // Update error message if provided
+        if (errorMessage) {
+            element.textContent = '❌ ' + errorMessage;
+        }
+        element.style.display = 'block';
+        setTimeout(() => {
+            element.style.display = 'none';
+        }, 5000);
+    }
 }
 
 // Timezone save handler
@@ -43,13 +49,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data.success) {
                         showSuccess('timezone-success');
                     } else {
-                        console.error('Timezone save failed:', data.error);
-                        showError('timezone-error');
+                        const errorMsg = data.error || 'Failed to save timezone. Please try again.';
+                        console.error('Timezone save failed:', errorMsg);
+                        showError('timezone-error', errorMsg);
                     }
                 })
                 .catch(error => {
+                    const errorMsg = error.message || 'Error saving timezone. Please try again.';
                     console.error('Error saving timezone:', error);
-                    showError('timezone-error');
+                    showError('timezone-error', errorMsg);
                 });
         });
     }
@@ -79,13 +87,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (data.success) {
                         showSuccess('currency-success');
                     } else {
-                        console.error('Currency save failed:', data.error);
-                        showError('currency-error');
+                        const errorMsg = data.error || 'Failed to save currency. Please try again.';
+                        console.error('Currency save failed:', errorMsg);
+                        showError('currency-error', errorMsg);
                     }
                 })
                 .catch(error => {
+                    const errorMsg = error.message || 'Error saving currency. Please try again.';
                     console.error('Error saving currency:', error);
-                    showError('currency-error');
+                    showError('currency-error', errorMsg);
                 });
         });
     }
@@ -125,19 +135,21 @@ document.addEventListener('DOMContentLoaded', function () {
                         // Update original theme for next error recovery
                         originalTheme = theme;
                     } else {
-                        console.error('Theme save failed:', data.error);
+                        const errorMsg = data.error || 'Failed to save theme. Please try again.';
+                        console.error('Theme save failed:', errorMsg);
                         // Revert on error
                         document.documentElement.setAttribute('data-theme', originalTheme);
                         selectElement.value = originalTheme;
-                        showError('theme-error');
+                        showError('theme-error', errorMsg);
                     }
                 })
                 .catch(error => {
+                    const errorMsg = error.message || 'Error saving theme. Please try again.';
                     console.error('Error saving theme:', error);
                     // Revert on error
                     document.documentElement.setAttribute('data-theme', originalTheme);
                     selectElement.value = originalTheme;
-                    showError('theme-error');
+                    showError('theme-error', errorMsg);
                 });
         });
     }

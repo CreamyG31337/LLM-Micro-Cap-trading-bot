@@ -146,25 +146,37 @@
 <script src="/assets/js/settings.js" data-cfasync="false"></script>
 <script>
     // Initialize page with current preferences
-    // Initialize page with current preferences
     document.addEventListener('DOMContentLoaded', function () {
         // Set current timezone
         const currentTimezone = '{{ current_timezone }}';
-        if (currentTimezone) {
-            document.getElementById('timezone-select').value = currentTimezone;
+        const timezoneSelect = document.getElementById('timezone-select');
+        if (currentTimezone && timezoneSelect) {
+            // Try to set the value, log if it doesn't match
+            timezoneSelect.value = currentTimezone;
+            if (timezoneSelect.value !== currentTimezone) {
+                console.warn(`Timezone value '${currentTimezone}' not found in options, current value: ${timezoneSelect.value}`);
+            }
             updateTimezonePreview();
         }
 
         // Set current currency
         const currentCurrency = '{{ current_currency }}';
-        if (currentCurrency) {
-            document.getElementById('currency-select').value = currentCurrency;
+        const currencySelect = document.getElementById('currency-select');
+        if (currentCurrency && currencySelect) {
+            currencySelect.value = currentCurrency;
+            if (currencySelect.value !== currentCurrency) {
+                console.warn(`Currency value '${currentCurrency}' not found in options, current value: ${currencySelect.value}`);
+            }
         }
 
         // Set current theme
         const currentTheme = '{{ current_theme }}';
-        if (currentTheme) {
-            document.getElementById('theme-select').value = currentTheme;
+        const themeSelect = document.getElementById('theme-select');
+        if (currentTheme && themeSelect) {
+            themeSelect.value = currentTheme;
+            if (themeSelect.value !== currentTheme) {
+                console.warn(`Theme value '${currentTheme}' not found in options, current value: ${themeSelect.value}`);
+            }
             updateThemePreview();
         }
 
@@ -195,7 +207,9 @@
                 } catch (error) {
                     console.error('Error updating v2_enabled:', error);
                     toggleElement.checked = !enabled; // Revert
-                    alert('Failed to update preference: ' + (error.message || 'Unknown error'));
+                    const errorMsg = error.message || 'Unknown error';
+                    alert('Failed to update preference: ' + errorMsg);
+                    console.error('Full error details:', error);
                 }
             });
         }

@@ -20,6 +20,7 @@ COMMENT ON COLUMN user_profiles.preferences IS 'User preferences stored as JSON.
 -- =====================================================
 
 -- Function to get a user preference value
+-- Returns the JSONB value for the given key, or NULL if not found
 CREATE OR REPLACE FUNCTION get_user_preference(pref_key TEXT)
 RETURNS JSONB AS $$
 DECLARE
@@ -32,26 +33,39 @@ BEGIN
         RETURN NULL;
     END IF;
     
+    -- Use -> operator to get the JSONB value for the key
+    -- This returns NULL if the key doesn't exist
     SELECT preferences->pref_key INTO pref_value
     FROM user_profiles
     WHERE user_id = user_uuid;
     
+    -- Return the value (could be NULL if key doesn't exist, or the actual JSONB value)
     RETURN pref_value;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Function to set a user preference value
 -- Accepts TEXT and converts to JSONB (for RPC calls from Python)
-CREATE OR REPLACE FUNCTION set_user_preference(pref_key TEXT, pref_value TEXT)
+-- UUID parameter is optional - if NULL, uses auth.uid() internally
+CREATE OR REPLACE FUNCTION set_user_preference(
+    pref_key TEXT, 
+    pref_value TEXT,
+    user_uuid UUID DEFAULT NULL
+)
 RETURNS BOOLEAN AS $$
 DECLARE
-    user_uuid UUID;
+    target_user_uuid UUID;
     rows_updated INTEGER;
     pref_value_jsonb JSONB;
 BEGIN
-    user_uuid := auth.uid();
-    
+    -- Use provided user_uuid or fall back to auth.uid()
     IF user_uuid IS NULL THEN
+        target_user_uuid := auth.uid();
+    ELSE
+        target_user_uuid := user_uuid;
+    END IF;
+    
+    IF target_user_uuid IS NULL THEN
         RETURN FALSE;
     END IF;
     
@@ -73,7 +87,7 @@ BEGIN
             true  -- create if missing
         ),
         updated_at = NOW()
-    WHERE user_id = user_uuid;
+    WHERE user_id = target_user_uuid;
     
     GET DIAGNOSTICS rows_updated = ROW_COUNT;
     

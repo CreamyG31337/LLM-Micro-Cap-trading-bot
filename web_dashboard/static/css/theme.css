@@ -2,9 +2,34 @@
  * Supports: light, dark, and system (follows OS preference)
  */
 
-/* Light Mode Variables */
-[data-theme="light"],
+/* Light Mode Variables - Default and explicit light theme */
 :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --text-tertiary: #9ca3af;
+    --border-color: #e5e7eb;
+    --border-hover: #d1d5db;
+    --gradient-from: #667eea;
+    --gradient-to: #764ba2;
+
+    /* Component colors */
+    --log-line-hover: #f9fafb;
+    --code-bg: #ffffff;
+    --code-border: #e5e7eb;
+
+    /* Log level colors (light mode) */
+    --log-debug: #6b7280;
+    --log-perf: #8b5cf6;
+    --log-info: #3b82f6;
+    --log-warning: #f59e0b;
+    --log-error: #ef4444;
+}
+
+/* Explicit Light Mode */
+[data-theme="light"] {
     --bg-primary: #ffffff;
     --bg-secondary: #f9fafb;
     --bg-tertiary: #f3f4f6;
@@ -56,6 +81,31 @@
 }
 
 /* System Theme - Use browser/OS preference */
+/* Light mode when OS prefers light */
+@media (prefers-color-scheme: light) {
+    [data-theme="system"] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f9fafb;
+        --bg-tertiary: #f3f4f6;
+        --text-primary: #111827;
+        --text-secondary: #6b7280;
+        --text-tertiary: #9ca3af;
+        --border-color: #e5e7eb;
+        --border-hover: #d1d5db;
+        --gradient-from: #667eea;
+        --gradient-to: #764ba2;
+        --log-line-hover: #f9fafb;
+        --code-bg: #ffffff;
+        --code-border: #e5e7eb;
+        --log-debug: #6b7280;
+        --log-perf: #8b5cf6;
+        --log-info: #3b82f6;
+        --log-warning: #f59e0b;
+        --log-error: #ef4444;
+    }
+}
+
+/* Dark mode when OS prefers dark */
 @media (prefers-color-scheme: dark) {
     [data-theme="system"] {
         --bg-primary: #1f2937;

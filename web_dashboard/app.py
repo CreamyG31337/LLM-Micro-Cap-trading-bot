@@ -39,6 +39,13 @@ from flask_cors import CORS
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Setup file logging to write to app.log
+try:
+    from log_handler import setup_logging
+    setup_logging()
+except ImportError:
+    pass  # Fallback to basicConfig if log_handler not available
+
 # Initialize Flask app with template and static folders
 # serving static files at /assets to avoid conflict with Streamlit's /static
 app = Flask(__name__, 

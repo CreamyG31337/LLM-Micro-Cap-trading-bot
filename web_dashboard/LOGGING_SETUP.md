@@ -24,21 +24,21 @@ Modify your existing Ollama container config:
 2.  **Entrypoint**: Override the default entrypoint to use a shell.
     *   *Portainer -> Command & logging -> Entrypoint*: `/bin/sh`
 3.  **Command**: Pipe output to file using `tee` (preserves docker logs + writes to file).
-    *   *Portainer -> Command & logging -> Command*: `-c "ollama serve 2>&1 | tee -a /var/log/ollama/server.log"`
+    *   *Portainer -> Command & logging -> Command*: `-c "ollama serve 2>&1 | tee -a /var/log/ollama/ollama.log"`
 
 ### B. Trading Dashboard Service (The Viewer)
 1.  **Volumes**:
-    *   Map Host `~/ollama-logs` -> Container `/app/web_dashboard/logs/server`
-    *   *(Note: This creates a 'server' subfolder inside the app's log dir)*
+    *   Map Host `~/ollama-logs/ollama.log` -> Container `/app/web_dashboard/logs/ollama.log`
+    *   *(Note: Maps the Ollama log file directly to the logs directory)*
 
 ### C. Caddy Service (The Agent Access)
 1.  **Volumes**:
     *   Map Host `~/ollama-logs` -> Container `/srv/logs`
 
 ## 3. Verify
-1.  **Check File**: On the host, check `tail -f ~/ollama-logs/server.log`. You should see Ollama startup logs.
-2.  **Dashboard**: Go to **Admin** -> **System Logs Viewer**. Select "File System" mode. You should see `server/server.log`.
-3.  **AI Access**: The AI can now fetch `https://<YOUR_DOMAIN>/logs/server.log`.
+1.  **Check File**: On the host, check `tail -f ~/ollama-logs/ollama.log`. You should see Ollama startup logs.
+2.  **Dashboard**: Go to **Admin** -> **System Logs Viewer**. Select "File System" mode. You should see `ollama.log`.
+3.  **AI Access**: The AI can now fetch `https://<YOUR_DOMAIN>/logs/ollama.log`.
 
 ## Troubleshooting
 *   **"Permission Denied"**: If Ollama crashes instantly, run `chmod 777 ~/ai-trading-logs` on the host again.

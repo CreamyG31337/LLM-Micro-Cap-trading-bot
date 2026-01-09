@@ -334,12 +334,12 @@ with tab_system:
             3. Ollama containers are automatically listed first for easy access
             
             **If running in Docker with volume mapping:**
-            - Ollama logs should appear at `server/server.log` in File System mode
-            - Ensure the volume is mapped: Host `~/ollama-logs` → Container `/app/web_dashboard/logs/server`
+            - Ollama logs should appear at `ollama.log` in File System mode
+            - Ensure the volume is mapped: Host `~/ollama-logs` → Container `/app/web_dashboard/logs/ollama.log`
             - See `LOGGING_SETUP.md` for detailed setup instructions
             """)
         else:
-            # Get list of log files (recursive to find server/ollama.log)
+            # Get list of log files (recursive to find ollama.log)
             log_files = list(LOGS_DIR.rglob("*.log"))
             log_files.extend(list(LOGS_DIR.rglob("*.txt")))
 
@@ -350,12 +350,12 @@ with tab_system:
                 1. Switch to **"Docker Containers (Live)"** mode above (recommended)
                 2. Select the Ollama container from the dropdown
                 
-                **Expected Ollama log location:** `server/server.log` (when volume mapping is configured)
+                **Expected Ollama log location:** `ollama.log` (when volume mapping is configured)
                 """)
             else:
-                # Prioritize Ollama logs (server/server.log)
-                ollama_log = LOGS_DIR / "server" / "server.log"
-                ollama_logs = [f for f in log_files if "server" in str(f) and "server.log" in str(f)]
+                # Prioritize Ollama logs (ollama.log)
+                ollama_log = LOGS_DIR / "ollama.log"
+                ollama_logs = [f for f in log_files if f.name == "ollama.log"]
                 other_logs = [f for f in log_files if f not in ollama_logs]
                 
                 # Sort: Ollama logs first, then by modification time
@@ -364,11 +364,11 @@ with tab_system:
                 else:
                     log_files.sort(key=os.path.getmtime, reverse=True)
                     # Warn if Ollama logs are missing
-                    st.warning("⚠️ Ollama logs (`server/server.log`) not found. Showing other log files.")
+                    st.warning("⚠️ Ollama logs (`ollama.log`) not found. Showing other log files.")
                     st.info("""
                     **To view Ollama logs:**
                     1. Switch to **"Docker Containers (Live)"** mode above (recommended)
-                    2. Or ensure volume mapping is configured: Host `/home/lance/ollama-logs` → Container `/app/web_dashboard/logs/server`
+                    2. Or ensure volume mapping is configured: Host `/home/lance/ollama-logs` → Container `/app/web_dashboard/logs/ollama.log`
                     """)
                 
                 # Create filenames list for dropdown (relative to logs dir)
@@ -382,7 +382,7 @@ with tab_system:
                     if ollama_logs and filenames:
                         # Find index of first Ollama log
                         for i, fname in enumerate(filenames):
-                            if "server" in fname and "server.log" in fname:
+                            if fname == "ollama.log":
                                 default_index = i
                                 break
                     

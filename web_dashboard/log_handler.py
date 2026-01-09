@@ -188,6 +188,7 @@ def setup_logging(level=logging.INFO):
     # List of our application module names to capture logs from
     app_modules = [
         'app',  # For log_message() calls from streamlit_app.py
+        'werkzeug',  # Flask's internal logger for request/response logs
         'streamlit_utils',
         'chart_utils', 
         'auth_utils',

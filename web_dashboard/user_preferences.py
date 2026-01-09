@@ -337,16 +337,23 @@ def set_user_preference(key: str, value: Any) -> bool:
             logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
             
             # Ensure Authorization header is set right before RPC call
-            # (in case client was reused or header was cleared)
-            if hasattr(client, 'supabase') and hasattr(client.supabase, 'postgrest'):
+            # Call postgrest.auth() to ensure the header is set correctly
+            if hasattr(client, 'supabase') and hasattr(client.supabase, 'postgrest') and user_token:
                 postgrest = client.supabase.postgrest
-                if hasattr(postgrest, 'session') and user_token:
-                    # Ensure header is set on the session
-                    if not hasattr(postgrest.session, 'headers'):
-                        postgrest.session.headers = {}
-                    postgrest.session.headers['Authorization'] = f'Bearer {user_token}'
-                    logger.debug(f"[PREF] Ensured Authorization header is set before RPC call")
+                try:
+                    # Call auth() method to set the header (this is what makes auth.uid() work)
+                    postgrest.auth(user_token)
+                    logger.debug(f"[PREF] Called postgrest.auth() before RPC call")
+                except Exception as auth_error:
+                    logger.warning(f"[PREF] postgrest.auth() failed: {auth_error}, trying direct header setting")
+                    # Fallback: set header directly on session
+                    if hasattr(postgrest, 'session'):
+                        if not hasattr(postgrest.session, 'headers'):
+                            postgrest.session.headers = {}
+                        postgrest.session.headers['Authorization'] = f'Bearer {user_token}'
             
+            # Try without user_uuid first (preferred - uses auth.uid())
+            # If that fails, we'll pass it explicitly in the HTTP fallback
             result = client.supabase.rpc('set_user_preference', {
                 'pref_key': key,
                 'pref_value': json_value
@@ -393,6 +400,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                 
                 if supabase_url and supabase_anon_key:
                     logger.info(f"Trying HTTP fallback for set_user_preference with key='{key}'")
+                    logger.debug(f"[PREF] HTTP fallback headers: Authorization={'Bearer ' + user_token[:20] + '...' if user_token else 'NOT SET'}")
                     response = requests.post(
                         f"{supabase_url}/rest/v1/rpc/set_user_preference",
                         headers={
@@ -402,10 +410,12 @@ def set_user_preference(key: str, value: Any) -> bool:
                         },
                         json={
                             "pref_key": key,
-                            "pref_value": json_value
-                            # Don't pass user_uuid - let auth.uid() work from Authorization header
+                            "pref_value": json_value,
+                            "user_uuid": str(user_id)  # Pass explicitly since auth.uid() returns NULL in Flask
+                            # TODO: Fix why auth.uid() returns NULL even with explicit Authorization header
                         }
                     )
+                    logger.debug(f"[PREF] HTTP fallback response status: {response.status_code}, body: {response.text[:200]}")
                     
                     if response.status_code == 200:
                         result_data = response.json()

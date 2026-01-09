@@ -14,15 +14,17 @@ COPY tailwind.config.js ./
 # Install npm dependencies (cached layer - only rebuilds if package.json changes)
 RUN npm install
 
-# Copy Tailwind input CSS
-COPY web_dashboard/static/css/input.css ./web_dashboard/static/css/
-
-# Copy source files needed for Tailwind content scanning
+# Copy Tailwind input CSS and source files needed for content scanning
+# Copy in order: config, input CSS, then templates (for better caching)
+COPY web_dashboard/static/css/input.css ./web_dashboard/static/css/input.css
 COPY web_dashboard/templates ./web_dashboard/templates
-COPY web_dashboard/static ./web_dashboard/static
 
 # Build Tailwind CSS (production-optimized, minified)
-RUN npm run build:css
+# Ensure output directory exists and build with error handling
+RUN mkdir -p web_dashboard/static/css && \
+    npm run build:css && \
+    ls -lh web_dashboard/static/css/tailwind.css || \
+    (echo "ERROR: Tailwind CSS build failed - output file not found" && exit 1)
 
 # Stage 2: Python app
 FROM python:3.11-slim

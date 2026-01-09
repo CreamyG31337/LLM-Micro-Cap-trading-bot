@@ -124,8 +124,9 @@ steps:
         BUILD_ERRORS=0
         if [ "$STREAMLIT_EXIT" != "0" ]; then
           echo "❌ ERROR: Streamlit build failed (exit code: $STREAMLIT_EXIT)"
-          echo "Streamlit build output:"
-          tail -50 "$STREAMLIT_LOG" || echo "No log available"
+          echo "=== Full Streamlit build output ==="
+          cat "$STREAMLIT_LOG" || echo "No log available"
+          echo "=== End Streamlit build output ==="
           BUILD_ERRORS=$((BUILD_ERRORS + 1))
         else
           echo "✅ Streamlit build succeeded"
@@ -133,8 +134,9 @@ steps:
         
         if [ "$FLASK_EXIT" != "0" ]; then
           echo "❌ ERROR: Flask build failed (exit code: $FLASK_EXIT)"
-          echo "Flask build output:"
-          tail -50 "$FLASK_LOG" || echo "No log available"
+          echo "=== Full Flask build output ==="
+          cat "$FLASK_LOG" || echo "No log available"
+          echo "=== End Flask build output ==="
           BUILD_ERRORS=$((BUILD_ERRORS + 1))
         else
           echo "✅ Flask build succeeded"
@@ -142,8 +144,9 @@ steps:
         
         if [ "$COOKIE_EXIT" != "0" ]; then
           echo "❌ ERROR: Cookie refresher build failed (exit code: $COOKIE_EXIT)"
-          echo "Cookie refresher build output:"
-          tail -50 "$COOKIE_LOG" || echo "No log available"
+          echo "=== Full Cookie refresher build output ==="
+          cat "$COOKIE_LOG" || echo "No log available"
+          echo "=== End Cookie refresher build output ==="
           BUILD_ERRORS=$((BUILD_ERRORS + 1))
         else
           echo "✅ Cookie refresher build succeeded"

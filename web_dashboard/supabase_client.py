@@ -72,49 +72,66 @@ class SupabaseClient:
             # Store token for use in queries
             self._user_token = user_token
             
+            logger.info(f"[SUPABASE_CLIENT] Initializing with user token (length: {len(user_token)})")
+            
+            # CRITICAL: Set Authorization header on ALL request paths
+            # The Supabase Python SDK uses multiple internal clients (postgrest, auth, etc.)
+            # We need to ensure the Authorization header is set for ALL of them
+            
             try:
-                # Try to set the access token in the auth session
-                # Supabase client needs both access_token and refresh_token for set_session
-                # If we only have access_token, we'll manually set headers instead
+                # Method 1: Set session via auth client (standard approach)
+                # This might work for newer SDK versions
                 self.supabase.auth.set_session(
                     access_token=user_token,
                     refresh_token=""  # Empty refresh token - may cause set_session to fail
                 )
+                logger.debug("[SUPABASE_CLIENT] Successfully called auth.set_session()")
             except Exception as e:
-                logger.debug(f"set_session failed (expected if no refresh token): {e}")
-                # We'll use the stored token to set headers manually in queries
+                logger.debug(f"[SUPABASE_CLIENT] auth.set_session() failed (expected): {e}")
             
-            # Manually set Authorization header on postgrest client
-            # This is the key fix - we need to set the Authorization header on the underlying postgrest client
+            # Method 2: Set Authorization header directly on postgrest client
+            # This ensures table queries work
             try:
-                # The Supabase client uses postgrest for database queries
-                # We need to call the auth() method (not assign to auth property) to set the Authorization header
-                if hasattr(self.supabase, 'postgrest'):
-                    # Call the auth() method with the token to set Authorization header
-                    # The postgrest client uses this for Authorization header in all queries
-                    self.supabase.postgrest.auth(user_token)
-                else:
-                    # If 'postgrest' is not present, try to set Authorization headers directly (rare situation)
-                    # Attempt to find the postgrest client via the supabase client attributes
-                    postgrest = getattr(self.supabase, "postgrest", None)
-                    if postgrest and hasattr(postgrest, "session"):
-                        # Remove 'apikey' header if it exists (confuses PostgREST when using JWT)
-                        postgrest.session.headers.pop("apikey", None)
-                        # Set Authorization header with user's token
-                        postgrest.session.headers["Authorization"] = f"Bearer {self._user_token}"
-                    # This is critical for auth.uid() to work in Postgres functions
-                    # Only proceed if _user_token is set and non-empty
-                    if hasattr(self, "_user_token") and self._user_token:
-                        pass  # No-op fallback for readability; optional for clarity
-                    # Fallback: try to access via table client
-                    # Create a dummy table query to access the underlying client
-                    dummy_table = self.supabase.table("_dummy_table_for_auth")
-                    if hasattr(dummy_table, '_client'):
-                        # Call auth() method on the underlying postgrest client
-                        dummy_table._client.auth(user_token)
-            except Exception as header_error:
-                logger.warning(f"Could not set Authorization header: {header_error}")
-                # Token is stored in self._user_token as fallback
+                if hasattr(self.supabase, 'postgrest') and self.supabase.postgrest:
+                    # The postgrest client should have a session attribute with headers
+                    if hasattr(self.supabase.postgrest, 'session'):
+                        # Set Authorization header directly on the session
+                        self.supabase.postgrest.session.headers["Authorization"] = f"Bearer {user_token}"
+                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on postgrest.session")
+                    # Also try the auth() method if it exists
+                    elif hasattr(self.supabase.postgrest, 'auth'):
+                        self.supabase.postgrest.auth(user_token)
+                        logger.debug("[SUPABASE_CLIENT] Called postgrest.auth()")
+            except Exception as e:
+                logger.warning(f"[SUPABASE_CLIENT] Could not set postgrest headers: {e}")
+            
+            # Method 3: CRITICAL FIX - Set headers on the underlying httpx/requests client
+            # RPC calls use the same client, so this ensures auth.uid() works
+            try:
+                # The Supabase client stores options which contain headers
+                if hasattr(self.supabase, 'options') and self.supabase.options:
+                    # Update the headers in options
+                    if not hasattr(self.supabase.options, 'headers'):
+                        self.supabase.options.headers = {}
+                    self.supabase.options.headers["Authorization"] = f"Bearer {user_token}"
+                    logger.debug("[SUPABASE_CLIENT] Set Authorization header in client options")
+                
+                # Also try to set on the rest client directly
+                if hasattr(self.supabase, 'rest') and self.supabase.rest:
+                    if hasattr(self.supabase.rest, 'session'):
+                        self.supabase.rest.session.headers["Authorization"] = f"Bearer {user_token}"
+                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on rest.session")
+                
+                # For SDK v2+, also check for _client attribute
+                if hasattr(self.supabase, '_client'):
+                    if hasattr(self.supabase._client, 'headers'):
+                        self.supabase._client.headers["Authorization"] = f"Bearer {user_token}"
+                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on _client")
+                        
+            except Exception as e:
+                logger.warning(f"[SUPABASE_CLIENT] Could not set client-level headers: {e}")
+            
+            logger.info("[SUPABASE_CLIENT] Completed user token initialization")
     
     def test_connection(self) -> bool:
         """Test database connection"""

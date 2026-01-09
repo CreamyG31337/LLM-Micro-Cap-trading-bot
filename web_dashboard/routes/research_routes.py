@@ -102,6 +102,13 @@ def research_dashboard():
                 limit=per_page,
                 offset=offset
             )
+        
+        # Ensure articles is a list (not None)
+        if articles is None:
+            logger.warning("ResearchRepository returned None for articles")
+            articles = []
+        
+        logger.info(f"Research dashboard: Fetched {len(articles)} articles")
             
         # Get common context
         user_email = get_user_email_flask()

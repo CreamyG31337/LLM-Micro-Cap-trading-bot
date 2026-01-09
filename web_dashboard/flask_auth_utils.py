@@ -23,7 +23,16 @@ def get_auth_token() -> Optional[str]:
 
 def get_refresh_token() -> Optional[str]:
     """Get refresh_token from cookies"""
-    return request.cookies.get('refresh_token')
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    token = request.cookies.get('refresh_token')
+    logger.info(f"[FLASK_AUTH] get_refresh_token() called, found refresh_token: {bool(token)}, length: {len(token) if token else 0}")
+    if token:
+        logger.info(f"[FLASK_AUTH] refresh_token value (first 20 chars): {token[:20]}...")
+    else:
+        logger.warning(f"[FLASK_AUTH] refresh_token cookie NOT FOUND. Available cookies: {list(request.cookies.keys())}")
+    return token
 
 
 def get_user_id_flask() -> Optional[str]:

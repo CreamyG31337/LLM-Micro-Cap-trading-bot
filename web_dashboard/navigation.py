@@ -79,7 +79,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 align-items: center;
                 padding: 0.4rem 0.75rem;
                 border-radius: 0.5rem;
-                text-decoration: none;
+                text-decoration: none !important;
                 color: inherit;
                 font-family: inherit;
                 transition: background-color 0.2s, transform 0.1s;
@@ -90,9 +90,17 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             .v2-nav-link:hover {
                 background-color: rgba(151, 166, 195, 0.15);
                 border-color: rgba(151, 166, 195, 0.1);
+                text-decoration: none !important;
             }
             .v2-nav-link:active {
                 transform: scale(0.98);
+            }
+            .v2-nav-link:visited {
+                text-decoration: none !important;
+                color: inherit;
+            }
+            .v2-nav-link:link {
+                text-decoration: none !important;
             }
             .v2-nav-icon {
                 margin-right: 0.75rem;

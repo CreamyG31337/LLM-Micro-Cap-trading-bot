@@ -188,12 +188,11 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
 
 
 
-
 # Register Blueprints
 try:
     from routes.research_routes import research_bp
-    app.register_blueprint(research_bp)
-    logger.info("Registered Research Blueprint")
+    app.register_blueprint(research_bp, url_prefix='/v2')
+    logger.info("Registered Research Blueprint at /v2")
 except Exception as e:
     logger.error(f"Failed to register Research Blueprint: {e}")
 

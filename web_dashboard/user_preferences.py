@@ -599,13 +599,14 @@ def get_all_user_preferences() -> Dict[str, Any]:
             # Flask context - need to get token from Flask request
             try:
                 from supabase_client import SupabaseClient
-                from flask_auth_utils import get_auth_token
+                from flask_auth_utils import get_auth_token, get_refresh_token
                 from flask import has_request_context
                 
                 if has_request_context():
-                    # Get token from Flask cookies
+                    # Get both tokens from Flask cookies
                     user_token = get_auth_token()
-                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
+                    refresh_token = get_refresh_token()
+                    client = SupabaseClient(user_token=user_token, refresh_token=refresh_token) if user_token else SupabaseClient()
                 else:
                     client = SupabaseClient()
             except ImportError:

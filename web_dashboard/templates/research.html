@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Research Repository - Portfolio Dashboard{% endblock %}
+{% block page_title %}Research Repository{% endblock %}
+{% block page_subtitle %}AI-curated market research and insights{% endblock %}
+
+{% block content %}
+<!-- Filters Section -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+    <form action="/research" method="GET" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Search -->
+            <div>
+                <label for="search" class="block mb-2 text-sm font-medium text-gray-900">Search</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <i class="fas fa-search text-gray-500"></i>
+                    </div>
+                    <input type="text" id="search" name="search" value="{{ filters.search }}" 
+                        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5" 
+                        placeholder="Search articles...">
+                </div>
+            </div>
+
+            <!-- Ticker Filter -->
+            <div>
+                <label for="ticker" class="block mb-2 text-sm font-medium text-gray-900">Ticker</label>
+                <select id="ticker" name="ticker" 
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option value="All" {% if filters.ticker == 'All' %}selected{% endif %}>All Tickers</option>
+                    {% for t in unique_tickers %}
+                    <option value="{{ t }}" {% if filters.ticker == t %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Date Range -->
+            <div>
+                <label for="date_range" class="block mb-2 text-sm font-medium text-gray-900">Date Range</label>
+                <select id="date_range" name="date_range" 
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option value="Last 7 days" {% if filters.date_range == 'Last 7 days' %}selected{% endif %}>Last 7 days</option>
+                    <option value="Last 30 days" {% if filters.date_range == 'Last 30 days' %}selected{% endif %}>Last 30 days</option>
+                    <option value="Last 90 days" {% if filters.date_range == 'Last 90 days' %}selected{% endif %}>Last 90 days</option>
+                    <option value="All time" {% if filters.date_range == 'All time' %}selected{% endif %}>All time</option>
+                </select>
+            </div>
+
+            <!-- Article Type -->
+            <div>
+                <label for="article_type" class="block mb-2 text-sm font-medium text-gray-900">Type</label>
+                <select id="article_type" name="article_type" 
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <option value="All" {% if filters.article_type == 'All' %}selected{% endif %}>All Types</option>
+                    <option value="Market News" {% if filters.article_type == 'Market News' %}selected{% endif %}>Market News</option>
+                    <option value="Ticker News" {% if filters.article_type == 'Ticker News' %}selected{% endif %}>Ticker News</option>
+                    <option value="Earnings" {% if filters.article_type == 'Earnings' %}selected{% endif %}>Earnings</option>
+                    <option value="Research Report" {% if filters.article_type == 'Research Report' %}selected{% endif %}>Research Report</option>
+                    <option value="Opportunity Discovery" {% if filters.article_type == 'Opportunity Discovery' %}selected{% endif %}>Opportunity Discovery</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mt-4">
+            <div class="flex items-center">
+                <input id="only_owned" name="only_owned" type="checkbox" value="true" {% if filters.only_owned %}checked{% endif %}
+                    class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
+                <label for="only_owned" class="ml-2 text-sm font-medium text-gray-900">Only owned tickers</label>
+            </div>
+            
+            <button type="submit" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mr-2 mb-2 focus:outline-none">
+                <i class="fas fa-filter mr-2"></i>Apply Filters
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Articles Grid -->
+<div class="grid grid-cols-1 gap-6">
+    {% for article in articles %}
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
+        <div class="p-6">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <!-- Badges -->
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded border border-blue-400">
+                            {{ article.source }}
+                        </span>
+                        {% if article.type %}
+                        <span class="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded border border-gray-500">
+                            {{ article.type }}
+                        </span>
+                        {% endif %}
+                        
+                        <!-- Sentiment Badge -->
+                        {% if article.sentiment == 'positive' or article.sentiment == 'bullish' %}
+                            <span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded border border-green-400">
+                                <i class="fas fa-arrow-up mr-1 user-select-none"></i>Bullish
+                            </span>
+                        {% elif article.sentiment == 'negative' or article.sentiment == 'bearish' %}
+                            <span class="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded border border-red-400">
+                                <i class="fas fa-arrow-down mr-1 user-select-none"></i>Bearish
+                            </span>
+                        {% elif article.sentiment %}
+                             <span class="bg-gray-100 text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded border border-gray-400">
+                                {{ article.sentiment|title }}
+                            </span>
+                        {% endif %}
+                    </div>
+                    
+                    <h3 class="text-xl font-bold text-gray-900 mb-1">
+                        {% if article.url %}
+                        <a href="{{ article.url }}" target="_blank" class="hover:text-blue-600 hover:underline">
+                            {{ article.title }} <i class="fas fa-external-link-alt text-xs ml-1 text-gray-400"></i>
+                        </a>
+                        {% else %}
+                        {{ article.title }}
+                        {% endif %}
+                    </h3>
+                    <p class="text-sm text-gray-500">
+                        <i class="far fa-calendar-alt mr-1"></i> {{ article.published_at|default('Unknown Date') }}
+                    </p>
+                </div>
+                
+                <!-- Tickers -->
+                <div class="flex flex-wrap gap-1 justify-end max-w-xs">
+                    {% for ticker in article.tickers %}
+                    <a href="/research?ticker={{ ticker }}" class="bg-indigo-100 text-indigo-800 text-xs font-medium px-2 py-0.5 rounded hover:bg-indigo-200">
+                        ${{ ticker }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="prose prose-sm max-w-none text-gray-600 mb-4 line-clamp-3">
+                {{ article.summary }}
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                <div class="text-xs text-gray-400">
+                    ID: {{ article.id|truncate(8, True, '') }}
+                </div>
+                <button class="text-blue-600 hover:text-blue-800 text-sm font-medium focus:outline-none" 
+                        onclick="toggleContent('content-{{ article.id }}')">
+                    Show Details <i class="fas fa-chevron-down ml-1"></i>
+                </button>
+            </div>
+            
+            <!-- Expandable Content (Hidden by default) -->
+            <div id="content-{{ article.id }}" class="hidden mt-4 pt-4 border-t border-gray-100">
+                <div class="prose prose-sm max-w-none text-gray-800">
+                    <h4 class="font-bold mb-2">Full Summary / Analysis</h4>
+                    <div class="whitespace-pre-wrap">{{ article.summary }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-lg shadow-sm p-12 text-center">
+        <div class="text-gray-400 mb-4">
+            <i class="fas fa-search text-5xl"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">No research found</h3>
+        <p class="text-gray-500">Try adjusting your filters or search terms.</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination (Simple Implementation) -->
+<div class="flex justify-center mt-8">
+    <nav class="flex items-center gap-2">
+        {% if filters.page > 1 %}
+        <button onclick="changePage({{ filters.page - 1 }})" class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">
+            Previous
+        </button>
+        {% endif %}
+        
+        <span class="px-3 py-2 text-sm text-gray-600">Page {{ filters.page }}</span>
+        
+        {% if articles|length == 20 %}
+        <!-- Assuming page size is 20, if we got 20 items there might be more -->
+        <button onclick="changePage({{ filters.page + 1 }})" class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100">
+            Next
+        </button>
+        {% endif %}
+    </nav>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function toggleContent(id) {
+        const el = document.getElementById(id);
+        if (el.classList.contains('hidden')) {
+            el.classList.remove('hidden');
+        } else {
+            el.classList.add('hidden');
+        }
+    }
+    
+    function changePage(page) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('page', page);
+        window.location.href = url.toString();
+    }
+</script>
+{% endblock %}

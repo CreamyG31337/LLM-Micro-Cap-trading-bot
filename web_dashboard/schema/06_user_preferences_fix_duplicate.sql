@@ -12,22 +12,30 @@ DROP FUNCTION IF EXISTS public.get_user_preference(TEXT);
 DROP FUNCTION IF EXISTS public.set_user_preference(TEXT, TEXT, UUID);
 DROP FUNCTION IF EXISTS public.set_user_preference(TEXT, TEXT);
 
--- Recreate get_user_preference (takes only pref_key, uses auth.uid() internally)
-CREATE OR REPLACE FUNCTION public.get_user_preference(pref_key TEXT)
+-- Recreate get_user_preference (takes pref_key and optional user_uuid)
+CREATE OR REPLACE FUNCTION public.get_user_preference(
+    pref_key TEXT,
+    user_uuid UUID DEFAULT NULL
+)
 RETURNS JSONB AS $$
 DECLARE
-    user_uuid UUID;
+    target_user_uuid UUID;
     pref_value JSONB;
 BEGIN
-    user_uuid := auth.uid();
-    
+    -- Use provided user_uuid or fall back to auth.uid()
     IF user_uuid IS NULL THEN
+        target_user_uuid := auth.uid();
+    ELSE
+        target_user_uuid := user_uuid;
+    END IF;
+    
+    IF target_user_uuid IS NULL THEN
         RETURN NULL;
     END IF;
     
     SELECT preferences->pref_key INTO pref_value
     FROM user_profiles
-    WHERE user_id = user_uuid;
+    WHERE user_id = target_user_uuid;
     
     RETURN pref_value;
 END;

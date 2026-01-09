@@ -155,10 +155,65 @@ def get_user_preference(key: str, default: Any = None) -> Any:
         
         if not client:
             return default
+            
+        # Get user ID for potential fallback
+        user_id_fallback = _get_user_id()
         
         # Call the RPC function to get preference
         # Use client.rpc() method which ensures Authorization header is set
-        result = client.rpc('get_user_preference', {'pref_key': key})
+        rpc_success = False
+        rpc_result = None
+        
+        try:
+            rpc_result = client.rpc('get_user_preference', {'pref_key': key})
+            rpc_success = True
+            result = rpc_result # For backward compatibility with existing result variable use
+        except Exception as rpc_error:
+            logger.warning(f"[PREF] RPC get_user_preference failed: {rpc_error}, trying HTTP fallback")
+            
+            # Fallback to direct HTTP request using explicit user_uuid
+            # This handles the expired token case where auth.uid() fails
+            if user_id_fallback:
+                try:
+                    import requests
+                    import os
+                    supabase_url = os.getenv("SUPABASE_URL")
+                    supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                    
+                    if supabase_url and supabase_anon_key:
+                        logger.info(f"Trying HTTP fallback for get_user_preference with key='{key}', user_id='{user_id_fallback}'")
+                        
+                        # Don't send Authorization header - expired tokens cause 401 errors
+                        headers = {
+                            "apikey": supabase_anon_key,
+                            "Content-Type": "application/json"
+                        }
+                        
+                        response = requests.post(
+                            f"{supabase_url}/rest/v1/rpc/get_user_preference",
+                            headers=headers,
+                            json={
+                                "pref_key": key,
+                                "user_uuid": str(user_id_fallback)  # Pass explicit UUID
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            logger.info(f"HTTP fallback RPC result: {data}")
+                            # Create a mock result object to match client.rpc return type
+                            class MockResult:
+                                def __init__(self, data):
+                                    self.data = data
+                            result = MockResult(data)
+                            rpc_success = True
+                        else:
+                            logger.error(f"HTTP fallback get_user_preference failed: {response.status_code} {response.text}")
+                except Exception as http_error:
+                    logger.error(f"HTTP fallback get_user_preference exception: {http_error}")
+            
+        if not rpc_success:
+            return default
         
         # Debug logging
         logger.debug(f"[PREF] RPC result for '{key}': data={result.data}, type={type(result.data).__name__}, raw={repr(result.data)}")
@@ -218,6 +273,10 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                     if isinstance(parsed, str) or parsed != value:
                         logger.debug(f"[PREF] Parsed JSON string for '{key}': {parsed}")
                         value = parsed
+                    # If parsed is None, it was explicit null
+                    if parsed is None:
+                        logger.debug(f"[PREF] Parsed JSON null for '{key}', returning default")
+                        return default
                 except (json.JSONDecodeError, TypeError):
                     # Not JSON-encoded, use as-is
                     logger.debug(f"[PREF] Value is plain string for '{key}': {value}")

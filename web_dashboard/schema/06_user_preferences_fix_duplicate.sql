@@ -31,7 +31,8 @@ BEGIN
     
     RETURN pref_value;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 -- Recreate set_user_preference with optional UUID parameter
 -- If user_uuid is NULL, uses auth.uid() internally
@@ -45,6 +46,7 @@ DECLARE
     target_user_uuid UUID;
     rows_updated INTEGER;
     pref_value_jsonb JSONB;
+    profile_exists BOOLEAN;
 BEGIN
     -- Use provided user_uuid or fall back to auth.uid()
     IF user_uuid IS NULL THEN
@@ -54,6 +56,18 @@ BEGIN
     END IF;
     
     IF target_user_uuid IS NULL THEN
+        RAISE WARNING 'set_user_preference: target_user_uuid is NULL (user_uuid param was NULL and auth.uid() returned NULL)';
+        RETURN FALSE;
+    END IF;
+    
+    -- Check if profile exists (for debugging)
+    SELECT EXISTS(
+        SELECT 1 FROM user_profiles 
+        WHERE user_id = target_user_uuid
+    ) INTO profile_exists;
+    
+    IF NOT profile_exists THEN
+        RAISE WARNING 'set_user_preference: Profile does not exist for user_id: %', target_user_uuid;
         RETURN FALSE;
     END IF;
     
@@ -79,9 +93,15 @@ BEGIN
     
     GET DIAGNOSTICS rows_updated = ROW_COUNT;
     
-    RETURN rows_updated > 0;
+    IF rows_updated = 0 THEN
+        RAISE WARNING 'set_user_preference: UPDATE returned 0 rows for user_id: %, pref_key: %, profile_exists: %', target_user_uuid, pref_key, profile_exists;
+        RETURN FALSE;
+    END IF;
+    
+    RETURN TRUE;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 -- =====================================================
 -- VERIFICATION

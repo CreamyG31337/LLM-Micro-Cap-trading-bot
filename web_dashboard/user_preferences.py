@@ -335,9 +335,22 @@ def set_user_preference(key: str, value: Any) -> bool:
         rpc_error_msg = None
         try:
             logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
+            
+            # Ensure Authorization header is set right before RPC call
+            # (in case client was reused or header was cleared)
+            if hasattr(client, 'supabase') and hasattr(client.supabase, 'postgrest'):
+                postgrest = client.supabase.postgrest
+                if hasattr(postgrest, 'session') and user_token:
+                    # Ensure header is set on the session
+                    if not hasattr(postgrest.session, 'headers'):
+                        postgrest.session.headers = {}
+                    postgrest.session.headers['Authorization'] = f'Bearer {user_token}'
+                    logger.debug(f"[PREF] Ensured Authorization header is set before RPC call")
+            
             result = client.supabase.rpc('set_user_preference', {
                 'pref_key': key,
                 'pref_value': json_value
+                # Don't pass user_uuid - let auth.uid() work from Authorization header
             }).execute()
             
             # Check if the RPC call succeeded
@@ -390,6 +403,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                         json={
                             "pref_key": key,
                             "pref_value": json_value
+                            # Don't pass user_uuid - let auth.uid() work from Authorization header
                         }
                     )
                     

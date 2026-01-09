@@ -25,7 +25,8 @@ def get_log_file_path() -> Path:
 def read_recent_errors(
     hours: int = 24,
     max_lines: int = 100,
-    include_warnings: bool = True
+    include_warnings: bool = True,
+    exclude_heartbeat: bool = True
 ) -> List[Dict[str, str]]:
     """Read recent error and warning logs.
     
@@ -33,6 +34,7 @@ def read_recent_errors(
         hours: Number of hours to look back
         max_lines: Maximum number of error lines to return
         include_warnings: Include WARNING level logs
+        exclude_heartbeat: Exclude scheduler heartbeat logs (scheduler.scheduler_core.heartbeat)
         
     Returns:
         List of error log entries with keys: timestamp, level, module, message, formatted
@@ -87,11 +89,17 @@ def read_recent_errors(
                     
                     # Filter by level
                     level = level_str.strip()
+                    module_name = module.strip()
+                    
+                    # Filter out heartbeat logs if requested
+                    if exclude_heartbeat and module_name == 'scheduler.scheduler_core.heartbeat':
+                        continue
+                    
                     if level == 'ERROR' or (include_warnings and level == 'WARNING'):
                         errors.append({
                             'timestamp': timestamp_str,
                             'level': level,
-                            'module': module.strip(),
+                            'module': module_name,
                             'message': message.strip(),
                             'formatted': line
                         })
@@ -115,7 +123,8 @@ def search_logs(
     search_term: str,
     hours: int = 24,
     max_lines: int = 50,
-    case_sensitive: bool = False
+    case_sensitive: bool = False,
+    exclude_heartbeat: bool = True
 ) -> List[Dict[str, str]]:
     """Search logs for a specific term.
     
@@ -124,6 +133,7 @@ def search_logs(
         hours: Number of hours to look back
         max_lines: Maximum number of matching lines to return
         case_sensitive: Whether search should be case sensitive
+        exclude_heartbeat: Exclude scheduler heartbeat logs (scheduler.scheduler_core.heartbeat)
         
     Returns:
         List of matching log entries
@@ -178,10 +188,15 @@ def search_logs(
                     if timestamp < cutoff_time:
                         continue
                     
+                    # Filter out heartbeat logs if requested
+                    module_name = module.strip()
+                    if exclude_heartbeat and module_name == 'scheduler.scheduler_core.heartbeat':
+                        continue
+                    
                     matches.append({
                         'timestamp': timestamp_str,
                         'level': level_str.strip(),
-                        'module': module.strip(),
+                        'module': module_name,
                         'message': message.strip(),
                         'formatted': line
                     })

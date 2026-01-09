@@ -196,6 +196,7 @@ def setup_logging(level=logging.INFO):
         'exchange_rates_utils',
         'scheduler',
         'scheduler.scheduler_core',
+        'scheduler.scheduler_core.heartbeat',  # Heartbeat logger for filtering
         'scheduler.jobs',
         'log_handler',
         'ollama_client',  # AI integration
@@ -240,7 +241,7 @@ def setup_logging(level=logging.INFO):
     # For now, let's just stick to FileHandler as the source of truth.
 
 
-def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> List[Dict]:
+def read_logs_from_file(n=100, level=None, search=None, return_all=False, exclude_modules=None) -> List[Dict]:
     """Read recent logs from the log file efficiently.
     
     Reads from the end of the file to avoid loading the entire file into memory.
@@ -251,6 +252,7 @@ def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> Lis
         level: Filter by log level (str) or list of levels (e.g., ['INFO', 'ERROR'])
         search: Filter by message text
         return_all: If True, return all filtered logs (up to reasonable limit)
+        exclude_modules: List of module/logger names to exclude (e.g., ['scheduler.scheduler_core.heartbeat'])
         
     Returns:
         List of dicts with timestamp, level, module, message keys
@@ -319,6 +321,12 @@ def read_logs_from_file(n=100, level=None, search=None, return_all=False) -> Lis
             else:
                 # Single level filter
                 logs = [log for log in logs if log['level'] == level]
+        
+        if exclude_modules:
+            # Exclude logs from specified modules/loggers
+            if isinstance(exclude_modules, str):
+                exclude_modules = [exclude_modules]
+            logs = [log for log in logs if log['module'] not in exclude_modules]
         
         if search:
             search_lower = search.lower()

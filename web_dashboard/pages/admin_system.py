@@ -142,7 +142,7 @@ with tab_logs:
             from log_handler import read_logs_from_file
             
             # Controls row
-            col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 1])
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([1, 1, 1, 1, 1.5, 1.5, 1])
             
             with col1:
                 auto_refresh = st.checkbox("🔄 Auto-refresh", value=False, help="Refresh logs every 5 seconds")
@@ -172,6 +172,13 @@ with tab_logs:
                 search_text = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed")
             
             with col6:
+                exclude_heartbeat = st.checkbox(
+                    "💓 Hide Heartbeat", 
+                    value=True, 
+                    help="Exclude scheduler heartbeat logs (scheduler.scheduler_core.heartbeat)"
+                )
+            
+            with col7:
                 if st.button("🗑️ Clear Logs"):
                     # Clear log file content
                     try:
@@ -189,7 +196,7 @@ with tab_logs:
                 st.session_state.log_page = 1
             
             # Reset page to 1 if filters change
-            filter_key = f"{level_filter}_{num_logs}_{sort_order}_{search_text}"
+            filter_key = f"{level_filter}_{num_logs}_{sort_order}_{search_text}_{exclude_heartbeat}"
             if 'log_filter_key' not in st.session_state or st.session_state.log_filter_key != filter_key:
                 st.session_state.log_page = 1
                 st.session_state.log_filter_key = filter_key
@@ -204,12 +211,18 @@ with tab_logs:
                 else:
                     level = level_filter
                 
+                # Build exclude_modules list
+                exclude_modules = []
+                if exclude_heartbeat:
+                    exclude_modules.append('scheduler.scheduler_core.heartbeat')
+                
                 # Fetch all filtered logs for pagination
                 all_logs = read_logs_from_file(
                     n=None,  # Get all logs (up to reasonable limit)
                     level=level,
                     search=search_text if search_text else None,
-                    return_all=True
+                    return_all=True,
+                    exclude_modules=exclude_modules if exclude_modules else None
                 )
                 
                 # Apply sort order (default from file is oldest first)

@@ -1393,12 +1393,19 @@ def api_logs_application():
         else:
             level_filter = level
         
+        # Get exclude_modules parameter (default to excluding heartbeat)
+        exclude_heartbeat = request.args.get('exclude_heartbeat', 'true').lower() == 'true'
+        exclude_modules = []
+        if exclude_heartbeat:
+            exclude_modules.append('scheduler.scheduler_core.heartbeat')
+        
         # Get all filtered logs
         all_logs = read_logs_from_file(
             n=None,
             level=level_filter,
             search=search if search else None,
-            return_all=True
+            return_all=True,
+            exclude_modules=exclude_modules if exclude_modules else None
         )
         
         # Reverse for newest first

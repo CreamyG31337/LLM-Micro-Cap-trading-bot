@@ -41,6 +41,8 @@ if web_dashboard_path not in sys.path:
     sys.path.insert(1, web_dashboard_path)  # Insert at index 1, after project_root
 
 logger = logging.getLogger(__name__)
+# Separate logger for heartbeat to allow filtering
+heartbeat_logger = logging.getLogger(f"{__name__}.heartbeat")
 
 # Global scheduler instance
 _scheduler: Optional[BackgroundScheduler] = None
@@ -63,8 +65,8 @@ MAX_RESTART_ATTEMPTS = 5
 # Heartbeat file to detect scheduler status across processes
 # This allows Streamlit workers to check if scheduler is running without creating a new one
 _HEARTBEAT_FILE = Path(__file__).parent.parent / 'logs' / '.scheduler_heartbeat'
-_HEARTBEAT_INTERVAL = 10  # seconds between heartbeat updates
-_HEARTBEAT_TIMEOUT = 30  # seconds before considering scheduler dead
+_HEARTBEAT_INTERVAL = 20  # seconds between heartbeat updates
+_HEARTBEAT_TIMEOUT = 60  # seconds before considering scheduler dead
 
 
 def _update_heartbeat():
@@ -147,6 +149,30 @@ def get_scheduler(create=True) -> Optional[BackgroundScheduler]:
     return _scheduler
 
 
+def _get_job_name_for_logging(job_id: Optional[str]) -> str:
+    """Get job name for logging purposes.
+    
+    Args:
+        job_id: The job ID from the event
+        
+    Returns:
+        Job name if available, otherwise job_id or 'N/A'
+    """
+    if not job_id:
+        return 'N/A'
+    
+    try:
+        scheduler = get_scheduler(create=False)
+        if scheduler:
+            job = scheduler.get_job(job_id)
+            if job and job.name:
+                return f"{job.name} ({job_id})"
+    except Exception:
+        pass  # Fall through to return job_id
+    
+    return job_id
+
+
 def _scheduler_event_listener(event) -> None:
     """Event listener for scheduler events - catches errors and shutdowns."""
     # Use print() as fallback - always works even if logging is broken
@@ -162,23 +188,31 @@ def _scheduler_event_listener(event) -> None:
             EVENT_JOB_SUBMITTED
         )
         
+        # Get job ID and name for logging
+        job_id = getattr(event, 'job_id', None)
+        job_display = _get_job_name_for_logging(job_id)
+        
         # Only log important events to stderr (not routine job add/remove/modify/execute)
         # Routine events are logged at debug level only
         should_log_stderr = event.code not in (EVENT_JOB_ADDED, EVENT_JOB_REMOVED, EVENT_JOB_MODIFIED, EVENT_JOB_EXECUTED, EVENT_JOB_SUBMITTED)
         if should_log_stderr:
-            event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job ID: {getattr(event, 'job_id', 'N/A')}"
+            event_msg = f"[SCHEDULER EVENT] Code: {event.code}, Job: {job_display}"
             print(event_msg, file=sys.stderr, flush=True)
         
         if event.code == EVENT_JOB_EXECUTED:
             # Normal event - job completed successfully
             # Only log at debug level to reduce noise
+            # Skip heartbeat job - it has its own logger category
             try:
-                logger.debug(f"Job executed: {getattr(event, 'job_id', 'N/A')}")
+                if job_id == 'scheduler_heartbeat':
+                    heartbeat_logger.debug(f"Job executed: {job_display}")
+                else:
+                    logger.debug(f"Job executed: {job_display}")
             except:
                 pass
                 
         elif event.code == EVENT_JOB_ERROR:
-            error_msg = f"❌ SCHEDULER EVENT: Job {event.job_id} raised exception: {event.exception}"
+            error_msg = f"❌ SCHEDULER EVENT: Job {job_display} raised exception: {event.exception}"
             print(error_msg, file=sys.stderr, flush=True)
             if hasattr(event, 'exception') and event.exception:
                 traceback.print_exception(type(event.exception), event.exception, event.exception.__traceback__, file=sys.stderr)
@@ -188,7 +222,7 @@ def _scheduler_event_listener(event) -> None:
                 pass  # Logger might not work
                 
         elif event.code == EVENT_JOB_MISSED:
-            msg = f"⚠️ SCHEDULER EVENT: Job {event.job_id} missed execution time"
+            msg = f"⚠️ SCHEDULER EVENT: Job {job_display} missed execution time"
             print(msg, file=sys.stderr, flush=True)
             try:
                 logger.warning(msg)
@@ -254,7 +288,7 @@ def _scheduler_event_listener(event) -> None:
             # Normal event - job was added to scheduler
             # Only log at debug level to reduce noise
             try:
-                logger.debug(f"Job added: {getattr(event, 'job_id', 'N/A')}")
+                logger.debug(f"Job added: {job_display}")
             except:
                 pass
                 
@@ -262,7 +296,7 @@ def _scheduler_event_listener(event) -> None:
             # Normal event - job was removed from scheduler
             # Only log at debug level to reduce noise
             try:
-                logger.debug(f"Job removed: {getattr(event, 'job_id', 'N/A')}")
+                logger.debug(f"Job removed: {job_display}")
             except:
                 pass
                 
@@ -270,15 +304,19 @@ def _scheduler_event_listener(event) -> None:
             # Normal event - job was modified in scheduler
             # Only log at debug level to reduce noise
             try:
-                logger.debug(f"Job modified: {getattr(event, 'job_id', 'N/A')}")
+                logger.debug(f"Job modified: {job_display}")
             except:
                 pass
                 
         elif event.code == EVENT_JOB_SUBMITTED:
             # Normal event - job was submitted to executor
             # Only log at debug level to reduce noise
+            # Skip heartbeat job - it has its own logger category
             try:
-                logger.debug(f"Job submitted: {getattr(event, 'job_id', 'N/A')}")
+                if job_id == 'scheduler_heartbeat':
+                    heartbeat_logger.debug(f"Job submitted: {job_display}")
+                else:
+                    logger.debug(f"Job submitted: {job_display}")
             except:
                 pass
                 

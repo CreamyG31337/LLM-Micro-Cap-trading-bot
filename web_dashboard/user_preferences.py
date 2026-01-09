@@ -346,42 +346,41 @@ def set_user_preference(key: str, value: Any) -> bool:
         client = None
         user_token = None
         try:
-            from streamlit_utils import get_supabase_client
-            # Try to get token from Streamlit context
-            try:
-                from auth_utils import get_user_token
-                user_token = get_user_token()
-                client = get_supabase_client(user_token=user_token)
-            except ImportError:
-                client = get_supabase_client()
-        except ImportError:
-            # Flask context - need to get token from Flask request
-            try:
-                from supabase_client import SupabaseClient
-                from flask_auth_utils import get_auth_token, get_refresh_token
-                from flask import has_request_context
-                
-                if has_request_context():
-                    # Get both tokens from Flask cookies
+            # IMPORTANT: Check Flask context FIRST, before Streamlit
+            # When Flask threads call this (e.g., from Flask API endpoints), they don't have st.session_state,
+            # so we need to get tokens from Flask cookies instead
+            from flask import has_request_context
+            
+            if has_request_context():
+                # We're in a Flask request - get tokens from cookies
+                try:
+                    from supabase_client import SupabaseClient
+                    from flask_auth_utils import get_auth_token, get_refresh_token
+                    
                     user_token = get_auth_token()
                     refresh_token = get_refresh_token()
                     if user_token:
                         logger.info(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}, refresh: {len(refresh_token) if refresh_token else 0}) for preference '{key}'")
                         client = SupabaseClient(user_token=user_token, refresh_token=refresh_token)
-                        # Verify the client has the token set
-                        if hasattr(client, '_user_token') and client._user_token:
-                            logger.info(f"[PREF] Client token verified: {client._user_token[:20]}...")
-                        else:
-                            logger.warning(f"[PREF] Client created but _user_token not set!")
                     else:
                         logger.warning(f"[PREF] No token available for preference '{key}' - creating client without token")
                         client = SupabaseClient()
-                else:
-                    logger.warning(f"[PREF] No Flask request context for preference '{key}' - creating client without token")
-                    client = SupabaseClient()
-            except ImportError:
-                logger.warning("Cannot set preference: no Supabase client available")
-                return False
+                except ImportError as e:
+                    logger.warning(f"Cannot set preference in Flask context: {e}")
+                    return False
+            else:
+                # Not in Flask request context, try Streamlit
+                try:
+                    from streamlit_utils import get_supabase_client
+                    from auth_utils import get_user_token
+                    user_token = get_user_token()
+                    client = get_supabase_client(user_token=user_token)
+                except ImportError:
+                    client = get_supabase_client()
+        except ImportError:
+            # Neither Flask nor Streamlit available
+            logger.warning("Cannot set preference: no Supabase client available")
+            return False
         
         if not client:
             logger.warning("Cannot set preference: no Supabase client")

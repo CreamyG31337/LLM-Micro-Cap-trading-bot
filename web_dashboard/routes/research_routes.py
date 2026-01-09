@@ -129,5 +129,17 @@ def research_dashboard():
         
     except Exception as e:
         logger.error(f"Error in research dashboard: {e}", exc_info=True)
-        # Fallback to simple error page or main dashboard
-        return render_template('base.html', error=str(e), **get_navigation_context())
+        # Return error page with details
+        user_email = get_user_email_flask()
+        user_theme = get_user_preference('theme', default='system')
+        nav_context = get_navigation_context(current_page='research')
+        
+        return render_template(
+            'error.html' if Path('templates/error.html').exists() else 'base.html', 
+            error_title="Research Repository Error",
+            error_message=str(e),
+            error_details="Please check the logs for more information.",
+            user_email=user_email,
+            user_theme=user_theme,
+            **nav_context
+        ), 500

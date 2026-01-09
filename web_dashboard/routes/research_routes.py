@@ -114,7 +114,14 @@ def research_dashboard():
             logger.warning("ResearchRepository returned None for articles")
             articles = []
         
-        logger.info(f"Research dashboard: Fetched {len(articles)} articles")
+        # Filter out any None articles and ensure valid structure
+        articles = [a for a in articles if a is not None]
+        logger.info(f"Research dashboard: Fetched {len(articles)} valid articles")
+        
+        # Ensure each article has tickers field (defensive)
+        for article in articles:
+            if not hasattr(article, 'tickers') or article.tickers is None:
+                article.tickers = []
             
         # Get common context
         user_email = get_user_email_flask()

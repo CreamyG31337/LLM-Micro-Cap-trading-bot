@@ -140,31 +140,6 @@ steps:
         
         echo "Build exit codes from files: Streamlit=$STREAMLIT_EXIT Flask=$FLASK_EXIT Cookie=$COOKIE_EXIT"
         
-        # Also verify images exist as a double-check
-        if docker images trading-dashboard:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "trading-dashboard:latest" 2>/dev/null; then
-          echo "✅ Streamlit image verified to exist"
-          if [ "$STREAMLIT_EXIT" != "0" ]; then
-            echo "⚠️  Warning: Streamlit build reported exit code $STREAMLIT_EXIT but image exists - treating as success"
-            STREAMLIT_EXIT=0
-          fi
-        fi
-        
-        if docker images trading-dashboard-flask:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "trading-dashboard-flask:latest" 2>/dev/null; then
-          echo "✅ Flask image verified to exist"
-          if [ "$FLASK_EXIT" != "0" ]; then
-            echo "⚠️  Warning: Flask build reported exit code $FLASK_EXIT but image exists - treating as success"
-            FLASK_EXIT=0
-          fi
-        fi
-        
-        if docker images cookie-refresher:latest --format "{{.Repository}}:{{.Tag}}" | grep -q "cookie-refresher:latest" 2>/dev/null; then
-          echo "✅ Cookie refresher image verified to exist"
-          if [ "$COOKIE_EXIT" != "0" ]; then
-            echo "⚠️  Warning: Cookie refresher build reported exit code $COOKIE_EXIT but image exists - treating as success"
-            COOKIE_EXIT=0
-          fi
-        fi
-        
         # Check results and show errors
         BUILD_ERRORS=0
         if [ "$STREAMLIT_EXIT" != "0" ]; then

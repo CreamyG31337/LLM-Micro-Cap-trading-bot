@@ -139,7 +139,7 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                 show = False
             
             # Check service availability for specific pages
-            if link['page'] == 'research' or link['page'] == 'social_sentiment' or link['page'] == 'etf_holdings':
+            if link['page'] == 'social_sentiment' or link['page'] == 'etf_holdings':
                 # These require Postgres
                 try:
                     from postgres_client import PostgresClient
@@ -148,6 +148,7 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                         show = False
                 except Exception:
                     show = False
+
             
             if link['page'] == 'ai_assistant':
                 # Check Ollama availability

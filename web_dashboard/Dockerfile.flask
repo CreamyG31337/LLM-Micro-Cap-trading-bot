@@ -57,6 +57,8 @@ ENV FLASK_PORT=5001
 
 # Copy entire project (needed for imports)
 # This layer rebuilds on every code change, but dependencies are cached above
+# Cache-busting: Use build arg to force rebuild when code changes
+ARG CACHEBUST=1
 COPY . /app
 
 # Copy built Tailwind CSS from builder stage

@@ -110,11 +110,11 @@ steps:
         echo "Log files: STREAMLIT=$STREAMLIT_LOG FLASK=$FLASK_LOG COOKIE=$COOKIE_LOG"
         
         # Build Streamlit image (capture both stdout and stderr)
-        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "$STREAMLIT_EXIT_FILE") &
+        (docker build --progress=plain --build-arg CACHEBUST=${CI_COMMIT_SHA} -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "$STREAMLIT_EXIT_FILE") &
         STREAMLIT_PID=$!
         
         # Build Flask image (capture both stdout and stderr)
-        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "$FLASK_EXIT_FILE") &
+        (docker build --progress=plain --build-arg CACHEBUST=${CI_COMMIT_SHA} -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "$FLASK_EXIT_FILE") &
         FLASK_PID=$!
         
         # Build Cookie refresher image (capture both stdout and stderr)

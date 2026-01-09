@@ -85,6 +85,7 @@ steps:
       # This leverages Docker layer caching and eliminates the need to install Node.js in CI
       # Using BuildKit for better caching and parallel builds
       - |
+        set +e  # Don't exit on error - we'll handle errors manually
         export DOCKER_BUILDKIT=1
         export COMPOSE_DOCKER_CLI_BUILD=1
         echo "Building Docker images in parallel with BuildKit..."
@@ -97,28 +98,42 @@ steps:
         STREAMLIT_LOG=$(mktemp)
         FLASK_LOG=$(mktemp)
         COOKIE_LOG=$(mktemp)
+        STREAMLIT_EXIT_FILE="${STREAMLIT_LOG}.exit"
+        FLASK_EXIT_FILE="${FLASK_LOG}.exit"
+        COOKIE_EXIT_FILE="${COOKIE_LOG}.exit"
+        
+        echo "Log files: STREAMLIT=$STREAMLIT_LOG FLASK=$FLASK_LOG COOKIE=$COOKIE_LOG"
         
         # Build Streamlit image (capture both stdout and stderr)
-        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "${STREAMLIT_LOG}.exit") &
+        (docker build --progress=plain -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; EXIT_CODE=$?; echo $EXIT_CODE > "$STREAMLIT_EXIT_FILE"; exit $EXIT_CODE) &
         STREAMLIT_PID=$!
         
         # Build Flask image (capture both stdout and stderr)
-        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "${FLASK_LOG}.exit") &
+        (docker build --progress=plain -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; EXIT_CODE=$?; echo $EXIT_CODE > "$FLASK_EXIT_FILE"; exit $EXIT_CODE) &
         FLASK_PID=$!
         
         # Build Cookie refresher image (capture both stdout and stderr)
-        (docker build --progress=plain -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . > "$COOKIE_LOG" 2>&1; echo $? > "${COOKIE_LOG}.exit") &
+        (docker build --progress=plain -f web_dashboard/Dockerfile.cookie-refresher -t cookie-refresher:latest . > "$COOKIE_LOG" 2>&1; EXIT_CODE=$?; echo $EXIT_CODE > "$COOKIE_EXIT_FILE"; exit $EXIT_CODE) &
         COOKIE_PID=$!
+        
+        echo "Waiting for builds to complete (PIDs: Streamlit=$STREAMLIT_PID Flask=$FLASK_PID Cookie=$COOKIE_PID)..."
         
         # Wait for all builds to complete
         wait $STREAMLIT_PID
+        STREAMLIT_WAIT_EXIT=$?
         wait $FLASK_PID
+        FLASK_WAIT_EXIT=$?
         wait $COOKIE_PID
+        COOKIE_WAIT_EXIT=$?
         
-        # Read exit codes
-        STREAMLIT_EXIT=$(cat "${STREAMLIT_LOG}.exit" 2>/dev/null || echo "1")
-        FLASK_EXIT=$(cat "${FLASK_LOG}.exit" 2>/dev/null || echo "1")
-        COOKIE_EXIT=$(cat "${COOKIE_LOG}.exit" 2>/dev/null || echo "1")
+        echo "Builds completed. Wait exit codes: Streamlit=$STREAMLIT_WAIT_EXIT Flask=$FLASK_WAIT_EXIT Cookie=$COOKIE_WAIT_EXIT"
+        
+        # Read exit codes from files
+        STREAMLIT_EXIT=$(cat "$STREAMLIT_EXIT_FILE" 2>/dev/null || echo "1")
+        FLASK_EXIT=$(cat "$FLASK_EXIT_FILE" 2>/dev/null || echo "1")
+        COOKIE_EXIT=$(cat "$COOKIE_EXIT_FILE" 2>/dev/null || echo "1")
+        
+        echo "Build exit codes: Streamlit=$STREAMLIT_EXIT Flask=$FLASK_EXIT Cookie=$COOKIE_EXIT"
         
         # Check results and show errors
         BUILD_ERRORS=0
@@ -152,8 +167,12 @@ steps:
           echo "✅ Cookie refresher build succeeded"
         fi
         
-        # Clean up log files
-        rm -f "$STREAMLIT_LOG" "${STREAMLIT_LOG}.exit" "$FLASK_LOG" "${FLASK_LOG}.exit" "$COOKIE_LOG" "${COOKIE_LOG}.exit"
+        # Clean up log files (but keep them if builds failed for debugging)
+        if [ $BUILD_ERRORS -eq 0 ]; then
+          rm -f "$STREAMLIT_LOG" "$STREAMLIT_EXIT_FILE" "$FLASK_LOG" "$FLASK_EXIT_FILE" "$COOKIE_LOG" "$COOKIE_EXIT_FILE"
+        else
+          echo "⚠️  Keeping log files for debugging: $STREAMLIT_LOG $FLASK_LOG $COOKIE_LOG"
+        fi
         
         if [ $BUILD_ERRORS -gt 0 ]; then
           echo "❌ ERROR: $BUILD_ERRORS build(s) failed"

@@ -52,7 +52,10 @@ RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 COPY . /app
 
 # Copy built Tailwind CSS from builder stage
+# Ensure directory exists first, then copy the built CSS file
+RUN mkdir -p web_dashboard/static/css
 COPY --from=tailwind-builder /app/web_dashboard/static/css/tailwind.css ./web_dashboard/static/css/tailwind.css
+RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
 # Set PYTHONPATH to include project root FIRST, then web_dashboard
 # IMPORTANT: Order matters! /app must come before /app/web_dashboard 

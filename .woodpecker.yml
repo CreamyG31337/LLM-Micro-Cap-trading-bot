@@ -80,15 +80,9 @@ steps:
       - mkdir -p /home/lance/trading-dashboard-logs /shared/cookies /deploy_target/frontend
       - chmod 777 /home/lance/trading-dashboard-logs /shared/cookies
       
-      # Build Tailwind CSS (production-optimized, before Docker builds)
-      - echo "Building Tailwind CSS..."
-      - apk add --no-cache nodejs npm
-      - npm install
-      - npm run build:css
-      - echo "✅ Tailwind CSS built successfully"
-      - ls -lh web_dashboard/static/css/tailwind.css || echo "⚠️  CSS file not found"
-      
       # Build all Docker images in parallel for faster deployment
+      # Note: Tailwind CSS is now built inside Dockerfiles using multi-stage builds
+      # This leverages Docker layer caching and eliminates the need to install Node.js in CI
       # Using BuildKit for better caching and parallel builds
       - |
         export DOCKER_BUILDKIT=1

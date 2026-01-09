@@ -2,7 +2,30 @@
 # Separate container for Flask routes (Settings page, API endpoints)
 # Runs on port 5001 to avoid conflict with NFT calculator on port 5000
 # Optimized for fast builds with layer caching
+# Multi-stage build: Build Tailwind CSS first, then Python app
 
+# Stage 1: Build Tailwind CSS
+FROM node:20-alpine AS tailwind-builder
+WORKDIR /app
+
+# Copy package files for dependency installation (better layer caching)
+COPY package.json ./
+COPY tailwind.config.js ./
+
+# Install npm dependencies (cached layer - only rebuilds if package.json changes)
+RUN npm install
+
+# Copy Tailwind input CSS
+COPY web_dashboard/static/css/input.css ./web_dashboard/static/css/
+
+# Copy source files needed for Tailwind content scanning
+COPY web_dashboard/templates ./web_dashboard/templates
+COPY web_dashboard/static ./web_dashboard/static
+
+# Build Tailwind CSS (production-optimized, minified)
+RUN npm run build:css
+
+# Stage 2: Python app
 FROM python:3.11-slim
 
 # Set working directory
@@ -33,6 +56,9 @@ ENV FLASK_PORT=5001
 # Copy entire project (needed for imports)
 # This layer rebuilds on every code change, but dependencies are cached above
 COPY . /app
+
+# Copy built Tailwind CSS from builder stage
+COPY --from=tailwind-builder /app/web_dashboard/static/css/tailwind.css ./web_dashboard/static/css/tailwind.css
 
 # Expose Flask port
 EXPOSE 5001

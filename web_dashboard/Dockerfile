@@ -8,7 +8,7 @@ FROM node:20-alpine AS tailwind-builder
 WORKDIR /app
 
 # Copy package files for dependency installation (better layer caching)
-COPY web_dashboard/package.json ./
+COPY package.json ./
 COPY tailwind.config.js ./
 
 # Install npm dependencies (cached layer - only rebuilds if package.json changes)

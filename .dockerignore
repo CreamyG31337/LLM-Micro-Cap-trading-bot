@@ -75,6 +75,9 @@ Research/
 !web_dashboard/**/*.json
 !schema/**/*.json
 !*.keys.json
+!package.json
+!package-lock.json
+!tailwind.config.js
 
 # Git and version control
 .git/

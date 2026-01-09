@@ -263,8 +263,10 @@ def require_admin(f):
             if token and len(token.split('.')) == 3:
                 try:
                     from supabase_client import SupabaseClient
+                    from flask_auth_utils import get_refresh_token
                     # Create Supabase client with user token (handles auth header properly)
-                    client = SupabaseClient(user_token=token)
+                    refresh_token = get_refresh_token()
+                    client = SupabaseClient(user_token=token, refresh_token=refresh_token)
                     # Call RPC function (same way Streamlit does it)
                     result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                     
@@ -347,7 +349,9 @@ def is_admin():
             # This is critical because RPC often returns false/error for Anon key
             try:
                 from supabase_client import SupabaseClient
-                client = SupabaseClient(user_token=token)
+                from flask_auth_utils import get_refresh_token
+                refresh_token = get_refresh_token()
+                client = SupabaseClient(user_token=token, refresh_token=refresh_token)
                 result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                 
                 if result.data is not None:

@@ -314,3 +314,8 @@ data/conversations/
 # Research PDF files (ignore PDFs but keep folder structure)
 Research/**/*.pdf
 !Research/**/.gitkeep
+
+# Node.js dependencies and generated CSS
+node_modules/
+package-lock.json
+web_dashboard/static/css/tailwind.css

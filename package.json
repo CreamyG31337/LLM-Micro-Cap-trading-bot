@@ -1,0 +1,17 @@
+{
+  "name": "llm-micro-cap-trading-bot",
+  "version": "1.0.0",
+  "description": "Trading bot web dashboard with Tailwind CSS",
+  "scripts": {
+    "build:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.35",
+    "autoprefixer": "^10.4.17"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

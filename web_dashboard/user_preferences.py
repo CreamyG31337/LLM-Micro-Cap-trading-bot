@@ -157,7 +157,8 @@ def get_user_preference(key: str, default: Any = None) -> Any:
             return default
         
         # Call the RPC function to get preference
-        result = client.supabase.rpc('get_user_preference', {'pref_key': key}).execute()
+        # Use client.rpc() method which ensures Authorization header is set
+        result = client.rpc('get_user_preference', {'pref_key': key})
         
         # Debug logging
         logger.debug(f"[PREF] RPC result for '{key}': data={result.data}, type={type(result.data).__name__}, raw={repr(result.data)}")
@@ -354,11 +355,12 @@ def set_user_preference(key: str, value: Any) -> bool:
             
             # Try without user_uuid first (preferred - uses auth.uid())
             # If that fails, we'll pass it explicitly in the HTTP fallback
-            result = client.supabase.rpc('set_user_preference', {
+            # Use client.rpc() method which ensures Authorization header is set
+            result = client.rpc('set_user_preference', {
                 'pref_key': key,
                 'pref_value': json_value
                 # Don't pass user_uuid - let auth.uid() work from Authorization header
-            }).execute()
+            })
             
             # Check if the RPC call succeeded
             # The function returns a boolean, but Supabase might wrap it
@@ -549,7 +551,8 @@ def get_all_user_preferences() -> Dict[str, Any]:
             return {}
         
         # Call the RPC function to get all preferences
-        result = client.supabase.rpc('get_user_preferences').execute()
+        # Use client.rpc() method which ensures Authorization header is set
+        result = client.rpc('get_user_preferences')
         
         if result.data is not None:
             # Handle both scalar and list responses

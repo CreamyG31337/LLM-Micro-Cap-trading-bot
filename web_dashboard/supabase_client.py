@@ -113,6 +113,68 @@ class SupabaseClient:
             logger.error(f"❌ Supabase connection failed: {e}")
             return False
     
+    def rpc(self, function_name: str, params: dict = None) -> Any:
+        """Call RPC function with guaranteed Authorization header
+        
+        This method ensures the Authorization header is set correctly before making
+        the RPC call, which is required for auth.uid() to work in SQL functions.
+        
+        Args:
+            function_name: Name of the RPC function to call
+            params: Parameters to pass to the function (optional)
+            
+        Returns:
+            Result of the RPC call
+            
+        Raises:
+            Exception: If RPC call fails
+        """
+        if not hasattr(self.supabase, 'postgrest'):
+            raise ValueError("Supabase client does not have postgrest attribute")
+        
+        postgrest = self.supabase.postgrest
+        
+        # Ensure Authorization header is set RIGHT before making the call
+        # This is critical for auth.uid() to work in Postgres functions
+        if hasattr(self, '_user_token') and self._user_token:
+            # Set header directly on session - this is more reliable than postgrest.auth()
+            if hasattr(postgrest, 'session'):
+                session_headers = postgrest.session.headers
+                
+                # Headers object type - check if it supports dict-like assignment
+                try:
+                    # Try setting directly (works for most header types)
+                    session_headers['Authorization'] = f'Bearer {self._user_token}'
+                except Exception as header_error:
+                    # Fallback for httpx.Headers which might require different approach
+                    logger.warning(f"Could not set Authorization header directly: {header_error}")
+                    # For httpx, try merging
+                    try:
+                        from httpx import Headers
+                        if isinstance(session_headers, Headers):
+                            new_headers = session_headers.copy()
+                            new_headers['Authorization'] = f'Bearer {self._user_token}'
+                            postgrest.session.headers = new_headers
+                    except ImportError:
+                        pass
+        
+        # Now make the RPC call
+        # The session should have the Authorization header set above
+        if params:
+            result = postgrest.rpc(function_name, params).execute()
+        else:
+            result = postgrest.rpc(function_name).execute()
+        
+        # Verify header was set (for debugging)
+        if hasattr(self, '_user_token') and self._user_token:
+            final_auth = postgrest.session.headers.get('Authorization', '')
+            if not final_auth or self._user_token not in final_auth:
+                logger.warning(f"[RPC] Authorization header was NOT included in RPC call for {function_name}")
+            else:
+                logger.debug(f"[RPC] Authorization header was included: {final_auth[:30]}...")
+        
+        return result
+    
     def ensure_ticker_in_securities(self, ticker: str, currency: str, company_name: Optional[str] = None) -> bool:
         """Ensure ticker exists in securities table with metadata from yfinance.
         

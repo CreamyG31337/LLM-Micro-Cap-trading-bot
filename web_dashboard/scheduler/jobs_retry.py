@@ -64,13 +64,13 @@ def process_retry_queue_job() -> None:
         try:
             client = SupabaseClient(use_service_role=True)
             running_jobs = client.supabase.table("job_executions")\
-                .select("job_id")\
+                .select("job_name")\
                 .eq("status", "running")\
-                .in_("job_id", OLLAMA_JOBS)\
+                .in_("job_name", OLLAMA_JOBS)\
                 .execute()
             
             if running_jobs.data:
-                running_names = [j['job_id'] for j in running_jobs.data]
+                running_names = [j['job_name'] for j in running_jobs.data]
                 duration_ms = int((time.time() - start_time) * 1000)
                 message = f"Skipped: Ollama job(s) running: {running_names}"
                 log_job_execution(job_id, success=True, message=message, duration_ms=duration_ms)

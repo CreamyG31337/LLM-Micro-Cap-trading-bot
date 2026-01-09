@@ -92,44 +92,58 @@ class SupabaseClient:
             # Method 2: Set Authorization header directly on postgrest client
             # This ensures table queries work
             try:
+                logger.info(f"[SUPABASE_CLIENT] postgrest exists: {hasattr(self.supabase, 'postgrest')}")
                 if hasattr(self.supabase, 'postgrest') and self.supabase.postgrest:
+                    logger.info(f"[SUPABASE_CLIENT] postgrest.session exists: {hasattr(self.supabase.postgrest, 'session')}")
+                    logger.info(f"[SUPABASE_CLIENT] postgrest.auth exists: {hasattr(self.supabase.postgrest, 'auth')}")
                     # The postgrest client should have a session attribute with headers
                     if hasattr(self.supabase.postgrest, 'session'):
                         # Set Authorization header directly on the session
                         self.supabase.postgrest.session.headers["Authorization"] = f"Bearer {user_token}"
-                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on postgrest.session")
+                        logger.info("[SUPABASE_CLIENT] ✅ Set Authorization header on postgrest.session")
                     # Also try the auth() method if it exists
                     elif hasattr(self.supabase.postgrest, 'auth'):
                         self.supabase.postgrest.auth(user_token)
-                        logger.debug("[SUPABASE_CLIENT] Called postgrest.auth()")
+                        logger.info("[SUPABASE_CLIENT] ✅ Called postgrest.auth()")
+                    else:
+                        logger.warning("[SUPABASE_CLIENT] ❌ No postgrest.session or postgrest.auth() available")
             except Exception as e:
-                logger.warning(f"[SUPABASE_CLIENT] Could not set postgrest headers: {e}")
+                logger.warning(f"[SUPABASE_CLIENT] ❌ Could not set postgrest headers: {e}")
             
             # Method 3: CRITICAL FIX - Set headers on the underlying httpx/requests client
             # RPC calls use the same client, so this ensures auth.uid() works
             try:
                 # The Supabase client stores options which contain headers
+                logger.info(f"[SUPABASE_CLIENT] options exists: {hasattr(self.supabase, 'options')}")
                 if hasattr(self.supabase, 'options') and self.supabase.options:
+                    logger.info(f"[SUPABASE_CLIENT] options.headers exists: {hasattr(self.supabase.options, 'headers')}")
                     # Update the headers in options
                     if not hasattr(self.supabase.options, 'headers'):
                         self.supabase.options.headers = {}
                     self.supabase.options.headers["Authorization"] = f"Bearer {user_token}"
-                    logger.debug("[SUPABASE_CLIENT] Set Authorization header in client options")
+                    logger.info("[SUPABASE_CLIENT] ✅ Set Authorization header in client options")
                 
                 # Also try to set on the rest client directly
+                logger.info(f"[SUPABASE_CLIENT] rest exists: {hasattr(self.supabase, 'rest')}")
                 if hasattr(self.supabase, 'rest') and self.supabase.rest:
+                    logger.info(f"[SUPABASE_CLIENT] rest.session exists: {hasattr(self.supabase.rest, 'session')}")
                     if hasattr(self.supabase.rest, 'session'):
                         self.supabase.rest.session.headers["Authorization"] = f"Bearer {user_token}"
-                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on rest.session")
+                        logger.info("[SUPABASE_CLIENT] ✅ Set Authorization header on rest.session")
                 
                 # For SDK v2+, also check for _client attribute
+                logger.info(f"[SUPABASE_CLIENT] _client exists: {hasattr(self.supabase, '_client')}")
                 if hasattr(self.supabase, '_client'):
+                    logger.info(f"[SUPABASE_CLIENT] _client.headers exists: {hasattr(self.supabase._client, 'headers')}")
                     if hasattr(self.supabase._client, 'headers'):
                         self.supabase._client.headers["Authorization"] = f"Bearer {user_token}"
-                        logger.debug("[SUPABASE_CLIENT] Set Authorization header on _client")
+                        logger.info("[SUPABASE_CLIENT] ✅ Set Authorization header on _client")
+                
+                # NEW: Try to find where RPC calls are actually made
+                logger.info(f"[SUPABASE_CLIENT] Client attributes: {[attr for attr in dir(self.supabase) if not attr.startswith('_')]}")
                         
             except Exception as e:
-                logger.warning(f"[SUPABASE_CLIENT] Could not set client-level headers: {e}")
+                logger.warning(f"[SUPABASE_CLIENT] ❌ Could not set client-level headers: {e}")
             
             logger.info("[SUPABASE_CLIENT] Completed user token initialization")
     

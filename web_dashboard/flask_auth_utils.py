@@ -21,6 +21,11 @@ def get_auth_token() -> Optional[str]:
     return request.cookies.get('auth_token') or request.cookies.get('session_token')
 
 
+def get_refresh_token() -> Optional[str]:
+    """Get refresh_token from cookies"""
+    return request.cookies.get('refresh_token')
+
+
 def get_user_id_flask() -> Optional[str]:
     """Extract user ID from auth_token/session_token cookie (Flask context)"""
     token = get_auth_token()

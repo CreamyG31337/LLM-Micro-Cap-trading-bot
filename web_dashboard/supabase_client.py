@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 class SupabaseClient:
     """Client for interacting with Supabase database"""
     
-    def __init__(self, user_token: Optional[str] = None, use_service_role: bool = False):
+    def __init__(self, user_token: Optional[str] = None, refresh_token: Optional[str] = None, use_service_role: bool = False):
         """Initialize Supabase client
         
         Args:
@@ -80,14 +80,24 @@ class SupabaseClient:
             
             try:
                 # Method 1: Set session via auth client (standard approach)
-                # This might work for newer SDK versions
-                self.supabase.auth.set_session(
-                    access_token=user_token,
-                    refresh_token=""  # Empty refresh token - may cause set_session to fail
-                )
-                logger.debug("[SUPABASE_CLIENT] Successfully called auth.set_session()")
+                # This is the CORRECT way - it sets auth headers globally for ALL requests
+                # including RPC calls, table queries, etc.
+                if refresh_token:
+                    # Use both tokens for proper session
+                    self.supabase.auth.set_session(
+                        access_token=user_token,
+                        refresh_token=refresh_token
+                    )
+                    logger.info("[SUPABASE_CLIENT] ✅ Successfully called auth.set_session() with refresh_token")
+                else:
+                    # Try with empty refresh_token as fallback
+                    self.supabase.auth.set_session(
+                        access_token=user_token,
+                        refresh_token=""
+                    )
+                    logger.info("[SUPABASE_CLIENT] ⚠️ Called auth.set_session() without refresh_token (may not work for RPC)")
             except Exception as e:
-                logger.debug(f"[SUPABASE_CLIENT] auth.set_session() failed (expected): {e}")
+                logger.warning(f"[SUPABASE_CLIENT] ❌ auth.set_session() failed: {e}")
             
             # Method 2: Set Authorization header directly on postgrest client
             # This ensures table queries work

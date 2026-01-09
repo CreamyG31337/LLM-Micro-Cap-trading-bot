@@ -357,15 +357,16 @@ def set_user_preference(key: str, value: Any) -> bool:
             # Flask context - need to get token from Flask request
             try:
                 from supabase_client import SupabaseClient
-                from flask_auth_utils import get_auth_token
+                from flask_auth_utils import get_auth_token, get_refresh_token
                 from flask import has_request_context
                 
                 if has_request_context():
-                    # Get token from Flask cookies
+                    # Get both tokens from Flask cookies
                     user_token = get_auth_token()
+                    refresh_token = get_refresh_token()
                     if user_token:
-                        logger.info(f"[PREF] Creating SupabaseClient with token (length: {len(user_token)}) for preference '{key}'")
-                        client = SupabaseClient(user_token=user_token)
+                        logger.info(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}, refresh: {len(refresh_token) if refresh_token else 0}) for preference '{key}'")
+                        client = SupabaseClient(user_token=user_token, refresh_token=refresh_token)
                         # Verify the client has the token set
                         if hasattr(client, '_user_token') and client._user_token:
                             logger.info(f"[PREF] Client token verified: {client._user_token[:20]}...")

@@ -141,6 +141,24 @@ class SupabaseClient:
                 
                 # NEW: Try to find where RPC calls are actually made
                 logger.info(f"[SUPABASE_CLIENT] Client attributes: {[attr for attr in dir(self.supabase) if not attr.startswith('_')]}")
+                
+                # CRITICAL DEBUG: Inspect postgrest.session deeply
+                if hasattr(self.supabase, 'postgrest') and self.supabase.postgrest:
+                    if hasattr(self.supabase.postgrest, 'session'):
+                        session = self.supabase.postgrest.session
+                        logger.info(f"[SUPABASE_CLIENT] postgrest.session type: {type(session)}")
+                        logger.info(f"[SUPABASE_CLIENT] postgrest.session.headers type: {type(session.headers)}")
+                        logger.info(f"[SUPABASE_CLIENT] postgrest.session.headers keys: {list(session.headers.keys())}")
+                        logger.info(f"[SUPABASE_CLIENT] Authorization in headers: {'Authorization' in session.headers}")
+                        if 'Authorization' in session.headers:
+                            auth_val = session.headers['Authorization']
+                            logger.info(f"[SUPABASE_CLIENT] Current Authorization header: {auth_val[:50]}..." if len(auth_val) > 50 else f"[SUPABASE_CLIENT] Current Authorization header: {auth_val}")
+                
+                # Check if there's a shared session for RPC
+                # Try to access the actual HTTP client used by rpc method
+                if hasattr(self.supabase.postgrest, '_client'):
+                    logger.info(f"[SUPABASE_CLIENT] postgrest has _client: {type(self.supabase.postgrest._client)}")
+
                         
             except Exception as e:
                 logger.warning(f"[SUPABASE_CLIENT] ❌ Could not set client-level headers: {e}")

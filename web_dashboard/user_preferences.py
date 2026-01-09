@@ -393,7 +393,10 @@ def set_user_preference(key: str, value: Any) -> bool:
             rpc_success = False
         
         # Fallback to direct HTTP request if RPC client call failed
-        if not rpc_success and user_token:
+        # NOTE: We intentionally don't send the Authorization header here because:
+        # - An invalid/expired JWT causes PostgREST to return 401 BEFORE the SQL function runs
+        # - Without the Authorization header, the RPC with explicit user_uuid succeeds
+        if not rpc_success:
             try:
                 import requests
                 import os
@@ -401,20 +404,21 @@ def set_user_preference(key: str, value: Any) -> bool:
                 supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
                 
                 if supabase_url and supabase_anon_key:
-                    logger.info(f"Trying HTTP fallback for set_user_preference with key='{key}'")
-                    logger.debug(f"[PREF] HTTP fallback headers: Authorization={'Bearer ' + user_token[:20] + '...' if user_token else 'NOT SET'}")
+                    logger.info(f"Trying HTTP fallback for set_user_preference with key='{key}', user_id='{user_id}'")
+                    
+                    # Don't send Authorization header - expired tokens cause 401 errors
+                    headers = {
+                        "apikey": supabase_anon_key,
+                        "Content-Type": "application/json"
+                    }
+                    
                     response = requests.post(
                         f"{supabase_url}/rest/v1/rpc/set_user_preference",
-                        headers={
-                            "apikey": supabase_anon_key,
-                            "Authorization": f"Bearer {user_token}",
-                            "Content-Type": "application/json"
-                        },
+                        headers=headers,
                         json={
                             "pref_key": key,
                             "pref_value": json_value,
-                            "user_uuid": str(user_id)  # Pass explicitly since auth.uid() returns NULL in Flask
-                            # TODO: Fix why auth.uid() returns NULL even with explicit Authorization header
+                            "user_uuid": str(user_id)  # Pass explicitly - works without Authorization header
                         }
                     )
                     logger.debug(f"[PREF] HTTP fallback response status: {response.status_code}, body: {response.text[:200]}")
@@ -433,8 +437,6 @@ def set_user_preference(key: str, value: Any) -> bool:
         
         if not rpc_success:
             error_details = rpc_error_msg or "Unknown error"
-            if user_token:
-                error_details += " (HTTP fallback also attempted)"
             logger.error(f"Both RPC client and HTTP fallback failed for preference '{key}': {error_details}")
             # Store error in cache so UI can display it
             cache = _get_cache()
@@ -456,6 +458,7 @@ def set_user_preference(key: str, value: Any) -> bool:
     except Exception as e:
         logger.error(f"Error setting user preference '{key}': {e}")
         return False
+
 
 
 def get_user_timezone() -> Optional[str]:

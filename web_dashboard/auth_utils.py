@@ -111,26 +111,90 @@ def register_user(email: str, password: str) -> Optional[Dict]:
 
 
 def get_user_token() -> Optional[str]:
-    """Get current user's access token from session state"""
+    """Get current user's access token from session state
+    
+    IMPORTANT: This function is for Streamlit contexts ONLY!
+    If you're in a Flask context, use flask_auth_utils.get_auth_token() instead.
+    
+    Raises:
+        RuntimeError: If called from Flask context or when Streamlit is not available
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if st is None:
-        return None  # Not in Streamlit context
-    if "user_token" in st.session_state:
-        return st.session_state.user_token
-    return None
+        raise RuntimeError(
+            "get_user_token() called but Streamlit is not available. "
+            "Use flask_auth_utils.get_auth_token() in Flask context instead."
+        )
+    
+    # Check if we're actually in a Streamlit context with session_state
+    try:
+        if not hasattr(st, 'session_state'):
+            raise RuntimeError(
+                "get_user_token() called but st.session_state is not available. "
+                "You may be calling this from a Flask thread. "
+                "Use flask_auth_utils.get_auth_token() in Flask context instead."
+            )
+        
+        if "user_token" in st.session_state:
+            return st.session_state.user_token
+        
+        logger.debug("get_user_token(): No user_token in session_state")
+        return None
+        
+    except RuntimeError:
+        # Re-raise our own RuntimeErrors
+        raise
+    except Exception as e:
+        # st.session_state access failed - we're in wrong context
+        raise RuntimeError(
+            f"get_user_token() failed to access st.session_state - likely called from Flask thread! "
+            f"Use flask_auth_utils.get_auth_token() in Flask context instead. "
+            f"Original error: {e}"
+        )
 
 
 def get_user_id() -> Optional[str]:
-    """Get current user's ID from session state"""
-    if "user_id" in st.session_state:
-        return st.session_state.user_id
-    return None
+    """Get current user's ID from session state
+    
+    IMPORTANT: This function is for Streamlit contexts ONLY!
+    If you're in a Flask context, use flask_auth_utils.get_user_id_flask() instead.
+    
+    Raises:
+        RuntimeError: If called from Flask context
+    """
+    try:
+        if "user_id" in st.session_state:
+            return st.session_state.user_id
+        return None
+    except Exception as e:
+        raise RuntimeError(
+            f"get_user_id() failed to access st.session_state - likely called from Flask thread! "
+            f"Use flask_auth_utils.get_user_id_flask() in Flask context instead. "
+            f"Original error: {e}"
+        )
 
 
 def get_user_email() -> Optional[str]:
-    """Get current user's email from session state"""
-    if "user_email" in st.session_state:
-        return st.session_state.user_email
-    return None
+    """Get current user's email from session state
+    
+    IMPORTANT: This function is for Streamlit contexts ONLY!
+    If you're in a Flask context, use flask_auth_utils.get_user_email_flask() instead.
+    
+    Raises:
+        RuntimeError: If called from Flask context
+    """
+    try:
+        if "user_email" in st.session_state:
+            return st.session_state.user_email
+        return None
+    except Exception as e:
+        raise RuntimeError(
+            f"get_user_email() failed to access st.session_state - likely called from Flask thread! "
+            f"Use flask_auth_utils.get_user_email_flask() in Flask context instead. "
+            f"Original error: {e}"
+        )
 
 
 def is_authenticated() -> bool:

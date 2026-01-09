@@ -12,7 +12,7 @@ from auth import require_auth
 from research_repository import ResearchRepository
 from user_preferences import get_user_preference
 from flask_auth_utils import get_user_email_flask
-from app import get_navigation_context
+# Note: get_navigation_context imported inside function to avoid circular import
 
 logger = logging.getLogger('research')
 
@@ -124,6 +124,7 @@ def research_dashboard():
                 article.tickers = []
             
         # Get common context
+        from app import get_navigation_context  # Import here to avoid circular import
         user_email = get_user_email_flask()
         user_theme = get_user_preference('theme', default='system')
         nav_context = get_navigation_context(current_page='research')
@@ -152,6 +153,7 @@ def research_dashboard():
     except Exception as e:
         logger.error(f"Error in research dashboard: {e}", exc_info=True)
         # Return error page with details
+        from app import get_navigation_context  # Import here to avoid circular import
         user_email = get_user_email_flask()
         user_theme = get_user_preference('theme', default='system')
         nav_context = get_navigation_context(current_page='research')

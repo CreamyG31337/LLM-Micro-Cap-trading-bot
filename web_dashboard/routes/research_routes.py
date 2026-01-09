@@ -119,9 +119,10 @@ def research_dashboard():
         logger.info(f"Research dashboard: Fetched {len(articles)} valid articles")
         
         # Ensure each article has tickers field (defensive)
+        # Articles are dicts, not objects
         for article in articles:
-            if not hasattr(article, 'tickers') or article.tickers is None:
-                article.tickers = []
+            if 'tickers' not in article or article['tickers'] is None:
+                article['tickers'] = []
             
         # Get common context
         from app import get_navigation_context  # Import here to avoid circular import

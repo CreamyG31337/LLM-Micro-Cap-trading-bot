@@ -94,6 +94,18 @@ class SupabaseClient:
                     # The postgrest client uses this for Authorization header in all queries
                     self.supabase.postgrest.auth(user_token)
                 else:
+                    # If 'postgrest' is not present, try to set Authorization headers directly (rare situation)
+                    # Attempt to find the postgrest client via the supabase client attributes
+                    postgrest = getattr(self.supabase, "postgrest", None)
+                    if postgrest and hasattr(postgrest, "session"):
+                        # Remove 'apikey' header if it exists (confuses PostgREST when using JWT)
+                        postgrest.session.headers.pop("apikey", None)
+                        # Set Authorization header with user's token
+                        postgrest.session.headers["Authorization"] = f"Bearer {self._user_token}"
+                    # This is critical for auth.uid() to work in Postgres functions
+                    # Only proceed if _user_token is set and non-empty
+                    if hasattr(self, "_user_token") and self._user_token:
+                        pass  # No-op fallback for readability; optional for clarity
                     # Fallback: try to access via table client
                     # Create a dummy table query to access the underlying client
                     dummy_table = self.supabase.table("_dummy_table_for_auth")

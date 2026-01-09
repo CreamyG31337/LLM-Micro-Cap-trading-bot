@@ -129,30 +129,34 @@ def get_user_preference(key: str, default: Any = None) -> Any:
         # Get Supabase client (works in both contexts)
         client = None
         try:
-            from streamlit_utils import get_supabase_client
-            # Try to get token from Streamlit context
-            try:
-                from auth_utils import get_user_token
-                user_token = get_user_token()
-                client = get_supabase_client(user_token=user_token)
-            except ImportError:
-                client = get_supabase_client()
-        except ImportError:
-            # Flask context - need to get token from Flask request
-            try:
-                from supabase_client import SupabaseClient
-                from flask_auth_utils import get_auth_token, get_refresh_token
-                from flask import has_request_context
-                
-                if has_request_context():
-                    # Get both tokens from Flask cookies
+            # IMPORTANT: Check Flask context FIRST, before Streamlit
+            # When Flask threads call this, they don't have st.session_state
+            from flask import has_request_context
+            
+            if has_request_context():
+                # We're in a Flask request - get tokens from cookies
+                try:
+                    from supabase_client import SupabaseClient
+                    from flask_auth_utils import get_auth_token, get_refresh_token
+                    
                     user_token = get_auth_token()
                     refresh_token = get_refresh_token()
                     client = SupabaseClient(user_token=user_token, refresh_token=refresh_token) if user_token else SupabaseClient()
-                else:
-                    client = SupabaseClient()
-            except ImportError:
-                return default
+                except ImportError as e:
+                    logger.warning(f"Cannot get preference in Flask context: {e}")
+                    return default
+            else:
+                # Not in Flask request context, try Streamlit
+                try:
+                    from streamlit_utils import get_supabase_client
+                    from auth_utils import get_user_token
+                    user_token = get_user_token()
+                    client = get_supabase_client(user_token=user_token)
+                except ImportError:
+                    client = get_supabase_client()
+        except ImportError:
+            # Neither Flask nor Streamlit available
+            return default
         
         if not client:
             return default

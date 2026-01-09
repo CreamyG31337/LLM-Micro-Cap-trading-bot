@@ -152,7 +152,24 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
         from postgres_client import PostgresClient
         client = PostgresClient()
         if client.test_connection():
-            st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
+            # Check if Research page is migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('research'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    research_url = get_page_url('research')
+                    st.sidebar.markdown(f'''
+                        <a href="{research_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">📚</span>
+                            <span class="v2-nav-label">Research Repository</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
+            
             st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
             st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="💼")
     except Exception:

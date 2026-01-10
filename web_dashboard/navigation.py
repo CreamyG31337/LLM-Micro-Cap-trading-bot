@@ -210,30 +210,23 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     
     # AI Assistant link (if available and requested)
     if show_ai_assistant:
+        # Check if AI Assistant page is migrated to Flask
         try:
-            from ollama_client import check_ollama_health
-            
-            if check_ollama_health():
-                # AI Assistant emoji options:
-                # 🤖 (robot - default, may be wider)
-                # 🧠 (brain - good alignment)
-                # 💡 (lightbulb - good alignment)
-                # ⚡ (lightning - good alignment)
-                # 🎯 (target - good alignment)
-                # 🔮 (crystal ball - good alignment)
-                # ✨ (sparkles - good alignment)
-                # 🚀 (rocket - good alignment)
-                # 💬 (speech bubble - good alignment)
-                # 🎓 (graduation cap - good alignment)
-                ai_emoji = "🧠"  # Change this to any emoji from the list above
-                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon=ai_emoji)
+            from shared_navigation import is_page_migrated, get_page_url
+            if is_v2_enabled and is_page_migrated('ai_assistant'):
+                # Use markdown link for Flask route with matching Streamlit styling
+                ai_assistant_url = get_page_url('ai_assistant')
+                st.sidebar.markdown(f'''
+                    <a href="{ai_assistant_url}" target="_self" class="v2-nav-link">
+                        <span class="v2-nav-icon">🧠</span>
+                        <span class="v2-nav-label">AI Assistant</span>
+                    </a>
+                ''', unsafe_allow_html=True)
             else:
-                with st.sidebar.expander("💬 Chat Assistant", expanded=False):
-                    st.warning("AI Assistant unavailable")
-                    st.caption("Ollama is not running or not accessible.")
-        except Exception:
-            # Silently fail if Ollama check not available
-            pass
+                st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🧠")
+        except ImportError:
+            # Fallback if shared_navigation not available
+            st.sidebar.page_link("pages/ai_assistant.py", label="AI Assistant", icon="🧠")
     
     # Settings link (if requested)
     if show_settings:

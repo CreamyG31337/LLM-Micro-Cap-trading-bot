@@ -167,14 +167,7 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                     show = False
 
             
-            if link['page'] == 'ai_assistant':
-                # Check Ollama availability
-                try:
-                    from ollama_client import check_ollama_health
-                    if not check_ollama_health():
-                        show = False
-                except Exception:
-                    show = False
+            # AI Assistant - always show (let the page handle Ollama unavailability)
             
             # Determine URL (use Flask route if migrated and v2 enabled)
             url = link['url']

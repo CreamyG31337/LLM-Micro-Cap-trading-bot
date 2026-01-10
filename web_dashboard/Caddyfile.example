@@ -62,6 +62,7 @@
 		reverse_proxy localhost:8501
 	}
 
+
     # Flask Static Assets (Theme CSS etc)
     # Routed to /assets to avoid conflict with Streamlit's /static
     handle /assets/* {
@@ -98,6 +99,22 @@
             }
         }
     }
+
+	# Fix Streamlit health/stream paths - Hybrid Safe Matcher
+	# 1. path glob: Ensures we NEVER match normal pages (Safety)
+	# 2. path_regexp: Extracts the /_stcore/... part for the rewrite (Functionality)
+	@stcore_safe {
+		path */_stcore/health */_stcore/host-config */_stcore/stream
+		path_regexp stcore_capture (/_stcore/.*)$
+	}
+	handle @stcore_safe {
+		rewrite * {re.stcore_capture.1}
+		reverse_proxy localhost:8501 {
+			transport http {
+				versions 1.1 2
+			}
+		}
+	}
 	
 	# Health check endpoint
     handle /health {

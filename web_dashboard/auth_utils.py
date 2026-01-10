@@ -211,7 +211,6 @@ def is_authenticated() -> bool:
     try:
         cookies = st.context.cookies
         auth_token = cookies.get("auth_token")
-        cookie_refresh_token = cookies.get("refresh_token")
         
         if auth_token:
             # Validate token
@@ -227,13 +226,19 @@ def is_authenticated() -> bool:
                 
                 if exp > current_time:
                     # Token valid, restore session
+                    print(f"DEBUG: Restoring session from cookie. User: {user_data.get('email')}")
                     set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp,
-                                    refresh_token=cookie_refresh_token)
+                                    refresh_token=cookies.get("refresh_token"))
                     return True
-    except Exception:
-        # If restoration fails, user isn't authenticated
+                else:
+                    print(f"DEBUG: Cookie token expired. Exp: {exp}, Now: {current_time}")
+        else:
+            print("DEBUG: No auth_token cookie found on reload")
+    except Exception as e:
+        print(f"DEBUG: Error restoring session: {e}")
         pass
     
+    print("DEBUG: is_authenticated returning False")
     return False
 
 
@@ -288,8 +293,15 @@ def redirect_to_login(return_to: Optional[str] = None):
     """
     if return_to:
         st.session_state.return_to = return_to
-    st.switch_page("streamlit_app.py")
+    
+    # DEBUG: Show why we are redirecting
+    cookies = st.context.cookies
+    st.error(f"DEBUG: Auth Check Failed. Would redirect to login. Return to: {return_to}")
+    st.info(f"Cookies visible to Streamlit: {cookies}")
     st.stop()
+    
+    # st.switch_page("streamlit_app.py")
+    # st.stop()
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False, 

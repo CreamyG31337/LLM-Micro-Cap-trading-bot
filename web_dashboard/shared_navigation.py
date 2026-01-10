@@ -36,7 +36,7 @@ def get_page_url(page_name: str) -> str:
         if page_name == 'dashboard':
             return '/'
         else:
-            return f'/?goto=pages/{page_name}.py'
+            return f'/?goto=pages/{page_name}'
 
 
 def get_navigation_links() -> list:

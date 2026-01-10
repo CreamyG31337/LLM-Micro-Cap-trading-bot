@@ -2314,6 +2314,93 @@ def api_ai_models():
         logger.error(f"Error fetching AI models: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/v2/ai/context/build', methods=['POST'])
+@require_auth
+def api_ai_context_build():
+    """Build context string with portfolio data tables (called by JS before chat)"""
+    try:
+        from flask_auth_utils import get_user_id_flask
+        from ai_context_builder import (
+            format_holdings, format_thesis, format_trades, 
+            format_performance_metrics, format_cash_balances
+        )
+        from streamlit_utils import (
+            get_current_positions, get_trade_log, get_cash_balances,
+            calculate_portfolio_value_over_time, get_fund_thesis_data,
+            calculate_performance_metrics
+        )
+        
+        data = request.get_json()
+        fund = data.get('fund')
+        
+        if not fund:
+            return jsonify({"context_string": "", "char_count": 0})
+
+        context_parts = []
+        
+        # --- Always Included: Holdings with all data tables ---
+        positions_df = get_current_positions(fund)
+        trades_df = get_trade_log(limit=100, fund=fund)
+        
+        include_pv = data.get('include_price_volume', True)
+        include_fund = data.get('include_fundamentals', True)
+        
+        if not positions_df.empty:
+            holdings_text = format_holdings(
+                positions_df,
+                fund,
+                trades_df=trades_df,
+                include_price_volume=include_pv,
+                include_fundamentals=include_fund
+            )
+            context_parts.append(holdings_text)
+        
+        # --- Always Included: Performance Metrics ---
+        try:
+            metrics = calculate_performance_metrics(fund)
+            portfolio_df = calculate_portfolio_value_over_time(fund, days=365)
+            if metrics:
+                context_parts.append(format_performance_metrics(metrics, portfolio_df))
+        except Exception as e:
+            logger.warning(f"Error loading performance metrics: {e}")
+        
+        # --- Always Included: Cash Balances ---
+        try:
+            cash = get_cash_balances(fund)
+            if cash:
+                context_parts.append(format_cash_balances(cash))
+        except Exception as e:
+            logger.warning(f"Error loading cash balances: {e}")
+        
+        # --- Optional: Thesis ---
+        if data.get('include_thesis', False):
+            try:
+                thesis_data = get_fund_thesis_data(fund)
+                if thesis_data:
+                    context_parts.append(format_thesis(thesis_data))
+            except Exception as e:
+                logger.warning(f"Error loading thesis: {e}")
+        
+        # --- Optional: Trades ---
+        if data.get('include_trades', False):
+            try:
+                if trades_df is not None and not trades_df.empty:
+                    context_parts.append(format_trades(trades_df, limit=100))
+            except Exception as e:
+                logger.warning(f"Error loading trades: {e}")
+        
+        # Combine all parts
+        context_string = "\n\n---\n\n".join(context_parts) if context_parts else ""
+        
+        return jsonify({
+            "context_string": context_string,
+            "char_count": len(context_string)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error building context: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/v2/ai/context', methods=['GET', 'POST'])
 @require_auth
 def api_ai_context():

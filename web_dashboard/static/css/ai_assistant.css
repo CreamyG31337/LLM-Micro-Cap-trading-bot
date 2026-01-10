@@ -147,6 +147,110 @@
         background-color: #1f2937;
         border-left-color: #374151;
     }
+
+    /* Button Dark Mode Overrides */
+    .bg-blue-100 {
+        background-color: #1e3a8a !important; /* blue-900 */
+        color: #dbeafe !important; /* blue-100 */
+    }
+    .bg-blue-100:hover {
+        background-color: #1e40af !important; /* blue-800 */
+    }
+
+    .bg-green-100 {
+        background-color: #14532d !important; /* green-900 */
+        color: #dcfce7 !important; /* green-100 */
+    }
+    .bg-green-100:hover {
+        background-color: #166534 !important; /* green-800 */
+    }
+
+    .bg-red-100 {
+        background-color: #7f1d1d !important; /* red-900 */
+        color: #fee2e2 !important; /* red-100 */
+    }
+    .bg-red-100:hover {
+        background-color: #991b1b !important; /* red-800 */
+    }
+
+    .bg-gray-200 {
+        background-color: #374151 !important; /* gray-700 */
+        color: #f3f4f6 !important; /* gray-100 */
+    }
+    .bg-gray-200:hover {
+        background-color: #4b5563 !important; /* gray-600 */
+    }
+
+    /* Message Input Dark Mode */
+    #chat-input {
+        background-color: #374151;
+        border-color: #4b5563;
+        color: white;
+    }
+    #chat-input::placeholder {
+        color: #9ca3af;
+    }
+}
+
+/* Explicit Dark Theme Support (matching theme.css data-theme="dark") */
+[data-theme="dark"] #chat-container {
+    background-color: #1f2937;
+    border-color: rgba(128, 128, 128, 0.3);
+}
+
+[data-theme="dark"] .message-bubble.assistant {
+    background-color: #374151;
+    color: #f3f4f6;
+}
+
+[data-theme="dark"] #quick-research-sidebar {
+    border-left-color: rgba(128, 128, 128, 0.3);
+}
+
+[data-theme="dark"] #ai-sidebar {
+    background-color: #1f2937;
+    border-left-color: #374151;
+}
+
+[data-theme="dark"] .bg-blue-100 {
+    background-color: #1e3a8a !important;
+    color: #dbeafe !important;
+}
+[data-theme="dark"] .bg-blue-100:hover {
+    background-color: #1e40af !important;
+}
+
+[data-theme="dark"] .bg-green-100 {
+    background-color: #14532d !important;
+    color: #dcfce7 !important;
+}
+[data-theme="dark"] .bg-green-100:hover {
+    background-color: #166534 !important;
+}
+
+[data-theme="dark"] .bg-red-100 {
+    background-color: #7f1d1d !important;
+    color: #fee2e2 !important;
+}
+[data-theme="dark"] .bg-red-100:hover {
+    background-color: #991b1b !important;
+}
+
+[data-theme="dark"] .bg-gray-200 {
+    background-color: #374151 !important;
+    color: #f3f4f6 !important;
+}
+[data-theme="dark"] .bg-gray-200:hover {
+    background-color: #4b5563 !important;
+}
+
+[data-theme="dark"] #chat-input {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: white;
+}
+[data-theme="dark"] #chat-input::placeholder {
+    color: #9ca3af;
 }
 
 /* Mobile Responsive */

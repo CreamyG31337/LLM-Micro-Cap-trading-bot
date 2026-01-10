@@ -2056,6 +2056,84 @@ def api_ticker_external_links():
         logger.error(f"Error fetching external links for {ticker}: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/v2/ai/search', methods=['POST'])
+@require_auth
+def api_ai_search():
+    """Perform web search"""
+    try:
+        data = request.get_json()
+        query = data.get('query')
+        
+        if not query:
+            return jsonify({"error": "No query provided"}), 400
+            
+        from searxng_client import get_searxng_client
+        client = get_searxng_client()
+        
+        if not client:
+            return jsonify({"error": "Search is unavailable"}), 503
+            
+        results = client.search(query)
+        return jsonify({"results": results})
+        
+    except Exception as e:
+        logger.error(f"Error performing search: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/preview_context', methods=['POST'])
+@require_auth
+def api_ai_preview_context():
+    """Preview the AI context (debug mode)"""
+    try:
+        from flask_auth_utils import get_user_id_flask
+        from chat_context import ContextItemType
+        from ai_context_builder import build_ai_context
+        
+        data = request.get_json()
+        fund = data.get('fund')
+        
+        if not fund:
+            return jsonify({"error": "No fund specified"}), 400
+
+        # Build context items list based on toggles
+        context_types = []
+        
+        # Always included base context
+        context_types.append(ContextItemType.HOLDINGS)
+        context_types.append(ContextItemType.PERFORMANCE)
+        context_types.append(ContextItemType.CASH)
+        
+        # Optional context
+        if data.get('include_thesis', False):
+            context_types.append(ContextItemType.THESIS)
+            
+        if data.get('include_trades', False):
+            context_types.append(ContextItemType.TRADES)
+            
+        # Context options
+        options = {
+            'include_price_volume': data.get('include_price_volume', True),
+            'include_fundamentals': data.get('include_fundamentals', True)
+        }
+        
+        # Build the context string
+        context_string = build_ai_context(
+            user_id=get_user_id_flask(),
+            fund=fund,
+            item_types=context_types,
+            options=options
+        )
+        
+        return jsonify({
+            "success": True, 
+            "context": context_string,
+            "char_count": len(context_string)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating context preview: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 # ============================================================================
 # AI Assistant Routes (Flask v2)
 # ============================================================================
@@ -2116,40 +2194,34 @@ def api_ai_models():
     """Get available AI models"""
     try:
         from ollama_client import list_available_models
-        from ai_service_keys import get_model_display_name
-        
-        ollama_models = list_available_models()
-        
-        # Format models with display names
-        models = []
-        for model in ollama_models:
-            models.append({
-                'id': model,
-                'name': model,
-                'type': 'ollama'
-            })
-        
-        # Add WebAI models if available
         try:
-            webai_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
-            for model in webai_models:
+            from ai_service_keys import get_model_display_name
+        except ImportError:
+            def get_model_display_name(m): return m
+
+        all_models = list_available_models()
+        
+        formatted_models = []
+        for model in all_models:
+            is_webai = model.startswith('gemini-')
+            display_name = model
+            
+            if is_webai:
                 try:
                     display_name = get_model_display_name(model)
-                    models.append({
-                        'id': model,
-                        'name': display_name,
-                        'type': 'webai'
-                    })
-                except (KeyError, FileNotFoundError):
-                    models.append({
-                        'id': model,
-                        'name': model,
-                        'type': 'webai'
-                    })
-        except (ImportError, FileNotFoundError):
-            pass
+                    # Add sparkle to webai models if not already there
+                    if 'AI' in display_name or 'Gemini' in display_name:
+                         display_name = f"✨ {display_name}"
+                except:
+                    pass
+            
+            formatted_models.append({
+                'id': model,
+                'name': display_name,
+                'type': 'webai' if is_webai else 'ollama'
+            })
         
-        return jsonify({"models": models})
+        return jsonify({"models": formatted_models})
     except Exception as e:
         logger.error(f"Error fetching AI models: {e}")
         return jsonify({"error": str(e)}), 500

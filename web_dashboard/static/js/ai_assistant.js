@@ -31,7 +31,7 @@ class AIAssistant {
         // Send button
         const sendBtn = document.getElementById('send-btn');
         const chatInput = document.getElementById('chat-input');
-        
+
         sendBtn.addEventListener('click', () => this.sendMessage());
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -112,26 +112,98 @@ class AIAssistant {
             document.getElementById('start-analysis-area').classList.add('hidden');
             this.sendMessage(prompt);
         });
+
+        // Debug Preview Context
+        const previewBtn = document.getElementById('preview-context-btn');
+        if (previewBtn) {
+            previewBtn.addEventListener('click', () => this.previewContext());
+        }
+    }
+
+    async previewContext() {
+        if (!this.selectedFund) {
+            this.showError('Please select a fund first');
+            return;
+        }
+
+        const debugArea = document.getElementById('debug-context-area');
+        const countArea = document.getElementById('debug-char-count');
+        const btn = document.getElementById('preview-context-btn');
+
+        try {
+            btn.disabled = true;
+            btn.textContent = '⏳ Loading...';
+            debugArea.value = 'Loading context...';
+
+            // Gather current toggles
+            const includeThesis = document.getElementById('toggle-thesis').checked;
+            const includeTrades = document.getElementById('toggle-trades').checked;
+            const includePriceVolume = document.getElementById('toggle-price-volume').checked;
+            const includeFundamentals = document.getElementById('toggle-fundamentals').checked;
+
+            const response = await fetch('/api/v2/ai/preview_context', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fund: this.selectedFund,
+                    include_thesis: includeThesis,
+                    include_trades: includeTrades,
+                    include_price_volume: includePriceVolume,
+                    include_fundamentals: includeFundamentals
+                })
+            });
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data = await response.json();
+
+            if (data.success) {
+                debugArea.value = data.context;
+                countArea.textContent = `${data.char_count.toLocaleString()} characters`;
+            } else {
+                debugArea.value = `Error: ${data.error}`;
+            }
+        } catch (err) {
+            console.error('Error previewing context:', err);
+            debugArea.value = `Failed to load context: ${err.message}`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '👁️ Preview Context';
+        }
     }
 
     loadModels() {
+        console.log('Fetching models from API...');
         fetch('/api/v2/ai/models')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                return res.json();
+            })
             .then(data => {
+                console.log('Models API response:', data);
                 const select = document.getElementById('model-select');
                 select.innerHTML = '';
-                data.models.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.id;
-                    option.textContent = model.name;
-                    if (model.id === this.selectedModel) {
-                        option.selected = true;
-                    }
-                    select.appendChild(option);
-                });
+
+                if (data.models && Array.isArray(data.models)) {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.name; // API handles display names
+                        if (model.id === this.selectedModel) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                } else {
+                    console.error('Invalid models format received:', data);
+                    this.showError('Failed to load models: Invalid data format');
+                }
                 this.updateModelDescription();
             })
-            .catch(err => console.error('Error loading models:', err));
+            .catch(err => {
+                console.error('Error loading models:', err);
+                this.showError('Failed to load AI models. Please check connection.');
+            });
     }
 
     loadFunds() {
@@ -160,7 +232,7 @@ class AIAssistant {
     updateContextItem(itemType, enabled) {
         const action = enabled ? 'add' : 'remove';
         const metadata = itemType === 'trades' ? { limit: 50 } : {};
-        
+
         fetch('/api/v2/ai/context', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -171,13 +243,13 @@ class AIAssistant {
                 metadata: metadata
             })
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                this.loadContextItems();
-            }
-        })
-        .catch(err => console.error('Error updating context:', err));
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    this.loadContextItems();
+                }
+            })
+            .catch(err => console.error('Error updating context:', err));
     }
 
     clearContext() {
@@ -186,17 +258,17 @@ class AIAssistant {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'clear' })
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                this.contextItems = [];
-                this.updateContextUI();
-                // Uncheck all toggles
-                document.getElementById('toggle-thesis').checked = false;
-                document.getElementById('toggle-trades').checked = false;
-            }
-        })
-        .catch(err => console.error('Error clearing context:', err));
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    this.contextItems = [];
+                    this.updateContextUI();
+                    // Uncheck all toggles
+                    document.getElementById('toggle-thesis').checked = false;
+                    document.getElementById('toggle-trades').checked = false;
+                }
+            })
+            .catch(err => console.error('Error clearing context:', err));
     }
 
     updateContextUI() {
@@ -207,7 +279,7 @@ class AIAssistant {
             summary.textContent = `✅ ${this.contextItems.length} data source(s) selected`;
         }
         document.getElementById('context-items').textContent = `Context Items: ${this.contextItems.length}`;
-        
+
         // Invalidate context cache when items change
         this.contextFingerprint = null;
         this.contextCache = null;
@@ -216,7 +288,7 @@ class AIAssistant {
     updateModelDescription() {
         const model = this.selectedModel;
         const desc = document.getElementById('model-description');
-        
+
         if (model.startsWith('gemini-')) {
             desc.textContent = 'Web-based AI model with persistent conversations';
         } else {
@@ -229,7 +301,7 @@ class AIAssistant {
         const custom = document.getElementById('custom-ticker').value.trim().toUpperCase();
         const selected = Array.from(select.selectedOptions).map(opt => opt.value);
         const activeTickers = custom ? [...selected, custom] : selected;
-        
+
         const actionsDiv = document.getElementById('ticker-actions');
         if (activeTickers.length > 0) {
             actionsDiv.classList.remove('hidden');
@@ -308,7 +380,7 @@ class AIAssistant {
 
     getContextFingerprint() {
         // Create fingerprint from context items
-        const items = this.contextItems.map(item => 
+        const items = this.contextItems.map(item =>
             `${item.item_type}:${item.fund || ''}:${JSON.stringify(item.metadata || {})}`
         ).sort().join('|');
         return items;
@@ -349,7 +421,7 @@ class AIAssistant {
     async performSearch(query) {
         // Extract tickers from query (simple implementation)
         const tickers = this.extractTickers(query);
-        
+
         const response = await fetch('/api/v2/ai/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -391,9 +463,9 @@ class AIAssistant {
     extractTickers(query) {
         // Simple ticker extraction (uppercase words that look like tickers)
         const words = query.toUpperCase().split(/\s+/);
-        const tickers = words.filter(word => 
-            word.length <= 5 && 
-            /^[A-Z]+$/.test(word) && 
+        const tickers = words.filter(word =>
+            word.length <= 5 &&
+            /^[A-Z]+$/.test(word) &&
             word.length >= 1
         );
         return tickers;
@@ -405,19 +477,19 @@ class AIAssistant {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.error) {
-                this.updateMessage(loadingId, 'assistant', `Error: ${data.error}`);
-            } else {
-                this.updateMessage(loadingId, 'assistant', data.response);
-                this.conversationHistory.push({ role: 'assistant', content: data.response });
-            }
-        })
-        .catch(err => {
-            console.error('Chat error:', err);
-            this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
-        });
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    this.updateMessage(loadingId, 'assistant', `Error: ${data.error}`);
+                } else {
+                    this.updateMessage(loadingId, 'assistant', data.response);
+                    this.conversationHistory.push({ role: 'assistant', content: data.response });
+                }
+            })
+            .catch(err => {
+                console.error('Chat error:', err);
+                this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+            });
     }
 
     sendStreamingMessage(requestData, loadingId) {
@@ -426,101 +498,101 @@ class AIAssistant {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         })
-        .then(res => {
-            if (!res.ok) {
-                return res.json().then(data => {
-                    throw new Error(data.error || `HTTP error! status: ${res.status}`);
-                });
-            }
+            .then(res => {
+                if (!res.ok) {
+                    return res.json().then(data => {
+                        throw new Error(data.error || `HTTP error! status: ${res.status}`);
+                    });
+                }
 
-            // Check if response is SSE (text/event-stream) or JSON
-            const contentType = res.headers.get('content-type');
-            if (contentType && contentType.includes('text/event-stream')) {
-                // SSE streaming
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let fullResponse = '';
+                // Check if response is SSE (text/event-stream) or JSON
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('text/event-stream')) {
+                    // SSE streaming
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let fullResponse = '';
 
-                const readChunk = () => {
-                    reader.read().then(({ done, value }) => {
-                        if (done) {
-                            // Remove streaming indicator and finalize
-                            this.updateMessage(loadingId, 'assistant', fullResponse);
-                            this.conversationHistory.push({ role: 'assistant', content: fullResponse });
-                            this.updateRetryButton();
-                            return;
-                        }
+                    const readChunk = () => {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                // Remove streaming indicator and finalize
+                                this.updateMessage(loadingId, 'assistant', fullResponse);
+                                this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+                                this.updateRetryButton();
+                                return;
+                            }
 
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-                        for (const line of lines) {
-                            if (line.trim() === '') continue;
-                            if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.slice(6));
-                                    if (data.done) {
-                                        this.updateMessage(loadingId, 'assistant', fullResponse);
-                                        this.conversationHistory.push({ role: 'assistant', content: fullResponse });
-                                        this.updateRetryButton();
-                                        return;
+                            for (const line of lines) {
+                                if (line.trim() === '') continue;
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.slice(6));
+                                        if (data.done) {
+                                            this.updateMessage(loadingId, 'assistant', fullResponse);
+                                            this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+                                            this.updateRetryButton();
+                                            return;
+                                        }
+                                        if (data.chunk) {
+                                            fullResponse += data.chunk;
+                                            this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="streaming-indicator">▌</span>');
+                                        }
+                                        if (data.error) {
+                                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
+                                            this.updateRetryButton();
+                                            return;
+                                        }
+                                    } catch (e) {
+                                        console.error('Error parsing SSE data:', e, 'Line:', line);
                                     }
-                                    if (data.chunk) {
-                                        fullResponse += data.chunk;
-                                        this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="streaming-indicator">▌</span>');
-                                    }
-                                    if (data.error) {
-                                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
-                                        this.updateRetryButton();
-                                        return;
-                                    }
-                                } catch (e) {
-                                    console.error('Error parsing SSE data:', e, 'Line:', line);
                                 }
                             }
+
+                            readChunk();
+                        }).catch(err => {
+                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
+                            this.updateRetryButton();
+                        });
+                    };
+
+                    readChunk();
+                } else {
+                    // Non-streaming JSON response (fallback)
+                    return res.json().then(data => {
+                        if (data.error) {
+                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
+                            this.updateRetryButton();
+                        } else {
+                            this.updateMessage(loadingId, 'assistant', data.response || data.chunk || '');
+                            this.conversationHistory.push({ role: 'assistant', content: data.response || data.chunk || '' });
+                            this.updateRetryButton();
                         }
-
-                        readChunk();
-                    }).catch(err => {
-                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
-                        this.updateRetryButton();
                     });
-                };
-
-                readChunk();
-            } else {
-                // Non-streaming JSON response (fallback)
-                return res.json().then(data => {
-                    if (data.error) {
-                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
-                        this.updateRetryButton();
-                    } else {
-                        this.updateMessage(loadingId, 'assistant', data.response || data.chunk || '');
-                        this.conversationHistory.push({ role: 'assistant', content: data.response || data.chunk || '' });
-                        this.updateRetryButton();
-                    }
-                });
-            }
-        })
-        .catch(err => {
-            console.error('Chat error:', err);
-            this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
-        });
+                }
+            })
+            .catch(err => {
+                console.error('Chat error:', err);
+                this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+            });
     }
 
     addMessage(role, content, isLoading = false) {
         const messagesDiv = document.getElementById('chat-messages');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
-        
+
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
         messageDiv.className = `chat-message ${role}`;
-        
+
         const bubble = document.createElement('div');
         bubble.className = `message-bubble ${role}`;
-        
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         if (isLoading) {
@@ -528,20 +600,20 @@ class AIAssistant {
         } else {
             contentDiv.innerHTML = this.renderMarkdown(content);
         }
-        
+
         bubble.appendChild(contentDiv);
         messageDiv.appendChild(bubble);
         messagesDiv.appendChild(messageDiv);
-        
+
         this.scrollToBottom();
-        
+
         return messageId;
     }
 
     updateMessage(messageId, role, content) {
         const messageDiv = document.getElementById(messageId);
         if (!messageDiv) return;
-        
+
         const contentDiv = messageDiv.querySelector('.message-content');
         if (contentDiv) {
             // Check if this is an error message
@@ -550,7 +622,7 @@ class AIAssistant {
             }
             contentDiv.innerHTML = this.renderMarkdown(content);
         }
-        
+
         this.scrollToBottom();
     }
 
@@ -580,7 +652,7 @@ class AIAssistant {
         this.conversationHistory = [];
         document.getElementById('chat-messages').innerHTML = '';
         document.getElementById('retry-button-container').classList.add('hidden');
-        
+
         // Show start analysis area if context items exist
         if (this.contextItems.length > 0) {
             this.showStartAnalysis();
@@ -599,7 +671,7 @@ class AIAssistant {
         if (this.contextItems.length === 0) {
             return "Please help me analyze my portfolio.";
         }
-        
+
         const itemTypes = this.contextItems.map(item => item.item_type);
         if (itemTypes.includes('holdings') && itemTypes.includes('thesis')) {
             return "Based on the portfolio holdings and investment thesis provided above, analyze how well the current positions align with the stated investment strategy and pillars.";
@@ -617,9 +689,9 @@ class AIAssistant {
         const custom = document.getElementById('custom-ticker').value.trim().toUpperCase();
         const selected = Array.from(select.selectedOptions).map(opt => opt.value);
         const activeTickers = custom ? [...selected, custom] : selected;
-        
+
         let prompt = '';
-        
+
         switch (action) {
             case 'research':
                 if (activeTickers.length === 1) {
@@ -655,7 +727,7 @@ class AIAssistant {
                 prompt = "What's happening in the stock market sectors today?";
                 break;
         }
-        
+
         if (prompt) {
             document.getElementById('suggested-prompt-area').classList.remove('hidden');
             document.getElementById('editable-prompt').value = prompt;
@@ -674,7 +746,7 @@ class AIAssistant {
     updateUI() {
         document.getElementById('current-model').textContent = this.selectedModel;
         this.updateContextUI();
-        
+
         // Load portfolio tickers for quick research
         if (this.selectedFund) {
             this.loadPortfolioTickers();
@@ -683,7 +755,7 @@ class AIAssistant {
 
     async loadPortfolioTickers() {
         if (!this.selectedFund) return;
-        
+
         try {
             // Fetch portfolio positions to get tickers
             const response = await fetch(`/api/portfolio?fund=${encodeURIComponent(this.selectedFund)}`);
@@ -713,7 +785,7 @@ class AIAssistant {
         }
 
         // Remove last assistant message if it exists
-        if (this.conversationHistory.length > 0 && 
+        if (this.conversationHistory.length > 0 &&
             this.conversationHistory[this.conversationHistory.length - 1].role === 'assistant') {
             this.conversationHistory.pop();
             // Remove last message from UI
@@ -749,7 +821,7 @@ class AIAssistant {
             }
 
             const data = await response.json();
-            
+
             if (data.matching_articles && data.matching_articles.length > 0) {
                 // Format article context
                 let articleContext = "Here are recent research articles found for the user's portfolio holdings:\n\n";
@@ -781,7 +853,7 @@ class AIAssistant {
 
     updateRetryButton() {
         const retryContainer = document.getElementById('retry-button-container');
-        if (this.conversationHistory.length > 0 && 
+        if (this.conversationHistory.length > 0 &&
             this.conversationHistory[this.conversationHistory.length - 1].role === 'assistant') {
             retryContainer.classList.remove('hidden');
         } else {

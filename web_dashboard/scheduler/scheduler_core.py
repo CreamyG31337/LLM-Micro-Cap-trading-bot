@@ -533,9 +533,9 @@ def start_scheduler() -> bool:
     
     logger.info("="*60)
     logger.info("SCHEDULER START_SCHEDULER() CALLED")
-    logger.info(f"  Process ID: {os.getpid() if hasattr(os, 'getpid') else 'N/A'}")
-    logger.info(f"  Thread: {threading.current_thread().name} ({threading.current_thread().ident})")
-    logger.info("="*60)
+    logger.debug(f"  Process ID: {os.getpid() if hasattr(os, 'getpid') else 'N/A'}")
+    logger.debug(f"  Thread: {threading.current_thread().name} ({threading.current_thread().ident})")
+    logger.debug("="*60)
     
     # PHASE 0: Ensure logs are captured (both file and unhandled exceptions)
     try:
@@ -543,7 +543,7 @@ def start_scheduler() -> bool:
         try:
             from log_handler import setup_logging
             setup_logging()
-            logger.info("  → Log handler configured (logs will appear in Web UI)")
+            logger.debug("  → Log handler configured (logs will appear in Web UI)")
         except ImportError:
             logger.warning("  ⚠️ Could not import log_handler.setup_logging")
 
@@ -555,31 +555,31 @@ def start_scheduler() -> bool:
             logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
         
         sys.excepthook = handle_exception
-        logger.info("  → Global exception handler installed")
+        logger.debug("  → Global exception handler installed")
         
     except Exception as e:
         logger.error(f"  ❌ Failed to setup extended logging: {e}")
 
     # PHASE 1: Check if already running (quick lock)
-    logger.info("[PHASE 1] Checking if scheduler is already running...")
+    logger.debug("[PHASE 1] Checking if scheduler is already running...")
     with _scheduler_lock:
         scheduler = get_scheduler()
         if scheduler.running:
             logger.info("  → Scheduler already running, returning False")
             return False
-        logger.info("  → Scheduler not running, proceeding with startup")
+        logger.debug("  → Scheduler not running, proceeding with startup")
     
     # PHASE 2: Cleanup stale jobs OUTSIDE lock (DB operation, may be slow)
-    logger.info("[PHASE 2] Cleaning up stale running jobs (outside lock)...")
+    logger.debug("[PHASE 2] Cleaning up stale running jobs (outside lock)...")
     try:
         cleanup_stale_running_jobs()
-        logger.info(f"  → Cleanup completed in {time.time() - start_time:.2f}s")
+        logger.debug(f"  → Cleanup completed in {time.time() - start_time:.2f}s")
     except Exception as e:
         logger.error(f"  ❌ Cleanup failed (non-fatal): {e}")
         # Continue - cleanup failure shouldn't prevent scheduler start
     
     # PHASE 3: Start scheduler under lock (critical section)
-    logger.info("[PHASE 3] Starting scheduler (in lock)...")
+    logger.debug("[PHASE 3] Starting scheduler (in lock)...")
     phase3_start = time.time()
     
     with _scheduler_lock:
@@ -596,13 +596,13 @@ def start_scheduler() -> bool:
                 sys.path.insert(0, str(project_root))
             from scheduler.jobs import register_default_jobs
         
-        logger.info("  → Registering default jobs...")
+        logger.debug("  → Registering default jobs...")
         register_default_jobs(scheduler)
         
         # Start scheduler
         try:
             scheduler.start()
-            logger.info("  → scheduler.start() called")
+            logger.debug("  → scheduler.start() called")
         except Exception as e:
             logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
             raise
@@ -619,12 +619,12 @@ def start_scheduler() -> bool:
             logger.error("  ❌ Scheduler not running after start()")
             raise RuntimeError("Scheduler failed to start - not running after start() call")
         
-        logger.info(f"  ✅ Scheduler running (verified in {waited:.2f}s)")
+        logger.debug(f"  ✅ Scheduler running (verified in {waited:.2f}s)")
     
-    logger.info(f"  → Phase 3 completed in {time.time() - phase3_start:.2f}s")
+    logger.debug(f"  → Phase 3 completed in {time.time() - phase3_start:.2f}s")
     
     # PHASE 4: Add startup jobs OUTSIDE lock (scheduler is already running)
-    logger.info("[PHASE 4] Adding startup jobs (outside lock)...")
+    logger.debug("[PHASE 4] Adding startup jobs (outside lock)...")
     
     # Log startup summary
     jobs = scheduler.get_jobs()
@@ -632,7 +632,7 @@ def start_scheduler() -> bool:
     logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
     for job in jobs:
         next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
-        logger.info(f"   📋 {job.id}: {next_run}")
+        logger.debug(f"   📋 {job.id}: {next_run}")
     logger.info("="*50)
     
     # Add startup jobs (wrapped in try/catch - non-fatal if they fail)
@@ -651,7 +651,7 @@ def start_scheduler() -> bool:
             name='Startup Backfill Check',
             replace_existing=True
         )
-        logger.info("  📋 Scheduled startup backfill check")
+        logger.debug("  📋 Scheduled startup backfill check")
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule backfill check: {e}")
     
@@ -663,7 +663,7 @@ def start_scheduler() -> bool:
             name='Startup Overdue Job Check',
             replace_existing=True
         )
-        logger.info("  📋 Scheduled startup overdue job check")
+        logger.debug("  📋 Scheduled startup overdue job check")
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule overdue check: {e}")
     
@@ -678,7 +678,7 @@ def start_scheduler() -> bool:
             max_instances=1,
             coalesce=True
         )
-        logger.info("  📋 Scheduled scheduler health check (every 5 minutes)")
+        logger.debug("  📋 Scheduled scheduler health check (every 5 minutes)")
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule health check: {e}")
     
@@ -696,7 +696,7 @@ def start_scheduler() -> bool:
         )
         # Also do an immediate heartbeat update
         _update_heartbeat()
-        logger.info(f"  💓 Heartbeat job registered (every {_HEARTBEAT_INTERVAL}s)")
+        logger.debug(f"  💓 Heartbeat job registered (every {_HEARTBEAT_INTERVAL}s)")
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule heartbeat: {e}")
     
@@ -718,7 +718,7 @@ def check_overdue_jobs() -> None:
     
     If overdue, it triggers ONE immediate run.
     """
-    logger.info("🔍 Checking for overdue jobs (Smart Startup)...")
+    logger.debug("🔍 Checking for overdue jobs (Smart Startup)...")
     
     try:
         # Defensive import
@@ -803,7 +803,7 @@ def check_overdue_jobs() -> None:
                 else:
                     logger.warning(f"   Could not find scheduler ID for overdue job {job_id}")
             else:
-                logger.info(f"   Job '{job_id}' is OK. Last run: {minutes_since:.1f}m ago.")
+                logger.debug(f"   Job '{job_id}' is OK. Last run: {minutes_since:.1f}m ago.")
                 
     except Exception as e:
         logger.error(f"❌ Smart Startup check failed: {e}", exc_info=True)
@@ -1409,7 +1409,7 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         job_statuses[job_id]['recent_logs'] = existing_logs[:5]
     
     elapsed_ms = (time.perf_counter() - start_time) * 1000
-    logger.info(f"⏱️ get_all_jobs_status_batched: {elapsed_ms:.2f}ms for {len(jobs)} jobs")
+    logger.debug(f"⏱️ get_all_jobs_status_batched: {elapsed_ms:.2f}ms for {len(jobs)} jobs")
     
     return list(job_statuses.values())
 
@@ -1428,9 +1428,9 @@ def _safe_job_wrapper(job_func, job_id: str, **kwargs):
     This prevents manual job failures from crashing the scheduler thread pool.
     """
     try:
-        logger.info(f"Executing manual job: {job_id}")
+        logger.debug(f"Executing manual job: {job_id}")
         job_func(**kwargs)
-        logger.info(f"Manual job completed: {job_id}")
+        logger.debug(f"Manual job completed: {job_id}")
     except Exception as e:
         # Log the error but don't re-raise - this prevents scheduler crashes
         logger.error(f"Manual job {job_id} failed with exception: {e}", exc_info=True)
@@ -1476,7 +1476,7 @@ def run_job_now(job_id: str, **kwargs) -> bool:
         # Schedule the job to run ASYNCHRONOUSLY via the scheduler
         # This prevents blocking the main thread (and the UI)
         try:
-            logger.info(f"Scheduling job for immediate async execution: {job_id} (args: {kwargs})")
+            logger.debug(f"Scheduling job for immediate async execution: {job_id} (args: {kwargs})")
             
             # Generate unique ID for manual run
             manual_id = f"{job_id}_manual_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
@@ -1494,7 +1494,7 @@ def run_job_now(job_id: str, **kwargs) -> bool:
                 misfire_grace_time=None  # Don't skip manual jobs if delayed
             )
             
-            logger.info(f"Job {job_id} scheduled for async execution as {manual_id}")
+            logger.debug(f"Job {job_id} scheduled for async execution as {manual_id}")
             return True
         except Exception as e:
             logger.error(f"Error adding job {job_id} to scheduler: {e}", exc_info=True)

@@ -19,18 +19,18 @@ logger = logging.getLogger('research')
 research_bp = Blueprint('research', __name__)
 
 # Log blueprint registration
-logger.info("[RESEARCH] Research blueprint loaded")
+logger.debug("[RESEARCH] Research blueprint loaded")
 
 @research_bp.route('/research')
 @require_auth
 def research_dashboard():
     """Research Repository Dashboard"""
-    logger.info("[RESEARCH] Route /v2/research accessed")
+    logger.debug("[RESEARCH] Route /v2/research accessed")
     try:
         # Initialize repository
-        logger.info("[RESEARCH] Initializing ResearchRepository")
+        logger.debug("[RESEARCH] Initializing ResearchRepository")
         repo = ResearchRepository()
-        logger.info("[RESEARCH] ResearchRepository initialized successfully")
+        logger.debug("[RESEARCH] ResearchRepository initialized successfully")
         
         # Parse query parameters for filters
         # Date Range
@@ -130,7 +130,7 @@ def research_dashboard():
         user_theme = get_user_preference('theme', default='system')
         nav_context = get_navigation_context(current_page='research')
 
-        logger.info(f"[RESEARCH] Rendering template with {len(articles)} articles, {len(unique_tickers)} tickers")
+        logger.debug(f"[RESEARCH] Rendering template with {len(articles)} articles, {len(unique_tickers)} tickers")
         
         return render_template(
             'research.html',

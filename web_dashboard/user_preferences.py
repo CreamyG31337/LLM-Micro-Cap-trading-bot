@@ -186,7 +186,7 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                     supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
                     
                     if supabase_url and supabase_anon_key:
-                        logger.info(f"Trying HTTP fallback for get_user_preference with key='{key}', user_id='{user_id_fallback}'")
+                        logger.debug(f"Trying HTTP fallback for get_user_preference with key='{key}', user_id='{user_id_fallback}'")
                         
                         # Don't send Authorization header - expired tokens cause 401 errors
                         headers = {
@@ -205,7 +205,7 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                         
                         if response.status_code == 200:
                             data = response.json()
-                            logger.info(f"HTTP fallback RPC result: {data}")
+                            logger.debug(f"HTTP fallback RPC result: {data}")
                             # Create a mock result object to match client.rpc return type
                             class MockResult:
                                 def __init__(self, data):
@@ -364,7 +364,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                     user_token = get_auth_token()
                     refresh_token = get_refresh_token()
                     if user_token:
-                        logger.info(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}, refresh: {len(refresh_token) if refresh_token else 0}) for preference '{key}'")
+                        logger.debug(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}, refresh: {len(refresh_token) if refresh_token else 0}) for preference '{key}'")
                         client = SupabaseClient(user_token=user_token, refresh_token=refresh_token)
                     else:
                         logger.warning(f"[PREF] No token available for preference '{key}' - creating client without token")
@@ -399,7 +399,7 @@ def set_user_preference(key: str, value: Any) -> bool:
         rpc_success = False
         rpc_error_msg = None
         try:
-            logger.info(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
+            logger.debug(f"Calling RPC set_user_preference with key='{key}', user_id='{user_id}'")
             
             # Ensure Authorization header is set right before RPC call
             # Call postgrest.auth() to ensure the header is set correctly
@@ -428,7 +428,7 @@ def set_user_preference(key: str, value: Any) -> bool:
             
             # Check if the RPC call succeeded
             # The function returns a boolean, but Supabase might wrap it
-            logger.info(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
+            logger.debug(f"RPC set_user_preference result: {result.data}, type: {type(result.data)}")
             
             # Handle different response formats
             if result.data is None:
@@ -468,7 +468,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                 supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
                 
                 if supabase_url and supabase_anon_key:
-                    logger.info(f"Trying HTTP fallback for set_user_preference with key='{key}', user_id='{user_id}'")
+                    logger.debug(f"Trying HTTP fallback for set_user_preference with key='{key}', user_id='{user_id}'")
                     
                     # Don't send Authorization header - expired tokens cause 401 errors
                     headers = {
@@ -489,7 +489,7 @@ def set_user_preference(key: str, value: Any) -> bool:
                     
                     if response.status_code == 200:
                         result_data = response.json()
-                        logger.info(f"HTTP fallback RPC result: {result_data}, type: {type(result_data)}")
+                        logger.debug(f"HTTP fallback RPC result: {result_data}, type: {type(result_data)}")
                         if result_data is True or (isinstance(result_data, list) and len(result_data) > 0 and result_data[0] is True):
                             rpc_success = True
                         else:

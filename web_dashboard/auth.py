@@ -270,7 +270,7 @@ def require_admin(f):
                     # Call RPC function (same way Streamlit does it)
                     result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                     
-                    logger.info(f"Admin check RPC result: {result.data}, type: {type(result.data)}")
+                    logger.debug(f"Admin check RPC result: {result.data}, type: {type(result.data)}")
                     
                     if result.data is not None:
                         if isinstance(result.data, bool):
@@ -285,7 +285,7 @@ def require_admin(f):
             
             # Fallback to HTTP request method
             if not is_user_admin:
-                logger.info(f"Trying HTTP request admin check for user_id: {request.user_id}")
+                logger.debug(f"Trying HTTP request admin check for user_id: {request.user_id}")
                 try:
                     import requests
                     response = requests.post(
@@ -298,7 +298,7 @@ def require_admin(f):
                         json={"user_uuid": request.user_id}
                     )
                     
-                    logger.info(f"Admin check HTTP response: status={response.status_code}, body={response.text[:200]}")
+                    logger.debug(f"Admin check HTTP response: status={response.status_code}, body={response.text[:200]}")
                     
                     if response.status_code == 200:
                         result = response.json()
@@ -312,9 +312,9 @@ def require_admin(f):
             
             # Final fallback to auth_manager method
             if not is_user_admin:
-                logger.info(f"Trying final fallback admin check for user_id: {request.user_id}")
+                logger.debug(f"Trying final fallback admin check for user_id: {request.user_id}")
                 is_user_admin = auth_manager.is_admin(request.user_id)
-                logger.info(f"Final fallback admin check result: {is_user_admin}")
+                logger.debug(f"Final fallback admin check result: {is_user_admin}")
         except Exception as e:
             admin_check_error = str(e)
             logger.error(f"Error checking admin status: {e}", exc_info=True)

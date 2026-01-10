@@ -59,6 +59,29 @@
         }
     }
     
+	# Redirect /pages/*.py to /pages/* (strip .py extension) - STREAMLIT ONLY
+	# This prevents issues when accessing Streamlit pages directly with .py extension
+	# Note: This only affects /pages/* paths (Streamlit), not /v2/* (Flask)
+	# Streamlit handles pages without .py extension in the URL
+    @pages_py {
+        path_regexp ^/pages/(.+)\.py$
+    }
+    handle @pages_py {
+        rewrite * /pages/{re.pages_py.1}
+        reverse_proxy localhost:8501
+    }
+    
+	# Streamlit static files - must be before general reverse_proxy
+	# This ensures JS/CSS files are served with correct MIME types
+	# CRITICAL: This handler must come before the general reverse_proxy
+	# to ensure static files are always served correctly, even during errors
+    handle /static/* {
+        reverse_proxy localhost:8501 {
+            header_up Host {host}
+        }
+        # Streamlit sets Cache-Control headers, we preserve them
+    }
+    
 	# WebSocket endpoint - must be before general reverse_proxy
     handle /_stcore/stream {
         reverse_proxy localhost:8501 {

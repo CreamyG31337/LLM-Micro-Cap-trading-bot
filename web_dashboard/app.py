@@ -200,7 +200,7 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
 try:
     from routes.research_routes import research_bp
     app.register_blueprint(research_bp, url_prefix='/v2')
-    logger.info("Registered Research Blueprint at /v2")
+    logger.debug("Registered Research Blueprint at /v2")
 except Exception as e:
     logger.error(f"Failed to register Research Blueprint: {e}")
 
@@ -886,7 +886,7 @@ def api_funds():
             if response.status_code == 200:
                 data = response.json()
                 funds = list(set([item.get('fund', '') for item in data if item.get('fund')]))
-                logger.info(f"Returning Supabase funds: {funds}")
+                logger.debug(f"Returning Supabase funds: {funds}")
                 return jsonify({"funds": funds})
         
         # Fallback to CSV configuration
@@ -895,12 +895,12 @@ def api_funds():
             with open(config_file, 'r') as f:
                 config = json.load(f)
             funds = config.get("repository", {}).get("available_funds", [])
-            logger.info(f"Returning CSV config funds: {funds}")
+            logger.debug(f"Returning CSV config funds: {funds}")
             return jsonify({"funds": funds})
         
         # Final fallback
         funds = ["Project Chimera", "RRSP Lance Webull", "TFSA", "TEST"]
-        logger.info(f"Returning hardcoded fallback funds: {funds}")
+        logger.debug(f"Returning hardcoded fallback funds: {funds}")
         return jsonify({"funds": funds})
         
     except Exception as e:
@@ -1364,7 +1364,7 @@ def logs_page():
         # Get navigation context
         nav_context = get_navigation_context(current_page='admin_logs')
         
-        logger.info(f"Rendering logs page for user: {user_email}")
+        logger.debug(f"Rendering logs page for user: {user_email}")
         
         return render_template('logs.html', 
                              user_email=user_email,
@@ -1579,7 +1579,7 @@ def settings_page():
                 pass
         
         # Debug logging
-        logger.info(f"[SETTINGS DEBUG] Loaded preferences - timezone: {current_timezone}, currency: {current_currency}, theme: {current_theme}, v2_enabled: {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
+        logger.debug(f"[SETTINGS DEBUG] Loaded preferences - timezone: {current_timezone}, currency: {current_currency}, theme: {current_theme}, v2_enabled: {is_v2_enabled} (type: {type(is_v2_enabled).__name__})")
         
         # Get navigation context
         nav_context = get_navigation_context(current_page='settings')
@@ -1611,7 +1611,7 @@ def update_timezone():
             return jsonify({"success": False, "error": "Timezone is required"}), 400
         
         user_id = get_user_id_flask()
-        logger.info(f"Updating timezone for user {user_id} to {timezone}")
+        logger.debug(f"Updating timezone for user {user_id} to {timezone}")
         
         result = set_user_timezone(timezone)
         if result:
@@ -1643,7 +1643,7 @@ def update_currency():
             return jsonify({"success": False, "error": "Currency is required"}), 400
         
         user_id = get_user_id_flask()
-        logger.info(f"Updating currency for user {user_id} to {currency}")
+        logger.debug(f"Updating currency for user {user_id} to {currency}")
         
         result = set_user_currency(currency)
         if result:
@@ -1675,7 +1675,7 @@ def update_theme():
             return jsonify({"success": False, "error": "Theme is required"}), 400
         
         user_id = get_user_id_flask()
-        logger.info(f"Updating theme for user {user_id} to {theme}")
+        logger.debug(f"Updating theme for user {user_id} to {theme}")
         
         result = set_user_theme(theme)
         if result:
@@ -1710,12 +1710,12 @@ def update_v2_enabled():
             return jsonify({"success": False, "error": "Missing enabled parameter"}), 400
         
         user_id = get_user_id_flask()
-        logger.info(f"Updating v2_enabled for user {user_id} to {enabled}")
+        logger.debug(f"Updating v2_enabled for user {user_id} to {enabled}")
         
         # Debug: capture any exception from set_user_preference
         try:
             result = set_user_preference('v2_enabled', enabled)
-            logger.info(f"set_user_preference returned: {result} (type: {type(result)})")
+            logger.debug(f"set_user_preference returned: {result} (type: {type(result)})")
         except Exception as pref_error:
             import traceback
             tb = traceback.format_exc()

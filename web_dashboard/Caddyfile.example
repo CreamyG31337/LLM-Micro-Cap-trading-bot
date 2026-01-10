@@ -52,10 +52,10 @@
 	}
 
 		# Fix Streamlit asset loading when accessed from /pages/ subpaths
-	# Browser resolves assets like ./static/js/... relative to /pages/, creating 404s
-	# This regex strips /pages/ from the path for assets, components, and vendor files
+	# Browser resolves assets like ./static/js/... and ./_stcore/health relative to /pages/, creating 404s
+	# This regex strips /pages/ from the path for assets, components, vendor files, and _stcore endpoints
 	@items_in_pages {
-		path_regexp pages_assets ^/pages/(static|_stcore|vendor|component|favicon\.png|manifest\.json)(.*)$
+		path_regexp pages_assets ^/pages/[^/]+/(static|_stcore|vendor|component|favicon\.png|manifest\.json)(.*)$
 	}
 	handle @items_in_pages {
 		rewrite * /{re.pages_assets.1}{re.pages_assets.2}

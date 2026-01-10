@@ -872,11 +872,20 @@ def apply_user_theme() -> None:
         """, unsafe_allow_html=True)
     
     elif theme == 'light':
-        # Force light mode - just set color-scheme, let Streamlit handle the rest
+        # Force light mode - override Streamlit's dark mode detection
         st.markdown("""
         <style>
             :root {
                 color-scheme: light;
+            }
+            /* Override Streamlit's dark mode when OS is dark but user wants light */
+            [data-testid="stAppViewContainer"],
+            [data-testid="stSidebar"],
+            [data-testid="stHeader"],
+            .main,
+            .stApp {
+                background-color: #ffffff !important;
+                color: #31333F !important;
             }
         </style>
         """, unsafe_allow_html=True)

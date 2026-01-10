@@ -20,11 +20,21 @@ class AIAssistant {
     }
 
     init() {
-        this.setupEventListeners();
-        this.loadModels();
-        this.loadFunds();
-        this.loadContextItems();
-        this.updateUI();
+        console.log('[AIAssistant] init() starting...');
+        console.log('[AIAssistant] Config:', this.config);
+        try {
+            this.setupEventListeners();
+            console.log('[AIAssistant] Event listeners set up');
+            this.loadModels();
+            console.log('[AIAssistant] loadModels() called');
+            this.loadFunds();
+            console.log('[AIAssistant] loadFunds() called');
+            this.loadContextItems();
+            this.updateUI();
+            console.log('[AIAssistant] init() complete');
+        } catch (err) {
+            console.error('[AIAssistant] init() error:', err);
+        }
     }
 
     setupEventListeners() {

@@ -54,6 +54,10 @@ app = Flask(__name__,
             static_url_path='/assets')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
 
+# FORCE DEBUG MODE - Ensures errors are visible
+app.debug = True
+app.config['PROPAGATE_EXCEPTIONS'] = True
+
 # CSRF Protection (optional - can be enabled if Flask-WTF is installed)
 try:
     from flask_wtf.csrf import CSRFProtect
@@ -2131,11 +2135,19 @@ def api_ai_search():
 @app.route('/api/v2/ai/preview_context', methods=['POST'])
 @require_auth
 def api_ai_preview_context():
-    """Preview the AI context (debug mode)"""
+    """Preview the AI context (debug mode) - Shows the raw data tables sent to LLM"""
     try:
         from flask_auth_utils import get_user_id_flask
-        from chat_context import ContextItemType
-        from ai_context_builder import build_ai_context
+        from ai_context_builder import (
+            format_holdings, format_thesis, format_trades, 
+            format_performance_metrics, format_cash_balances,
+            format_price_volume_table, format_fundamentals_table
+        )
+        from streamlit_utils import (
+            get_current_positions, get_trade_log, get_cash_balances,
+            calculate_portfolio_value_over_time, get_fund_thesis_data,
+            calculate_performance_metrics
+        )
         
         data = request.get_json()
         fund = data.get('fund')
@@ -2143,34 +2155,62 @@ def api_ai_preview_context():
         if not fund:
             return jsonify({"error": "No fund specified"}), 400
 
-        # Build context items list based on toggles
-        context_types = []
+        user_id = get_user_id_flask()
+        context_parts = []
         
-        # Always included base context
-        context_types.append(ContextItemType.HOLDINGS)
-        context_types.append(ContextItemType.PERFORMANCE)
-        context_types.append(ContextItemType.CASH)
+        # --- Always Included: Holdings ---
+        positions_df = get_current_positions(fund)
+        trades_df = get_trade_log(limit=100, fund=fund)
         
-        # Optional context
+        include_pv = data.get('include_price_volume', True)
+        include_fund = data.get('include_fundamentals', True)
+        
+        if not positions_df.empty:
+            holdings_text = format_holdings(
+                positions_df,
+                fund,
+                trades_df=trades_df,
+                include_price_volume=include_pv,
+                include_fundamentals=include_fund
+            )
+            context_parts.append(holdings_text)
+        
+        # --- Always Included: Performance Metrics ---
+        try:
+            metrics = calculate_performance_metrics(fund)
+            portfolio_df = calculate_portfolio_value_over_time(fund, days=365)
+            if metrics:
+                context_parts.append(format_performance_metrics(metrics, portfolio_df))
+        except Exception as e:
+            logger.warning(f"Error loading performance metrics: {e}")
+        
+        # --- Always Included: Cash Balances ---
+        try:
+            cash = get_cash_balances(fund)
+            if cash:
+                context_parts.append(format_cash_balances(cash))
+        except Exception as e:
+            logger.warning(f"Error loading cash balances: {e}")
+        
+        # --- Optional: Thesis ---
         if data.get('include_thesis', False):
-            context_types.append(ContextItemType.THESIS)
-            
-        if data.get('include_trades', False):
-            context_types.append(ContextItemType.TRADES)
-            
-        # Context options
-        options = {
-            'include_price_volume': data.get('include_price_volume', True),
-            'include_fundamentals': data.get('include_fundamentals', True)
-        }
+            try:
+                thesis_data = get_fund_thesis_data(fund)
+                if thesis_data:
+                    context_parts.append(format_thesis(thesis_data))
+            except Exception as e:
+                logger.warning(f"Error loading thesis: {e}")
         
-        # Build the context string
-        context_string = build_ai_context(
-            user_id=get_user_id_flask(),
-            fund=fund,
-            item_types=context_types,
-            options=options
-        )
+        # --- Optional: Trades ---
+        if data.get('include_trades', False):
+            try:
+                if not trades_df.empty:
+                    context_parts.append(format_trades(trades_df, limit=100))
+            except Exception as e:
+                logger.warning(f"Error loading trades: {e}")
+        
+        # Combine all parts
+        context_string = "\n\n---\n\n".join(context_parts) if context_parts else "No context data available"
         
         return jsonify({
             "success": True, 

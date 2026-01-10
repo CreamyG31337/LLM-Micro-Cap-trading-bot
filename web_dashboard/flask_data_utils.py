@@ -18,11 +18,28 @@ logger = logging.getLogger(__name__)
 
 
 def get_supabase_client_flask() -> Optional[SupabaseClient]:
-    """Get Supabase client for Flask context (no Streamlit dependencies)"""
+    """Get Supabase client for Flask context WITH user token for RLS
+    
+    This passes the user's JWT from the auth_token cookie to SupabaseClient,
+    which sets the Authorization header so RLS policies work correctly.
+    """
     try:
-        return SupabaseClient()
+        from flask_auth_utils import get_auth_token, get_refresh_token
+        
+        # Get the user's JWT token from cookies
+        user_token = get_auth_token()
+        refresh_token = get_refresh_token()
+        
+        if not user_token:
+            logger.warning("[get_supabase_client_flask] No auth_token cookie found - RLS queries will fail!")
+            # Return client anyway, but queries on RLS tables will return empty
+            return SupabaseClient()
+        
+        logger.debug(f"[get_supabase_client_flask] Creating client with user token (length: {len(user_token)})")
+        return SupabaseClient(user_token=user_token, refresh_token=refresh_token)
+        
     except Exception as e:
-        logger.error(f"Error initializing Supabase client: {e}")
+        logger.error(f"Error initializing Supabase client: {e}", exc_info=True)
         return None
 
 

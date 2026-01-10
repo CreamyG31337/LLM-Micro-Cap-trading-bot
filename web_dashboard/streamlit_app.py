@@ -218,11 +218,15 @@ st.set_page_config(
 # This fixes the blank page issue when navigating from Flask V2 pages
 if "goto" in st.query_params:
     goto_page = st.query_params["goto"]
+    # st.switch_page() requires .py extension
+    if not goto_page.endswith('.py'):
+        goto_page = goto_page + '.py'
     _logger.info(f"[GOTO] Redirecting to {goto_page}")
     # Clear the param so it doesn't persist
     st.query_params.clear()
     # Navigate to the target page
     st.switch_page(goto_page)
+
 
 
 # Custom CSS (dark mode compatible)

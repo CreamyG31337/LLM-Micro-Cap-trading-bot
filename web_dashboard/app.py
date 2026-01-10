@@ -2648,8 +2648,6 @@ def api_ai_chat():
             format_holdings, format_thesis, format_trades,
             format_performance_metrics, format_cash_balances
         )
-            format_performance_metrics, format_cash_balances
-        )
         from flask_data_utils import (
             get_current_positions_flask, get_trade_log_flask
         )

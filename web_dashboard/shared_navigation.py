@@ -31,12 +31,11 @@ def get_page_url(page_name: str) -> str:
     if is_page_migrated(page_name):
         return MIGRATED_PAGES[page_name]
     else:
-        # Streamlit page route - use redirect pattern to avoid relative path issues
-        # when navigating from V2 pages
+        # Streamlit MPA URLs: /page_name (not /pages/page_name)
         if page_name == 'dashboard':
             return '/'
         else:
-            return f'/pages/{page_name}'
+            return f'/{page_name}'
 
 
 def get_navigation_links() -> list:

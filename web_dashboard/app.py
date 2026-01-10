@@ -2153,10 +2153,10 @@ def api_ai_preview_context():
             format_performance_metrics, format_cash_balances,
             format_price_volume_table, format_fundamentals_table
         )
-        from streamlit_utils import (
-            get_current_positions, get_trade_log, get_cash_balances,
-            calculate_portfolio_value_over_time, get_fund_thesis_data,
-            calculate_performance_metrics
+        from flask_data_utils import (
+            get_current_positions_flask, get_trade_log_flask, get_cash_balances_flask,
+            calculate_portfolio_value_over_time_flask, get_fund_thesis_data_flask,
+            calculate_performance_metrics_flask
         )
         
         data = request.get_json()
@@ -2169,8 +2169,8 @@ def api_ai_preview_context():
         context_parts = []
         
         # --- Always Included: Holdings ---
-        positions_df = get_current_positions(fund)
-        trades_df = get_trade_log(limit=100, fund=fund)
+        positions_df = get_current_positions_flask(fund)
+        trades_df = get_trade_log_flask(limit=100, fund=fund)
         
         include_pv = data.get('include_price_volume', True)
         include_fund = data.get('include_fundamentals', True)
@@ -2187,8 +2187,8 @@ def api_ai_preview_context():
         
         # --- Always Included: Performance Metrics ---
         try:
-            metrics = calculate_performance_metrics(fund)
-            portfolio_df = calculate_portfolio_value_over_time(fund, days=365)
+            metrics = calculate_performance_metrics_flask(fund)
+            portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
             if metrics:
                 context_parts.append(format_performance_metrics(metrics, portfolio_df))
         except Exception as e:
@@ -2196,7 +2196,7 @@ def api_ai_preview_context():
         
         # --- Always Included: Cash Balances ---
         try:
-            cash = get_cash_balances(fund)
+            cash = get_cash_balances_flask(fund)
             if cash:
                 context_parts.append(format_cash_balances(cash))
         except Exception as e:
@@ -2205,7 +2205,7 @@ def api_ai_preview_context():
         # --- Optional: Thesis ---
         if data.get('include_thesis', False):
             try:
-                thesis_data = get_fund_thesis_data(fund)
+                thesis_data = get_fund_thesis_data_flask(fund)
                 if thesis_data:
                     context_parts.append(format_thesis(thesis_data))
             except Exception as e:
@@ -2352,12 +2352,9 @@ def api_ai_context_build():
         from flask_data_utils import (
             get_current_positions_flask, get_trade_log_flask
         )
-        # For now, we reuse some utils that don't depend on Streamlit or pass safe vars
-        # But calculate_performance_metrics might be unsafe if unmodified.
-        # We need to port calculate_performance_metrics to flask_data_utils if it uses st.
-        from streamlit_utils import (
-            calculate_portfolio_value_over_time, get_fund_thesis_data,
-            calculate_performance_metrics, get_cash_balances
+        from flask_data_utils import (
+            get_cash_balances_flask, calculate_portfolio_value_over_time_flask,
+            get_fund_thesis_data_flask, calculate_performance_metrics_flask
         )
         
         data = request.get_json()
@@ -2396,8 +2393,8 @@ def api_ai_context_build():
         
         # --- Always Included: Performance Metrics ---
         try:
-            metrics = calculate_performance_metrics(fund)
-            portfolio_df = calculate_portfolio_value_over_time(fund, days=365)
+            metrics = calculate_performance_metrics_flask(fund)
+            portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
             if metrics:
                 context_parts.append(format_performance_metrics(metrics, portfolio_df))
                 logger.info(f"[Context Build] Performance metrics added")
@@ -2406,7 +2403,7 @@ def api_ai_context_build():
         
         # --- Always Included: Cash Balances ---
         try:
-            cash = get_cash_balances(fund)
+            cash = get_cash_balances_flask(fund)
             if cash:
                 context_parts.append(format_cash_balances(cash))
                 logger.info(f"[Context Build] Cash balances added")
@@ -2416,7 +2413,7 @@ def api_ai_context_build():
         # --- Optional: Thesis ---
         if data.get('include_thesis', False):
             try:
-                thesis_data = get_fund_thesis_data(fund)
+                thesis_data = get_fund_thesis_data_flask(fund)
                 if thesis_data:
                     context_parts.append(format_thesis(thesis_data))
             except Exception as e:
@@ -2651,11 +2648,9 @@ def api_ai_chat():
         from flask_data_utils import (
             get_current_positions_flask, get_trade_log_flask
         )
-        # Still need some streamlit_utils for cash/metrics until ported, but positions/trades are covered
-        from streamlit_utils import (
-            get_cash_balances,
-            calculate_portfolio_value_over_time, get_fund_thesis_data,
-            calculate_performance_metrics
+        from flask_data_utils import (
+            get_cash_balances_flask, calculate_portfolio_value_over_time_flask,
+            get_fund_thesis_data_flask, calculate_performance_metrics_flask
         )
         from ai_prompts import get_system_prompt
         from search_utils import format_search_results
@@ -2712,7 +2707,7 @@ def api_ai_chat():
                             )
                         )
                     elif item_type == ContextItemType.THESIS:
-                        thesis_data = get_fund_thesis_data(item_fund or "")
+                        thesis_data = get_fund_thesis_data_flask(item_fund or "")
                         if thesis_data:
                             context_parts.append(format_thesis(thesis_data))
                     elif item_type == ContextItemType.TRADES:
@@ -2720,11 +2715,11 @@ def api_ai_chat():
                         trades_df = get_trade_log_flask(limit=limit, fund=item_fund)
                         context_parts.append(format_trades(trades_df, limit))
                     elif item_type == ContextItemType.METRICS:
-                        portfolio_df = calculate_portfolio_value_over_time(item_fund, days=365) if item_fund else None
-                        metrics = calculate_performance_metrics(item_fund) if item_fund else {}
+                        portfolio_df = calculate_portfolio_value_over_time_flask(item_fund, days=365) if item_fund else None
+                        metrics = calculate_performance_metrics_flask(item_fund) if item_fund else {}
                         context_parts.append(format_performance_metrics(metrics, portfolio_df))
                     elif item_type == ContextItemType.CASH_BALANCES:
-                        cash = get_cash_balances(item_fund) if item_fund else {}
+                        cash = get_cash_balances_flask(item_fund) if item_fund else {}
                         context_parts.append(format_cash_balances(cash))
                 except Exception as e:
                     logger.warning(f"Error loading {item_type_str}: {e}")

@@ -13,7 +13,8 @@
     <!-- Header with Clear Chat button -->
     <div class="flex justify-between items-center mb-4">
         <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">💬 Chat</h2>
-        <button id="clear-chat-btn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+        <button id="clear-chat-btn"
+            class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
             🔄 Clear Chat
         </button>
     </div>
@@ -22,8 +23,31 @@
     <div class="flex gap-4 flex-1 min-h-0">
         <!-- Left Column: Chat Interface (70%) -->
         <div class="flex-1 flex flex-col min-w-0" style="flex: 0 0 70%;">
+            <!-- Context Preview Panel (always visible - shows data sent to LLM) -->
+            <div id="context-preview-panel"
+                class="mb-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
+                <div class="p-3 flex items-center justify-between border-b border-gray-300 dark:border-gray-600">
+                    <span class="font-semibold text-gray-900 dark:text-gray-100">
+                        📋 Context Preview
+                        <span id="context-char-badge"
+                            class="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(loading...)</span>
+                    </span>
+                    <button id="refresh-context-btn"
+                        class="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded transition-colors">
+                        🔄 Refresh
+                    </button>
+                </div>
+                <div class="p-3">
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">This data is sent to the LLM with each
+                        message. Toggle options in the sidebar to customize.</p>
+                    <pre id="context-preview-content"
+                        class="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 max-h-64 overflow-y-auto">Loading context...</pre>
+                </div>
+            </div>
+
             <!-- Chat Messages Container -->
-            <div id="chat-container" class="flex-1 overflow-y-auto max-h-[calc(100vh-300px)] min-h-[400px] border border-gray-300 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-800">
+            <div id="chat-container"
+                class="flex-1 overflow-y-auto max-h-[calc(100vh-400px)] min-h-[300px] border border-gray-300 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-800">
                 <div id="chat-messages" class="space-y-4">
                     <!-- Messages will be inserted here -->
                 </div>
@@ -40,7 +64,8 @@
             <div id="suggested-prompt-area" class="hidden mb-4">
                 <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                     <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">✏️ Edit Your Prompt</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then click Send.</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then
+                        click Send.</p>
                     <textarea id="editable-prompt" rows="4"
                         class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
                     <div class="flex gap-2">
@@ -58,9 +83,11 @@
 
             <!-- Start Analysis Workflow (shown when no messages) -->
             <div id="start-analysis-area" class="hidden mb-4">
-                <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <div
+                    class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                     <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">🚀 Start Analysis</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then click Run to start.</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then
+                        click Run to start.</p>
                     <textarea id="initial-prompt" rows="6"
                         class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-green-500"></textarea>
                     <button id="run-analysis-btn"
@@ -74,7 +101,8 @@
             <div class="flex gap-2">
                 <input type="text" id="chat-input" placeholder="Ask about your portfolio..."
                     class="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
-                <button id="send-btn" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 font-medium focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button id="send-btn"
+                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 font-medium focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     <i class="fas fa-paper-plane mr-2"></i>Send
                 </button>
             </div>
@@ -96,15 +124,18 @@
         </div>
 
         <!-- Right Column: Quick Research Sidebar (30%) -->
-        <div class="w-80 flex-shrink-0 border-l border-gray-300 dark:border-gray-600 pl-4 overflow-y-auto sticky top-0 max-h-[calc(100vh-200px)]" style="flex: 0 0 30%;">
+        <div class="w-80 flex-shrink-0 border-l border-gray-300 dark:border-gray-600 pl-4 overflow-y-auto sticky top-0 max-h-[calc(100vh-200px)]"
+            style="flex: 0 0 30%;">
             <div id="quick-research-sidebar">
                 <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">🔍 Quick Research</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Select tickers to analyze</p>
 
                 <!-- Ticker Selection -->
                 <div class="mb-4">
-                    <label class="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Select Tickers:</label>
-                    <select id="ticker-select" multiple class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                    <label class="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Select
+                        Tickers:</label>
+                    <select id="ticker-select" multiple
+                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                         size="5">
                         <!-- Populated by JavaScript -->
                     </select>
@@ -163,7 +194,8 @@
         <!-- Model Selection -->
         <div>
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">⚙️ Model</h3>
-            <select id="model-select" class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+            <select id="model-select"
+                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
                 <!-- Populated by JavaScript -->
             </select>
             <p id="model-description" class="text-xs text-gray-500 dark:text-gray-400 mt-2"></p>
@@ -174,7 +206,8 @@
         <!-- Fund Selection -->
         <div>
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">📊 Data Source</h3>
-            <select id="fund-select" class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+            <select id="fund-select"
+                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
                 {% for fund in available_funds %}
                 <option value="{{ fund }}">{{ fund }}</option>
                 {% endfor %}
@@ -186,16 +219,19 @@
         <!-- Context Selection -->
         <div>
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">📋 Analysis Context</h3>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">✅ Always Included: Holdings, Performance Metrics, Cash Balances</p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">✅ Always Included: Holdings, Performance Metrics,
+                Cash Balances</p>
             <p class="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100">Optional:</p>
 
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-thesis" class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-thesis"
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Investment Thesis</span>
             </label>
 
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-trades" class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-trades"
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Recent Trades</span>
             </label>
 
@@ -204,12 +240,14 @@
             <h4 class="font-semibold mb-2 text-sm text-gray-900 dark:text-gray-100">📊 Portfolio Table Options</h4>
 
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-price-volume" checked class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-price-volume" checked
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Price & Volume Table</span>
             </label>
 
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-fundamentals" checked class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-fundamentals" checked
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Company Fundamentals Table</span>
             </label>
         </div>
@@ -222,7 +260,8 @@
             {% if searxng_available %}
             <p class="text-xs text-green-600 dark:text-green-400 mb-2">✅ SearXNG available</p>
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-search" checked class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-search" checked
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Enable Web Search</span>
             </label>
             {% else %}
@@ -237,7 +276,8 @@
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">🧠 Research Knowledge</h3>
             {% if ollama_available %}
             <label class="flex items-center mb-2 cursor-pointer">
-                <input type="checkbox" id="toggle-repository" checked class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                <input type="checkbox" id="toggle-repository" checked
+                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Use Research Repository</span>
             </label>
             {% else %}
@@ -250,29 +290,18 @@
         <!-- Context Summary -->
         <div>
             <p class="text-xs text-gray-600 dark:text-gray-400 mb-2" id="context-summary">No context items selected</p>
-            <button id="clear-context-btn" class="w-full px-3 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-800 dark:text-red-200 rounded-lg text-sm mb-4 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+            <button id="clear-context-btn"
+                class="w-full px-3 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-800 dark:text-red-200 rounded-lg text-sm mb-4 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                 🗑️ Clear All
             </button>
         </div>
 
         <hr class="border-gray-200 dark:border-gray-700">
 
-        <!-- Debug Context -->
+        <!-- Context Status (Debug moved to main area) -->
         <div>
-            <details>
-                <summary class="font-semibold cursor-pointer mb-2 text-sm select-none text-gray-900 dark:text-gray-100">🛠️ Debug Context</summary>
-                <div class="mt-2">
-                    <button id="preview-context-btn"
-                        class="w-full px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-sm mb-2 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                        👁️ Preview Context
-                    </button>
-                    <textarea id="debug-context-area"
-                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono h-40 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                        readonly
-                        placeholder="Click Preview to see the raw table data usually sending to LLM..."></textarea>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" id="debug-char-count">0 characters</p>
-                </div>
-            </details>
+            <p class="text-xs text-gray-500 dark:text-gray-400">💡 Expand "Context Preview" in the chat area to see raw
+                data tables.</p>
         </div>
     </div>
 </aside>

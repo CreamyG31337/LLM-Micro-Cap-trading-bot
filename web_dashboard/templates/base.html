@@ -249,6 +249,24 @@
     <!-- Flowbite JavaScript (required for interactive components) -->
     <script src="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.js"></script>
 
+    <!-- Fix: Remove aria-hidden from sidebar on desktop to prevent accessibility warning -->
+    <script>
+        (function () {
+            function fixSidebarAriaHidden() {
+                const sidebar = document.getElementById('sidebar');
+                if (sidebar && window.innerWidth >= 768) {
+                    // On desktop, sidebar is visible - remove aria-hidden
+                    sidebar.removeAttribute('aria-hidden');
+                }
+            }
+            // Run on page load and resize
+            document.addEventListener('DOMContentLoaded', fixSidebarAriaHidden);
+            window.addEventListener('resize', fixSidebarAriaHidden);
+            // Also run after Flowbite initializes (slight delay)
+            setTimeout(fixSidebarAriaHidden, 100);
+        })();
+    </script>
+
     {% block extra_scripts %}{% endblock %}
 </body>
 

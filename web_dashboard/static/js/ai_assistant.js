@@ -15,14 +15,20 @@ class AIAssistant {
         this.includeRepository = true;
         this.includePriceVolume = true;
         this.includeFundamentals = true;
-        this.contextCache = null;
-        this.contextFingerprint = null;
+
+        // Context caching - calculate once, use for all messages
+        this.contextString = null;  // The actual context text to send to LLM
+        this.contextReady = false;  // True when context is loaded and ready
+        this.contextLoading = false; // True while loading (prevent duplicate requests)
     }
 
     init() {
         console.log('[AIAssistant] init() starting...');
         console.log('[AIAssistant] Config:', this.config);
         try {
+            // Disable send button until context is ready
+            this.setSendEnabled(false);
+
             this.setupEventListeners();
             console.log('[AIAssistant] Event listeners set up');
             this.loadModels();
@@ -31,9 +37,25 @@ class AIAssistant {
             console.log('[AIAssistant] loadFunds() called');
             this.loadContextItems();
             this.updateUI();
+
+            // Eagerly load context - this enables the send button when done
+            this.loadContext();
+
             console.log('[AIAssistant] init() complete');
         } catch (err) {
             console.error('[AIAssistant] init() error:', err);
+        }
+    }
+
+    setSendEnabled(enabled) {
+        const sendBtn = document.getElementById('send-btn');
+        if (sendBtn) {
+            sendBtn.disabled = !enabled;
+            if (!enabled) {
+                sendBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                sendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
         }
     }
 
@@ -73,9 +95,9 @@ class AIAssistant {
         globalFundSelect?.addEventListener('change', (e) => {
             this.selectedFund = e.target.value;
             console.log('[AIAssistant] Fund changed to:', this.selectedFund);
-            this.contextCache = null; // Clear context cache to force rebuild
-            this.contextFingerprint = ''; // Reset fingerprint
+            this.contextReady = false; // Reset context state
             this.loadPortfolioTickers(); // Reload tickers for new fund
+            this.loadContext(); // Reload context for new fund
             // Sync right sidebar selector if exists
             if (rightSidebarFundSelect) {
                 rightSidebarFundSelect.value = e.target.value;
@@ -86,9 +108,9 @@ class AIAssistant {
         rightSidebarFundSelect?.addEventListener('change', (e) => {
             this.selectedFund = e.target.value;
             console.log('[AIAssistant] Fund changed (sidebar) to:', this.selectedFund);
-            this.contextCache = null;
-            this.contextFingerprint = '';
+            this.contextReady = false;
             this.loadPortfolioTickers();
+            this.loadContext();
             // Sync global selector if exists
             if (globalFundSelect) {
                 globalFundSelect.value = e.target.value;
@@ -152,33 +174,60 @@ class AIAssistant {
             if (prompt) this.sendMessage(prompt);
         });
 
-        // Debug Preview Context
-        const previewBtn = document.getElementById('preview-context-btn');
-        if (previewBtn) {
-            previewBtn.addEventListener('click', () => this.previewContext());
+        // Debug Preview Context - now in main chat area
+        const refreshContextBtn = document.getElementById('refresh-context-btn');
+        if (refreshContextBtn) {
+            refreshContextBtn.addEventListener('click', () => this.refreshContextPreview());
         }
+
+        // Auto-reload context when toggles change
+        ['toggle-thesis', 'toggle-trades', 'toggle-price-volume', 'toggle-fundamentals'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', () => this.loadContext());
+        });
     }
 
-    async previewContext() {
-        if (!this.selectedFund) {
-            this.showError('Please select a fund first');
+    /**
+     * Load context from backend and cache it.
+     * This is the single source of truth for context - called on init and when config changes.
+     * Enables send button when ready.
+     */
+    async loadContext() {
+        // Prevent duplicate requests
+        if (this.contextLoading) {
+            console.log('[AIAssistant] Context already loading, skipping...');
             return;
         }
 
-        const debugArea = document.getElementById('debug-context-area');
-        const countArea = document.getElementById('debug-char-count');
-        const btn = document.getElementById('preview-context-btn');
+        const contentArea = document.getElementById('context-preview-content');
+        const charBadge = document.getElementById('context-char-badge');
+        const btn = document.getElementById('refresh-context-btn');
+
+        // Mark as loading
+        this.contextLoading = true;
+        this.contextReady = false;
+        this.setSendEnabled(false);
+
+        if (!this.selectedFund) {
+            if (contentArea) contentArea.textContent = 'Please select a fund to load context.';
+            if (charBadge) charBadge.textContent = '(0 chars)';
+            this.contextLoading = false;
+            return;
+        }
 
         try {
-            btn.disabled = true;
-            btn.textContent = '⏳ Loading...';
-            debugArea.value = 'Loading context...';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Loading...';
+            }
+            if (contentArea) contentArea.textContent = 'Loading context...';
 
             // Gather current toggles
-            const includeThesis = document.getElementById('toggle-thesis').checked;
-            const includeTrades = document.getElementById('toggle-trades').checked;
-            const includePriceVolume = document.getElementById('toggle-price-volume').checked;
-            const includeFundamentals = document.getElementById('toggle-fundamentals').checked;
+            const includeThesis = document.getElementById('toggle-thesis')?.checked || false;
+            const includeTrades = document.getElementById('toggle-trades')?.checked || false;
+            const includePriceVolume = document.getElementById('toggle-price-volume')?.checked || false;
+            const includeFundamentals = document.getElementById('toggle-fundamentals')?.checked || false;
+
+            console.log('[AIAssistant] Fetching context for fund:', this.selectedFund);
 
             const response = await fetch('/api/v2/ai/preview_context', {
                 method: 'POST',
@@ -197,18 +246,41 @@ class AIAssistant {
             const data = await response.json();
 
             if (data.success) {
-                debugArea.value = data.context;
-                countArea.textContent = `${data.char_count.toLocaleString()} characters`;
+                // Cache the context string for use in chat
+                this.contextString = data.context;
+                this.contextReady = true;
+
+                // Update display
+                if (contentArea) contentArea.textContent = data.context;
+                if (charBadge) charBadge.textContent = `(${data.char_count.toLocaleString()} chars)`;
+
+                // Enable send button
+                this.setSendEnabled(true);
+                console.log('[AIAssistant] Context ready:', data.char_count, 'chars');
             } else {
-                debugArea.value = `Error: ${data.error}`;
+                this.contextString = null;
+                this.contextReady = false;
+                if (contentArea) contentArea.textContent = `Error: ${data.error}`;
+                if (charBadge) charBadge.textContent = '(error)';
             }
         } catch (err) {
-            console.error('Error previewing context:', err);
-            debugArea.value = `Failed to load context: ${err.message}`;
+            console.error('[AIAssistant] Error loading context:', err);
+            this.contextString = null;
+            this.contextReady = false;
+            if (contentArea) contentArea.textContent = `Failed to load context: ${err.message}`;
+            if (charBadge) charBadge.textContent = '(error)';
         } finally {
-            btn.disabled = false;
-            btn.textContent = '👁️ Preview Context';
+            this.contextLoading = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '🔄 Refresh';
+            }
         }
+    }
+
+    // Alias for backwards compatibility
+    refreshContextPreview() {
+        return this.loadContext();
     }
 
     loadModels() {
@@ -394,20 +466,11 @@ class AIAssistant {
             }
         }
 
-        // Get cached context
-        const contextString = await this.getCachedContext();
+        // Get pre-loaded context (synchronous - no API call)
+        const contextString = this.getCachedContext();
 
         // Debug logging
-        console.log('[AIAssistant] Context string length:', contextString?.length || 0);
-        console.log('[AIAssistant] Search results:', searchResults);
-        console.log('[AIAssistant] Repository articles:', repositoryArticles?.length || 0);
-
-        // Update debug area if visible
-        const debugArea = document.getElementById('debug-context-area');
-        if (debugArea) {
-            debugArea.value = contextString || '(No context loaded)';
-            document.getElementById('debug-char-count').textContent = `${contextString?.length || 0} characters`;
-        }
+        console.log('[AIAssistant] Using cached context, length:', contextString?.length || 0);
 
         // Build request
         const requestData = {
@@ -435,47 +498,18 @@ class AIAssistant {
         }
     }
 
-    getContextFingerprint() {
-        // Create fingerprint from context items
-        const items = this.contextItems.map(item =>
-            `${item.item_type}:${item.fund || ''}:${JSON.stringify(item.metadata || {})}`
-        ).sort().join('|');
-        return items;
-    }
-
-    async getCachedContext() {
-        // Check if context has changed
-        const fingerprint = this.getContextFingerprint();
-        if (fingerprint === this.contextFingerprint && this.contextCache) {
-            return this.contextCache;
+    /**
+     * Get the cached context string (already loaded by loadContext)
+     * This is synchronous now - no API call needed since context was pre-loaded
+     */
+    getCachedContext() {
+        // Context was already loaded by loadContext() on init
+        // Just return it - no need to call API again
+        if (!this.contextReady) {
+            console.warn('[AIAssistant] getCachedContext called but context not ready yet');
+            return '';
         }
-
-        // Build context from API
-        try {
-            const response = await fetch('/api/v2/ai/context/build', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fund: this.selectedFund,
-                    include_price_volume: this.includePriceVolume,
-                    include_fundamentals: this.includeFundamentals
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('[AIAssistant] Context build response:', data);
-                this.contextCache = data.context_string || '';
-                this.contextFingerprint = fingerprint;
-                return this.contextCache;
-            } else {
-                console.error('[AIAssistant] Context build failed:', response.status, response.statusText);
-            }
-        } catch (err) {
-            this.showError('Error building context: ' + err.message);
-        }
-
-        return '';
+        return this.contextString || '';
     }
 
     async performSearch(query) {

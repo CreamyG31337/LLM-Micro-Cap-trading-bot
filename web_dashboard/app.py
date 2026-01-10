@@ -234,15 +234,25 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                 'active': current_page == link['page']
             })
         
+        # Get available funds for the sidebar selector
+        try:
+            from streamlit_utils import get_available_funds
+            available_funds = get_available_funds()
+        except Exception as e:
+            logger.warning(f"Could not load available funds: {e}")
+            available_funds = []
+        
         return {
             'navigation_links': nav_links,
-            'is_admin': is_admin() if hasattr(request, 'user_id') else False
+            'is_admin': is_admin() if hasattr(request, 'user_id') else False,
+            'available_funds': available_funds
         }
     except Exception as e:
         logger.warning(f"Error building navigation context: {e}")
         return {
             'navigation_links': [],
-            'is_admin': False
+            'is_admin': False,
+            'available_funds': []
         }
 
 

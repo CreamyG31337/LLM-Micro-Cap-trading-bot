@@ -31,22 +31,27 @@ def get_available_funds_flask() -> List[str]:
     try:
         user_id = get_user_id_flask()
         if not user_id:
-            logger.warning("get_available_funds_flask: No user_id in session")
+            logger.warning("[get_available_funds_flask] No user_id in Flask session/cookie")
             return []
+        
+        logger.info(f"[get_available_funds_flask] Looking up funds for user_id: {user_id[:8]}...")
             
         client = get_supabase_client_flask()
         if not client:
+            logger.error("[get_available_funds_flask] Failed to create Supabase client")
             return []
             
         result = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id).execute()
         
         if result and result.data:
             funds = [row.get('fund_name') for row in result.data if row.get('fund_name')]
+            logger.info(f"[get_available_funds_flask] Found {len(funds)} funds: {funds}")
             return sorted(funds)
-            
+        
+        logger.warning(f"[get_available_funds_flask] No funds found for user_id: {user_id[:8]}...")
         return []
     except Exception as e:
-        logger.error(f"get_available_funds_flask failed: {e}")
+        logger.error(f"[get_available_funds_flask] Exception: {e}", exc_info=True)
         return []
 
 

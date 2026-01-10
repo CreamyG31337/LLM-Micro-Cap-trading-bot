@@ -303,12 +303,26 @@ def render_theme_settings():
     except ValueError:
         current_index = 0
     
-    # Theme selector
+    # Auto-save function - defined before use
+    def _save_theme_on_change():
+        if "theme_selectbox" in st.session_state:
+            selected_label = st.session_state.theme_selectbox
+            selected = theme_options[theme_labels.index(selected_label)]
+            try:
+                result = set_user_theme(selected)
+                if result:
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Failed to save theme: {e}")
+    
+    # Theme selector - auto-saves on change
     selected_theme_label = st.selectbox(
         "Select your theme:",
         options=theme_labels,
         index=current_index,
-        help="Override your browser/system theme preference. 'System Default' follows your OS setting."
+        help="Override your browser/system theme preference. 'System Default' follows your OS setting.",
+        key="theme_selectbox",
+        on_change=_save_theme_on_change
     )
     
     selected_theme = theme_options[theme_labels.index(selected_theme_label)]
@@ -317,32 +331,9 @@ def render_theme_settings():
     if selected_theme == 'system':
         st.caption("ℹ️ Theme will follow your browser/OS dark mode setting")
     elif selected_theme == 'dark':
-        st.caption("🌙 Dark mode is forced on")
+        st.caption("🌙 Dark mode")
     else:
-        st.caption("☀️ Light mode is forced on")
-    
-    # Save button
-    if st.button("💾 Save Theme", type="primary", key="save_theme"):
-        try:
-            # Access cache through streamlit session state
-            cache = st.session_state
-            # Clear any previous error
-            if "_pref_error_theme" in cache:
-                del cache["_pref_error_theme"]
-            
-            result = set_user_theme(selected_theme)
-            if result:
-                st.success(f"✅ Theme saved as {THEME_OPTIONS[selected_theme]}")
-                st.info("🔄 Refresh the page to apply the theme change")
-                st.rerun()  # Refresh to show updated value
-            else:
-                # Get error details if available
-                error_msg = cache.get("_pref_error_theme", "Unknown error - RPC call returned False")
-                st.error(f"❌ Failed to save theme: {error_msg}")
-                st.caption("Check the application console/logs for more details.")
-        except Exception as e:
-            st.error(f"❌ Exception saving theme: {type(e).__name__}: {str(e)}")
-            st.exception(e)
+        st.caption("☀️ Light mode")
 
 render_theme_settings()
 

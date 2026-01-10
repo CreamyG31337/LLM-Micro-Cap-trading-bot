@@ -22,6 +22,16 @@
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+        /* Sync color-scheme with data-theme for consistency with Streamlit */
+        {% if user_theme == 'dark' %}
+        :root {
+            color-scheme: dark;
+        }
+        {% elif user_theme == 'light' %}
+        :root {
+            color-scheme: light;
+        }
+        {% endif %}
     </style>
 
     {% block extra_head %}{% endblock %}

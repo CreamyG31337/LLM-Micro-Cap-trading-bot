@@ -198,9 +198,43 @@ def get_user_email() -> Optional[str]:
 
 
 def is_authenticated() -> bool:
-    """Check if user is authenticated (checks session_state only)"""
-    # Session should be restored from cookie at app start, so just check session_state
-    return "user_token" in st.session_state and st.session_state.user_token is not None
+    """Check if user is authenticated.
+    
+    This function automatically attempts to restore the session from cookies
+    if the user is not already authenticated, ensuring deep-linked pages work correctly.
+    """
+    # First check if already authenticated
+    if "user_token" in st.session_state and st.session_state.user_token is not None:
+        return True
+    
+    # Try to restore session from cookie (for deep-linked subpages)
+    try:
+        cookies = st.context.cookies
+        auth_token = cookies.get("auth_token")
+        cookie_refresh_token = cookies.get("refresh_token")
+        
+        if auth_token:
+            # Validate token
+            token_parts = auth_token.split('.')
+            if len(token_parts) >= 2:
+                payload = token_parts[1]
+                payload += '=' * (4 - len(payload) % 4)
+                decoded = base64.urlsafe_b64decode(payload)
+                user_data = json.loads(decoded)
+                exp = user_data.get("exp", 0)
+                
+                current_time = int(time.time())
+                
+                if exp > current_time:
+                    # Token valid, restore session
+                    set_user_session(auth_token, skip_cookie_redirect=True, expires_at=exp,
+                                    refresh_token=cookie_refresh_token)
+                    return True
+    except Exception:
+        # If restoration fails, user isn't authenticated
+        pass
+    
+    return False
 
 
 def logout_user(reason: str = "manual", return_to: Optional[str] = None):

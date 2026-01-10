@@ -1445,6 +1445,92 @@ def api_logs_application():
         logger.error(f"Error fetching logs: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/logs/ollama')
+@require_admin
+def api_logs_ollama():
+    """Get Ollama logs from ollama.log file"""
+    try:
+        import os
+        from pathlib import Path
+        
+        log_file = Path(__file__).parent / 'logs' / 'ollama.log'
+        
+        if not log_file.exists():
+            return jsonify({
+                'logs': [],
+                'total': 0,
+                'page': 1,
+                'pages': 1,
+                'error': 'Ollama log file not found. Ensure volume mapping is configured.'
+            })
+        
+        # Read file (tail approach for large files)
+        limit = int(request.args.get('limit', 100))
+        page = int(request.args.get('page', 1))
+        search = request.args.get('search', '')
+        
+        # Read last N lines (simple approach for now)
+        # For large files, read from end
+        file_size = log_file.stat().st_size
+        if file_size == 0:
+            return jsonify({
+                'logs': [],
+                'total': 0,
+                'page': 1,
+                'pages': 1
+            })
+        
+        # Read up to 5MB from end for efficiency
+        buffer_size = min(5 * 1024 * 1024, file_size)
+        with open(log_file, 'rb') as f:
+            f.seek(max(0, file_size - buffer_size))
+            buffer = f.read().decode('utf-8', errors='ignore')
+        
+        lines = buffer.split('\n')
+        if file_size > buffer_size:
+            lines = lines[1:]  # Skip first partial line
+        
+        # Apply search filter
+        if search:
+            lines = [line for line in lines if search.lower() in line.lower()]
+        
+        # Reverse for newest first
+        lines = list(reversed(lines))
+        
+        # Pagination
+        total = len(lines)
+        start = (page - 1) * limit
+        end = start + limit
+        paginated_lines = lines[start:end]
+        
+        # Format logs (Ollama logs don't have structured format, so treat each line as a message)
+        formatted_logs = []
+        for line in paginated_lines:
+            # Try to extract timestamp if present, otherwise use current time
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Simple parsing - if line starts with timestamp-like pattern, extract it
+            # Otherwise treat entire line as message
+            formatted_logs.append({
+                'timestamp': '',  # Ollama logs may not have timestamps
+                'level': 'INFO',  # Default level
+                'module': 'ollama',
+                'message': line
+            })
+        
+        return jsonify({
+            'logs': formatted_logs,
+            'total': total,
+            'page': page,
+            'pages': (total + limit - 1) // limit if total > 0 else 1
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching Ollama logs: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/logs/clear', methods=['POST'])
 @require_admin
 def api_logs_clear():

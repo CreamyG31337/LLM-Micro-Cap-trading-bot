@@ -82,45 +82,45 @@ class AIAssistant {
         document.getElementById('toggle-search').addEventListener('change', (e) => {
             this.includeSearch = e.target.checked;
         });
-        document.getElementById('toggle-repository').addEventListener('change', (e) => {
+        document.getElementById('toggle-repository')?.addEventListener('change', (e) => {
             this.includeRepository = e.target.checked;
         });
 
         // Clear context
-        document.getElementById('clear-context-btn').addEventListener('click', () => this.clearContext());
+        document.getElementById('clear-context-btn')?.addEventListener('click', () => this.clearContext());
 
         // Retry last response button
-        document.getElementById('retry-btn').addEventListener('click', () => this.retryLastMessage());
+        document.getElementById('retry-btn')?.addEventListener('click', () => this.retryLastMessage());
 
-        // Portfolio Intelligence button
-        document.getElementById('portfolio-intelligence-btn').addEventListener('click', () => this.checkPortfolioNews());
+        // Portfolio Intelligence button (optional)
+        document.getElementById('portfolio-intelligence-btn')?.addEventListener('click', () => this.checkPortfolioNews());
 
-        // Quick research buttons
-        document.getElementById('research-ticker-btn').addEventListener('click', () => this.quickResearch('research'));
-        document.getElementById('analyze-ticker-btn').addEventListener('click', () => this.quickResearch('analyze'));
-        document.getElementById('compare-tickers-btn').addEventListener('click', () => this.quickResearch('compare'));
-        document.getElementById('earnings-ticker-btn').addEventListener('click', () => this.quickResearch('earnings'));
-        document.getElementById('portfolio-analysis-btn').addEventListener('click', () => this.quickResearch('portfolio'));
-        document.getElementById('market-news-btn').addEventListener('click', () => this.quickResearch('market'));
-        document.getElementById('sector-news-btn').addEventListener('click', () => this.quickResearch('sector'));
+        // Quick research buttons (optional - may not all exist)
+        document.getElementById('research-ticker-btn')?.addEventListener('click', () => this.quickResearch('research'));
+        document.getElementById('analyze-ticker-btn')?.addEventListener('click', () => this.quickResearch('analyze'));
+        document.getElementById('compare-tickers-btn')?.addEventListener('click', () => this.quickResearch('compare'));
+        document.getElementById('earnings-ticker-btn')?.addEventListener('click', () => this.quickResearch('earnings'));
+        document.getElementById('portfolio-analysis-btn')?.addEventListener('click', () => this.quickResearch('portfolio'));
+        document.getElementById('market-news-btn')?.addEventListener('click', () => this.quickResearch('market'));
+        document.getElementById('sector-news-btn')?.addEventListener('click', () => this.quickResearch('sector'));
 
-        // Ticker selection
-        document.getElementById('ticker-select').addEventListener('change', () => this.updateTickerActions());
-        document.getElementById('custom-ticker').addEventListener('input', () => this.updateTickerActions());
+        // Ticker selection (optional)
+        document.getElementById('ticker-select')?.addEventListener('change', () => this.updateTickerActions());
+        document.getElementById('custom-ticker')?.addEventListener('input', () => this.updateTickerActions());
 
-        // Suggested prompt handlers
-        document.getElementById('send-edited-prompt-btn').addEventListener('click', () => {
-            const prompt = document.getElementById('editable-prompt').value;
-            document.getElementById('suggested-prompt-area').classList.add('hidden');
-            this.sendMessage(prompt);
+        // Suggested prompt handlers (optional)
+        document.getElementById('send-edited-prompt-btn')?.addEventListener('click', () => {
+            const prompt = document.getElementById('editable-prompt')?.value;
+            document.getElementById('suggested-prompt-area')?.classList.add('hidden');
+            if (prompt) this.sendMessage(prompt);
         });
-        document.getElementById('cancel-edited-prompt-btn').addEventListener('click', () => {
-            document.getElementById('suggested-prompt-area').classList.add('hidden');
+        document.getElementById('cancel-edited-prompt-btn')?.addEventListener('click', () => {
+            document.getElementById('suggested-prompt-area')?.classList.add('hidden');
         });
-        document.getElementById('run-analysis-btn').addEventListener('click', () => {
-            const prompt = document.getElementById('initial-prompt').value;
-            document.getElementById('start-analysis-area').classList.add('hidden');
-            this.sendMessage(prompt);
+        document.getElementById('run-analysis-btn')?.addEventListener('click', () => {
+            const prompt = document.getElementById('initial-prompt')?.value;
+            document.getElementById('start-analysis-area')?.classList.add('hidden');
+            if (prompt) this.sendMessage(prompt);
         });
 
         // Debug Preview Context

@@ -15,7 +15,7 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, has_admin_access, can_modify_data, get_user_email
+from auth_utils import is_authenticated, has_admin_access, can_modify_data, get_user_email, redirect_to_login
 from streamlit_utils import get_supabase_client
 from navigation import render_navigation
 from supabase_client import SupabaseClient
@@ -38,16 +38,13 @@ st.set_page_config(page_title="AI Settings", page_icon="🤖", layout="wide")
 
 # Check authentication - redirect to main page if not logged in
 if not is_authenticated():
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/admin_ai_settings.py")
 
 # Refresh token if needed (auto-refresh before expiry)
 from auth_utils import refresh_token_if_needed
 if not refresh_token_if_needed():
     from auth_utils import logout_user
-    logout_user()
-    st.error("Your session has expired. Please log in again.")
-    st.switch_page("streamlit_app.py")
+    logout_user(return_to="pages/admin_ai_settings.py")
     st.stop()
 
 # Check admin access (allows both admin and readonly_admin)

@@ -51,6 +51,17 @@
         }
 	}
 
+		# Fix Streamlit asset loading when accessed from /pages/ subpaths
+	# Browser resolves assets like ./static/js/... relative to /pages/, creating 404s
+	# This regex strips /pages/ from the path for assets, components, and vendor files
+	@items_in_pages {
+		path_regexp pages_assets ^/pages/(static|_stcore|vendor|component|favicon\.png|manifest\.json)(.*)$
+	}
+	handle @items_in_pages {
+		rewrite * /{re.pages_assets.1}{re.pages_assets.2}
+		reverse_proxy localhost:8501
+	}
+
     # Flask Static Assets (Theme CSS etc)
     # Routed to /assets to avoid conflict with Streamlit's /static
     handle /assets/* {

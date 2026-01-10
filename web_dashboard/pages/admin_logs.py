@@ -13,12 +13,11 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from navigation import render_navigation
-from auth_utils import is_authenticated, has_admin_access
+from auth_utils import is_authenticated, has_admin_access, redirect_to_login
 
 # Check authentication - redirect to main page if not logged in
 if not is_authenticated():
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/admin_logs.py")
 
 # Check admin access (allows both admin and readonly_admin)
 if not has_admin_access():

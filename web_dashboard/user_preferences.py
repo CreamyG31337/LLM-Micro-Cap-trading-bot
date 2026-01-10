@@ -868,9 +868,12 @@ def apply_user_theme() -> None:
             /* Force dark mode */
             :root {
                 color-scheme: dark;
+                --background-color: #0e1117;
+                --secondary-background-color: #262730;
+                --text-color: #fafafa;
             }
             
-            /* Override Streamlit's theme detection */
+            /* Override Streamlit's theme detection - Main containers */
             [data-testid="stAppViewContainer"],
             [data-testid="stSidebar"],
             [data-testid="stHeader"],
@@ -880,25 +883,162 @@ def apply_user_theme() -> None:
                 color: #fafafa !important;
             }
             
+            /* Streamlit CSS variables */
+            [data-testid="stAppViewContainer"] {
+                --background-color: #0e1117 !important;
+                --secondary-background-color: #262730 !important;
+                --text-color: #fafafa !important;
+            }
+            
             /* Inputs and widgets */
             [data-testid="stTextInput"] input,
             [data-testid="stTextArea"] textarea,
+            [data-testid="stNumberInput"] input,
+            [data-testid="stDateInput"] input,
+            [data-testid="stTimeInput"] input,
             [data-testid="stSelectbox"] > div,
-            .stSelectbox > div > div {
+            [data-testid="stMultiSelect"] > div,
+            [data-testid="stSlider"] > div,
+            .stSelectbox > div > div,
+            .stTextInput > div > input,
+            .stTextArea > div > textarea {
                 background-color: #262730 !important;
                 color: #fafafa !important;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            /* Radio buttons and checkboxes */
+            [data-testid="stRadio"] label,
+            [data-testid="stCheckbox"] label,
+            [data-testid="stRadio"] > div,
+            [data-testid="stCheckbox"] > div {
+                color: #fafafa !important;
+            }
+            
+            /* Buttons */
+            [data-testid="stButton"] > button,
+            .stButton > button {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            [data-testid="stButton"] > button:hover,
+            .stButton > button:hover {
+                background-color: #374151 !important;
             }
             
             /* Cards and containers */
             [data-testid="stExpander"],
+            [data-testid="stExpander"] > div,
             .stAlert,
-            .element-container {
+            .element-container,
+            [data-testid="stVerticalBlock"] > div {
                 background-color: #262730 !important;
             }
             
-            /* Ensure text is readable */
-            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th {
+            /* DataFrames and tables */
+            [data-testid="stDataFrame"],
+            [data-testid="stDataFrame"] table,
+            [data-testid="stDataFrame"] thead,
+            [data-testid="stDataFrame"] th {
+                background-color: #262730 !important;
                 color: #fafafa !important;
+            }
+            
+            [data-testid="stDataFrame"] tbody tr {
+                background-color: #262730 !important;
+            }
+            
+            [data-testid="stDataFrame"] tbody tr:nth-child(even) {
+                background-color: #1f2937 !important;
+            }
+            
+            [data-testid="stDataFrame"] td {
+                color: #fafafa !important;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            /* Metrics cards */
+            [data-testid="stMetric"],
+            [data-testid="stMetric"] > div {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+            }
+            
+            /* Tabs */
+            [data-testid="stTabs"] button,
+            [data-testid="stTabs"] > div > div {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+            }
+            
+            [data-testid="stTabs"] button[aria-selected="true"] {
+                background-color: #374151 !important;
+            }
+            
+            /* Markdown and code blocks */
+            [data-testid="stMarkdownContainer"],
+            [data-testid="stMarkdownContainer"] p,
+            [data-testid="stMarkdownContainer"] li,
+            [data-testid="stCodeBlock"],
+            [data-testid="stCodeBlock"] code {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+            }
+            
+            /* Alerts */
+            [data-baseweb="notification"],
+            .stAlert {
+                background-color: #262730 !important;
+                color: #fafafa !important;
+            }
+            
+            /* Ensure text is readable */
+            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th, div {
+                color: #fafafa !important;
+            }
+            
+            /* Navigation section titles - from streamlit_app.py */
+            .nav-section-title {
+                color: rgb(250, 250, 250) !important;
+            }
+            
+            /* Navigation page links - from streamlit_app.py */
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"] {
+                background-color: #262730 !important;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+                color: #fafafa !important;
+            }
+            
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"]:hover {
+                background-color: #0e1117 !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+            }
+            
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"][aria-current="page"] {
+                background: linear-gradient(135deg, rgba(255, 75, 75, 0.3) 0%, #262730 100%) !important;
+                border-color: rgba(255, 75, 75, 0.6) !important;
+            }
+            
+            /* Sidebar expander - from streamlit_app.py */
+            section[data-testid="stSidebar"] div[data-testid="stExpander"] {
+                background-color: #262730 !important;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            section[data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
+                border-color: rgba(255, 255, 255, 0.2) !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+            }
+            
+            /* Sidebar title - from streamlit_app.py */
+            section[data-testid="stSidebar"] h1 {
+                background: linear-gradient(135deg, #ff6b6b 0%, #4dabf7 100%) !important;
+                -webkit-background-clip: text !important;
+                -webkit-text-fill-color: transparent !important;
+                background-clip: text !important;
             }
         </style>
         """, unsafe_allow_html=True)
@@ -910,9 +1050,12 @@ def apply_user_theme() -> None:
             /* Force light mode */
             :root {
                 color-scheme: light;
+                --background-color: #ffffff;
+                --secondary-background-color: #f0f2f6;
+                --text-color: #31333F;
             }
             
-            /* Override Streamlit's theme detection */
+            /* Override Streamlit's theme detection - Main containers */
             [data-testid="stAppViewContainer"],
             [data-testid="stSidebar"],
             [data-testid="stHeader"],
@@ -922,25 +1065,162 @@ def apply_user_theme() -> None:
                 color: #31333F !important;
             }
             
+            /* Streamlit CSS variables */
+            [data-testid="stAppViewContainer"] {
+                --background-color: #ffffff !important;
+                --secondary-background-color: #f0f2f6 !important;
+                --text-color: #31333F !important;
+            }
+            
             /* Inputs and widgets */
             [data-testid="stTextInput"] input,
             [data-testid="stTextArea"] textarea,
+            [data-testid="stNumberInput"] input,
+            [data-testid="stDateInput"] input,
+            [data-testid="stTimeInput"] input,
             [data-testid="stSelectbox"] > div,
-            .stSelectbox > div > div {
+            [data-testid="stMultiSelect"] > div,
+            [data-testid="stSlider"] > div,
+            .stSelectbox > div > div,
+            .stTextInput > div > input,
+            .stTextArea > div > textarea {
                 background-color: #f0f2f6 !important;
                 color: #31333F !important;
+                border-color: rgba(128, 128, 128, 0.2) !important;
+            }
+            
+            /* Radio buttons and checkboxes */
+            [data-testid="stRadio"] label,
+            [data-testid="stCheckbox"] label,
+            [data-testid="stRadio"] > div,
+            [data-testid="stCheckbox"] > div {
+                color: #31333F !important;
+            }
+            
+            /* Buttons */
+            [data-testid="stButton"] > button,
+            .stButton > button {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+                border-color: rgba(128, 128, 128, 0.2) !important;
+            }
+            
+            [data-testid="stButton"] > button:hover,
+            .stButton > button:hover {
+                background-color: #e5e7eb !important;
             }
             
             /* Cards and containers */
             [data-testid="stExpander"],
+            [data-testid="stExpander"] > div,
             .stAlert,
-            .element-container {
+            .element-container,
+            [data-testid="stVerticalBlock"] > div {
                 background-color: #f0f2f6 !important;
             }
             
-            /* Ensure text is readable */
-            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th {
+            /* DataFrames and tables */
+            [data-testid="stDataFrame"],
+            [data-testid="stDataFrame"] table,
+            [data-testid="stDataFrame"] thead,
+            [data-testid="stDataFrame"] th {
+                background-color: #f0f2f6 !important;
                 color: #31333F !important;
+            }
+            
+            [data-testid="stDataFrame"] tbody tr {
+                background-color: #ffffff !important;
+            }
+            
+            [data-testid="stDataFrame"] tbody tr:nth-child(even) {
+                background-color: #f9fafb !important;
+            }
+            
+            [data-testid="stDataFrame"] td {
+                color: #31333F !important;
+                border-color: rgba(128, 128, 128, 0.2) !important;
+            }
+            
+            /* Metrics cards */
+            [data-testid="stMetric"],
+            [data-testid="stMetric"] > div {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+            }
+            
+            /* Tabs */
+            [data-testid="stTabs"] button,
+            [data-testid="stTabs"] > div > div {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+            }
+            
+            [data-testid="stTabs"] button[aria-selected="true"] {
+                background-color: #ffffff !important;
+            }
+            
+            /* Markdown and code blocks */
+            [data-testid="stMarkdownContainer"],
+            [data-testid="stMarkdownContainer"] p,
+            [data-testid="stMarkdownContainer"] li,
+            [data-testid="stCodeBlock"],
+            [data-testid="stCodeBlock"] code {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+            }
+            
+            /* Alerts */
+            [data-baseweb="notification"],
+            .stAlert {
+                background-color: #f0f2f6 !important;
+                color: #31333F !important;
+            }
+            
+            /* Ensure text is readable */
+            p, span, label, h1, h2, h3, h4, h5, h6, li, td, th, div {
+                color: #31333F !important;
+            }
+            
+            /* Navigation section titles - from streamlit_app.py */
+            .nav-section-title {
+                color: rgb(49, 51, 63) !important;
+            }
+            
+            /* Navigation page links - from streamlit_app.py */
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"] {
+                background-color: #f0f2f6 !important;
+                border-color: rgba(128, 128, 128, 0.1) !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+                color: #31333F !important;
+            }
+            
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"]:hover {
+                background-color: #ffffff !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+            }
+            
+            section[data-testid="stSidebar"] a[data-testid="stPageLink"][aria-current="page"] {
+                background: linear-gradient(135deg, rgba(255, 75, 75, 0.2) 0%, #f0f2f6 100%) !important;
+                border-color: rgba(255, 75, 75, 0.5) !important;
+            }
+            
+            /* Sidebar expander - from streamlit_app.py */
+            section[data-testid="stSidebar"] div[data-testid="stExpander"] {
+                background-color: #f0f2f6 !important;
+                border-color: rgba(128, 128, 128, 0.1) !important;
+            }
+            
+            section[data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
+                border-color: rgba(128, 128, 128, 0.2) !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+            }
+            
+            /* Sidebar title - from streamlit_app.py */
+            section[data-testid="stSidebar"] h1 {
+                background: linear-gradient(135deg, #ff4b4b 0%, #1f77b4 100%) !important;
+                -webkit-background-clip: text !important;
+                -webkit-text-fill-color: transparent !important;
+                background-clip: text !important;
             }
         </style>
         """, unsafe_allow_html=True)

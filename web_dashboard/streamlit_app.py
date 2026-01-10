@@ -214,23 +214,6 @@ st.set_page_config(
     }
 )
 
-# Handle V2 navigation redirect - MUST run on every page load
-# This fixes the blank page issue when navigating from Flask V2 pages
-if "goto" in st.query_params:
-    goto_page = st.query_params["goto"]
-    _logger.info(f"[GOTO] Redirecting to /{goto_page}")
-    # Use JavaScript to change the URL and trigger Streamlit's client-side routing
-    # We use history.pushState to avoid a full page reload
-    redirect_url = f"/{goto_page}"
-    st.components.v1.html(f'''
-        <script>
-            // Push the new URL to history
-            window.parent.history.pushState({{}}, '', '{redirect_url}');
-            // Dispatch a popstate event to trigger Streamlit's router
-            window.parent.dispatchEvent(new PopStateEvent('popstate', {{state: {{}}}}));
-        </script>
-    ''', height=0)
-    st.stop()  # Stop execution while navigation happens
 
 
 
@@ -1070,18 +1053,37 @@ def main():
     # Helper to get current page path for return_to redirects
     def get_current_page_path():
         """Get the current page path to redirect back to after cookie operations."""
+        # 1. Check query parameters first (passed from subpages)
+        try:
+            if "return_to" in st.query_params:
+                return st.query_params["return_to"]
+        except Exception:
+            pass
+            
+        # 2. Check session state (set before switching pages)
+        if "return_to" in st.session_state:
+            val = st.session_state.return_to
+            # Clear it so it doesn't persist forever
+            del st.session_state.return_to
+            return val
+
+        # 3. Fallback to Referer header
         try:
             # Try to get path from st.context.headers (Streamlit 1.37+)
-            # The 'Referer' or custom headers might have the path
             headers = getattr(st.context, 'headers', {})
             referer = headers.get('Referer', '')
             if referer:
                 from urllib.parse import urlparse
                 parsed = urlparse(referer)
                 if parsed.path:
-                    return parsed.path
+                    # Strip lead slash if redirecting to pages/...
+                    path = parsed.path
+                    if path.startswith('/pages/'):
+                        return path.substring(1) if hasattr(path, 'substring') else path[1:]
+                    return path
         except Exception:
             pass
+            
         # Default to root if we can't determine the path
         return '/'
     

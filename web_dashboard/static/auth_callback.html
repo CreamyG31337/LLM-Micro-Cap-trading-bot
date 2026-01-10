@@ -86,20 +86,34 @@
                     }
                 }
 
-                // Build redirect URL - use /?goto= pattern for Streamlit pages
+                // Build redirect URL
                 let redirectUrl = streamlitUrl.toString();
 
-                // If redirecting to a Streamlit page, use the goto pattern
-                const currentPath = window.location.pathname;
-                if (currentPath.startsWith('/pages/')) {
-                    // Convert /pages/page_name to /?goto=pages/page_name
-                    redirectUrl = baseUrl + '/?goto=' + currentPath.substring(1);
+                // Check if we have a return_to parameter in the search params
+                const searchParams = new URLSearchParams(window.location.search);
+                const returnTo = searchParams.get('return_to') || searchParams.get('redirectTo');
+
+                if (returnTo) {
+                    // If we have a return_to, use it
+                    if (returnTo.startsWith('/')) {
+                        redirectUrl = baseUrl + returnTo;
+                    } else if (returnTo.startsWith('pages/')) {
+                        redirectUrl = baseUrl + '/' + returnTo;
+                    } else {
+                        redirectUrl = baseUrl + '/' + returnTo;
+                    }
                 }
 
                 window.location.replace(redirectUrl);
             } else {
-                // No hash, redirect to main page
-                window.location.replace('/');
+                // No hash, check for return_to even in error state
+                const searchParams = new URLSearchParams(window.location.search);
+                const returnTo = searchParams.get('return_to') || searchParams.get('redirectTo');
+                if (returnTo) {
+                    window.location.replace(baseUrl + (returnTo.startsWith('/') ? '' : '/') + returnTo);
+                } else {
+                    window.location.replace('/');
+                }
             }
         })();
     </script>

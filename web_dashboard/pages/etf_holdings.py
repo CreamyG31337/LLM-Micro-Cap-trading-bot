@@ -30,7 +30,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email
+from auth_utils import is_authenticated, get_user_email, redirect_to_login
 from navigation import render_navigation
 from supabase_client import SupabaseClient
 from user_preferences import get_user_timezone
@@ -48,17 +48,14 @@ st.set_page_config(
 
 # Check authentication
 if not is_authenticated():
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/etf_holdings.py")
 
 # Refresh token if needed (auto-refresh before expiry)
 from auth_utils import refresh_token_if_needed
 if not refresh_token_if_needed():
     # Token refresh failed - session is invalid, redirect to login
     from auth_utils import logout_user
-    logout_user()
-    st.error("Your session has expired. Please log in again.")
-    st.switch_page("streamlit_app.py")
+    logout_user(return_to="pages/etf_holdings.py")
     st.stop()
 
 # Render navigation

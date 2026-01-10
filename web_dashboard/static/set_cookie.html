@@ -181,7 +181,7 @@
 
                 // Redirect after 3 seconds to allow user to read the message
                 setTimeout(function () {
-                    window.location.replace(window.location.origin + '/');
+                    window.location.replace(window.location.origin + returnTo);
                 }, 3000);
             } else if (token) {
                 // Set the cookies (login or refresh)
@@ -189,13 +189,8 @@
                 if (refreshToken) {
                     setCookie('refresh_token', refreshToken, 30); // 30 days for refresh token
                 }
-                // Redirect back to where user was - use /?goto= pattern for Streamlit pages
-                let redirectUrl = window.location.origin + returnTo;
-                if (returnTo.startsWith('/pages/')) {
-                    // Convert /pages/page_name to /?goto=pages/page_name
-                    redirectUrl = window.location.origin + '/?goto=' + returnTo.substring(1);
-                }
-                window.location.replace(redirectUrl);
+                // Redirect back to where user was
+                window.location.replace(window.location.origin + returnTo);
             } else {
                 document.getElementById('messageText').textContent = 'No action specified.';
                 setTimeout(function () {

@@ -18,7 +18,7 @@ import pandas as pd
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_id
+from auth_utils import is_authenticated, get_user_id, redirect_to_login
 from chat_context import ChatContextManager, ContextItem, ContextItemType # Added ContextItem
 from ollama_client import get_ollama_client, check_ollama_health, list_available_models
 from searxng_client import get_searxng_client, check_searxng_health
@@ -194,17 +194,14 @@ st.markdown("""
 
 # Check authentication
 if not is_authenticated():
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/ai_assistant.py")
 
 # Refresh token if needed (auto-refresh before expiry)
 from auth_utils import refresh_token_if_needed
 if not refresh_token_if_needed():
     # Token refresh failed - session is invalid, redirect to login
     from auth_utils import logout_user
-    logout_user()
-    st.error("Your session has expired. Please log in again.")
-    st.switch_page("streamlit_app.py")
+    logout_user(return_to="pages/ai_assistant.py")
     st.stop()
 
 # Initialize chat context manager

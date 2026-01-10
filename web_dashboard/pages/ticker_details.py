@@ -21,7 +21,7 @@ parent_dir = Path(__file__).parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from auth_utils import is_authenticated, refresh_token_if_needed, is_admin, get_user_token
+from auth_utils import is_authenticated, refresh_token_if_needed, is_admin, get_user_token, redirect_to_login
 from navigation import render_navigation
 from postgres_client import PostgresClient
 from supabase_client import SupabaseClient
@@ -89,15 +89,12 @@ except (ImportError, Exception):
 
 # Check authentication
 if not is_authenticated():
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/ticker_details.py")
 
 # Refresh token if needed
 if not refresh_token_if_needed():
     from auth_utils import logout_user
-    logout_user()
-    st.error("Your session has expired. Please log in again.")
-    st.switch_page("streamlit_app.py")
+    logout_user(return_to="pages/ticker_details.py")
     st.stop()
 
 # Render navigation

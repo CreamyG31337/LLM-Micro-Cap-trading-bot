@@ -47,6 +47,7 @@ st.set_page_config(
 
 # Check authentication
 if not is_authenticated():
+    st.session_state.return_to = "pages/social_sentiment.py"
     st.switch_page("streamlit_app.py")
     st.stop()
 
@@ -55,9 +56,7 @@ from auth_utils import refresh_token_if_needed
 if not refresh_token_if_needed():
     # Token refresh failed - session is invalid, redirect to login
     from auth_utils import logout_user
-    logout_user()
-    st.error("Your session has expired. Please log in again.")
-    st.switch_page("streamlit_app.py")
+    logout_user(return_to="pages/social_sentiment.py")
     st.stop()
 
 # Render navigation

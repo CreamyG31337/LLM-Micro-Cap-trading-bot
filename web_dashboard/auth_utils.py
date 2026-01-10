@@ -203,7 +203,7 @@ def is_authenticated() -> bool:
     return "user_token" in st.session_state and st.session_state.user_token is not None
 
 
-def logout_user(reason: str = "manual"):
+def logout_user(reason: str = "manual", return_to: Optional[str] = None):
     """Clear user session
     
     Args:
@@ -212,6 +212,7 @@ def logout_user(reason: str = "manual"):
             - "session_expired": Token expired
             - "refresh_failed": Token refresh failed
             - "invalid_token": Token validation failed
+        return_to: Optional page to redirect back to after login
     """
     if "user_token" in st.session_state:
         del st.session_state.user_token
@@ -231,16 +232,35 @@ def logout_user(reason: str = "manual"):
     # (Streamlit can't clear cookies directly due to iframe sandboxing)
     import urllib.parse
     encoded_reason = urllib.parse.quote(reason, safe='')
+    
+    redirect_url = f'/set_cookie.html?action=clear&reason={encoded_reason}'
+    if return_to:
+        encoded_return = urllib.parse.quote(return_to, safe='')
+        redirect_url += f'&return_to={encoded_return}'
+        
     st.markdown(
-        f'<meta http-equiv="refresh" content="0; url=/set_cookie.html?action=clear&reason={encoded_reason}">',
+        f'<meta http-equiv="refresh" content="0; url={redirect_url}">',
         unsafe_allow_html=True
     )
     st.write("Logging out...")
     st.stop()
 
 
+def redirect_to_login(return_to: Optional[str] = None):
+    """Redirect to main page login while preserving current page context
+    
+    Args:
+        return_to: Path to the current page (e.g., 'pages/social_sentiment.py')
+    """
+    if return_to:
+        st.session_state.return_to = return_to
+    st.switch_page("streamlit_app.py")
+    st.stop()
+
+
 def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False, 
-                     refresh_token: Optional[str] = None, expires_at: Optional[int] = None):
+                     refresh_token: Optional[str] = None, expires_at: Optional[int] = None,
+                     return_to: Optional[str] = None):
     """Store user session data. If user is None, decode from JWT token.
     
     Args:
@@ -249,6 +269,7 @@ def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie
         skip_cookie_redirect: If True, don't redirect to set cookie (used when restoring from cookie)
         refresh_token: Optional refresh token for automatic token renewal
         expires_at: Optional expiration timestamp (Unix epoch seconds)
+        return_to: Optional page to redirect back to after setting cookies
     """
     st.session_state.user_token = access_token
     
@@ -310,6 +331,10 @@ def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie
         if refresh_token:
             encoded_refresh = urllib.parse.quote(refresh_token, safe='')
             redirect_url += f'&refresh_token={encoded_refresh}'
+        
+        if return_to:
+            encoded_return = urllib.parse.quote(return_to, safe='')
+            redirect_url += f'&return_to={encoded_return}'
         
         # Use JavaScript via st.markdown with meta refresh (not stripped like script tags)
         # This will redirect the ENTIRE page, not just an iframe

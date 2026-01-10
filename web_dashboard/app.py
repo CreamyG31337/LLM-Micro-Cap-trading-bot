@@ -6,7 +6,7 @@ A Flask web app to display trading bot portfolio performance using Supabase
 
 # Check critical dependencies first
 try:
-    from flask import Flask, render_template, jsonify, request, redirect, url_for
+    from flask import Flask, render_template, jsonify, request, redirect, url_for, session
 except ImportError as e:
     print(f"❌ ERROR: {e}")
     print("🔔 SOLUTION: Activate the virtual environment first!")
@@ -53,6 +53,16 @@ app = Flask(__name__,
             static_folder='static',
             static_url_path='/assets')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key-change-this")
+
+# CSRF Protection (optional - can be enabled if Flask-WTF is installed)
+try:
+    from flask_wtf.csrf import CSRFProtect
+    csrf = CSRFProtect(app)
+    CSRF_ENABLED = True
+    logger.info("CSRF protection enabled via Flask-WTF")
+except ImportError:
+    CSRF_ENABLED = False
+    logger.warning("Flask-WTF not available - CSRF protection disabled. Install with: pip install flask-wtf")
 
 # Configure CORS to allow credentials from Vercel deployment
 CORS(app, 
@@ -1735,6 +1745,35 @@ def update_v2_enabled():
         logger.error(f"Full traceback: {error_details}")
         return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
 
+@app.route('/api/settings/ai_model', methods=['POST'])
+@require_auth
+def update_ai_model():
+    """Update user AI model preference"""
+    try:
+        from user_preferences import set_user_ai_model
+        from flask_auth_utils import get_user_id_flask
+        
+        data = request.get_json()
+        model = data.get('model')
+        
+        if not model:
+            return jsonify({"success": False, "error": "Model is required"}), 400
+        
+        user_id = get_user_id_flask()
+        logger.debug(f"Updating AI model for user {user_id} to {model}")
+        
+        result = set_user_ai_model(model)
+        if result:
+            logger.info(f"Successfully updated AI model to {model}")
+            return jsonify({"success": True})
+        else:
+            logger.error(f"Failed to update AI model - set_user_ai_model returned False")
+            return jsonify({"success": False, "error": "Failed to save model preference"}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating AI model: {e}", exc_info=True)
+        return jsonify({"success": False, "error": f"Server error: {str(e)}"}), 500
+
 @app.route('/api/settings/debug', methods=['GET'])
 @require_auth
 def settings_debug():
@@ -2022,6 +2061,695 @@ def api_ticker_external_links():
         return jsonify(links)
     except Exception as e:
         logger.error(f"Error fetching external links for {ticker}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# AI Assistant Routes (Flask v2)
+# ============================================================================
+
+@app.route('/v2/ai_assistant')
+@require_auth
+def ai_assistant_page():
+    """AI Assistant chat interface page (Flask v2)"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme, get_user_ai_model
+        from streamlit_utils import get_available_funds
+        from ollama_client import list_available_models, check_ollama_health
+        from searxng_client import check_searxng_health
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        default_model = get_user_ai_model()
+        
+        # Get available funds
+        available_funds = get_available_funds()
+        
+        # Get available models
+        ollama_models = list_available_models()
+        ollama_available = check_ollama_health()
+        searxng_available = check_searxng_health()
+        
+        # Check for WebAI models
+        try:
+            from ai_service_keys import get_model_display_name
+            webai_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
+            has_webai = True
+        except (ImportError, FileNotFoundError):
+            webai_models = []
+            has_webai = False
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='ai_assistant')
+        
+        return render_template('ai_assistant.html',
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             default_model=default_model,
+                             available_funds=available_funds,
+                             ollama_models=ollama_models,
+                             ollama_available=ollama_available,
+                             searxng_available=searxng_available,
+                             webai_models=webai_models,
+                             has_webai=has_webai,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error loading AI assistant page: {e}", exc_info=True)
+        return jsonify({"error": "Failed to load AI assistant page"}), 500
+
+@app.route('/api/v2/ai/models', methods=['GET'])
+@require_auth
+def api_ai_models():
+    """Get available AI models"""
+    try:
+        from ollama_client import list_available_models
+        from ai_service_keys import get_model_display_name
+        
+        ollama_models = list_available_models()
+        
+        # Format models with display names
+        models = []
+        for model in ollama_models:
+            models.append({
+                'id': model,
+                'name': model,
+                'type': 'ollama'
+            })
+        
+        # Add WebAI models if available
+        try:
+            webai_models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.0-pro"]
+            for model in webai_models:
+                try:
+                    display_name = get_model_display_name(model)
+                    models.append({
+                        'id': model,
+                        'name': display_name,
+                        'type': 'webai'
+                    })
+                except (KeyError, FileNotFoundError):
+                    models.append({
+                        'id': model,
+                        'name': model,
+                        'type': 'webai'
+                    })
+        except (ImportError, FileNotFoundError):
+            pass
+        
+        return jsonify({"models": models})
+    except Exception as e:
+        logger.error(f"Error fetching AI models: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/context', methods=['GET', 'POST'])
+@require_auth
+def api_ai_context():
+    """Get or update context items"""
+    try:
+        from flask_auth_utils import get_user_id_flask
+        from chat_context import ContextItemType, ContextItem
+        import json as json_lib
+        
+        user_id = get_user_id_flask()
+        if not user_id:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        # Initialize context in session if needed
+        if 'ai_context_items' not in session:
+            session['ai_context_items'] = []
+        
+        if request.method == 'GET':
+            # Return current context items
+            context_items = session.get('ai_context_items', [])
+            # Convert to serializable format
+            items = []
+            for item_dict in context_items:
+                items.append({
+                    'item_type': item_dict['item_type'],
+                    'fund': item_dict.get('fund'),
+                    'metadata': item_dict.get('metadata', {})
+                })
+            return jsonify({"items": items})
+        
+        elif request.method == 'POST':
+            # Add or remove context item
+            data = request.get_json()
+            action = data.get('action')  # 'add' or 'remove'
+            item_type_str = data.get('item_type')
+            fund = data.get('fund')
+            metadata = data.get('metadata', {})
+            
+            try:
+                item_type = ContextItemType(item_type_str)
+            except ValueError:
+                return jsonify({"error": f"Invalid item type: {item_type_str}"}), 400
+            
+            context_items = session.get('ai_context_items', [])
+            
+            # Create item dict for comparison
+            item_dict = {
+                'item_type': item_type_str,
+                'fund': fund,
+                'metadata': metadata
+            }
+            
+            if action == 'add':
+                # Check if already exists
+                if item_dict not in context_items:
+                    context_items.append(item_dict)
+                    session['ai_context_items'] = context_items
+                    return jsonify({"success": True, "message": "Item added"})
+                else:
+                    return jsonify({"success": False, "message": "Item already exists"})
+            
+            elif action == 'remove':
+                if item_dict in context_items:
+                    context_items.remove(item_dict)
+                    session['ai_context_items'] = context_items
+                    return jsonify({"success": True, "message": "Item removed"})
+                else:
+                    return jsonify({"success": False, "message": "Item not found"})
+            
+            elif action == 'clear':
+                session['ai_context_items'] = []
+                return jsonify({"success": True, "message": "All items cleared"})
+            
+            else:
+                return jsonify({"error": f"Invalid action: {action}"}), 400
+    
+    except Exception as e:
+        logger.error(f"Error managing context: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/context/build', methods=['POST'])
+@require_auth
+def api_ai_context_build():
+    """Build context string from selected items"""
+    try:
+        from flask_auth_utils import get_user_id_flask
+        from chat_context import ContextItemType
+        from ai_context_builder import (
+            format_holdings, format_thesis, format_trades,
+            format_performance_metrics, format_cash_balances
+        )
+        from streamlit_utils import (
+            get_current_positions, get_trade_log, get_cash_balances,
+            calculate_portfolio_value_over_time, get_fund_thesis_data,
+            calculate_performance_metrics
+        )
+        
+        user_id = get_user_id_flask()
+        if not user_id:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        data = request.get_json()
+        selected_fund = data.get('fund')
+        context_items = session.get('ai_context_items', [])
+        
+        if not context_items:
+            return jsonify({"context_string": ""})
+        
+        context_parts = []
+        
+        for item_dict in context_items:
+            item_type_str = item_dict['item_type']
+            fund = item_dict.get('fund') or selected_fund
+            
+            try:
+                item_type = ContextItemType(item_type_str)
+            except ValueError:
+                continue
+            
+            try:
+                if item_type == ContextItemType.HOLDINGS:
+                    positions_df = get_current_positions(fund)
+                    trades_df = get_trade_log(limit=1000, fund=fund) if fund else None
+                    include_pv = data.get('include_price_volume', True)
+                    include_fund = data.get('include_fundamentals', True)
+                    context_parts.append(
+                        format_holdings(
+                            positions_df,
+                            fund or "Unknown",
+                            trades_df=trades_df,
+                            include_price_volume=include_pv,
+                            include_fundamentals=include_fund
+                        )
+                    )
+                
+                elif item_type == ContextItemType.THESIS:
+                    thesis_data = get_fund_thesis_data(fund or "")
+                    if thesis_data:
+                        context_parts.append(format_thesis(thesis_data))
+                
+                elif item_type == ContextItemType.TRADES:
+                    limit = item_dict.get('metadata', {}).get('limit', 100)
+                    trades_df = get_trade_log(limit=limit, fund=fund)
+                    context_parts.append(format_trades(trades_df, limit))
+                
+                elif item_type == ContextItemType.METRICS:
+                    portfolio_df = calculate_portfolio_value_over_time(fund, days=365) if fund else None
+                    metrics = calculate_performance_metrics(fund) if fund else {}
+                    context_parts.append(format_performance_metrics(metrics, portfolio_df))
+                
+                elif item_type == ContextItemType.CASH_BALANCES:
+                    cash = get_cash_balances(fund) if fund else {}
+                    context_parts.append(format_cash_balances(cash))
+                
+            except Exception as e:
+                logger.warning(f"Error loading {item_type_str}: {e}")
+                continue
+        
+        context_string = "\n\n---\n\n".join(context_parts)
+        return jsonify({"context_string": context_string})
+    
+    except Exception as e:
+        logger.error(f"Error building context: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/search', methods=['POST'])
+@require_auth
+def api_ai_search():
+    """Perform web search via SearXNG"""
+    try:
+        from searxng_client import get_searxng_client, check_searxng_health
+        from search_utils import (
+            build_search_query, detect_research_intent,
+            get_company_name_from_db, filter_relevant_results
+        )
+        
+        if not check_searxng_health():
+            return jsonify({"error": "SearXNG unavailable"}), 503
+        
+        data = request.get_json()
+        user_query = data.get('query', '')
+        tickers = data.get('tickers', [])
+        time_range = data.get('time_range', 'day')
+        min_relevance_score = data.get('min_relevance_score', 0.3)
+        
+        searxng_client = get_searxng_client()
+        if not searxng_client:
+            return jsonify({"error": "SearXNG client not available"}), 503
+        
+        # Detect research intent
+        research_intent = detect_research_intent(user_query)
+        
+        # Build search query
+        if tickers:
+            company_name = get_company_name_from_db(tickers[0]) if tickers else None
+            search_query = build_search_query(
+                user_query,
+                tickers=tickers,
+                company_name=company_name,
+                preserve_keywords=True,
+                research_intent=research_intent
+            )
+            
+            # Search news
+            search_data = searxng_client.search_news(
+                query=search_query,
+                time_range=time_range,
+                max_results=20
+            )
+            
+            # Filter for relevance if ticker search
+            if search_data and 'results' in search_data and search_data['results']:
+                filter_result = filter_relevant_results(
+                    search_data['results'],
+                    tickers[0],
+                    company_name=company_name,
+                    min_relevance_score=min_relevance_score
+                )
+                search_data['results'] = filter_result['relevant']
+        else:
+            # General search
+            search_query = build_search_query(
+                user_query,
+                preserve_keywords=True,
+                research_intent=research_intent
+            )
+            search_data = searxng_client.search_web(
+                query=search_query,
+                time_range=time_range,
+                max_results=10
+            )
+        
+        # Format results
+        from search_utils import format_search_results
+        if search_data and 'results' in search_data:
+            formatted = format_search_results(search_data, max_results=10)
+            return jsonify({
+                "success": True,
+                "results": search_data['results'],
+                "formatted": formatted,
+                "query": search_query
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "results": [],
+                "formatted": "",
+                "query": search_query
+            })
+    
+    except Exception as e:
+        logger.error(f"Error performing search: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/repository', methods=['POST'])
+@require_auth
+def api_ai_repository():
+    """Search research repository (RAG)"""
+    try:
+        from ollama_client import get_ollama_client, check_ollama_health
+        from research_repository import ResearchRepository
+        
+        if not check_ollama_health():
+            return jsonify({"error": "Ollama unavailable (required for embeddings)"}), 503
+        
+        data = request.get_json()
+        user_query = data.get('query', '')
+        max_results = data.get('max_results', 3)
+        min_similarity = data.get('min_similarity', 0.6)
+        
+        # Generate embedding
+        client = get_ollama_client()
+        if not client:
+            return jsonify({"error": "Ollama client not available"}), 503
+        
+        query_embedding = client.generate_embedding(user_query)
+        if not query_embedding:
+            return jsonify({"error": "Failed to generate embedding"}), 500
+        
+        # Search repository
+        repo = ResearchRepository()
+        articles = repo.search_similar_articles(
+            query_embedding=query_embedding,
+            limit=max_results,
+            min_similarity=min_similarity
+        )
+        
+        return jsonify({
+            "success": True,
+            "articles": articles
+        })
+    
+    except Exception as e:
+        logger.error(f"Error searching repository: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/portfolio-intelligence', methods=['POST'])
+@require_auth
+def api_ai_portfolio_intelligence():
+    """Check portfolio news from research repository"""
+    try:
+        from research_repository import ResearchRepository
+        from streamlit_utils import get_current_positions
+        
+        data = request.get_json()
+        fund = data.get('fund')
+        
+        if not fund:
+            return jsonify({"error": "Fund is required"}), 400
+        
+        # Initialize repository
+        repo = ResearchRepository()
+        
+        # Get portfolio tickers
+        portfolio_tickers = set()
+        positions_df = get_current_positions(fund)
+        if not positions_df.empty and 'ticker' in positions_df.columns:
+            portfolio_tickers = {t.strip().upper() for t in positions_df['ticker'].dropna().unique()}
+        
+        if not portfolio_tickers:
+            return jsonify({
+                "success": False,
+                "message": "No positions found in current portfolio to check.",
+                "matching_articles": []
+            })
+        
+        # Fetch recent articles
+        recent_articles = repo.get_recent_articles(limit=50, days=7)
+        
+        # Filter for holdings
+        matching_articles = []
+        seen_titles = set()
+        
+        for article in recent_articles:
+            article_tickers = article.get('tickers')
+            if not article_tickers:
+                continue
+            
+            art_ticker_set = {t.upper() for t in article_tickers}
+            matches = art_ticker_set.intersection(portfolio_tickers)
+            
+            if matches and article['title'] not in seen_titles:
+                matching_articles.append({
+                    'title': article.get('title'),
+                    'matched_holdings': list(matches),
+                    'summary': article.get('summary', 'No summary'),
+                    'conclusion': article.get('conclusion', 'N/A'),
+                    'source': article.get('source', 'Unknown'),
+                    'published_at': article.get('published_at', '')
+                })
+                seen_titles.add(article['title'])
+        
+        return jsonify({
+            "success": True,
+            "matching_articles": matching_articles,
+            "count": len(matching_articles)
+        })
+    
+    except Exception as e:
+        logger.error(f"Error checking portfolio news: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/ai/chat', methods=['POST'])
+@require_auth
+def api_ai_chat():
+    """Handle chat message and stream AI response"""
+    try:
+        from flask import Response, stream_with_context
+        from flask_auth_utils import get_user_id_flask
+        from chat_context import ContextItemType
+        from ai_context_builder import (
+            format_holdings, format_thesis, format_trades,
+            format_performance_metrics, format_cash_balances
+        )
+        from streamlit_utils import (
+            get_current_positions, get_trade_log, get_cash_balances,
+            calculate_portfolio_value_over_time, get_fund_thesis_data,
+            calculate_performance_metrics
+        )
+        from ai_prompts import get_system_prompt
+        from search_utils import format_search_results
+        from research_utils import escape_markdown
+        import json as json_lib
+        
+        user_id = get_user_id_flask()
+        if not user_id:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        data = request.get_json()
+        user_query = data.get('query', '')
+        model = data.get('model')
+        fund = data.get('fund')
+        context_items = data.get('context_items', [])
+        conversation_history = data.get('conversation_history', [])
+        include_search = data.get('include_search', False)
+        include_repository = data.get('include_repository', False)
+        search_results = data.get('search_results')  # Pre-computed search results
+        repository_articles = data.get('repository_articles')  # Pre-computed repository results
+        
+        if not user_query:
+            return jsonify({"error": "Query is required"}), 400
+        
+        # Use pre-built context string if provided (from caching), otherwise build it
+        context_string = data.get('context_string', '')
+        
+        if not context_string:
+            # Build context string from items
+            context_parts = []
+            
+            for item_dict in context_items:
+                item_type_str = item_dict['item_type']
+                item_fund = item_dict.get('fund') or fund
+                
+                try:
+                    item_type = ContextItemType(item_type_str)
+                except ValueError:
+                    continue
+                
+                try:
+                    if item_type == ContextItemType.HOLDINGS:
+                        positions_df = get_current_positions(item_fund)
+                        trades_df = get_trade_log(limit=1000, fund=item_fund) if item_fund else None
+                        include_pv = data.get('include_price_volume', True)
+                        include_fund = data.get('include_fundamentals', True)
+                        context_parts.append(
+                            format_holdings(
+                                positions_df,
+                                item_fund or "Unknown",
+                                trades_df=trades_df,
+                                include_price_volume=include_pv,
+                                include_fundamentals=include_fund
+                            )
+                        )
+                    elif item_type == ContextItemType.THESIS:
+                        thesis_data = get_fund_thesis_data(item_fund or "")
+                        if thesis_data:
+                            context_parts.append(format_thesis(thesis_data))
+                    elif item_type == ContextItemType.TRADES:
+                        limit = item_dict.get('metadata', {}).get('limit', 100)
+                        trades_df = get_trade_log(limit=limit, fund=item_fund)
+                        context_parts.append(format_trades(trades_df, limit))
+                    elif item_type == ContextItemType.METRICS:
+                        portfolio_df = calculate_portfolio_value_over_time(item_fund, days=365) if item_fund else None
+                        metrics = calculate_performance_metrics(item_fund) if item_fund else {}
+                        context_parts.append(format_performance_metrics(metrics, portfolio_df))
+                    elif item_type == ContextItemType.CASH_BALANCES:
+                        cash = get_cash_balances(item_fund) if item_fund else {}
+                        context_parts.append(format_cash_balances(cash))
+                except Exception as e:
+                    logger.warning(f"Error loading {item_type_str}: {e}")
+                    continue
+            
+            context_string = "\n\n---\n\n".join(context_parts) if context_parts else ""
+        
+        # Add search results if provided (always add these dynamically)
+        if search_results and search_results.get('formatted'):
+            if context_string:
+                context_string = f"{context_string}\n\n---\n\n{search_results['formatted']}"
+            else:
+                context_string = search_results['formatted']
+        
+        # Add repository articles if provided (always add these dynamically)
+        if repository_articles:
+            articles_text = "## Relevant Research from Repository:\n\n"
+            for i, article in enumerate(repository_articles, 1):
+                similarity = article.get('similarity', 0)
+                title = article.get('title', 'Untitled')
+                summary = escape_markdown(article.get('summary', article.get('content', '')[:300]))
+                source = article.get('source', 'Unknown')
+                published = article.get('published_at', '')
+                
+                articles_text += f"### Article {i} (Similarity: {similarity:.2%})\n"
+                articles_text += f"**{title}**\n"
+                articles_text += f"*Source: {source}"
+                if published:
+                    articles_text += f" | Published: {published}"
+                articles_text += "*\n\n"
+                if summary:
+                    articles_text += f"{summary}\n\n"
+                articles_text += "---\n\n"
+            
+            if context_string:
+                context_string = f"{context_string}\n\n{articles_text}"
+            else:
+                context_string = articles_text
+        
+        # Generate prompt using context items
+        # Simple prompt generation (can be enhanced later)
+        if context_items:
+            # Build a descriptive prompt based on context items
+            item_types = [item.get('item_type') for item in context_items]
+            if 'holdings' in item_types and 'thesis' in item_types:
+                prompt = f"Based on the portfolio holdings and investment thesis provided above, analyze how well the current positions align with the stated investment strategy. {user_query}"
+            elif 'trades' in item_types:
+                prompt = f"Based on the trading activity data provided above, analyze recent trades and review trade patterns. {user_query}"
+            elif 'metrics' in item_types:
+                prompt = f"Based on the performance metrics data provided above, analyze portfolio performance. {user_query}"
+            else:
+                prompt = f"Based on the portfolio data provided above, {user_query}"
+        else:
+            prompt = user_query
+        
+        # Combine context and prompt
+        full_prompt = prompt
+        if context_string:
+            full_prompt = f"{context_string}\n\n{prompt}"
+        
+        # Get system prompt
+        system_prompt = get_system_prompt()
+        
+        # Check if using WebAI or Ollama
+        if model and model.startswith("gemini-"):
+            # WebAI (non-streaming)
+            try:
+                from webai_wrapper import PersistentConversationSession
+                from ai_service_keys import get_model_display_name_short
+                
+                # Get or create session
+                session_key = f'webai_session_{user_id}'
+                if session_key not in session:
+                    session[session_key] = PersistentConversationSession(
+                        session_id=user_id,
+                        auto_refresh=False,
+                        model=model,
+                        system_prompt=system_prompt
+                    )
+                
+                webai_session = session[session_key]
+                
+                # For WebAI, include instructions in message
+                webai_instructions = (
+                    "You are an AI portfolio assistant. Analyze the provided portfolio data, "
+                    "news, and research articles to provide insights. Be concise and actionable.\n\n"
+                )
+                webai_message = webai_instructions + full_prompt
+                
+                # Send message (non-streaming)
+                full_response = webai_session.send_sync(webai_message)
+                
+                return jsonify({
+                    "response": full_response,
+                    "model": model,
+                    "streaming": False
+                })
+            
+            except Exception as e:
+                logger.error(f"WebAI error: {e}", exc_info=True)
+                return jsonify({"error": f"WebAI error: {str(e)}"}), 500
+        
+        else:
+            # Ollama (streaming)
+            from ollama_client import get_ollama_client
+            
+            client = get_ollama_client()
+            if not client:
+                return jsonify({"error": "Ollama client not available"}), 503
+            
+            def generate():
+                """Generator for streaming response"""
+                try:
+                    for chunk in client.query_ollama(
+                        prompt=full_prompt,
+                        model=model or "granite3.2:8b",
+                        stream=True,
+                        temperature=None,
+                        max_tokens=None,
+                        system_prompt=system_prompt
+                    ):
+                        yield f"data: {json_lib.dumps({'chunk': chunk, 'done': False})}\n\n"
+                    
+                    # Send done signal
+                    yield f"data: {json_lib.dumps({'chunk': '', 'done': True})}\n\n"
+                
+                except Exception as e:
+                    logger.error(f"Streaming error: {e}", exc_info=True)
+                    error_msg = json_lib.dumps({'error': str(e), 'done': True})
+                    yield f"data: {error_msg}\n\n"
+            
+            return Response(
+                stream_with_context(generate()),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'  # Disable nginx buffering
+                }
+            )
+    
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

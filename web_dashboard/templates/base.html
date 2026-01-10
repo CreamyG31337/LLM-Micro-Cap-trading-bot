@@ -2,6 +2,7 @@
 <html lang="en" data-theme="{{ user_theme|default('system') }}">
 
 <head>
+    <base href="/">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Portfolio Dashboard{% endblock %}</title>
@@ -22,16 +23,27 @@
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+
         /* Sync color-scheme with data-theme for consistency with Streamlit */
-        {% if user_theme == 'dark' %}
+            {
+            % if user_theme=='dark' %
+        }
+
         :root {
             color-scheme: dark;
         }
-        {% elif user_theme == 'light' %}
+
+            {
+            % elif user_theme=='light' %
+        }
+
         :root {
             color-scheme: light;
         }
-        {% endif %}
+
+            {
+            % endif %
+        }
     </style>
 
     {% block extra_head %}{% endblock %}
@@ -134,49 +146,49 @@
                     </div>
                     <ul class="space-y-1">
                         <li>
-                            <a href="/pages/admin_scheduler"
+                            <a href="/admin_scheduler"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">🔨</span>
                                 <span>Jobs</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_users"
+                            <a href="/admin_users"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">👥</span>
                                 <span>User & Access</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_funds"
+                            <a href="/admin_funds"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">🏦</span>
                                 <span>Fund Management</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_trade_entry"
+                            <a href="/admin_trade_entry"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">📈</span>
                                 <span>Trade Entry</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_contributions"
+                            <a href="/admin_contributions"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">💰</span>
                                 <span>Contributions</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_ai_settings"
+                            <a href="/admin_ai_settings"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">⚙️</span>
                                 <span>AI Settings</span>
                             </a>
                         </li>
                         <li>
-                            <a href="/pages/admin_system"
+                            <a href="/admin_system"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">📊</span>
                                 <span>System Monitoring</span>

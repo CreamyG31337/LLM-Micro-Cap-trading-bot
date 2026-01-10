@@ -59,11 +59,40 @@ class AIAssistant {
             this.saveModelPreference();
         });
 
-        // Fund selection
-        document.getElementById('fund-select').addEventListener('change', (e) => {
+        // Fund selection - use global selector from left nav (or fallback to right sidebar)
+        const globalFundSelect = document.getElementById('global-fund-select');
+        const rightSidebarFundSelect = document.getElementById('fund-select');
+
+        // Read initial fund from global selector
+        if (globalFundSelect && globalFundSelect.value) {
+            this.selectedFund = globalFundSelect.value;
+            console.log('[AIAssistant] Initial fund from global selector:', this.selectedFund);
+        }
+
+        // Listen to global fund selector (left nav)
+        globalFundSelect?.addEventListener('change', (e) => {
             this.selectedFund = e.target.value;
-            this.clearChat(); // Clear chat when fund changes
+            console.log('[AIAssistant] Fund changed to:', this.selectedFund);
+            this.contextCache = null; // Clear context cache to force rebuild
+            this.contextFingerprint = ''; // Reset fingerprint
             this.loadPortfolioTickers(); // Reload tickers for new fund
+            // Sync right sidebar selector if exists
+            if (rightSidebarFundSelect) {
+                rightSidebarFundSelect.value = e.target.value;
+            }
+        });
+
+        // Also listen to right sidebar fund selector (for backwards compat)
+        rightSidebarFundSelect?.addEventListener('change', (e) => {
+            this.selectedFund = e.target.value;
+            console.log('[AIAssistant] Fund changed (sidebar) to:', this.selectedFund);
+            this.contextCache = null;
+            this.contextFingerprint = '';
+            this.loadPortfolioTickers();
+            // Sync global selector if exists
+            if (globalFundSelect) {
+                globalFundSelect.value = e.target.value;
+            }
         });
 
         // Context toggles
@@ -368,6 +397,18 @@ class AIAssistant {
         // Get cached context
         const contextString = await this.getCachedContext();
 
+        // Debug logging
+        console.log('[AIAssistant] Context string length:', contextString?.length || 0);
+        console.log('[AIAssistant] Search results:', searchResults);
+        console.log('[AIAssistant] Repository articles:', repositoryArticles?.length || 0);
+
+        // Update debug area if visible
+        const debugArea = document.getElementById('debug-context-area');
+        if (debugArea) {
+            debugArea.value = contextString || '(No context loaded)';
+            document.getElementById('debug-char-count').textContent = `${contextString?.length || 0} characters`;
+        }
+
         // Build request
         const requestData = {
             query: query,
@@ -423,9 +464,12 @@ class AIAssistant {
 
             if (response.ok) {
                 const data = await response.json();
+                console.log('[AIAssistant] Context build response:', data);
                 this.contextCache = data.context_string || '';
                 this.contextFingerprint = fingerprint;
                 return this.contextCache;
+            } else {
+                console.error('[AIAssistant] Context build failed:', response.status, response.statusText);
             }
         } catch (err) {
             this.showError('Error building context: ' + err.message);

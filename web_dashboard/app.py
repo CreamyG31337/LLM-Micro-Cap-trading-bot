@@ -2334,7 +2334,10 @@ def api_ai_context_build():
         data = request.get_json()
         fund = data.get('fund')
         
+        logger.info(f"[Context Build] Request received for fund: {fund}")
+        
         if not fund:
+            logger.warning("[Context Build] No fund specified, returning empty context")
             return jsonify({"context_string": "", "char_count": 0})
 
         context_parts = []
@@ -2342,6 +2345,9 @@ def api_ai_context_build():
         # --- Always Included: Holdings with all data tables ---
         positions_df = get_current_positions(fund)
         trades_df = get_trade_log(limit=100, fund=fund)
+        
+        logger.info(f"[Context Build] Positions count: {len(positions_df) if positions_df is not None else 0}")
+        logger.info(f"[Context Build] Trades count: {len(trades_df) if trades_df is not None else 0}")
         
         include_pv = data.get('include_price_volume', True)
         include_fund = data.get('include_fundamentals', True)
@@ -2355,6 +2361,9 @@ def api_ai_context_build():
                 include_fundamentals=include_fund
             )
             context_parts.append(holdings_text)
+            logger.info(f"[Context Build] Holdings text length: {len(holdings_text)}")
+        else:
+            logger.warning(f"[Context Build] No positions found for fund: {fund}")
         
         # --- Always Included: Performance Metrics ---
         try:
@@ -2362,6 +2371,7 @@ def api_ai_context_build():
             portfolio_df = calculate_portfolio_value_over_time(fund, days=365)
             if metrics:
                 context_parts.append(format_performance_metrics(metrics, portfolio_df))
+                logger.info(f"[Context Build] Performance metrics added")
         except Exception as e:
             logger.warning(f"Error loading performance metrics: {e}")
         
@@ -2370,6 +2380,7 @@ def api_ai_context_build():
             cash = get_cash_balances(fund)
             if cash:
                 context_parts.append(format_cash_balances(cash))
+                logger.info(f"[Context Build] Cash balances added")
         except Exception as e:
             logger.warning(f"Error loading cash balances: {e}")
         
@@ -2392,6 +2403,8 @@ def api_ai_context_build():
         
         # Combine all parts
         context_string = "\n\n---\n\n".join(context_parts) if context_parts else ""
+        
+        logger.info(f"[Context Build] Final context length: {len(context_string)} chars, {len(context_parts)} parts")
         
         return jsonify({
             "context_string": context_string,

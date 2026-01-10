@@ -222,10 +222,9 @@ if "goto" in st.query_params:
     if not goto_page.endswith('.py'):
         goto_page = goto_page + '.py'
     _logger.info(f"[GOTO] Redirecting to {goto_page}")
-    # Clear the param so it doesn't persist
-    st.query_params.clear()
-    # Navigate to the target page
-    st.switch_page(goto_page)
+    # Navigate to the target page - pass empty query_params to clear them
+    # Don't call st.query_params.clear() first - it causes a rerun that prevents switch_page!
+    st.switch_page(goto_page, query_params={})
 
 
 

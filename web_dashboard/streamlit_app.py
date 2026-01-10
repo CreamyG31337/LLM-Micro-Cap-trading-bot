@@ -218,13 +218,19 @@ st.set_page_config(
 # This fixes the blank page issue when navigating from Flask V2 pages
 if "goto" in st.query_params:
     goto_page = st.query_params["goto"]
-    # st.switch_page() requires .py extension
-    if not goto_page.endswith('.py'):
-        goto_page = goto_page + '.py'
-    _logger.info(f"[GOTO] Redirecting to {goto_page}")
-    # Navigate to the target page - pass empty query_params to clear them
-    # Don't call st.query_params.clear() first - it causes a rerun that prevents switch_page!
-    st.switch_page(goto_page, query_params={})
+    _logger.info(f"[GOTO] Redirecting to /{goto_page}")
+    # Use JavaScript to change the URL and trigger Streamlit's client-side routing
+    # We use history.pushState to avoid a full page reload
+    redirect_url = f"/{goto_page}"
+    st.components.v1.html(f'''
+        <script>
+            // Push the new URL to history
+            window.parent.history.pushState({{}}, '', '{redirect_url}');
+            // Dispatch a popstate event to trigger Streamlit's router
+            window.parent.dispatchEvent(new PopStateEvent('popstate', {{state: {{}}}}));
+        </script>
+    ''', height=0)
+    st.stop()  # Stop execution while navigation happens
 
 
 

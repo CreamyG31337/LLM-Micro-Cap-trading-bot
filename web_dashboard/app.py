@@ -234,26 +234,13 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                 'active': current_page == link['page']
             })
         
-        # Get available funds for the sidebar selector (Flask-compatible, no Streamlit dependency)
-        available_funds = []
+        # Get available funds for the sidebar selector (Flask-compatible)
         try:
-            from flask_auth_utils import get_user_id_flask
-            from supabase_client import SupabaseClient
-            
-            user_id = get_user_id_flask()
-            if user_id:
-                # Direct Supabase query without Streamlit session
-                client = SupabaseClient()
-                result = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id).execute()
-                if result and result.data:
-                    available_funds = sorted([row.get('fund_name') for row in result.data if row.get('fund_name')])
-                    logger.info(f"[Navigation] Loaded {len(available_funds)} funds for user")
-                else:
-                    logger.warning(f"[Navigation] No funds found for user_id: {user_id}")
-            else:
-                logger.warning("[Navigation] No user_id available for fund lookup")
+            from flask_data_utils import get_available_funds_flask
+            available_funds = get_available_funds_flask()
         except Exception as e:
             logger.warning(f"Could not load available funds: {e}")
+            available_funds = []
         
         return {
             'navigation_links': nav_links,
@@ -2256,7 +2243,7 @@ def ai_assistant_page():
     try:
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme, get_user_ai_model
-        from streamlit_utils import get_available_funds
+        from flask_data_utils import get_available_funds_flask
         from ollama_client import list_available_models, check_ollama_health
         from searxng_client import check_searxng_health
         
@@ -2265,7 +2252,7 @@ def ai_assistant_page():
         default_model = get_user_ai_model()
         
         # Get available funds
-        available_funds = get_available_funds()
+        available_funds = get_available_funds_flask()
         
         # Get available models
         ollama_models = list_available_models()
@@ -2288,7 +2275,6 @@ def ai_assistant_page():
                              user_email=user_email,
                              user_theme=user_theme,
                              default_model=default_model,
-                             available_funds=available_funds,
                              ollama_models=ollama_models,
                              ollama_available=ollama_available,
                              searxng_available=searxng_available,
@@ -2362,10 +2348,16 @@ def api_ai_context_build():
             format_holdings, format_thesis, format_trades, 
             format_performance_metrics, format_cash_balances
         )
+        # Use Flask-safe data access
+        from flask_data_utils import (
+            get_current_positions_flask, get_trade_log_flask
+        )
+        # For now, we reuse some utils that don't depend on Streamlit or pass safe vars
+        # But calculate_performance_metrics might be unsafe if unmodified.
+        # We need to port calculate_performance_metrics to flask_data_utils if it uses st.
         from streamlit_utils import (
-            get_current_positions, get_trade_log, get_cash_balances,
             calculate_portfolio_value_over_time, get_fund_thesis_data,
-            calculate_performance_metrics
+            calculate_performance_metrics, get_cash_balances
         )
         
         data = request.get_json()
@@ -2380,8 +2372,8 @@ def api_ai_context_build():
         context_parts = []
         
         # --- Always Included: Holdings with all data tables ---
-        positions_df = get_current_positions(fund)
-        trades_df = get_trade_log(limit=100, fund=fund)
+        positions_df = get_current_positions_flask(fund)
+        trades_df = get_trade_log_flask(limit=100, fund=fund)
         
         logger.info(f"[Context Build] Positions count: {len(positions_df) if positions_df is not None else 0}")
         logger.info(f"[Context Build] Trades count: {len(trades_df) if trades_df is not None else 0}")
@@ -2584,7 +2576,7 @@ def api_ai_portfolio_intelligence():
     """Check portfolio news from research repository"""
     try:
         from research_repository import ResearchRepository
-        from streamlit_utils import get_current_positions
+        from flask_data_utils import get_current_positions_flask
         
         data = request.get_json()
         fund = data.get('fund')
@@ -2597,7 +2589,7 @@ def api_ai_portfolio_intelligence():
         
         # Get portfolio tickers
         portfolio_tickers = set()
-        positions_df = get_current_positions(fund)
+        positions_df = get_current_positions_flask(fund)
         if not positions_df.empty and 'ticker' in positions_df.columns:
             portfolio_tickers = {t.strip().upper() for t in positions_df['ticker'].dropna().unique()}
         
@@ -2656,8 +2648,14 @@ def api_ai_chat():
             format_holdings, format_thesis, format_trades,
             format_performance_metrics, format_cash_balances
         )
+            format_performance_metrics, format_cash_balances
+        )
+        from flask_data_utils import (
+            get_current_positions_flask, get_trade_log_flask
+        )
+        # Still need some streamlit_utils for cash/metrics until ported, but positions/trades are covered
         from streamlit_utils import (
-            get_current_positions, get_trade_log, get_cash_balances,
+            get_cash_balances,
             calculate_portfolio_value_over_time, get_fund_thesis_data,
             calculate_performance_metrics
         )
@@ -2702,8 +2700,8 @@ def api_ai_chat():
                 
                 try:
                     if item_type == ContextItemType.HOLDINGS:
-                        positions_df = get_current_positions(item_fund)
-                        trades_df = get_trade_log(limit=1000, fund=item_fund) if item_fund else None
+                        positions_df = get_current_positions_flask(item_fund)
+                        trades_df = get_trade_log_flask(limit=1000, fund=item_fund) if item_fund else None
                         include_pv = data.get('include_price_volume', True)
                         include_fund = data.get('include_fundamentals', True)
                         context_parts.append(
@@ -2721,7 +2719,7 @@ def api_ai_chat():
                             context_parts.append(format_thesis(thesis_data))
                     elif item_type == ContextItemType.TRADES:
                         limit = item_dict.get('metadata', {}).get('limit', 100)
-                        trades_df = get_trade_log(limit=limit, fund=item_fund)
+                        trades_df = get_trade_log_flask(limit=limit, fund=item_fund)
                         context_parts.append(format_trades(trades_df, limit))
                     elif item_type == ContextItemType.METRICS:
                         portfolio_df = calculate_portfolio_value_over_time(item_fund, days=365) if item_fund else None

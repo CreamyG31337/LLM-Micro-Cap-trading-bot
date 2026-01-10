@@ -23,20 +23,24 @@ if current_dir.name == "scheduler":
 else:
     project_root = current_dir.parent.parent
 
-# Also ensure web_dashboard is in path for supabase_client imports
-web_dashboard_path = str(Path(__file__).resolve().parent.parent)
-if web_dashboard_path not in sys.path:
-    sys.path.insert(0, web_dashboard_path)
-
-# CRITICAL: Project root must be inserted LAST (at index 0) to ensure it comes
+# CRITICAL: Project root must be inserted FIRST (at index 0) to ensure it comes
 # BEFORE web_dashboard in sys.path. This prevents web_dashboard/utils from
 # shadowing the project root's utils package.
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-elif sys.path[0] != str(project_root):
-    # If it is in path but not first, move it to front
-    sys.path.remove(str(project_root))
-    sys.path.insert(0, str(project_root))
+project_root_str = str(project_root)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
+
+# Also ensure web_dashboard is in path for supabase_client imports
+# (but AFTER project root so it doesn't shadow utils)
+web_dashboard_path = str(Path(__file__).resolve().parent.parent)
+if web_dashboard_path in sys.path:
+    sys.path.remove(web_dashboard_path)
+# Insert at index 1, after project_root
+if len(sys.path) > 1:
+    sys.path.insert(1, web_dashboard_path)
+else:
+    sys.path.append(web_dashboard_path)
 
 from scheduler.scheduler_core import log_job_execution
 
@@ -65,6 +69,22 @@ def fetch_congress_trades_job() -> None:
     start_time = time.time()
     
     try:
+        # Ensure path is set up correctly before importing
+        import sys
+        from pathlib import Path
+        
+        # Re-ensure project root is first in path
+        current_dir = Path(__file__).resolve().parent
+        if current_dir.name == "scheduler":
+            project_root = current_dir.parent.parent
+        else:
+            project_root = current_dir.parent.parent
+        
+        project_root_str = str(project_root)
+        if project_root_str in sys.path:
+            sys.path.remove(project_root_str)
+        sys.path.insert(0, project_root_str)
+        
         # Import job tracking
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
@@ -534,6 +554,22 @@ def analyze_congress_trades_job() -> None:
     start_time = time.time()
     
     try:
+        # Ensure path is set up correctly before importing
+        import sys
+        from pathlib import Path
+        
+        # Re-ensure project root is first in path
+        current_dir = Path(__file__).resolve().parent
+        if current_dir.name == "scheduler":
+            project_root = current_dir.parent.parent
+        else:
+            project_root = current_dir.parent.parent
+        
+        project_root_str = str(project_root)
+        if project_root_str in sys.path:
+            sys.path.remove(project_root_str)
+        sys.path.insert(0, project_root_str)
+        
         # Import job tracking
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         
@@ -723,6 +759,22 @@ def rescore_congress_sessions_job(limit: int = 1000, batch_size: int = 10, model
     start_time = time.time()
     
     try:
+        # Ensure path is set up correctly before importing
+        import sys
+        from pathlib import Path
+        
+        # Re-ensure project root is first in path
+        current_dir = Path(__file__).resolve().parent
+        if current_dir.name == "scheduler":
+            project_root = current_dir.parent.parent
+        else:
+            project_root = current_dir.parent.parent
+        
+        project_root_str = str(project_root)
+        if project_root_str in sys.path:
+            sys.path.remove(project_root_str)
+        sys.path.insert(0, project_root_str)
+        
         # Import job tracking
         from utils.job_tracking import mark_job_started, mark_job_completed, mark_job_failed
         from settings import get_summarizing_model

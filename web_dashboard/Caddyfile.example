@@ -63,13 +63,10 @@
 	# This prevents issues when accessing Streamlit pages directly with .py extension
 	# Note: This only affects /pages/* paths (Streamlit), not /v2/* (Flask)
 	# Streamlit handles pages without .py extension in the URL
-    @pages_py {
-        path_regexp ^/pages/(.+)\.py$
-    }
-    handle @pages_py {
-        rewrite * /pages/{re.pages_py.1}
-        reverse_proxy localhost:8501
-    }
+	route /pages/*.py {
+		uri strip_suffix .py
+		redir {path} permanent
+	}
     
 	# Streamlit static files - must be before general reverse_proxy
 	# This ensures JS/CSS files are served with correct MIME types

@@ -14,6 +14,9 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+# Import log_job_execution at module level so it's always available
+from scheduler.scheduler_core import log_job_execution
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +51,6 @@ def process_retry_queue_job() -> None:
             mark_resolved, mark_abandoned
         )
         from scheduler.jobs_portfolio import backfill_portfolio_prices_range
-        from scheduler.jobs import log_job_execution
         from supabase_client import SupabaseClient
         
         logger.info("🔄 Starting retry queue processor...")

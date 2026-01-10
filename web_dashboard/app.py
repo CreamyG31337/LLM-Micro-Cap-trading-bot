@@ -234,13 +234,26 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                 'active': current_page == link['page']
             })
         
-        # Get available funds for the sidebar selector
+        # Get available funds for the sidebar selector (Flask-compatible, no Streamlit dependency)
+        available_funds = []
         try:
-            from streamlit_utils import get_available_funds
-            available_funds = get_available_funds()
+            from flask_auth_utils import get_user_id_flask
+            from supabase_client import SupabaseClient
+            
+            user_id = get_user_id_flask()
+            if user_id:
+                # Direct Supabase query without Streamlit session
+                client = SupabaseClient()
+                result = client.supabase.table("user_funds").select("fund_name").eq("user_id", user_id).execute()
+                if result and result.data:
+                    available_funds = sorted([row.get('fund_name') for row in result.data if row.get('fund_name')])
+                    logger.info(f"[Navigation] Loaded {len(available_funds)} funds for user")
+                else:
+                    logger.warning(f"[Navigation] No funds found for user_id: {user_id}")
+            else:
+                logger.warning("[Navigation] No user_id available for fund lookup")
         except Exception as e:
             logger.warning(f"Could not load available funds: {e}")
-            available_funds = []
         
         return {
             'navigation_links': nav_links,
@@ -2283,8 +2296,22 @@ def ai_assistant_page():
                              has_webai=has_webai,
                              **nav_context)
     except Exception as e:
-        logger.error(f"Error loading AI assistant page: {e}", exc_info=True)
-        return jsonify({"error": "Failed to load AI assistant page"}), 500
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Error loading AI assistant page: {e}\n{tb}")
+        # Show full stack trace on page for debugging
+        return f'''<!DOCTYPE html>
+<html>
+<head><title>Error - AI Assistant</title></head>
+<body style="background:#1a1a2e;color:#eee;font-family:monospace;padding:20px;">
+<h1 style="color:#ff6b6b;">❌ Failed to load AI Assistant Page</h1>
+<h2 style="color:#feca57;">Exception: {type(e).__name__}</h2>
+<pre style="background:#16213e;padding:20px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;">{e}</pre>
+<h3 style="color:#54a0ff;">Stack Trace:</h3>
+<pre style="background:#16213e;padding:20px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;">{tb}</pre>
+<p><a href="/" style="color:#5f27cd;">← Back to Dashboard</a></p>
+</body>
+</html>''', 500
 
 @app.route('/api/v2/ai/models', methods=['GET'])
 @require_auth

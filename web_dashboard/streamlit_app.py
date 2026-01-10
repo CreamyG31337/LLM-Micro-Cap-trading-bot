@@ -25,6 +25,21 @@ _postgres_checked = False
 _scheduler_init_timeout = 30  # seconds
 
 
+# Handle V2 navigation redirect - MUST be before any other UI rendering
+# This fixes the blank page issue when navigating from Flask V2 pages
+try:
+    if "goto" in st.query_params:
+        goto_page = st.query_params["goto"]
+        _logger.info(f"redirecting to {goto_page}")
+        # Clear the param so it doesn't persist
+        st.query_params.clear()
+        # Navigate to the target page
+        st.switch_page(goto_page)
+except Exception as e:
+    _logger.warning(f"Failed to handle goto redirect: {e}")
+
+
+
 def _start_scheduler_with_result(result_holder: dict):
     """Helper function to run scheduler start in a thread and store result."""
     try:

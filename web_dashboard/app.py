@@ -2315,6 +2315,7 @@ def api_ai_models():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/v2/ai/context/build', methods=['POST'])
+# Context build endpoint - v2
 @require_auth
 def api_ai_context_build():
     """Build context string with portfolio data tables (called by JS before chat)"""
@@ -2481,90 +2482,7 @@ def api_ai_context():
         logger.error(f"Error managing context: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/v2/ai/context/build', methods=['POST'])
-@require_auth
-def api_ai_context_build():
-    """Build context string from selected items"""
-    try:
-        from flask_auth_utils import get_user_id_flask
-        from chat_context import ContextItemType
-        from ai_context_builder import (
-            format_holdings, format_thesis, format_trades,
-            format_performance_metrics, format_cash_balances
-        )
-        from streamlit_utils import (
-            get_current_positions, get_trade_log, get_cash_balances,
-            calculate_portfolio_value_over_time, get_fund_thesis_data,
-            calculate_performance_metrics
-        )
-        
-        user_id = get_user_id_flask()
-        if not user_id:
-            return jsonify({"error": "User not authenticated"}), 401
-        
-        data = request.get_json()
-        selected_fund = data.get('fund')
-        context_items = session.get('ai_context_items', [])
-        
-        if not context_items:
-            return jsonify({"context_string": ""})
-        
-        context_parts = []
-        
-        for item_dict in context_items:
-            item_type_str = item_dict['item_type']
-            fund = item_dict.get('fund') or selected_fund
-            
-            try:
-                item_type = ContextItemType(item_type_str)
-            except ValueError:
-                continue
-            
-            try:
-                if item_type == ContextItemType.HOLDINGS:
-                    positions_df = get_current_positions(fund)
-                    trades_df = get_trade_log(limit=1000, fund=fund) if fund else None
-                    include_pv = data.get('include_price_volume', True)
-                    include_fund = data.get('include_fundamentals', True)
-                    context_parts.append(
-                        format_holdings(
-                            positions_df,
-                            fund or "Unknown",
-                            trades_df=trades_df,
-                            include_price_volume=include_pv,
-                            include_fundamentals=include_fund
-                        )
-                    )
-                
-                elif item_type == ContextItemType.THESIS:
-                    thesis_data = get_fund_thesis_data(fund or "")
-                    if thesis_data:
-                        context_parts.append(format_thesis(thesis_data))
-                
-                elif item_type == ContextItemType.TRADES:
-                    limit = item_dict.get('metadata', {}).get('limit', 100)
-                    trades_df = get_trade_log(limit=limit, fund=fund)
-                    context_parts.append(format_trades(trades_df, limit))
-                
-                elif item_type == ContextItemType.METRICS:
-                    portfolio_df = calculate_portfolio_value_over_time(fund, days=365) if fund else None
-                    metrics = calculate_performance_metrics(fund) if fund else {}
-                    context_parts.append(format_performance_metrics(metrics, portfolio_df))
-                
-                elif item_type == ContextItemType.CASH_BALANCES:
-                    cash = get_cash_balances(fund) if fund else {}
-                    context_parts.append(format_cash_balances(cash))
-                
-            except Exception as e:
-                logger.warning(f"Error loading {item_type_str}: {e}")
-                continue
-        
-        context_string = "\n\n---\n\n".join(context_parts)
-        return jsonify({"context_string": context_string})
-    
-    except Exception as e:
-        logger.error(f"Error building context: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+
 
 
 

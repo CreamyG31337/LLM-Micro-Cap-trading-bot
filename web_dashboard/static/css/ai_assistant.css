@@ -1,26 +1,7 @@
-/* AI Assistant Chat Styles */
+/* AI Assistant Chat Styles - Minimal Custom CSS */
+/* Most styling is now handled by Tailwind utility classes */
 
-/* Chat Container */
-#chat-container {
-    max-height: calc(100vh - 300px);
-    min-height: 400px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border: 1px solid rgba(128, 128, 128, 0.2);
-    border-radius: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    background-color: #f9fafb;
-}
-
-/* Prevent child elements from breaking out of container */
-#chat-container > div {
-    flex-shrink: 0;
-}
-
-/* Custom Scrollbar */
+/* Custom Scrollbar Styling (webkit-specific, cannot be done with Tailwind) */
 #chat-container::-webkit-scrollbar {
     width: 8px;
 }
@@ -39,40 +20,34 @@
     background: rgba(128, 128, 128, 0.5);
 }
 
-/* Message Bubbles */
-.chat-message {
-    margin-bottom: 1rem;
-    display: flex;
-    flex-direction: column;
+/* Dark mode scrollbar */
+@media (prefers-color-scheme: dark) {
+    #chat-container::-webkit-scrollbar-track {
+        background: rgba(128, 128, 128, 0.2);
+    }
+    
+    #chat-container::-webkit-scrollbar-thumb {
+        background: rgba(128, 128, 128, 0.4);
+    }
+    
+    #chat-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(128, 128, 128, 0.6);
+    }
 }
 
-.chat-message.user {
-    align-items: flex-end;
+[data-theme="dark"] #chat-container::-webkit-scrollbar-track {
+    background: rgba(128, 128, 128, 0.2);
 }
 
-.chat-message.assistant {
-    align-items: flex-start;
+[data-theme="dark"] #chat-container::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.4);
 }
 
-.message-bubble {
-    max-width: 80%;
-    padding: 0.75rem 1rem;
-    border-radius: 1rem;
-    word-wrap: break-word;
+[data-theme="dark"] #chat-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 128, 0.6);
 }
 
-.message-bubble.user {
-    background-color: #3b82f6;
-    color: white;
-    border-bottom-right-radius: 0.25rem;
-}
-
-.message-bubble.assistant {
-    background-color: #e5e7eb;
-    color: #1f2937;
-    border-bottom-left-radius: 0.25rem;
-}
-
+/* Message Content Typography */
 .message-content {
     line-height: 1.6;
 }
@@ -89,7 +64,7 @@
     margin-bottom: 0;
 }
 
-/* Streaming Indicator */
+/* Streaming Indicator - Using Tailwind animate-pulse in JS, but keeping fallback */
 .streaming-indicator {
     display: inline-block;
     animation: blink 1s infinite;
@@ -100,199 +75,34 @@
     51%, 100% { opacity: 0.3; }
 }
 
-/* Quick Research Sidebar */
-#quick-research-sidebar {
-    position: sticky;
-    top: 3.5rem;
-    max-height: calc(100vh - 4rem);
-    overflow-y: auto;
-    padding-left: 1rem;
-    border-left: 2px solid rgba(128, 128, 128, 0.2);
+/* Error Message Styling - Enhanced with Tailwind classes in HTML/JS */
+.error-message .message-bubble {
+    background-color: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
 }
 
-/* AI Sidebar */
-#ai-sidebar {
-    position: fixed;
-    top: 0;
-    right: 0;
-    z-index: 30;
-    width: 20rem;
-    height: 100vh;
-    background-color: white;
-    border-left: 1px solid #e5e7eb;
-    box-shadow: -2px 0 4px rgba(0, 0, 0, 0.1);
-    overflow-y: auto;
-    padding-top: 6rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
+.error-message .message-bubble.assistant {
+    background-color: #fee2e2;
+    color: #991b1b;
 }
 
-/* Dark Mode Support */
+/* Dark mode error messages */
 @media (prefers-color-scheme: dark) {
-    #chat-container {
-        background-color: #1f2937;
-        border-color: rgba(128, 128, 128, 0.3);
-    }
-
-    .message-bubble.assistant {
-        background-color: #374151;
-        color: #f3f4f6;
-    }
-
-    #quick-research-sidebar {
-        border-left-color: rgba(128, 128, 128, 0.3);
-    }
-
-    #ai-sidebar {
-        background-color: #1f2937;
-        border-left-color: #374151;
-    }
-
-    /* Button Dark Mode Overrides */
-    .bg-blue-100 {
-        background-color: #1e3a8a !important; /* blue-900 */
-        color: #dbeafe !important; /* blue-100 */
-    }
-    .bg-blue-100:hover {
-        background-color: #1e40af !important; /* blue-800 */
-    }
-
-    .bg-green-100 {
-        background-color: #14532d !important; /* green-900 */
-        color: #dcfce7 !important; /* green-100 */
-    }
-    .bg-green-100:hover {
-        background-color: #166534 !important; /* green-800 */
-    }
-
-    .bg-red-100 {
-        background-color: #7f1d1d !important; /* red-900 */
-        color: #fee2e2 !important; /* red-100 */
-    }
-    .bg-red-100:hover {
-        background-color: #991b1b !important; /* red-800 */
-    }
-
-    .bg-gray-200 {
-        background-color: #374151 !important; /* gray-700 */
-        color: #f3f4f6 !important; /* gray-100 */
-    }
-    .bg-gray-200:hover {
-        background-color: #4b5563 !important; /* gray-600 */
-    }
-
-    /* Message Input Dark Mode */
-    #chat-input {
-        background-color: #374151;
-        border-color: #4b5563;
-        color: white;
-    }
-    #chat-input::placeholder {
-        color: #9ca3af;
+    .error-message .message-bubble {
+        background-color: #7f1d1d;
+        border-color: #991b1b;
+        color: #fee2e2;
     }
 }
 
-/* Explicit Dark Theme Support (matching theme.css data-theme="dark") */
-[data-theme="dark"] #chat-container {
-    background-color: #1f2937;
-    border-color: rgba(128, 128, 128, 0.3);
+[data-theme="dark"] .error-message .message-bubble {
+    background-color: #7f1d1d;
+    border-color: #991b1b;
+    color: #fee2e2;
 }
 
-[data-theme="dark"] .message-bubble.assistant {
-    background-color: #374151;
-    color: #f3f4f6;
-}
-
-[data-theme="dark"] #quick-research-sidebar {
-    border-left-color: rgba(128, 128, 128, 0.3);
-}
-
-[data-theme="dark"] #ai-sidebar {
-    background-color: #1f2937;
-    border-left-color: #374151;
-}
-
-[data-theme="dark"] .bg-blue-100 {
-    background-color: #1e3a8a !important;
-    color: #dbeafe !important;
-}
-[data-theme="dark"] .bg-blue-100:hover {
-    background-color: #1e40af !important;
-}
-
-[data-theme="dark"] .bg-green-100 {
-    background-color: #14532d !important;
-    color: #dcfce7 !important;
-}
-[data-theme="dark"] .bg-green-100:hover {
-    background-color: #166534 !important;
-}
-
-[data-theme="dark"] .bg-red-100 {
-    background-color: #7f1d1d !important;
-    color: #fee2e2 !important;
-}
-[data-theme="dark"] .bg-red-100:hover {
-    background-color: #991b1b !important;
-}
-
-[data-theme="dark"] .bg-gray-200 {
-    background-color: #374151 !important;
-    color: #f3f4f6 !important;
-}
-[data-theme="dark"] .bg-gray-200:hover {
-    background-color: #4b5563 !important;
-}
-
-[data-theme="dark"] #chat-input {
-    background-color: #374151;
-    border-color: #4b5563;
-    color: white;
-}
-[data-theme="dark"] #chat-input::placeholder {
-    color: #9ca3af;
-}
-
-/* Mobile Responsive */
-@media (max-width: 768px) {
-    #quick-research-sidebar {
-        position: relative;
-        border-left: none;
-        border-top: 2px solid rgba(128, 128, 128, 0.2);
-        padding-left: 0;
-        padding-top: 1rem;
-    }
-
-    #chat-container {
-        height: 60vh;
-    }
-
-    #ai-sidebar {
-        display: none;
-    }
-
-    .message-bubble {
-        max-width: 90%;
-    }
-}
-
-/* Loading Spinner */
-.loading-spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid #f3f3f3;
-    border-top: 2px solid #3b82f6;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* Search Results Display */
+/* Search Results Display - Utility classes */
 .search-results {
     margin-top: 0.5rem;
     padding: 0.75rem;
@@ -317,6 +127,17 @@
     padding-left: 1rem;
 }
 
+/* Dark mode search results */
+@media (prefers-color-scheme: dark) {
+    .search-results {
+        background-color: #1e3a8a;
+    }
+}
+
+[data-theme="dark"] .search-results {
+    background-color: #1e3a8a;
+}
+
 /* Repository Results Display */
 .repository-results {
     margin-top: 0.5rem;
@@ -326,20 +147,20 @@
     font-size: 0.875rem;
 }
 
-/* Error Message Styling */
-.error-message .message-bubble {
-    background-color: #fee2e2;
-    border: 1px solid #fca5a5;
-    color: #991b1b;
+/* Dark mode repository results */
+@media (prefers-color-scheme: dark) {
+    .repository-results {
+        background-color: #14532d;
+    }
 }
 
-.error-message .message-bubble.assistant {
-    background-color: #fee2e2;
-    color: #991b1b;
+[data-theme="dark"] .repository-results {
+    background-color: #14532d;
 }
 
-/* Retry Button Container */
-#retry-button-container {
-    text-align: center;
-    padding: 1rem;
+/* Mobile Responsive - Some adjustments that Tailwind breakpoints handle, but keeping specific ones */
+@media (max-width: 768px) {
+    #chat-container {
+        height: 60vh;
+    }
 }

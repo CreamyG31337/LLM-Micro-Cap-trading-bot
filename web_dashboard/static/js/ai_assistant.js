@@ -325,8 +325,14 @@ class AIAssistant {
         const query = userQuery || document.getElementById('chat-input').value.trim();
         if (!query) return;
 
+        // Disable send button and input during sending
+        const sendBtn = document.getElementById('send-btn');
+        const chatInput = document.getElementById('chat-input');
+        sendBtn.disabled = true;
+        chatInput.disabled = true;
+
         // Clear input
-        document.getElementById('chat-input').value = '';
+        chatInput.value = '';
 
         // Add user message
         this.addMessage('user', query);
@@ -336,8 +342,8 @@ class AIAssistant {
         document.getElementById('start-analysis-area').classList.add('hidden');
         document.getElementById('retry-button-container').classList.add('hidden');
 
-        // Show loading indicator
-        const loadingId = this.addMessage('assistant', '🧠 Generating response...', true);
+        // Show loading indicator with Tailwind spinner
+        const loadingId = this.addMessage('assistant', '<div class="flex items-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400"></div><span>Generating response...</span></div>', true);
 
         // Perform search if enabled
         let searchResults = null;
@@ -499,6 +505,9 @@ class AIAssistant {
             .catch(err => {
                 console.error('Chat error:', err);
                 this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+                // Re-enable send button and input
+                document.getElementById('send-btn').disabled = false;
+                document.getElementById('chat-input').disabled = false;
             });
     }
 
@@ -547,15 +556,21 @@ class AIAssistant {
                                             this.updateMessage(loadingId, 'assistant', fullResponse);
                                             this.conversationHistory.push({ role: 'assistant', content: fullResponse });
                                             this.updateRetryButton();
+                                            // Re-enable send button and input
+                                            document.getElementById('send-btn').disabled = false;
+                                            document.getElementById('chat-input').disabled = false;
                                             return;
                                         }
                                         if (data.chunk) {
                                             fullResponse += data.chunk;
-                                            this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="streaming-indicator">▌</span>');
+                                            this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="inline-block w-2 h-4 bg-gray-500 dark:bg-gray-400 ml-1 animate-pulse">▌</span>');
                                         }
                                         if (data.error) {
                                             this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
                                             this.updateRetryButton();
+                                            // Re-enable send button and input
+                                            document.getElementById('send-btn').disabled = false;
+                                            document.getElementById('chat-input').disabled = false;
                                             return;
                                         }
                                     } catch (e) {
@@ -568,6 +583,9 @@ class AIAssistant {
                         }).catch(err => {
                             this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
                             this.updateRetryButton();
+                            // Re-enable send button and input
+                            document.getElementById('send-btn').disabled = false;
+                            document.getElementById('chat-input').disabled = false;
                         });
                     };
 
@@ -583,12 +601,18 @@ class AIAssistant {
                             this.conversationHistory.push({ role: 'assistant', content: data.response || data.chunk || '' });
                             this.updateRetryButton();
                         }
+                        // Re-enable send button and input
+                        document.getElementById('send-btn').disabled = false;
+                        document.getElementById('chat-input').disabled = false;
                     });
                 }
             })
             .catch(err => {
                 console.error('Chat error:', err);
                 this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+                // Re-enable send button and input
+                document.getElementById('send-btn').disabled = false;
+                document.getElementById('chat-input').disabled = false;
             });
     }
 
@@ -596,25 +620,64 @@ class AIAssistant {
         const messagesDiv = document.getElementById('chat-messages');
         const messageId = `msg-${Date.now()}-${Math.random()}`;
 
+        // Create message container with Flowbite/Tailwind structure
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
-        messageDiv.className = `chat-message ${role}`;
 
-        const bubble = document.createElement('div');
-        bubble.className = `message-bubble ${role}`;
+        if (role === 'user') {
+            // User message: aligned right
+            messageDiv.className = 'flex gap-3 justify-end mb-4';
 
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        if (isLoading) {
-            contentDiv.innerHTML = content;
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.className = 'flex flex-col max-w-[80%]';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bg-blue-600 text-white rounded-lg rounded-br-sm px-4 py-3 shadow-sm';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content text-white';
+            if (isLoading) {
+                contentDiv.innerHTML = content;
+            } else {
+                contentDiv.innerHTML = this.renderMarkdown(content);
+            }
+
+            bubble.appendChild(contentDiv);
+            bubbleContainer.appendChild(bubble);
+            messageDiv.appendChild(bubbleContainer);
         } else {
-            contentDiv.innerHTML = this.renderMarkdown(content);
+            // Assistant message: aligned left with avatar placeholder
+            messageDiv.className = 'flex gap-3 mb-4';
+
+            // Avatar placeholder
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'flex-shrink-0';
+            const avatar = document.createElement('div');
+            avatar.className = 'w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-semibold';
+            avatar.textContent = 'AI';
+            avatarDiv.appendChild(avatar);
+
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.className = 'flex-1';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg rounded-bl-sm px-4 py-3 shadow-sm';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            if (isLoading) {
+                contentDiv.innerHTML = content;
+            } else {
+                contentDiv.innerHTML = this.renderMarkdown(content);
+            }
+
+            bubble.appendChild(contentDiv);
+            bubbleContainer.appendChild(bubble);
+            messageDiv.appendChild(avatarDiv);
+            messageDiv.appendChild(bubbleContainer);
         }
 
-        bubble.appendChild(contentDiv);
-        messageDiv.appendChild(bubble);
         messagesDiv.appendChild(messageDiv);
-
         this.scrollToBottom();
 
         return messageId;
@@ -625,9 +688,18 @@ class AIAssistant {
         if (!messageDiv) return;
 
         const contentDiv = messageDiv.querySelector('.message-content');
-        if (contentDiv) {
+        const bubble = messageDiv.querySelector('.bg-blue-600, .bg-gray-100, .dark\\:bg-gray-700');
+
+        if (contentDiv && bubble) {
             // Check if this is an error message
-            if (content.includes('Error:') || content.includes('error:')) {
+            if (content.includes('Error:') || content.includes('error:') || content.includes('❌')) {
+                // Update bubble styling for error
+                bubble.className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-800 rounded-lg px-4 py-3 shadow-sm';
+                if (role === 'user') {
+                    bubble.className += ' rounded-br-sm';
+                } else {
+                    bubble.className += ' rounded-bl-sm';
+                }
                 messageDiv.classList.add('error-message');
             }
             contentDiv.innerHTML = this.renderMarkdown(content);
@@ -739,8 +811,11 @@ class AIAssistant {
         }
 
         if (prompt) {
-            document.getElementById('suggested-prompt-area').classList.remove('hidden');
-            document.getElementById('editable-prompt').value = prompt;
+            // Turbo Mode: Send immediately
+            this.sendMessage(prompt);
+
+            // Hide any open editing areas
+            document.getElementById('suggested-prompt-area').classList.add('hidden');
         }
     }
 
@@ -857,8 +932,18 @@ class AIAssistant {
     }
 
     showError(message) {
-        // Show error in chat UI
-        this.addMessage('assistant', `❌ Error: ${message}`);
+        // Show error in chat UI with proper styling
+        const errorId = this.addMessage('assistant', `❌ Error: ${message}`);
+        // Error styling is handled in updateMessage, but ensure it's applied
+        setTimeout(() => {
+            const messageDiv = document.getElementById(errorId);
+            if (messageDiv) {
+                const bubble = messageDiv.querySelector('.bg-gray-100, .dark\\:bg-gray-700, .bg-blue-600');
+                if (bubble) {
+                    bubble.className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-800 rounded-lg rounded-bl-sm px-4 py-3 shadow-sm';
+                }
+            }
+        }, 10);
     }
 
     updateRetryButton() {

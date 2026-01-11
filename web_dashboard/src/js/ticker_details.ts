@@ -1,62 +1,178 @@
-"use strict";
 // Ticker Details Page TypeScript
-let currentTicker = '';
-let tickerList = [];
+
+// Plotly and toggleSummary global declarations (using any for external libraries)
+
+// API Response interfaces
+interface TickerListResponse {
+    tickers: string[];
+}
+
+interface BasicInfo {
+    ticker?: string;
+    company_name?: string;
+    sector?: string;
+    industry?: string;
+    currency?: string;
+    exchange?: string;
+}
+
+interface Position {
+    fund?: string;
+    shares?: number;
+    price?: number;
+    cost_basis?: number;
+    pnl?: number;
+    date?: string;
+}
+
+interface Trade {
+    date?: string;
+    action?: string;
+    shares?: number;
+    price?: number;
+    fund?: string;
+    reason?: string;
+}
+
+interface PortfolioData {
+    has_positions?: boolean;
+    has_trades?: boolean;
+    positions?: Position[];
+    trades?: Trade[];
+}
+
+interface ResearchArticle {
+    id?: string;
+    title?: string;
+    summary?: string;
+    url?: string;
+    source?: string;
+    published_at?: string;
+    sentiment?: string;
+}
+
+interface SentimentMetric {
+    platform?: string;
+    sentiment_label?: string;
+    sentiment_score?: number;
+    volume?: number;
+    bull_bear_ratio?: number | null;
+    created_at?: string;
+}
+
+interface SentimentAlert {
+    platform?: string;
+    sentiment_label?: string;
+    sentiment_score?: number;
+}
+
+interface SocialSentiment {
+    latest_metrics?: SentimentMetric[];
+    alerts?: SentimentAlert[];
+}
+
+interface CongressTrade {
+    transaction_date?: string;
+    politician?: string;
+    chamber?: string;
+    type?: string;
+    amount?: string;
+    party?: string;
+}
+
+interface WatchlistStatus {
+    is_active?: boolean;
+    priority_tier?: string;
+    source?: string;
+}
+
+interface TickerInfoResponse {
+    basic_info?: BasicInfo;
+    portfolio_data?: PortfolioData;
+    research_articles?: ResearchArticle[];
+    social_sentiment?: SocialSentiment;
+    congress_trades?: CongressTrade[];
+    watchlist_status?: WatchlistStatus;
+}
+
+interface ChartData {
+    data: any[];
+    layout: any;
+}
+
+interface PriceHistoryData {
+    data?: Array<{ price?: number }>;
+}
+
+interface ErrorResponse {
+    error?: string;
+}
+
+let currentTicker: string = '';
+let tickerList: string[] = [];
+
 // Initialize page on load
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function(): void {
     // Get ticker from URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
     const tickerParam = urlParams.get('ticker');
+    
     // Load ticker list first
     loadTickerList().then(() => {
         // If ticker in URL, load it
         if (tickerParam) {
             currentTicker = tickerParam.toUpperCase();
-            const select = document.getElementById('ticker-select');
+            const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
             if (select) {
                 select.value = currentTicker;
             }
             loadTickerData(currentTicker);
-        }
-        else {
+        } else {
             // Show placeholder
             showPlaceholder();
         }
     });
+    
     // Set up ticker dropdown change handler
-    const select = document.getElementById('ticker-select');
+    const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
     if (select) {
         select.addEventListener('change', handleTickerSearch);
     }
+    
     // Set up chart controls
-    const checkbox = document.getElementById('solid-lines-checkbox');
+    const checkbox = document.getElementById('solid-lines-checkbox') as HTMLInputElement | null;
     if (checkbox) {
-        checkbox.addEventListener('change', function () {
+        checkbox.addEventListener('change', function(this: HTMLInputElement): void {
             if (currentTicker) {
                 loadAndRenderChart(currentTicker, this.checked);
             }
         });
     }
 });
+
 // Load ticker list for dropdown
-async function loadTickerList() {
+async function loadTickerList(): Promise<void> {
     try {
         const response = await fetch('/api/v2/ticker/list', {
             credentials: 'include'
         });
+        
         if (!response.ok) {
             throw new Error('Failed to load ticker list');
         }
-        const data = await response.json();
+        
+        const data: TickerListResponse = await response.json();
         tickerList = data.tickers || [];
+        
         // Populate dropdown
-        const select = document.getElementById('ticker-select');
-        if (!select)
-            return;
+        const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
+        if (!select) return;
+        
         // Clear existing options except first one
         while (select.options.length > 1) {
             select.remove(1);
         }
+        
         // Add tickers
         tickerList.forEach(ticker => {
             const option = document.createElement('option');
@@ -64,26 +180,27 @@ async function loadTickerList() {
             option.textContent = ticker;
             select.appendChild(option);
         });
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error loading ticker list:', error);
     }
 }
+
 // Handle ticker search dropdown change
-function handleTickerSearch() {
-    const select = document.getElementById('ticker-select');
-    if (!select)
-        return;
+function handleTickerSearch(): void {
+    const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
+    if (!select) return;
+    
     const selectedTicker = select.value.toUpperCase().trim();
+    
     if (selectedTicker) {
         // Update URL without reload
         const url = new URL(window.location.href);
         url.searchParams.set('ticker', selectedTicker);
         window.history.pushState({}, '', url);
+        
         currentTicker = selectedTicker;
         loadTickerData(selectedTicker);
-    }
-    else {
+    } else {
         // Clear URL and show placeholder
         const url = new URL(window.location.href);
         url.searchParams.delete('ticker');
@@ -91,21 +208,26 @@ function handleTickerSearch() {
         showPlaceholder();
     }
 }
+
 // Load all ticker data
-async function loadTickerData(ticker) {
+async function loadTickerData(ticker: string): Promise<void> {
     hideAllSections();
     showLoading();
     hideTickerError();
     hidePlaceholder();
+    
     try {
         const response = await fetch(`/api/v2/ticker/info?ticker=${encodeURIComponent(ticker)}`, {
             credentials: 'include'
         });
+        
         if (!response.ok) {
-            const errorData = await response.json();
+            const errorData: ErrorResponse = await response.json();
             throw new Error(errorData.error || 'Failed to load ticker data');
         }
-        const data = await response.json();
+        
+        const data: TickerInfoResponse = await response.json();
+        
         // Render all sections
         if (data.basic_info) {
             renderBasicInfo(data.basic_info);
@@ -126,69 +248,75 @@ async function loadTickerData(ticker) {
         if (data.watchlist_status) {
             renderWatchlistStatus(data.watchlist_status);
         }
+        
         // Load and render chart
-        const checkbox = document.getElementById('solid-lines-checkbox');
+        const checkbox = document.getElementById('solid-lines-checkbox') as HTMLInputElement | null;
         const useSolid = checkbox ? checkbox.checked : false;
         loadAndRenderChart(ticker, useSolid);
+        
         hideLoading();
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error loading ticker data:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         showTickerError(errorMessage);
         hideLoading();
     }
 }
+
 // Render basic info section
-function renderBasicInfo(basicInfo) {
+function renderBasicInfo(basicInfo: BasicInfo): void {
     if (!basicInfo) {
         return;
     }
+    
     const section = document.getElementById('basic-info-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     const companyName = document.getElementById('company-name');
     const sector = document.getElementById('sector');
     const industry = document.getElementById('industry');
     const currency = document.getElementById('currency');
     const exchangeInfo = document.getElementById('exchange-info');
-    if (companyName)
-        companyName.textContent = basicInfo.company_name || 'N/A';
-    if (sector)
-        sector.textContent = basicInfo.sector || 'N/A';
-    if (industry)
-        industry.textContent = basicInfo.industry || 'N/A';
-    if (currency)
-        currency.textContent = basicInfo.currency || 'USD';
+    
+    if (companyName) companyName.textContent = basicInfo.company_name || 'N/A';
+    if (sector) sector.textContent = basicInfo.sector || 'N/A';
+    if (industry) industry.textContent = basicInfo.industry || 'N/A';
+    if (currency) currency.textContent = basicInfo.currency || 'USD';
+    
     if (exchangeInfo) {
         if (basicInfo.exchange && basicInfo.exchange !== 'N/A') {
             exchangeInfo.textContent = `Exchange: ${basicInfo.exchange}`;
             exchangeInfo.style.display = 'block';
-        }
-        else {
+        } else {
             exchangeInfo.style.display = 'none';
         }
     }
 }
+
 // Render external links
-async function renderExternalLinks(basicInfo) {
+async function renderExternalLinks(basicInfo: BasicInfo): Promise<void> {
     if (!basicInfo || !basicInfo.ticker) {
         return;
     }
+    
     try {
         const exchange = basicInfo.exchange || null;
         const response = await fetch(`/api/v2/ticker/external-links?ticker=${encodeURIComponent(basicInfo.ticker)}${exchange ? `&exchange=${encodeURIComponent(exchange)}` : ''}`, {
             credentials: 'include'
         });
+        
         if (!response.ok) {
             return;
         }
-        const links = await response.json();
+        
+        const links: Record<string, string> = await response.json();
         const grid = document.getElementById('external-links-grid');
-        if (!grid)
-            return;
+        if (!grid) return;
+        
         grid.innerHTML = '';
+        
         Object.entries(links).forEach(([name, url]) => {
             const link = document.createElement('a');
             link.href = url;
@@ -198,37 +326,42 @@ async function renderExternalLinks(basicInfo) {
             link.textContent = name;
             grid.appendChild(link);
         });
+        
         const section = document.getElementById('external-links-section');
         if (section && Object.keys(links).length > 0) {
             section.classList.remove('section-hidden');
         }
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error loading external links:', error);
     }
 }
+
 // Render portfolio data
-function renderPortfolioData(portfolioData) {
+function renderPortfolioData(portfolioData: PortfolioData): void {
     if (!portfolioData || (!portfolioData.has_positions && !portfolioData.has_trades)) {
         return;
     }
+    
     const section = document.getElementById('portfolio-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     // Render positions
     if (portfolioData.has_positions && portfolioData.positions && portfolioData.positions.length > 0) {
         const tbody = document.getElementById('positions-tbody');
         if (tbody) {
             tbody.innerHTML = '';
+            
             // Get latest position per fund
-            const latestPositions = {};
+            const latestPositions: Record<string, Position> = {};
             portfolioData.positions.forEach(pos => {
                 const fund = pos.fund || 'Unknown';
                 if (!latestPositions[fund] || (pos.date && pos.date > (latestPositions[fund].date || ''))) {
                     latestPositions[fund] = pos;
                 }
             });
+            
             Object.values(latestPositions).forEach(pos => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -241,21 +374,21 @@ function renderPortfolioData(portfolioData) {
                 `;
                 tbody.appendChild(row);
             });
+            
             const container = document.getElementById('positions-container');
-            if (container)
-                container.style.display = 'block';
+            if (container) container.style.display = 'block';
         }
-    }
-    else {
+    } else {
         const container = document.getElementById('positions-container');
-        if (container)
-            container.style.display = 'none';
+        if (container) container.style.display = 'none';
     }
+    
     // Render trades
     if (portfolioData.has_trades && portfolioData.trades && portfolioData.trades.length > 0) {
         const tbody = document.getElementById('trades-tbody');
         if (tbody) {
             tbody.innerHTML = '';
+            
             portfolioData.trades.slice(0, 20).forEach(trade => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -271,85 +404,95 @@ function renderPortfolioData(portfolioData) {
         }
     }
 }
+
 // Load and render chart
-async function loadAndRenderChart(ticker, useSolid) {
+async function loadAndRenderChart(ticker: string, useSolid: boolean): Promise<void> {
     // Show loading indicator
     const chartLoading = document.getElementById('chart-loading');
     const chartContainer = document.getElementById('chart-container');
-    if (!chartContainer || !chartLoading)
-        return;
+    
+    if (!chartContainer || !chartLoading) return;
+    
     // Clear any existing chart
     chartContainer.innerHTML = '';
     chartLoading.classList.remove('section-hidden');
+    
     // Show chart section (but with loading indicator)
     const chartSection = document.getElementById('chart-section');
-    if (chartSection)
-        chartSection.classList.remove('section-hidden');
+    if (chartSection) chartSection.classList.remove('section-hidden');
+    
     try {
         // Detect actual theme from page
         const htmlElement = document.documentElement;
         const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
-        let theme = 'light'; // default
+        let theme: string = 'light'; // default
+        
         if (dataTheme === 'dark') {
             theme = 'dark';
-        }
-        else if (dataTheme === 'light') {
+        } else if (dataTheme === 'light') {
             theme = 'light';
-        }
-        else if (dataTheme === 'system') {
+        } else if (dataTheme === 'system') {
             // For 'system', check if page is actually in dark mode via CSS
             const bodyBg = window.getComputedStyle(document.body).backgroundColor;
             // Check for dark mode background colors
-            const isDark = bodyBg && (bodyBg.includes('rgb(31, 41, 55)') || // --bg-primary dark
-                bodyBg.includes('rgb(17, 24, 39)') || // --bg-secondary dark  
-                bodyBg.includes('rgb(55, 65, 81)') // --bg-tertiary dark
+            const isDark = bodyBg && (
+                bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+                bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+                bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
             );
             theme = isDark ? 'dark' : 'light';
         }
+        
         console.log('Detected theme:', theme, 'from data-theme:', dataTheme);
+        
         const response = await fetch(`/api/v2/ticker/chart?ticker=${encodeURIComponent(ticker)}&use_solid=${useSolid}&theme=${encodeURIComponent(theme)}`, {
             credentials: 'include'
         });
+        
         // Check if response is JSON
         const contentType = response.headers.get('content-type');
         const isJson = contentType && contentType.includes('application/json');
+        
         if (!response.ok) {
             let errorMessage = `Failed to load chart (${response.status})`;
             if (isJson) {
                 try {
-                    const errorData = await response.json();
+                    const errorData: ErrorResponse = await response.json();
                     errorMessage = errorData.error || errorMessage;
-                }
-                catch (e) {
+                } catch (e) {
                     // If JSON parsing fails, use default message
                 }
-            }
-            else {
+            } else {
                 // Response is HTML (likely an error page)
                 errorMessage = `Server error: ${response.status} ${response.statusText}`;
             }
             throw new Error(errorMessage);
         }
+        
         if (!isJson) {
             throw new Error('Server returned non-JSON response. Please check your authentication.');
         }
-        const chartData = await response.json();
+        
+        const chartData: ChartData = await response.json();
+        
         // Validate chart data structure
         if (!chartData || !chartData.data || !chartData.layout) {
             throw new Error('Invalid chart data received from server');
         }
+        
         // Render with Plotly
-        const Plotly = window.Plotly;
+        const Plotly = (window as any).Plotly;
         if (Plotly) {
-            Plotly.newPlot('chart-container', chartData.data, chartData.layout, { responsive: true });
+            Plotly.newPlot('chart-container', chartData.data, chartData.layout, {responsive: true});
         }
+        
         // Hide loading indicator AFTER successful rendering
         chartLoading.classList.add('section-hidden');
         chartLoading.style.display = 'none';
+        
         // Load price history for metrics
         loadPriceHistoryMetrics(ticker);
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error loading chart:', error);
         // Hide loading indicator
         chartLoading.classList.add('section-hidden');
@@ -358,71 +501,80 @@ async function loadAndRenderChart(ticker, useSolid) {
         showTickerError(`Failed to load chart: ${errorMessage}`);
         // Hide chart section on error
         const chartSection = document.getElementById('chart-section');
-        if (chartSection)
-            chartSection.classList.add('section-hidden');
+        if (chartSection) chartSection.classList.add('section-hidden');
     }
 }
+
 // Load price history for metrics
-async function loadPriceHistoryMetrics(ticker) {
+async function loadPriceHistoryMetrics(ticker: string): Promise<void> {
     try {
         const response = await fetch(`/api/v2/ticker/price-history?ticker=${encodeURIComponent(ticker)}&days=90`, {
             credentials: 'include'
         });
+        
         if (!response.ok) {
             return;
         }
-        const data = await response.json();
+        
+        const data: PriceHistoryData = await response.json();
         const prices = data.data || [];
+        
         if (prices.length > 0) {
             const firstPrice = prices[0].price || 0;
             const lastPrice = prices[prices.length - 1].price || 0;
             const priceChange = lastPrice - firstPrice;
             const priceChangePct = firstPrice > 0 ? (priceChange / firstPrice * 100) : 0;
+            
             const firstPriceEl = document.getElementById('first-price');
             const lastPriceEl = document.getElementById('last-price');
             const changeEl = document.getElementById('price-change');
-            if (firstPriceEl)
-                firstPriceEl.textContent = formatCurrency(firstPrice);
-            if (lastPriceEl)
-                lastPriceEl.textContent = formatCurrency(lastPrice);
+            
+            if (firstPriceEl) firstPriceEl.textContent = formatCurrency(firstPrice);
+            if (lastPriceEl) lastPriceEl.textContent = formatCurrency(lastPrice);
             if (changeEl) {
                 changeEl.textContent = `${priceChangePct >= 0 ? '+' : ''}${priceChangePct.toFixed(2)}%`;
                 changeEl.className = `text-xl font-semibold ${priceChangePct >= 0 ? 'text-green-600' : 'text-red-600'}`;
             }
         }
-    }
-    catch (error) {
+    } catch (error) {
         console.error('Error loading price history metrics:', error);
     }
 }
+
 // Render research articles
-function renderResearchArticles(articles) {
+function renderResearchArticles(articles: ResearchArticle[]): void {
     if (!articles || articles.length === 0) {
         return;
     }
+    
     const section = document.getElementById('research-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     const countEl = document.getElementById('research-count');
-    if (countEl)
-        countEl.textContent = `Found ${articles.length} articles mentioning ${currentTicker} (last 30 days)`;
+    if (countEl) countEl.textContent = `Found ${articles.length} articles mentioning ${currentTicker} (last 30 days)`;
+    
     const list = document.getElementById('research-articles-list');
-    if (!list)
-        return;
+    if (!list) return;
+    
     list.innerHTML = '';
+    
     articles.slice(0, 10).forEach(article => {
         const articleDiv = document.createElement('div');
         articleDiv.className = 'border-b border-gray-200 py-4';
+        
         const title = article.title || 'Untitled';
         const summary = article.summary || '';
         const url = article.url || '#';
         const source = article.source || 'Unknown';
         const publishedAt = formatDate(article.published_at);
         const sentiment = article.sentiment || 'N/A';
+        
         const summaryId = `summary-${article.id || Math.random().toString(36).substr(2, 9)}`;
         const isLongSummary = summary.length > 500;
         const shortSummary = isLongSummary ? summary.substring(0, 500) + '...' : summary;
+        
         articleDiv.innerHTML = `
             <details class="cursor-pointer">
                 <summary class="font-semibold text-blue-600 hover:text-blue-800">${title}</summary>
@@ -448,20 +600,24 @@ function renderResearchArticles(articles) {
         list.appendChild(articleDiv);
     });
 }
+
 // Render social sentiment
-function renderSocialSentiment(sentiment) {
+function renderSocialSentiment(sentiment: SocialSentiment): void {
     if (!sentiment) {
         return;
     }
+    
     const section = document.getElementById('sentiment-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     // Render metrics
     if (sentiment.latest_metrics && sentiment.latest_metrics.length > 0) {
         const tbody = document.getElementById('sentiment-tbody');
         if (tbody) {
             tbody.innerHTML = '';
+            
             sentiment.latest_metrics.forEach(metric => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -474,67 +630,69 @@ function renderSocialSentiment(sentiment) {
                 `;
                 tbody.appendChild(row);
             });
+            
             const container = document.getElementById('sentiment-metrics-container');
-            if (container)
-                container.style.display = 'block';
+            if (container) container.style.display = 'block';
         }
-    }
-    else {
+    } else {
         const container = document.getElementById('sentiment-metrics-container');
-        if (container)
-            container.style.display = 'none';
+        if (container) container.style.display = 'none';
     }
+    
     // Render alerts
     if (sentiment.alerts && sentiment.alerts.length > 0) {
         const alertsList = document.getElementById('sentiment-alerts-list');
         if (alertsList) {
             alertsList.innerHTML = '';
+            
             sentiment.alerts.forEach(alert => {
                 const alertDiv = document.createElement('div');
                 const platform = (alert.platform || 'Unknown').charAt(0).toUpperCase() + (alert.platform || '').slice(1);
                 const sentimentLabel = alert.sentiment_label || 'N/A';
                 const score = (alert.sentiment_score || 0).toFixed(2);
+                
                 let alertClass = 'bg-blue-100 border-blue-400 text-blue-700';
                 if (sentimentLabel === 'EUPHORIC') {
                     alertClass = 'bg-green-100 border-green-400 text-green-700';
-                }
-                else if (sentimentLabel === 'FEARFUL') {
+                } else if (sentimentLabel === 'FEARFUL') {
                     alertClass = 'bg-red-100 border-red-400 text-red-700';
-                }
-                else if (sentimentLabel === 'BULLISH') {
+                } else if (sentimentLabel === 'BULLISH') {
                     alertClass = 'bg-blue-100 border-blue-400 text-blue-700';
                 }
+                
                 alertDiv.className = `border px-4 py-3 rounded mb-2 ${alertClass}`;
                 alertDiv.textContent = `${platform} - ${sentimentLabel} (Score: ${score})`;
                 alertsList.appendChild(alertDiv);
             });
+            
             const container = document.getElementById('sentiment-alerts-container');
-            if (container)
-                container.style.display = 'block';
+            if (container) container.style.display = 'block';
         }
-    }
-    else {
+    } else {
         const container = document.getElementById('sentiment-alerts-container');
-        if (container)
-            container.style.display = 'none';
+        if (container) container.style.display = 'none';
     }
 }
+
 // Render congress trades
-function renderCongressTrades(trades) {
+function renderCongressTrades(trades: CongressTrade[]): void {
     if (!trades || trades.length === 0) {
         return;
     }
+    
     const section = document.getElementById('congress-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     const countEl = document.getElementById('congress-count');
-    if (countEl)
-        countEl.textContent = `Found ${trades.length} recent trades by politicians (last 30 days)`;
+    if (countEl) countEl.textContent = `Found ${trades.length} recent trades by politicians (last 30 days)`;
+    
     const tbody = document.getElementById('congress-tbody');
-    if (!tbody)
-        return;
+    if (!tbody) return;
+    
     tbody.innerHTML = '';
+    
     trades.slice(0, 20).forEach(trade => {
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -548,78 +706,80 @@ function renderCongressTrades(trades) {
         tbody.appendChild(row);
     });
 }
+
 // Render watchlist status
-function renderWatchlistStatus(status) {
+function renderWatchlistStatus(status: WatchlistStatus): void {
     if (!status) {
         return;
     }
+    
     const section = document.getElementById('watchlist-section');
-    if (!section)
-        return;
+    if (!section) return;
+    
     section.classList.remove('section-hidden');
+    
     const statusEl = document.getElementById('watchlist-status');
     const tierEl = document.getElementById('watchlist-tier');
     const sourceEl = document.getElementById('watchlist-source');
-    if (statusEl)
-        statusEl.textContent = status.is_active ? '✅ In Watchlist' : '❌ Not Active';
-    if (tierEl)
-        tierEl.textContent = status.priority_tier || 'N/A';
-    if (sourceEl)
-        sourceEl.textContent = status.source || 'N/A';
+    
+    if (statusEl) statusEl.textContent = status.is_active ? '✅ In Watchlist' : '❌ Not Active';
+    if (tierEl) tierEl.textContent = status.priority_tier || 'N/A';
+    if (sourceEl) sourceEl.textContent = status.source || 'N/A';
 }
+
 // Utility functions
-function formatDate(dateStr) {
-    if (!dateStr)
-        return 'N/A';
+function formatDate(dateStr?: string): string {
+    if (!dateStr) return 'N/A';
     try {
         const date = new Date(dateStr);
         return date.toLocaleDateString();
-    }
-    catch (e) {
+    } catch (e) {
         return dateStr.substring(0, 10); // Return first 10 chars if parsing fails
     }
 }
-function formatCurrency(value) {
+
+function formatCurrency(value: number | string): string {
     return `$${parseFloat(String(value || 0)).toFixed(2)}`;
 }
-function formatNumber(value, decimals = 2) {
+
+function formatNumber(value: number | string, decimals: number = 2): string {
     return parseFloat(String(value || 0)).toFixed(decimals);
 }
-function showLoading() {
+
+function showLoading(): void {
     const spinner = document.getElementById('loading-spinner');
-    if (spinner)
-        spinner.classList.remove('section-hidden');
+    if (spinner) spinner.classList.remove('section-hidden');
 }
-function hideLoading() {
+
+function hideLoading(): void {
     const spinner = document.getElementById('loading-spinner');
-    if (spinner)
-        spinner.classList.add('section-hidden');
+    if (spinner) spinner.classList.add('section-hidden');
 }
-function showTickerError(message) {
+
+function showTickerError(message: string): void {
     const errorText = document.getElementById('error-text');
     const errorMessage = document.getElementById('error-message');
-    if (errorText)
-        errorText.textContent = message;
-    if (errorMessage)
-        errorMessage.classList.remove('section-hidden');
+    if (errorText) errorText.textContent = message;
+    if (errorMessage) errorMessage.classList.remove('section-hidden');
 }
-function hideTickerError() {
+
+function hideTickerError(): void {
     const errorMessage = document.getElementById('error-message');
-    if (errorMessage)
-        errorMessage.classList.add('section-hidden');
+    if (errorMessage) errorMessage.classList.add('section-hidden');
 }
-function toggleSummary(summaryId) {
+
+function toggleSummary(summaryId: string): void {
     const shortDiv = document.getElementById(`${summaryId}-short`);
     const fullDiv = document.getElementById(`${summaryId}-full`);
     const toggleBtn = document.getElementById(`${summaryId}-toggle`);
+    
     if (shortDiv && fullDiv && toggleBtn) {
         if (fullDiv.classList.contains('hidden')) {
             // Show full summary
             shortDiv.classList.add('hidden');
             fullDiv.classList.remove('hidden');
             toggleBtn.textContent = 'Show Less';
-        }
-        else {
+        } else {
             // Show short summary
             shortDiv.classList.remove('hidden');
             fullDiv.classList.add('hidden');
@@ -627,20 +787,22 @@ function toggleSummary(summaryId) {
         }
     }
 }
+
 // Make toggleSummary available globally
-window.toggleSummary = toggleSummary;
-function showPlaceholder() {
+(window as any).toggleSummary = toggleSummary;
+
+function showPlaceholder(): void {
     const placeholder = document.getElementById('placeholder-message');
-    if (placeholder)
-        placeholder.classList.remove('section-hidden');
+    if (placeholder) placeholder.classList.remove('section-hidden');
     hideAllSections();
 }
-function hidePlaceholder() {
+
+function hidePlaceholder(): void {
     const placeholder = document.getElementById('placeholder-message');
-    if (placeholder)
-        placeholder.classList.add('section-hidden');
+    if (placeholder) placeholder.classList.add('section-hidden');
 }
-function hideAllSections() {
+
+function hideAllSections(): void {
     const sections = [
         'basic-info-section',
         'external-links-section',
@@ -651,10 +813,9 @@ function hideAllSections() {
         'congress-section',
         'watchlist-section'
     ];
+    
     sections.forEach(id => {
         const section = document.getElementById(id);
-        if (section)
-            section.classList.add('section-hidden');
+        if (section) section.classList.add('section-hidden');
     });
 }
-//# sourceMappingURL=ticker_details.js.map

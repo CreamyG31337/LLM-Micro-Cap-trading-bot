@@ -2,11 +2,119 @@
  * Congress Trades TypeScript
  * Handles AgGrid initialization and interactions
  */
-let gridApi = null;
-let gridColumnApi = null;
+
+// AgGrid types (using any for now - can install @types/ag-grid-community later)
+interface AgGridParams {
+    value: string | null;
+    data?: CongressTrade;
+    column?: {
+        colId: string;
+    };
+    node?: AgGridNode;
+}
+
+interface AgGridNode {
+    setDataValue(key: string, value: string): void;
+    setSelected(selected: boolean): void;
+}
+
+interface AgGridApi {
+    getSelectedRows(): CongressTrade[];
+    getSelectedNodes(): AgGridNode[];
+    sizeColumnsToFit(): void;
+}
+
+interface AgGridColumnApi {
+    // Column API methods if needed
+}
+
+interface AgGridGrid {
+    api: AgGridApi;
+    columnApi: AgGridColumnApi;
+}
+
+interface AgGridGlobal {
+    Grid: new (element: HTMLElement, options: AgGridOptions) => AgGridGrid;
+}
+
+interface AgGridOptions {
+    columnDefs: AgGridColumnDef[];
+    rowData: CongressTrade[];
+    defaultColDef?: Partial<AgGridColumnDef>;
+    rowSelection?: string;
+    suppressRowClickSelection?: boolean;
+    enableRangeSelection?: boolean;
+    enableCellTextSelection?: boolean;
+    ensureDomOrder?: boolean;
+    domLayout?: string;
+    pagination?: boolean;
+    paginationPageSize?: number;
+    paginationPageSizeSelector?: number[];
+    onCellClicked?: (params: AgGridParams) => void;
+    onSelectionChanged?: () => void;
+    animateRows?: boolean;
+    suppressCellFocus?: boolean;
+}
+
+interface AgGridColumnDef {
+    field: string;
+    headerName: string;
+    width?: number;
+    pinned?: string;
+    cellRenderer?: any;
+    sortable?: boolean;
+    filter?: boolean;
+    hide?: boolean;
+    editable?: boolean;
+    resizable?: boolean;
+    tooltipValueGetter?: (params: AgGridParams) => string;
+    cellStyle?: Record<string, string>;
+}
+
+interface AgGridCellRendererParams {
+    value: string | null;
+    data?: CongressTrade;
+}
+
+interface AgGridCellRenderer {
+    init(params: AgGridCellRendererParams): void;
+    getGui(): HTMLElement;
+}
+
+// Congress Trade data interface
+interface CongressTrade {
+    Ticker?: string;
+    Company?: string;
+    Politician?: string;
+    Chamber?: string;
+    Party?: string;
+    State?: string;
+    Date?: string;
+    Type?: string;
+    Amount?: string;
+    Score?: string;
+    Owner?: string;
+    'AI Reasoning'?: string;
+    _tooltip?: string;
+    _click_action?: string;
+    _full_reasoning?: string;
+}
+
+// Global AgGrid reference
+declare global {
+    interface Window {
+        agGrid: AgGridGlobal;
+    }
+}
+
+let gridApi: AgGridApi | null = null;
+let gridColumnApi: AgGridColumnApi | null = null;
+
 // Ticker cell renderer - makes ticker clickable
-class TickerCellRenderer {
-    init(params) {
+class TickerCellRenderer implements AgGridCellRenderer {
+    private eGui!: HTMLElement; // Definitely assigned in init()
+
+    init(params: AgGridCellRendererParams): void {
         this.eGui = document.createElement('span');
         if (params.value && params.value !== 'N/A') {
             this.eGui.innerText = params.value;
@@ -14,24 +122,25 @@ class TickerCellRenderer {
             this.eGui.style.fontWeight = 'bold';
             this.eGui.style.textDecoration = 'underline';
             this.eGui.style.cursor = 'pointer';
-            this.eGui.addEventListener('click', function (e) {
+            this.eGui.addEventListener('click', function(e: Event) {
                 e.stopPropagation();
                 const ticker = params.value;
                 if (ticker && ticker !== 'N/A') {
                     window.location.href = `/v2/ticker?ticker=${encodeURIComponent(ticker)}`;
                 }
             });
-        }
-        else {
+        } else {
             this.eGui.innerText = params.value || 'N/A';
         }
     }
-    getGui() {
+
+    getGui(): HTMLElement {
         return this.eGui;
     }
 }
+
 // Global click handler - manages navigation vs selection
-function onCellClicked(params) {
+function onCellClicked(params: AgGridParams): void {
     if (params.data) {
         // Determine action based on column
         let action = 'details';
@@ -42,13 +151,15 @@ function onCellClicked(params) {
             window.location.href = `/v2/ticker?ticker=${encodeURIComponent(ticker)}`;
             return;
         }
+        
         // Update hidden column
         if (params.node) {
             params.node.setDataValue('_click_action', action);
+            
             // Select the row to trigger selection event
             if (gridApi) {
                 const selectedNodes = gridApi.getSelectedNodes();
-                selectedNodes.forEach(function (node) {
+                selectedNodes.forEach(function(node: AgGridNode) {
                     node.setSelected(false);
                 });
                 params.node.setSelected(true);
@@ -56,22 +167,25 @@ function onCellClicked(params) {
         }
     }
 }
+
 // Handle row selection - show AI reasoning
-function onSelectionChanged() {
-    if (!gridApi)
-        return;
+function onSelectionChanged(): void {
+    if (!gridApi) return;
+    
     const selectedRows = gridApi.getSelectedRows();
     if (selectedRows && selectedRows.length > 0) {
         const selectedRow = selectedRows[0];
         // Get full reasoning - check both _full_reasoning and _tooltip fields
-        const fullReasoning = (selectedRow._full_reasoning && selectedRow._full_reasoning.trim()) ||
-            (selectedRow._tooltip && selectedRow._tooltip.trim()) ||
-            '';
+        const fullReasoning = (selectedRow._full_reasoning && selectedRow._full_reasoning.trim()) || 
+                             (selectedRow._tooltip && selectedRow._tooltip.trim()) || 
+                             '';
+        
         if (fullReasoning) {
             // Show reasoning section
             const reasoningSection = document.getElementById('ai-reasoning-section');
             if (reasoningSection) {
                 reasoningSection.classList.remove('hidden');
+                
                 // Populate fields
                 const tickerEl = document.getElementById('reasoning-ticker');
                 const companyEl = document.getElementById('reasoning-company');
@@ -80,26 +194,20 @@ function onSelectionChanged() {
                 const typeEl = document.getElementById('reasoning-type');
                 const scoreEl = document.getElementById('reasoning-score');
                 const textEl = document.getElementById('reasoning-text');
-                if (tickerEl)
-                    tickerEl.textContent = selectedRow.Ticker || '-';
-                if (companyEl)
-                    companyEl.textContent = selectedRow.Company || '-';
-                if (politicianEl)
-                    politicianEl.textContent = selectedRow.Politician || '-';
-                if (dateEl)
-                    dateEl.textContent = selectedRow.Date || '-';
-                if (typeEl)
-                    typeEl.textContent = selectedRow.Type || '-';
-                if (scoreEl)
-                    scoreEl.textContent = selectedRow.Score || '-';
-                if (textEl)
-                    textEl.textContent = fullReasoning;
+                
+                if (tickerEl) tickerEl.textContent = selectedRow.Ticker || '-';
+                if (companyEl) companyEl.textContent = selectedRow.Company || '-';
+                if (politicianEl) politicianEl.textContent = selectedRow.Politician || '-';
+                if (dateEl) dateEl.textContent = selectedRow.Date || '-';
+                if (typeEl) typeEl.textContent = selectedRow.Type || '-';
+                if (scoreEl) scoreEl.textContent = selectedRow.Score || '-';
+                if (textEl) textEl.textContent = fullReasoning;
+                
                 // Scroll to reasoning section
                 reasoningSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         }
-    }
-    else {
+    } else {
         // Hide reasoning section if no selection
         const reasoningSection = document.getElementById('ai-reasoning-section');
         if (reasoningSection) {
@@ -107,18 +215,21 @@ function onSelectionChanged() {
         }
     }
 }
-export function initializeCongressTradesGrid(tradesData) {
-    const gridDiv = document.querySelector('#congress-trades-grid');
+
+export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void {
+    const gridDiv = document.querySelector('#congress-trades-grid') as HTMLElement | null;
     if (!gridDiv) {
         console.error('Congress trades grid container not found');
         return;
     }
+
     if (!window.agGrid) {
         console.error('AgGrid not loaded');
         return;
     }
+
     // Column definitions
-    const columnDefs = [
+    const columnDefs: AgGridColumnDef[] = [
         {
             field: 'Ticker',
             headerName: 'Ticker',
@@ -204,7 +315,7 @@ export function initializeCongressTradesGrid(tradesData) {
             width: 400,
             sortable: true,
             filter: true,
-            tooltipValueGetter: function (params) {
+            tooltipValueGetter: function(params: AgGridParams): string {
                 return params.data?._tooltip || params.value || '';
             },
             cellStyle: {
@@ -229,8 +340,9 @@ export function initializeCongressTradesGrid(tradesData) {
             hide: true
         }
     ];
+
     // Grid options
-    const gridOptions = {
+    const gridOptions: AgGridOptions = {
         columnDefs: columnDefs,
         rowData: tradesData,
         defaultColDef: {
@@ -253,14 +365,23 @@ export function initializeCongressTradesGrid(tradesData) {
         animateRows: true,
         suppressCellFocus: false
     };
+
     // Create grid
     const gridInstance = new window.agGrid.Grid(gridDiv, gridOptions);
     gridApi = gridInstance.api;
     gridColumnApi = gridInstance.columnApi;
+    
     // Auto-size columns on first data render
     if (gridApi) {
         gridApi.sizeColumnsToFit();
     }
 }
+
+// Make function available globally for template usage
+declare global {
+    interface Window {
+        initializeCongressTradesGrid: typeof initializeCongressTradesGrid;
+    }
+}
+
 window.initializeCongressTradesGrid = initializeCongressTradesGrid;
-//# sourceMappingURL=congress_trades.js.map

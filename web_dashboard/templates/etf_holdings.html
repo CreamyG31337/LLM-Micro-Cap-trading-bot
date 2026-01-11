@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}ETF Holdings Watchtower - Portfolio Dashboard{% endblock %}
+{% block page_title %}💼 ETF Holdings Watchtower{% endblock %}
+{% block page_subtitle %}Track Institutional Activity by monitoring daily changes in ETF holdings.{% endblock %}
+
+{% block extra_head %}
+<!-- AgGrid Community Edition -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+    <div class="flex">
+        <div class="flex-shrink-0">
+            <i class="fas fa-exclamation-triangle text-red-400"></i>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">{{ error }}</h3>
+            <div class="mt-2 text-sm text-red-700">
+                <p>{{ error_message }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Info Box -->
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+    <p class="text-sm text-blue-800">
+        <strong>Track Institutional Activity</strong> by monitoring daily changes in ETF holdings. The <strong>Diff
+            Engine</strong> detects when ETFs accumulate or distribute positions—signals that often precede significant
+        price movements.
+    </p>
+    <p class="text-xs text-blue-600 mt-2">
+        <em>Increases in shares held are bullish signals, decreases are bearish signals.</em>
+    </p>
+</div>
+
+<!-- Filters -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+    <form id="filters-form" action="/v2/etf_holdings" method="GET" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- ETF Filter -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">ETF</label>
+                <select name="etf" class="w-full text-sm border border-gray-300 rounded-lg p-2"
+                    onchange="updateFilters()">
+                    <option value="All ETFs" {% if current_etf=='All ETFs' %}selected{% endif %}>All ETFs</option>
+                    {% for etf in available_etfs %}
+                    <option value="{{ etf.ticker }}" {% if current_etf==etf.ticker %}selected{% endif %}>
+                        {{ etf.ticker }} - {{ etf.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Date Filter -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">Date</label>
+                <input type="date" name="date" value="{{ current_date }}" max="{{ latest_date }}"
+                    class="w-full text-sm border border-gray-300 rounded-lg p-2" onchange="updateFilters()">
+            </div>
+
+            <!-- Fund Filter (Multi-select) -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">Holdings Filter</label>
+                <div class="relative group">
+                    <button type="button"
+                        class="w-full bg-white border border-gray-300 text-gray-700 py-2 px-3 rounded-lg text-sm text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onclick="document.getElementById('fund-dropdown-menu').classList.toggle('hidden')">
+                        <span id="fund-select-label">
+                            {% if current_fund and current_fund != 'All Funds' and current_fund != '' %}
+                            {{ current_fund }}
+                            {% else %}
+                            All Funds (Show All)
+                            {% endif %}
+                        </span>
+                        <i class="fas fa-chevron-down text-xs text-gray-500"></i>
+                    </button>
+
+                    <div id="fund-dropdown-menu"
+                        class="hidden absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto">
+                        <div class="p-2 border-b border-gray-100">
+                            <label class="flex items-center p-1 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox"
+                                    class="fund-checkbox rounded text-blue-600 focus:ring-blue-500 mr-2"
+                                    value="All Funds" {% if not current_fund or current_fund=='All Funds' %}checked{%
+                                    endif %} onchange="handleFundSelection(this)">
+                                <span class="text-sm font-medium text-gray-900">All Funds</span>
+                            </label>
+                        </div>
+                        <div class="p-2 space-y-1">
+                            {% for fund in available_funds %}
+                            <label class="flex items-center p-1 rounded hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox"
+                                    class="fund-checkbox rounded text-blue-600 focus:ring-blue-500 mr-2"
+                                    value="{{ fund }}" {% if current_fund and fund in current_fund and current_fund
+                                    !='All Funds' %}checked{% endif %} onchange="handleFundSelection(this)">
+                                <span class="text-sm text-gray-700">{{ fund }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <div class="p-2 border-t border-gray-100 flex justify-end">
+                            <button type="button"
+                                class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+                                onclick="updateFilters()">
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Hidden input to store selected funds for form submit -->
+                <input type="hidden" name="fund" id="fund-input" value="{{ current_fund }}">
+            </div>
+
+            <!-- Refresh Button -->
+            <div class="flex items-end">
+                <button type="button" onclick="updateFilters(true)"
+                    class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 w-full text-center">
+                    <i class="fas fa-sync-alt mr-2"></i>Refresh Data
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- ETF Ownership Alert -->
+{% if etf_ownership %}
+<div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 flex items-center">
+    <i class="fas fa-check-circle text-green-500 mr-3 text-xl"></i>
+    <div>
+        <h4 class="text-sm font-bold text-green-800">You own {{ etf_ownership.total_shares | int }} shares of {{
+            current_etf }}</h4>
+        <p class="text-xs text-green-600">Held in: {{ etf_ownership.funds }}</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Summary Stats (Only for Changes View) -->
+{% if view_mode == 'changes' and stats %}
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📊 Summary Statistics</h2>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase font-bold">Latest Update</div>
+            <div class="text-lg font-bold text-gray-900">{{ current_date }}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase font-bold">Total Changes</div>
+            <div class="text-lg font-bold text-gray-900">{{ stats.total_changes }}</div>
+        </div>
+        <div class="bg-green-50 rounded-lg p-4 border-l-4 border-green-500">
+            <div class="text-xs text-green-700 uppercase font-bold">Bullish (BUY)</div>
+            <div class="text-lg font-bold text-green-900">{{ stats.bullish_count }}</div>
+        </div>
+        <div class="bg-red-50 rounded-lg p-4 border-l-4 border-red-500">
+            <div class="text-xs text-red-700 uppercase font-bold">Bearish (SELL)</div>
+            <div class="text-lg font-bold text-red-900">{{ stats.bearish_count }}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase font-bold">ETFs Tracked</div>
+            <div class="text-lg font-bold text-gray-900">{{ stats.total_etfs }}</div>
+        </div>
+    </div>
+
+    {% if stats.largest_buy or stats.largest_sell %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+        {% if stats.largest_buy %}
+        <div class="text-sm">
+            <span class="text-green-600 font-bold">🟢 Largest Buy:</span>
+            {{ stats.largest_buy.ticker }} ({{ stats.largest_buy.etf }})
+            <span class="font-mono bg-green-100 px-1 rounded">+{{ stats.largest_buy.change | int }}</span> shares
+        </div>
+        {% endif %}
+        {% if stats.largest_sell %}
+        <div class="text-sm">
+            <span class="text-red-600 font-bold">🔴 Largest Sell:</span>
+            {{ stats.largest_sell.ticker }} ({{ stats.largest_sell.etf }})
+            <span class="font-mono bg-red-100 px-1 rounded">{{ stats.largest_sell.change | int }}</span> shares
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Data Table -->
+<div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">
+        {% if view_mode == 'holdings' %}
+        Current Holdings - {{ current_etf }}
+        {% else %}
+        Latest Changes
+        {% endif %}
+    </h2>
+    <div id="etf-holdings-grid" class="ag-theme-alpine" style="height: 600px; width: 100%;"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/assets/js/etf_holdings.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const holdingsData = {{ holdings_data | tojson
+    }};
+    const viewMode = "{{ view_mode }}";
+    initializeEtfGrid(holdingsData, viewMode);
+    });
+</script>
+{% endblock %}

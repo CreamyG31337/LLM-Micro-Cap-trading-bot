@@ -19,6 +19,7 @@ MIGRATED_PAGES = {
     'research': '/v2/research',     # Research Repository page
     'ai_assistant': '/v2/ai_assistant',  # AI Assistant chat interface
     'congress_trades': '/v2/congress_trades',  # Congress Trades page
+    'etf_holdings': '/v2/etf_holdings',  # ETF Holdings Watchtower
 }
 
 

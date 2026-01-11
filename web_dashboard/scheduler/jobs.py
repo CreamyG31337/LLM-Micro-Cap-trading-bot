@@ -989,6 +989,32 @@ def register_default_jobs(scheduler) -> None:
             replace_existing=True,
             max_instances=1,
             coalesce=True,
-            misfire_grace_time=3600
+        misfire_grace_time=3600
         )
         logger.info("Registered job: subreddit_scanner (every 4 hours)")
+
+    # ETF Watchtower - Daily at 8:00 PM EST
+    if AVAILABLE_JOBS.get('etf_watchtower', {}).get('enabled_by_default', True):
+        from scheduler.jobs_etf_watchtower import etf_watchtower_job
+        
+        # Use triggers from definition or default to 8pm EST
+        config = AVAILABLE_JOBS['etf_watchtower']
+        triggers = config.get('cron_triggers', [{'hour': 20, 'minute': 0, 'timezone': 'America/New_York'}])
+        
+        # We can only support one trigger easily here, take the first
+        trigger_config = triggers[0]
+        
+        scheduler.add_job(
+            etf_watchtower_job,
+            trigger=CronTrigger(
+                hour=trigger_config['hour'], 
+                minute=trigger_config['minute'], 
+                timezone=trigger_config.get('timezone', 'America/New_York')
+            ),
+            id='etf_watchtower',
+            name=f"{get_job_icon('etf_watchtower')} ETF Watchtower",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True
+        )
+        logger.info("Registered job: etf_watchtower (daily at 8:00 PM EST)")

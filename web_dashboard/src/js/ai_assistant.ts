@@ -1,15 +1,109 @@
-"use strict";
 /**
  * AI Assistant TypeScript
  * Handles chat interface, streaming responses, context management, and search
  */
+
+// Configuration interfaces
+interface AIAssistantConfig {
+    defaultModel?: string;
+    availableFunds?: string[];
+    ollamaModels?: Array<{ id: string; name: string }>;
+    ollamaAvailable?: boolean;
+    searxngAvailable?: boolean;
+    webaiModels?: string[];
+    hasWebai?: boolean;
+}
+
+interface ContextItem {
+    item_type?: string;
+    [key: string]: any;
+}
+
+interface Message {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+interface ContextPreviewResponse {
+    success: boolean;
+    context?: string;
+    char_count?: number;
+    error?: string;
+}
+
+interface ModelsResponse {
+    models?: Array<{ id: string; name: string }>;
+}
+
+interface ContextResponse {
+    success?: boolean;
+    items?: ContextItem[];
+}
+
+interface SearchResponse {
+    results?: any[];
+    [key: string]: any;
+}
+
+interface RepositoryResponse {
+    articles?: any[];
+    [key: string]: any;
+}
+
+interface ChatRequest {
+    query: string;
+    model: string;
+    fund: string | null;
+    context_items: ContextItem[];
+    context_string: string | null;
+    conversation_history: Message[];
+    include_search: boolean;
+    include_repository: boolean;
+    include_price_volume: boolean;
+    include_fundamentals: boolean;
+    search_results: any;
+    repository_articles: any;
+}
+
+interface ChatResponse {
+    response?: string;
+    chunk?: string;
+    done?: boolean;
+    error?: string;
+}
+
+interface PortfolioIntelligenceResponse {
+    matching_articles?: Array<{
+        title?: string;
+        matched_holdings?: string[];
+        summary?: string;
+        conclusion?: string;
+    }>;
+}
+
+interface PortfolioResponse {
+    positions?: Array<{ ticker?: string }>;
+}
+
 class AIAssistant {
-    constructor(config) {
-        // Context caching - calculate once, use for all messages
-        this.contextString = null; // The actual context text to send to LLM
-        this.contextReady = false; // True when context is loaded and ready
-        this.contextLoading = false; // True while loading (prevent duplicate requests)
-        this.isSending = false; // True while a message is being sent (prevent duplicate sends)
+    private config: AIAssistantConfig;
+    private messages: Message[];
+    private contextItems: ContextItem[];
+    private selectedModel: string;
+    private selectedFund: string | null;
+    private conversationHistory: Message[];
+    private includeSearch: boolean;
+    private includeRepository: boolean;
+    private includePriceVolume: boolean;
+    private includeFundamentals: boolean;
+
+    // Context caching - calculate once, use for all messages
+    private contextString: string | null = null;  // The actual context text to send to LLM
+    private contextReady: boolean = false;  // True when context is loaded and ready
+    private contextLoading: boolean = false; // True while loading (prevent duplicate requests)
+    private isSending: boolean = false; // True while a message is being sent (prevent duplicate sends)
+
+    constructor(config: AIAssistantConfig) {
         this.config = config;
         this.messages = [];
         this.contextItems = [];
@@ -21,12 +115,14 @@ class AIAssistant {
         this.includePriceVolume = true;
         this.includeFundamentals = true;
     }
-    init() {
+
+    init(): void {
         console.log('[AIAssistant] init() starting...');
         console.log('[AIAssistant] Config:', this.config);
         try {
             // Disable send button until context is ready
             this.setSendEnabled(false);
+
             this.setupEventListeners();
             console.log('[AIAssistant] Event listeners set up');
             this.loadModels();
@@ -35,67 +131,75 @@ class AIAssistant {
             console.log('[AIAssistant] loadFunds() called');
             this.loadContextItems();
             this.updateUI();
+
             // Eagerly load context - this enables the send button when done
             this.loadContext();
+
             console.log('[AIAssistant] init() complete');
-        }
-        catch (err) {
+        } catch (err) {
             console.error('[AIAssistant] init() error:', err);
         }
     }
-    setSendEnabled(enabled) {
-        const sendBtn = document.getElementById('send-btn');
+
+    setSendEnabled(enabled: boolean): void {
+        const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
         if (sendBtn) {
             sendBtn.disabled = !enabled;
             if (!enabled) {
                 sendBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            }
-            else {
+            } else {
                 sendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
             }
         }
     }
-    setupEventListeners() {
+
+    setupEventListeners(): void {
         // Send button
-        const sendBtn = document.getElementById('send-btn');
-        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+        const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+
         if (sendBtn) {
             sendBtn.addEventListener('click', () => this.sendMessage());
         }
         if (chatInput) {
-            chatInput.addEventListener('keypress', (e) => {
+            chatInput.addEventListener('keypress', (e: KeyboardEvent) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     this.sendMessage();
                 }
             });
         }
+
         // Clear chat
         const clearBtn = document.getElementById('clear-chat-btn');
         if (clearBtn) {
             clearBtn.addEventListener('click', () => this.clearChat());
         }
+
         // Model selection
-        const modelSelect = document.getElementById('model-select');
+        const modelSelect = document.getElementById('model-select') as HTMLSelectElement | null;
         if (modelSelect) {
-            modelSelect.addEventListener('change', (e) => {
-                const target = e.target;
+            modelSelect.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLSelectElement;
                 this.selectedModel = target.value;
                 this.saveModelPreference();
             });
         }
+
         // Fund selection - use global selector from left nav (or fallback to right sidebar)
-        const globalFundSelect = document.getElementById('global-fund-select');
-        const rightSidebarFundSelect = document.getElementById('fund-select');
+        const globalFundSelect = document.getElementById('global-fund-select') as HTMLSelectElement | null;
+        const rightSidebarFundSelect = document.getElementById('fund-select') as HTMLSelectElement | null;
+
         // Read initial fund from global selector
         if (globalFundSelect && globalFundSelect.value) {
             this.selectedFund = globalFundSelect.value;
             console.log('[AIAssistant] Initial fund from global selector:', this.selectedFund);
         }
+
         // Listen to global fund selector (left nav)
         if (globalFundSelect) {
-            globalFundSelect.addEventListener('change', (e) => {
-                const target = e.target;
+            globalFundSelect.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLSelectElement;
                 this.selectedFund = target.value;
                 console.log('[AIAssistant] Fund changed to:', this.selectedFund);
                 this.contextReady = false; // Reset context state
@@ -107,10 +211,11 @@ class AIAssistant {
                 }
             });
         }
+
         // Also listen to right sidebar fund selector (for backwards compat)
         if (rightSidebarFundSelect) {
-            rightSidebarFundSelect.addEventListener('change', (e) => {
-                const target = e.target;
+            rightSidebarFundSelect.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLSelectElement;
                 this.selectedFund = target.value;
                 console.log('[AIAssistant] Fund changed (sidebar) to:', this.selectedFund);
                 this.contextReady = false;
@@ -122,64 +227,70 @@ class AIAssistant {
                 }
             });
         }
+
         // Context toggles
-        const toggleThesis = document.getElementById('toggle-thesis');
-        const toggleTrades = document.getElementById('toggle-trades');
-        const togglePriceVolume = document.getElementById('toggle-price-volume');
-        const toggleFundamentals = document.getElementById('toggle-fundamentals');
-        const toggleSearch = document.getElementById('toggle-search');
-        const toggleRepository = document.getElementById('toggle-repository');
+        const toggleThesis = document.getElementById('toggle-thesis') as HTMLInputElement | null;
+        const toggleTrades = document.getElementById('toggle-trades') as HTMLInputElement | null;
+        const togglePriceVolume = document.getElementById('toggle-price-volume') as HTMLInputElement | null;
+        const toggleFundamentals = document.getElementById('toggle-fundamentals') as HTMLInputElement | null;
+        const toggleSearch = document.getElementById('toggle-search') as HTMLInputElement | null;
+        const toggleRepository = document.getElementById('toggle-repository') as HTMLInputElement | null;
+
         if (toggleThesis) {
-            toggleThesis.addEventListener('change', (e) => {
-                const target = e.target;
+            toggleThesis.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.updateContextItem('thesis', target.checked);
             });
         }
         if (toggleTrades) {
-            toggleTrades.addEventListener('change', (e) => {
-                const target = e.target;
+            toggleTrades.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.updateContextItem('trades', target.checked);
             });
         }
         if (togglePriceVolume) {
-            togglePriceVolume.addEventListener('change', (e) => {
-                const target = e.target;
+            togglePriceVolume.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.includePriceVolume = target.checked;
             });
         }
         if (toggleFundamentals) {
-            toggleFundamentals.addEventListener('change', (e) => {
-                const target = e.target;
+            toggleFundamentals.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.includeFundamentals = target.checked;
             });
         }
         if (toggleSearch) {
-            toggleSearch.addEventListener('change', (e) => {
-                const target = e.target;
+            toggleSearch.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.includeSearch = target.checked;
             });
         }
         if (toggleRepository) {
-            toggleRepository.addEventListener('change', (e) => {
-                const target = e.target;
+            toggleRepository.addEventListener('change', (e: Event) => {
+                const target = e.target as HTMLInputElement;
                 this.includeRepository = target.checked;
             });
         }
+
         // Clear context
         const clearContextBtn = document.getElementById('clear-context-btn');
         if (clearContextBtn) {
             clearContextBtn.addEventListener('click', () => this.clearContext());
         }
+
         // Retry last response button
         const retryBtn = document.getElementById('retry-btn');
         if (retryBtn) {
             retryBtn.addEventListener('click', () => this.retryLastMessage());
         }
+
         // Portfolio Intelligence button (optional)
         const portfolioIntelligenceBtn = document.getElementById('portfolio-intelligence-btn');
         if (portfolioIntelligenceBtn) {
             portfolioIntelligenceBtn.addEventListener('click', () => this.checkPortfolioNews());
         }
+
         // Quick research buttons (optional - may not all exist)
         const researchTickerBtn = document.getElementById('research-ticker-btn');
         const analyzeTickerBtn = document.getElementById('analyze-ticker-btn');
@@ -188,39 +299,35 @@ class AIAssistant {
         const portfolioAnalysisBtn = document.getElementById('portfolio-analysis-btn');
         const marketNewsBtn = document.getElementById('market-news-btn');
         const sectorNewsBtn = document.getElementById('sector-news-btn');
-        if (researchTickerBtn)
-            researchTickerBtn.addEventListener('click', () => this.quickResearch('research'));
-        if (analyzeTickerBtn)
-            analyzeTickerBtn.addEventListener('click', () => this.quickResearch('analyze'));
-        if (compareTickersBtn)
-            compareTickersBtn.addEventListener('click', () => this.quickResearch('compare'));
-        if (earningsTickerBtn)
-            earningsTickerBtn.addEventListener('click', () => this.quickResearch('earnings'));
-        if (portfolioAnalysisBtn)
-            portfolioAnalysisBtn.addEventListener('click', () => this.quickResearch('portfolio'));
-        if (marketNewsBtn)
-            marketNewsBtn.addEventListener('click', () => this.quickResearch('market'));
-        if (sectorNewsBtn)
-            sectorNewsBtn.addEventListener('click', () => this.quickResearch('sector'));
+
+        if (researchTickerBtn) researchTickerBtn.addEventListener('click', () => this.quickResearch('research'));
+        if (analyzeTickerBtn) analyzeTickerBtn.addEventListener('click', () => this.quickResearch('analyze'));
+        if (compareTickersBtn) compareTickersBtn.addEventListener('click', () => this.quickResearch('compare'));
+        if (earningsTickerBtn) earningsTickerBtn.addEventListener('click', () => this.quickResearch('earnings'));
+        if (portfolioAnalysisBtn) portfolioAnalysisBtn.addEventListener('click', () => this.quickResearch('portfolio'));
+        if (marketNewsBtn) marketNewsBtn.addEventListener('click', () => this.quickResearch('market'));
+        if (sectorNewsBtn) sectorNewsBtn.addEventListener('click', () => this.quickResearch('sector'));
+
         // Ticker selection (optional)
-        const tickerSelect = document.getElementById('ticker-select');
-        const customTicker = document.getElementById('custom-ticker');
+        const tickerSelect = document.getElementById('ticker-select') as HTMLSelectElement | null;
+        const customTicker = document.getElementById('custom-ticker') as HTMLInputElement | null;
         if (tickerSelect) {
             tickerSelect.addEventListener('change', () => this.updateTickerActions());
         }
         if (customTicker) {
             customTicker.addEventListener('input', () => this.updateTickerActions());
         }
+
         // Suggested prompt handlers (optional)
         const sendEditedPromptBtn = document.getElementById('send-edited-prompt-btn');
         const cancelEditedPromptBtn = document.getElementById('cancel-edited-prompt-btn');
         const runAnalysisBtn = document.getElementById('run-analysis-btn');
+
         if (sendEditedPromptBtn) {
             sendEditedPromptBtn.addEventListener('click', () => {
-                const editablePrompt = document.getElementById('editable-prompt');
+                const editablePrompt = document.getElementById('editable-prompt') as HTMLTextAreaElement | null;
                 const suggestedPromptArea = document.getElementById('suggested-prompt-area');
-                if (suggestedPromptArea)
-                    suggestedPromptArea.classList.add('hidden');
+                if (suggestedPromptArea) suggestedPromptArea.classList.add('hidden');
                 if (editablePrompt && editablePrompt.value) {
                     this.sendMessage(editablePrompt.value);
                 }
@@ -229,21 +336,20 @@ class AIAssistant {
         if (cancelEditedPromptBtn) {
             cancelEditedPromptBtn.addEventListener('click', () => {
                 const suggestedPromptArea = document.getElementById('suggested-prompt-area');
-                if (suggestedPromptArea)
-                    suggestedPromptArea.classList.add('hidden');
+                if (suggestedPromptArea) suggestedPromptArea.classList.add('hidden');
             });
         }
         if (runAnalysisBtn) {
             runAnalysisBtn.addEventListener('click', () => {
-                const initialPrompt = document.getElementById('initial-prompt');
+                const initialPrompt = document.getElementById('initial-prompt') as HTMLTextAreaElement | null;
                 const startAnalysisArea = document.getElementById('start-analysis-area');
-                if (startAnalysisArea)
-                    startAnalysisArea.classList.add('hidden');
+                if (startAnalysisArea) startAnalysisArea.classList.add('hidden');
                 if (initialPrompt && initialPrompt.value) {
                     this.sendMessage(initialPrompt.value);
                 }
             });
         }
+
         // Auto-reload context when toggles change
         ['toggle-thesis', 'toggle-trades', 'toggle-price-volume', 'toggle-fundamentals'].forEach(id => {
             const element = document.getElementById(id);
@@ -252,44 +358,50 @@ class AIAssistant {
             }
         });
     }
+
     /**
      * Load context from backend and cache it.
      * This is the single source of truth for context - called on init and when config changes.
      * Enables send button when ready.
      */
-    async loadContext() {
+    async loadContext(): Promise<void> {
         // Prevent duplicate requests
         if (this.contextLoading) {
             console.log('[AIAssistant] Context already loading, skipping...');
             return;
         }
+
         const contentArea = document.getElementById('context-preview-content');
         const charBadge = document.getElementById('context-char-badge');
+
         // Mark as loading
         this.contextLoading = true;
         this.contextReady = false;
         this.setSendEnabled(false);
+
         if (!this.selectedFund) {
-            if (contentArea)
-                contentArea.textContent = 'Please select a fund to load context.';
-            if (charBadge)
-                charBadge.textContent = '(0 chars)';
+            if (contentArea) contentArea.textContent = 'Please select a fund to load context.';
+            if (charBadge) charBadge.textContent = '(0 chars)';
             this.contextLoading = false;
             return;
         }
+
         try {
-            if (contentArea)
-                contentArea.textContent = 'Loading context...';
+            if (contentArea) contentArea.textContent = 'Loading context...';
+
             // Gather current toggles
-            const toggleThesis = document.getElementById('toggle-thesis');
-            const toggleTrades = document.getElementById('toggle-trades');
-            const togglePriceVolume = document.getElementById('toggle-price-volume');
-            const toggleFundamentals = document.getElementById('toggle-fundamentals');
+            const toggleThesis = document.getElementById('toggle-thesis') as HTMLInputElement | null;
+            const toggleTrades = document.getElementById('toggle-trades') as HTMLInputElement | null;
+            const togglePriceVolume = document.getElementById('toggle-price-volume') as HTMLInputElement | null;
+            const toggleFundamentals = document.getElementById('toggle-fundamentals') as HTMLInputElement | null;
+
             const includeThesis = toggleThesis?.checked || false;
             const includeTrades = toggleTrades?.checked || false;
             const includePriceVolume = togglePriceVolume?.checked || false;
             const includeFundamentals = toggleFundamentals?.checked || false;
+
             console.log('[AIAssistant] Fetching context for fund:', this.selectedFund);
+
             const response = await fetch('/api/v2/ai/preview_context', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -301,13 +413,16 @@ class AIAssistant {
                     include_fundamentals: includeFundamentals
                 })
             });
-            if (!response.ok)
-                throw new Error(`HTTP error! status: ${response.status}`);
-            const data = await response.json();
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            const data: ContextPreviewResponse = await response.json();
+
             if (data.success) {
                 // Cache the context string for use in chat
                 this.contextString = data.context || null;
                 this.contextReady = true;
+
                 // Update display - convert HTML to plain text for <pre>
                 if (contentArea && data.context) {
                     // Create temp element to decode HTML entities and convert <br> to newlines
@@ -318,76 +433,72 @@ class AIAssistant {
                 if (charBadge && data.char_count !== undefined) {
                     charBadge.textContent = `(${data.char_count.toLocaleString()} chars)`;
                 }
+
                 // Enable send button
                 this.setSendEnabled(true);
-            }
-            else {
+            } else {
                 this.contextString = null;
                 this.contextReady = false;
-                if (contentArea)
-                    contentArea.textContent = `Error: ${data.error || 'Unknown error'}`;
-                if (charBadge)
-                    charBadge.textContent = '(error)';
+                if (contentArea) contentArea.textContent = `Error: ${data.error || 'Unknown error'}`;
+                if (charBadge) charBadge.textContent = '(error)';
             }
-        }
-        catch (err) {
+        } catch (err) {
             console.error('[AIAssistant] Error loading context:', err);
             this.contextString = null;
             this.contextReady = false;
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-            if (contentArea)
-                contentArea.textContent = `Failed to load context: ${errorMessage}`;
-            if (charBadge)
-                charBadge.textContent = '(error)';
-        }
-        finally {
+            if (contentArea) contentArea.textContent = `Failed to load context: ${errorMessage}`;
+            if (charBadge) charBadge.textContent = '(error)';
+        } finally {
             this.contextLoading = false;
         }
     }
+
     // Alias for backwards compatibility
-    refreshContextPreview() {
+    refreshContextPreview(): Promise<void> {
         return this.loadContext();
     }
-    loadModels() {
+
+    loadModels(): void {
         console.log('Fetching models from API...');
         fetch('/api/v2/ai/models')
-            .then((res) => {
-            if (!res.ok)
-                throw new Error(`HTTP error! status: ${res.status}`);
-            return res.json();
-        })
-            .then((data) => {
-            console.log('Models API response:', data);
-            const select = document.getElementById('model-select');
-            if (!select)
-                return;
-            select.innerHTML = '';
-            if (data.models && Array.isArray(data.models)) {
-                data.models.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.id;
-                    option.textContent = model.name; // API handles display names
-                    if (model.id === this.selectedModel) {
-                        option.selected = true;
-                    }
-                    select.appendChild(option);
-                });
-            }
-            else {
-                console.error('Invalid models format received:', data);
-                this.showError('Failed to load models: Invalid data format');
-            }
-            this.updateModelDescription();
-        })
-            .catch((err) => {
-            console.error('Error loading models:', err);
-            this.showError('Failed to load AI models. Please check connection.');
-        });
+            .then((res: Response) => {
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                return res.json();
+            })
+            .then((data: ModelsResponse) => {
+                console.log('Models API response:', data);
+                const select = document.getElementById('model-select') as HTMLSelectElement | null;
+                if (!select) return;
+
+                select.innerHTML = '';
+
+                if (data.models && Array.isArray(data.models)) {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.name; // API handles display names
+                        if (model.id === this.selectedModel) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                } else {
+                    console.error('Invalid models format received:', data);
+                    this.showError('Failed to load models: Invalid data format');
+                }
+                this.updateModelDescription();
+            })
+            .catch((err: Error) => {
+                console.error('Error loading models:', err);
+                this.showError('Failed to load AI models. Please check connection.');
+            });
     }
-    loadFunds() {
-        const select = document.getElementById('fund-select');
-        if (!select || !this.config.availableFunds)
-            return;
+
+    loadFunds(): void {
+        const select = document.getElementById('fund-select') as HTMLSelectElement | null;
+        if (!select || !this.config.availableFunds) return;
+
         this.config.availableFunds.forEach(fund => {
             const option = document.createElement('option');
             option.value = fund;
@@ -398,18 +509,21 @@ class AIAssistant {
             select.appendChild(option);
         });
     }
-    loadContextItems() {
+
+    loadContextItems(): void {
         fetch('/api/v2/ai/context')
-            .then((res) => res.json())
-            .then((data) => {
-            this.contextItems = data.items || [];
-            this.updateContextUI();
-        })
-            .catch((err) => console.error('Error loading context:', err));
+            .then((res: Response) => res.json())
+            .then((data: ContextResponse) => {
+                this.contextItems = data.items || [];
+                this.updateContextUI();
+            })
+            .catch((err: Error) => console.error('Error loading context:', err));
     }
-    updateContextItem(itemType, enabled) {
+
+    updateContextItem(itemType: string, enabled: boolean): void {
         const action = enabled ? 'add' : 'remove';
         const metadata = itemType === 'trades' ? { limit: 50 } : {};
+
         fetch('/api/v2/ai/context', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -420,44 +534,43 @@ class AIAssistant {
                 metadata: metadata
             })
         })
-            .then((res) => res.json())
-            .then((data) => {
-            if (data.success) {
-                this.loadContextItems();
-            }
-        })
-            .catch((err) => console.error('Error updating context:', err));
+            .then((res: Response) => res.json())
+            .then((data: ContextResponse) => {
+                if (data.success) {
+                    this.loadContextItems();
+                }
+            })
+            .catch((err: Error) => console.error('Error updating context:', err));
     }
-    clearContext() {
+
+    clearContext(): void {
         fetch('/api/v2/ai/context', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'clear' })
         })
-            .then((res) => res.json())
-            .then((data) => {
-            if (data.success) {
-                this.contextItems = [];
-                this.updateContextUI();
-                // Uncheck all toggles
-                const toggleThesis = document.getElementById('toggle-thesis');
-                const toggleTrades = document.getElementById('toggle-trades');
-                if (toggleThesis)
-                    toggleThesis.checked = false;
-                if (toggleTrades)
-                    toggleTrades.checked = false;
-            }
-        })
-            .catch((err) => console.error('Error clearing context:', err));
+            .then((res: Response) => res.json())
+            .then((data: ContextResponse) => {
+                if (data.success) {
+                    this.contextItems = [];
+                    this.updateContextUI();
+                    // Uncheck all toggles
+                    const toggleThesis = document.getElementById('toggle-thesis') as HTMLInputElement | null;
+                    const toggleTrades = document.getElementById('toggle-trades') as HTMLInputElement | null;
+                    if (toggleThesis) toggleThesis.checked = false;
+                    if (toggleTrades) toggleTrades.checked = false;
+                }
+            })
+            .catch((err: Error) => console.error('Error clearing context:', err));
     }
-    updateContextUI() {
+
+    updateContextUI(): void {
         const summary = document.getElementById('context-summary');
         const contextItems = document.getElementById('context-items');
         if (summary) {
             if (this.contextItems.length === 0) {
                 summary.textContent = 'No context items selected';
-            }
-            else {
+            } else {
                 summary.textContent = `✅ ${this.contextItems.length} data source(s) selected`;
             }
         }
@@ -465,26 +578,28 @@ class AIAssistant {
             contextItems.textContent = `Context Items: ${this.contextItems.length}`;
         }
     }
-    updateModelDescription() {
+
+    updateModelDescription(): void {
         const model = this.selectedModel;
         const desc = document.getElementById('model-description');
-        if (!desc)
-            return;
+        if (!desc) return;
+
         if (model.startsWith('gemini-')) {
             desc.textContent = 'Web-based AI model with persistent conversations';
-        }
-        else {
+        } else {
             desc.textContent = 'Local Ollama model';
         }
     }
-    updateTickerActions() {
-        const select = document.getElementById('ticker-select');
-        const custom = document.getElementById('custom-ticker');
-        if (!select)
-            return;
+
+    updateTickerActions(): void {
+        const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
+        const custom = document.getElementById('custom-ticker') as HTMLInputElement | null;
+        if (!select) return;
+
         const customValue = custom ? custom.value.trim().toUpperCase() : '';
         const selected = Array.from(select.selectedOptions).map(opt => opt.value);
         const activeTickers = customValue ? [...selected, customValue] : selected;
+
         const actionsDiv = document.getElementById('ticker-actions');
         if (actionsDiv) {
             if (activeTickers.length > 0) {
@@ -493,77 +608,81 @@ class AIAssistant {
                 if (compareBtn) {
                     compareBtn.classList.toggle('hidden', activeTickers.length < 2);
                 }
-            }
-            else {
+            } else {
                 actionsDiv.classList.add('hidden');
             }
         }
     }
-    async sendMessage(userQuery = null) {
-        const chatInput = document.getElementById('chat-input');
+
+    async sendMessage(userQuery: string | null = null): Promise<void> {
+        const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
         const query = userQuery || (chatInput ? chatInput.value.trim() : '');
-        if (!query)
-            return;
+        if (!query) return;
+
         // Check if already sending a message
         if (this.isSending) {
             this.showError('Please wait for the current message to finish before sending another.');
             return;
         }
+
         // Mark as sending
         this.isSending = true;
+
         // Disable send button and input during sending
-        const sendBtn = document.getElementById('send-btn');
-        if (sendBtn)
-            sendBtn.disabled = true;
-        if (chatInput)
-            chatInput.disabled = true;
+        const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+        if (sendBtn) sendBtn.disabled = true;
+        if (chatInput) chatInput.disabled = true;
+
         // Clear input
-        if (chatInput)
-            chatInput.value = '';
+        if (chatInput) chatInput.value = '';
+
         // Add user message
         this.addMessage('user', query);
         this.conversationHistory.push({ role: 'user', content: query });
+
         // Hide start analysis area and retry button
         const startAnalysisArea = document.getElementById('start-analysis-area');
         const retryButtonContainer = document.getElementById('retry-button-container');
-        if (startAnalysisArea)
-            startAnalysisArea.classList.add('hidden');
-        if (retryButtonContainer)
-            retryButtonContainer.classList.add('hidden');
+        if (startAnalysisArea) startAnalysisArea.classList.add('hidden');
+        if (retryButtonContainer) retryButtonContainer.classList.add('hidden');
+
         // Show loading indicator with Tailwind spinner
         const loadingId = this.addMessage('assistant', '<div class="flex items-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400"></div><span>Generating response...</span></div>', true);
+
         // Perform search if enabled
-        let searchResults = null;
-        let repositoryArticles = null;
+        let searchResults: any = null;
+        let repositoryArticles: any = null;
+
         if (this.includeSearch && this.config.searxngAvailable) {
             try {
                 searchResults = await this.performSearch(query);
-            }
-            catch (err) {
+            } catch (err) {
                 console.error('Search error:', err);
             }
         }
+
         if (this.includeRepository && this.config.ollamaAvailable) {
             try {
                 repositoryArticles = await this.performRepositorySearch(query);
-            }
-            catch (err) {
+            } catch (err) {
                 console.error('Repository search error:', err);
             }
         }
+
         // Get pre-loaded context (synchronous - no API call)
         // Only send context with the FIRST message of a conversation
         const isFirstMessage = this.conversationHistory.length === 1; // After adding user message
         const contextString = isFirstMessage ? this.getCachedContext() : null;
+
         // Debug logging
         if (isFirstMessage) {
             console.log('[AIAssistant] First message - including context, length:', contextString?.length || 0);
-        }
-        else {
+        } else {
             console.log('[AIAssistant] Subsequent message - context already in conversation history');
         }
+
         // Build request
-        const requestData = {
+        const requestData: ChatRequest = {
             query: query,
             model: this.selectedModel,
             fund: this.selectedFund,
@@ -577,21 +696,22 @@ class AIAssistant {
             search_results: searchResults,
             repository_articles: repositoryArticles
         };
+
         // Check if streaming (Ollama) or non-streaming (WebAI)
         if (this.selectedModel.startsWith('gemini-')) {
             // WebAI - non-streaming
             this.sendWebAIMessage(requestData, loadingId);
-        }
-        else {
+        } else {
             // Ollama - streaming
             this.sendStreamingMessage(requestData, loadingId);
         }
     }
+
     /**
      * Get the cached context string (already loaded by loadContext)
      * This is synchronous now - no API call needed since context was pre-loaded
      */
-    getCachedContext() {
+    getCachedContext(): string {
         // Context was already loaded by loadContext() on init
         // Just return it - no need to call API again
         if (!this.contextReady) {
@@ -600,9 +720,11 @@ class AIAssistant {
         }
         return this.contextString || '';
     }
-    async performSearch(query) {
+
+    async performSearch(query: string): Promise<any> {
         // Extract tickers from query (simple implementation)
         const tickers = this.extractTickers(query);
+
         const response = await fetch('/api/v2/ai/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -613,13 +735,16 @@ class AIAssistant {
                 min_relevance_score: 0.3
             })
         });
+
         if (!response.ok) {
             throw new Error('Search failed');
         }
-        const data = await response.json();
+
+        const data: SearchResponse = await response.json();
         return data;
     }
-    async performRepositorySearch(query) {
+
+    async performRepositorySearch(query: string): Promise<any[]> {
         const response = await fetch('/api/v2/ai/repository', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -629,225 +754,226 @@ class AIAssistant {
                 min_similarity: 0.6
             })
         });
+
         if (!response.ok) {
             throw new Error('Repository search failed');
         }
-        const data = await response.json();
+
+        const data: RepositoryResponse = await response.json();
         return data.articles || [];
     }
-    extractTickers(query) {
+
+    extractTickers(query: string): string[] {
         // Simple ticker extraction (uppercase words that look like tickers)
         const words = query.toUpperCase().split(/\s+/);
-        const tickers = words.filter(word => word.length <= 5 &&
+        const tickers = words.filter(word =>
+            word.length <= 5 &&
             /^[A-Z]+$/.test(word) &&
-            word.length >= 1);
+            word.length >= 1
+        );
         return tickers;
     }
-    sendWebAIMessage(requestData, loadingId) {
+
+    sendWebAIMessage(requestData: ChatRequest, loadingId: string): void {
         fetch('/api/v2/ai/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         })
-            .then((res) => res.json())
-            .then((data) => {
-            const sendBtn = document.getElementById('send-btn');
-            const chatInput = document.getElementById('chat-input');
-            if (data.error) {
-                this.updateMessage(loadingId, 'assistant', `Error: ${data.error}`);
-            }
-            else {
-                this.updateMessage(loadingId, 'assistant', data.response || '');
-                this.conversationHistory.push({ role: 'assistant', content: data.response || '' });
-            }
-            // Re-enable send button and input
-            this.isSending = false;
-            if (sendBtn)
-                sendBtn.disabled = false;
-            if (chatInput)
-                chatInput.disabled = false;
-        })
-            .catch((err) => {
-            console.error('Chat error:', err);
-            this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
-            // Re-enable send button and input
-            this.isSending = false;
-            const sendBtn = document.getElementById('send-btn');
-            const chatInput = document.getElementById('chat-input');
-            if (sendBtn)
-                sendBtn.disabled = false;
-            if (chatInput)
-                chatInput.disabled = false;
-        });
-    }
-    sendStreamingMessage(requestData, loadingId) {
-        fetch('/api/v2/ai/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestData)
-        })
-            .then((res) => {
-            if (!res.ok) {
-                return res.json().then((data) => {
-                    throw new Error(data.error || `HTTP error! status: ${res.status}`);
-                });
-            }
-            // Check if response is SSE (text/event-stream) or JSON
-            const contentType = res.headers.get('content-type');
-            if (contentType && contentType.includes('text/event-stream')) {
-                // SSE streaming
-                const reader = res.body?.getReader();
-                if (!reader) {
-                    throw new Error('Response body is not readable');
+            .then((res: Response) => res.json())
+            .then((data: ChatResponse) => {
+                const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+
+                if (data.error) {
+                    this.updateMessage(loadingId, 'assistant', `Error: ${data.error}`);
+                } else {
+                    this.updateMessage(loadingId, 'assistant', data.response || '');
+                    this.conversationHistory.push({ role: 'assistant', content: data.response || '' });
                 }
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let fullResponse = '';
-                const readChunk = () => {
-                    reader.read().then(({ done, value }) => {
-                        if (done) {
-                            // Remove streaming indicator and finalize
-                            this.updateMessage(loadingId, 'assistant', fullResponse);
-                            this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+                // Re-enable send button and input
+                this.isSending = false;
+                if (sendBtn) sendBtn.disabled = false;
+                if (chatInput) chatInput.disabled = false;
+            })
+            .catch((err: Error) => {
+                console.error('Chat error:', err);
+                this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+                // Re-enable send button and input
+                this.isSending = false;
+                const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                if (sendBtn) sendBtn.disabled = false;
+                if (chatInput) chatInput.disabled = false;
+            });
+    }
+
+    sendStreamingMessage(requestData: ChatRequest, loadingId: string): void {
+        fetch('/api/v2/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestData)
+        })
+            .then((res: Response) => {
+                if (!res.ok) {
+                    return res.json().then((data: ChatResponse) => {
+                        throw new Error(data.error || `HTTP error! status: ${res.status}`);
+                    });
+                }
+
+                // Check if response is SSE (text/event-stream) or JSON
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('text/event-stream')) {
+                    // SSE streaming
+                    const reader = res.body?.getReader();
+                    if (!reader) {
+                        throw new Error('Response body is not readable');
+                    }
+
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let fullResponse = '';
+
+                    const readChunk = (): void => {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                // Remove streaming indicator and finalize
+                                this.updateMessage(loadingId, 'assistant', fullResponse);
+                                this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+                                this.updateRetryButton();
+                                // Re-enable send button and input
+                                this.isSending = false;
+                                const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                                const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                                if (sendBtn) sendBtn.disabled = false;
+                                if (chatInput) chatInput.disabled = false;
+                                return;
+                            }
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                            for (const line of lines) {
+                                if (line.trim() === '') continue;
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data: ChatResponse = JSON.parse(line.slice(6));
+                                        if (data.done) {
+                                            this.updateMessage(loadingId, 'assistant', fullResponse);
+                                            this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+                                            this.updateRetryButton();
+                                            // Re-enable send button and input
+                                            this.isSending = false;
+                                            const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                                            const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                                            if (sendBtn) sendBtn.disabled = false;
+                                            if (chatInput) chatInput.disabled = false;
+                                            return;
+                                        }
+                                        if (data.chunk) {
+                                            fullResponse += data.chunk;
+                                            this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="inline-block w-2 h-4 bg-gray-500 dark:bg-gray-400 ml-1 animate-pulse">▌</span>');
+                                        }
+                                        if (data.error) {
+                                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
+                                            this.updateRetryButton();
+                                            // Re-enable send button and input
+                                            this.isSending = false;
+                                            const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                                            const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                                            if (sendBtn) sendBtn.disabled = false;
+                                            if (chatInput) chatInput.disabled = false;
+                                            return;
+                                        }
+                                    } catch (e) {
+                                        console.error('Error parsing SSE data:', e, 'Line:', line);
+                                    }
+                                }
+                            }
+
+                            readChunk();
+                        }).catch((err: Error) => {
+                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
                             this.updateRetryButton();
                             // Re-enable send button and input
                             this.isSending = false;
-                            const sendBtn = document.getElementById('send-btn');
-                            const chatInput = document.getElementById('chat-input');
-                            if (sendBtn)
-                                sendBtn.disabled = false;
-                            if (chatInput)
-                                chatInput.disabled = false;
-                            return;
+                            const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                            const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                            if (sendBtn) sendBtn.disabled = false;
+                            if (chatInput) chatInput.disabled = false;
+                        });
+                    };
+
+                    readChunk();
+                } else {
+                    // Non-streaming JSON response (fallback)
+                    return res.json().then((data: ChatResponse) => {
+                        const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                        const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+
+                        if (data.error) {
+                            this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
+                            this.updateRetryButton();
+                        } else {
+                            this.updateMessage(loadingId, 'assistant', data.response || data.chunk || '');
+                            this.conversationHistory.push({ role: 'assistant', content: data.response || data.chunk || '' });
+                            this.updateRetryButton();
                         }
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-                        for (const line of lines) {
-                            if (line.trim() === '')
-                                continue;
-                            if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.slice(6));
-                                    if (data.done) {
-                                        this.updateMessage(loadingId, 'assistant', fullResponse);
-                                        this.conversationHistory.push({ role: 'assistant', content: fullResponse });
-                                        this.updateRetryButton();
-                                        // Re-enable send button and input
-                                        this.isSending = false;
-                                        const sendBtn = document.getElementById('send-btn');
-                                        const chatInput = document.getElementById('chat-input');
-                                        if (sendBtn)
-                                            sendBtn.disabled = false;
-                                        if (chatInput)
-                                            chatInput.disabled = false;
-                                        return;
-                                    }
-                                    if (data.chunk) {
-                                        fullResponse += data.chunk;
-                                        this.updateMessage(loadingId, 'assistant', fullResponse + '<span class="inline-block w-2 h-4 bg-gray-500 dark:bg-gray-400 ml-1 animate-pulse">▌</span>');
-                                    }
-                                    if (data.error) {
-                                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
-                                        this.updateRetryButton();
-                                        // Re-enable send button and input
-                                        this.isSending = false;
-                                        const sendBtn = document.getElementById('send-btn');
-                                        const chatInput = document.getElementById('chat-input');
-                                        if (sendBtn)
-                                            sendBtn.disabled = false;
-                                        if (chatInput)
-                                            chatInput.disabled = false;
-                                        return;
-                                    }
-                                }
-                                catch (e) {
-                                    console.error('Error parsing SSE data:', e, 'Line:', line);
-                                }
-                            }
-                        }
-                        readChunk();
-                    }).catch((err) => {
-                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
-                        this.updateRetryButton();
                         // Re-enable send button and input
                         this.isSending = false;
-                        const sendBtn = document.getElementById('send-btn');
-                        const chatInput = document.getElementById('chat-input');
-                        if (sendBtn)
-                            sendBtn.disabled = false;
-                        if (chatInput)
-                            chatInput.disabled = false;
+                        if (sendBtn) sendBtn.disabled = false;
+                        if (chatInput) chatInput.disabled = false;
                     });
-                };
-                readChunk();
-            }
-            else {
-                // Non-streaming JSON response (fallback)
-                return res.json().then((data) => {
-                    const sendBtn = document.getElementById('send-btn');
-                    const chatInput = document.getElementById('chat-input');
-                    if (data.error) {
-                        this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
-                        this.updateRetryButton();
-                    }
-                    else {
-                        this.updateMessage(loadingId, 'assistant', data.response || data.chunk || '');
-                        this.conversationHistory.push({ role: 'assistant', content: data.response || data.chunk || '' });
-                        this.updateRetryButton();
-                    }
-                    // Re-enable send button and input
-                    this.isSending = false;
-                    if (sendBtn)
-                        sendBtn.disabled = false;
-                    if (chatInput)
-                        chatInput.disabled = false;
-                });
-            }
-        })
-            .catch((err) => {
-            console.error('Chat error:', err);
-            this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
-            // Re-enable send button and input
-            this.isSending = false;
-            const sendBtn = document.getElementById('send-btn');
-            const chatInput = document.getElementById('chat-input');
-            if (sendBtn)
-                sendBtn.disabled = false;
-            if (chatInput)
-                chatInput.disabled = false;
-        });
+                }
+            })
+            .catch((err: Error) => {
+                console.error('Chat error:', err);
+                this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
+                // Re-enable send button and input
+                this.isSending = false;
+                const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
+                const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+                if (sendBtn) sendBtn.disabled = false;
+                if (chatInput) chatInput.disabled = false;
+            });
     }
-    addMessage(role, content, isLoading = false) {
+
+    addMessage(role: 'user' | 'assistant', content: string, isLoading: boolean = false): string {
         const messagesDiv = document.getElementById('chat-messages');
-        if (!messagesDiv)
-            return '';
+        if (!messagesDiv) return '';
+
         const messageId = `msg-${Date.now()}-${Math.random()}`;
+
         // Create message container with Flowbite/Tailwind structure
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
+
         if (role === 'user') {
             // User message: aligned right
             messageDiv.className = 'flex gap-3 justify-end mb-4';
+
             const bubbleContainer = document.createElement('div');
             bubbleContainer.className = 'flex flex-col max-w-[80%]';
+
             const bubble = document.createElement('div');
             bubble.className = 'bg-blue-600 text-white rounded-lg rounded-br-sm px-4 py-3 shadow-sm';
+
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content text-white';
             if (isLoading) {
                 contentDiv.innerHTML = content;
-            }
-            else {
+            } else {
                 contentDiv.innerHTML = this.renderMarkdown(content);
             }
+
             bubble.appendChild(contentDiv);
             bubbleContainer.appendChild(bubble);
             messageDiv.appendChild(bubbleContainer);
-        }
-        else {
+        } else {
             // Assistant message: aligned left with avatar placeholder
             messageDiv.className = 'flex gap-3 mb-4';
+
             // Avatar placeholder
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'flex-shrink-0';
@@ -855,33 +981,40 @@ class AIAssistant {
             avatar.className = 'w-8 h-8 rounded-full bg-gray-300 dark:bg-dashboard-surface-alt flex items-center justify-center text-text-secondary text-sm font-semibold';
             avatar.textContent = 'AI';
             avatarDiv.appendChild(avatar);
+
             const bubbleContainer = document.createElement('div');
             bubbleContainer.className = 'flex-1';
+
             const bubble = document.createElement('div');
             bubble.className = 'bg-gray-100 dark:bg-dashboard-surface-alt text-text-primary rounded-lg rounded-bl-sm px-4 py-3 shadow-sm';
+
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             if (isLoading) {
                 contentDiv.innerHTML = content;
-            }
-            else {
+            } else {
                 contentDiv.innerHTML = this.renderMarkdown(content);
             }
+
             bubble.appendChild(contentDiv);
             bubbleContainer.appendChild(bubble);
             messageDiv.appendChild(avatarDiv);
             messageDiv.appendChild(bubbleContainer);
         }
+
         messagesDiv.appendChild(messageDiv);
         this.scrollToBottom();
+
         return messageId;
     }
-    updateMessage(messageId, role, content) {
+
+    updateMessage(messageId: string, role: 'user' | 'assistant', content: string): void {
         const messageDiv = document.getElementById(messageId);
-        if (!messageDiv)
-            return;
+        if (!messageDiv) return;
+
         const contentDiv = messageDiv.querySelector('.message-content');
-        const bubble = messageDiv.querySelector('.bg-blue-600, .bg-gray-100, .dark\\:bg-dashboard-surface-alt');
+        const bubble = messageDiv.querySelector('.bg-blue-600, .bg-gray-100, .dark\\:bg-dashboard-surface-alt') as HTMLElement | null;
+
         if (contentDiv && bubble) {
             // Check if this is an error message
             if (content.includes('Error:') || content.includes('error:') || content.includes('❌')) {
@@ -889,18 +1022,19 @@ class AIAssistant {
                 bubble.className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-800 rounded-lg px-4 py-3 shadow-sm';
                 if (role === 'user') {
                     bubble.className += ' rounded-br-sm';
-                }
-                else {
+                } else {
                     bubble.className += ' rounded-bl-sm';
                 }
                 messageDiv.classList.add('error-message');
             }
             contentDiv.innerHTML = this.renderMarkdown(content);
         }
+
         this.scrollToBottom();
     }
-    renderMarkdown(text) {
-        const windowAny = window;
+
+    renderMarkdown(text: string): string {
+        const windowAny = window as any;
         if (typeof window !== 'undefined' && windowAny.marked) {
             const html = windowAny.marked.parse(text);
             // Sanitize HTML to prevent XSS attacks
@@ -915,78 +1049,79 @@ class AIAssistant {
         // Fallback: simple text rendering (escape HTML)
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     }
-    scrollToBottom() {
+
+    scrollToBottom(): void {
         const container = document.getElementById('chat-container');
         if (container) {
             container.scrollTop = container.scrollHeight;
         }
     }
-    clearChat() {
+
+    clearChat(): void {
         this.messages = [];
         this.conversationHistory = [];
         const messagesDiv = document.getElementById('chat-messages');
-        if (messagesDiv)
-            messagesDiv.innerHTML = '';
+        if (messagesDiv) messagesDiv.innerHTML = '';
         const retryButtonContainer = document.getElementById('retry-button-container');
-        if (retryButtonContainer)
-            retryButtonContainer.classList.add('hidden');
+        if (retryButtonContainer) retryButtonContainer.classList.add('hidden');
+
         // Show start analysis area if context items exist
         if (this.contextItems.length > 0) {
             this.showStartAnalysis();
         }
     }
-    showStartAnalysis() {
+
+    showStartAnalysis(): void {
         const area = document.getElementById('start-analysis-area');
-        if (!area)
-            return;
+        if (!area) return;
+
         area.classList.remove('hidden');
         // Generate default prompt
         const prompt = this.generateDefaultPrompt();
-        const initialPrompt = document.getElementById('initial-prompt');
-        if (initialPrompt)
-            initialPrompt.value = prompt;
+        const initialPrompt = document.getElementById('initial-prompt') as HTMLTextAreaElement | null;
+        if (initialPrompt) initialPrompt.value = prompt;
     }
-    generateDefaultPrompt() {
+
+    generateDefaultPrompt(): string {
         if (this.contextItems.length === 0) {
             return "Please help me analyze my portfolio.";
         }
+
         const itemTypes = this.contextItems.map(item => item.item_type);
         if (itemTypes.includes('holdings') && itemTypes.includes('thesis')) {
             return "Based on the portfolio holdings and investment thesis provided above, analyze how well the current positions align with the stated investment strategy and pillars.";
-        }
-        else if (itemTypes.includes('trades')) {
+        } else if (itemTypes.includes('trades')) {
             return "Based on the trading activity data provided above, analyze recent trades and review trade patterns.";
-        }
-        else if (itemTypes.includes('metrics')) {
+        } else if (itemTypes.includes('metrics')) {
             return "Based on the performance metrics data provided above, analyze portfolio performance over time.";
-        }
-        else {
+        } else {
             return "Based on the portfolio data provided above, provide a comprehensive analysis.";
         }
     }
-    quickResearch(action) {
-        const select = document.getElementById('ticker-select');
-        const custom = document.getElementById('custom-ticker');
-        if (!select)
-            return;
+
+    quickResearch(action: string): void {
+        const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
+        const custom = document.getElementById('custom-ticker') as HTMLInputElement | null;
+        if (!select) return;
+
         const customValue = custom ? custom.value.trim().toUpperCase() : '';
         const selected = Array.from(select.selectedOptions).map(opt => opt.value);
         const activeTickers = customValue ? [...selected, customValue] : selected;
+
         let prompt = '';
+
         switch (action) {
             case 'research':
                 if (activeTickers.length === 1) {
                     prompt = `Research ${activeTickers[0]} - latest news and analysis`;
-                }
-                else {
+                } else {
                     prompt = `Research the following stocks: ${activeTickers.join(', ')}. Provide latest news for each.`;
                 }
                 break;
             case 'analyze':
                 if (activeTickers.length === 1) {
                     prompt = `Analyze ${activeTickers[0]} stock - recent performance and outlook`;
-                }
-                else {
+                } else {
                     prompt = `Analyze and compare the outlooks for: ${activeTickers.join(', ')}`;
                 }
                 break;
@@ -996,8 +1131,7 @@ class AIAssistant {
             case 'earnings':
                 if (activeTickers.length === 1) {
                     prompt = `Find recent earnings news for ${activeTickers[0]}`;
-                }
-                else {
+                } else {
                     prompt = `Find recent earnings reports for: ${activeTickers.join(', ')}`;
                 }
                 break;
@@ -1011,43 +1145,47 @@ class AIAssistant {
                 prompt = "What's happening in the stock market sectors today?";
                 break;
         }
+
         if (prompt) {
             // Turbo Mode: Send immediately
             this.sendMessage(prompt);
+
             // Hide any open editing areas
             const suggestedPromptArea = document.getElementById('suggested-prompt-area');
-            if (suggestedPromptArea)
-                suggestedPromptArea.classList.add('hidden');
+            if (suggestedPromptArea) suggestedPromptArea.classList.add('hidden');
         }
     }
-    saveModelPreference() {
+
+    saveModelPreference(): void {
         // Save model preference to user settings
         fetch('/api/settings/ai_model', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model: this.selectedModel })
-        }).catch((err) => console.error('Error saving model preference:', err));
+        }).catch((err: Error) => console.error('Error saving model preference:', err));
     }
-    updateUI() {
+
+    updateUI(): void {
         const currentModel = document.getElementById('current-model');
-        if (currentModel)
-            currentModel.textContent = this.selectedModel;
+        if (currentModel) currentModel.textContent = this.selectedModel;
         this.updateContextUI();
+
         // Load portfolio tickers for quick research
         if (this.selectedFund) {
             this.loadPortfolioTickers();
         }
     }
-    async loadPortfolioTickers() {
-        if (!this.selectedFund)
-            return;
+
+    async loadPortfolioTickers(): Promise<void> {
+        if (!this.selectedFund) return;
+
         try {
             // Fetch portfolio positions to get tickers
             const response = await fetch(`/api/portfolio?fund=${encodeURIComponent(this.selectedFund)}`);
             if (response.ok) {
-                const data = await response.json();
+                const data: PortfolioResponse = await response.json();
                 const tickers = data.positions?.map(pos => pos.ticker).filter(Boolean) || [];
-                const select = document.getElementById('ticker-select');
+                const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
                 if (select) {
                     select.innerHTML = '';
                     [...new Set(tickers)].sort().forEach(ticker => {
@@ -1058,19 +1196,20 @@ class AIAssistant {
                     });
                 }
             }
-        }
-        catch (err) {
+        } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             this.showError('Error loading portfolio tickers: ' + errorMessage);
         }
     }
-    retryLastMessage() {
+
+    retryLastMessage(): void {
         // Find last user message
         const lastUserMsg = this.conversationHistory.filter(msg => msg.role === 'user').pop();
         if (!lastUserMsg) {
             this.showError('No previous message to retry');
             return;
         }
+
         // Remove last assistant message if it exists
         if (this.conversationHistory.length > 0 &&
             this.conversationHistory[this.conversationHistory.length - 1].role === 'assistant') {
@@ -1084,28 +1223,34 @@ class AIAssistant {
                 }
             }
         }
+
         // Hide retry button
         const retryButtonContainer = document.getElementById('retry-button-container');
-        if (retryButtonContainer)
-            retryButtonContainer.classList.add('hidden');
+        if (retryButtonContainer) retryButtonContainer.classList.add('hidden');
+
         // Re-send the last user message
         this.sendMessage(lastUserMsg.content);
     }
-    async checkPortfolioNews() {
+
+    async checkPortfolioNews(): Promise<void> {
         if (!this.selectedFund) {
             this.showError('Please select a fund first');
             return;
         }
+
         try {
             const response = await fetch('/api/v2/ai/portfolio-intelligence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fund: this.selectedFund })
             });
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            const data = await response.json();
+
+            const data: PortfolioIntelligenceResponse = await response.json();
+
             if (data.matching_articles && data.matching_articles.length > 0) {
                 // Format article context
                 let articleContext = "Here are recent research articles found for the user's portfolio holdings:\n\n";
@@ -1115,52 +1260,51 @@ class AIAssistant {
                     articleContext += `   Summary: ${art.summary || 'No summary'}\n`;
                     articleContext += `   Conclusion: ${art.conclusion || 'N/A'}\n\n`;
                 });
+
                 const prompt = "Review the following recent research articles about my portfolio holdings. " +
                     "Identify any noteworthy events, risks, or opportunities that strictly require my attention.\n\n" +
                     articleContext;
+
                 const suggestedPromptArea = document.getElementById('suggested-prompt-area');
-                const editablePrompt = document.getElementById('editable-prompt');
-                if (suggestedPromptArea)
-                    suggestedPromptArea.classList.remove('hidden');
-                if (editablePrompt)
-                    editablePrompt.value = prompt;
-            }
-            else {
+                const editablePrompt = document.getElementById('editable-prompt') as HTMLTextAreaElement | null;
+                if (suggestedPromptArea) suggestedPromptArea.classList.remove('hidden');
+                if (editablePrompt) editablePrompt.value = prompt;
+            } else {
                 this.showError(`No recent articles found in the repository for your holdings (past 7 days).`);
             }
-        }
-        catch (err) {
+        } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             this.showError('Failed to check portfolio news: ' + errorMessage);
         }
     }
-    showError(message) {
+
+    showError(message: string): void {
         // Show error in chat UI with proper styling
         const errorId = this.addMessage('assistant', `❌ Error: ${message}`);
         // Error styling is handled in updateMessage, but ensure it's applied
         setTimeout(() => {
             const messageDiv = document.getElementById(errorId);
             if (messageDiv) {
-                const bubble = messageDiv.querySelector('.bg-gray-100, .dark\\:bg-gray-700, .bg-blue-600');
+                const bubble = messageDiv.querySelector('.bg-gray-100, .dark\\:bg-gray-700, .bg-blue-600') as HTMLElement | null;
                 if (bubble) {
                     bubble.className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-800 rounded-lg rounded-bl-sm px-4 py-3 shadow-sm';
                 }
             }
         }, 10);
     }
-    updateRetryButton() {
+
+    updateRetryButton(): void {
         const retryContainer = document.getElementById('retry-button-container');
         if (retryContainer) {
             if (this.conversationHistory.length > 0 &&
                 this.conversationHistory[this.conversationHistory.length - 1].role === 'assistant') {
                 retryContainer.classList.remove('hidden');
-            }
-            else {
+            } else {
                 retryContainer.classList.add('hidden');
             }
         }
     }
 }
+
 // Make AIAssistant available globally for template usage
-window.AIAssistant = AIAssistant;
-//# sourceMappingURL=ai_assistant.js.map
+(window as any).AIAssistant = AIAssistant;

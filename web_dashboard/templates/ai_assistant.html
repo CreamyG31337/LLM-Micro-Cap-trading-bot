@@ -12,9 +12,9 @@
 <div class="flex flex-col h-[calc(100vh-200px)]">
     <!-- Header with Clear Chat button -->
     <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">💬 Chat</h2>
+        <h2 class="text-2xl font-bold text-text-primary">💬 Chat</h2>
         <button id="clear-chat-btn"
-            class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+            class="px-4 py-2 bg-gray-200 dark:bg-dashboard-surface-alt hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-text-primary rounded-lg text-sm font-medium transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
             🔄 Clear Chat
         </button>
     </div>
@@ -25,16 +25,16 @@
         <div class="flex-1 flex flex-col min-w-0" style="flex: 0 0 70%;">
             <!-- Context Preview Panel (always visible - shows data sent to LLM) -->
             <div id="context-preview-panel"
-                class="mb-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800">
-                <div class="p-3 border-b border-gray-300 dark:border-gray-600">
-                    <span class="font-semibold text-gray-900 dark:text-gray-100">
+                class="mb-4 border border-border rounded-lg bg-gray-50 dark:bg-dashboard-surface">
+                <div class="p-3 border-b border-border">
+                    <span class="font-semibold text-text-primary">
                         📋 Context Preview
                         <span id="context-char-badge"
-                            class="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(loading...)</span>
+                            class="ml-2 text-xs font-normal text-text-tertiary">(loading...)</span>
                     </span>
                 </div>
                 <div class="p-3">
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">This data is sent to the LLM with the first
+                    <p class="text-xs text-text-secondary mb-2">This data is sent to the LLM with the first
                         message of each conversation. Clear chat to reset context.</p>
                     <pre id="context-preview-content"
                         class="w-full p-3 border-2 border-purple-900 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre bg-slate-950 text-cyan-300 max-h-64 overflow-y-auto">Loading context...</pre>
@@ -43,14 +43,14 @@
 
             <!-- Chat Messages Container -->
             <div id="chat-container"
-                class="flex-1 overflow-y-auto max-h-[calc(100vh-400px)] min-h-[300px] border border-gray-300 dark:border-gray-600 rounded-lg p-4 mb-4 bg-gray-50 dark:bg-gray-800">
+                class="flex-1 overflow-y-auto max-h-[calc(100vh-400px)] min-h-[300px] border border-border rounded-lg p-4 mb-4 bg-gray-50 dark:bg-dashboard-surface">
                 <div id="chat-messages" class="space-y-4">
                     <!-- Messages will be inserted here -->
                 </div>
                 <!-- Retry Button (shown when last message is from assistant) -->
                 <div id="retry-button-container" class="hidden mt-4 text-center">
                     <button id="retry-btn"
-                        class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors">
+                        class="px-4 py-2 bg-gray-200 dark:bg-dashboard-surface-alt hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-text-primary rounded-lg text-sm font-medium transition-colors">
                         🔄 Retry Last Response
                     </button>
                 </div>
@@ -96,7 +96,7 @@
             <!-- Chat Input -->
             <div class="flex gap-2">
                 <input type="text" id="chat-input" placeholder="Ask about your portfolio..."
-                    class="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                    class="flex-1 px-4 py-3 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
                 <button id="send-btn"
                     class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 font-medium focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     <i class="fas fa-paper-plane mr-2"></i>Send
@@ -128,15 +128,15 @@
 
                 <!-- Ticker Selection -->
                 <div class="mb-4">
-                    <label class="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Select
+                    <label class="block text-sm font-medium mb-2 text-text-primary">Select
                         Tickers:</label>
                     <select id="ticker-select" multiple
-                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                        class="w-full p-2 border border-border rounded-lg mb-2 bg-dashboard-surface text-text-primary focus:ring-2 focus:ring-blue-500"
                         size="5">
                         <!-- Populated by JavaScript -->
                     </select>
                     <input type="text" id="custom-ticker" placeholder="Custom ticker (e.g., NVDA)"
-                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500">
+                        class="w-full p-2 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:ring-2 focus:ring-blue-500">
                 </div>
 
                 <div class="border-t border-gray-300 dark:border-gray-600 pt-4">
@@ -185,7 +185,7 @@
 
 <!-- Sidebar: Model Selection, Fund Selector, Context Toggles -->
 <aside id="ai-sidebar"
-    class="hidden md:block fixed top-0 right-0 z-30 w-80 h-screen bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-lg overflow-y-auto pt-24 px-4">
+    class="hidden md:block fixed top-0 right-0 z-30 w-80 h-screen bg-dashboard-surface border-l border-border shadow-lg overflow-y-auto pt-24 px-4">
     <div class="space-y-6">
         <!-- Model Selection -->
         <div>
@@ -248,7 +248,7 @@
             </label>
         </div>
 
-        <hr class="border-gray-200 dark:border-gray-700">
+        <hr class="border-border">
 
         <!-- Web Search -->
         <div>

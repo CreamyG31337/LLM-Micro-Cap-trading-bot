@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}System Monitoring - Portfolio Dashboard{% endblock %}
+{% block page_title %}System Monitoring{% endblock %}
+{% block page_subtitle %}Monitor system health, check logs and docker containers{% endblock %}
+
+{% block extra_head %}
+<style>
+    .log-line {
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .log-line:hover {
+        background-color: var(--log-line-hover);
+    }
+
+    .log-container {
+        height: 70vh;
+        overflow-y: auto;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 0.5rem;
+    }
+
+    .status-card {
+        transition: all 0.2s;
+    }
+
+    .status-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Tabs -->
+<div class="mb-6 border-b border-gray-200">
+    <nav class="flex space-x-8" aria-label="Tabs">
+        <button onclick="switchTab('status')" id="tab-status"
+            class="tab-button active border-b-2 border-blue-500 py-4 px-1 text-sm font-medium text-blue-600 transition-colors">
+            📊 System Status
+        </button>
+        <button onclick="switchTab('logs')" id="tab-logs"
+            class="tab-button border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">
+            📜 System Logs
+        </button>
+    </nav>
+</div>
+
+<!-- STATUS TAB -->
+<div id="content-status" class="tab-content block">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <!-- Database Status -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 status-card">
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">Database Connection</h3>
+            <div id="status-db" class="flex items-center">
+                <div class="animate-pulse bg-gray-200 h-6 w-24 rounded"></div>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">Supabase Connectivity</p>
+        </div>
+
+        <!-- Postgres Status -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 status-card">
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">Research Repository</h3>
+            <div id="status-postgres" class="flex items-center">
+                <div class="animate-pulse bg-gray-200 h-6 w-24 rounded"></div>
+            </div>
+            <div id="stats-postgres" class="text-sm mt-2 space-y-1 text-gray-600"></div>
+        </div>
+
+        <!-- Exchange Rates -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 status-card">
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">Exchange Rates</h3>
+            <div id="status-rates">
+                <div class="animate-pulse bg-gray-200 h-6 w-24 rounded"></div>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">USD/CAD Rate</p>
+        </div>
+    </div>
+
+    <!-- Recent Jobs -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Scheduler Jobs</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3">Job Name</th>
+                        <th class="px-6 py-3">Status</th>
+                        <th class="px-6 py-3">Last Run</th>
+                        <th class="px-6 py-3">Message</th>
+                    </tr>
+                </thead>
+                <tbody id="jobs-table-body">
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center">Loading jobs...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- LOGS TAB -->
+<div id="content-logs" class="tab-content hidden">
+    <!-- Sub-Tabs for Logs -->
+    <div class="flex space-x-4 mb-4">
+        <div class="inline-flex rounded-md shadow-sm" role="group">
+            <button onclick="switchLogMode('app')" id="mode-app"
+                class="px-4 py-2 text-sm font-medium text-blue-700 bg-white border border-gray-200 rounded-l-lg hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700">
+                App Logs
+            </button>
+            <button onclick="switchLogMode('docker')" id="mode-docker"
+                class="px-4 py-2 text-sm font-medium text-gray-900 bg-white border-t border-b border-r border-gray-200 hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700">
+                Docker Containers
+            </button>
+            <button onclick="switchLogMode('files')" id="mode-files"
+                class="px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-r-lg hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700">
+                File System
+            </button>
+        </div>
+
+        <div class="flex-grow"></div>
+
+        <button onclick="refreshLogs()"
+            class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-4 py-2 text-center inline-flex items-center">
+            <i class="fas fa-sync-alt mr-2"></i> Refresh
+        </button>
+    </div>
+
+    <!-- Controls Toolbar -->
+    <div id="log-controls"
+        class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- App Log Controls -->
+        <div class="log-control-group app-controls col-span-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">Level</label>
+                <select id="log-level" onchange="refreshLogs()"
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
+                    <option value="INFO + ERROR">INFO + ERROR</option>
+                    <option value="All">All Levels</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="WARNING">WARNING</option>
+                </select>
+            </div>
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">Search</label>
+                <input type="text" id="log-search" onkeydown="if(event.key==='Enter') refreshLogs()"
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5"
+                    placeholder="Filter text...">
+            </div>
+            <div class="flex items-center mt-6">
+                <input id="auto-refresh" type="checkbox"
+                    class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
+                <label for="auto-refresh" class="ml-2 text-sm font-medium text-gray-900">Auto-refresh (5s)</label>
+            </div>
+        </div>
+
+        <!-- Docker/File Controls -->
+        <div class="log-control-group docker-controls hidden col-span-4">
+            <label class="block mb-2 text-sm font-medium text-gray-900">Select Source</label>
+            <select id="docker-source" onchange="loadSourceLogs()"
+                class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5">
+                <option>Loading...</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Log Viewer -->
+    <div id="log-viewer" class="log-container p-4 bg-gray-900 text-gray-300 font-mono text-sm leading-relaxed">
+        <div class="text-center text-gray-500 mt-10">Select a source to view logs</div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/assets/js/system.js"></script>
+{% endblock %}

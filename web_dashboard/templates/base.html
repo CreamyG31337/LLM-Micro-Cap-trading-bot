@@ -193,7 +193,7 @@
                             </a>
                         </li>
                         <li>
-                            <a href="/admin_funds"
+                            <a href="/v2/admin/funds"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">🏦</span>
                                 <span>Fund Management</span>
@@ -221,9 +221,9 @@
                             </a>
                         </li>
                         <li>
-                            <a href="/admin_system"
+                            <a href="{{ url_for('admin.system_page') }}"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
-                                <span class="mr-3 text-lg">📊</span>
+                                <span class="mr-3 text-lg">🖥️</span>
                                 <span>System Monitoring</span>
                             </a>
                         </li>
@@ -252,7 +252,7 @@
     <!-- Footer -->
     <footer class="bg-gray-800 text-white py-4 mt-auto">
         <div class="container mx-auto px-4 text-center text-sm">
-            <p>&copy; 2024 Portfolio Dashboard. All rights reserved.</p>
+            <p>Build: {{ build_timestamp|default('Development') }}</p>
         </div>
     </footer>
 

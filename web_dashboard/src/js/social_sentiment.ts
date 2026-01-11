@@ -59,6 +59,7 @@ interface AgGridOptions {
 interface AgGridColumnDef {
     field: string;
     headerName: string;
+    valueGetter?: (params: AgGridParams) => any;
     width?: number;
     pinned?: string;
     cellRenderer?: any;
@@ -138,7 +139,7 @@ let sentimentGridApi: AgGridApi | null = null;
 
 // Ticker cell renderer - makes ticker clickable
 class TickerCellRenderer implements AgGridCellRenderer {
-    private eGui: HTMLElement;
+    private eGui!: HTMLElement;
 
     init(params: AgGridCellRendererParams): void {
         this.eGui = document.createElement('span');
@@ -167,7 +168,7 @@ class TickerCellRenderer implements AgGridCellRenderer {
 
 // Sentiment color cell renderer
 class SentimentCellRenderer implements AgGridCellRenderer {
-    private eGui: HTMLElement;
+    private eGui!: HTMLElement;
 
     init(params: AgGridCellRendererParams): void {
         this.eGui = document.createElement('span');

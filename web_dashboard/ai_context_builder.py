@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
 import sys
+import textwrap
 from pathlib import Path
 
 # Add project root to path for market data imports
@@ -489,6 +490,24 @@ def _format_market_cap(value) -> str:
         return str(value)
 
 
+def _wrap_text(text: str, width: int = 120, indent: str = "") -> str:
+    """Wrap text to specified width with optional indentation."""
+    if not text:
+        return ""
+    # Use textwrap to fill, ensuring newlines in original text are roughly respected if they mark paragraphs?
+    # Actually textwrap.fill replaces all whitespace including newlines with single space by default.
+    # We should probably respect existing double-newlines (paragraphs).
+    
+    paragraphs = text.split('\n\n')
+    wrapped_paragraphs = []
+    
+    for p in paragraphs:
+        if p.strip():
+            wrapped_paragraphs.append(textwrap.fill(p.strip(), width=width, initial_indent=indent, subsequent_indent=indent))
+            
+    return "\n\n".join(wrapped_paragraphs)
+
+
 def format_thesis(thesis_data: Dict[str, Any]) -> str:
     """Format investment thesis data for LLM context.
     
@@ -509,7 +528,8 @@ def format_thesis(thesis_data: Dict[str, Any]) -> str:
     
     overview = thesis_data.get('overview', '')
     if overview:
-        lines.append(f"\nOverview:\n{overview}")
+        lines.append(f"\nOverview:")
+        lines.append(_wrap_text(overview, width=120))
     
     pillars = thesis_data.get('pillars', [])
     if pillars:
@@ -520,7 +540,7 @@ def format_thesis(thesis_data: Dict[str, Any]) -> str:
             thesis_text = pillar.get('thesis', '')
             
             lines.append(f"\n  {name} ({allocation}):")
-            lines.append(f"    {thesis_text}")
+            lines.append(_wrap_text(thesis_text, width=116, indent="    "))
     
     return "\n".join(lines)
 

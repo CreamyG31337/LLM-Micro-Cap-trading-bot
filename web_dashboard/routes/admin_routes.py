@@ -83,6 +83,7 @@ def calculate_fifo_pnl(fund: str, ticker: str, sell_shares: float, sell_price: f
         from app import get_supabase_client
         
         # Fetch existing trades - try to get action column if available
+        from app import get_supabase_client
         client = get_supabase_client()
         # First try with action column
         try:
@@ -273,6 +274,7 @@ def users_page():
         user_theme = get_user_theme() or 'system'
         
         # Get navigation context
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_users')
         
         logger.debug(f"Rendering users page for user: {user_email}")
@@ -512,6 +514,7 @@ def api_admin_update_contributor_email():
         if not re.match(email_pattern, new_email):
             return jsonify({"error": "Invalid email format"}), 400
         
+        from app import get_supabase_client
         client = get_supabase_client()
         if not client:
             return jsonify({"error": "Failed to connect to database"}), 500
@@ -617,6 +620,7 @@ def api_admin_contributors():
 def api_admin_unregistered_contributors():
     """Get unregistered contributors"""
     try:
+        from app import get_supabase_client
         client = get_supabase_client()
         if not client:
             return jsonify({"error": "Failed to connect to database", "contributors": []}), 500
@@ -641,6 +645,7 @@ def api_admin_unregistered_contributors():
 def api_admin_contributor_access():
     """Get all contributor access records"""
     try:
+        from app import get_supabase_client
         client = get_supabase_client()
         if not client:
             return jsonify({"error": "Failed to connect to database", "access": []}), 500
@@ -701,6 +706,7 @@ def api_admin_grant_contributor_access():
         if access_level not in ['viewer', 'manager', 'owner']:
             return jsonify({"error": "Invalid access level. Must be viewer, manager, or owner"}), 400
         
+        from app import get_supabase_client
         client = get_supabase_client()
         if not client:
             return jsonify({"error": "Failed to connect to database"}), 500

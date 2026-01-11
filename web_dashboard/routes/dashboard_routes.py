@@ -50,7 +50,18 @@ def dashboard_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering dashboard: {e}", exc_info=True)
-        return render_template('error.html', error=str(e), user_theme='system')
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='dashboard')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('dashboard.html', 
+                             user_email='User',
+                             user_theme='system',
+                             initial_fund=None,
+                             **nav_context)
 
 @dashboard_bp.route('/api/dashboard/summary', methods=['GET'])
 def get_dashboard_summary():

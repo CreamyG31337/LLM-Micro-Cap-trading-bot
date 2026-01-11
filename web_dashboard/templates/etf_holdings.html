@@ -207,7 +207,7 @@
 <!-- ETF Holdings Configuration -->
 <script id="etf-holdings-config" type="application/json">
 {
-    "holdingsData": {{ (holdings_data if view_mode == 'holdings' else changes_data)|tojson|safe }},
+    "holdingsData": {{ (holdings_data|default([]))|tojson|safe }},
     "viewMode": "{{ view_mode }}"
 }
 </script>

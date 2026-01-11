@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Admin: Jobs - Portfolio Dashboard{% endblock %}
+
+{% block page_title %}🔨 Jobs{% endblock %}
+{% block page_subtitle %}Manage background scheduled jobs{% endblock %}
+
+{% block extra_head %}
+<style>
+    .job-card {
+        transition: transform 0.2s ease-in-out;
+    }
+    .job-card:hover {
+        transform: translateY(-2px);
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    .status-running {
+        background-color: #3b82f6;
+        color: white;
+    }
+    .status-failed {
+        background-color: #ef4444;
+        color: white;
+    }
+    .status-paused {
+        background-color: #6b7280;
+        color: white;
+    }
+    .status-idle {
+        background-color: #10b981;
+        color: white;
+    }
+    .log-entry {
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .log-entry:last-child {
+        border-bottom: none;
+    }
+    .parameter-form {
+        background-color: var(--code-bg, #f9fafb);
+        border: 1px solid var(--code-border, #e5e7eb);
+        border-radius: 0.5rem;
+        padding: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Scheduler Status -->
+<div id="scheduler-status-container" class="bg-white rounded-lg shadow-lg p-6 mb-6">
+    <div id="scheduler-error" class="hidden bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-semibold text-red-800">❌ Scheduler is not running</h3>
+                <p class="text-sm text-red-600 mt-1">The scheduler may have crashed. Check the logs for errors.</p>
+            </div>
+            <button id="start-scheduler-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
+                🚀 Start Scheduler
+            </button>
+        </div>
+    </div>
+    <div id="scheduler-running" class="hidden">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-semibold text-green-800">✅ Scheduler is running</h3>
+                <p class="text-sm text-gray-600 mt-1" id="scheduler-info">Loading scheduler status...</p>
+            </div>
+            <button id="refresh-status-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
+                <i class="fas fa-sync-alt mr-2"></i>Refresh Status
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Jobs List -->
+<div id="jobs-container" class="space-y-4">
+    <div id="loading" class="text-center py-8 text-gray-500">
+        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+        <p>Loading jobs...</p>
+    </div>
+    <div id="jobs-list" class="hidden"></div>
+    <div id="no-jobs" class="hidden bg-white rounded-lg shadow-lg p-6 text-center text-gray-500">
+        <i class="fas fa-inbox text-4xl mb-4"></i>
+        <p>No scheduled jobs configured.</p>
+    </div>
+    <div id="error-message" class="hidden bg-red-50 border border-red-200 rounded-lg p-4">
+        <i class="fas fa-exclamation-circle text-red-500 mr-2"></i>
+        <span id="error-text" class="text-red-700"></span>
+    </div>
+</div>
+
+<!-- Auto-refresh toggle -->
+<div class="mt-6 flex items-center justify-center">
+    <label class="inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="auto-refresh" class="form-checkbox h-5 w-5 text-blue-600" checked>
+        <span class="ml-2 text-sm text-gray-700">Auto-refresh every 5s</span>
+    </label>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/assets/js/jobs.js"></script>
+{% endblock %}

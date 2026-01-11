@@ -315,7 +315,23 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 unsafe_allow_html=True
             )
             # Admin pages (only visible to admins)
-            st.sidebar.page_link("pages/admin_scheduler.py", label="Jobs", icon="🔨")
+            # Jobs link - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_scheduler'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    jobs_url = get_page_url('admin_scheduler')
+                    st.sidebar.markdown(f'''
+                        <a href="{jobs_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">🔨</span>
+                            <span class="v2-nav-label">Jobs</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_scheduler.py", label="Jobs", icon="🔨")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_scheduler.py", label="Jobs", icon="🔨")
             st.sidebar.page_link("pages/admin_users.py", label="User & Access", icon="👥")
             st.sidebar.page_link("pages/admin_funds.py", label="Fund Management", icon="🏦")
             st.sidebar.page_link("pages/admin_trade_entry.py", label="Trade Entry", icon="📈")

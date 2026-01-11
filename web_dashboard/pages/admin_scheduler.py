@@ -4,6 +4,8 @@ Scheduler Administration
 =======================
 
 Dedicated admin page for managing background scheduled jobs.
+
+NOTE: This page has been migrated to Flask. This file redirects to the Flask version.
 """
 
 import streamlit as st
@@ -15,6 +17,22 @@ from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Redirect to Flask version if available AND enabled
+try:
+    from shared_navigation import is_page_migrated, get_page_url
+    from user_preferences import get_user_preference
+    
+    # Only redirect if V2 is enabled AND page is migrated
+    is_v2_enabled = get_user_preference('v2_enabled', default=False)
+    
+    if is_v2_enabled and is_page_migrated('admin_scheduler'):
+        url = get_page_url('admin_scheduler')
+        st.markdown(f'<meta http-equiv="refresh" content="0; url={url}">', unsafe_allow_html=True)
+        st.write("Redirecting to new jobs page...")
+        st.stop()
+except ImportError:
+    pass  # Continue with Streamlit version if shared_navigation not available
 
 from auth_utils import is_authenticated, has_admin_access, get_user_email, redirect_to_login
 from navigation import render_navigation

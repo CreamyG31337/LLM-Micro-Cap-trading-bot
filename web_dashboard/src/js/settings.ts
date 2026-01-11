@@ -55,16 +55,14 @@ function showError(elementId: string, errorMessage?: string): void {
 
 // Initialize event handlers when DOM is ready
 document.addEventListener('DOMContentLoaded', function (): void {
-    // Timezone save handler
-    const saveTimezoneBtn = document.getElementById('save-timezone');
-    if (saveTimezoneBtn) {
-        saveTimezoneBtn.addEventListener('click', function (): void {
-            const timezoneSelect = document.getElementById('timezone-select') as HTMLSelectElement | null;
-            if (!timezoneSelect) {
-                console.error('Timezone select element not found');
-                return;
-            }
-            const timezone = timezoneSelect.value;
+    // Timezone auto-save handler
+    const timezoneSelect = document.getElementById('timezone-select') as HTMLSelectElement | null;
+    if (timezoneSelect) {
+        let originalTimezone: string = timezoneSelect.value;
+
+        timezoneSelect.addEventListener('change', function (this: HTMLSelectElement): void {
+            const timezone = this.value;
+            const selectElement = this;
 
             fetch('/api/settings/timezone', {
                 method: 'POST',
@@ -84,30 +82,31 @@ document.addEventListener('DOMContentLoaded', function (): void {
                 .then((data: ApiResponse) => {
                     if (data.success) {
                         showSuccess('timezone-success');
+                        originalTimezone = timezone;
                     } else {
                         const errorMsg = data.error || 'Failed to save timezone. Please try again.';
                         console.error('Timezone save failed:', errorMsg);
+                        selectElement.value = originalTimezone; // Revert
                         showError('timezone-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
                     const errorMsg = error.message || 'Error saving timezone. Please try again.';
                     console.error('Error saving timezone:', error);
+                    selectElement.value = originalTimezone; // Revert
                     showError('timezone-error', errorMsg);
                 });
         });
     }
 
-    // Currency save handler
-    const saveCurrencyBtn = document.getElementById('save-currency');
-    if (saveCurrencyBtn) {
-        saveCurrencyBtn.addEventListener('click', function (): void {
-            const currencySelect = document.getElementById('currency-select') as HTMLSelectElement | null;
-            if (!currencySelect) {
-                console.error('Currency select element not found');
-                return;
-            }
-            const currency = currencySelect.value;
+    // Currency auto-save handler
+    const currencySelect = document.getElementById('currency-select') as HTMLSelectElement | null;
+    if (currencySelect) {
+        let originalCurrency: string = currencySelect.value;
+
+        currencySelect.addEventListener('change', function (this: HTMLSelectElement): void {
+            const currency = this.value;
+            const selectElement = this;
 
             fetch('/api/settings/currency', {
                 method: 'POST',
@@ -127,15 +126,18 @@ document.addEventListener('DOMContentLoaded', function (): void {
                 .then((data: ApiResponse) => {
                     if (data.success) {
                         showSuccess('currency-success');
+                        originalCurrency = currency;
                     } else {
                         const errorMsg = data.error || 'Failed to save currency. Please try again.';
                         console.error('Currency save failed:', errorMsg);
+                        selectElement.value = originalCurrency; // Revert
                         showError('currency-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
                     const errorMsg = error.message || 'Error saving currency. Please try again.';
                     console.error('Error saving currency:', error);
+                    selectElement.value = originalCurrency; // Revert
                     showError('currency-error', errorMsg);
                 });
         });
@@ -146,14 +148,14 @@ document.addEventListener('DOMContentLoaded', function (): void {
     if (themeSelect) {
         // Store original theme for error recovery
         let originalTheme: string = document.documentElement.getAttribute('data-theme') || 'system';
-        
+
         themeSelect.addEventListener('change', function (this: HTMLSelectElement): void {
             const theme: string = this.value;
             const selectElement: HTMLSelectElement = this; // Capture 'this' for use in callbacks
-            
+
             // Apply theme immediately (optimistic update)
             document.documentElement.setAttribute('data-theme', theme);
-            
+
             // Save to server
             fetch('/api/settings/theme', {
                 method: 'POST',

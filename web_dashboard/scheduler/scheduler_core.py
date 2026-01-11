@@ -118,7 +118,7 @@ def get_scheduler(create=True) -> Optional[BackgroundScheduler]:
                     'default': MemoryJobStore()
                 }
                 executors = {
-                    'default': ThreadPoolExecutor(max_workers=3)
+                    'default': ThreadPoolExecutor(max_workers=7)
                 }
                 job_defaults = {
                     'coalesce': True,  # Combine multiple missed executions into one

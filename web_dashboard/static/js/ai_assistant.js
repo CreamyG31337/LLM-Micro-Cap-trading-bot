@@ -471,10 +471,16 @@ class AIAssistant {
         }
 
         // Get pre-loaded context (synchronous - no API call)
-        const contextString = this.getCachedContext();
+        // Only send context with the FIRST message of a conversation
+        const isFirstMessage = this.conversationHistory.length === 0;
+        const contextString = isFirstMessage ? this.getCachedContext() : null;
 
         // Debug logging
-        console.log('[AIAssistant] Using cached context, length:', contextString?.length || 0);
+        if (isFirstMessage) {
+            console.log('[AIAssistant] First message - including context, length:', contextString?.length || 0);
+        } else {
+            console.log('[AIAssistant] Subsequent message - context already in conversation history');
+        }
 
         // Build request
         const requestData = {
@@ -482,7 +488,7 @@ class AIAssistant {
             model: this.selectedModel,
             fund: this.selectedFund,
             context_items: this.contextItems,
-            context_string: contextString, // Pre-built context string
+            context_string: contextString, // Only sent with first message
             conversation_history: this.conversationHistory.slice(-20), // Last 20 messages
             include_search: this.includeSearch,
             include_repository: this.includeRepository,

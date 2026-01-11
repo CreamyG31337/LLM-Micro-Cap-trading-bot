@@ -76,7 +76,13 @@ CORS(app,
      expose_headers=["Content-Type"])
 
 # Set JWT secret for auth system
+# Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
+
+# Global cache for AI context data to avoid re-fetching on every toggle
+# Key: (user_id, fund_name), Value: {'timestamp': datetime, 'data': dict}
+CONTEXT_DATA_CACHE = {}
+CACHE_TTL_SECONDS = 300  # 5 minutes
 
 # Global error handler to expose tracebacks in response
 @app.errorhandler(500)
@@ -2145,7 +2151,9 @@ def api_ai_search():
 @app.route('/api/v2/ai/preview_context', methods=['POST'])
 @require_auth
 def api_ai_preview_context():
-    """Preview the AI context (debug mode) - Shows the raw data tables sent to LLM"""
+    """Preview the AI context (debug mode) - Shows the raw data tables sent to LLM
+    Uses backend caching to avoid re-fetching data when toggling options.
+    """
     try:
         from flask_auth_utils import get_user_id_flask
         from ai_context_builder import (
@@ -2166,12 +2174,74 @@ def api_ai_preview_context():
             return jsonify({"error": "No fund specified"}), 400
 
         user_id = get_user_id_flask()
+        
+        # --- Caching Logic ---
+        now = datetime.now()
+        cache_key = (user_id, fund)
+        data_packet = None
+        
+        cached_entry = CONTEXT_DATA_CACHE.get(cache_key)
+        if cached_entry:
+            timestamp = cached_entry.get('timestamp')
+            if now - timestamp < timedelta(seconds=CACHE_TTL_SECONDS):
+                data_packet = cached_entry.get('data')
+                logger.debug(f"Using cached context data for {user_id}/{fund}")
+        
+        # If no valid cache, fetch ALL data
+        if not data_packet:
+            logger.info(f"Refreshing context data for {user_id}/{fund}")
+            
+            # Fetch all components regardless of current flags so we can cache them
+            positions_df = get_current_positions_flask(fund)
+            trades_df = get_trade_log_flask(limit=100, fund=fund)
+            
+            try:
+                metrics = calculate_performance_metrics_flask(fund)
+                portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
+            except Exception as e:
+                logger.warning(f"Error loading metrics: {e}")
+                metrics = None
+                portfolio_df = None
+                
+            try:
+                cash = get_cash_balances_flask(fund)
+            except Exception as e:
+                logger.warning(f"Error loading cash: {e}")
+                cash = None
+                
+            try:
+                thesis_data = get_fund_thesis_data_flask(fund)
+            except Exception as e:
+                logger.warning(f"Error loading thesis: {e}")
+                thesis_data = None
+                
+            data_packet = {
+                'positions_df': positions_df,
+                'trades_df': trades_df,
+                'metrics': metrics,
+                'portfolio_df': portfolio_df,
+                'cash': cash,
+                'thesis_data': thesis_data
+            }
+            
+            # Update cache
+            CONTEXT_DATA_CACHE[cache_key] = {
+                'timestamp': now,
+                'data': data_packet
+            }
+            
+        # --- Context Assembly ---
+        # Unpack data
+        positions_df = data_packet['positions_df']
+        trades_df = data_packet['trades_df']
+        metrics = data_packet['metrics']
+        portfolio_df = data_packet['portfolio_df']
+        cash = data_packet['cash']
+        thesis_data = data_packet['thesis_data']
+        
         context_parts = []
         
-        # --- Always Included: Holdings ---
-        positions_df = get_current_positions_flask(fund)
-        trades_df = get_trade_log_flask(limit=100, fund=fund)
-        
+        # 1. ALWAYS INCLUDED: Holdings
         include_pv = data.get('include_price_volume', True)
         include_fund = data.get('include_fundamentals', True)
         
@@ -2185,39 +2255,21 @@ def api_ai_preview_context():
             )
             context_parts.append(holdings_text)
         
-        # --- Always Included: Performance Metrics ---
-        try:
-            metrics = calculate_performance_metrics_flask(fund)
-            portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
-            if metrics:
-                context_parts.append(format_performance_metrics(metrics, portfolio_df))
-        except Exception as e:
-            logger.warning(f"Error loading performance metrics: {e}")
+        # 2. ALWAYS INCLUDED: Performance Metrics
+        if metrics:
+            context_parts.append(format_performance_metrics(metrics, portfolio_df))
         
-        # --- Always Included: Cash Balances ---
-        try:
-            cash = get_cash_balances_flask(fund)
-            if cash:
-                context_parts.append(format_cash_balances(cash))
-        except Exception as e:
-            logger.warning(f"Error loading cash balances: {e}")
+        # 3. ALWAYS INCLUDED: Cash Balances
+        if cash:
+            context_parts.append(format_cash_balances(cash))
         
-        # --- Optional: Thesis ---
-        if data.get('include_thesis', False):
-            try:
-                thesis_data = get_fund_thesis_data_flask(fund)
-                if thesis_data:
-                    context_parts.append(format_thesis(thesis_data))
-            except Exception as e:
-                logger.warning(f"Error loading thesis: {e}")
+        # 4. OPTIONAL: Thesis
+        if data.get('include_thesis', False) and thesis_data:
+            context_parts.append(format_thesis(thesis_data))
         
-        # --- Optional: Trades ---
-        if data.get('include_trades', False):
-            try:
-                if not trades_df.empty:
-                    context_parts.append(format_trades(trades_df, limit=100))
-            except Exception as e:
-                logger.warning(f"Error loading trades: {e}")
+        # 5. OPTIONAL: Recent Trades
+        if data.get('include_trades', False) and not trades_df.empty:
+            context_parts.append(format_trades(trades_df, limit=100))
         
         # Combine all parts
         context_string = "\n\n---\n\n".join(context_parts) if context_parts else "No context data available"

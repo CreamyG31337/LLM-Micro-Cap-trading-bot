@@ -202,11 +202,6 @@ class AIAssistant {
         const charBadge = document.getElementById('context-char-badge');
         const btn = document.getElementById('refresh-context-btn');
 
-        // Log if elements not found (helps debug)
-        if (!contentArea) {
-            console.warn('[AIAssistant] context-preview-content element not found! Context will load but not display.');
-        }
-
         // Mark as loading
         this.contextLoading = true;
         this.contextReady = false;
@@ -255,17 +250,17 @@ class AIAssistant {
                 this.contextString = data.context;
                 this.contextReady = true;
 
-                // Update display - use innerText for <pre> elements
+                // Update display - convert HTML to plain text for <pre>
                 if (contentArea) {
-                    contentArea.innerText = data.context;
-                    console.log('[AIAssistant] Set contentArea.innerText, first 100 chars:', data.context.substring(0, 100));
-                    console.log('[AIAssistant] contentArea.innerText length:', contentArea.innerText.length);
+                    // Create temp element to decode HTML entities and convert <br> to newlines
+                    const temp = document.createElement('div');
+                    temp.innerHTML = data.context;
+                    contentArea.textContent = temp.textContent || temp.innerText || '';
                 }
                 if (charBadge) charBadge.textContent = `(${data.char_count.toLocaleString()} chars)`;
 
                 // Enable send button
                 this.setSendEnabled(true);
-                console.log('[AIAssistant] Context ready:', data.char_count, 'chars');
             } else {
                 this.contextString = null;
                 this.contextReady = false;

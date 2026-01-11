@@ -284,11 +284,16 @@ def users_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering users page: {e}", exc_info=True)
-        user_theme = 'system'
-        nav_context = get_navigation_context(current_page='admin_users')
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_users')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
         return render_template('users.html', 
                              user_email='Admin',
-                             user_theme=user_theme,
+                             user_theme='system',
                              **nav_context)
 
 # User management routes
@@ -745,6 +750,7 @@ def system_page():
         user_theme = get_user_theme() or 'system'
         
         # Get navigation context
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_system')
         
         return render_template('system.html', 
@@ -753,7 +759,17 @@ def system_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering system page: {e}", exc_info=True)
-        return render_template('error.html', error=str(e))
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_system')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('system.html', 
+                             user_email='Admin',
+                             user_theme='system',
+                             **nav_context)
 
 @admin_bp.route('/api/admin/system/status')
 @require_admin
@@ -808,6 +824,7 @@ def logs_page():
         user_theme = get_user_theme() or 'system'
         
         # Get navigation context
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_logs')
         
         return render_template('logs.html', 
@@ -816,7 +833,17 @@ def logs_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering logs page: {e}", exc_info=True)
-        return f"Error loading logs page: {str(e)}", 500
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_logs')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('logs.html', 
+                             user_email='Admin',
+                             user_theme='system',
+                             **nav_context)
 
 @admin_bp.route('/api/logs/application')
 @require_admin
@@ -1053,6 +1080,7 @@ def scheduler_page():
     try:
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme
+        from app import get_navigation_context
         
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
@@ -1066,11 +1094,16 @@ def scheduler_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering scheduler page: {e}", exc_info=True)
-        user_theme = 'system'
-        nav_context = get_navigation_context(current_page='admin_scheduler')
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_scheduler')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
         return render_template('jobs.html', 
                              user_email='Admin',
-                             user_theme=user_theme,
+                             user_theme='system',
                              **nav_context)
 
 @admin_bp.route('/api/admin/scheduler/status')
@@ -1239,6 +1272,7 @@ def trade_entry_page():
         user_theme = get_user_theme() or 'system'
         
         # Get navigation context
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_trade_entry')
         
         return render_template('trade_entry.html', 
@@ -1247,7 +1281,17 @@ def trade_entry_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering trade entry page: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_trade_entry')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('trade_entry.html', 
+                             user_email='Admin',
+                             user_theme='system',
+                             **nav_context)
 
 @admin_bp.route('/api/admin/trades/preview-email', methods=['POST'])
 @require_admin
@@ -1559,6 +1603,7 @@ def contributions_page():
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
         
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_contributions')
         
         return render_template('contributions.html', 
@@ -1567,7 +1612,17 @@ def contributions_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering contributions page: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_contributions')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('contributions.html', 
+                             user_email='Admin',
+                             user_theme='system',
+                             **nav_context)
 
 @admin_bp.route('/api/admin/contributions', methods=['GET'])
 @require_admin
@@ -1719,6 +1774,7 @@ def ai_settings_page():
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
         
+        from app import get_navigation_context
         nav_context = get_navigation_context(current_page='admin_ai_settings')
         
         return render_template('ai_settings.html', 
@@ -1727,7 +1783,17 @@ def ai_settings_page():
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering AI settings page: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        # Fallback with minimal context
+        try:
+            from app import get_navigation_context
+            nav_context = get_navigation_context(current_page='admin_ai_settings')
+        except Exception:
+            # If navigation context also fails, use minimal fallback
+            nav_context = {}
+        return render_template('ai_settings.html', 
+                             user_email='Admin',
+                             user_theme='system',
+                             **nav_context)
 
 @admin_bp.route('/api/admin/ai/status')
 @require_admin

@@ -244,6 +244,11 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
         links = get_navigation_links()
         is_v2_enabled = get_user_preference('v2_enabled', default=False)
         
+        # If we're on a v2 page (current_page is migrated), assume v2 is enabled for navigation
+        # This ensures menu is populated when viewing v2 pages
+        if current_page and is_page_migrated(current_page):
+            is_v2_enabled = True
+        
         # Build navigation context
         nav_links = []
         for link in links:

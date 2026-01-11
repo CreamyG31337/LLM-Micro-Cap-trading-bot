@@ -602,45 +602,19 @@ def create_performance_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str
         logger.error(f"Error creating performance chart: {e}", exc_info=True)
         return json.dumps({})
 
+# Register Dashboard Blueprint
+try:
+    from routes.dashboard_routes import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    logger.debug("Registered Dashboard Blueprint")
+except Exception as e:
+    logger.error(f"Failed to register Dashboard Blueprint: {e}", exc_info=True)
+
+# Root route - redirect to dashboard
 @app.route('/')
 def index():
-    """Main dashboard page - requires authentication"""
-    # Check for session token
-    token = request.cookies.get('session_token')
-    if not token:
-        return redirect(url_for('auth_page'))
-    
-    # Verify session
-    user_data = auth_manager.verify_session(token)
-    if not user_data:
-        return redirect(url_for('auth_page'))
-    
-    try:
-        from flask_auth_utils import get_user_email_flask
-        from user_preferences import get_user_theme
-        
-        user_email = get_user_email_flask()
-        user_theme = get_user_theme() or 'system'
-        fund = request.args.get('fund')
-        
-        # Get navigation context
-        nav_context = get_navigation_context(current_page='dashboard')
-        
-        return render_template('index.html', 
-                             selected_fund=fund,
-                             user_email=user_email,
-                             user_theme=user_theme,
-                             **nav_context)
-    except Exception as e:
-        logger.error(f"Error loading dashboard: {e}", exc_info=True)
-        fund = request.args.get('fund')
-        # Fallback with minimal context
-        nav_context = get_navigation_context(current_page='dashboard')
-        return render_template('index.html', 
-                             selected_fund=fund,
-                             user_email='User',
-                             user_theme='system',
-                             **nav_context)
+    """Redirect root to dashboard"""
+    return redirect(url_for('dashboard.dashboard_page'))
 
 @app.route('/auth')
 def auth_page():

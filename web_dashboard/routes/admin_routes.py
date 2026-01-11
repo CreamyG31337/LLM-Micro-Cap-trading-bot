@@ -45,7 +45,130 @@ except ImportError:
     def is_scheduler_running(): return False
 
 
+
+# Trade Entry Imports
+try:
+    from utils.email_trade_parser import EmailTradeParser
+    from portfolio.trade_processor import TradeProcessor
+    from data.repositories.repository_factory import RepositoryFactory
+    from data.models.trade import Trade as TradeModel
+    from data.repositories.supabase_repository import SupabaseRepository
+    from web_dashboard.utils.background_rebuild import trigger_background_rebuild
+except ImportError:
+    pass
+
+# AI Settings Imports
+try:
+    from ollama_client import check_ollama_health, get_ollama_client
+    from admin_utils import get_postgres_status_cached
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
+
+# Helper function for FIFO P&L calculation
+def calculate_fifo_pnl(fund: str, ticker: str, sell_shares: float, sell_price: float) -> float:
+    """Calculate P&L for a sell using FIFO method.
+    
+    Args:
+        fund: Fund name
+        ticker: Ticker symbol
+        sell_shares: Number of shares being sold
+        sell_price: Price per share for the sell
+        
+    Returns:
+        Calculated P&L as float. Returns 0.0 if calculation fails.
+    """
+    try:
+        from collections import deque
+        from decimal import Decimal
+        from supabase_client import get_supabase_client
+        
+        # Fetch existing trades - try to get action column if available
+        client = get_supabase_client()
+        # First try with action column
+        try:
+            existing_trades = client.supabase.table("trade_log") \
+                .select("shares, price, reason, action") \
+                .eq("fund", fund) \
+                .eq("ticker", ticker) \
+                .order("date") \
+                .execute()
+            has_action_column = True
+        except Exception:
+            # Fallback if action column doesn't exist
+            existing_trades = client.supabase.table("trade_log") \
+                .select("shares, price, reason") \
+                .eq("fund", fund) \
+                .eq("ticker", ticker) \
+                .order("date") \
+                .execute()
+            has_action_column = False
+        
+        # Build FIFO queue
+        lots = deque()
+        for t in (existing_trades.data or []):
+            # Determine if this is a BUY or SELL
+            trade_action = None
+            
+            if has_action_column and t.get('action'):
+                # Use action column if available
+                trade_action = str(t.get('action', '')).upper()
+            else:
+                # Fallback to improved string matching with regex
+                reason_text = str(t.get('reason', ''))
+                # Use regex to find BUY or SELL as whole words (case-insensitive)
+                buy_match = re.search(r'\bBUY\b', reason_text, re.IGNORECASE)
+                sell_match = re.search(r'\bSELL\b', reason_text, re.IGNORECASE)
+                
+                if buy_match and not sell_match:
+                    trade_action = 'BUY'
+                elif sell_match and not buy_match:
+                    trade_action = 'SELL'
+                elif buy_match and sell_match:
+                    # Ambiguous - log warning and default to BUY
+                    logger.warning(f"Ambiguous trade action in reason field: {reason_text}. Defaulting to BUY.")
+                    trade_action = 'BUY'
+                else:
+                    # No clear action found - default to BUY (assume purchases)
+                    logger.warning(f"Could not determine trade action from reason: {reason_text}. Defaulting to BUY.")
+                    trade_action = 'BUY'
+            
+            if trade_action == 'BUY':
+                lots.append((Decimal(str(t['shares'])), Decimal(str(t['price']))))
+            elif trade_action == 'SELL':
+                rem = Decimal(str(t['shares']))
+                while rem > 0 and lots:
+                    l_shares, l_price = lots[0]
+                    if l_shares <= rem:
+                        rem -= l_shares
+                        lots.popleft()
+                    else:
+                        lots[0] = (l_shares - rem, l_price)
+                        rem = Decimal('0')
+        
+        # Calculate cost for this sell
+        sell_shares_decimal = Decimal(str(sell_shares))
+        total_cost = Decimal('0')
+        remaining_sell = sell_shares_decimal
+        
+        while remaining_sell > 0 and lots:
+            l_shares, l_price = lots[0]
+            if l_shares <= remaining_sell:
+                total_cost += l_shares * l_price
+                remaining_sell -= l_shares
+                lots.popleft()
+            else:
+                total_cost += remaining_sell * l_price
+                lots[0] = (l_shares - remaining_sell, l_price)
+                remaining_sell = Decimal('0')
+        
+        proceeds = Decimal(str(sell_shares * sell_price))
+        pnl = float(proceeds - total_cost)
+        return pnl
+    except Exception as e:
+        logger.error(f"FIFO P&L Calc Error: {e}", exc_info=True)
+        return 0.0
 
 # Cached log helper
 @cache_data(ttl=5)
@@ -1095,4 +1218,648 @@ def api_resume_job(job_id):
         return jsonify({"success": True, "message": "Job resumed"})
     except Exception as e:
         logger.error(f"Error resuming job: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# Trade Entry Routes
+# ==========================================
+
+@admin_bp.route('/v2/admin/trade-entry')
+@require_admin
+def trade_entry_page():
+    """Trade Entry Page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='admin_trade_entry')
+        
+        return render_template('trade_entry.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering trade entry page: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/trades/preview-email', methods=['POST'])
+@require_admin
+def api_preview_email_trade():
+    """Parse trade from email text.
+    
+    POST /api/admin/trades/preview-email
+    
+    Request Body:
+        text (str): Raw email text containing trade information
+        
+    Returns:
+        JSON response with:
+            - success (bool): Whether parsing was successful
+            - trade (dict): Parsed trade data with fields:
+                - ticker (str): Stock ticker symbol
+                - action (str): BUY or SELL
+                - shares (float): Number of shares
+                - price (float): Price per share
+                - cost_basis (float): Total cost
+                - currency (str): Currency code
+                - timestamp (str): ISO format timestamp
+                - reason (str): Trade reason/notes
+                - pnl (float): Profit/loss if applicable
+            - error (str): Error message if parsing failed
+            
+    Error Responses:
+        400: No email text provided or parsing failed
+        500: Server error during parsing
+    """
+    try:
+        data = request.get_json()
+        email_text = data.get('text', '')
+        
+        if not email_text:
+            return jsonify({"error": "No email text provided"}), 400
+            
+        parser = EmailTradeParser()
+        trade = parser.parse_email_trade(email_text)
+        
+        if trade:
+            # Serialize trade object
+            return jsonify({
+                "success": True,
+                "trade": {
+                    "ticker": trade.ticker,
+                    "action": trade.action if hasattr(trade, 'action') and trade.action else 'BUY',
+                    "shares": float(trade.shares),
+                    "price": float(trade.price),
+                    "cost_basis": float(trade.cost_basis),
+                    "currency": trade.currency,
+                    "timestamp": trade.timestamp.isoformat(),
+                    "reason": trade.reason,
+                    "pnl": float(trade.pnl) if trade.pnl else 0
+                }
+            })
+        else:
+            return jsonify({"success": False, "error": "Could not parse trade from email"}), 400
+    except Exception as e:
+        logger.error(f"Error parsing email trade: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/trades/submit', methods=['POST'])
+@require_admin
+def api_submit_trade():
+    """Submit a new trade (Manual or Email).
+    
+    POST /api/admin/trades/submit
+    
+    Request Body:
+        fund (str): Fund name (required)
+        ticker (str): Ticker symbol (required)
+        action (str): BUY or SELL (default: BUY)
+        shares (float): Number of shares (required, > 0)
+        price (float): Price per share (required, > 0)
+        currency (str): Currency code (default: USD)
+        timestamp (str): ISO format timestamp (required)
+        reason (str): Trade reason/notes (optional)
+        source (str): 'email' or 'manual' (optional, for validation)
+        
+    Returns:
+        JSON response with:
+            - success (bool): Whether submission was successful
+            - message (str): Success message
+            - rebuild_job_id (str): Job ID if backdated rebuild triggered
+            - warning (str): Warning message if portfolio update failed
+            - error_details (str): Error details if portfolio update failed
+            - requires_rebuild (bool): Whether manual rebuild is required
+            
+    Error Responses:
+        400: Invalid trade data or validation failed
+        403: Read-only admin cannot submit trades
+        500: Server error during submission
+    """
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot submit trades"}), 403
+            
+        data = request.get_json()
+        
+        # Extract fields
+        fund = data.get('fund')
+        ticker = data.get('ticker', '').upper()
+        action = data.get('action', 'BUY')
+        shares = float(data.get('shares', 0))
+        price = float(data.get('price', 0))
+        currency = data.get('currency', 'USD')
+        # Combined date/time from manual entry, or full timestamp from email parse
+        timestamp_str = data.get('timestamp') 
+        reason = data.get('reason', '')
+        
+        if not fund or not ticker or shares <= 0 or price <= 0:
+             return jsonify({"error": "Invalid trade data"}), 400
+
+        try:
+             trade_dt = datetime.fromisoformat(timestamp_str)
+        except ValueError:
+             return jsonify({"error": "Invalid timestamp format"}), 400
+
+        # Additional validation for email-parsed trades
+        if data.get('source') == 'email':
+            # Validate parsed trade structure
+            if not all([ticker, action in ['BUY', 'SELL'], shares > 0, price > 0]):
+                return jsonify({"error": "Invalid parsed trade data"}), 400
+            
+            # Validate timestamp is reasonable (not more than 1 day in future)
+            if trade_dt > datetime.now() + timedelta(days=1):
+                return jsonify({"error": "Trade timestamp cannot be in the future"}), 400
+
+        # Calculations
+        cost_basis = shares * price
+        pnl = 0
+        
+        # Service role client for admin ops
+        admin_client = SupabaseClient(use_service_role=True)
+        
+        # 1. Ensure ticker exists and metadata is fetched
+        try:
+            admin_client.ensure_ticker_in_securities(ticker, currency)
+        except Exception as e:
+            logger.warning(f"Metadata fetch warning for {ticker}: {e}")
+            
+        # 2. Calculate P&L for SELLs (FIFO)
+        if action == "SELL":
+            pnl = calculate_fifo_pnl(fund, ticker, shares, price)
+        
+        # 3. Format Reason
+        final_reason = reason
+        if not final_reason:
+            final_reason = f"{action} order"
+        elif action == "SELL" and "sell" not in final_reason.lower():
+             final_reason = f"{final_reason} - SELL"
+        elif action == "BUY" and "buy" not in final_reason.lower() and "sell" not in final_reason.lower():
+             final_reason = f"{final_reason} - BUY"
+             
+        # 4. Insert Trade Log
+        trade_data = {
+            "fund": fund,
+            "ticker": ticker,
+            "shares": shares,
+            "price": price,
+            "cost_basis": cost_basis,
+            "pnl": pnl,
+            "reason": final_reason,
+            "currency": currency,
+            "date": trade_dt.isoformat()
+        }
+        admin_client.supabase.table("trade_log").insert(trade_data).execute()
+        
+        # 5. Process Portfolio Update
+        try:
+            from decimal import Decimal
+            trade_obj = TradeModel(
+                ticker=ticker,
+                action=action,
+                shares=Decimal(str(shares)),
+                price=Decimal(str(price)),
+                timestamp=trade_dt,
+                cost_basis=Decimal(str(cost_basis)),
+                pnl=Decimal(str(pnl)) if pnl else None,
+                reason=final_reason,
+                currency=currency
+            )
+            
+            # Repository resolution
+            data_dir = f"trading_data/funds/{fund}"
+            try:
+                # Try to get data dir from DB
+                fund_res = admin_client.supabase.table("funds").select("data_directory").eq("name", fund).execute()
+                if fund_res.data:
+                     data_dir = fund_res.data[0].get('data_directory', data_dir)
+            except: 
+                pass
+                
+            try:
+                repository = RepositoryFactory.create_dual_write_repository(data_dir, fund)
+            except:
+                repository = SupabaseRepository(fund)
+                
+            processor = TradeProcessor(repository)
+            # trade_already_saved=True because we just inserted it above
+            processor.process_trade_entry(trade_obj, clear_caches=True, trade_already_saved=True)
+            
+        except Exception as proc_e:
+            logger.error(f"Portfolio processor error: {proc_e}", exc_info=True)
+            # Trade was saved but portfolio update failed - return partial success
+            return jsonify({
+                "success": True,
+                "warning": "Trade saved but portfolio update failed. Please rebuild manually.",
+                "error_details": str(proc_e),
+                "requires_rebuild": True
+            }), 200
+
+        # 6. Trigger Rebuild if Backdated
+        is_backdated = trade_dt.date() < datetime.now().date()
+        job_id = None
+        if is_backdated:
+            try:
+                job_id = trigger_background_rebuild(fund, trade_dt.date())
+            except Exception as rb_e:
+                logger.error(f"Rebuild trigger error: {rb_e}")
+
+        return jsonify({
+            "success": True, 
+            "message": f"Verified: {action} {shares} {ticker}",
+            "rebuild_job_id": job_id
+        })
+
+    except Exception as e:
+        logger.error(f"Error submitting trade: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/trades/recent')
+@require_admin
+def api_recent_trades():
+    """Get recent trades for a fund.
+    
+    GET /api/admin/trades/recent
+    
+    Query Parameters:
+        fund (str): Fund name (required)
+        page (int): Page number for pagination (default: 0)
+        limit (int): Number of trades per page (default: 20)
+        
+    Returns:
+        JSON response with:
+            - trades (list): Array of trade objects
+            - total (int): Total number of trades (excluding DRIP)
+            - page (int): Current page number
+            - pages (int): Total number of pages
+            
+    Error Responses:
+        500: Server error during fetch
+    """
+    try:
+        fund = request.args.get('fund')
+        page = int(request.args.get('page', 0))
+        limit = int(request.args.get('limit', 20))
+        offset = page * limit
+        
+        if not fund:
+            return jsonify({"trades": [], "total": 0})
+            
+        # Use service role as requested for all admin pages
+        client = SupabaseClient(use_service_role=True)
+        
+        # Get total count (excluding DRIP)
+        count_res = client.supabase.table("trade_log")\
+            .select("id", count="exact")\
+            .eq("fund", fund)\
+            .neq("reason", "DRIP")\
+            .execute()
+        total = count_res.count or 0
+        
+        # Get data
+        data_res = client.supabase.table("trade_log")\
+            .select("*")\
+            .eq("fund", fund)\
+            .neq("reason", "DRIP")\
+            .order("date", desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+            
+        trades = data_res.data or []
+        
+        return jsonify({
+            "trades": trades,
+            "total": total,
+            "page": page,
+            "pages": (total + limit - 1) // limit
+        })
+    except Exception as e:
+        logger.error(f"Error fetching recent trades: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# Contributions Routes
+# ==========================================
+
+@admin_bp.route('/v2/admin/contributions')
+@require_admin
+def contributions_page():
+    """Contributions Management Page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        nav_context = get_navigation_context(current_page='admin_contributions')
+        
+        return render_template('contributions.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering contributions page: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/contributions', methods=['GET'])
+@require_admin
+def api_get_contributions():
+    """Get list of contributions with filters"""
+    try:
+        fund = request.args.get('fund', 'All')
+        c_type = request.args.get('type', 'All')
+        search = request.args.get('search', '')
+        
+        # Use service role as requested
+        client = SupabaseClient(use_service_role=True)
+        
+        query = client.supabase.table("fund_contributions").select("*").order("timestamp", desc=True)
+        
+        if fund != "All":
+            query = query.eq("fund", fund)
+        if c_type != "All":
+            query = query.eq("contribution_type", c_type)
+        if search:
+            query = query.ilike("contributor", f"%{search}%")
+            
+        result = query.execute()
+        
+        return jsonify({"contributions": result.data or []})
+    except Exception as e:
+        logger.error(f"Error fetching contributions: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/contributions', methods=['POST'])
+@require_admin
+def api_add_contribution():
+    """Add a new contribution or withdrawal"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot add contributions"}), 403
+            
+        data = request.get_json()
+        
+        fund = data.get('fund')
+        name = data.get('contributor')
+        email = data.get('email')
+        amount = float(data.get('amount', 0))
+        c_type = data.get('type', 'CONTRIBUTION')
+        date_str = data.get('date')
+        notes = data.get('notes')
+        
+        if not fund or not name or amount <= 0 or not date_str:
+            return jsonify({"error": "Invalid contribution data"}), 400
+            
+        # Combine date with current time
+        try:
+            date_obj = datetime.fromisoformat(date_str).date()
+            timestamp = datetime.combine(date_obj, datetime.now().time()).isoformat()
+        except:
+            return jsonify({"error": "Invalid date format"}), 400
+            
+        payload = {
+            "fund": fund,
+            "contributor": name,
+            "email": email if email else None,
+            "amount": amount,
+            "contribution_type": c_type,
+            "timestamp": timestamp,
+            "notes": notes if notes else None
+        }
+        
+        # Service role client
+        client = SupabaseClient(use_service_role=True)
+        client.supabase.table("fund_contributions").insert(payload).execute()
+        
+        return jsonify({"success": True, "message": f"{c_type} recorded successfully"})
+    except Exception as e:
+        logger.error(f"Error adding contribution: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/contributions/summary')
+@require_admin
+def api_contributions_summary():
+    """Get contributor summary (aggregated).
+    
+    GET /api/admin/contributions/summary
+    
+    Returns:
+        JSON response with:
+            - summary (list): Array of contributor summary objects with:
+                - contributor (str): Contributor name
+                - fund (str): Fund name
+                - contribution (float): Total contributions
+                - withdrawal (float): Total withdrawals
+                - net (float): Net contribution (contribution - withdrawal)
+                
+    Error Responses:
+        500: Server error during aggregation
+    """
+    try:
+        # Service role client
+        client = SupabaseClient(use_service_role=True)
+        
+        result = client.supabase.table("fund_contributions").select("contributor, fund, contribution_type, amount").execute()
+        
+        if not result.data:
+            return jsonify({"summary": []})
+            
+        # Manually aggregate in Python since Supabase JS client groupBy is limited
+        # structure: { 'contributor|fund': { name, fund, contribution: 0, withdrawal: 0 } }
+        agg = {}
+        
+        for row in result.data:
+            key = f"{row['contributor']}|{row['fund']}"
+            if key not in agg:
+                agg[key] = {
+                    "contributor": row['contributor'],
+                    "fund": row['fund'],
+                    "contribution": 0,
+                    "withdrawal": 0
+                }
+            
+            amt = float(row.get('amount', 0))
+            if row.get('contribution_type') == 'CONTRIBUTION':
+                agg[key]['contribution'] += amt
+            else:
+                agg[key]['withdrawal'] += amt
+        
+        # Convert to list and calculate net
+        summary_list = []
+        for v in agg.values():
+            v['net'] = v['contribution'] - v['withdrawal']
+            summary_list.append(v)
+            
+        return jsonify({"summary": summary_list})
+    except Exception as e:
+         logger.error(f"Error fetching contribution summary: {e}", exc_info=True)
+         return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# AI Settings Routes
+# ==========================================
+
+@admin_bp.route('/v2/admin/ai-settings')
+@require_admin
+def ai_settings_page():
+    """AI Settings Page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        nav_context = get_navigation_context(current_page='admin_ai_settings')
+        
+        return render_template('ai_settings.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering AI settings page: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/status')
+@require_admin
+def api_ai_status():
+    """Check connections status"""
+    try:
+        # Ollama
+        ollama_ok = False
+        ollama_msg = ""
+        try:
+             ollama_ok, ollama_msg = check_ollama_health()
+        except Exception as e:
+             ollama_msg = str(e)
+             
+        # Postgres
+        pg_status = get_postgres_status_cached()
+        
+        return jsonify({
+            "ollama": {"status": ollama_ok, "message": ollama_msg},
+            "postgres": pg_status
+        })
+    except Exception as e:
+         return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/settings', methods=['GET'])
+@require_admin
+def api_get_ai_settings():
+    """Get system settings"""
+    try:
+        client = SupabaseClient(use_service_role=True)
+        # Using system_settings table or similar KV store
+        # Assuming a simple KV store or using a specific row in a settings table
+        # For now, let's mock/use what's available or query a 'system_config' table if exists,
+        # otherwise defaulting to env vars or safe defaults.
+        
+        # Checking if we have a table for this. If not, we might need to create it or just return mock for now
+        # per the existing 'admin_ai_settings.py' logic.
+        
+        # Looking at previous context, there is a `system_settings` table usually.
+        settings = {}
+        try:
+            res = client.supabase.table("system_settings").select("*").execute()
+            if res.data:
+                for row in res.data:
+                    settings[row['key']] = row['value']
+        except:
+            # Table might not exist yet, return defaults
+            settings = {
+                "auto_blacklist_threshold": "0.15",
+                "max_research_batch_size": "50"
+            }
+            
+        return jsonify(settings)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/settings', methods=['POST'])
+@require_admin
+def api_update_ai_settings():
+    """Update system settings"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify settings"}), 403
+            
+        data = request.get_json()
+        client = SupabaseClient(use_service_role=True)
+        
+        # Upsert keys
+        for key, value in data.items():
+            client.supabase.table("system_settings").upsert({
+                "key": key, 
+                "value": str(value),
+                "updated_at": datetime.now().isoformat()
+            }).execute()
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/blacklist', methods=['GET'])
+@require_admin
+def api_get_blacklist():
+    """Get research blacklist"""
+    try:
+        client = SupabaseClient(use_service_role=True)
+        res = client.supabase.table("research_blacklist").select("*").order("added_at", desc=True).execute()
+        return jsonify({"blacklist": res.data or []})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/blacklist', methods=['POST'])
+@require_admin
+def api_add_blacklist():
+    """Add domain to blacklist"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify blacklist"}), 403
+            
+        data = request.get_json()
+        domain = data.get('domain')
+        reason = data.get('reason', 'Manual addition')
+        
+        if not domain:
+            return jsonify({"error": "Domain required"}), 400
+            
+        client = SupabaseClient(use_service_role=True)
+        client.supabase.table("research_blacklist").insert({
+            "domain": domain,
+            "reason": reason,
+            "added_by": "admin" # could track user email
+        }).execute()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/ai/blacklist', methods=['DELETE'])
+@require_admin
+def api_remove_blacklist():
+    """Remove domain from blacklist"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify blacklist"}), 403
+            
+        domain = request.args.get('domain')
+        if not domain:
+            return jsonify({"error": "Domain required"}), 400
+            
+        client = SupabaseClient(use_service_role=True)
+        client.supabase.table("research_blacklist").delete().eq("domain", domain).execute()
+        
+        return jsonify({"success": True})
+    except Exception as e:
         return jsonify({"error": str(e)}), 500

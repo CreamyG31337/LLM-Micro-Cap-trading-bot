@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Portfolio Performance{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6">
+    <!-- Header -->
+    <div class="mb-6 flex justify-between items-center flex-wrap gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span class="text-3xl">📈</span> Portfolio Dashboard
+            </h1>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400" id="last-updated-text">Loading...</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex gap-4 items-center">
+            <!-- Fund Selector -->
+            <div class="w-64">
+                <select id="dashboard-fund-select"
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white">
+                    <option value="All">All Funds</option>
+                    <!-- JS populated -->
+                </select>
+            </div>
+
+            <!-- Time Range -->
+            <div class="inline-flex rounded-md shadow-sm" role="group">
+                <button type="button" data-range="1M"
+                    class="range-btn px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-200 rounded-s-lg hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:text-white dark:hover:bg-gray-600 dark:focus:ring-blue-500 dark:focus:text-white">
+                    1M
+                </button>
+                <button type="button" data-range="3M"
+                    class="range-btn px-4 py-2 text-sm font-medium text-gray-900 bg-white border-t border-b border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-2 focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:text-white dark:hover:bg-gray-600 dark:focus:ring-blue-500 dark:focus:text-white">
+                    3M
+                </button>
+                <button type="button" data-range="ALL"
+                    class="range-btn active ring-2 ring-blue-700 z-10 text-blue-700 px-4 py-2 text-sm font-medium bg-white border border-gray-200 rounded-e-lg hover:bg-gray-100 hover:text-blue-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:text-white dark:hover:bg-gray-600 dark:focus:ring-blue-500 dark:focus:text-white">
+                    All
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thesis Section (Dynamic) -->
+    <div id="thesis-container"
+        class="hidden mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800">
+        <h3 class="text-lg font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+            <span class="text-xl">📋</span> <span id="thesis-title">Investment Thesis</span>
+        </h3>
+        <div id="thesis-content"
+            class="mt-2 text-sm text-blue-800 dark:text-blue-200 prose dark:prose-invert max-w-none">
+            <!-- Content -->
+        </div>
+    </div>
+
+    <!-- Key Metrics Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <!-- Total Value -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h5 class="mb-1 text-sm font-medium text-gray-500 dark:text-gray-400">Total Value</h5>
+            <div class="flex items-baseline gap-2">
+                <span class="text-2xl font-bold text-gray-900 dark:text-white" id="metric-total-value">--</span>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400" id="metric-currency">CAD</span>
+            </div>
+        </div>
+
+        <!-- Day Change -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h5 class="mb-1 text-sm font-medium text-gray-500 dark:text-gray-400">Day Change</h5>
+            <div class="flex items-baseline gap-2">
+                <span class="text-2xl font-bold" id="metric-day-change">--</span>
+                <span class="text-sm font-medium px-2 py-0.5 rounded" id="metric-day-pct">--%</span>
+            </div>
+        </div>
+
+        <!-- Unrealized P&L -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h5 class="mb-1 text-sm font-medium text-gray-500 dark:text-gray-400">Unrealized P&L</h5>
+            <div class="flex items-baseline gap-2">
+                <span class="text-2xl font-bold" id="metric-total-pnl">--</span>
+                <span class="text-sm font-medium px-2 py-0.5 rounded" id="metric-total-pnl-pct">--%</span>
+            </div>
+        </div>
+
+        <!-- Cash Balance -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h5 class="mb-1 text-sm font-medium text-gray-500 dark:text-gray-400">Cash Balance</h5>
+            <div class="flex items-baseline gap-2">
+                <span class="text-2xl font-bold text-gray-900 dark:text-white" id="metric-cash">--</span>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">(Combined)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Charts -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
+        <!-- Performance Chart (2/3 width) -->
+        <div
+            class="xl:col-span-2 p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Portfolio Performance</h3>
+            <div class="h-80 w-full" id="performance-chart">
+                <!-- ApexChart -->
+            </div>
+        </div>
+
+        <!-- Sector Allocation (1/3 width) -->
+        <div
+            class="xl:col-span-1 p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Sector Allocation</h3>
+            <div class="h-80 w-full flex items-center justify-center" id="sector-chart">
+                <!-- ApexChart -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Holdings Table -->
+    <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700 mb-6">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Current Holdings</h3>
+        <div id="holdings-grid" class="ag-theme-alpine w-full h-[500px]"></div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Recent Activity</h3>
+        <div class="relative overflow-x-auto">
+            <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                    <tr>
+                        <th scope="col" class="px-6 py-3">Date</th>
+                        <th scope="col" class="px-6 py-3">Ticker</th>
+                        <th scope="col" class="px-6 py-3">Action</th>
+                        <th scope="col" class="px-6 py-3 text-right">Shares</th>
+                        <th scope="col" class="px-6 py-3 text-right">Price</th>
+                        <th scope="col" class="px-6 py-3 text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody id="activity-table-body">
+                    <!-- JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<!-- Load AgGrid from CDN as typical for this project (or local if available) -->
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+<script>
+    // Pass initial data from backend if needed, or just let JS fetch it
+    const INITIAL_FUND = "{{ initial_fund }}";
+</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

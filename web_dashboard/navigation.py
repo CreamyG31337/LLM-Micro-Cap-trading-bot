@@ -349,10 +349,80 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
             except ImportError:
                 # Fallback if shared_navigation not available
                 st.sidebar.page_link("pages/admin_users.py", label="User & Access", icon="👥")
-            st.sidebar.page_link("pages/admin_funds.py", label="Fund Management", icon="🏦")
-            st.sidebar.page_link("pages/admin_trade_entry.py", label="Trade Entry", icon="📈")
-            st.sidebar.page_link("pages/admin_contributions.py", label="Contributions", icon="💰")
-            st.sidebar.page_link("pages/admin_ai_settings.py", label="AI Settings", icon="⚙️")
+            
+            # Fund Management - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_funds'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    funds_url = get_page_url('admin_funds')
+                    st.sidebar.markdown(f'''
+                        <a href="{funds_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">🏦</span>
+                            <span class="v2-nav-label">Fund Management</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_funds.py", label="Fund Management", icon="🏦")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_funds.py", label="Fund Management", icon="🏦")
+
+            # Trade Entry - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_trade_entry'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    trade_entry_url = get_page_url('admin_trade_entry')
+                    st.sidebar.markdown(f'''
+                        <a href="{trade_entry_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">📈</span>
+                            <span class="v2-nav-label">Trade Entry</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_trade_entry.py", label="Trade Entry", icon="📈")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_trade_entry.py", label="Trade Entry", icon="📈")
+
+            # Contributions - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_contributions'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    contributions_url = get_page_url('admin_contributions')
+                    st.sidebar.markdown(f'''
+                        <a href="{contributions_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">💰</span>
+                            <span class="v2-nav-label">Contributions</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_contributions.py", label="Contributions", icon="💰")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_contributions.py", label="Contributions", icon="💰")
+
+            # AI Settings - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_ai_settings'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    ai_settings_url = get_page_url('admin_ai_settings')
+                    st.sidebar.markdown(f'''
+                        <a href="{ai_settings_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">🤖</span>
+                            <span class="v2-nav-label">AI Settings</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_ai_settings.py", label="AI Settings", icon="🤖")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_ai_settings.py", label="AI Settings", icon="🤖")
+
+            # System Monitoring - check if migrated to Flask
             try:
                 from shared_navigation import is_page_migrated, get_page_url
                 if is_v2_enabled and is_page_migrated('admin_system'):
@@ -365,10 +435,10 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                         </a>
                     ''', unsafe_allow_html=True)
                 else:
-                    st.sidebar.page_link("pages/admin_system.py", label="System Monitoring", icon="📊")
+                    st.sidebar.page_link("pages/admin_system.py", label="System Monitoring", icon="🖥️")
             except ImportError:
                 # Fallback if shared_navigation not available
-                st.sidebar.page_link("pages/admin_system.py", label="System Monitoring", icon="📊")
+                st.sidebar.page_link("pages/admin_system.py", label="System Monitoring", icon="🖥️")
             
             # Logs link - check if migrated to Flask
             try:

@@ -8,7 +8,6 @@ import json
 
 from flask_auth_utils import get_user_email_flask
 from user_preferences import get_user_theme, get_user_currency, get_user_selected_fund, get_user_preference
-from app import get_navigation_context
 from streamlit_utils import (
     get_current_positions,
     get_trade_log,
@@ -28,6 +27,9 @@ dashboard_bp = Blueprint('dashboard', __name__)
 def dashboard_page():
     """Render the main dashboard page"""
     try:
+        # Lazy import to avoid circular dependency
+        from app import get_navigation_context
+        
         # Check V2 Preference
         v2_enabled = get_user_preference('v2_enabled', default=False)
         if not v2_enabled:

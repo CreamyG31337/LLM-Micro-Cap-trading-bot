@@ -283,9 +283,47 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
             available_funds = []
         
         # Check if user is admin
-        # Note: Only check if v2 is enabled - show admin menu if v2 is enabled
-        # Don't hide menu items for any other reason - let pages handle errors and authorization
-        is_admin_value = is_v2_enabled
+        # Note: We show admin menu items if user is authenticated, regardless of admin check result
+        # This prevents buggy admin checks from hiding menu items - let the pages handle authorization
+        is_admin_value = False
+        
+        try:
+            # Check if user is authenticated (has user_id or email)
+            user_is_authenticated = False
+            
+            if hasattr(request, 'user_id') and request.user_id:
+                user_is_authenticated = True
+            else:
+                # Try to get user_id from session/cookies
+                try:
+                    from flask_auth_utils import get_user_id_flask
+                    user_id = get_user_id_flask()
+                    if user_id:
+                        user_is_authenticated = True
+                except Exception:
+                    pass
+            
+            # If still not authenticated, check via email
+            if not user_is_authenticated:
+                try:
+                    from flask_auth_utils import get_user_email_flask
+                    if get_user_email_flask():
+                        user_is_authenticated = True
+                except Exception:
+                    pass
+            
+            # If user is authenticated, show admin menu (optimistic approach)
+            # Pages will handle actual authorization with @require_admin decorator
+            if user_is_authenticated:
+                is_admin_value = True
+        except Exception:
+            # If anything fails, default to showing menu if we can detect user is logged in
+            try:
+                from flask_auth_utils import get_user_email_flask
+                if get_user_email_flask():
+                    is_admin_value = True
+            except Exception:
+                pass
         
         return {
             'navigation_links': nav_links,

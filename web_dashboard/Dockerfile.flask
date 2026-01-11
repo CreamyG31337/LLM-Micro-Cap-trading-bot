@@ -40,7 +40,7 @@ COPY web_dashboard/src ./src
 
 # Build TypeScript (outputs to static/js/)
 RUN npm run build && \
-    ls -lh static/js/settings.js static/js/theme.js static/js/chart_theme_utils.js static/js/congress_trades.js static/js/ticker_details.js static/js/ai_assistant.js || \
+    ls -lh static/js/settings.js static/js/theme.js static/js/chart_theme_utils.js static/js/congress_trades.js static/js/ticker_details.js static/js/ai_assistant.js static/js/jobs.js || \
     (echo "ERROR: TypeScript build failed - output files not found" && exit 1)
 
 # Stage 2: Python app
@@ -84,7 +84,7 @@ COPY --from=frontend-builder /app/web_dashboard/static/css/tailwind.css ./web_da
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
 # Copy compiled TypeScript JavaScript files from builder stage
-# Copy all TypeScript-compiled files (6 files total)
+# Copy all TypeScript-compiled files (7 files total)
 # Other JS files are already copied via COPY . /app above, but we overwrite with compiled versions
 RUN mkdir -p web_dashboard/static/js
 COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js ./web_dashboard/static/js/settings.js
@@ -93,6 +93,7 @@ COPY --from=frontend-builder /app/web_dashboard/static/js/chart_theme_utils.js .
 COPY --from=frontend-builder /app/web_dashboard/static/js/congress_trades.js ./web_dashboard/static/js/congress_trades.js
 COPY --from=frontend-builder /app/web_dashboard/static/js/ticker_details.js ./web_dashboard/static/js/ticker_details.js
 COPY --from=frontend-builder /app/web_dashboard/static/js/ai_assistant.js ./web_dashboard/static/js/ai_assistant.js
+COPY --from=frontend-builder /app/web_dashboard/static/js/jobs.js ./web_dashboard/static/js/jobs.js
 # Note: Source maps are generated but not copied to reduce image size (optional for production)
 # Note: types.js is also compiled but not needed in browser (type-only file)
 RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: TypeScript compiled settings.js not found" && exit 1)
@@ -101,6 +102,7 @@ RUN test -f web_dashboard/static/js/chart_theme_utils.js || (echo "ERROR: TypeSc
 RUN test -f web_dashboard/static/js/congress_trades.js || (echo "ERROR: TypeScript compiled congress_trades.js not found" && exit 1)
 RUN test -f web_dashboard/static/js/ticker_details.js || (echo "ERROR: TypeScript compiled ticker_details.js not found" && exit 1)
 RUN test -f web_dashboard/static/js/ai_assistant.js || (echo "ERROR: TypeScript compiled ai_assistant.js not found" && exit 1)
+RUN test -f web_dashboard/static/js/jobs.js || (echo "ERROR: TypeScript compiled jobs.js not found" && exit 1)
 
 # Expose Flask port
 EXPOSE 5001

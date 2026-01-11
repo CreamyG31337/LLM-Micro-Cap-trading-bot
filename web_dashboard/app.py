@@ -2169,10 +2169,9 @@ def api_ticker_price_history():
         }), 500
 
 @cache_data(ttl=300)
-def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
-    """Get ticker chart with caching (300s TTL)"""
+def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
+    """Get ticker chart data with caching (300s TTL) - theme is applied separately"""
     from supabase_client import SupabaseClient
-    from user_preferences import get_user_theme
     
     if user_is_admin:
         supabase_client = SupabaseClient(use_service_role=True)
@@ -2188,13 +2187,7 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
     if price_df.empty:
         raise ValueError("No price data available")
     
-    # Get user theme preference (with fallback to 'system' if it fails)
-    try:
-        theme = get_user_theme() or 'system'
-    except Exception as e:
-        logger.warning(f"Error getting user theme, defaulting to 'system': {e}")
-        theme = 'system'
-    
+    # Create chart WITHOUT theme (theme applied after cache retrieval)
     from chart_utils import create_ticker_price_chart
     all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
     fig = create_ticker_price_chart(
@@ -2203,11 +2196,62 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
         show_benchmarks=all_benchmarks,
         show_weekend_shading=True,
         use_solid_lines=use_solid,
-        theme=theme
+        theme='light'  # Default theme for data generation, will be overridden
     )
     
     # Return as JSON string for caching
     return plotly.utils.PlotlyJSONEncoder().encode(fig)
+
+
+def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str], theme: Optional[str] = None):
+    """Get ticker chart with theme applied (not cached)"""
+    import json
+    
+    # Get cached chart data (without theme)
+    chart_json_str = _get_ticker_chart_data_cached(ticker, use_solid, user_is_admin, auth_token)
+    
+    # Parse the JSON
+    chart_data = json.loads(chart_json_str)
+    
+    # Determine theme to use
+    if not theme or theme not in ['dark', 'light']:
+        try:
+            from user_preferences import get_user_theme
+            user_theme = get_user_theme() or 'system'
+            theme = user_theme if user_theme in ['dark', 'light'] else 'light'
+        except Exception as e:
+            logger.warning(f"Error getting user theme, defaulting to 'light': {e}")
+            theme = 'light'
+    
+    # Apply theme to the chart data
+    from chart_utils import get_chart_theme_config
+    theme_config = get_chart_theme_config(theme)
+    
+    # Update template in layout
+    if 'layout' in chart_data:
+        chart_data['layout']['template'] = theme_config['template']
+        
+        # Update legend background if it exists
+        if 'legend' in chart_data['layout']:
+            chart_data['layout']['legend']['bgcolor'] = theme_config['legend_bg_color']
+        
+        # Update baseline line color if it exists in annotations
+        if 'shapes' in chart_data['layout']:
+            for shape in chart_data['layout']['shapes']:
+                if shape.get('type') == 'line' and shape.get('y0') == shape.get('y1'):
+                    # This is likely the baseline hline
+                    if 'line' in shape:
+                        shape['line']['color'] = theme_config['baseline_line_color']
+    
+    # Update weekend shading colors in layout shapes
+    if 'layout' in chart_data and 'shapes' in chart_data['layout']:
+        for shape in chart_data['layout']['shapes']:
+            if shape.get('type') == 'rect' and 'fillcolor' in shape:
+                # This is likely weekend shading
+                shape['fillcolor'] = theme_config['weekend_shading_color']
+    
+    # Return as JSON string
+    return json.dumps(chart_data)
 
 @app.route('/api/v2/ticker/chart')
 @require_auth
@@ -2221,11 +2265,13 @@ def api_ticker_chart():
             return jsonify({"error": "Ticker symbol is required"}), 400
         
         use_solid = request.args.get('use_solid', 'false').lower() == 'true'
+        # Get theme from request (client detects actual page theme)
+        client_theme = request.args.get('theme', '').strip().lower()
         user_is_admin = is_admin()
         auth_token = request.cookies.get('auth_token')
         
-        # Get chart (cached)
-        chart_json = _get_ticker_chart_cached(ticker, use_solid, user_is_admin, auth_token)
+        # Get chart (cached) - use client theme if valid, otherwise fall back to user preference
+        chart_json = _get_ticker_chart_cached(ticker, use_solid, user_is_admin, auth_token, theme=client_theme if client_theme in ['dark', 'light'] else None)
         return Response(chart_json, mimetype='application/json')
     except Exception as e:
         logger.error(f"Error generating chart for {ticker}: {e}", exc_info=True)

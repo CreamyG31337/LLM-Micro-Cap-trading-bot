@@ -263,7 +263,30 @@ async function loadAndRenderChart(ticker, useSolid) {
     document.getElementById('chart-section').classList.remove('section-hidden');
     
     try {
-        const response = await fetch(`/api/v2/ticker/chart?ticker=${encodeURIComponent(ticker)}&use_solid=${useSolid}`, {
+        // Detect actual theme from page
+        const htmlElement = document.documentElement;
+        const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+        let theme = 'light'; // default
+        
+        if (dataTheme === 'dark') {
+            theme = 'dark';
+        } else if (dataTheme === 'light') {
+            theme = 'light';
+        } else if (dataTheme === 'system') {
+            // For 'system', check if page is actually in dark mode via CSS
+            const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+            // Check for dark mode background colors
+            const isDark = bodyBg && (
+                bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+                bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+                bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+            );
+            theme = isDark ? 'dark' : 'light';
+        }
+        
+        console.log('Detected theme:', theme, 'from data-theme:', dataTheme);
+        
+        const response = await fetch(`/api/v2/ticker/chart?ticker=${encodeURIComponent(ticker)}&use_solid=${useSolid}&theme=${encodeURIComponent(theme)}`, {
             credentials: 'include'
         });
         
@@ -298,11 +321,12 @@ async function loadAndRenderChart(ticker, useSolid) {
             throw new Error('Invalid chart data received from server');
         }
         
-        // Hide loading indicator
-        chartLoading.classList.add('section-hidden');
-        
         // Render with Plotly
         Plotly.newPlot('chart-container', chartData.data, chartData.layout, {responsive: true});
+        
+        // Hide loading indicator AFTER successful rendering
+        chartLoading.classList.add('section-hidden');
+        chartLoading.style.display = 'none';
         
         // Load price history for metrics
         loadPriceHistoryMetrics(ticker);

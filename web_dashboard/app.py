@@ -6,7 +6,7 @@ A Flask web app to display trading bot portfolio performance using Supabase
 
 # Check critical dependencies first
 try:
-    from flask import Flask, render_template, jsonify, request, redirect, url_for, session
+    from flask import Flask, render_template, jsonify, request, redirect, url_for, session, Response
 except ImportError as e:
     print(f"❌ ERROR: {e}")
     print("🔔 SOLUTION: Activate the virtual environment first!")
@@ -2012,7 +2012,12 @@ def api_ticker_list():
         return jsonify({"tickers": tickers})
     except Exception as e:
         logger.error(f"Error fetching ticker list: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "type": type(e).__name__
+        }), 500
 
 @cache_data(ttl=300)
 def _get_ticker_info_cached(ticker: str, user_is_admin: bool, auth_token: Optional[str]):
@@ -2156,7 +2161,12 @@ def api_ticker_price_history():
         return jsonify({"data": price_df.to_dict('records')})
     except Exception as e:
         logger.error(f"Error fetching price history: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "type": type(e).__name__
+        }), 500
 
 @cache_data(ttl=300)
 def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
@@ -2207,10 +2217,15 @@ def api_ticker_chart():
         
         # Get chart (cached)
         chart_json = _get_ticker_chart_cached(ticker, use_solid, user_is_admin, auth_token)
-        return Response(graph_json, mimetype='application/json')
+        return Response(chart_json, mimetype='application/json')
     except Exception as e:
         logger.error(f"Error generating chart for {ticker}: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "type": type(e).__name__
+        }), 500
 
 @app.route('/api/v2/ticker/external-links')
 @require_auth
@@ -2229,7 +2244,12 @@ def api_ticker_external_links():
         return jsonify(links)
     except Exception as e:
         logger.error(f"Error fetching external links for {ticker}: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "type": type(e).__name__
+        }), 500
 
 @app.route('/api/v2/ai/search', methods=['POST'])
 @require_auth

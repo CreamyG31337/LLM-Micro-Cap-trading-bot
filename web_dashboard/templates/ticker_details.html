@@ -18,6 +18,13 @@
         margin: 20px auto;
     }
 
+    #chart-loading {
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
     @keyframes spin {
         0% {
             transform: rotate(0deg);
@@ -184,6 +191,7 @@
     <div class="mb-2 text-sm text-gray-500 md:hidden">
         💡 Tip: Rotate your device for better viewing
     </div>
+    <div id="chart-loading" class="loading-spinner section-hidden"></div>
     <div id="chart-container" class="overflow-x-auto"></div>
     <div id="chart-metrics" class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
         <div class="metric-card">

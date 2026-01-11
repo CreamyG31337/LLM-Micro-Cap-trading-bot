@@ -251,6 +251,17 @@ function renderPortfolioData(portfolioData) {
 
 // Load and render chart
 async function loadAndRenderChart(ticker, useSolid) {
+    // Show loading indicator
+    const chartLoading = document.getElementById('chart-loading');
+    const chartContainer = document.getElementById('chart-container');
+    
+    // Clear any existing chart
+    chartContainer.innerHTML = '';
+    chartLoading.classList.remove('section-hidden');
+    
+    // Show chart section (but with loading indicator)
+    document.getElementById('chart-section').classList.remove('section-hidden');
+    
     try {
         const response = await fetch(`/api/v2/ticker/chart?ticker=${encodeURIComponent(ticker)}&use_solid=${useSolid}`, {
             credentials: 'include'
@@ -263,16 +274,18 @@ async function loadAndRenderChart(ticker, useSolid) {
         
         const chartData = await response.json();
         
+        // Hide loading indicator
+        chartLoading.classList.add('section-hidden');
+        
         // Render with Plotly
         Plotly.newPlot('chart-container', chartData.data, chartData.layout, {responsive: true});
-        
-        // Show chart section
-        document.getElementById('chart-section').classList.remove('section-hidden');
         
         // Load price history for metrics
         loadPriceHistoryMetrics(ticker);
     } catch (error) {
         console.error('Error loading chart:', error);
+        // Hide loading indicator
+        chartLoading.classList.add('section-hidden');
         // Hide chart section on error
         document.getElementById('chart-section').classList.add('section-hidden');
     }

@@ -2169,8 +2169,8 @@ def api_ticker_price_history():
         }), 500
 
 @cache_data(ttl=300)
-def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
-    """Get ticker chart data with caching (300s TTL) - theme is applied separately"""
+def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str], theme: str = 'light'):
+    """Get ticker chart data with caching (300s TTL) - theme is part of cache key"""
     from supabase_client import SupabaseClient
     
     if user_is_admin:
@@ -2187,7 +2187,7 @@ def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: b
     if price_df.empty:
         raise ValueError("No price data available")
     
-    # Create chart WITHOUT theme (theme applied after cache retrieval)
+    # Create chart WITH theme - theme is part of cache key so each theme has separate cache
     from chart_utils import create_ticker_price_chart
     all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
     fig = create_ticker_price_chart(
@@ -2196,7 +2196,7 @@ def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: b
         show_benchmarks=all_benchmarks,
         show_weekend_shading=True,
         use_solid_lines=use_solid,
-        theme='light'  # Default theme for data generation, will be overridden
+        theme=theme
     )
     
     # Return as JSON string for caching
@@ -2204,15 +2204,7 @@ def _get_ticker_chart_data_cached(ticker: str, use_solid: bool, user_is_admin: b
 
 
 def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str], theme: Optional[str] = None):
-    """Get ticker chart with theme applied (not cached)"""
-    import json
-    
-    # Get cached chart data (without theme)
-    chart_json_str = _get_ticker_chart_data_cached(ticker, use_solid, user_is_admin, auth_token)
-    
-    # Parse the JSON
-    chart_data = json.loads(chart_json_str)
-    
+    """Get ticker chart with correct theme (cached per theme)"""
     # Determine theme to use
     if not theme or theme not in ['dark', 'light']:
         try:
@@ -2223,35 +2215,8 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
             logger.warning(f"Error getting user theme, defaulting to 'light': {e}")
             theme = 'light'
     
-    # Apply theme to the chart data
-    from chart_utils import get_chart_theme_config
-    theme_config = get_chart_theme_config(theme)
-    
-    # Update template in layout
-    if 'layout' in chart_data:
-        chart_data['layout']['template'] = theme_config['template']
-        
-        # Update legend background if it exists
-        if 'legend' in chart_data['layout']:
-            chart_data['layout']['legend']['bgcolor'] = theme_config['legend_bg_color']
-        
-        # Update baseline line color if it exists in annotations
-        if 'shapes' in chart_data['layout']:
-            for shape in chart_data['layout']['shapes']:
-                if shape.get('type') == 'line' and shape.get('y0') == shape.get('y1'):
-                    # This is likely the baseline hline
-                    if 'line' in shape:
-                        shape['line']['color'] = theme_config['baseline_line_color']
-    
-    # Update weekend shading colors in layout shapes
-    if 'layout' in chart_data and 'shapes' in chart_data['layout']:
-        for shape in chart_data['layout']['shapes']:
-            if shape.get('type') == 'rect' and 'fillcolor' in shape:
-                # This is likely weekend shading
-                shape['fillcolor'] = theme_config['weekend_shading_color']
-    
-    # Return as JSON string
-    return json.dumps(chart_data)
+    # Get cached chart data WITH theme (theme is part of cache key)
+    return _get_ticker_chart_data_cached(ticker, use_solid, user_is_admin, auth_token, theme)
 
 @app.route('/api/v2/ticker/chart')
 @require_auth

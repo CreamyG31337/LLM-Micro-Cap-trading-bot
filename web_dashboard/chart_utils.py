@@ -89,7 +89,7 @@ def get_chart_theme_config(theme: Optional[str] = 'system') -> Dict[str, any]:
     return {
         'is_dark': is_dark,
         'template': 'plotly_dark' if is_dark else 'plotly_white',
-        'weekend_shading_color': "rgba(200, 200, 200, 0.15)" if is_dark else "rgba(128, 128, 128, 0.1)",
+        'weekend_shading_color': "rgba(50, 50, 50, 0.3)" if is_dark else "rgba(128, 128, 128, 0.1)",
         'baseline_line_color': "rgba(200, 200, 200, 0.7)" if is_dark else "gray",
         'legend_bg_color': "rgba(31, 41, 55, 0.8)" if is_dark else "rgba(255, 255, 255, 0.8)"
     }

@@ -2063,11 +2063,11 @@ def api_admin_revoke_admin():
             if isinstance(result_data, list) and len(result_data) > 0:
                 result_data = result_data[0]
             
-        if result_data and result_data.get('success'):
-            # Clear cache
-            if cache:
-                cache.delete_memoized(_get_cached_users_flask)
-            return jsonify(result_data), 200
+            if result_data and result_data.get('success'):
+                # Clear cache
+                if cache:
+                    cache.delete_memoized(_get_cached_users_flask)
+                return jsonify(result_data), 200
             else:
                 return jsonify(result_data or {"error": "Failed to revoke admin role"}), 400
         else:
@@ -2104,11 +2104,11 @@ def api_admin_delete_user():
         
         if response.status_code == 200:
             result_data = response.json()
-        if result_data and result_data.get('success'):
-            # Clear cache
-            if cache:
-                cache.delete_memoized(_get_cached_users_flask)
-            return jsonify(result_data), 200
+            if result_data and result_data.get('success'):
+                # Clear cache
+                if cache:
+                    cache.delete_memoized(_get_cached_users_flask)
+                return jsonify(result_data), 200
             else:
                 return jsonify(result_data or {"error": "Failed to delete user"}), 400
         else:

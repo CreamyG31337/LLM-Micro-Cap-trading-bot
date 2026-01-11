@@ -124,28 +124,53 @@ def _get_cache():
     global _cache_instance, _simple_cache
     
     if FLASK_CACHING_AVAILABLE:
-        if _cache_instance is None:
-            try:
-                if has_app_context():
-                    # Try to get from Flask app config
-                    _cache_instance = current_app.extensions.get('cache')
-                    if _cache_instance is None:
-                        # Initialize Flask-Caching with SimpleCache backend
-                        _cache_instance = Cache(config={'CACHE_TYPE': 'SimpleCache'})
-                        _cache_instance.init_app(current_app)
-                        current_app.extensions['cache'] = _cache_instance
-                else:
-                    # Not in app context, use simple cache
-                    if _simple_cache is None:
-                        _simple_cache = SimpleCache()
-                    return _simple_cache
-            except Exception as e:
-                logger.warning(f"Failed to initialize Flask-Caching: {e}. Using simple cache.")
+        try:
+            if has_app_context():
+                # Try to import cache from app module (safest approach)
+                # This avoids issues with Flask-Caching's internal storage mechanism
+                try:
+                    # Use importlib to avoid circular import issues
+                    import importlib
+                    app_module = importlib.import_module('web_dashboard.app')
+                    if hasattr(app_module, 'cache') and app_module.cache is not None:
+                        return app_module.cache
+                except (ImportError, AttributeError, ModuleNotFoundError) as e:
+                    logger.debug(f"Could not import cache from app module: {e}")
+                
+                # Fallback: Try to get from extensions
+                # Flask-Caching stores cache backend in app.extensions['cache'] as a dict
+                # where the Cache instance is the key
+                cache_ext = current_app.extensions.get('cache')
+                if cache_ext is not None:
+                    # Flask-Caching stores as {Cache_instance: backend_cache}
+                    # We need to get the Cache instance (which is the key)
+                    if hasattr(cache_ext, 'keys'):
+                        try:
+                            # Get the first key, which is the Cache instance
+                            cache_keys = list(cache_ext.keys())
+                            if cache_keys:
+                                return cache_keys[0]
+                        except (TypeError, AttributeError):
+                            pass
+                    # If it's already a Cache instance (shouldn't happen but handle it)
+                    elif isinstance(cache_ext, Cache):
+                        return cache_ext
+                
+                # Last resort: Initialize new cache instance
+                logger.warning("Cache not found in extensions, initializing new Flask-Caching instance")
+                _cache_instance = Cache(config={'CACHE_TYPE': 'SimpleCache'})
+                _cache_instance.init_app(current_app)
+                return _cache_instance
+            else:
+                # Not in app context, use simple cache
                 if _simple_cache is None:
                     _simple_cache = SimpleCache()
                 return _simple_cache
-        
-        return _cache_instance
+        except Exception as e:
+            logger.warning(f"Failed to get Flask-Caching instance: {e}. Using simple cache.")
+            if _simple_cache is None:
+                _simple_cache = SimpleCache()
+            return _simple_cache
     else:
         # Flask-Caching not available, use simple cache
         if _simple_cache is None:
@@ -331,6 +356,7 @@ def cache_resource():
             result = func(*args, **kwargs)
             
             # Store in cache without TTL (cached forever until manually cleared)
+            # Flask-Caching: timeout=None means no expiration
             cache.set(cache_key, result, timeout=None)
             
             return result

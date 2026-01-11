@@ -85,7 +85,8 @@ try:
         'CACHE_DEFAULT_TIMEOUT': 300,  # Default 5 minutes
     })
     cache.init_app(app)
-    app.extensions['cache'] = cache
+    # NOTE: Don't manually set app.extensions['cache'] - Flask-Caching handles this internally
+    # Flask-Caching stores the cache backend in a special way that we shouldn't overwrite
     logger.info("Flask-Caching initialized successfully")
 except ImportError:
     logger.warning("Flask-Caching not available. Using fallback cache from flask_cache_utils.")

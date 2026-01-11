@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "TypeScript build configuration for web dashboard",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --pretty --listFiles --diagnostics",
     "watch": "tsc --watch",
     "clean": "rm -rf static/js/*.js static/js/*.js.map"
   },

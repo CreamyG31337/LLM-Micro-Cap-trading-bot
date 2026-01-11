@@ -5,7 +5,7 @@
   "scripts": {
     "build:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --minify",
     "watch:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --watch",
-    "build:ts": "tsc -p web_dashboard/tsconfig.json",
+    "build:ts": "tsc -p web_dashboard/tsconfig.json --pretty --listFiles --diagnostics",
     "build": "npm run build:css && npm run build:ts"
   },
   "devDependencies": {

@@ -26,7 +26,14 @@ COPY web_dashboard/src ./web_dashboard/src
 # Ensure output directories exist and build with error handling
 RUN mkdir -p web_dashboard/static/css web_dashboard/static/js && \
     npm run build:css && \
-    npm run build:ts && \
+    echo "=== TypeScript Compilation Starting ===" && \
+    npm run build:ts || \
+    (echo "=== TypeScript Compilation Failed ===" && \
+     echo "Showing compilation diagnostics:" && \
+     (cd web_dashboard && npx tsc --diagnostics 2>&1 || true) && \
+     echo "=== Full TypeScript Error Output ===" && \
+     exit 1) && \
+    echo "=== TypeScript Compilation Successful ===" && \
     ls -lh web_dashboard/static/css/tailwind.css || \
     (echo "ERROR: Tailwind CSS build failed - output file not found" && exit 1)
 

@@ -130,14 +130,17 @@
             <select id="theme-select"
                 class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 <option value="system">System Default</option>
-                <option value="dark">Dark Mode</option>
                 <option value="light">Light Mode</option>
+                <option value="dark">Dark Mode</option>
+                <option value="midnight-tokyo">Midnight Tokyo (Neon)</option>
+                <option value="abyss">Abyss (Ocean)</option>
             </select>
         </div>
 
         <div id="theme-preview" class="text-sm text-gray-500 mb-4"></div>
         <div id="theme-success" class="success-message" style="display: none;">✅ Theme saved successfully!</div>
-        <div id="theme-error" class="error-message" style="display: none;">❌ Failed to save theme. Please try again.</div>
+        <div id="theme-error" class="error-message" style="display: none;">❌ Failed to save theme. Please try again.
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -199,12 +202,12 @@
                         const data = await response.json().catch(() => ({}));
                         throw new Error(data.error || `HTTP ${response.status}`);
                     }
-                    
+
                     const data = await response.json();
                     if (!data.success) {
                         throw new Error(data.error || 'Failed to update');
                     }
-                    
+
                     // Reload page to update navigation menu immediately
                     window.location.reload();
                 } catch (error) {
@@ -233,8 +236,12 @@
             preview.textContent = 'ℹ️ Theme will follow your browser/OS dark mode setting';
         } else if (theme === 'dark') {
             preview.textContent = '🌙 Dark mode will be forced on';
-        } else {
+        } else if (theme === 'light') {
             preview.textContent = '☀️ Light mode will be forced on';
+        } else if (theme === 'midnight-tokyo') {
+            preview.textContent = '🌃 Cyberpunk neon theme';
+        } else if (theme === 'abyss') {
+            preview.textContent = '🌊 Deep ocean void theme';
         }
     }
 

@@ -1558,10 +1558,14 @@ def api_logs_application():
         try:
             all_logs = _get_cached_application_logs(level_filter, search, exclude_modules if exclude_modules else None)
         except Exception as cache_error:
-            logger.error(f"Error in _get_cached_application_logs: {cache_error}", exc_info=True)
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return jsonify({'error': f'Failed to fetch logs: {str(cache_error)}'}), 500
+            tb = traceback.format_exc()
+            logger.error(f"Error in _get_cached_application_logs: {cache_error}", exc_info=True)
+            return jsonify({
+                'error': f'Failed to fetch logs: {str(cache_error)}',
+                'traceback': tb,
+                'exception_type': type(cache_error).__name__
+            }), 500
         
         # Pagination
         total = len(all_logs)
@@ -1597,11 +1601,15 @@ def api_logs_application():
         })
         
     except Exception as e:
-        logger.error(f"Error fetching logs: {e}", exc_info=True)
         import traceback
-        error_traceback = traceback.format_exc()
-        logger.error(f"Full traceback: {error_traceback}")
-        return jsonify({'error': str(e), 'traceback': error_traceback}), 500
+        tb = traceback.format_exc()
+        logger.error(f"Error fetching logs: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'traceback': tb,
+            'exception_type': type(e).__name__,
+            'message': str(e)
+        }), 500
 
 @app.route('/api/logs/ollama')
 @require_admin
@@ -1664,8 +1672,14 @@ def api_logs_ollama():
         })
         
     except Exception as e:
-        logger.error(f"Error fetching Ollama logs: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Error fetching Ollama logs: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'traceback': tb,
+            'exception_type': type(e).__name__
+        }), 500
 
 @app.route('/api/logs/clear', methods=['POST'])
 @require_admin

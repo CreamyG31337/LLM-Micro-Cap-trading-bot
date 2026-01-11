@@ -288,7 +288,12 @@ def cache_data(ttl: Optional[int] = None, show_spinner: bool = False, use_market
             
             # Try to get from cache
             cache = _get_cache()
-            cached_value = cache.get(cache_key)
+            # Flask-Caching: use cache.get() which returns None if not found
+            try:
+                cached_value = cache.get(cache_key)
+            except Exception as cache_error:
+                logger.warning(f"Cache get error for {func.__name__}: {cache_error}", exc_info=True)
+                cached_value = None
             
             if cached_value is not None:
                 logger.debug(f"Cache hit for {func.__name__} with key {cache_key[:16]}...")
@@ -299,7 +304,11 @@ def cache_data(ttl: Optional[int] = None, show_spinner: bool = False, use_market
             result = func(*args, **kwargs)
             
             # Store in cache
-            cache.set(cache_key, result, timeout=effective_ttl)
+            try:
+                cache.set(cache_key, result, timeout=effective_ttl)
+            except Exception as cache_error:
+                logger.warning(f"Cache set error for {func.__name__}: {cache_error}", exc_info=True)
+                # Continue without caching if cache.set fails
             
             return result
         
@@ -324,7 +333,7 @@ def cache_data(ttl: Optional[int] = None, show_spinner: bool = False, use_market
     return decorator
 
 
-def cache_resource():
+def cache_resource(func: Optional[Callable] = None):
     """
     Decorator for caching resources (similar to @st.cache_resource).
     Resources are cached for the application lifetime (no TTL).
@@ -334,52 +343,69 @@ def cache_resource():
         def get_database_client():
             return DatabaseClient()
     """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Extract cache_version from kwargs if present
-            cache_version = kwargs.pop('_cache_version', None)
-            
-            # Generate cache key
-            cache_key = _make_cache_key(func.__name__, args, kwargs, cache_version)
-            
-            # Try to get from cache
-            cache = _get_cache()
+    # Support both @cache_resource and @cache_resource() syntax
+    if func is None:
+        # Called as @cache_resource() - return decorator factory
+        def decorator_factory(f: Callable) -> Callable:
+            return _cache_resource_impl(f)
+        return decorator_factory
+    else:
+        # Called as @cache_resource - apply decorator directly
+        return _cache_resource_impl(func)
+
+def _cache_resource_impl(func: Callable) -> Callable:
+    """Internal implementation of cache_resource decorator."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Extract cache_version from kwargs if present
+        cache_version = kwargs.pop('_cache_version', None)
+        
+        # Generate cache key
+        cache_key = _make_cache_key(func.__name__, args, kwargs, cache_version)
+        
+        # Try to get from cache
+        cache = _get_cache()
+        try:
             cached_value = cache.get(cache_key)
-            
-            if cached_value is not None:
-                logger.debug(f"Resource cache hit for {func.__name__} with key {cache_key[:16]}...")
-                return cached_value
-            
-            # Cache miss - execute function
-            logger.debug(f"Resource cache miss for {func.__name__} with key {cache_key[:16]}...")
-            result = func(*args, **kwargs)
-            
-            # Store in cache without TTL (cached forever until manually cleared)
-            # Flask-Caching: timeout=None means no expiration
+        except Exception as cache_error:
+            logger.warning(f"Cache get error for {func.__name__}: {cache_error}", exc_info=True)
+            cached_value = None
+        
+        if cached_value is not None:
+            logger.debug(f"Resource cache hit for {func.__name__} with key {cache_key[:16]}...")
+            return cached_value
+        
+        # Cache miss - execute function
+        logger.debug(f"Resource cache miss for {func.__name__} with key {cache_key[:16]}...")
+        result = func(*args, **kwargs)
+        
+        # Store in cache without TTL (cached forever until manually cleared)
+        # Flask-Caching: timeout=None means no expiration
+        try:
             cache.set(cache_key, result, timeout=None)
-            
-            return result
+        except Exception as cache_error:
+            logger.warning(f"Cache set error for {func.__name__}: {cache_error}", exc_info=True)
+            # Continue without caching if cache.set fails
         
-        # Add cache clearing methods
-        def clear_cache(*args, **kwargs):
-            """Clear cache for this resource with specific arguments."""
-            cache_version = kwargs.pop('_cache_version', None)
-            cache_key = _make_cache_key(func.__name__, args, kwargs, cache_version)
-            cache = _get_cache()
-            cache.delete(cache_key)
-        
-        def clear_all_cache():
-            """Clear all cache entries for this resource."""
-            cache = _get_cache()
-            cache.clear()
-        
-        wrapper.clear_cache = clear_cache
-        wrapper.clear_all_cache = clear_all_cache
-        
-        return wrapper
+        return result
     
-    return decorator
+    # Add cache clearing methods
+    def clear_cache(*args, **kwargs):
+        """Clear cache for this resource with specific arguments."""
+        cache_version = kwargs.pop('_cache_version', None)
+        cache_key = _make_cache_key(func.__name__, args, kwargs, cache_version)
+        cache = _get_cache()
+        cache.delete(cache_key)
+    
+    def clear_all_cache():
+        """Clear all cache entries for this resource."""
+        cache = _get_cache()
+        cache.clear()
+    
+    wrapper.clear_cache = clear_cache
+    wrapper.clear_all_cache = clear_all_cache
+    
+    return wrapper
 
 
 def clear_all_caches():

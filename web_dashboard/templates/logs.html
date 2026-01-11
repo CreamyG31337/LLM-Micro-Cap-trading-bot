@@ -135,7 +135,7 @@
     <div id="logs-container" class="log-container hidden"></div>
     <div id="error-message" class="hidden text-center py-8 text-red-500">
         <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
-        <p id="error-text"></p>
+        <pre id="error-text" class="text-left bg-red-50 p-4 rounded border border-red-200 overflow-auto max-h-96 whitespace-pre-wrap font-mono text-sm"></pre>
     </div>
 </div>
 </div>
@@ -203,7 +203,7 @@
     <div id="logs-container-ollama" class="log-container hidden"></div>
     <div id="error-message-ollama" class="hidden text-center py-8 text-red-500">
         <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
-        <p id="error-text-ollama"></p>
+        <pre id="error-text-ollama" class="text-left bg-red-50 p-4 rounded border border-red-200 overflow-auto max-h-96 whitespace-pre-wrap font-mono text-sm"></pre>
     </div>
 </div>
 </div>
@@ -238,9 +238,20 @@
             document.getElementById('error-message').classList.add('hidden');
 
             const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch logs');
-
             const data = await response.json();
+            
+            if (!response.ok) {
+                // Show full error with traceback
+                let errorMsg = `HTTP ${response.status}: ${data.error || 'Failed to fetch logs'}`;
+                if (data.traceback) {
+                    errorMsg += `\n\nStack Trace:\n${data.traceback}`;
+                }
+                if (data.exception_type) {
+                    errorMsg += `\n\nException Type: ${data.exception_type}`;
+                }
+                throw new Error(errorMsg);
+            }
+
             displayLogs(data);
 
             document.getElementById('loading').classList.add('hidden');
@@ -248,7 +259,12 @@
         } catch (error) {
             document.getElementById('loading').classList.add('hidden');
             document.getElementById('error-message').classList.remove('hidden');
-            document.getElementById('error-text').textContent = error.message;
+            // Show full error message including stack trace
+            const errorText = error.message || String(error);
+            document.getElementById('error-text').textContent = errorText;
+            // Also log to console for debugging
+            console.error('Logs fetch error:', error);
+            console.error('Full error details:', error);
         }
     }
 
@@ -264,9 +280,19 @@
             document.getElementById('error-message-ollama').classList.add('hidden');
 
             const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch Ollama logs');
-
             const data = await response.json();
+            
+            if (!response.ok) {
+                // Show full error with traceback
+                let errorMsg = `HTTP ${response.status}: ${data.error || 'Failed to fetch Ollama logs'}`;
+                if (data.traceback) {
+                    errorMsg += `\n\nStack Trace:\n${data.traceback}`;
+                }
+                if (data.exception_type) {
+                    errorMsg += `\n\nException Type: ${data.exception_type}`;
+                }
+                throw new Error(errorMsg);
+            }
             
             if (data.error) {
                 document.getElementById('loading-ollama').classList.add('hidden');
@@ -282,7 +308,9 @@
         } catch (error) {
             document.getElementById('loading-ollama').classList.add('hidden');
             document.getElementById('error-message-ollama').classList.remove('hidden');
-            document.getElementById('error-text-ollama').textContent = error.message;
+            const errorText = error.message || String(error);
+            document.getElementById('error-text-ollama').textContent = errorText;
+            console.error('Ollama logs fetch error:', error);
         }
     }
 

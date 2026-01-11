@@ -84,11 +84,11 @@ COPY --from=frontend-builder /app/web_dashboard/static/css/tailwind.css ./web_da
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
 # Copy compiled TypeScript JavaScript files from builder stage
-# Only copy the TypeScript-compiled files (settings.js and its source map)
+# Only copy the TypeScript-compiled files (settings.js - source map is optional for production)
 # Other JS files (ai_assistant.js, etc.) are already copied via COPY . /app above
 RUN mkdir -p web_dashboard/static/js
 COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js ./web_dashboard/static/js/settings.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js.map ./web_dashboard/static/js/settings.js.map 2>/dev/null || true
+# Note: Source maps are generated but not copied to reduce image size (optional for production)
 RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: TypeScript compiled settings.js not found" && exit 1)
 
 # Expose Flask port

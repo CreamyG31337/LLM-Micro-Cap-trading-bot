@@ -13,6 +13,7 @@ from datetime import datetime
 
 from supabase_client import SupabaseClient
 from flask_auth_utils import get_user_id_flask
+from flask_cache_utils import cache_data
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,9 @@ def get_supabase_client_flask() -> Optional[SupabaseClient]:
         return None
 
 
+@cache_data(ttl=300)
 def get_available_funds_flask() -> List[str]:
-    """Get list of available funds for current Flask user"""
+    """Get list of available funds for current Flask user (cached 5min)"""
     try:
         user_id = get_user_id_flask()
         if not user_id:
@@ -72,8 +74,15 @@ def get_available_funds_flask() -> List[str]:
         return []
 
 
-def get_current_positions_flask(fund: Optional[str] = None) -> pd.DataFrame:
-    """Get current positions for Flask (no Streamlit cache)"""
+@cache_data(ttl=300)
+def get_current_positions_flask(fund: Optional[str] = None, _cache_version: Optional[str] = None) -> pd.DataFrame:
+    """Get current positions for Flask (cached 5min, with cache_version support)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
     client = get_supabase_client_flask()
     if not client:
         return pd.DataFrame()
@@ -116,8 +125,15 @@ def get_current_positions_flask(fund: Optional[str] = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def get_trade_log_flask(limit: int = 1000, fund: Optional[str] = None) -> pd.DataFrame:
-    """Get trade log for Flask (no caching)"""
+@cache_data(ttl=None)  # Cache forever - historical trades don't change
+def get_trade_log_flask(limit: int = 1000, fund: Optional[str] = None, _cache_version: Optional[str] = None) -> pd.DataFrame:
+    """Get trade log for Flask (cached forever, with cache_version support)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
     client = get_supabase_client_flask()
     if not client:
         return pd.DataFrame()
@@ -139,8 +155,15 @@ def get_trade_log_flask(limit: int = 1000, fund: Optional[str] = None) -> pd.Dat
         return pd.DataFrame()
 
 
-def get_cash_balances_flask(fund: Optional[str] = None) -> Dict[str, float]:
-    """Get cash balances by currency for Flask"""
+@cache_data(ttl=300)
+def get_cash_balances_flask(fund: Optional[str] = None, _cache_version: Optional[str] = None) -> Dict[str, float]:
+    """Get cash balances by currency for Flask (cached 5min, with cache_version support)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
     client = get_supabase_client_flask()
     if not client:
         return {"CAD": 0.0, "USD": 0.0}
@@ -187,8 +210,9 @@ def get_cash_balances_flask(fund: Optional[str] = None) -> Dict[str, float]:
         return {"CAD": 0.0, "USD": 0.0}
 
 
+@cache_data(ttl=3600)  # Cache for 1 hour - thesis changes infrequently
 def get_fund_thesis_data_flask(fund_name: str) -> Optional[Dict[str, Any]]:
-    """Get thesis data for a fund from the database view (Flask version)"""
+    """Get thesis data for a fund from the database view (Flask version, cached 1hr)"""
     client = get_supabase_client_flask()
     if not client:
         return None
@@ -247,12 +271,19 @@ def calculate_performance_metrics_flask(fund: Optional[str] = None) -> Dict[str,
     }
 
 
-def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = None) -> pd.DataFrame:
-    """Calculate portfolio value over time (Flask version - simplified)
+@cache_data(ttl=300)
+def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = None, _cache_version: Optional[str] = None) -> pd.DataFrame:
+    """Calculate portfolio value over time (Flask version - simplified, cached 5min)
     
     This is a simplified version that returns basic data.
     The full implementation with currency conversion would need more work.
     """
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
     client = get_supabase_client_flask()
     if not client:
         return pd.DataFrame()

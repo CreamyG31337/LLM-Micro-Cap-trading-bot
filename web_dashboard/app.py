@@ -34,6 +34,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 import requests
 from flask_cors import CORS
+from flask_cache_utils import cache_data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -93,11 +94,8 @@ except ImportError:
 # Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
 
-# Global cache for AI context data to avoid re-fetching on every toggle
-# Key: (user_id, fund_name), Value: {'timestamp': datetime, 'data': dict}
-# NOTE: Consider migrating to flask_cache_utils.cache_data() decorator
-CONTEXT_DATA_CACHE = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes
+# NOTE: CONTEXT_DATA_CACHE removed - now using flask_cache_utils.cache_data() decorator
+# See _get_context_data_packet() function for cached context building
 
 # Global error handler to expose tracebacks in response
 @app.errorhandler(500)
@@ -1465,13 +1463,59 @@ def logs_page():
                              user_theme=user_theme,
                              **nav_context)
 
+@cache_data(ttl=5)
+def _get_cached_application_logs(level_filter, search, exclude_modules):
+    """Get application logs with caching (5s TTL for near real-time)"""
+    from log_handler import read_logs_from_file
+    
+    # Get all filtered logs
+    all_logs = read_logs_from_file(
+        n=None,
+        level=level_filter,
+        search=search if search else None,
+        return_all=True,
+        exclude_modules=exclude_modules if exclude_modules else None
+    )
+    
+    # Reverse for newest first
+    return list(reversed(all_logs))
+
+@cache_data(ttl=5)
+def _get_cached_ollama_log_lines():
+    """Get Ollama log lines with caching (5s TTL for near real-time)"""
+    from pathlib import Path
+    
+    log_file = Path(__file__).parent / 'logs' / 'ollama.log'
+    
+    if not log_file.exists():
+        return []
+    
+    try:
+        # Read up to 5MB from end for efficiency
+        file_size = log_file.stat().st_size
+        if file_size == 0:
+            return []
+        
+        buffer_size = min(5 * 1024 * 1024, file_size)
+        with open(log_file, 'rb') as f:
+            f.seek(max(0, file_size - buffer_size))
+            buffer = f.read().decode('utf-8', errors='ignore')
+        
+        lines = buffer.split('\n')
+        if file_size > buffer_size:
+            lines = lines[1:]  # Skip first partial line
+        
+        # Reverse for newest first
+        return list(reversed(lines))
+    except Exception as e:
+        logger.error(f"Error reading Ollama log file: {e}")
+        return []
+
 @app.route('/api/logs/application')
 @require_admin
 def api_logs_application():
     """Get application logs with filtering"""
     try:
-        from log_handler import read_logs_from_file
-        
         # Get query parameters
         level = request.args.get('level', 'INFO + ERROR')
         limit = int(request.args.get('limit', 100))
@@ -1492,17 +1536,8 @@ def api_logs_application():
         if exclude_heartbeat:
             exclude_modules.append('scheduler.scheduler_core.heartbeat')
         
-        # Get all filtered logs
-        all_logs = read_logs_from_file(
-            n=None,
-            level=level_filter,
-            search=search if search else None,
-            return_all=True,
-            exclude_modules=exclude_modules if exclude_modules else None
-        )
-        
-        # Reverse for newest first
-        all_logs = list(reversed(all_logs))
+        # Get cached logs
+        all_logs = _get_cached_application_logs(level_filter, search, exclude_modules if exclude_modules else None)
         
         # Pagination
         total = len(all_logs)
@@ -1536,7 +1571,6 @@ def api_logs_application():
 def api_logs_ollama():
     """Get Ollama logs from ollama.log file"""
     try:
-        import os
         from pathlib import Path
         
         log_file = Path(__file__).parent / 'logs' / 'ollama.log'
@@ -1550,38 +1584,17 @@ def api_logs_ollama():
                 'error': 'Ollama log file not found. Ensure volume mapping is configured.'
             })
         
-        # Read file (tail approach for large files)
+        # Get query parameters
         limit = int(request.args.get('limit', 100))
         page = int(request.args.get('page', 1))
         search = request.args.get('search', '')
         
-        # Read last N lines (simple approach for now)
-        # For large files, read from end
-        file_size = log_file.stat().st_size
-        if file_size == 0:
-            return jsonify({
-                'logs': [],
-                'total': 0,
-                'page': 1,
-                'pages': 1
-            })
+        # Get cached log lines
+        lines = _get_cached_ollama_log_lines()
         
-        # Read up to 5MB from end for efficiency
-        buffer_size = min(5 * 1024 * 1024, file_size)
-        with open(log_file, 'rb') as f:
-            f.seek(max(0, file_size - buffer_size))
-            buffer = f.read().decode('utf-8', errors='ignore')
-        
-        lines = buffer.split('\n')
-        if file_size > buffer_size:
-            lines = lines[1:]  # Skip first partial line
-        
-        # Apply search filter
+        # Apply search filter (not cached, as it's user-specific)
         if search:
             lines = [line for line in lines if search.lower() in line.lower()]
-        
-        # Reverse for newest first
-        lines = list(reversed(lines))
         
         # Pagination
         total = len(lines)
@@ -1928,80 +1941,72 @@ def ticker_details_page():
         logger.error(f"Error loading ticker details page: {e}")
         return jsonify({"error": "Failed to load ticker details page"}), 500
 
+@cache_data(ttl=60)
+def _get_all_tickers_cached():
+    """Get all unique tickers with caching (60s TTL)"""
+    try:
+        from utils.db_utils import get_all_unique_tickers
+        tickers = get_all_unique_tickers()
+        return sorted(tickers) if tickers else []
+    except (ImportError, ModuleNotFoundError):
+        logger.warning("utils.db_utils not available, returning empty ticker list")
+        return []
+
 @app.route('/api/v2/ticker/list')
 @require_auth
 def api_ticker_list():
     """Get list of all available tickers for dropdown"""
     try:
-        # Simple caching with module-level dict
-        import time
-        if not hasattr(api_ticker_list, '_cache') or not hasattr(api_ticker_list, '_cache_time'):
-            api_ticker_list._cache = None
-            api_ticker_list._cache_time = 0
-        
-        # Check cache (60s TTL)
-        current_time = time.time()
-        if api_ticker_list._cache and (current_time - api_ticker_list._cache_time) < 60:
-            return jsonify({"tickers": api_ticker_list._cache})
-        
-        # Import and fetch tickers
-        try:
-            from utils.db_utils import get_all_unique_tickers
-            tickers = get_all_unique_tickers()
-        except (ImportError, ModuleNotFoundError):
-            # Fallback if utils.db_utils not available
-            logger.warning("utils.db_utils not available, returning empty ticker list")
-            tickers = []
-        
-        # Sort and cache
-        tickers = sorted(tickers) if tickers else []
-        api_ticker_list._cache = tickers
-        api_ticker_list._cache_time = current_time
-        
+        tickers = _get_all_tickers_cached()
         return jsonify({"tickers": tickers})
     except Exception as e:
         logger.error(f"Error fetching ticker list: {e}")
         return jsonify({"error": str(e)}), 500
+
+@cache_data(ttl=300)
+def _get_ticker_info_cached(ticker: str, user_is_admin: bool, auth_token: Optional[str]):
+    """Get ticker info with caching (300s TTL)"""
+    from postgres_client import PostgresClient
+    from supabase_client import SupabaseClient
+    
+    # Initialize Supabase client with appropriate access
+    if user_is_admin:
+        supabase_client = SupabaseClient(use_service_role=True)
+    else:
+        supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+    
+    # Initialize Postgres client
+    try:
+        postgres_client = PostgresClient()
+    except Exception as e:
+        logger.warning(f"PostgresClient initialization failed: {e}")
+        postgres_client = None
+    
+    if not supabase_client and not postgres_client:
+        raise ValueError("Unable to connect to databases")
+    
+    # Get ticker info
+    from ticker_utils import get_ticker_info
+    return get_ticker_info(ticker, supabase_client, postgres_client)
 
 @app.route('/api/v2/ticker/info')
 @require_auth
 def api_ticker_info():
     """Get comprehensive ticker information"""
     try:
+        from flask_auth_utils import get_user_id_flask
+        from auth import is_admin
+        
         ticker = request.args.get('ticker', '').upper().strip()
         if not ticker:
             return jsonify({"error": "Ticker symbol is required"}), 400
         
-        # Initialize clients with role-based access
-        from postgres_client import PostgresClient
-        from supabase_client import SupabaseClient
-        from flask_auth_utils import get_user_id_flask
-        from auth import is_admin
-        
         # Check if user is admin
         user_is_admin = is_admin()
+        auth_token = request.cookies.get('auth_token')
         
-        # Initialize Supabase client with appropriate access
-        if user_is_admin:
-            supabase_client = SupabaseClient(use_service_role=True)
-        else:
-            # For regular users, use auth_token from cookie (it IS the access token)
-            auth_token = request.cookies.get('auth_token')
-            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
-        
-        # Initialize Postgres client
-        try:
-            postgres_client = PostgresClient()
-        except Exception as e:
-            logger.warning(f"PostgresClient initialization failed: {e}")
-            postgres_client = None
-        
-        if not supabase_client and not postgres_client:
-            return jsonify({"error": "Unable to connect to databases"}), 500
-        
-        # Get ticker info
-        from ticker_utils import get_ticker_info
-        ticker_data = get_ticker_info(ticker, supabase_client, postgres_client)
+        # Get ticker info (cached)
+        ticker_data = _get_ticker_info_cached(ticker, user_is_admin, auth_token)
         
         # Convert datetime objects to ISO strings for JSON serialization
         def serialize_datetime(obj):
@@ -2020,37 +2025,42 @@ def api_ticker_info():
         
         return jsonify(ticker_data)
     except Exception as e:
-        logger.error(f"Error fetching ticker info for {ticker}: {e}", exc_info=True)
+        logger.error(f"Error fetching ticker info: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+@cache_data(ttl=300)
+def _get_ticker_price_history_cached(ticker: str, days: int, user_is_admin: bool, auth_token: Optional[str]):
+    """Get ticker price history with caching (300s TTL)"""
+    from supabase_client import SupabaseClient
+    
+    if user_is_admin:
+        supabase_client = SupabaseClient(use_service_role=True)
+    else:
+        supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+    
+    if not supabase_client:
+        raise ValueError("Unable to connect to database")
+    
+    from ticker_utils import get_ticker_price_history
+    return get_ticker_price_history(ticker, supabase_client, days=days)
 
 @app.route('/api/v2/ticker/price-history')
 @require_auth
 def api_ticker_price_history():
     """Get price history for a ticker"""
     try:
+        from auth import is_admin
+        
         ticker = request.args.get('ticker', '').upper().strip()
         if not ticker:
             return jsonify({"error": "Ticker symbol is required"}), 400
         
         days = int(request.args.get('days', 90))
+        user_is_admin = is_admin()
+        auth_token = request.cookies.get('auth_token')
         
-        # Initialize Supabase client with role-based access
-        from supabase_client import SupabaseClient
-        from auth import is_admin
-        
-        if is_admin():
-            supabase_client = SupabaseClient(use_service_role=True)
-        else:
-            # For regular users, use auth_token from cookie (it IS the access token)
-            auth_token = request.cookies.get('auth_token')
-            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
-        
-        if not supabase_client:
-            return jsonify({"error": "Unable to connect to database"}), 500
-        
-        # Get price history
-        from ticker_utils import get_ticker_price_history
-        price_df = get_ticker_price_history(ticker, supabase_client, days=days)
+        # Get price history (cached)
+        price_df = _get_ticker_price_history_cached(ticker, days, user_is_admin, auth_token)
         
         # Convert DataFrame to JSON
         if price_df.empty:
@@ -2063,58 +2073,58 @@ def api_ticker_price_history():
         
         return jsonify({"data": price_df.to_dict('records')})
     except Exception as e:
-        logger.error(f"Error fetching price history for {ticker}: {e}", exc_info=True)
+        logger.error(f"Error fetching price history: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+@cache_data(ttl=300)
+def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
+    """Get ticker chart with caching (300s TTL)"""
+    from supabase_client import SupabaseClient
+    
+    if user_is_admin:
+        supabase_client = SupabaseClient(use_service_role=True)
+    else:
+        supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
+    
+    if not supabase_client:
+        raise ValueError("Unable to connect to database")
+    
+    from ticker_utils import get_ticker_price_history
+    price_df = get_ticker_price_history(ticker, supabase_client, days=90)
+    
+    if price_df.empty:
+        raise ValueError("No price data available")
+    
+    from chart_utils import create_ticker_price_chart
+    all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
+    fig = create_ticker_price_chart(
+        price_df,
+        ticker,
+        show_benchmarks=all_benchmarks,
+        show_weekend_shading=True,
+        use_solid_lines=use_solid
+    )
+    
+    # Return as JSON string for caching
+    return plotly.utils.PlotlyJSONEncoder().encode(fig)
 
 @app.route('/api/v2/ticker/chart')
 @require_auth
 def api_ticker_chart():
     """Get Plotly chart JSON for ticker price history"""
     try:
+        from auth import is_admin
+        
         ticker = request.args.get('ticker', '').upper().strip()
         if not ticker:
             return jsonify({"error": "Ticker symbol is required"}), 400
         
         use_solid = request.args.get('use_solid', 'false').lower() == 'true'
+        user_is_admin = is_admin()
+        auth_token = request.cookies.get('auth_token')
         
-        # Initialize Supabase client
-        from supabase_client import SupabaseClient
-        from auth import is_admin
-        
-        if is_admin():
-            supabase_client = SupabaseClient(use_service_role=True)
-        else:
-            # For regular users, use auth_token from cookie (it IS the access token)
-            auth_token = request.cookies.get('auth_token')
-            supabase_client = SupabaseClient(user_token=auth_token) if auth_token else None
-        
-        if not supabase_client:
-            return jsonify({"error": "Unable to connect to database"}), 500
-        
-        # Get price history
-        from ticker_utils import get_ticker_price_history
-        price_df = get_ticker_price_history(ticker, supabase_client, days=90)
-        
-        if price_df.empty:
-            return jsonify({"error": "No price data available"}), 404
-        
-        # Create chart
-        from chart_utils import create_ticker_price_chart
-        all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
-        fig = create_ticker_price_chart(
-            price_df,
-            ticker,
-            show_benchmarks=all_benchmarks,
-            show_weekend_shading=True,
-            use_solid_lines=use_solid
-        )
-        
-        # Convert Plotly figure to JSON
-        import plotly.utils
-        graph_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-        
-        # Return as JSON response
-        from flask import Response
+        # Get chart (cached)
+        chart_json = _get_ticker_chart_cached(ticker, use_solid, user_is_admin, auth_token)
         return Response(graph_json, mimetype='application/json')
     except Exception as e:
         logger.error(f"Error generating chart for {ticker}: {e}", exc_info=True)
@@ -2163,6 +2173,50 @@ def api_ai_search():
         logger.error(f"Error performing search: {e}")
         return jsonify({"error": str(e)}), 500
 
+@cache_data(ttl=300)
+def _get_context_data_packet(user_id: str, fund: str):
+    """Get context data packet with caching (300s TTL)"""
+    from flask_data_utils import (
+        get_current_positions_flask, get_trade_log_flask, get_cash_balances_flask,
+        calculate_portfolio_value_over_time_flask, get_fund_thesis_data_flask,
+        calculate_performance_metrics_flask
+    )
+    
+    logger.info(f"Refreshing context data for {user_id}/{fund}")
+    
+    # Fetch all components
+    positions_df = get_current_positions_flask(fund)
+    trades_df = get_trade_log_flask(limit=100, fund=fund)
+    
+    try:
+        metrics = calculate_performance_metrics_flask(fund)
+        portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
+    except Exception as e:
+        logger.warning(f"Error loading metrics: {e}")
+        metrics = None
+        portfolio_df = None
+        
+    try:
+        cash = get_cash_balances_flask(fund)
+    except Exception as e:
+        logger.warning(f"Error loading cash: {e}")
+        cash = None
+        
+    try:
+        thesis_data = get_fund_thesis_data_flask(fund)
+    except Exception as e:
+        logger.warning(f"Error loading thesis: {e}")
+        thesis_data = None
+        
+    return {
+        'positions_df': positions_df,
+        'trades_df': trades_df,
+        'metrics': metrics,
+        'portfolio_df': portfolio_df,
+        'cash': cash,
+        'thesis_data': thesis_data
+    }
+
 @app.route('/api/v2/ai/preview_context', methods=['POST'])
 @require_auth
 def api_ai_preview_context():
@@ -2176,11 +2230,6 @@ def api_ai_preview_context():
             format_performance_metrics, format_cash_balances,
             format_price_volume_table, format_fundamentals_table
         )
-        from flask_data_utils import (
-            get_current_positions_flask, get_trade_log_flask, get_cash_balances_flask,
-            calculate_portfolio_value_over_time_flask, get_fund_thesis_data_flask,
-            calculate_performance_metrics_flask
-        )
         
         data = request.get_json()
         fund = data.get('fund')
@@ -2190,60 +2239,8 @@ def api_ai_preview_context():
 
         user_id = get_user_id_flask()
         
-        # --- Caching Logic ---
-        now = datetime.now()
-        cache_key = (user_id, fund)
-        data_packet = None
-        
-        cached_entry = CONTEXT_DATA_CACHE.get(cache_key)
-        if cached_entry:
-            timestamp = cached_entry.get('timestamp')
-            if now - timestamp < timedelta(seconds=CACHE_TTL_SECONDS):
-                data_packet = cached_entry.get('data')
-                logger.debug(f"Using cached context data for {user_id}/{fund}")
-        
-        # If no valid cache, fetch ALL data
-        if not data_packet:
-            logger.info(f"Refreshing context data for {user_id}/{fund}")
-            
-            # Fetch all components regardless of current flags so we can cache them
-            positions_df = get_current_positions_flask(fund)
-            trades_df = get_trade_log_flask(limit=100, fund=fund)
-            
-            try:
-                metrics = calculate_performance_metrics_flask(fund)
-                portfolio_df = calculate_portfolio_value_over_time_flask(fund, days=365)
-            except Exception as e:
-                logger.warning(f"Error loading metrics: {e}")
-                metrics = None
-                portfolio_df = None
-                
-            try:
-                cash = get_cash_balances_flask(fund)
-            except Exception as e:
-                logger.warning(f"Error loading cash: {e}")
-                cash = None
-                
-            try:
-                thesis_data = get_fund_thesis_data_flask(fund)
-            except Exception as e:
-                logger.warning(f"Error loading thesis: {e}")
-                thesis_data = None
-                
-            data_packet = {
-                'positions_df': positions_df,
-                'trades_df': trades_df,
-                'metrics': metrics,
-                'portfolio_df': portfolio_df,
-                'cash': cash,
-                'thesis_data': thesis_data
-            }
-            
-            # Update cache
-            CONTEXT_DATA_CACHE[cache_key] = {
-                'timestamp': now,
-                'data': data_packet
-            }
+        # Get cached data packet
+        data_packet = _get_context_data_packet(user_id, fund)
             
         # --- Context Assembly ---
         # Unpack data
@@ -2303,6 +2300,24 @@ def api_ai_preview_context():
 # AI Assistant Routes (Flask v2)
 # ============================================================================
 
+@cache_data(ttl=30)
+def _get_cached_ollama_health():
+    """Check Ollama health with 30s cache"""
+    from ollama_client import check_ollama_health
+    return check_ollama_health()
+
+@cache_data(ttl=30)
+def _get_cached_searxng_health():
+    """Check SearXNG health with 30s cache"""
+    from searxng_client import check_searxng_health
+    return check_searxng_health()
+
+@cache_data(ttl=30)
+def _get_cached_ollama_models():
+    """Get available Ollama models with 30s cache"""
+    from ollama_client import list_available_models
+    return list_available_models()
+
 @app.route('/v2/ai_assistant')
 @require_auth
 def ai_assistant_page():
@@ -2311,20 +2326,18 @@ def ai_assistant_page():
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme, get_user_ai_model
         from flask_data_utils import get_available_funds_flask
-        from ollama_client import list_available_models, check_ollama_health
-        from searxng_client import check_searxng_health
         
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
         default_model = get_user_ai_model()
         
-        # Get available funds
+        # Get available funds (cached in flask_data_utils)
         available_funds = get_available_funds_flask()
         
-        # Get available models
-        ollama_models = list_available_models()
-        ollama_available = check_ollama_health()
-        searxng_available = check_searxng_health()
+        # Get available models (cached)
+        ollama_models = _get_cached_ollama_models()
+        ollama_available = _get_cached_ollama_health()
+        searxng_available = _get_cached_searxng_health()
         
         # Check for WebAI models
         try:
@@ -2366,39 +2379,44 @@ def ai_assistant_page():
 </body>
 </html>''', 500
 
+@cache_data(ttl=30)
+def _get_formatted_ai_models():
+    """Get formatted AI models list with 30s cache"""
+    from ollama_client import list_available_models
+    try:
+        from ai_service_keys import get_model_display_name
+    except ImportError:
+        def get_model_display_name(m): return m
+
+    all_models = list_available_models()
+    formatted_models = []
+    for model in all_models:
+        is_webai = model.startswith('gemini-')
+        display_name = model
+        
+        if is_webai:
+            try:
+                display_name = get_model_display_name(model)
+                # Add sparkle to webai models if not already there
+                if 'AI' in display_name or 'Gemini' in display_name:
+                     display_name = f"✨ {display_name}"
+            except:
+                pass
+        
+        formatted_models.append({
+            'id': model,
+            'name': display_name,
+            'type': 'webai' if is_webai else 'ollama'
+        })
+    
+    return formatted_models
+
 @app.route('/api/v2/ai/models', methods=['GET'])
 @require_auth
 def api_ai_models():
     """Get available AI models"""
     try:
-        from ollama_client import list_available_models
-        try:
-            from ai_service_keys import get_model_display_name
-        except ImportError:
-            def get_model_display_name(m): return m
-
-        all_models = list_available_models()
-        
-        formatted_models = []
-        for model in all_models:
-            is_webai = model.startswith('gemini-')
-            display_name = model
-            
-            if is_webai:
-                try:
-                    display_name = get_model_display_name(model)
-                    # Add sparkle to webai models if not already there
-                    if 'AI' in display_name or 'Gemini' in display_name:
-                         display_name = f"✨ {display_name}"
-                except:
-                    pass
-            
-            formatted_models.append({
-                'id': model,
-                'name': display_name,
-                'type': 'webai' if is_webai else 'ollama'
-            })
-        
+        formatted_models = _get_formatted_ai_models()
         return jsonify({"models": formatted_models})
     except Exception as e:
         logger.error(f"Error fetching AI models: {e}")

@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, g
 import logging
 from datetime import datetime, timedelta, date, timezone
+from typing import Optional
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from auth import require_auth
 from research_repository import ResearchRepository
 from user_preferences import get_user_preference
 from flask_auth_utils import get_user_email_flask
+from flask_cache_utils import cache_resource, cache_data
 # Note: get_navigation_context imported inside function to avoid circular import
 
 logger = logging.getLogger('research')
@@ -21,16 +23,83 @@ research_bp = Blueprint('research', __name__)
 # Log blueprint registration
 logger.debug("[RESEARCH] Research blueprint loaded")
 
+# Cached repository instance (resource caching)
+@cache_resource
+def get_research_repository():
+    """Get research repository instance, cached for application lifetime"""
+    return ResearchRepository()
+
+# Cached helper functions for data fetching
+@cache_data(ttl=300)
+def get_cached_unique_tickers(repo: ResearchRepository):
+    """Get unique tickers with caching (5min TTL)"""
+    try:
+        return repo.get_unique_tickers()
+    except Exception as e:
+        logger.error(f"Error fetching unique tickers: {e}")
+        return []
+
+@cache_data(ttl=30)
+def get_cached_articles(
+    repo: ResearchRepository,
+    start_date: Optional[datetime],
+    end_date: Optional[datetime],
+    article_type_filter: Optional[str],
+    search_filter: Optional[str],
+    ticker_filter: Optional[str],
+    per_page: int,
+    offset: int
+):
+    """Get articles with caching (30s TTL for fresher data during active use)"""
+    try:
+        tickers_filter = [ticker_filter] if ticker_filter else None
+        
+        if start_date and end_date:
+            articles = repo.get_articles_by_date_range(
+                start_date=start_date,
+                end_date=end_date,
+                article_type=article_type_filter,
+                search_text=search_filter,
+                tickers_filter=tickers_filter,
+                limit=per_page,
+                offset=offset
+            )
+        else:
+            articles = repo.get_all_articles(
+                article_type=article_type_filter,
+                search_text=search_filter,
+                tickers_filter=tickers_filter,
+                limit=per_page,
+                offset=offset
+            )
+        
+        # Ensure articles is a list (not None)
+        if articles is None:
+            return []
+        
+        # Filter out any None articles and ensure valid structure
+        articles = [a for a in articles if a is not None]
+        
+        # Ensure each article has tickers field
+        for article in articles:
+            if 'tickers' not in article or article['tickers'] is None:
+                article['tickers'] = []
+        
+        return articles
+    except Exception as e:
+        logger.error(f"Error fetching articles: {e}", exc_info=True)
+        return []
+
 @research_bp.route('/research')
 @require_auth
 def research_dashboard():
     """Research Repository Dashboard"""
     logger.debug("[RESEARCH] Route /v2/research accessed")
     try:
-        # Initialize repository
-        logger.debug("[RESEARCH] Initializing ResearchRepository")
-        repo = ResearchRepository()
-        logger.debug("[RESEARCH] ResearchRepository initialized successfully")
+        # Get cached repository instance
+        logger.debug("[RESEARCH] Getting ResearchRepository (cached)")
+        repo = get_research_repository()
+        logger.debug("[RESEARCH] ResearchRepository retrieved successfully")
         
         # Parse query parameters for filters
         # Date Range
@@ -80,49 +149,22 @@ def research_dashboard():
         # Owned tickers filter (simplified for V1: passing boolean if checked)
         only_owned = request.args.get('only_owned') == 'true'
         
-        # Fetch tickers for dropdown
-        try:
-            unique_tickers = repo.get_unique_tickers()
-        except:
-            unique_tickers = []
+        # Fetch tickers for dropdown (cached)
+        unique_tickers = get_cached_unique_tickers(repo)
             
-        # Fetch Articles
-        # Note: ResearchRepository.get_articles_by_date_range handles date filtering
-        # get_all_articles handles no date filtering
+        # Fetch Articles (cached)
+        articles = get_cached_articles(
+            repo=repo,
+            start_date=start_date,
+            end_date=end_date,
+            article_type_filter=article_type_filter,
+            search_filter=search_filter,
+            ticker_filter=ticker_filter,
+            per_page=per_page,
+            offset=offset
+        )
         
-        if start_date:
-            articles = repo.get_articles_by_date_range(
-                start_date=start_date,
-                end_date=end_date,
-                article_type=article_type_filter,
-                search_text=search_filter,
-                tickers_filter=[ticker_filter] if ticker_filter else None,
-                limit=per_page,
-                offset=offset
-            )
-        else:
-            articles = repo.get_all_articles(
-                article_type=article_type_filter,
-                search_text=search_filter,
-                tickers_filter=[ticker_filter] if ticker_filter else None,
-                limit=per_page,
-                offset=offset
-            )
-        
-        # Ensure articles is a list (not None)
-        if articles is None:
-            logger.warning("ResearchRepository returned None for articles")
-            articles = []
-        
-        # Filter out any None articles and ensure valid structure
-        articles = [a for a in articles if a is not None]
         logger.info(f"Research dashboard: Fetched {len(articles)} valid articles")
-        
-        # Ensure each article has tickers field (defensive)
-        # Articles are dicts, not objects
-        for article in articles:
-            if 'tickers' not in article or article['tickers'] is None:
-                article['tickers'] = []
             
         # Get common context
         from app import get_navigation_context  # Import here to avoid circular import

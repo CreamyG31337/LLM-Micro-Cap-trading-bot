@@ -189,24 +189,74 @@ def _make_cache_key(func_name: str, args: tuple, kwargs: dict, cache_version: Op
     return hashlib.sha256(full_key.encode()).hexdigest()
 
 
-def cache_data(ttl: Optional[int] = None, show_spinner: bool = False):
+def _get_cache_ttl() -> int:
+    """Get cache TTL based on market hours (reuses logic from streamlit_utils).
+    
+    Returns:
+        Cache TTL in seconds:
+        - 300s (5 min) during market hours (9:30 AM - 4:00 PM EST, Mon-Fri)
+        - 3600s (1 hour) outside market hours
+    """
+    try:
+        # Try to import from streamlit_utils first
+        from streamlit_utils import get_cache_ttl
+        return get_cache_ttl()
+    except (ImportError, AttributeError):
+        # Fallback implementation if streamlit_utils not available
+        from datetime import datetime
+        try:
+            import pytz
+            est = pytz.timezone('America/New_York')
+            now = datetime.now(est)
+        except ImportError:
+            from zoneinfo import ZoneInfo
+            est = ZoneInfo('America/New_York')
+            now = datetime.now(est)
+        
+        # Weekend: cache for 1 hour
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            return 3600
+        
+        # Market hours: 9:30 AM - 4:00 PM EST
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        
+        if market_open <= now <= market_close:
+            return 300  # 5 minutes during market hours
+        else:
+            return 3600  # 1 hour outside market hours
+
+
+def cache_data(ttl: Optional[int] = None, show_spinner: bool = False, use_market_hours: bool = False):
     """
     Decorator for caching function results (similar to @st.cache_data).
     
     Args:
         ttl: Time to live in seconds. None means cache forever (until manually cleared).
+             If use_market_hours=True, this parameter is ignored and TTL is calculated dynamically.
         show_spinner: Not used in Flask (no UI spinner), kept for API compatibility.
+        use_market_hours: If True, use market-hours-aware TTL (300s during market hours, 3600s outside).
     
     Usage:
-        @cache_data(ttl=300)  # Cache for 5 minutes
+        @cache_data(ttl=300)  # Cache for 5 minutes (static)
         def get_expensive_data(param1, param2):
             return expensive_operation()
+        
+        @cache_data(use_market_hours=True)  # Dynamic TTL based on market hours
+        def get_portfolio_data(fund: str):
+            return fetch_portfolio(fund)
     """
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Extract cache_version from kwargs if present (for manual invalidation)
             cache_version = kwargs.pop('_cache_version', None)
+            
+            # Determine TTL
+            if use_market_hours:
+                effective_ttl = _get_cache_ttl()
+            else:
+                effective_ttl = ttl
             
             # Generate cache key
             cache_key = _make_cache_key(func.__name__, args, kwargs, cache_version)
@@ -224,7 +274,7 @@ def cache_data(ttl: Optional[int] = None, show_spinner: bool = False):
             result = func(*args, **kwargs)
             
             # Store in cache
-            cache.set(cache_key, result, timeout=ttl)
+            cache.set(cache_key, result, timeout=effective_ttl)
             
             return result
         

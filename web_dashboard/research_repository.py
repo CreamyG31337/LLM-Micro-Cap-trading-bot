@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from web_dashboard.postgres_client import PostgresClient
+from postgres_client import PostgresClient
 
 logger = logging.getLogger(__name__)
 

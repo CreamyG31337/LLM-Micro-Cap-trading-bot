@@ -1469,17 +1469,32 @@ def _get_cached_application_logs(level_filter, search, exclude_modules):
     """Get application logs with caching (5s TTL for near real-time)"""
     from log_handler import read_logs_from_file
     
-    # Get all filtered logs
-    all_logs = read_logs_from_file(
-        n=None,
-        level=level_filter,
-        search=search if search else None,
-        return_all=True,
-        exclude_modules=exclude_modules if exclude_modules else None
-    )
-    
-    # Reverse for newest first
-    return list(reversed(all_logs))
+    try:
+        # Get all filtered logs
+        all_logs = read_logs_from_file(
+            n=None,
+            level=level_filter,
+            search=search if search else None,
+            return_all=True,
+            exclude_modules=exclude_modules if exclude_modules else None
+        )
+        
+        # Convert datetime objects to strings for cache compatibility
+        # This ensures the cache can properly serialize/deserialize the data
+        serializable_logs = []
+        for log in all_logs:
+            serializable_log = log.copy()
+            if 'timestamp' in serializable_log and hasattr(serializable_log['timestamp'], 'strftime'):
+                serializable_log['timestamp'] = serializable_log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+            serializable_logs.append(serializable_log)
+        
+        # Reverse for newest first
+        return list(reversed(serializable_logs))
+    except Exception as e:
+        logger.error(f"Error in _get_cached_application_logs: {e}", exc_info=True)
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
 
 @cache_data(ttl=5)
 def _get_cached_ollama_log_lines():
@@ -1538,7 +1553,13 @@ def api_logs_application():
             exclude_modules.append('scheduler.scheduler_core.heartbeat')
         
         # Get cached logs
-        all_logs = _get_cached_application_logs(level_filter, search, exclude_modules if exclude_modules else None)
+        try:
+            all_logs = _get_cached_application_logs(level_filter, search, exclude_modules if exclude_modules else None)
+        except Exception as cache_error:
+            logger.error(f"Error in _get_cached_application_logs: {cache_error}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({'error': f'Failed to fetch logs: {str(cache_error)}'}), 500
         
         # Pagination
         total = len(all_logs)
@@ -1546,15 +1567,25 @@ def api_logs_application():
         end = start + limit
         logs = all_logs[start:end]
         
-        # Format logs for JSON
+        # Format logs for JSON (timestamps are already strings from cached function)
         formatted_logs = []
         for log in logs:
-            formatted_logs.append({
-                'timestamp': log['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
-                'level': log['level'],
-                'module': log['module'],
-                'message': log['message']
-            })
+            try:
+                # Timestamp is already a string from _get_cached_application_logs
+                # but handle both cases for safety
+                timestamp = log.get('timestamp')
+                if timestamp and not isinstance(timestamp, str):
+                    timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                
+                formatted_logs.append({
+                    'timestamp': timestamp or '',
+                    'level': log.get('level', 'UNKNOWN'),
+                    'module': log.get('module', 'unknown'),
+                    'message': log.get('message', '')
+                })
+            except Exception as format_error:
+                logger.warning(f"Error formatting log entry: {format_error}, log: {log}")
+                continue
         
         return jsonify({
             'logs': formatted_logs,
@@ -1564,8 +1595,11 @@ def api_logs_application():
         })
         
     except Exception as e:
-        logger.error(f"Error fetching logs: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error fetching logs: {e}", exc_info=True)
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Full traceback: {error_traceback}")
+        return jsonify({'error': str(e), 'traceback': error_traceback}), 500
 
 @app.route('/api/logs/ollama')
 @require_admin

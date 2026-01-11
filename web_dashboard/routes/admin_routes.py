@@ -83,7 +83,6 @@ def calculate_fifo_pnl(fund: str, ticker: str, sell_shares: float, sell_price: f
         from app import get_supabase_client
         
         # Fetch existing trades - try to get action column if available
-        from app import get_supabase_client
         client = get_supabase_client()
         # First try with action column
         try:

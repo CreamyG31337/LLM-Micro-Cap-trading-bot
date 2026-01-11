@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Congress Trades - Portfolio Dashboard{% endblock %}
+{% block page_title %}🏛️ Congress Trades{% endblock %}
+{% block page_subtitle %}Track the 'Smart Money' by monitoring stock disclosures from US Congress members{% endblock %}
+
+{% block extra_head %}
+<!-- AgGrid Community Edition -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+    <div class="flex">
+        <div class="flex-shrink-0">
+            <i class="fas fa-exclamation-triangle text-red-400"></i>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">{{ error }}</h3>
+            <div class="mt-2 text-sm text-red-700">
+                <p>{{ error_message }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- Description -->
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+    <p class="text-sm text-blue-800">
+        <strong>Track the 'Smart Money'</strong> by monitoring stock disclosures from US Congress members. Our proprietary <strong>Conflict Score</strong> highlights suspicious trades where politicians buy stocks regulated by their own committees—often a leading indicator for upcoming government contracts or legislation.
+    </p>
+    <p class="text-xs text-blue-600 mt-2">
+        <em>Note: Data is based on public disclosures which may be delayed by up to 45 days.</em>
+    </p>
+</div>
+
+<!-- Filters Sidebar (Desktop) and Top Bar (Mobile) -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+    <form id="filters-form" action="/v2/congress_trades" method="GET" class="space-y-4">
+        <input type="hidden" name="refresh_key" value="{{ refresh_key }}">
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Chamber Filter -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">🏛️ Chamber</label>
+                <div class="flex space-x-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="chamber" value="All" {% if current_chamber == 'All' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">All</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="chamber" value="House" {% if current_chamber == 'House' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">House</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="chamber" value="Senate" {% if current_chamber == 'Senate' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">Senate</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Transaction Type Filter -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">📊 Transaction Type</label>
+                <div class="flex space-x-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="type" value="All" {% if current_type == 'All' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">All</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="type" value="Purchase" {% if current_type == 'Purchase' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">Purchase</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="type" value="Sale" {% if current_type == 'Sale' %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">Sale</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- AI Analysis Filters -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">🤖 AI Analysis</label>
+                <div class="space-y-2">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="analyzed_only" value="true" {% if current_analyzed_only %}checked{% endif %} class="mr-2">
+                        <span class="text-sm">Only analyzed trades</span>
+                    </label>
+                    <select name="score_filter" class="w-full text-sm border border-gray-300 rounded-lg p-2">
+                        <option value="All Scores" {% if current_score_filter == 'All Scores' %}selected{% endif %}>All Scores</option>
+                        <option value="High Risk (>0.7)" {% if current_score_filter == 'High Risk (>0.7)' %}selected{% endif %}>High Risk (>0.7)</option>
+                        <option value="Medium Risk (0.3-0.7)" {% if current_score_filter == 'Medium Risk (0.3-0.7)' %}selected{% endif %}>Medium Risk (0.3-0.7)</option>
+                        <option value="Low Risk (<0.3)" {% if current_score_filter == 'Low Risk (<0.3)' %}selected{% endif %}>Low Risk (<0.3)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Advanced Filters -->
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-900">🔍 Advanced</label>
+                <select name="ticker" class="w-full text-sm border border-gray-300 rounded-lg p-2 mb-2">
+                    <option value="All" {% if current_ticker == 'All' %}selected{% endif %}>All Tickers</option>
+                    {% for ticker in unique_tickers %}
+                    <option value="{{ ticker }}" {% if current_ticker == ticker %}selected{% endif %}>{{ ticker }}</option>
+                    {% endfor %}
+                </select>
+                <select name="politician" class="w-full text-sm border border-gray-300 rounded-lg p-2">
+                    <option value="All" {% if current_politician == 'All' %}selected{% endif %}>All Politicians</option>
+                    {% for politician in unique_politicians %}
+                    <option value="{{ politician }}" {% if current_politician == politician %}selected{% endif %}>{{ politician }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <!-- Date Range Filter -->
+        <div class="border-t border-gray-200 pt-4">
+            <label class="flex items-center mb-2">
+                <input type="checkbox" name="use_date_filter" value="true" {% if current_use_date_filter %}checked{% endif %} class="mr-2" id="use-date-filter">
+                <span class="text-sm font-medium text-gray-900">📅 Filter by transaction date</span>
+            </label>
+            <div id="date-range-inputs" class="grid grid-cols-1 md:grid-cols-2 gap-4 {% if not current_use_date_filter %}hidden{% endif %}">
+                <div>
+                    <label class="block mb-1 text-xs text-gray-600">Start Date</label>
+                    <input type="date" name="start_date" value="{{ current_start_date }}" class="w-full text-sm border border-gray-300 rounded-lg p-2">
+                </div>
+                <div>
+                    <label class="block mb-1 text-xs text-gray-600">End Date</label>
+                    <input type="date" name="end_date" value="{{ current_end_date }}" class="w-full text-sm border border-gray-300 rounded-lg p-2">
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+            <button type="button" onclick="refreshData()" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">
+                <i class="fas fa-sync-alt mr-2"></i>Refresh Data
+            </button>
+            <button type="submit" class="text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5">
+                <i class="fas fa-filter mr-2"></i>Apply Filters
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Summary Statistics -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📊 Summary Statistics</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ total_trades }}</div>
+            <div class="text-sm text-gray-600">Total Trades</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ analyzed_count }}/{{ total_trades }}</div>
+            <div class="text-sm text-gray-600">Analyzed</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ house_count }}</div>
+            <div class="text-sm text-gray-600">House</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ senate_count }}</div>
+            <div class="text-sm text-gray-600">Senate</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ purchase_count }}/{{ sale_count }}</div>
+            <div class="text-sm text-gray-600">Buy/Sell</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ unique_tickers_count }}</div>
+            <div class="text-sm text-gray-600">Unique Tickers</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900">{{ high_risk_count }}</div>
+            <div class="text-sm text-gray-600">High Risk</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-lg font-bold text-gray-900">{{ most_active_display }}</div>
+            <div class="text-xs text-gray-600">Most Active (31d)</div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Table -->
+<div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📋 Congress Trades</h2>
+    <div id="congress-trades-grid" class="ag-theme-alpine" style="height: 600px; width: 100%;"></div>
+</div>
+
+<!-- AI Reasoning Display (hidden by default) -->
+<div id="ai-reasoning-section" class="bg-white rounded-lg shadow-sm p-6 mt-6 border border-gray-200 hidden">
+    <h2 class="text-xl font-bold mb-4">📋 Full AI Reasoning (Click to Copy)</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+            <div class="text-sm text-gray-600">Ticker</div>
+            <div class="font-semibold" id="reasoning-ticker">-</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600">Company</div>
+            <div class="font-semibold" id="reasoning-company">-</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600">Politician</div>
+            <div class="font-semibold" id="reasoning-politician">-</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600">Date</div>
+            <div class="font-semibold" id="reasoning-date">-</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600">Type</div>
+            <div class="font-semibold" id="reasoning-type">-</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600">Score</div>
+            <div class="font-semibold" id="reasoning-score">-</div>
+        </div>
+    </div>
+    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <pre id="reasoning-text" class="text-sm whitespace-pre-wrap font-mono cursor-text" onclick="copyReasoning()">-</pre>
+    </div>
+</div>
+
+{% if total_trades == 0 %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+    <p class="text-sm text-blue-800">
+        📭 No congress trades found matching the current filters.
+    </p>
+    <p class="text-xs text-blue-600 mt-2">
+        Try adjusting your filter criteria or check back later when more data is available.
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/assets/js/congress_trades.js"></script>
+<script>
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if not error and trades_data %}
+        const tradesData = {{ trades_data | tojson }};
+        initializeCongressTradesGrid(tradesData);
+        {% endif %}
+        
+        // Toggle date range inputs
+        const useDateFilter = document.getElementById('use-date-filter');
+        const dateRangeInputs = document.getElementById('date-range-inputs');
+        if (useDateFilter) {
+            useDateFilter.addEventListener('change', function() {
+                if (this.checked) {
+                    dateRangeInputs.classList.remove('hidden');
+                } else {
+                    dateRangeInputs.classList.add('hidden');
+                }
+            });
+        }
+    });
+    
+    function refreshData() {
+        const currentUrl = new URL(window.location.href);
+        const currentRefreshKey = parseInt(currentUrl.searchParams.get('refresh_key') || '0');
+        currentUrl.searchParams.set('refresh_key', (currentRefreshKey + 1).toString());
+        window.location.href = currentUrl.toString();
+    }
+    
+    function copyReasoning() {
+        const reasoningText = document.getElementById('reasoning-text');
+        if (reasoningText) {
+            const text = reasoningText.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                // Show temporary feedback
+                const originalText = reasoningText.textContent;
+                reasoningText.textContent = '✓ Copied to clipboard!';
+                setTimeout(function() {
+                    reasoningText.textContent = originalText;
+                }, 2000);
+            });
+        }
+    }
+</script>
+{% endblock %}

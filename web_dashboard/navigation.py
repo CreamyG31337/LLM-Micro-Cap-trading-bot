@@ -189,7 +189,23 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
     try:
         client = get_supabase_client()
         if client and client.test_connection():
-            st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
+            # Check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('congress_trades'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    congress_url = get_page_url('congress_trades')
+                    st.sidebar.markdown(f'''
+                        <a href="{congress_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">🏛️</span>
+                            <span class="v2-nav-label">Congress Trades</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/congress_trades.py", label="Congress Trades", icon="🏛️")
             # Ticker Lookup - check if migrated to Flask
             try:
                 from shared_navigation import is_page_migrated, get_page_url

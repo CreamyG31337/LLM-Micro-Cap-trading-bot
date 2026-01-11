@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 import requests
 from flask_cors import CORS
-from flask_cache_utils import cache_data
+from flask_cache_utils import cache_data, cache_resource
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -3050,6 +3050,629 @@ def api_ai_chat():
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# Congress Trades Routes (Flask v2)
+# ============================================================================
+
+@cache_resource
+def get_postgres_client_congress():
+    """Get PostgreSQL client instance for congress trades analysis data"""
+    try:
+        from postgres_client import PostgresClient
+        return PostgresClient()
+    except Exception as e:
+        logger.warning(f"PostgreSQL not available (AI analysis disabled): {e}")
+        return None
+
+@cache_data(ttl=3600)
+def get_unique_tickers_congress(_supabase_client, refresh_key: int, _cache_version: Optional[str] = None) -> List[str]:
+    """Get all unique tickers from congress_trades table (cached 1 hour)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
+    
+    try:
+        if _supabase_client is None:
+            return []
+        
+        all_tickers = set()
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            result = _supabase_client.supabase.table("congress_trades_enriched")\
+                .select("ticker")\
+                .range(offset, offset + batch_size - 1)\
+                .execute()
+            
+            if not result.data:
+                break
+            
+            for trade in result.data:
+                ticker = trade.get('ticker')
+                if ticker:
+                    all_tickers.add(ticker)
+            
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            if offset > 100000:
+                logger.warning("Reached 100,000 row safety limit in get_unique_tickers_congress pagination")
+                break
+        
+        return sorted(list(all_tickers))
+    except Exception as e:
+        logger.error(f"Error fetching unique tickers: {e}", exc_info=True)
+        return []
+
+@cache_data(ttl=3600)
+def get_unique_politicians_congress(_supabase_client, refresh_key: int, _cache_version: Optional[str] = None) -> List[str]:
+    """Get all unique politicians from congress_trades table (cached 1 hour)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
+    
+    try:
+        if _supabase_client is None:
+            return []
+        
+        all_politicians = set()
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            result = _supabase_client.supabase.table("congress_trades_enriched")\
+                .select("politician")\
+                .range(offset, offset + batch_size - 1)\
+                .execute()
+            
+            if not result.data:
+                break
+            
+            for trade in result.data:
+                politician = trade.get('politician')
+                if politician:
+                    all_politicians.add(politician)
+            
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            if offset > 100000:
+                logger.warning("Reached 100,000 row safety limit in get_unique_politicians_congress pagination")
+                break
+        
+        return sorted(list(all_politicians))
+    except Exception as e:
+        logger.error(f"Error fetching unique politicians: {e}", exc_info=True)
+        return []
+
+@cache_data(ttl=60)
+def get_analysis_data_congress(_postgres_client, refresh_key: int) -> Dict[int, Dict[str, Any]]:
+    """Get AI analysis data from PostgreSQL (cached 60s)"""
+    if _postgres_client is None:
+        return {}
+    
+    try:
+        result = _postgres_client.execute_query(
+            "SELECT trade_id, conflict_score, reasoning, model_used, analyzed_at FROM congress_trades_analysis WHERE conflict_score IS NOT NULL ORDER BY analyzed_at DESC"
+        )
+        
+        analysis_map = {}
+        for row in result:
+            trade_id = row['trade_id']
+            if trade_id not in analysis_map:
+                analysis_map[trade_id] = row
+        
+        return analysis_map
+    except Exception as e:
+        logger.error(f"Error fetching analysis data: {e}")
+        return {}
+
+@cache_data(ttl=60)
+def get_congress_trades_cached(
+    _supabase_client,
+    refresh_key: int,
+    ticker_filter: Optional[str] = None,
+    politician_filter: Optional[str] = None,
+    chamber_filter: Optional[str] = None,
+    type_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    analyzed_only: bool = False,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+    _postgres_client = None
+) -> List[Dict[str, Any]]:
+    """Get congress trades with filters (cached 60s)"""
+    try:
+        if _supabase_client is None:
+            return []
+        
+        query = _supabase_client.supabase.table("congress_trades_enriched").select("*")
+        
+        if ticker_filter:
+            query = query.eq("ticker", ticker_filter)
+        if politician_filter:
+            query = query.eq("politician", politician_filter)
+        if chamber_filter:
+            query = query.eq("chamber", chamber_filter)
+        if type_filter:
+            query = query.eq("type", type_filter)
+        if start_date:
+            query = query.gte("transaction_date", start_date)
+        if end_date:
+            query = query.lte("transaction_date", end_date)
+        
+        query = query.order("transaction_date", desc=True)
+        
+        # Get analysis data for filtering
+        analysis_map = get_analysis_data_congress(_postgres_client, refresh_key) if _postgres_client else {}
+        
+        all_trades = []
+        batch_size = 1000
+        offset = 0
+        
+        while True:
+            result = query.range(offset, offset + batch_size - 1).execute()
+            
+            if not result.data:
+                break
+            
+            all_trades.extend(result.data)
+            
+            if len(result.data) < batch_size:
+                break
+            
+            offset += batch_size
+            
+            if offset > 50000:
+                logger.warning("Reached 50,000 row safety limit in get_congress_trades_cached pagination")
+                break
+        
+        # Post-process: filter by analysis status and score
+        if analyzed_only or min_score is not None or max_score is not None:
+            filtered_trades = []
+            for trade in all_trades:
+                trade_id = trade.get('id')
+                
+                if analyzed_only and trade_id not in analysis_map:
+                    continue
+                
+                # Check score filters
+                if min_score is not None or max_score is not None:
+                    analysis = analysis_map.get(trade_id)
+                    if not analysis or analysis.get('conflict_score') is None:
+                        continue
+                    
+                    score_val = float(analysis['conflict_score'])
+                    
+                    # Check minimum score
+                    if min_score is not None and score_val < min_score:
+                        continue
+                    
+                    # Check maximum score (for Low Risk filter)
+                    if max_score is not None and score_val >= max_score:
+                        continue
+                
+                filtered_trades.append(trade)
+            
+            return filtered_trades
+        
+        return all_trades
+    except Exception as e:
+        logger.error(f"Error fetching congress trades: {e}", exc_info=True)
+        return []
+
+@cache_data(ttl=86400)  # Cache for 24 hours - company names don't change often
+def get_company_names_map_congress(_supabase_client, tickers_tuple: tuple, _cache_version: Optional[str] = None) -> Dict[str, str]:
+    """Batch fetch company names from securities table (cached 24 hours)"""
+    if _cache_version is None:
+        try:
+            from cache_version import get_cache_version
+            _cache_version = get_cache_version()
+        except ImportError:
+            _cache_version = ""
+    
+    # Convert tuple back to list
+    tickers = list(tickers_tuple) if tickers_tuple else []
+    
+    company_names_map = {}
+    
+    if not _supabase_client or not tickers:
+        return company_names_map
+    
+    try:
+        # Query in chunks of 50 (Supabase limit)
+        for i in range(0, len(tickers), 50):
+            ticker_batch = tickers[i:i+50]
+            result = _supabase_client.supabase.table("securities")\
+                .select("ticker, company_name")\
+                .in_("ticker", ticker_batch)\
+                .execute()
+            
+            if result.data:
+                for item in result.data:
+                    ticker = item.get('ticker', '').upper()
+                    company_name = item.get('company_name', '')
+                    if company_name and company_name.strip() and company_name != 'Unknown':
+                        company_names_map[ticker] = company_name.strip()
+    except Exception as e:
+        logger.warning(f"Error fetching company names: {e}")
+    
+    return company_names_map
+
+def format_date_congress(d) -> str:
+    """Format date for display"""
+    if d is None:
+        return "N/A"
+    
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.split('T')[0]).date()
+        except (ValueError, AttributeError, TypeError):
+            return d
+    
+    if isinstance(d, date):
+        return d.strftime("%Y-%m-%d")
+    
+    return str(d)
+
+@app.route('/v2/congress_trades')
+@require_auth
+def congress_trades_page():
+    """Congress Trades page (Flask v2)"""
+    try:
+        from flask_auth_utils import get_user_email_flask, is_admin_flask, get_auth_token
+        from flask_data_utils import get_supabase_client_flask
+        from user_preferences import get_user_theme
+        from cache_version import get_cache_version
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        # Get refresh key from query params
+        refresh_key = int(request.args.get('refresh_key', 0))
+        
+        # Get Supabase client
+        if is_admin_flask():
+            from supabase_client import SupabaseClient
+            supabase_client = SupabaseClient(use_service_role=True)
+        else:
+            supabase_client = get_supabase_client_flask()
+        
+        if supabase_client is None:
+            nav_context = get_navigation_context(current_page='congress_trades')
+            return render_template('congress_trades.html',
+                                 user_email=user_email,
+                                 user_theme=user_theme,
+                                 error="Congress Trades Database Unavailable",
+                                 error_message="The congress trades database is not available. Check the logs or contact an administrator.",
+                                 **nav_context)
+        
+        # Get Postgres client
+        postgres_client = get_postgres_client_congress()
+        
+        # Get filter values from query params
+        chamber_filter = request.args.get('chamber', 'All')
+        type_filter = request.args.get('type', 'All')
+        analyzed_only = request.args.get('analyzed_only') == 'true'
+        score_filter = request.args.get('score_filter', 'All Scores')
+        ticker_filter = request.args.get('ticker', 'All')
+        politician_filter = request.args.get('politician', 'All')
+        use_date_filter = request.args.get('use_date_filter') == 'true'
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Convert filters
+        chamber_filter = None if chamber_filter == 'All' else chamber_filter
+        type_filter = None if type_filter == 'All' else type_filter
+        ticker_filter = None if ticker_filter == 'All' else ticker_filter
+        politician_filter = None if politician_filter == 'All' else politician_filter
+        
+        min_score = None
+        max_score = None
+        if score_filter == "High Risk (>0.7)":
+            min_score = 0.7
+            max_score = None
+        elif score_filter == "Medium Risk (0.3-0.7)":
+            min_score = 0.3
+            max_score = 0.7
+        elif score_filter == "Low Risk (<0.3)":
+            min_score = 0.0
+            max_score = 0.3
+        
+        # Get unique values for filters
+        cache_version = get_cache_version()
+        unique_tickers = get_unique_tickers_congress(supabase_client, refresh_key, cache_version)
+        unique_politicians = get_unique_politicians_congress(supabase_client, refresh_key, cache_version)
+        
+        # Get trades
+        all_trades = get_congress_trades_cached(
+            supabase_client,
+            refresh_key,
+            ticker_filter=ticker_filter,
+            politician_filter=politician_filter,
+            chamber_filter=chamber_filter,
+            type_filter=type_filter,
+            start_date=start_date if use_date_filter else None,
+            end_date=end_date if use_date_filter else None,
+            analyzed_only=analyzed_only,
+            min_score=min_score,
+            max_score=max_score,
+            _postgres_client=postgres_client
+        )
+        
+        # Get analysis data
+        analysis_map = get_analysis_data_congress(postgres_client, refresh_key) if postgres_client else {}
+        
+        # Get company names (cached)
+        unique_ticker_list = list(set([t.get('ticker') for t in all_trades if t.get('ticker')]))
+        company_names_map = get_company_names_map_congress(supabase_client, tuple(unique_ticker_list), cache_version)
+        
+        # Calculate summary statistics
+        total_trades = len(all_trades)
+        analyzed_count = len([t for t in all_trades if t.get('id') in analysis_map])
+        unique_tickers_count = len(set([t.get('ticker') for t in all_trades if t.get('ticker')]))
+        
+        high_risk_count = 0
+        for trade in all_trades:
+            trade_id = trade.get('id')
+            analysis = analysis_map.get(trade_id, {})
+            conflict_score = analysis.get('conflict_score')
+            if conflict_score is not None:
+                try:
+                    score_val = float(conflict_score)
+                    if score_val >= 0.7:
+                        high_risk_count += 1
+                except (ValueError, TypeError):
+                    pass
+        
+        house_count = len([t for t in all_trades if t.get('chamber') == 'House'])
+        senate_count = len([t for t in all_trades if t.get('chamber') == 'Senate'])
+        purchase_count = len([t for t in all_trades if t.get('type') == 'Purchase'])
+        sale_count = len([t for t in all_trades if t.get('type') == 'Sale'])
+        
+        # Calculate most active politician (last 31 days)
+        thirty_one_days_ago = date.today() - timedelta(days=31)
+        politician_counts = {}
+        for trade in all_trades:
+            transaction_date_str = trade.get('transaction_date')
+            if transaction_date_str:
+                try:
+                    if isinstance(transaction_date_str, str):
+                        transaction_date = datetime.fromisoformat(transaction_date_str.split('T')[0]).date()
+                    elif isinstance(transaction_date_str, date):
+                        transaction_date = transaction_date_str
+                    else:
+                        continue
+                    
+                    if transaction_date < thirty_one_days_ago:
+                        continue
+                except (ValueError, AttributeError, TypeError):
+                    continue
+            
+            owner = trade.get('owner')
+            if owner and owner.lower() in ('child', 'spouse'):
+                continue
+            politician = trade.get('politician')
+            if politician:
+                politician_counts[politician] = politician_counts.get(politician, 0) + 1
+        
+        if politician_counts:
+            most_active_politician = max(politician_counts.items(), key=lambda x: x[1])
+            most_active_display = f"{most_active_politician[0]} ({most_active_politician[1]})"
+        else:
+            most_active_display = "N/A"
+        
+        # Prepare trades data for JavaScript
+        trades_data = []
+        for trade in all_trades:
+            ticker = trade.get('ticker', 'N/A')
+            ticker_upper = ticker.upper() if ticker != 'N/A' else 'N/A'
+            company_name = company_names_map.get(ticker_upper, 'N/A')
+            
+            trade_id = trade.get('id')
+            analysis = analysis_map.get(trade_id, {})
+            conflict_score = analysis.get('conflict_score')
+            reasoning = analysis.get('reasoning', '')
+            
+            if conflict_score is not None:
+                score_val = float(conflict_score)
+                if score_val >= 0.7:
+                    score_display = f"🔴 {score_val:.2f}"
+                elif score_val >= 0.3:
+                    score_display = f"🟡 {score_val:.2f}"
+                else:
+                    score_display = f"🟢 {score_val:.2f}"
+            else:
+                score_display = "⚪ N/A"
+            
+            reasoning_short = reasoning[:80] + '...' if reasoning and len(reasoning) > 80 else (reasoning or '')
+            
+            trades_data.append({
+                'Ticker': ticker,
+                'Company': company_name,
+                'Politician': trade.get('politician', 'N/A'),
+                'Chamber': trade.get('chamber', 'N/A'),
+                'Party': trade.get('party', 'N/A'),
+                'State': trade.get('state', 'N/A'),
+                'Date': format_date_congress(trade.get('transaction_date')),
+                'Type': trade.get('type', 'N/A'),
+                'Amount': trade.get('amount', 'N/A'),
+                'Score': score_display,
+                'AI Reasoning': reasoning_short,
+                'Owner': trade.get('owner', 'N/A'),
+                '_tooltip': reasoning if reasoning else reasoning_short,
+                '_full_reasoning': reasoning if reasoning else ''
+            })
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='congress_trades')
+        
+        return render_template('congress_trades.html',
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             refresh_key=refresh_key,
+                             unique_tickers=unique_tickers,
+                             unique_politicians=unique_politicians,
+                             trades_data=trades_data,
+                             total_trades=total_trades,
+                             analyzed_count=analyzed_count,
+                             unique_tickers_count=unique_tickers_count,
+                             high_risk_count=high_risk_count,
+                             house_count=house_count,
+                             senate_count=senate_count,
+                             purchase_count=purchase_count,
+                             sale_count=sale_count,
+                             most_active_display=most_active_display,
+                             # Current filter values
+                             current_chamber=request.args.get('chamber', 'All'),
+                             current_type=request.args.get('type', 'All'),
+                             current_analyzed_only=analyzed_only,
+                             current_score_filter=score_filter,
+                             current_ticker=request.args.get('ticker', 'All'),
+                             current_politician=request.args.get('politician', 'All'),
+                             current_use_date_filter=use_date_filter,
+                             current_start_date=start_date or '',
+                             current_end_date=end_date or '',
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error in congress trades page: {e}", exc_info=True)
+        import traceback
+        tb = traceback.format_exc()
+        nav_context = get_navigation_context(current_page='congress_trades')
+        return render_template('congress_trades.html',
+                             user_email='User',
+                             user_theme='system',
+                             error=str(e),
+                             error_message="An error occurred loading congress trades. Please check the logs.",
+                             **nav_context), 500
+
+@app.route('/api/congress_trades/data')
+@require_auth
+def api_congress_trades_data():
+    """API endpoint for congress trades data (JSON)"""
+    try:
+        from flask_auth_utils import is_admin_flask, get_auth_token
+        from flask_data_utils import get_supabase_client_flask
+        from cache_version import get_cache_version
+        
+        refresh_key = int(request.args.get('refresh_key', 0))
+        
+        # Get Supabase client
+        if is_admin_flask():
+            from supabase_client import SupabaseClient
+            supabase_client = SupabaseClient(use_service_role=True)
+        else:
+            supabase_client = get_supabase_client_flask()
+        
+        if supabase_client is None:
+            return jsonify({"error": "Supabase client unavailable"}), 500
+        
+        postgres_client = get_postgres_client_congress()
+        
+        # Get filter values
+        ticker_filter = request.args.get('ticker')
+        politician_filter = request.args.get('politician')
+        chamber_filter = request.args.get('chamber')
+        type_filter = request.args.get('type')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        analyzed_only = request.args.get('analyzed_only') == 'true'
+        min_score = request.args.get('min_score')
+        max_score = request.args.get('max_score')
+        min_score = float(min_score) if min_score else None
+        max_score = float(max_score) if max_score else None
+        
+        # Get trades
+        all_trades = get_congress_trades_cached(
+            supabase_client,
+            refresh_key,
+            ticker_filter=ticker_filter if ticker_filter and ticker_filter != 'All' else None,
+            politician_filter=politician_filter if politician_filter and politician_filter != 'All' else None,
+            chamber_filter=chamber_filter if chamber_filter and chamber_filter != 'All' else None,
+            type_filter=type_filter if type_filter and type_filter != 'All' else None,
+            start_date=start_date,
+            end_date=end_date,
+            analyzed_only=analyzed_only,
+            min_score=min_score,
+            max_score=max_score,
+            _postgres_client=postgres_client
+        )
+        
+        # Get analysis data
+        analysis_map = get_analysis_data_congress(postgres_client, refresh_key) if postgres_client else {}
+        
+        # Get company names (cached)
+        unique_ticker_list = list(set([t.get('ticker') for t in all_trades if t.get('ticker')]))
+        cache_version = get_cache_version()
+        company_names_map = get_company_names_map_congress(supabase_client, tuple(unique_ticker_list), cache_version)
+        
+        # Format trades data
+        trades_data = []
+        for trade in all_trades:
+            ticker = trade.get('ticker', 'N/A')
+            ticker_upper = ticker.upper() if ticker != 'N/A' else 'N/A'
+            company_name = company_names_map.get(ticker_upper, 'N/A')
+            
+            trade_id = trade.get('id')
+            analysis = analysis_map.get(trade_id, {})
+            conflict_score = analysis.get('conflict_score')
+            reasoning = analysis.get('reasoning', '')
+            
+            if conflict_score is not None:
+                score_val = float(conflict_score)
+                if score_val >= 0.7:
+                    score_display = f"🔴 {score_val:.2f}"
+                elif score_val >= 0.3:
+                    score_display = f"🟡 {score_val:.2f}"
+                else:
+                    score_display = f"🟢 {score_val:.2f}"
+            else:
+                score_display = "⚪ N/A"
+            
+            reasoning_short = reasoning[:80] + '...' if reasoning and len(reasoning) > 80 else (reasoning or '')
+            
+            trades_data.append({
+                'Ticker': ticker,
+                'Company': company_name,
+                'Politician': trade.get('politician', 'N/A'),
+                'Chamber': trade.get('chamber', 'N/A'),
+                'Party': trade.get('party', 'N/A'),
+                'State': trade.get('state', 'N/A'),
+                'Date': format_date_congress(trade.get('transaction_date')),
+                'Type': trade.get('type', 'N/A'),
+                'Amount': trade.get('amount', 'N/A'),
+                'Score': score_display,
+                'AI Reasoning': reasoning_short,
+                'Owner': trade.get('owner', 'N/A'),
+                '_tooltip': reasoning if reasoning else reasoning_short,
+                '_full_reasoning': reasoning if reasoning else ''
+            })
+        
+        return jsonify({
+            "trades": trades_data,
+            "total": len(trades_data),
+            "analysis_map": {str(k): v for k, v in analysis_map.items()}
+        })
+    except ValueError as e:
+        logger.error(f"Invalid parameter in congress trades API: {e}", exc_info=True)
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        logger.error(f"Error in congress trades API: {e}", exc_info=True)
+        return jsonify({"error": "An error occurred while fetching congress trades data. Please check the logs."}), 500
 
 if __name__ == '__main__':
     # Run the app

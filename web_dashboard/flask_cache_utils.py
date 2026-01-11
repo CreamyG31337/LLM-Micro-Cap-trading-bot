@@ -126,37 +126,34 @@ def _get_cache():
     if FLASK_CACHING_AVAILABLE:
         try:
             if has_app_context():
-                # Try to import cache from app module (safest approach)
-                # This avoids issues with Flask-Caching's internal storage mechanism
-                try:
-                    # Use importlib to avoid circular import issues
-                    import importlib
-                    app_module = importlib.import_module('web_dashboard.app')
-                    if hasattr(app_module, 'cache') and app_module.cache is not None:
-                        return app_module.cache
-                except (ImportError, AttributeError, ModuleNotFoundError) as e:
-                    logger.debug(f"Could not import cache from app module: {e}")
-                
-                # Fallback: Try to get from extensions
+                # 1. Try to get from extensions (Standard Flask-Caching way)
                 # Flask-Caching stores cache backend in app.extensions['cache'] as a dict
-                # where the Cache instance is the key
+                # where the Cache instance is the key: {Cache_instance: backend}
                 cache_ext = current_app.extensions.get('cache')
+                
                 if cache_ext is not None:
-                    # Flask-Caching stores as {Cache_instance: backend_cache}
-                    # We need to get the Cache instance (which is the key)
+                    # Case A: Standard Flask-Caching dict
                     if hasattr(cache_ext, 'keys'):
                         try:
-                            # Get the first key, which is the Cache instance
-                            cache_keys = list(cache_ext.keys())
-                            if cache_keys:
-                                return cache_keys[0]
+                            # The Cache object itself is the key
+                            # We iterate to find it
+                            for key in cache_ext.keys():
+                                if isinstance(key, Cache):
+                                    return key
                         except (TypeError, AttributeError):
                             pass
-                    # If it's already a Cache instance (shouldn't happen but handle it)
+                            
+                    # Case B: Direct Cache instance (unlikely but possible in some setups)
                     elif isinstance(cache_ext, Cache):
                         return cache_ext
+
+                # 2. Try to get 'cache' attribute from current_app if manually attached
+                # Some apps attach it like app.cache = cache
+                if hasattr(current_app, 'cache') and isinstance(current_app.cache, Cache):
+                    return current_app.cache
                 
-                # Last resort: Initialize new cache instance
+                # 3. Last resort: Initialize new cache instance attached to current_app
+                # This should only happen if cache wasn't initialized in app.py
                 logger.warning("Cache not found in extensions, initializing new Flask-Caching instance")
                 _cache_instance = Cache(config={'CACHE_TYPE': 'SimpleCache'})
                 _cache_instance.init_app(current_app)

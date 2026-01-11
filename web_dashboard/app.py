@@ -1996,11 +1996,11 @@ def ticker_details_page():
 def _get_all_tickers_cached():
     """Get all unique tickers with caching (60s TTL)"""
     try:
-        from utils.db_utils import get_all_unique_tickers
+        from ticker_utils import get_all_unique_tickers
         tickers = get_all_unique_tickers()
         return sorted(tickers) if tickers else []
-    except (ImportError, ModuleNotFoundError):
-        logger.warning("utils.db_utils not available, returning empty ticker list")
+    except Exception as e:
+        logger.error(f"Error fetching ticker list: {e}")
         return []
 
 @app.route('/api/v2/ticker/list')
@@ -2047,6 +2047,7 @@ def api_ticker_info():
     try:
         from flask_auth_utils import get_user_id_flask
         from auth import is_admin
+        import json as json_lib
         
         ticker = request.args.get('ticker', '').upper().strip()
         if not ticker:
@@ -2057,27 +2058,57 @@ def api_ticker_info():
         auth_token = request.cookies.get('auth_token')
         
         # Get ticker info (cached)
-        ticker_data = _get_ticker_info_cached(ticker, user_is_admin, auth_token)
+        try:
+            ticker_data = _get_ticker_info_cached(ticker, user_is_admin, auth_token)
+        except RecursionError:
+            # Handle recursion errors specifically from cache pickling issues
+            logger.error(f"RecursionError fetching ticker info for {ticker}", exc_info=True)
+            return jsonify({"error": "Data structure too complex (recursion error)"}), 500
         
-        # Convert datetime objects to ISO strings for JSON serialization
-        def serialize_datetime(obj):
-            if isinstance(obj, datetime):
+        # Helper for safe serialization
+        def safe_serialize(obj, visited=None):
+            if visited is None:
+                visited = set()
+            
+            # Primitive types
+            if obj is None or isinstance(obj, (bool, int, float, str)):
+                return obj
+            
+            # Handle dates/times
+            if isinstance(obj, (datetime, date, pd.Timestamp)):
                 return obj.isoformat()
-            elif isinstance(obj, pd.Timestamp):
-                return obj.isoformat()
-            elif isinstance(obj, date):
-                return obj.isoformat()
-            return obj
+            
+            # Handle circular references
+            obj_id = id(obj)
+            if obj_id in visited:
+                return f"<Circular Reference: {type(obj).__name__}>"
+            
+            visited.add(obj_id)
+            try:
+                if isinstance(obj, (list, tuple)):
+                    return [safe_serialize(item, visited) for item in obj]
+                elif isinstance(obj, dict):
+                    return {str(k): safe_serialize(v, visited) for k, v in obj.items()}
+                elif hasattr(obj, 'to_dict'):  # Pandas/Numpy objects
+                    return safe_serialize(obj.to_dict(), visited)
+                else:
+                    return str(obj)  # Fallback
+            finally:
+                visited.remove(obj_id)
+
+        # Serialize explicitly
+        clean_data = safe_serialize(ticker_data)
         
-        # Recursively serialize the response
-        import json as json_lib
-        ticker_data_str = json_lib.dumps(ticker_data, default=serialize_datetime)
-        ticker_data = json_lib.loads(ticker_data_str)
+        return jsonify(clean_data)
         
-        return jsonify(ticker_data)
     except Exception as e:
         logger.error(f"Error fetching ticker info: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),  # Show stack trace to user
+            "type": type(e).__name__
+        }), 500
 
 @cache_data(ttl=300)
 def _get_ticker_price_history_cached(ticker: str, days: int, user_is_admin: bool, auth_token: Optional[str]):

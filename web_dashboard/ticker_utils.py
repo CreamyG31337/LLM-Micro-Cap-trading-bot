@@ -12,8 +12,119 @@ import re
 import pandas as pd
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, timezone
+from flask import current_app
+
+try:
+    from supabase_client import SupabaseClient
+    from postgres_client import PostgresClient
+except ImportError:
+    # Handle case where clients might be in different path
+    try:
+        from web_dashboard.supabase_client import SupabaseClient
+        from web_dashboard.postgres_client import PostgresClient
+    except ImportError:
+        pass
 
 logger = logging.getLogger(__name__)
+
+
+def get_all_unique_tickers(supabase_client=None, postgres_client=None) -> List[str]:
+    """
+    Aggregate unique tickers from all relevant database tables.
+    Flask-compatible version (no Streamlit dependencies).
+
+    Args:
+        supabase_client: Optional SupabaseClient instance
+        postgres_client: Optional PostgresClient instance
+
+    Returns:
+        List of unique ticker symbols sorted alphabetically.
+    """
+    tickers: set[str] = set()
+
+    # Use provided clients or try to get from current_app context
+    # This avoids creating new connections if they exist
+    sb_client = supabase_client
+    pg_client = postgres_client
+    
+    # Try to resolve clients from Flask app context if not provided
+    try:
+        if not sb_client and current_app:
+            # Try to get from app extension or attribute
+            # Note: This depends on how clients are stored in your app
+            pass 
+            
+        # Fallback to creating new clients if needed (but try to avoid)
+        # For now, we'll assume the caller passes them or we create temporary ones
+        if not sb_client:
+            try:
+                sb_client = SupabaseClient(use_service_role=True)
+            except Exception as e:
+                logger.warning(f"Failed to init SupabaseClient: {e}")
+
+        if not pg_client:
+            try:
+                pg_client = PostgresClient()
+            except Exception as e:
+                logger.warning(f"Failed to init PostgresClient: {e}")
+                
+    except RuntimeError:
+        # standard fallback if outside request context
+        pass
+
+    # 1. Fetch from Supabase
+    if sb_client:
+        try:
+            # From securities table
+            securities = sb_client.supabase.table('securities').select('ticker').execute()
+            if securities.data:
+                tickers.update(row['ticker'].upper() for row in securities.data if row.get('ticker'))
+
+            # From portfolio_positions
+            positions = sb_client.supabase.table('portfolio_positions').select('ticker').execute()
+            if positions.data:
+                tickers.update(row['ticker'].upper() for row in positions.data if row.get('ticker'))
+
+            # From trade_log
+            trades = sb_client.supabase.table('trade_log').select('ticker').execute()
+            if trades.data:
+                tickers.update(row['ticker'].upper() for row in trades.data if row.get('ticker'))
+
+            # From watched_tickers (active only)
+            watched = sb_client.supabase.table('watched_tickers').select('ticker').eq('is_active', True).execute()
+            if watched.data:
+                tickers.update(row['ticker'].upper() for row in watched.data if row.get('ticker'))
+
+            # From congress_trades
+            congress = sb_client.supabase.table('congress_trades').select('ticker').execute()
+            if congress.data:
+                tickers.update(row['ticker'].upper() for row in congress.data if row.get('ticker'))
+
+        except Exception as e:
+            logger.error(f"Error fetching tickers from Supabase: {e}")
+
+    # 2. Fetch from PostgreSQL (Research DB)
+    if pg_client:
+        try:
+            # From research_articles (unnest array)
+            articles = pg_client.execute_query("""
+                SELECT DISTINCT UNNEST(tickers) as ticker
+                FROM research_articles
+                WHERE tickers IS NOT NULL
+            """)
+            if articles:
+                tickers.update(row['ticker'].upper() for row in articles if row.get('ticker'))
+
+            # From social_metrics
+            social = pg_client.execute_query("SELECT DISTINCT ticker FROM social_metrics")
+            if social:
+                tickers.update(row['ticker'].upper() for row in social if row.get('ticker'))
+
+        except Exception as e:
+            logger.error(f"Error fetching tickers from PostgreSQL: {e}")
+
+    # Return sorted list
+    return sorted(tickers)
 
 
 def get_ticker_info(

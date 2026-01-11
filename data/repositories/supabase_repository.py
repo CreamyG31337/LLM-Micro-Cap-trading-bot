@@ -900,7 +900,7 @@ class SupabaseRepository(BaseRepository):
             target_fund = fund if fund else None
             
             while True:
-                query = self.supabase.table("latest_positions").select("*")
+                query = self.supabase.table("latest_positions").select("*, securities(company_name, sector, industry, market_cap, country)")
                 if target_fund:
                     query = query.eq("fund", target_fund)
                 

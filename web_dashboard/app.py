@@ -142,7 +142,7 @@ def handle_exception(e):
     # Handle non-HTTP exceptions (like 500s)
     import traceback
     tb = traceback.format_exc()
-    logger.error(f"Unhandled exception: {e}\n{tb}")
+    logger.error(f"Unhandled exception: {e}", exc_info=True)
     
     # Return JSON for API requests
     if request.path.startswith('/api/') or request.is_json:
@@ -201,7 +201,7 @@ def get_supabase_client() -> Optional[SupabaseClient]:
     try:
         return SupabaseClient()
     except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
+        logger.error(f"Failed to initialize Supabase client: {e}", exc_info=True)
         return None
 
 
@@ -287,7 +287,7 @@ try:
     app.register_blueprint(research_bp, url_prefix='/v2')
     logger.debug("Registered Research Blueprint at /v2")
 except Exception as e:
-    logger.error(f"Failed to register Research Blueprint: {e}")
+    logger.error(f"Failed to register Research Blueprint: {e}", exc_info=True)
 
 def load_portfolio_data(fund_name=None) -> Dict:
     """Load and process portfolio data from Supabase (web app only - no CSV fallback)"""
@@ -341,7 +341,7 @@ def load_portfolio_data(fund_name=None) -> Dict:
             "current_fund": fund_name
         }
     except Exception as e:
-        logger.error(f"Error loading portfolio data from Supabase: {e}")
+        logger.error(f"Error loading portfolio data from Supabase: {e}", exc_info=True)
         return {
             "portfolio": pd.DataFrame(),
             "trades": pd.DataFrame(),
@@ -430,7 +430,7 @@ def calculate_performance_metrics(portfolio_df: pd.DataFrame, trade_df: pd.DataF
             "losing_trades": losing_trades
         }
     except Exception as e:
-        logger.error(f"Error calculating performance metrics: {e}")
+        logger.error(f"Error calculating performance metrics: {e}", exc_info=True)
         return {
             "total_value": 0,
             "total_cost_basis": 0,
@@ -550,7 +550,7 @@ def create_performance_chart(portfolio_df: pd.DataFrame, fund_name: Optional[str
         return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
     
     except Exception as e:
-        logger.error(f"Error creating performance chart: {e}")
+        logger.error(f"Error creating performance chart: {e}", exc_info=True)
         return json.dumps({})
 
 @app.route('/')
@@ -583,7 +583,7 @@ def index():
                              user_theme=user_theme,
                              **nav_context)
     except Exception as e:
-        logger.error(f"Error loading dashboard: {e}")
+        logger.error(f"Error loading dashboard: {e}", exc_info=True)
         fund = request.args.get('fund')
         # Fallback with minimal context
         nav_context = get_navigation_context(current_page='dashboard')
@@ -694,8 +694,9 @@ def login():
                 return jsonify({"error": error_msg}), 401
             
     except Exception as e:
-        logger.error(f"Login error: {e}")
-        return jsonify({"error": "Login failed"}), 500
+        logger.error(f"Login error: {e}", exc_info=True)
+        import traceback
+        return jsonify({"error": "Login failed", "message": str(e), "traceback": traceback.format_exc()}), 500
 
 @app.route('/api/auth/register', methods=['POST'])
 def register():
@@ -747,8 +748,9 @@ def register():
                 return jsonify({"error": error_msg}), 400
             
     except Exception as e:
-        logger.error(f"Registration error: {e}")
-        return jsonify({"error": "Registration failed"}), 500
+        logger.error(f"Registration error: {e}", exc_info=True)
+        import traceback
+        return jsonify({"error": "Registration failed", "message": str(e), "traceback": traceback.format_exc()}), 500
 
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():

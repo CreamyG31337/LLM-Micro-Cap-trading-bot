@@ -36,7 +36,7 @@ def get_cached_unique_tickers(repo: ResearchRepository):
     try:
         return repo.get_unique_tickers()
     except Exception as e:
-        logger.error(f"Error fetching unique tickers: {e}")
+        logger.error(f"Error fetching unique tickers: {e}", exc_info=True)
         return []
 
 @cache_data(ttl=30)

@@ -36,7 +36,7 @@ interface PlotlyElement extends HTMLElement {
  * @param themeName - Theme name ('system', 'light', 'dark', 'midnight-tokyo', 'abyss')
  * @returns Plotly layout object with theme-specific styles
  */
-function getPlotlyLayout(themeName: Theme): PlotlyLayout {
+export function getPlotlyLayout(themeName: Theme): PlotlyLayout {
     // Resolve 'system' to actual theme
     let effectiveTheme: EffectiveTheme = themeName === 'system'
         ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -95,7 +95,7 @@ function getPlotlyLayout(themeName: Theme): PlotlyLayout {
  * @param chartElement - Chart DOM element or ID
  * @param themeName - Theme to apply
  */
-function applyThemeToChart(chartElement: HTMLElement | string, themeName: Theme): void {
+export function applyThemeToChart(chartElement: HTMLElement | string, themeName: Theme): void {
     // Get the element
     const element: PlotlyElement | null = typeof chartElement === 'string'
         ? (document.getElementById(chartElement) as PlotlyElement | null)
@@ -125,7 +125,7 @@ function applyThemeToChart(chartElement: HTMLElement | string, themeName: Theme)
  * Apply theme to all Plotly charts on the page
  * @param themeName - Theme to apply
  */
-function applyThemeToAllCharts(themeName: Theme): void {
+export function applyThemeToAllCharts(themeName: Theme): void {
     // Find all Plotly charts
     const charts = document.querySelectorAll<PlotlyElement>('.js-plotly-plot');
 
@@ -138,7 +138,7 @@ function applyThemeToAllCharts(themeName: Theme): void {
  * Initialize chart theme synchronization
  * Automatically updates charts when theme changes
  */
-function initChartThemeSync(): void {
+export function initChartThemeSync(): void {
     const themeManager = (window as Window & { themeManager?: { addListener: (callback: (theme: Theme) => void) => void } }).themeManager;
     if (themeManager) {
         themeManager.addListener((theme: Theme) => {

@@ -47,3 +47,21 @@ python run_tests.py portfolio_display
 # Run only integration tests
 python run_tests.py integration
 ```
+
+## 5. Web Dashboard Tests
+
+The web dashboard has its own virtual environment and test suite.
+
+### Backend (Flask)
+
+```bash
+# Use the web_dashboard venv
+.\web_dashboard\venv\Scripts\python -m pytest tests/test_flask_routes.py
+```
+
+### Frontend (TypeScript)
+
+```bash
+cd web_dashboard
+npm test
+```

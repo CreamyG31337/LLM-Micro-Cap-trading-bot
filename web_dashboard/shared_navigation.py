@@ -16,6 +16,7 @@ MIGRATED_PAGES = {
     'settings': '/v2/settings',  # Routed to Flask via Caddy /v2/* handler
     'admin_logs': '/v2/logs',    # Admin logs viewer
     'admin_scheduler': '/v2/jobs',  # Admin job scheduler
+    'admin_users': '/v2/admin/users',  # Admin user & access management
     'ticker_details': '/v2/ticker',  # Ticker details page
     'research': '/v2/research',     # Research Repository page
     'ai_assistant': '/v2/ai_assistant',  # AI Assistant chat interface

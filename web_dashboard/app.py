@@ -250,22 +250,16 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
             is_v2_enabled = True
         
         # Build navigation context
+        # Only check: is v2 enabled AND is page migrated? If yes, show link.
+        # Don't hide links for any other reason - let pages handle errors and authorization
         nav_links = []
         for link in links:
-            # Determine if link should be shown
+            # Only check: if page is migrated, show it only if v2 is enabled
+            # Otherwise, show it (it's a Streamlit page)
             show = True
-            
-            # Check if page is migrated and v2 is enabled
-            if is_page_migrated(link['page']) and not is_v2_enabled:
-                # Don't show migrated pages if v2 is disabled
-                show = False
-            
-            # Check service availability for specific pages
-            # Note: We show the links even if services are unavailable - let the pages handle errors
-            # This provides better UX as users can see what's available and get helpful error messages
-
-            
-            # AI Assistant - always show (let the page handle Ollama unavailability)
+            if is_page_migrated(link['page']):
+                # Only show migrated pages if v2 is enabled
+                show = is_v2_enabled
             
             # Determine URL (use Flask route if migrated and v2 enabled)
             url = link['url']
@@ -288,9 +282,14 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
             logger.warning(f"Could not load available funds: {e}")
             available_funds = []
         
+        # Check if user is admin
+        # Note: Only check if v2 is enabled - show admin menu if v2 is enabled
+        # Don't hide menu items for any other reason - let pages handle errors and authorization
+        is_admin_value = is_v2_enabled
+        
         return {
             'navigation_links': nav_links,
-            'is_admin': is_admin() if hasattr(request, 'user_id') else False,
+            'is_admin': is_admin_value,
             'available_funds': available_funds
         }
     except Exception as e:

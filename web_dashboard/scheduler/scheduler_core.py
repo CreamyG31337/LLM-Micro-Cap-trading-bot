@@ -68,6 +68,11 @@ _HEARTBEAT_FILE = Path(__file__).parent.parent / 'logs' / '.scheduler_heartbeat'
 _HEARTBEAT_INTERVAL = 20  # seconds between heartbeat updates
 _HEARTBEAT_TIMEOUT = 60  # seconds before considering scheduler dead
 
+# Worker Utilization Tracking
+_active_job_count = 0
+_active_job_lock = threading.Lock()
+WORKER_WARNING_THRESHOLD = 6  # Warn if 6 or 7 workers are active
+
 
 def _update_heartbeat():
     """Update the heartbeat file with current timestamp."""
@@ -179,6 +184,9 @@ def _scheduler_event_listener(event) -> None:
     import sys
     import traceback
     
+    # Access global tracking variables
+    global _active_job_count
+    
     try:
         from apscheduler.events import (
             EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED,
@@ -210,8 +218,16 @@ def _scheduler_event_listener(event) -> None:
                     logger.debug(f"Job executed: {job_display}")
             except:
                 pass
+            
+            # Decrement active job count
+            with _active_job_lock:
+                _active_job_count = max(0, _active_job_count - 1)
                 
         elif event.code == EVENT_JOB_ERROR:
+            # Decrement active job count
+            with _active_job_lock:
+                _active_job_count = max(0, _active_job_count - 1)
+                
             error_msg = f"❌ SCHEDULER EVENT: Job {job_display} raised exception: {event.exception}"
             print(error_msg, file=sys.stderr, flush=True)
             if hasattr(event, 'exception') and event.exception:
@@ -319,6 +335,22 @@ def _scheduler_event_listener(event) -> None:
                     logger.debug(f"Job submitted: {job_display}")
             except:
                 pass
+            
+            # Increment active job count and check threshold
+            # Skip heartbeat job from counting towards saturation
+            if job_id != 'scheduler_heartbeat':
+                with _active_job_lock:
+                    _active_job_count += 1
+                    current_count = _active_job_count
+                    
+                if current_count >= WORKER_WARNING_THRESHOLD:
+                    msg = f"⚠️ HIGH LOAD WARNING: {current_count}/7 scheduler threads are active! (Threshold: {WORKER_WARNING_THRESHOLD})"
+                    # Force print to stderr to ensure visibility
+                    print(msg, file=sys.stderr, flush=True)
+                    try:
+                        logger.warning(msg)
+                    except:
+                        pass
                 
         else:
             # Truly unknown event code - log it

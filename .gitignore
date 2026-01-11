@@ -319,3 +319,5 @@ Research/**/*.pdf
 node_modules/
 package-lock.json
 web_dashboard/static/css/tailwind.css
+web_dashboard/static/js/*.js
+web_dashboard/static/js/*.js.map

@@ -63,10 +63,10 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then
                         click Send.</p>
                     <textarea id="editable-prompt" rows="4"
-                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                        class="w-full p-2 border border-border rounded-lg mb-2 bg-dashboard-surface text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"></textarea>
                     <div class="flex gap-2">
                         <button id="send-edited-prompt-btn"
-                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
+                            class="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-colors">
                             📤 Send
                         </button>
                         <button id="cancel-edited-prompt-btn"
@@ -85,7 +85,7 @@
                     <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Review and edit the prompt below, then
                         click Run to start.</p>
                     <textarea id="initial-prompt" rows="6"
-                        class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-green-500"></textarea>
+                        class="w-full p-2 border border-border rounded-lg mb-2 bg-dashboard-surface text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"></textarea>
                     <button id="run-analysis-btn"
                         class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors">
                         ▶️ Run Analysis
@@ -96,9 +96,9 @@
             <!-- Chat Input -->
             <div class="flex gap-2">
                 <input type="text" id="chat-input" placeholder="Ask about your portfolio..."
-                    class="flex-1 px-4 py-3 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                    class="flex-1 px-4 py-3 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors">
                 <button id="send-btn"
-                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 font-medium focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    class="px-6 py-3 bg-accent text-white rounded-lg hover:bg-accent-hover font-medium focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     <i class="fas fa-paper-plane mr-2"></i>Send
                 </button>
             </div>
@@ -131,12 +131,12 @@
                     <label class="block text-sm font-medium mb-2 text-text-primary">Select
                         Tickers:</label>
                     <select id="ticker-select" multiple
-                        class="w-full p-2 border border-border rounded-lg mb-2 bg-dashboard-surface text-text-primary focus:ring-2 focus:ring-blue-500"
+                        class="w-full p-2 border border-border rounded-lg mb-2 bg-dashboard-surface text-text-primary focus:ring-2 focus:ring-accent"
                         size="5">
                         <!-- Populated by JavaScript -->
                     </select>
                     <input type="text" id="custom-ticker" placeholder="Custom ticker (e.g., NVDA)"
-                        class="w-full p-2 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:ring-2 focus:ring-blue-500">
+                        class="w-full p-2 border border-border rounded-lg bg-dashboard-surface text-text-primary placeholder-text-tertiary focus:ring-2 focus:ring-accent">
                 </div>
 
                 <div class="border-t border-gray-300 dark:border-gray-600 pt-4">
@@ -145,19 +145,19 @@
                     <!-- Ticker-Specific Actions -->
                     <div id="ticker-actions" class="hidden mb-4">
                         <button id="research-ticker-btn"
-                            class="w-full mb-2 px-3 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            class="w-full mb-2 px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-sm transition-colors focus:ring-2 focus:ring-accent focus:ring-offset-2">
                             🔍 Research
                         </button>
                         <button id="analyze-ticker-btn"
-                            class="w-full mb-2 px-3 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            class="w-full mb-2 px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-sm transition-colors focus:ring-2 focus:ring-accent focus:ring-offset-2">
                             📊 Analyze
                         </button>
                         <button id="compare-tickers-btn"
-                            class="w-full mb-2 px-3 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm hidden transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            class="w-full mb-2 px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-sm hidden transition-colors focus:ring-2 focus:ring-accent focus:ring-offset-2">
                             📈 Compare Stocks
                         </button>
                         <button id="earnings-ticker-btn"
-                            class="w-full mb-2 px-3 py-2 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-lg text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            class="w-full mb-2 px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-sm transition-colors focus:ring-2 focus:ring-accent focus:ring-offset-2">
                             💰 Earnings
                         </button>
                     </div>
@@ -191,7 +191,7 @@
         <div>
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">⚙️ Model</h3>
             <select id="model-select"
-                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent">
                 <!-- Populated by JavaScript -->
             </select>
             <p id="model-description" class="text-xs text-gray-500 dark:text-gray-400 mt-2"></p>
@@ -203,7 +203,7 @@
         <div>
             <h3 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">📊 Data Source</h3>
             <select id="fund-select"
-                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+                class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent">
                 {% for fund in available_funds %}
                 <option value="{{ fund }}">{{ fund }}</option>
                 {% endfor %}
@@ -221,13 +221,13 @@
 
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-thesis"
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Investment Thesis</span>
             </label>
 
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-trades"
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Recent Trades</span>
             </label>
 
@@ -237,13 +237,13 @@
 
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-price-volume" checked
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Price & Volume Table</span>
             </label>
 
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-fundamentals" checked
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Company Fundamentals Table</span>
             </label>
         </div>
@@ -257,7 +257,7 @@
             <p class="text-xs text-green-600 dark:text-green-400 mb-2">✅ SearXNG available</p>
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-search" checked
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Enable Web Search</span>
             </label>
             {% else %}
@@ -273,7 +273,7 @@
             {% if ollama_available %}
             <label class="flex items-center mb-2 cursor-pointer">
                 <input type="checkbox" id="toggle-repository" checked
-                    class="mr-2 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                    class="mr-2 w-4 h-4 text-accent bg-gray-100 border-gray-300 rounded focus:ring-accent dark:focus:ring-accent dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                 <span class="text-sm text-gray-900 dark:text-gray-100">Use Research Repository</span>
             </label>
             {% else %}

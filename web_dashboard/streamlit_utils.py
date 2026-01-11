@@ -495,7 +495,28 @@ def get_current_positions(fund: Optional[str] = None, _cache_version: str = CACH
                 break
         
         if all_rows:
-            return pd.DataFrame(all_rows)
+            df = pd.DataFrame(all_rows)
+            
+            # Deduplicate by fund + ticker (keep latest by date)
+            if not df.empty and 'fund' in df.columns and 'ticker' in df.columns:
+                initial_count = len(df)
+                
+                # Convert date to datetime if it's a string
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                
+                # Sort by date descending, then drop duplicates keeping first (latest)
+                df = df.sort_values('date', ascending=False, na_position='last')
+                df = df.drop_duplicates(subset=['fund', 'ticker'], keep='first')
+                
+                final_count = len(df)
+                if initial_count > final_count:
+                    logger.warning(
+                        f"Removed {initial_count - final_count} duplicate positions "
+                        f"(fund+ticker) in get_current_positions"
+                    )
+            
+            return df
         return pd.DataFrame()
     except Exception as e:
         import logging

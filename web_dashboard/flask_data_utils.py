@@ -95,6 +95,7 @@ def get_current_positions_flask(fund: Optional[str] = None, _cache_version: Opti
         offset = 0
         
         while True:
+            # Join with securities table to get sector, industry, market_cap, country for filtering
             query = client.supabase.table("latest_positions").select(
                 "*, securities(company_name, sector, industry, market_cap, country)"
             )
@@ -117,7 +118,23 @@ def get_current_positions_flask(fund: Optional[str] = None, _cache_version: Opti
                 break
                 
         if all_rows:
-            return pd.DataFrame(all_rows)
+            df = pd.DataFrame(all_rows)
+            
+            # Flatten nested securities data (same as streamlit_utils.py)
+            if 'securities' in df.columns:
+                securities_df = pd.json_normalize(df['securities'])
+                if not securities_df.empty:
+                    # Merge sector and industry from securities, prefer securities currency if available
+                    if 'sector' in securities_df.columns:
+                        df['sector'] = securities_df['sector']
+                    if 'industry' in securities_df.columns:
+                        df['industry'] = securities_df['industry']
+                    if 'currency' in securities_df.columns:
+                        # Use securities currency if available, otherwise use position currency
+                        df['currency'] = securities_df['currency'].fillna(df.get('currency', 'USD'))
+                df = df.drop(columns=['securities'], errors='ignore')
+            
+            return df
         return pd.DataFrame()
         
     except Exception as e:

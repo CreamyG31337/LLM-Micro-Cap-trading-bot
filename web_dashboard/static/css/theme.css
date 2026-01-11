@@ -20,6 +20,12 @@
     --code-bg: #ffffff;
     --code-border: #e5e7eb;
 
+    /* Accent Colors */
+    --color-accent: #7c3aed;
+    /* purple-600 (Main accent) */
+    --color-accent-hover: #6d28d9;
+    /* purple-700 */
+
     /* Log level colors (light mode) */
     --log-debug: #6b7280;
     --log-perf: #8b5cf6;
@@ -45,6 +51,12 @@
     --log-line-hover: #f9fafb;
     --code-bg: #ffffff;
     --code-border: #e5e7eb;
+
+    /* Accent Colors */
+    --color-accent: #7c3aed;
+    /* purple-600 */
+    --color-accent-hover: #6d28d9;
+    /* purple-700 */
 
     /* Log level colors (light mode) */
     --log-debug: #6b7280;
@@ -73,6 +85,11 @@
     --code-bg: #1f2937;
     --code-border: #374151;
 
+    /* Accent Colors */
+    --color-accent: #7c3aed;
+    /* purple-600 - Keeping consistent with light mode default for now, can be blue-600 #2563eb if preferred */
+    --color-accent-hover: #6d28d9;
+
     /* Log level colors (dark mode - slightly brighter for visibility) */
     --log-debug: #9ca3af;
     --log-perf: #a78bfa;
@@ -99,6 +116,10 @@
     --code-bg: #24283b;
     --code-border: #3b4261;
 
+    /* Accent Colors - Neon Pink/Purple to match theme */
+    --color-accent: #bb9af7;
+    --color-accent-hover: #9d7cd8;
+
     /* Log level colors */
     --log-debug: #565f89;
     --log-perf: #bb9af7;
@@ -124,6 +145,10 @@
     --log-line-hover: #1a2b42;
     --code-bg: #0f1c2e;
     --code-border: #1a2b42;
+
+    /* Accent Colors - Teal/Cyan */
+    --color-accent: #41a6b5;
+    --color-accent-hover: #2d7a8a;
 
     /* Log level colors */
     --log-debug: #4a5568;

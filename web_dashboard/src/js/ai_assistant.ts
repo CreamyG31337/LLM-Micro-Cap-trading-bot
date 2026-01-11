@@ -647,7 +647,7 @@ class AIAssistant {
         if (retryButtonContainer) retryButtonContainer.classList.add('hidden');
 
         // Show loading indicator with Tailwind spinner
-        const loadingId = this.addMessage('assistant', '<div class="flex items-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400"></div><span>Generating response...</span></div>', true);
+        const loadingId = this.addMessage('assistant', '<div class="flex items-center gap-2"><div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-accent"></div><span>Generating response...</span></div>', true);
 
         // Perform search if enabled
         let searchResults: any = null;
@@ -957,7 +957,7 @@ class AIAssistant {
             bubbleContainer.className = 'flex flex-col max-w-[80%]';
 
             const bubble = document.createElement('div');
-            bubble.className = 'bg-blue-600 text-white rounded-lg rounded-br-sm px-4 py-3 shadow-sm';
+            bubble.className = 'bg-accent text-white rounded-lg rounded-br-sm px-4 py-3 shadow-sm';
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content text-white';
@@ -1013,7 +1013,7 @@ class AIAssistant {
         if (!messageDiv) return;
 
         const contentDiv = messageDiv.querySelector('.message-content');
-        const bubble = messageDiv.querySelector('.bg-blue-600, .bg-gray-100, .dark\\:bg-dashboard-surface-alt') as HTMLElement | null;
+        const bubble = messageDiv.querySelector('.bg-blue-600, .bg-accent, .bg-gray-100, .dark\\:bg-dashboard-surface-alt') as HTMLElement | null;
 
         if (contentDiv && bubble) {
             // Check if this is an error message
@@ -1285,7 +1285,7 @@ class AIAssistant {
         setTimeout(() => {
             const messageDiv = document.getElementById(errorId);
             if (messageDiv) {
-                const bubble = messageDiv.querySelector('.bg-gray-100, .dark\\:bg-gray-700, .bg-blue-600') as HTMLElement | null;
+                const bubble = messageDiv.querySelector('.bg-gray-100, .dark\\:bg-gray-700, .bg-blue-600, .bg-accent') as HTMLElement | null;
                 if (bubble) {
                     bubble.className = 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-800 rounded-lg rounded-bl-sm px-4 py-3 shadow-sm';
                 }

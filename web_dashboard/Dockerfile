@@ -18,11 +18,15 @@ RUN npm install
 # Copy in order: config, input CSS, then templates (for better caching)
 COPY web_dashboard/static/css/input.css ./web_dashboard/static/css/input.css
 COPY web_dashboard/templates ./web_dashboard/templates
+# Copy TypeScript source and config
+COPY web_dashboard/tsconfig.json ./web_dashboard/tsconfig.json
+COPY web_dashboard/src ./web_dashboard/src
 
-# Build Tailwind CSS (production-optimized, minified)
-# Ensure output directory exists and build with error handling
-RUN mkdir -p web_dashboard/static/css && \
+# Build Tailwind CSS (production-optimized, minified) and TypeScript
+# Ensure output directories exist and build with error handling
+RUN mkdir -p web_dashboard/static/css web_dashboard/static/js && \
     npm run build:css && \
+    npm run build:ts && \
     ls -lh web_dashboard/static/css/tailwind.css || \
     (echo "ERROR: Tailwind CSS build failed - output file not found" && exit 1)
 
@@ -51,10 +55,11 @@ RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 # Copy entire project (cleaner than selective copying)
 COPY . /app
 
-# Copy built Tailwind CSS from builder stage
-# Ensure directory exists first, then copy the built CSS file
-RUN mkdir -p web_dashboard/static/css
+# Copy built Tailwind CSS and compiled JS from builder stage
+# Ensure directory exists first, then copy the built files
+RUN mkdir -p web_dashboard/static/css web_dashboard/static/js
 COPY --from=tailwind-builder /app/web_dashboard/static/css/tailwind.css ./web_dashboard/static/css/tailwind.css
+COPY --from=tailwind-builder /app/web_dashboard/static/js ./web_dashboard/static/js
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
 # Set PYTHONPATH to include project root FIRST, then web_dashboard

@@ -351,6 +351,9 @@ def etf_holdings():
                  'change': largest_sell_row['share_change']
              }
 
+    # Remove available_funds from nav_context to avoid duplicate when we pass it explicitly
+    nav_context_clean = {k: v for k, v in nav_context.items() if k != 'available_funds'}
+    
     return render_template(
         'etf_holdings.html',
         nav_context=nav_context,
@@ -370,5 +373,5 @@ def etf_holdings():
         etf_ownership=etf_ownership,
         stats=stats,
         
-        **nav_context # Explode nav_context again just to be safe if template uses direct keys
+        **nav_context_clean # Explode nav_context (without available_funds) for template
     )

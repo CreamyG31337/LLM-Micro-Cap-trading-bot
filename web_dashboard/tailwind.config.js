@@ -19,6 +19,8 @@ module.exports = {
                     'tertiary': 'var(--text-tertiary)',
                 },
                 'accent': {
+                    'DEFAULT': 'var(--color-accent)',
+                    'hover': 'var(--color-accent-hover)',
                     'from': 'var(--gradient-from)',
                     'to': 'var(--gradient-to)',
                 },

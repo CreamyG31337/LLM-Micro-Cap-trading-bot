@@ -125,10 +125,10 @@ def get_current_positions_flask(fund: Optional[str] = None, _cache_version: Opti
                 securities_df = pd.json_normalize(df['securities'])
                 if not securities_df.empty:
                     # Merge sector and industry from securities, prefer securities currency if available
-                    if 'sector' in securities_df.columns:
-                        df['sector'] = securities_df['sector']
-                    if 'industry' in securities_df.columns:
-                        df['industry'] = securities_df['industry']
+                    for col in ['sector', 'industry', 'market_cap', 'country', 'company_name']:
+                        if col in securities_df.columns:
+                            df[col] = securities_df[col]
+                    
                     if 'currency' in securities_df.columns:
                         # Use securities currency if available, otherwise use position currency
                         df['currency'] = securities_df['currency'].fillna(df.get('currency', 'USD'))

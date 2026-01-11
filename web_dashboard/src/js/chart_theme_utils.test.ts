@@ -4,13 +4,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPlotlyLayout } from './chart_theme_utils';
-import { Theme } from './types.ts';
+import { Theme } from './types';
 
 // Mock window.matchMedia since it's not implemented in jsdom by default
 beforeEach(() => {
     Object.defineProperty(window, 'matchMedia', {
         writable: true,
-        value: vi.fn().mockImplementation(query => ({
+        value: vi.fn().mockImplementation((query: string) => ({
             matches: false,
             media: query,
             onchange: null,

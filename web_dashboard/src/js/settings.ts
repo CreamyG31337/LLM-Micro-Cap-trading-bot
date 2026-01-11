@@ -3,7 +3,7 @@ console.log('Settings.js loaded successfully');
 
 // API Response interface
 interface ApiResponse {
-    success: boolean;
+    success?: boolean;
     error?: string;
 }
 

@@ -110,11 +110,16 @@ def display_aggrid_with_ticker_navigation(
     gb = GridOptionsBuilder.from_dataframe(df)
     
     # Enable selection
+    # Enable selection
     if enable_selection:
-        gb.configure_selection(
-            selection_mode="single",
-            use_checkbox=False,
-            pre_selected_rows=[]
+        # Use new rowSelection object format (AG Grid v32.2+)
+        # Deprecated: gb.configure_selection(selection_mode="single", ...)
+        gb.configure_grid_options(
+            rowSelection={
+                "mode": "singleRow",
+                "checkboxes": False,
+                "enableClickSelection": True,
+            }
         )
     
     # Configure ticker column with clickable cell renderer

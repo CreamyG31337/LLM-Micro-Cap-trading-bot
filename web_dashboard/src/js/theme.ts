@@ -175,8 +175,5 @@ declare global {
     }
 }
 
-// Export ThemeManager class for use in other modules
-export { ThemeManager };
-
-// Create global instance
+// Create global instance (no export needed - loaded as regular script)
 (window as Window & { themeManager: ThemeManager }).themeManager = new ThemeManager();

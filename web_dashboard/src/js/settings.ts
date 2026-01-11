@@ -1,9 +1,6 @@
 // Settings page AJAX handlers
 console.log('Settings.js loaded successfully');
 
-// Make this a module for proper scoping
-export {};
-
 // API Response interface
 interface ApiResponse {
     success: boolean;

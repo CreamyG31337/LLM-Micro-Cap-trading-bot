@@ -4,7 +4,6 @@
  */
 
 import { Theme, EffectiveTheme } from './types';
-import { ThemeManager } from './theme';
 
 interface PlotlyLayout {
     paper_bgcolor: string;
@@ -140,7 +139,7 @@ function applyThemeToAllCharts(themeName: Theme): void {
  * Automatically updates charts when theme changes
  */
 function initChartThemeSync(): void {
-    const themeManager = (window as Window & { themeManager?: ThemeManager }).themeManager;
+    const themeManager = (window as Window & { themeManager?: { addListener: (callback: (theme: Theme) => void) => void } }).themeManager;
     if (themeManager) {
         themeManager.addListener((theme: Theme) => {
             applyThemeToAllCharts(theme);

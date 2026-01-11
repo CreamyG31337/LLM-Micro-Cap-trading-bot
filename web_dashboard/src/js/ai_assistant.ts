@@ -81,7 +81,9 @@ interface PortfolioIntelligenceResponse {
     }>;
 }
 
-interface PortfolioResponse {
+export { }; // Ensure file is treated as a module
+
+interface AIAssistantPortfolioResponse {
     positions?: Array<{ ticker?: string }>;
 }
 
@@ -138,6 +140,25 @@ class AIAssistant {
             console.log('[AIAssistant] init() complete');
         } catch (err) {
             console.error('[AIAssistant] init() error:', err);
+        }
+    }
+
+    /**
+     * Helper to initialize from a JSON config element in the DOM
+     * Looks for <script id="ai-assistant-config" type="application/json">
+     */
+    static autoInit(): AIAssistant | null {
+        const configElement = document.getElementById('ai-assistant-config');
+        if (!configElement) return null;
+
+        try {
+            const config = JSON.parse(configElement.textContent || '{}');
+            const assistant = new AIAssistant(config);
+            assistant.init();
+            return assistant;
+        } catch (err) {
+            console.error('[AIAssistant] Failed to parse config from DOM:', err);
+            return null;
         }
     }
 
@@ -1183,7 +1204,7 @@ class AIAssistant {
             // Fetch portfolio positions to get tickers
             const response = await fetch(`/api/portfolio?fund=${encodeURIComponent(this.selectedFund)}`);
             if (response.ok) {
-                const data: PortfolioResponse = await response.json();
+                const data: AIAssistantPortfolioResponse = await response.json();
                 const tickers = data.positions?.map(pos => pos.ticker).filter(Boolean) || [];
                 const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
                 if (select) {
@@ -1308,3 +1329,8 @@ class AIAssistant {
 
 // Make AIAssistant available globally for template usage
 (window as any).AIAssistant = AIAssistant;
+
+// Auto-initialize if config is present
+document.addEventListener('DOMContentLoaded', () => {
+    AIAssistant.autoInit();
+});

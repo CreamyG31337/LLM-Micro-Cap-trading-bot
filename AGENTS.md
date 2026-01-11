@@ -123,6 +123,81 @@ python dev_run.py --data-dir "trading_data/funds/TEST"
 - Use descriptive test names
 - Mock external dependencies
 
+### Test-Driven Development (TDD) and Test Selection
+
+**CRITICAL**: Always run the appropriate test suite based on what code you're modifying.
+
+#### Identifying Code Type
+
+**Flask Code** (run Flask tests):
+- Files in `web_dashboard/` directory:
+  - `web_dashboard/app.py` - Main Flask application
+  - `web_dashboard/routes/*.py` - Flask route blueprints
+  - `web_dashboard/flask_*.py` - Flask utilities
+  - `web_dashboard/templates/*.html` - Flask templates
+  - `web_dashboard/static/js/*.ts` - Frontend TypeScript (compiles to JS)
+- Test files: `tests/test_flask_*.py`
+
+**Console App Code** (run console app tests):
+- Files in project root (not in `web_dashboard/`):
+  - `trading_script.py` - Main console application
+  - `portfolio/*.py` - Portfolio management
+  - `financial/*.py` - Financial calculations
+  - `utils/*.py` - Utility functions
+  - Any other root-level Python files
+- Test files: `tests/test_*.py` (excluding `test_flask_*.py`)
+
+**Streamlit Code**:
+- Files in `web_dashboard/pages/*.py` - Streamlit pages
+- **No tests** - Streamlit is prototype, no test suite
+
+#### Running Tests
+
+**Before making ANY code changes:**
+1. Identify which type of code you're modifying
+2. Run the appropriate test suite
+3. Ensure all tests pass before making changes
+
+**Flask Tests:**
+```bash
+# Activate root venv (both test suites use the same venv)
+.\venv\Scripts\activate
+
+# Run all Flask tests
+python -m pytest tests/test_flask_*.py -v
+
+# Run specific Flask test file
+python -m pytest tests/test_flask_routes.py -v
+python -m pytest tests/test_flask_data_utils.py -v
+```
+
+**Console App Tests:**
+```bash
+# Activate root venv
+.\venv\Scripts\activate
+
+# Run all console app tests (excludes Flask tests)
+python -m pytest tests/ -v -k "not flask"
+
+# Or use the test runner
+python run_tests.py all
+
+# Run specific test category
+python run_tests.py financial
+python run_tests.py integration
+```
+
+**TDD Workflow:**
+1. **Red**: Write failing test first
+2. **Green**: Implement minimum code to pass
+3. **Refactor**: Improve while keeping tests green
+4. **Verify**: Run full test suite before committing
+
+**After making changes:**
+- **Flask changes**: Run `python -m pytest tests/test_flask_*.py -v` (with root venv activated)
+- **Console app changes**: Run `python -m pytest tests/ -v -k "not flask"` (with root venv activated)
+- **Both changed**: Run both test suites
+
 ### File Structure
 - Keep modules focused on single responsibilities
 - Use repository pattern for data access

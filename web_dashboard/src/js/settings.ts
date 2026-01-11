@@ -55,14 +55,93 @@ function showError(elementId: string, errorMessage?: string): void {
 
 // Initialize event handlers when DOM is ready
 document.addEventListener('DOMContentLoaded', function (): void {
+    // 1. Auto-initialize from DOM config if present
+    const configElement = document.getElementById('settings-config');
+    if (configElement) {
+        try {
+            const config = JSON.parse(configElement.textContent || '{}');
+
+            // Set current timezone
+            const timezoneSelect = document.getElementById('timezone-select') as HTMLSelectElement | null;
+            if (config.currentTimezone && timezoneSelect) {
+                timezoneSelect.value = config.currentTimezone;
+                timezoneSelect.dataset.original = config.currentTimezone; // Store original for revert
+                updateTimezonePreview();
+            }
+
+            // Set current currency
+            const currencySelect = document.getElementById('currency-select') as HTMLSelectElement | null;
+            if (config.currentCurrency && currencySelect) {
+                currencySelect.value = config.currentCurrency;
+                currencySelect.dataset.original = config.currentCurrency; // Store original for revert
+            }
+
+            // Set current theme
+            const themeSelect = document.getElementById('theme-select') as HTMLSelectElement | null;
+            if (config.currentTheme && themeSelect) {
+                themeSelect.value = config.currentTheme;
+                themeSelect.dataset.original = config.currentTheme; // Store original for revert
+                updateThemePreview();
+            }
+        } catch (err) {
+            console.error('[Settings] Failed to auto-init:', err);
+        }
+    }
+
+    // 2. V2 Beta Toggle Handler
+    const v2Toggle = document.getElementById('v2-toggle') as HTMLInputElement | null;
+    if (v2Toggle) {
+        v2Toggle.addEventListener('change', async function (this: HTMLInputElement) {
+            const enabled = this.checked;
+            const toggleElement = this;
+            try {
+                const response = await fetch('/api/settings/v2_enabled', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                }
+
+                const data: ApiResponse = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to update');
+                }
+
+                // If V2 was disabled, redirect to Streamlit settings page
+                // Otherwise, reload to update navigation menu
+                if (!enabled) {
+                    window.location.href = '/settings';
+                } else {
+                    window.location.reload();
+                }
+            } catch (error) {
+                console.error('Error updating v2_enabled:', error);
+                toggleElement.checked = !enabled; // Revert
+                const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+                alert('Failed to update preference: ' + errorMsg);
+            }
+        });
+    }
+
     // Timezone auto-save handler
     const timezoneSelect = document.getElementById('timezone-select') as HTMLSelectElement | null;
     if (timezoneSelect) {
-        let originalTimezone: string = timezoneSelect.value;
+        // Store original value in dataset for revert
+        if (!timezoneSelect.dataset.original) {
+            timezoneSelect.dataset.original = timezoneSelect.value;
+        }
 
         timezoneSelect.addEventListener('change', function (this: HTMLSelectElement): void {
+            updateTimezonePreview();
             const timezone = this.value;
             const selectElement = this;
+            const originalValue = selectElement.dataset.original || selectElement.value;
 
             fetch('/api/settings/timezone', {
                 method: 'POST',
@@ -82,18 +161,20 @@ document.addEventListener('DOMContentLoaded', function (): void {
                 .then((data: ApiResponse) => {
                     if (data.success) {
                         showSuccess('timezone-success');
-                        originalTimezone = timezone;
+                        selectElement.dataset.original = timezone;
                     } else {
                         const errorMsg = data.error || 'Failed to save timezone. Please try again.';
                         console.error('Timezone save failed:', errorMsg);
-                        selectElement.value = originalTimezone; // Revert
+                        selectElement.value = originalValue; // Revert
+                        updateTimezonePreview();
                         showError('timezone-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
                     const errorMsg = error.message || 'Error saving timezone. Please try again.';
                     console.error('Error saving timezone:', error);
-                    selectElement.value = originalTimezone; // Revert
+                    selectElement.value = originalValue; // Revert
+                    updateTimezonePreview();
                     showError('timezone-error', errorMsg);
                 });
         });
@@ -102,11 +183,15 @@ document.addEventListener('DOMContentLoaded', function (): void {
     // Currency auto-save handler
     const currencySelect = document.getElementById('currency-select') as HTMLSelectElement | null;
     if (currencySelect) {
-        let originalCurrency: string = currencySelect.value;
+        // Store original value in dataset for revert
+        if (!currencySelect.dataset.original) {
+            currencySelect.dataset.original = currencySelect.value;
+        }
 
         currencySelect.addEventListener('change', function (this: HTMLSelectElement): void {
             const currency = this.value;
             const selectElement = this;
+            const originalValue = selectElement.dataset.original || selectElement.value;
 
             fetch('/api/settings/currency', {
                 method: 'POST',
@@ -126,32 +211,36 @@ document.addEventListener('DOMContentLoaded', function (): void {
                 .then((data: ApiResponse) => {
                     if (data.success) {
                         showSuccess('currency-success');
-                        originalCurrency = currency;
+                        selectElement.dataset.original = currency;
                     } else {
                         const errorMsg = data.error || 'Failed to save currency. Please try again.';
                         console.error('Currency save failed:', errorMsg);
-                        selectElement.value = originalCurrency; // Revert
+                        selectElement.value = originalValue; // Revert
                         showError('currency-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
                     const errorMsg = error.message || 'Error saving currency. Please try again.';
                     console.error('Error saving currency:', error);
-                    selectElement.value = originalCurrency; // Revert
+                    selectElement.value = originalValue; // Revert
                     showError('currency-error', errorMsg);
                 });
         });
     }
 
-    // Theme auto-save on change
+    // Theme auto-save handler
     const themeSelect = document.getElementById('theme-select') as HTMLSelectElement | null;
     if (themeSelect) {
-        // Store original theme for error recovery
-        let originalTheme: string = document.documentElement.getAttribute('data-theme') || 'system';
+        // Store original value in dataset for revert
+        if (!themeSelect.dataset.original) {
+            themeSelect.dataset.original = themeSelect.value;
+        }
 
         themeSelect.addEventListener('change', function (this: HTMLSelectElement): void {
+            updateThemePreview();
             const theme: string = this.value;
             const selectElement: HTMLSelectElement = this; // Capture 'this' for use in callbacks
+            const originalValue = selectElement.dataset.original || selectElement.value;
 
             // Apply theme immediately (optimistic update)
             document.documentElement.setAttribute('data-theme', theme);
@@ -175,14 +264,16 @@ document.addEventListener('DOMContentLoaded', function (): void {
                 .then((data: ApiResponse) => {
                     if (data.success) {
                         showSuccess('theme-success');
-                        // Update original theme for next error recovery
-                        originalTheme = theme;
+                        selectElement.dataset.original = theme;
+                        // Theme changes usually require a reload to apply globally
+                        setTimeout(() => window.location.reload(), 500);
                     } else {
                         const errorMsg = data.error || 'Failed to save theme. Please try again.';
                         console.error('Theme save failed:', errorMsg);
                         // Revert on error
-                        document.documentElement.setAttribute('data-theme', originalTheme);
-                        selectElement.value = originalTheme;
+                        document.documentElement.setAttribute('data-theme', originalValue);
+                        selectElement.value = originalValue;
+                        updateThemePreview();
                         showError('theme-error', errorMsg);
                     }
                 })
@@ -190,10 +281,38 @@ document.addEventListener('DOMContentLoaded', function (): void {
                     const errorMsg = error.message || 'Error saving theme. Please try again.';
                     console.error('Error saving theme:', error);
                     // Revert on error
-                    document.documentElement.setAttribute('data-theme', originalTheme);
-                    selectElement.value = originalTheme;
+                    document.documentElement.setAttribute('data-theme', originalValue);
+                    selectElement.value = originalValue;
+                    updateThemePreview();
                     showError('theme-error', errorMsg);
                 });
         });
     }
 });
+
+function updateTimezonePreview(): void {
+    const tzSelect = document.getElementById('timezone-select') as HTMLSelectElement | null;
+    const preview = document.getElementById('timezone-preview');
+    if (tzSelect && preview) {
+        preview.textContent = `Selected: ${tzSelect.value}`;
+    }
+}
+
+function updateThemePreview(): void {
+    const themeSelect = document.getElementById('theme-select') as HTMLSelectElement | null;
+    const preview = document.getElementById('theme-preview');
+    if (themeSelect && preview) {
+        const theme = themeSelect.value;
+        if (theme === 'system') {
+            preview.textContent = 'ℹ️ Theme will follow your browser/OS dark mode setting';
+        } else if (theme === 'dark') {
+            preview.textContent = '🌙 Dark mode will be forced on';
+        } else if (theme === 'light') {
+            preview.textContent = '☀️ Light mode will be forced on';
+        } else if (theme === 'midnight-tokyo') {
+            preview.textContent = '🌃 Cyberpunk neon theme';
+        } else if (theme === 'abyss') {
+            preview.textContent = '🌊 Deep ocean void theme';
+        }
+    }
+}

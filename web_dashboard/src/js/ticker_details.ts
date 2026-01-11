@@ -1,6 +1,4 @@
-// Ticker Details Page TypeScript
-
-// Plotly and toggleSummary global declarations (using any for external libraries)
+export { }; // Ensure file is treated as a module
 
 // API Response interfaces
 interface TickerListResponse {
@@ -16,7 +14,7 @@ interface BasicInfo {
     exchange?: string;
 }
 
-interface Position {
+interface TickerPosition {
     fund?: string;
     shares?: number;
     price?: number;
@@ -25,7 +23,7 @@ interface Position {
     date?: string;
 }
 
-interface Trade {
+interface TickerTrade {
     date?: string;
     action?: string;
     shares?: number;
@@ -34,11 +32,11 @@ interface Trade {
     reason?: string;
 }
 
-interface PortfolioData {
+interface TickerPortfolioData {
     has_positions?: boolean;
     has_trades?: boolean;
-    positions?: Position[];
-    trades?: Trade[];
+    positions?: TickerPosition[];
+    trades?: TickerTrade[];
 }
 
 interface ResearchArticle {
@@ -71,7 +69,7 @@ interface SocialSentiment {
     alerts?: SentimentAlert[];
 }
 
-interface CongressTrade {
+interface CongressTickerTrade {
     transaction_date?: string;
     politician?: string;
     chamber?: string;
@@ -88,10 +86,10 @@ interface WatchlistStatus {
 
 interface TickerInfoResponse {
     basic_info?: BasicInfo;
-    portfolio_data?: PortfolioData;
+    portfolio_data?: TickerPortfolioData;
     research_articles?: ResearchArticle[];
     social_sentiment?: SocialSentiment;
-    congress_trades?: CongressTrade[];
+    congress_trades?: CongressTickerTrade[];
     watchlist_status?: WatchlistStatus;
 }
 
@@ -112,11 +110,11 @@ let currentTicker: string = '';
 let tickerList: string[] = [];
 
 // Initialize page on load
-document.addEventListener('DOMContentLoaded', function(): void {
+document.addEventListener('DOMContentLoaded', function (): void {
     // Get ticker from URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
     const tickerParam = urlParams.get('ticker');
-    
+
     // Load ticker list first
     loadTickerList().then(() => {
         // If ticker in URL, load it
@@ -132,17 +130,17 @@ document.addEventListener('DOMContentLoaded', function(): void {
             showPlaceholder();
         }
     });
-    
+
     // Set up ticker dropdown change handler
     const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
     if (select) {
         select.addEventListener('change', handleTickerSearch);
     }
-    
+
     // Set up chart controls
     const checkbox = document.getElementById('solid-lines-checkbox') as HTMLInputElement | null;
     if (checkbox) {
-        checkbox.addEventListener('change', function(this: HTMLInputElement): void {
+        checkbox.addEventListener('change', function (this: HTMLInputElement): void {
             if (currentTicker) {
                 loadAndRenderChart(currentTicker, this.checked);
             }
@@ -156,23 +154,23 @@ async function loadTickerList(): Promise<void> {
         const response = await fetch('/api/v2/ticker/list', {
             credentials: 'include'
         });
-        
+
         if (!response.ok) {
             throw new Error('Failed to load ticker list');
         }
-        
+
         const data: TickerListResponse = await response.json();
         tickerList = data.tickers || [];
-        
+
         // Populate dropdown
         const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
         if (!select) return;
-        
+
         // Clear existing options except first one
         while (select.options.length > 1) {
             select.remove(1);
         }
-        
+
         // Add tickers
         tickerList.forEach(ticker => {
             const option = document.createElement('option');
@@ -189,15 +187,15 @@ async function loadTickerList(): Promise<void> {
 function handleTickerSearch(): void {
     const select = document.getElementById('ticker-select') as HTMLSelectElement | null;
     if (!select) return;
-    
+
     const selectedTicker = select.value.toUpperCase().trim();
-    
+
     if (selectedTicker) {
         // Update URL without reload
         const url = new URL(window.location.href);
         url.searchParams.set('ticker', selectedTicker);
         window.history.pushState({}, '', url);
-        
+
         currentTicker = selectedTicker;
         loadTickerData(selectedTicker);
     } else {
@@ -215,26 +213,26 @@ async function loadTickerData(ticker: string): Promise<void> {
     showLoading();
     hideTickerError();
     hidePlaceholder();
-    
+
     try {
         const response = await fetch(`/api/v2/ticker/info?ticker=${encodeURIComponent(ticker)}`, {
             credentials: 'include'
         });
-        
+
         if (!response.ok) {
             const errorData: ErrorResponse = await response.json();
             throw new Error(errorData.error || 'Failed to load ticker data');
         }
-        
+
         const data: TickerInfoResponse = await response.json();
-        
+
         // Render all sections
         if (data.basic_info) {
             renderBasicInfo(data.basic_info);
             renderExternalLinks(data.basic_info);
         }
         if (data.portfolio_data) {
-            renderPortfolioData(data.portfolio_data);
+            renderTickerPortfolioData(data.portfolio_data);
         }
         if (data.research_articles) {
             renderResearchArticles(data.research_articles);
@@ -243,17 +241,17 @@ async function loadTickerData(ticker: string): Promise<void> {
             renderSocialSentiment(data.social_sentiment);
         }
         if (data.congress_trades) {
-            renderCongressTrades(data.congress_trades);
+            renderCongressTickerTrades(data.congress_trades);
         }
         if (data.watchlist_status) {
             renderWatchlistStatus(data.watchlist_status);
         }
-        
+
         // Load and render chart
         const checkbox = document.getElementById('solid-lines-checkbox') as HTMLInputElement | null;
         const useSolid = checkbox ? checkbox.checked : false;
         loadAndRenderChart(ticker, useSolid);
-        
+
         hideLoading();
     } catch (error) {
         console.error('Error loading ticker data:', error);
@@ -268,23 +266,23 @@ function renderBasicInfo(basicInfo: BasicInfo): void {
     if (!basicInfo) {
         return;
     }
-    
+
     const section = document.getElementById('basic-info-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     const companyName = document.getElementById('company-name');
     const sector = document.getElementById('sector');
     const industry = document.getElementById('industry');
     const currency = document.getElementById('currency');
     const exchangeInfo = document.getElementById('exchange-info');
-    
+
     if (companyName) companyName.textContent = basicInfo.company_name || 'N/A';
     if (sector) sector.textContent = basicInfo.sector || 'N/A';
     if (industry) industry.textContent = basicInfo.industry || 'N/A';
     if (currency) currency.textContent = basicInfo.currency || 'USD';
-    
+
     if (exchangeInfo) {
         if (basicInfo.exchange && basicInfo.exchange !== 'N/A') {
             exchangeInfo.textContent = `Exchange: ${basicInfo.exchange}`;
@@ -300,23 +298,23 @@ async function renderExternalLinks(basicInfo: BasicInfo): Promise<void> {
     if (!basicInfo || !basicInfo.ticker) {
         return;
     }
-    
+
     try {
         const exchange = basicInfo.exchange || null;
         const response = await fetch(`/api/v2/ticker/external-links?ticker=${encodeURIComponent(basicInfo.ticker)}${exchange ? `&exchange=${encodeURIComponent(exchange)}` : ''}`, {
             credentials: 'include'
         });
-        
+
         if (!response.ok) {
             return;
         }
-        
+
         const links: Record<string, string> = await response.json();
         const grid = document.getElementById('external-links-grid');
         if (!grid) return;
-        
+
         grid.innerHTML = '';
-        
+
         Object.entries(links).forEach(([name, url]) => {
             const link = document.createElement('a');
             link.href = url;
@@ -326,7 +324,7 @@ async function renderExternalLinks(basicInfo: BasicInfo): Promise<void> {
             link.textContent = name;
             grid.appendChild(link);
         });
-        
+
         const section = document.getElementById('external-links-section');
         if (section && Object.keys(links).length > 0) {
             section.classList.remove('section-hidden');
@@ -337,32 +335,32 @@ async function renderExternalLinks(basicInfo: BasicInfo): Promise<void> {
 }
 
 // Render portfolio data
-function renderPortfolioData(portfolioData: PortfolioData): void {
+function renderTickerPortfolioData(portfolioData: TickerPortfolioData): void {
     if (!portfolioData || (!portfolioData.has_positions && !portfolioData.has_trades)) {
         return;
     }
-    
+
     const section = document.getElementById('portfolio-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     // Render positions
     if (portfolioData.has_positions && portfolioData.positions && portfolioData.positions.length > 0) {
         const tbody = document.getElementById('positions-tbody');
         if (tbody) {
             tbody.innerHTML = '';
-            
+
             // Get latest position per fund
-            const latestPositions: Record<string, Position> = {};
+            const latestTickerPositions: Record<string, TickerPosition> = {};
             portfolioData.positions.forEach(pos => {
                 const fund = pos.fund || 'Unknown';
-                if (!latestPositions[fund] || (pos.date && pos.date > (latestPositions[fund].date || ''))) {
-                    latestPositions[fund] = pos;
+                if (!latestTickerPositions[fund] || (pos.date && pos.date > (latestTickerPositions[fund].date || ''))) {
+                    latestTickerPositions[fund] = pos;
                 }
             });
-            
-            Object.values(latestPositions).forEach(pos => {
+
+            Object.values(latestTickerPositions).forEach(pos => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${pos.fund || 'N/A'}</td>
@@ -374,7 +372,7 @@ function renderPortfolioData(portfolioData: PortfolioData): void {
                 `;
                 tbody.appendChild(row);
             });
-            
+
             const container = document.getElementById('positions-container');
             if (container) container.style.display = 'block';
         }
@@ -382,13 +380,13 @@ function renderPortfolioData(portfolioData: PortfolioData): void {
         const container = document.getElementById('positions-container');
         if (container) container.style.display = 'none';
     }
-    
+
     // Render trades
     if (portfolioData.has_trades && portfolioData.trades && portfolioData.trades.length > 0) {
         const tbody = document.getElementById('trades-tbody');
         if (tbody) {
             tbody.innerHTML = '';
-            
+
             portfolioData.trades.slice(0, 20).forEach(trade => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -410,23 +408,23 @@ async function loadAndRenderChart(ticker: string, useSolid: boolean): Promise<vo
     // Show loading indicator
     const chartLoading = document.getElementById('chart-loading');
     const chartContainer = document.getElementById('chart-container');
-    
+
     if (!chartContainer || !chartLoading) return;
-    
+
     // Clear any existing chart
     chartContainer.innerHTML = '';
     chartLoading.classList.remove('section-hidden');
-    
+
     // Show chart section (but with loading indicator)
     const chartSection = document.getElementById('chart-section');
     if (chartSection) chartSection.classList.remove('section-hidden');
-    
+
     try {
         // Detect actual theme from page
         const htmlElement = document.documentElement;
         const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
         let theme: string = 'light'; // default
-        
+
         if (dataTheme === 'dark') {
             theme = 'dark';
         } else if (dataTheme === 'light') {
@@ -442,17 +440,17 @@ async function loadAndRenderChart(ticker: string, useSolid: boolean): Promise<vo
             );
             theme = isDark ? 'dark' : 'light';
         }
-        
+
         console.log('Detected theme:', theme, 'from data-theme:', dataTheme);
-        
+
         const response = await fetch(`/api/v2/ticker/chart?ticker=${encodeURIComponent(ticker)}&use_solid=${useSolid}&theme=${encodeURIComponent(theme)}`, {
             credentials: 'include'
         });
-        
+
         // Check if response is JSON
         const contentType = response.headers.get('content-type');
         const isJson = contentType && contentType.includes('application/json');
-        
+
         if (!response.ok) {
             let errorMessage = `Failed to load chart (${response.status})`;
             if (isJson) {
@@ -468,28 +466,28 @@ async function loadAndRenderChart(ticker: string, useSolid: boolean): Promise<vo
             }
             throw new Error(errorMessage);
         }
-        
+
         if (!isJson) {
             throw new Error('Server returned non-JSON response. Please check your authentication.');
         }
-        
+
         const chartData: ChartData = await response.json();
-        
+
         // Validate chart data structure
         if (!chartData || !chartData.data || !chartData.layout) {
             throw new Error('Invalid chart data received from server');
         }
-        
+
         // Render with Plotly
         const Plotly = (window as any).Plotly;
         if (Plotly) {
-            Plotly.newPlot('chart-container', chartData.data, chartData.layout, {responsive: true});
+            Plotly.newPlot('chart-container', chartData.data, chartData.layout, { responsive: true });
         }
-        
+
         // Hide loading indicator AFTER successful rendering
         chartLoading.classList.add('section-hidden');
         chartLoading.style.display = 'none';
-        
+
         // Load price history for metrics
         loadPriceHistoryMetrics(ticker);
     } catch (error) {
@@ -511,24 +509,24 @@ async function loadPriceHistoryMetrics(ticker: string): Promise<void> {
         const response = await fetch(`/api/v2/ticker/price-history?ticker=${encodeURIComponent(ticker)}&days=90`, {
             credentials: 'include'
         });
-        
+
         if (!response.ok) {
             return;
         }
-        
+
         const data: PriceHistoryData = await response.json();
         const prices = data.data || [];
-        
+
         if (prices.length > 0) {
             const firstPrice = prices[0].price || 0;
             const lastPrice = prices[prices.length - 1].price || 0;
             const priceChange = lastPrice - firstPrice;
             const priceChangePct = firstPrice > 0 ? (priceChange / firstPrice * 100) : 0;
-            
+
             const firstPriceEl = document.getElementById('first-price');
             const lastPriceEl = document.getElementById('last-price');
             const changeEl = document.getElementById('price-change');
-            
+
             if (firstPriceEl) firstPriceEl.textContent = formatCurrency(firstPrice);
             if (lastPriceEl) lastPriceEl.textContent = formatCurrency(lastPrice);
             if (changeEl) {
@@ -546,35 +544,35 @@ function renderResearchArticles(articles: ResearchArticle[]): void {
     if (!articles || articles.length === 0) {
         return;
     }
-    
+
     const section = document.getElementById('research-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     const countEl = document.getElementById('research-count');
     if (countEl) countEl.textContent = `Found ${articles.length} articles mentioning ${currentTicker} (last 30 days)`;
-    
+
     const list = document.getElementById('research-articles-list');
     if (!list) return;
-    
+
     list.innerHTML = '';
-    
+
     articles.slice(0, 10).forEach(article => {
         const articleDiv = document.createElement('div');
         articleDiv.className = 'border-b border-gray-200 py-4';
-        
+
         const title = article.title || 'Untitled';
         const summary = article.summary || '';
         const url = article.url || '#';
         const source = article.source || 'Unknown';
         const publishedAt = formatDate(article.published_at);
         const sentiment = article.sentiment || 'N/A';
-        
+
         const summaryId = `summary-${article.id || Math.random().toString(36).substr(2, 9)}`;
         const isLongSummary = summary.length > 500;
         const shortSummary = isLongSummary ? summary.substring(0, 500) + '...' : summary;
-        
+
         articleDiv.innerHTML = `
             <details class="cursor-pointer">
                 <summary class="font-semibold text-blue-600 hover:text-blue-800">${title}</summary>
@@ -606,18 +604,18 @@ function renderSocialSentiment(sentiment: SocialSentiment): void {
     if (!sentiment) {
         return;
     }
-    
+
     const section = document.getElementById('sentiment-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     // Render metrics
     if (sentiment.latest_metrics && sentiment.latest_metrics.length > 0) {
         const tbody = document.getElementById('sentiment-tbody');
         if (tbody) {
             tbody.innerHTML = '';
-            
+
             sentiment.latest_metrics.forEach(metric => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -630,7 +628,7 @@ function renderSocialSentiment(sentiment: SocialSentiment): void {
                 `;
                 tbody.appendChild(row);
             });
-            
+
             const container = document.getElementById('sentiment-metrics-container');
             if (container) container.style.display = 'block';
         }
@@ -638,19 +636,19 @@ function renderSocialSentiment(sentiment: SocialSentiment): void {
         const container = document.getElementById('sentiment-metrics-container');
         if (container) container.style.display = 'none';
     }
-    
+
     // Render alerts
     if (sentiment.alerts && sentiment.alerts.length > 0) {
         const alertsList = document.getElementById('sentiment-alerts-list');
         if (alertsList) {
             alertsList.innerHTML = '';
-            
+
             sentiment.alerts.forEach(alert => {
                 const alertDiv = document.createElement('div');
                 const platform = (alert.platform || 'Unknown').charAt(0).toUpperCase() + (alert.platform || '').slice(1);
                 const sentimentLabel = alert.sentiment_label || 'N/A';
                 const score = (alert.sentiment_score || 0).toFixed(2);
-                
+
                 let alertClass = 'bg-blue-100 border-blue-400 text-blue-700';
                 if (sentimentLabel === 'EUPHORIC') {
                     alertClass = 'bg-green-100 border-green-400 text-green-700';
@@ -659,12 +657,12 @@ function renderSocialSentiment(sentiment: SocialSentiment): void {
                 } else if (sentimentLabel === 'BULLISH') {
                     alertClass = 'bg-blue-100 border-blue-400 text-blue-700';
                 }
-                
+
                 alertDiv.className = `border px-4 py-3 rounded mb-2 ${alertClass}`;
                 alertDiv.textContent = `${platform} - ${sentimentLabel} (Score: ${score})`;
                 alertsList.appendChild(alertDiv);
             });
-            
+
             const container = document.getElementById('sentiment-alerts-container');
             if (container) container.style.display = 'block';
         }
@@ -675,24 +673,24 @@ function renderSocialSentiment(sentiment: SocialSentiment): void {
 }
 
 // Render congress trades
-function renderCongressTrades(trades: CongressTrade[]): void {
+function renderCongressTickerTrades(trades: CongressTickerTrade[]): void {
     if (!trades || trades.length === 0) {
         return;
     }
-    
+
     const section = document.getElementById('congress-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     const countEl = document.getElementById('congress-count');
     if (countEl) countEl.textContent = `Found ${trades.length} recent trades by politicians (last 30 days)`;
-    
+
     const tbody = document.getElementById('congress-tbody');
     if (!tbody) return;
-    
+
     tbody.innerHTML = '';
-    
+
     trades.slice(0, 20).forEach(trade => {
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -712,16 +710,16 @@ function renderWatchlistStatus(status: WatchlistStatus): void {
     if (!status) {
         return;
     }
-    
+
     const section = document.getElementById('watchlist-section');
     if (!section) return;
-    
+
     section.classList.remove('section-hidden');
-    
+
     const statusEl = document.getElementById('watchlist-status');
     const tierEl = document.getElementById('watchlist-tier');
     const sourceEl = document.getElementById('watchlist-source');
-    
+
     if (statusEl) statusEl.textContent = status.is_active ? '✅ In Watchlist' : '❌ Not Active';
     if (tierEl) tierEl.textContent = status.priority_tier || 'N/A';
     if (sourceEl) sourceEl.textContent = status.source || 'N/A';
@@ -772,7 +770,7 @@ function toggleSummary(summaryId: string): void {
     const shortDiv = document.getElementById(`${summaryId}-short`);
     const fullDiv = document.getElementById(`${summaryId}-full`);
     const toggleBtn = document.getElementById(`${summaryId}-toggle`);
-    
+
     if (shortDiv && fullDiv && toggleBtn) {
         if (fullDiv.classList.contains('hidden')) {
             // Show full summary
@@ -813,7 +811,7 @@ function hideAllSections(): void {
         'congress-section',
         'watchlist-section'
     ];
-    
+
     sections.forEach(id => {
         const section = document.getElementById(id);
         if (section) section.classList.add('section-hidden');

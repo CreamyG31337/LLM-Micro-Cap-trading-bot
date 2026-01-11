@@ -204,13 +204,13 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script type="module" src="/assets/js/etf_holdings.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const holdingsData = {{ holdings_data | tojson
-    }};
-    const viewMode = "{{ view_mode }}";
-    initializeEtfGrid(holdingsData, viewMode);
-    });
+<!-- ETF Holdings Configuration -->
+<script id="etf-holdings-config" type="application/json">
+{
+    "holdingsData": {{ (holdings_data if view_mode == 'holdings' else changes_data)|tojson|safe }},
+    "viewMode": "{{ view_mode }}"
+}
 </script>
+
+<script type="module" src="/assets/js/etf_holdings.js"></script>
 {% endblock %}

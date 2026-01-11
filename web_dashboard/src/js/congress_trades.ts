@@ -382,10 +382,53 @@ export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void 
 }
 
 // Make function available globally for template usage
-declare global {
-    interface Window {
-        initializeCongressTradesGrid: typeof initializeCongressTradesGrid;
-    }
-}
+(window as any).initializeCongressTradesGrid = initializeCongressTradesGrid;
+(window as any).refreshData = function () {
+    const currentUrl = new URL(window.location.href);
+    const currentRefreshKey = parseInt(currentUrl.searchParams.get('refresh_key') || '0');
+    currentUrl.searchParams.set('refresh_key', (currentRefreshKey + 1).toString());
+    window.location.href = currentUrl.toString();
+};
 
-window.initializeCongressTradesGrid = initializeCongressTradesGrid;
+(window as any).copyReasoning = function () {
+    const reasoningText = document.getElementById('reasoning-text');
+    if (reasoningText) {
+        const text = reasoningText.textContent || '';
+        navigator.clipboard.writeText(text).then(function () {
+            // Show temporary feedback
+            const originalText = reasoningText.textContent;
+            reasoningText.textContent = '✓ Copied to clipboard!';
+            setTimeout(function () {
+                reasoningText.textContent = originalText;
+            }, 2000);
+        });
+    }
+};
+
+// Auto-initialize if config is present
+document.addEventListener('DOMContentLoaded', () => {
+    // Handle date filter toggle
+    const useDateFilter = document.getElementById('use-date-filter') as HTMLInputElement | null;
+    const dateRangeInputs = document.getElementById('date-range-inputs');
+    if (useDateFilter && dateRangeInputs) {
+        useDateFilter.addEventListener('change', function () {
+            if (this.checked) {
+                dateRangeInputs.classList.remove('hidden');
+            } else {
+                dateRangeInputs.classList.add('hidden');
+            }
+        });
+    }
+
+    const configElement = document.getElementById('congress-trades-config');
+    if (configElement) {
+        try {
+            const config = JSON.parse(configElement.textContent || '{}');
+            if (config.tradesData) {
+                initializeCongressTradesGrid(config.tradesData);
+            }
+        } catch (err) {
+            console.error('[CongressTrades] Failed to auto-init:', err);
+        }
+    }
+});

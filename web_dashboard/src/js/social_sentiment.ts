@@ -174,7 +174,7 @@ class SentimentCellRenderer implements AgGridCellRenderer {
         this.eGui = document.createElement('span');
         const value = params.value || '';
         this.eGui.innerText = value;
-        
+
         // Apply color based on sentiment
         if (value.includes('EUPHORIC')) {
             this.eGui.style.color = 'green';
@@ -260,7 +260,7 @@ function initializeWatchlistGrid(data: WatchlistTicker[]): void {
     const agGrid = (window as any).agGrid as AgGridGlobal;
     const gridInstance = new agGrid.Grid(gridDiv, gridOptions);
     watchlistGridApi = gridInstance.api;
-    
+
     if (watchlistGridApi) {
         watchlistGridApi.sizeColumnsToFit();
     }
@@ -405,7 +405,7 @@ function initializeSentimentGrid(data: SentimentRow[]): void {
     const agGrid = (window as any).agGrid as AgGridGlobal;
     const gridInstance = new agGrid.Grid(gridDiv, gridOptions);
     sentimentGridApi = gridInstance.api;
-    
+
     if (sentimentGridApi) {
         sentimentGridApi.sizeColumnsToFit();
     }
@@ -416,20 +416,20 @@ async function loadWatchlistData(refreshKey: number): Promise<void> {
     try {
         const response = await fetch(`/api/v2/social_sentiment/watchlist?refresh_key=${refreshKey}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const data = result.data as WatchlistTicker[];
-            
+
             // Update summary metrics
             document.getElementById('watchlist-total')!.textContent = data.length.toString();
-            document.getElementById('watchlist-tier-a')!.textContent = 
+            document.getElementById('watchlist-tier-a')!.textContent =
                 data.filter(t => t.priority_tier === 'A').length.toString();
-            document.getElementById('watchlist-tier-b')!.textContent = 
+            document.getElementById('watchlist-tier-b')!.textContent =
                 data.filter(t => t.priority_tier === 'B').length.toString();
-            document.getElementById('watchlist-tier-c')!.textContent = 
+            document.getElementById('watchlist-tier-c')!.textContent =
                 data.filter(t => t.priority_tier === 'C').length.toString();
-            
+
             // Initialize grid
             if (data.length > 0) {
                 document.getElementById('watchlist-loading')!.classList.add('hidden');
@@ -455,27 +455,27 @@ async function loadAlertsData(refreshKey: number): Promise<void> {
     try {
         const response = await fetch(`/api/v2/social_sentiment/alerts?refresh_key=${refreshKey}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const alerts = result.data as Alert[];
             const alertsList = document.getElementById('alerts-list')!;
             alertsList.innerHTML = '';
-            
+
             if (alerts.length > 0) {
                 document.getElementById('alerts-loading')!.classList.add('hidden');
                 document.getElementById('alerts-empty')!.classList.add('hidden');
                 document.getElementById('alerts-content')!.classList.remove('hidden');
-                
+
                 alerts.forEach((alert, idx) => {
                     const alertDiv = document.createElement('div');
                     alertDiv.className = 'mb-4 p-4 rounded-lg border';
                     alertDiv.classList.add(
-                        alert.sentiment_label === 'EUPHORIC' 
-                            ? 'bg-green-50 border-green-200' 
+                        alert.sentiment_label === 'EUPHORIC'
+                            ? 'bg-green-50 border-green-200'
                             : 'bg-red-50 border-red-200'
                     );
-                    
+
                     alertDiv.innerHTML = `
                         <div class="flex items-center justify-between mb-2">
                             <div>
@@ -521,7 +521,7 @@ async function loadAlertPosts(metricId: number, sessionId: number | null, alertI
         postsDiv.classList.add('hidden');
         return;
     }
-    
+
     try {
         let response;
         if (sessionId) {
@@ -529,14 +529,14 @@ async function loadAlertPosts(metricId: number, sessionId: number | null, alertI
         } else {
             response = await fetch(`/api/v2/social_sentiment/posts/${metricId}`);
         }
-        
+
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const posts = result.data;
             postsDiv.innerHTML = '<h4 class="font-semibold mb-2">Source Posts:</h4>';
-            
+
             if (posts.length > 0) {
                 posts.forEach((post: any) => {
                     const postDiv = document.createElement('div');
@@ -557,7 +557,7 @@ async function loadAlertPosts(metricId: number, sessionId: number | null, alertI
             } else {
                 postsDiv.innerHTML += '<p class="text-sm text-gray-600">No posts found for this alert.</p>';
             }
-            
+
             postsDiv.classList.remove('hidden');
         }
     } catch (error) {
@@ -572,29 +572,29 @@ async function loadAIAnalysesData(refreshKey: number): Promise<void> {
     try {
         const response = await fetch(`/api/v2/social_sentiment/ai_analyses?refresh_key=${refreshKey}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const analyses = result.data as AIAnalysis[];
             const analysesList = document.getElementById('ai-analyses-list')!;
             analysesList.innerHTML = '';
-            
+
             // Update summary metrics
             document.getElementById('ai-total')!.textContent = analyses.length.toString();
-            const avgConfidence = analyses.length > 0 
+            const avgConfidence = analyses.length > 0
                 ? (analyses.reduce((sum, a) => sum + a.confidence_score, 0) / analyses.length * 100).toFixed(1)
                 : '0';
             document.getElementById('ai-avg-confidence')!.textContent = `${avgConfidence}%`;
-            document.getElementById('ai-euphoric')!.textContent = 
+            document.getElementById('ai-euphoric')!.textContent =
                 analyses.filter(a => a.sentiment_label === 'EUPHORIC').length.toString();
-            document.getElementById('ai-fearful')!.textContent = 
+            document.getElementById('ai-fearful')!.textContent =
                 analyses.filter(a => a.sentiment_label === 'FEARFUL').length.toString();
-            
+
             if (analyses.length > 0) {
                 document.getElementById('ai-loading')!.classList.add('hidden');
                 document.getElementById('ai-empty')!.classList.add('hidden');
                 document.getElementById('ai-content')!.classList.remove('hidden');
-                
+
                 analyses.forEach((analysis) => {
                     const analysisDiv = document.createElement('div');
                     analysisDiv.className = 'mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200';
@@ -644,18 +644,18 @@ async function loadAIDetails(analysisId: number, sessionId: number): Promise<voi
         detailsDiv.classList.add('hidden');
         return;
     }
-    
+
     try {
         const response = await fetch(`/api/v2/social_sentiment/ai_details/${analysisId}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const data = result.data;
             const analysis = data.analysis;
             const extractedTickers = data.extracted_tickers || [];
             const posts = data.posts || [];
-            
+
             detailsDiv.innerHTML = `
                 <div class="bg-white p-4 rounded border border-gray-300">
                     <h4 class="font-semibold mb-2">Analysis Summary</h4>
@@ -663,9 +663,9 @@ async function loadAIDetails(analysisId: number, sessionId: number): Promise<voi
                     
                     <h4 class="font-semibold mb-2">Key Themes</h4>
                     <ul class="list-disc list-inside text-sm mb-4">
-                        ${analysis.key_themes && analysis.key_themes.length > 0 
-                            ? analysis.key_themes.map((theme: string) => `<li>${theme}</li>`).join('')
-                            : '<li>No themes identified</li>'}
+                        ${analysis.key_themes && analysis.key_themes.length > 0
+                    ? analysis.key_themes.map((theme: string) => `<li>${theme}</li>`).join('')
+                    : '<li>No themes identified</li>'}
                     </ul>
                     
                     <h4 class="font-semibold mb-2">Detailed Reasoning</h4>
@@ -701,7 +701,7 @@ async function loadAIDetails(analysisId: number, sessionId: number): Promise<voi
                     ` : ''}
                 </div>
             `;
-            
+
             detailsDiv.classList.remove('hidden');
         }
     } catch (error) {
@@ -718,17 +718,17 @@ export async function loadSentimentData(refreshKey: number, showOnlyWatchlist: b
             `/api/v2/social_sentiment/latest_sentiment?refresh_key=${refreshKey}&show_only_watchlist=${showOnlyWatchlist}`
         );
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+
         const result = await response.json();
         if (result.success && result.data) {
             const data = result.data as SentimentRow[];
-            
+
             // Calculate summary statistics
             const uniqueTickers = new Set(data.map(row => row.Ticker));
             const sentimentColumns = ['💬 Stocktwits Sentiment', '👽 Reddit Sentiment'];
             let euphoricCount = 0;
             let fearfulCount = 0;
-            
+
             data.forEach(row => {
                 sentimentColumns.forEach(col => {
                     const value = row[col as keyof SentimentRow] as string;
@@ -736,22 +736,22 @@ export async function loadSentimentData(refreshKey: number, showOnlyWatchlist: b
                     if (value && value.includes('FEARFUL')) fearfulCount++;
                 });
             });
-            
+
             document.getElementById('stats-unique-tickers')!.textContent = uniqueTickers.size.toString();
             document.getElementById('stats-total-metrics')!.textContent = data.length.toString();
             document.getElementById('stats-euphoric')!.textContent = euphoricCount.toString();
             document.getElementById('stats-fearful')!.textContent = fearfulCount.toString();
-            
+
             if (data.length > 0) {
                 document.getElementById('sentiment-loading')!.classList.add('hidden');
                 document.getElementById('sentiment-empty')!.classList.add('hidden');
                 document.getElementById('sentiment-content')!.classList.remove('hidden');
-                
+
                 // Destroy existing grid if it exists
                 if (sentimentGridApi) {
                     sentimentGridApi.setGridOption('rowData', []);
                 }
-                
+
                 initializeSentimentGrid(data);
             } else {
                 document.getElementById('sentiment-loading')!.classList.add('hidden');
@@ -779,3 +779,32 @@ export function initializeSocialSentimentPage(refreshKey: number): void {
 (window as any).loadAlertPosts = loadAlertPosts;
 (window as any).loadAIDetails = loadAIDetails;
 (window as any).loadSentimentData = loadSentimentData;
+(window as any).initializeSocialSentimentPage = initializeSocialSentimentPage;
+(window as any).refreshData = function () {
+    const currentUrl = new URL(window.location.href);
+    const currentRefreshKey = parseInt(currentUrl.searchParams.get('refresh_key') || '0');
+    currentUrl.searchParams.set('refresh_key', (currentRefreshKey + 1).toString());
+    window.location.href = currentUrl.toString();
+};
+
+// Auto-initialize if config is present
+document.addEventListener('DOMContentLoaded', () => {
+    const configElement = document.getElementById('social-sentiment-config');
+    if (configElement) {
+        try {
+            const config = JSON.parse(configElement.textContent || '{}');
+            const refreshKey = config.refreshKey || 0;
+            initializeSocialSentimentPage(refreshKey);
+
+            // Handle watchlist filter checkbox if it exists
+            const watchlistFilter = document.getElementById('show-only-watchlist') as HTMLInputElement | null;
+            if (watchlistFilter) {
+                watchlistFilter.addEventListener('change', function () {
+                    loadSentimentData(refreshKey, this.checked);
+                });
+            }
+        } catch (err) {
+            console.error('[SocialSentiment] Failed to auto-init:', err);
+        }
+    }
+});

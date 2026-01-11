@@ -42,10 +42,10 @@ COPY web_dashboard/src ./src
 RUN echo "=== TypeScript Compilation Starting ===" && \
     npm run build || \
     (echo "=== TypeScript Compilation Failed ===" && \
-     echo "Showing compilation diagnostics:" && \
-     (npx tsc --diagnostics 2>&1 || true) && \
-     echo "=== Full TypeScript Error Output ===" && \
-     exit 1) && \
+    echo "Showing compilation diagnostics:" && \
+    (npx tsc --diagnostics 2>&1 || true) && \
+    echo "=== Full TypeScript Error Output ===" && \
+    exit 1) && \
     echo "=== TypeScript Compilation Successful ===" && \
     ls -lh static/js/settings.js static/js/theme.js static/js/chart_theme_utils.js static/js/congress_trades.js static/js/ticker_details.js static/js/ai_assistant.js static/js/jobs.js || \
     (echo "ERROR: TypeScript build failed - output files not found" && exit 1)
@@ -94,22 +94,14 @@ RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS 
 # Copy all TypeScript-compiled files (7 files total)
 # Other JS files are already copied via COPY . /app above, but we overwrite with compiled versions
 RUN mkdir -p web_dashboard/static/js
-COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js ./web_dashboard/static/js/settings.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/theme.js ./web_dashboard/static/js/theme.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/chart_theme_utils.js ./web_dashboard/static/js/chart_theme_utils.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/congress_trades.js ./web_dashboard/static/js/congress_trades.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/ticker_details.js ./web_dashboard/static/js/ticker_details.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/ai_assistant.js ./web_dashboard/static/js/ai_assistant.js
-COPY --from=frontend-builder /app/web_dashboard/static/js/jobs.js ./web_dashboard/static/js/jobs.js
-# Note: Source maps are generated but not copied to reduce image size (optional for production)
-# Note: types.js is also compiled but not needed in browser (type-only file)
-RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: TypeScript compiled settings.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/theme.js || (echo "ERROR: TypeScript compiled theme.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/chart_theme_utils.js || (echo "ERROR: TypeScript compiled chart_theme_utils.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/congress_trades.js || (echo "ERROR: TypeScript compiled congress_trades.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/ticker_details.js || (echo "ERROR: TypeScript compiled ticker_details.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/ai_assistant.js || (echo "ERROR: TypeScript compiled ai_assistant.js not found" && exit 1)
-RUN test -f web_dashboard/static/js/jobs.js || (echo "ERROR: TypeScript compiled jobs.js not found" && exit 1)
+# Copy ALL compiled TypeScript JavaScript files and source maps from builder stage
+RUN mkdir -p web_dashboard/static/js
+COPY --from=frontend-builder /app/web_dashboard/static/js/ ./web_dashboard/static/js/
+
+# Verify that key files are present
+RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: settings.js missing" && exit 1)
+RUN test -f web_dashboard/static/js/users.js || (echo "ERROR: users.js missing" && exit 1)
+RUN test -f web_dashboard/static/js/ai_assistant.js || (echo "ERROR: ai_assistant.js missing" && exit 1)
 
 # Expose Flask port
 EXPOSE 5001

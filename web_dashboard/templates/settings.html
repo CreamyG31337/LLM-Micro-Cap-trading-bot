@@ -137,107 +137,14 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script type="module" src="/assets/js/settings.js" data-cfasync="false"></script>
-<script>
-    // Initialize page with current preferences
-    document.addEventListener('DOMContentLoaded', function () {
-        // Set current timezone
-        const currentTimezone = '{{ current_timezone }}';
-        const timezoneSelect = document.getElementById('timezone-select');
-        if (currentTimezone && timezoneSelect) {
-            // Try to set the value, log if it doesn't match
-            timezoneSelect.value = currentTimezone;
-            if (timezoneSelect.value !== currentTimezone) {
-                console.warn(`Timezone value '${currentTimezone}' not found in options, current value: ${timezoneSelect.value}`);
-            }
-            updateTimezonePreview();
-        }
-
-        // Set current currency
-        const currentCurrency = '{{ current_currency }}';
-        const currencySelect = document.getElementById('currency-select');
-        if (currentCurrency && currencySelect) {
-            currencySelect.value = currentCurrency;
-            if (currencySelect.value !== currentCurrency) {
-                console.warn(`Currency value '${currentCurrency}' not found in options, current value: ${currencySelect.value}`);
-            }
-        }
-
-        // Set current theme
-        const currentTheme = '{{ current_theme }}';
-        const themeSelect = document.getElementById('theme-select');
-        if (currentTheme && themeSelect) {
-            themeSelect.value = currentTheme;
-            if (themeSelect.value !== currentTheme) {
-                console.warn(`Theme value '${currentTheme}' not found in options, current value: ${themeSelect.value}`);
-            }
-            updateThemePreview();
-        }
-
-        // V2 Beta Toggle Handler
-        const v2Toggle = document.getElementById('v2-toggle');
-        if (v2Toggle) {
-            v2Toggle.addEventListener('change', async function () {
-                const enabled = this.checked;
-                const toggleElement = this; // Capture 'this' for use in catch
-                try {
-                    const response = await fetch('/api/settings/v2_enabled', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ enabled: enabled })
-                    });
-
-                    if (!response.ok) {
-                        const data = await response.json().catch(() => ({}));
-                        throw new Error(data.error || `HTTP ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    if (!data.success) {
-                        throw new Error(data.error || 'Failed to update');
-                    }
-
-                    // Reload page to update navigation menu immediately
-                    window.location.reload();
-                } catch (error) {
-                    console.error('Error updating v2_enabled:', error);
-                    toggleElement.checked = !enabled; // Revert
-                    const errorMsg = error.message || 'Unknown error';
-                    alert('Failed to update preference: ' + errorMsg);
-                    console.error('Full error details:', error);
-                }
-            });
-        }
-    });
-
-    function updateTimezonePreview() {
-        const tz = document.getElementById('timezone-select').value;
-        if (tz) {
-            // This would ideally show current time, but requires server-side rendering
-            document.getElementById('timezone-preview').textContent = `Selected: ${tz}`;
-        }
-    }
-
-    function updateThemePreview() {
-        const theme = document.getElementById('theme-select').value;
-        const preview = document.getElementById('theme-preview');
-        if (theme === 'system') {
-            preview.textContent = 'ℹ️ Theme will follow your browser/OS dark mode setting';
-        } else if (theme === 'dark') {
-            preview.textContent = '🌙 Dark mode will be forced on';
-        } else if (theme === 'light') {
-            preview.textContent = '☀️ Light mode will be forced on';
-        } else if (theme === 'midnight-tokyo') {
-            preview.textContent = '🌃 Cyberpunk neon theme';
-        } else if (theme === 'abyss') {
-            preview.textContent = '🌊 Deep ocean void theme';
-        }
-    }
-
-    document.getElementById('timezone-select').addEventListener('change', updateTimezonePreview);
-    document.getElementById('theme-select').addEventListener('change', updateThemePreview);
+<!-- Settings Configuration -->
+<script id="settings-config" type="application/json">
+{
+    "currentTimezone": "{{ current_timezone }}",
+    "currentCurrency": "{{ current_currency }}",
+    "currentTheme": "{{ current_theme }}"
+}
 </script>
+
+<script type="module" src="/assets/js/settings.js" data-cfasync="false"></script>
 {% endblock %}

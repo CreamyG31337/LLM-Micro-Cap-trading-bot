@@ -29,7 +29,15 @@ if %ERRORLEVEL% NEQ 0 (
 cd ..
 
 echo.
-echo ==========================================
-echo      ✅ ALL TESTS PASSED
-echo ==========================================
+echo === Running Static Asset Verification ===
+.\web_dashboard\venv\Scripts\python.exe web_dashboard\verify_assets.py
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Static Asset Verification failed!
+    exit /b %ERRORLEVEL%
+)
+
+echo.
+echo ===================================================
+echo   ALL CHECKS PASSED SUCCESSFULLY!
+echo ===================================================
 pause

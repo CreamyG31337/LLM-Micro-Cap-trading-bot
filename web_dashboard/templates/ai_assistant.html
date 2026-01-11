@@ -308,22 +308,19 @@
 <!-- DOMPurify for XSS protection -->
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 
+<!-- AI Assistant Configuration (passed to TypeScript) -->
+<script id="ai-assistant-config" type="application/json">
+{
+    "defaultModel": {{ default_model|tojson|safe if default_model else '"granite3.2:8b"' }},
+    "availableFunds": {{ available_funds|tojson|safe }},
+    "ollamaModels": {{ ollama_models|tojson|safe }},
+    "ollamaAvailable": {{ ollama_available|tojson|safe }},
+    "searxngAvailable": {{ searxng_available|tojson|safe }},
+    "webaiModels": {{ webai_models|tojson|safe }},
+    "hasWebai": {{ has_webai|tojson|safe }}
+}
+</script>
+
 <!-- AI Assistant JavaScript -->
 <script src="/assets/js/ai_assistant.js"></script>
-
-<script>
-    // Initialize AI Assistant
-    document.addEventListener('DOMContentLoaded', function () {
-        const aiAssistant = new AIAssistant({
-            defaultModel: {{ default_model| tojson |default('"granite3.2:8b"') }},
-        availableFunds: {{ available_funds| tojson | safe }},
-        ollamaModels: {{ ollama_models| tojson | safe }},
-        ollamaAvailable: {{ ollama_available| tojson | safe }},
-        searxngAvailable: {{ searxng_available| tojson | safe }},
-        webaiModels: {{ webai_models| tojson | safe }},
-        hasWebai: {{ has_webai| tojson | safe }}
-        });
-    aiAssistant.init();
-    });
-</script>
 {% endblock %}

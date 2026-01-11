@@ -280,3 +280,18 @@ export function initializeEtfGrid(holdingsData: any[], viewMode: string) {
 };
 
 (window as any).initializeEtfGrid = initializeEtfGrid;
+
+// Auto-initialize if config is present
+document.addEventListener('DOMContentLoaded', () => {
+    const configElement = document.getElementById('etf-holdings-config');
+    if (configElement) {
+        try {
+            const config = JSON.parse(configElement.textContent || '{}');
+            if (config.holdingsData) {
+                initializeEtfGrid(config.holdingsData, config.viewMode || 'holdings');
+            }
+        } catch (err) {
+            console.error('[EtfHoldings] Failed to auto-init:', err);
+        }
+    }
+});

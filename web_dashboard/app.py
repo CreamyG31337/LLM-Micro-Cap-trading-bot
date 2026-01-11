@@ -2188,8 +2188,12 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
     if price_df.empty:
         raise ValueError("No price data available")
     
-    # Get user theme preference
-    theme = get_user_theme() or 'system'
+    # Get user theme preference (with fallback to 'system' if it fails)
+    try:
+        theme = get_user_theme() or 'system'
+    except Exception as e:
+        logger.warning(f"Error getting user theme, defaulting to 'system': {e}")
+        theme = 'system'
     
     from chart_utils import create_ticker_price_chart
     all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']

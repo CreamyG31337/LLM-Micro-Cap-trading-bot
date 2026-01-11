@@ -267,12 +267,36 @@ async function loadAndRenderChart(ticker, useSolid) {
             credentials: 'include'
         });
         
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        const isJson = contentType && contentType.includes('application/json');
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to load chart');
+            let errorMessage = `Failed to load chart (${response.status})`;
+            if (isJson) {
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    // If JSON parsing fails, use default message
+                }
+            } else {
+                // Response is HTML (likely an error page)
+                errorMessage = `Server error: ${response.status} ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+        }
+        
+        if (!isJson) {
+            throw new Error('Server returned non-JSON response. Please check your authentication.');
         }
         
         const chartData = await response.json();
+        
+        // Validate chart data structure
+        if (!chartData || !chartData.data || !chartData.layout) {
+            throw new Error('Invalid chart data received from server');
+        }
         
         // Hide loading indicator
         chartLoading.classList.add('section-hidden');
@@ -286,6 +310,8 @@ async function loadAndRenderChart(ticker, useSolid) {
         console.error('Error loading chart:', error);
         // Hide loading indicator
         chartLoading.classList.add('section-hidden');
+        // Show error message to user
+        showError(`Failed to load chart: ${error.message}`);
         // Hide chart section on error
         document.getElementById('chart-section').classList.add('section-hidden');
     }

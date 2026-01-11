@@ -133,3 +133,53 @@ def _decode_jwt_token(token: str) -> Optional[Dict]:
     except Exception as e:
         logger.debug(f"Failed to decode JWT token: {e}")
     return None
+
+
+def can_modify_data_flask() -> bool:
+    """
+    Check if current user can modify data (admin role only).
+    readonly_admin users can view but cannot modify data.
+    
+    Returns:
+        bool: True if user has admin role (not readonly_admin), False otherwise
+    """
+    user_id = get_user_id_flask()
+    if not user_id:
+        logger.debug("can_modify_data_flask(): No user_id found")
+        return False
+    
+    try:
+        from supabase_client import SupabaseClient
+        
+        # Get user's token for Supabase client
+        token = get_auth_token()
+        if not token:
+            logger.warning(f"can_modify_data_flask(): No user token available for user_id: {user_id}")
+            return False
+        
+        # Create Supabase client with user's token
+        client = SupabaseClient()
+        if not client or not client.supabase:
+            logger.warning(f"can_modify_data_flask(): Failed to get Supabase client for user_id: {user_id}")
+            return False
+        
+        # Call the can_modify_data SQL function
+        result = client.supabase.rpc('can_modify_data', {'user_uuid': user_id}).execute()
+        
+        # Handle both scalar boolean (newer supabase-py) and list (older versions)
+        if result.data is not None:
+            if isinstance(result.data, bool):
+                logger.debug(f"can_modify_data_flask(): RPC returned boolean {result.data} for user_id: {user_id}")
+                return result.data
+            elif isinstance(result.data, list) and len(result.data) > 0:
+                can_modify = bool(result.data[0])
+                logger.debug(f"can_modify_data_flask(): RPC returned list, first element: {can_modify} for user_id: {user_id}")
+                return can_modify
+            else:
+                logger.warning(f"can_modify_data_flask(): Unexpected RPC result format for user_id: {user_id}, result.data: {result.data}")
+        
+        logger.debug(f"can_modify_data_flask(): RPC returned None for user_id: {user_id}")
+        return False
+    except Exception as e:
+        logger.error(f"can_modify_data_flask(): Error checking modify permission for user_id {user_id}: {e}", exc_info=True)
+        return False

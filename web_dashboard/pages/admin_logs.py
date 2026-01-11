@@ -194,18 +194,22 @@ with tab_app:
             if total_pages > 1:
                 col_prev, col_info, col_next, col_download = st.columns([1, 2, 1, 1])
                 
-                with col_prev:
-                    if st.button("◀️ Previous", disabled=(st.session_state.log_page <= 1), use_container_width=True):
+                def prev_page():
+                    if st.session_state.log_page > 1:
                         st.session_state.log_page -= 1
-                        st.rerun()
+                
+                def next_page():
+                    if st.session_state.log_page < total_pages:
+                        st.session_state.log_page += 1
+                
+                with col_prev:
+                    st.button("◀️ Previous", disabled=(st.session_state.log_page <= 1), use_container_width=True, on_click=prev_page, key="log_prev_btn")
                 
                 with col_info:
                     st.caption(f"Page {st.session_state.log_page} of {total_pages}")
                 
                 with col_next:
-                    if st.button("Next ▶️", disabled=(st.session_state.log_page >= total_pages), use_container_width=True):
-                        st.session_state.log_page += 1
-                        st.rerun()
+                    st.button("Next ▶️", disabled=(st.session_state.log_page >= total_pages), use_container_width=True, on_click=next_page, key="log_next_btn")
                 
                 with col_download:
                     # Download all filtered logs (not just current page)

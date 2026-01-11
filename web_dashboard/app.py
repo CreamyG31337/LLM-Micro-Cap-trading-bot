@@ -1901,6 +1901,545 @@ def api_jobs_resume():
         logger.error(f"Error in api_jobs_resume: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+# =====================================================
+# USER & ACCESS MANAGEMENT ROUTES
+# =====================================================
+
+@app.route('/v2/admin/users')
+@require_admin
+def users_page():
+    """Admin user & access management page (Flask v2)"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='admin_users')
+        
+        logger.debug(f"Rendering users page for user: {user_email}")
+        
+        return render_template('users.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering users page: {e}", exc_info=True)
+        user_theme = 'system'
+        nav_context = get_navigation_context(current_page='admin_users')
+        return render_template('users.html', 
+                             user_email='Admin',
+                             user_theme=user_theme,
+                             **nav_context)
+
+@cache_data(ttl=60)
+def _get_cached_users_flask():
+    """Get all users with their fund assignments (cached for 60s)"""
+    try:
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/list_users_with_funds",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code == 200:
+            return response.json() or []
+        else:
+            logger.error(f"Error getting users: {response.text}")
+            return []
+    except Exception as e:
+        logger.error(f"Error in _get_cached_users_flask: {e}", exc_info=True)
+        return []
+
+@cache_data(ttl=60)
+def _get_cached_contributors_flask():
+    """Get all contributors (cached for 60s)"""
+    try:
+        client = get_supabase_client()
+        if not client:
+            return []
+        
+        result = client.supabase.table("contributors").select("id, name, email").order("name").execute()
+        return result.data if result.data else []
+    except Exception as e:
+        logger.error(f"Error getting contributors: {e}", exc_info=True)
+        return []
+
+@app.route('/api/admin/users/list')
+@require_admin
+def api_admin_users_list():
+    """Get all users with their fund assignments (for Flask page)"""
+    try:
+        users = _get_cached_users_flask()
+        
+        # Get stats
+        stats = {
+            "total_users": len(users),
+            "total_funds": len(set(fund for user in users for fund in (user.get('funds') or []))),
+            "total_assignments": sum(len(user.get('funds') or []) for user in users)
+        }
+        
+        return jsonify({"users": users, "stats": stats})
+    except Exception as e:
+        logger.error(f"Error in api_admin_users_list: {e}", exc_info=True)
+        return jsonify({"error": "Failed to load users", "users": [], "stats": {"total_users": 0, "total_funds": 0, "total_assignments": 0}}), 500
+
+@app.route('/api/admin/users/grant-admin', methods=['POST'])
+@require_admin
+def api_admin_grant_admin():
+    """Grant admin role to a user"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify user roles"}), 403
+        
+        data = request.get_json()
+        user_email = data.get('user_email')
+        
+        if not user_email:
+            return jsonify({"error": "User email required"}), 400
+        
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/grant_admin_role",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={"user_email": user_email}
+        )
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            if isinstance(result_data, list) and len(result_data) > 0:
+                result_data = result_data[0]
+            
+            if result_data and result_data.get('success'):
+                # Clear cache
+                cache.delete_memoized(_get_cached_users_flask)
+                return jsonify(result_data), 200
+            else:
+                return jsonify(result_data or {"error": "Failed to grant admin role"}), 400
+        else:
+            error_msg = response.json().get('message', 'Failed to grant admin role') if response.text else 'Failed to grant admin role'
+            return jsonify({"error": error_msg}), 400
+    except Exception as e:
+        logger.error(f"Error granting admin role: {e}", exc_info=True)
+        return jsonify({"error": "Failed to grant admin role"}), 500
+
+@app.route('/api/admin/users/revoke-admin', methods=['POST'])
+@require_admin
+def api_admin_revoke_admin():
+    """Revoke admin role from a user"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify user roles"}), 403
+        
+        data = request.get_json()
+        user_email = data.get('user_email')
+        
+        if not user_email:
+            return jsonify({"error": "User email required"}), 400
+        
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/revoke_admin_role",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={"user_email": user_email}
+        )
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            if isinstance(result_data, list) and len(result_data) > 0:
+                result_data = result_data[0]
+            
+            if result_data and result_data.get('success'):
+                # Clear cache
+                cache.delete_memoized(_get_cached_users_flask)
+                return jsonify(result_data), 200
+            else:
+                return jsonify(result_data or {"error": "Failed to revoke admin role"}), 400
+        else:
+            error_msg = response.json().get('message', 'Failed to revoke admin role') if response.text else 'Failed to revoke admin role'
+            return jsonify({"error": error_msg}), 400
+    except Exception as e:
+        logger.error(f"Error revoking admin role: {e}", exc_info=True)
+        return jsonify({"error": "Failed to revoke admin role"}), 500
+
+@app.route('/api/admin/users/delete', methods=['POST'])
+@require_admin
+def api_admin_delete_user():
+    """Delete a user safely"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot delete users"}), 403
+        
+        data = request.get_json()
+        user_email = data.get('user_email')
+        
+        if not user_email:
+            return jsonify({"error": "User email required"}), 400
+        
+        response = requests.post(
+            f"{os.getenv('SUPABASE_URL')}/rest/v1/rpc/delete_user_safe",
+            headers={
+                "apikey": os.getenv("SUPABASE_ANON_KEY"),
+                "Authorization": f"Bearer {os.getenv('SUPABASE_ANON_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={"user_email": user_email}
+        )
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            if result_data and result_data.get('success'):
+                # Clear cache
+                cache.delete_memoized(_get_cached_users_flask)
+                return jsonify(result_data), 200
+            else:
+                return jsonify(result_data or {"error": "Failed to delete user"}), 400
+        else:
+            error_msg = response.json().get('message', 'Failed to delete user') if response.text else 'Failed to delete user'
+            return jsonify({"error": error_msg}), 400
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}", exc_info=True)
+        return jsonify({"error": "Failed to delete user"}), 500
+
+@app.route('/api/admin/users/send-invite', methods=['POST'])
+@require_admin
+def api_admin_send_invite():
+    """Send magic link invite to a user"""
+    try:
+        from flask_auth_utils import can_modify_data_flask, get_user_email_flask
+        data = request.get_json()
+        user_email = data.get('user_email')
+        
+        if not user_email:
+            return jsonify({"error": "User email required"}), 400
+        
+        # Allow readonly_admin to send invite to themselves
+        current_email = get_user_email_flask()
+        can_send = can_modify_data_flask() or (user_email == current_email)
+        
+        if not can_send:
+            return jsonify({"error": "Read-only admin can only send invites to themselves"}), 403
+        
+        # Use Supabase client to send magic link
+        from supabase import create_client
+        supabase_url = os.getenv("SUPABASE_URL")
+        publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        
+        if not supabase_url or not publishable_key:
+            return jsonify({"error": "Supabase configuration missing"}), 500
+        
+        app_domain = os.getenv("APP_DOMAIN")
+        if not app_domain:
+            return jsonify({"error": "APP_DOMAIN environment variable is required"}), 500
+        
+        redirect_url = os.getenv("MAGIC_LINK_REDIRECT_URL", f"https://{app_domain}/auth_callback.html")
+        
+        supabase = create_client(supabase_url, publishable_key)
+        response = supabase.auth.sign_in_with_otp({
+            "email": user_email,
+            "options": {
+                "email_redirect_to": redirect_url
+            }
+        })
+        
+        if response:
+            return jsonify({"success": True, "message": "Invite sent to your email"}), 200
+        else:
+            return jsonify({"error": "Failed to send invite"}), 500
+    except Exception as e:
+        logger.error(f"Error sending invite: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to send invite: {str(e)}"}), 500
+
+@app.route('/api/admin/users/update-contributor-email', methods=['POST'])
+@require_admin
+def api_admin_update_contributor_email():
+    """Update contributor email address"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot update contributor emails"}), 403
+        
+        data = request.get_json()
+        contributor_name = data.get('contributor_name')
+        contributor_id = data.get('contributor_id')
+        contributor_type = data.get('contributor_type')  # 'contributor', 'fund_contribution', 'user'
+        new_email = data.get('new_email')
+        
+        if not new_email:
+            return jsonify({"error": "New email address required"}), 400
+        
+        # Validate email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, new_email):
+            return jsonify({"error": "Invalid email format"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        updates_made = []
+        
+        # Update based on type
+        if contributor_type == 'contributor' and contributor_id:
+            try:
+                client.supabase.table("contributors").update(
+                    {"email": new_email}
+                ).eq("id", contributor_id).execute()
+                updates_made.append("contributors table")
+            except Exception as e:
+                logger.warning(f"Could not update contributors table: {e}")
+        
+        # Always update fund_contributions for this contributor name
+        try:
+            client.supabase.table("fund_contributions").update(
+                {"email": new_email}
+            ).eq("contributor", contributor_name).execute()
+            updates_made.append("fund_contributions records")
+        except Exception as e:
+            logger.warning(f"Could not update fund_contributions: {e}")
+        
+        # If it's a registered user, also update auth
+        if contributor_type == 'user' and contributor_id:
+            try:
+                from supabase import create_client
+                supabase_url = os.getenv("SUPABASE_URL")
+                service_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                
+                if supabase_url and service_key:
+                    admin_client = create_client(supabase_url, service_key)
+                    
+                    # Check if email already exists
+                    users_response = admin_client.auth.admin.list_users()
+                    users_list = users_response if isinstance(users_response, list) else getattr(users_response, 'users', [])
+                    
+                    email_exists = False
+                    for u in users_list:
+                        check_email = u.email if hasattr(u, 'email') else u.get('email') if isinstance(u, dict) else None
+                        if check_email and check_email.lower() == new_email.lower():
+                            check_id = u.id if hasattr(u, 'id') else u.get('id') if isinstance(u, dict) else None
+                            if str(check_id) != str(contributor_id):
+                                email_exists = True
+                                break
+                    
+                    if email_exists:
+                        return jsonify({"error": f"Email {new_email} is already in use by another user"}), 400
+                    
+                    # Update email in auth.users
+                    update_response = admin_client.auth.admin.update_user_by_id(
+                        contributor_id,
+                        {"email": new_email}
+                    )
+                    
+                    if update_response and update_response.user:
+                        updates_made.append("auth.users")
+                        
+                        # Also update email in user_profiles table
+                        try:
+                            client.supabase.table("user_profiles").update(
+                                {"email": new_email}
+                            ).eq("user_id", contributor_id).execute()
+                            updates_made.append("user_profiles")
+                        except Exception as profile_error:
+                            logger.warning(f"Could not update user_profiles: {profile_error}")
+                    else:
+                        return jsonify({"error": "Failed to update email in auth.users"}), 500
+            except Exception as auth_error:
+                logger.warning(f"Could not update auth.users: {auth_error}")
+        
+        if updates_made:
+            # Clear caches
+            cache.delete_memoized(_get_cached_users_flask)
+            cache.delete_memoized(_get_cached_contributors_flask)
+            return jsonify({
+                "success": True,
+                "message": f"Email updated in: {', '.join(updates_made)}",
+                "updates_made": updates_made
+            }), 200
+        else:
+            return jsonify({"error": "No updates were made"}), 400
+    except Exception as e:
+        logger.error(f"Error updating contributor email: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to update email: {str(e)}"}), 500
+
+@app.route('/api/admin/contributors')
+@require_admin
+def api_admin_contributors():
+    """Get all contributors"""
+    try:
+        contributors = _get_cached_contributors_flask()
+        return jsonify({"contributors": contributors})
+    except Exception as e:
+        logger.error(f"Error getting contributors: {e}", exc_info=True)
+        return jsonify({"error": "Failed to load contributors", "contributors": []}), 500
+
+@app.route('/api/admin/contributors/unregistered')
+@require_admin
+def api_admin_unregistered_contributors():
+    """Get unregistered contributors"""
+    try:
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database", "contributors": []}), 500
+        
+        result = client.supabase.rpc('list_unregistered_contributors').execute()
+        contributors = result.data if result.data else []
+        return jsonify({"contributors": contributors})
+    except Exception as e:
+        logger.error(f"Error getting unregistered contributors: {e}", exc_info=True)
+        # Check if it's a missing table error
+        error_str = str(e).lower()
+        if "does not exist" in error_str or "relation" in error_str or "42p01" in error_str:
+            return jsonify({
+                "error": "Contributors table not found. Run migration DF_009 first.",
+                "contributors": []
+            }), 404
+        return jsonify({"error": f"Failed to load unregistered contributors: {str(e)}", "contributors": []}), 500
+
+@app.route('/api/admin/contributor-access')
+@require_admin
+def api_admin_contributor_access():
+    """Get all contributor access records"""
+    try:
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database", "access": []}), 500
+        
+        # Get access records
+        access_result = client.supabase.table("contributor_access").select(
+            "id, contributor_id, user_id, access_level, granted_at"
+        ).execute()
+        
+        if not access_result.data:
+            return jsonify({"access": []})
+        
+        # Get contributor and user details
+        contributors = _get_cached_contributors_flask()
+        users = _get_cached_users_flask()
+        
+        access_list = []
+        for access in access_result.data:
+            # Get contributor details
+            contrib = next((c for c in contributors if c['id'] == access['contributor_id']), {})
+            # Get user details
+            user = next((u for u in users if u.get('user_id') == access['user_id']), {})
+            
+            access_list.append({
+                "id": access['id'],
+                "contributor": contrib.get('name', 'Unknown'),
+                "contributor_email": contrib.get('email', 'No email'),
+                "user_email": user.get('email', 'Unknown'),
+                "user_name": user.get('full_name', ''),
+                "access_level": access.get('access_level', 'viewer'),
+                "granted": access.get('granted_at', '')[:10] if access.get('granted_at') else ''
+            })
+        
+        return jsonify({"access": access_list})
+    except Exception as e:
+        logger.error(f"Error getting contributor access: {e}", exc_info=True)
+        error_str = str(e).lower()
+        if "does not exist" in error_str or "relation" in error_str or "42p01" in error_str:
+            return jsonify({
+                "error": "Contributor access table not found. Run migration DF_009 first.",
+                "access": []
+            }), 404
+        return jsonify({"error": f"Failed to load access records: {str(e)}", "access": []}), 500
+
+@app.route('/api/admin/contributor-access/grant', methods=['POST'])
+@require_admin
+def api_admin_grant_contributor_access():
+    """Grant contributor access to a user"""
+    try:
+        data = request.get_json()
+        contributor_email = data.get('contributor_email')
+        user_email = data.get('user_email')
+        access_level = data.get('access_level', 'viewer')
+        
+        if not contributor_email or not user_email:
+            return jsonify({"error": "Contributor email and user email required"}), 400
+        
+        if access_level not in ['viewer', 'manager', 'owner']:
+            return jsonify({"error": "Invalid access level. Must be viewer, manager, or owner"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        result = client.supabase.rpc(
+            'grant_contributor_access',
+            {
+                'contributor_email': contributor_email,
+                'user_email': user_email,
+                'access_level': access_level
+            }
+        ).execute()
+        
+        if result.data:
+            result_data = result.data[0] if isinstance(result.data, list) else result.data
+            if result_data.get('success'):
+                # Clear cache
+                cache.delete_memoized(_get_cached_contributors_flask)
+                return jsonify(result_data), 200
+            else:
+                return jsonify(result_data), 400
+        else:
+            return jsonify({"error": "Failed to grant access"}), 500
+    except Exception as e:
+        logger.error(f"Error granting contributor access: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to grant access: {str(e)}"}), 500
+
+@app.route('/api/admin/contributor-access/revoke', methods=['POST'])
+@require_admin
+def api_admin_revoke_contributor_access():
+    """Revoke contributor access from a user"""
+    try:
+        data = request.get_json()
+        contributor_email = data.get('contributor_email')
+        user_email = data.get('user_email')
+        
+        if not contributor_email or not user_email:
+            return jsonify({"error": "Contributor email and user email required"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        result = client.supabase.rpc(
+            'revoke_contributor_access',
+            {
+                'contributor_email': contributor_email,
+                'user_email': user_email
+            }
+        ).execute()
+        
+        if result.data:
+            result_data = result.data[0] if isinstance(result.data, list) else result.data
+            if result_data.get('success'):
+                # Clear cache
+                cache.delete_memoized(_get_cached_contributors_flask)
+                return jsonify(result_data), 200
+            else:
+                return jsonify(result_data), 400
+        else:
+            return jsonify({"error": "Failed to revoke access"}), 500
+    except Exception as e:
+        logger.error(f"Error revoking contributor access: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to revoke access: {str(e)}"}), 500
+
 @app.route('/api/jobs/start-scheduler', methods=['POST'])
 @require_admin
 def api_jobs_start_scheduler():

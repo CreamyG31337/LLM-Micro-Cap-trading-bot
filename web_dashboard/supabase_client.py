@@ -173,7 +173,7 @@ class SupabaseClient:
             except Exception as e:
                 logger.warning(f"[SUPABASE_CLIENT] ❌ Could not set client-level headers: {e}")
             
-            logger.info("[SUPABASE_CLIENT] Completed user token initialization")
+            logger.debug("[SUPABASE_CLIENT] Completed user token initialization")
     
     def test_connection(self) -> bool:
         """Test database connection"""

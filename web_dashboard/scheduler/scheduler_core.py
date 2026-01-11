@@ -79,8 +79,23 @@ def _update_heartbeat():
     try:
         _HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
         _HEARTBEAT_FILE.write_text(str(time.time()))
-    except Exception:
-        pass  # Non-fatal - heartbeat is just for status checking
+        
+        # Log the path on first update for debugging
+        if not hasattr(_update_heartbeat, '_path_logged'):
+            heartbeat_logger.debug(f"💓 Heartbeat file path: {_HEARTBEAT_FILE}")
+            _update_heartbeat._path_logged = True
+        
+        # Log at INFO level periodically so we can see it's working (every 10th update = ~200 seconds)
+        # Use a simple counter to avoid logging every time
+        if not hasattr(_update_heartbeat, '_counter'):
+            _update_heartbeat._counter = 0
+        _update_heartbeat._counter += 1
+        if _update_heartbeat._counter % 10 == 0:
+            heartbeat_logger.info(f"💓 Heartbeat updated (check #{_update_heartbeat._counter})")
+    except Exception as e:
+        # Log the error so we can see what's failing
+        heartbeat_logger.error(f"❌ Failed to update heartbeat file at {_HEARTBEAT_FILE}: {e}", exc_info=True)
+        # Still pass - non-fatal but we want to know about it
 
 
 def _check_heartbeat() -> bool:
@@ -855,8 +870,48 @@ def is_scheduler_running() -> bool:
         return True
     
     # Cross-process check: use heartbeat file
-    return _check_heartbeat()
+    heartbeat_status = _check_heartbeat()
+    
+    # Add diagnostic logging if heartbeat check fails
+    if not heartbeat_status:
+        try:
+            if _HEARTBEAT_FILE.exists():
+                last_beat = float(_HEARTBEAT_FILE.read_text().strip())
+                age_seconds = time.time() - last_beat
+                logger.debug(f"Scheduler heartbeat file exists but is stale (age: {age_seconds:.1f}s, timeout: {_HEARTBEAT_TIMEOUT}s)")
+            else:
+                logger.debug(f"Scheduler heartbeat file does not exist at {_HEARTBEAT_FILE}")
+        except Exception as e:
+            logger.debug(f"Error checking heartbeat file: {e}")
+    
+    return heartbeat_status
 
+
+
+def get_scheduler_status() -> Dict[str, Any]:
+    """Get detailed scheduler status for debugging.
+    
+    Returns:
+        Dictionary with scheduler status information
+    """
+    status = {
+        'in_process_running': _scheduler is not None and _scheduler.running if _scheduler else False,
+        'heartbeat_file_exists': _HEARTBEAT_FILE.exists(),
+        'heartbeat_recent': False,
+        'heartbeat_age_seconds': None,
+        'heartbeat_file_path': str(_HEARTBEAT_FILE),
+    }
+    
+    try:
+        if _HEARTBEAT_FILE.exists():
+            last_beat = float(_HEARTBEAT_FILE.read_text().strip())
+            age = time.time() - last_beat
+            status['heartbeat_age_seconds'] = age
+            status['heartbeat_recent'] = age < _HEARTBEAT_TIMEOUT
+    except Exception as e:
+        status['heartbeat_error'] = str(e)
+    
+    return status
 
 
 def shutdown_scheduler() -> None:

@@ -2423,7 +2423,15 @@ def main():
                 # General Options - disable auto page size so user can select from 25/50/100
                 gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=50)
                 gb.configure_grid_options(domLayout='normal')
-                gb.configure_selection(selection_mode="single", use_checkbox=False)
+                # Use new rowSelection object format (AG Grid v32.2+)
+                # Deprecated: gb.configure_selection(selection_mode="single", use_checkbox=False)
+                gb.configure_grid_options(
+                    rowSelection={
+                        "mode": "singleRow",
+                        "checkboxes": False,
+                        "enableClickSelection": True,
+                    }
+                )
                 
                 # Add Ticker Click Handler
                 grid_options = gb.build()

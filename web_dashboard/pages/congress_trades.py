@@ -749,15 +749,19 @@ try:
         
         # Grid options
         gb.configure_default_column(editable=False, groupable=False)
-        gb.configure_selection(selection_mode="multiple", use_checkbox=False)
+        # gb.configure_selection(selection_mode="multiple", use_checkbox=False)
         gb.configure_grid_options(
+            rowSelection={
+                "mode": "multiRow",
+                "checkboxes": False,
+                "enableClickSelection": False,
+            },
             enableRangeSelection=True,
             enableCellTextSelection=True,
             ensureDomOrder=True,
             domLayout='normal',
             pagination=True,
             paginationPageSize=100,
-            suppressRowClickSelection=True
         )
         
         gridOptions = gb.build()

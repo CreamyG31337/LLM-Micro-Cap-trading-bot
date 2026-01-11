@@ -41,8 +41,8 @@ interface AgGridOptions {
     columnDefs: AgGridColumnDef[];
     rowData: CongressTrade[];
     defaultColDef?: Partial<AgGridColumnDef>;
-    rowSelection?: string;
-    suppressRowClickSelection?: boolean;
+    rowSelection?: any;
+    // suppressRowClickSelection deprecated
     enableRangeSelection?: boolean;
     enableCellTextSelection?: boolean;
     ensureDomOrder?: boolean;
@@ -122,7 +122,7 @@ class TickerCellRenderer implements AgGridCellRenderer {
             this.eGui.style.fontWeight = 'bold';
             this.eGui.style.textDecoration = 'underline';
             this.eGui.style.cursor = 'pointer';
-            this.eGui.addEventListener('click', function(e: Event) {
+            this.eGui.addEventListener('click', function (e: Event) {
                 e.stopPropagation();
                 const ticker = params.value;
                 if (ticker && ticker !== 'N/A') {
@@ -151,15 +151,15 @@ function onCellClicked(params: AgGridParams): void {
             window.location.href = `/v2/ticker?ticker=${encodeURIComponent(ticker)}`;
             return;
         }
-        
+
         // Update hidden column
         if (params.node) {
             params.node.setDataValue('_click_action', action);
-            
+
             // Select the row to trigger selection event
             if (gridApi) {
                 const selectedNodes = gridApi.getSelectedNodes();
-                selectedNodes.forEach(function(node: AgGridNode) {
+                selectedNodes.forEach(function (node: AgGridNode) {
                     node.setSelected(false);
                 });
                 params.node.setSelected(true);
@@ -171,21 +171,21 @@ function onCellClicked(params: AgGridParams): void {
 // Handle row selection - show AI reasoning
 function onSelectionChanged(): void {
     if (!gridApi) return;
-    
+
     const selectedRows = gridApi.getSelectedRows();
     if (selectedRows && selectedRows.length > 0) {
         const selectedRow = selectedRows[0];
         // Get full reasoning - check both _full_reasoning and _tooltip fields
-        const fullReasoning = (selectedRow._full_reasoning && selectedRow._full_reasoning.trim()) || 
-                             (selectedRow._tooltip && selectedRow._tooltip.trim()) || 
-                             '';
-        
+        const fullReasoning = (selectedRow._full_reasoning && selectedRow._full_reasoning.trim()) ||
+            (selectedRow._tooltip && selectedRow._tooltip.trim()) ||
+            '';
+
         if (fullReasoning) {
             // Show reasoning section
             const reasoningSection = document.getElementById('ai-reasoning-section');
             if (reasoningSection) {
                 reasoningSection.classList.remove('hidden');
-                
+
                 // Populate fields
                 const tickerEl = document.getElementById('reasoning-ticker');
                 const companyEl = document.getElementById('reasoning-company');
@@ -194,7 +194,7 @@ function onSelectionChanged(): void {
                 const typeEl = document.getElementById('reasoning-type');
                 const scoreEl = document.getElementById('reasoning-score');
                 const textEl = document.getElementById('reasoning-text');
-                
+
                 if (tickerEl) tickerEl.textContent = selectedRow.Ticker || '-';
                 if (companyEl) companyEl.textContent = selectedRow.Company || '-';
                 if (politicianEl) politicianEl.textContent = selectedRow.Politician || '-';
@@ -202,7 +202,7 @@ function onSelectionChanged(): void {
                 if (typeEl) typeEl.textContent = selectedRow.Type || '-';
                 if (scoreEl) scoreEl.textContent = selectedRow.Score || '-';
                 if (textEl) textEl.textContent = fullReasoning;
-                
+
                 // Scroll to reasoning section
                 reasoningSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -315,7 +315,7 @@ export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void 
             width: 400,
             sortable: true,
             filter: true,
-            tooltipValueGetter: function(params: AgGridParams): string {
+            tooltipValueGetter: function (params: AgGridParams): string {
                 return params.data?._tooltip || params.value || '';
             },
             cellStyle: {
@@ -351,8 +351,12 @@ export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void 
             filter: true,
             resizable: true
         },
-        rowSelection: 'multiple',
-        suppressRowClickSelection: true,
+        rowSelection: {
+            mode: 'multiRow',
+            checkboxes: false,
+            enableClickSelection: false,
+        },
+        // suppressRowClickSelection deprecated
         enableRangeSelection: true,
         enableCellTextSelection: true,
         ensureDomOrder: true,
@@ -370,7 +374,7 @@ export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void 
     const gridInstance = new window.agGrid.Grid(gridDiv, gridOptions);
     gridApi = gridInstance.api;
     gridColumnApi = gridInstance.columnApi;
-    
+
     // Auto-size columns on first data render
     if (gridApi) {
         gridApi.sizeColumnsToFit();

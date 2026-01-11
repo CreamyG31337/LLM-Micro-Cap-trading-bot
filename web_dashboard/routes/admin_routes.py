@@ -111,9 +111,8 @@ def _get_cached_users_flask():
 def _get_cached_contributors_flask():
     """Get all contributors (cached for 60s)"""
     try:
-        client = get_supabase_client()
-        if not client:
-            return []
+        # Use service_role to bypass RLS for admin operations
+        client = SupabaseClient(use_service_role=True)
         
         result = client.supabase.table("contributors").select("id, name, email").order("name").execute()
         return result.data if result.data else []

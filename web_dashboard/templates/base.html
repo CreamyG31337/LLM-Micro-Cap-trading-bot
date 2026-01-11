@@ -193,7 +193,7 @@
                             </a>
                         </li>
                         <li>
-                            <a href="/v2/admin/funds"
+                            <a href="{{ url_for('fund_routes.admin_funds_page') }}"
                                 class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
                                 <span class="mr-3 text-lg">🏦</span>
                                 <span>Fund Management</span>
@@ -227,13 +227,7 @@
                                 <span>System Monitoring</span>
                             </a>
                         </li>
-                        <li>
-                            <a href="/v2/logs"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
-                                <span class="mr-3 text-lg">📜</span>
-                                <span>Application Logs</span>
-                            </a>
-                        </li>
+
                     </ul>
                 </div>
                 {% endif %}

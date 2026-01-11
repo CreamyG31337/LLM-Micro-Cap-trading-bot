@@ -75,12 +75,27 @@ CORS(app,
      allow_headers=["Content-Type", "Authorization"],
      expose_headers=["Content-Type"])
 
-# Set JWT secret for auth system
+# Initialize Flask-Caching for data caching (similar to Streamlit's @st.cache_data)
+# This provides TTL-based caching for data-heavy operations
+try:
+    from flask_caching import Cache
+    cache = Cache(config={
+        'CACHE_TYPE': 'SimpleCache',  # In-memory cache (can be upgraded to Redis/Memcached)
+        'CACHE_DEFAULT_TIMEOUT': 300,  # Default 5 minutes
+    })
+    cache.init_app(app)
+    app.extensions['cache'] = cache
+    logger.info("Flask-Caching initialized successfully")
+except ImportError:
+    logger.warning("Flask-Caching not available. Using fallback cache from flask_cache_utils.")
+    cache = None
+
 # Set JWT secret for auth system
 os.environ["JWT_SECRET"] = os.getenv("JWT_SECRET", "your-jwt-secret-change-this")
 
 # Global cache for AI context data to avoid re-fetching on every toggle
 # Key: (user_id, fund_name), Value: {'timestamp': datetime, 'data': dict}
+# NOTE: Consider migrating to flask_cache_utils.cache_data() decorator
 CONTEXT_DATA_CACHE = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 

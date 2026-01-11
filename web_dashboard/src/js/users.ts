@@ -195,10 +195,10 @@ document.addEventListener('DOMContentLoaded', (): void => {
     
     // Tab switching
     if (elements.tabUsers) {
-        elements.tabUsers.addEventListener('click', () => switchTab('users'));
+        elements.tabUsers.addEventListener('click', () => switchUsersTab('users'));
     }
     if (elements.tabAccess) {
-        elements.tabAccess.addEventListener('click', () => switchTab('access'));
+        elements.tabAccess.addEventListener('click', () => switchUsersTab('access'));
     }
     
     // User Management
@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', (): void => {
 });
 
 // Tab Switching
-function switchTab(tabName: 'users' | 'access'): void {
+function switchUsersTab(tabName: 'users' | 'access'): void {
     // Update tab buttons
     if (tabName === 'users') {
         if (elements.tabUsers) {

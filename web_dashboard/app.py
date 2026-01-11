@@ -296,6 +296,13 @@ try:
 except Exception as e:
     logger.error(f"Failed to register ETF Blueprint: {e}", exc_info=True)
 
+try:
+    from routes.social_sentiment_routes import social_sentiment_bp
+    app.register_blueprint(social_sentiment_bp, url_prefix='/v2')
+    logger.debug("Registered Social Sentiment Blueprint at /v2")
+except Exception as e:
+    logger.error(f"Failed to register Social Sentiment Blueprint: {e}", exc_info=True)
+
 def load_portfolio_data(fund_name=None) -> Dict:
     """Load and process portfolio data from Supabase (web app only - no CSV fallback)"""
     if not REPOSITORY_AVAILABLE:

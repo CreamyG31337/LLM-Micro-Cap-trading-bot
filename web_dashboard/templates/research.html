@@ -86,12 +86,41 @@
     </form>
 </div>
 
+<!-- Re-Analyze Controls -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+    <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center gap-4 flex-1">
+            <label for="reanalysis-model" class="text-sm font-medium text-gray-900">Re-Analysis Model:</label>
+            <select id="reanalysis-model"
+                class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 px-3 py-2 min-w-[200px]">
+                <option value="">Loading models...</option>
+            </select>
+            <span id="selected-count" class="text-sm text-gray-600 hidden">0 articles selected</span>
+        </div>
+        <button id="reanalyze-btn" disabled
+            class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fas fa-sync-alt mr-2"></i>Re-Analyze Selected
+        </button>
+    </div>
+    <div id="reanalyze-progress" class="hidden mt-4">
+        <div class="w-full bg-gray-200 rounded-full h-2.5">
+            <div id="reanalyze-progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <p id="reanalyze-status" class="text-sm text-gray-600 mt-2"></p>
+    </div>
+    <div id="reanalyze-messages" class="mt-4"></div>
+</div>
+
 <!-- Articles Grid -->
 <div class="grid grid-cols-1 gap-6">
     {% for article in articles %}
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
         <div class="p-6">
-            <div class="flex justify-between items-start mb-4">
+            <div class="flex items-start gap-3 mb-4">
+                <input type="checkbox" class="article-checkbox mt-1 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" 
+                    data-article-id="{{ article.id }}" 
+                    onchange="updateSelectedCount()">
+            <div class="flex justify-between items-start flex-1">
                 <div>
                     <!-- Badges -->
                     <div class="flex flex-wrap gap-2 mb-2">
@@ -148,6 +177,7 @@
                     </a>
                     {% endfor %}
                 </div>
+            </div>
             </div>
 
             <!-- Summary -->
@@ -212,6 +242,15 @@
 
 {% block extra_scripts %}
 <script>
+    let availableModels = [];
+    let defaultModel = '';
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadAvailableModels();
+        setupReanalyzeButton();
+    });
+
     function toggleContent(id) {
         const el = document.getElementById(id);
         if (el.classList.contains('hidden')) {
@@ -225,6 +264,181 @@
         const url = new URL(window.location.href);
         url.searchParams.set('page', page);
         window.location.href = url.toString();
+    }
+
+    function loadAvailableModels() {
+        fetch('/v2/research/models')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.models) {
+                    availableModels = data.models;
+                    defaultModel = data.default_model || '';
+                    
+                    const select = document.getElementById('reanalysis-model');
+                    select.innerHTML = '';
+                    
+                    if (availableModels.length === 0) {
+                        select.innerHTML = '<option value="">No models available</option>';
+                        return;
+                    }
+                    
+                    availableModels.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        if (model === defaultModel) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                } else {
+                    console.error('Failed to load models:', data.error);
+                    document.getElementById('reanalysis-model').innerHTML = 
+                        '<option value="">Error loading models</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching models:', error);
+                document.getElementById('reanalysis-model').innerHTML = 
+                    '<option value="">Error loading models</option>';
+            });
+    }
+
+    function updateSelectedCount() {
+        const checkboxes = document.querySelectorAll('.article-checkbox:checked');
+        const count = checkboxes.length;
+        const countSpan = document.getElementById('selected-count');
+        const reanalyzeBtn = document.getElementById('reanalyze-btn');
+        
+        if (count > 0) {
+            countSpan.textContent = `${count} article${count !== 1 ? 's' : ''} selected`;
+            countSpan.classList.remove('hidden');
+            reanalyzeBtn.disabled = false;
+        } else {
+            countSpan.classList.add('hidden');
+            reanalyzeBtn.disabled = true;
+        }
+    }
+
+    function setupReanalyzeButton() {
+        const btn = document.getElementById('reanalyze-btn');
+        btn.addEventListener('click', function() {
+            const checkboxes = document.querySelectorAll('.article-checkbox:checked');
+            const selectedIds = Array.from(checkboxes).map(cb => cb.dataset.articleId);
+            const modelSelect = document.getElementById('reanalysis-model');
+            const modelName = modelSelect.value;
+            
+            if (selectedIds.length === 0) {
+                showMessage('Please select at least one article.', 'warning');
+                return;
+            }
+            
+            if (!modelName) {
+                showMessage('Please select a model.', 'warning');
+                return;
+            }
+            
+            reanalyzeArticles(selectedIds, modelName);
+        });
+    }
+
+    function reanalyzeArticles(articleIds, modelName) {
+        const progressDiv = document.getElementById('reanalyze-progress');
+        const progressBar = document.getElementById('reanalyze-progress-bar');
+        const statusText = document.getElementById('reanalyze-status');
+        const messagesDiv = document.getElementById('reanalyze-messages');
+        const reanalyzeBtn = document.getElementById('reanalyze-btn');
+        
+        // Show progress
+        progressDiv.classList.remove('hidden');
+        progressBar.style.width = '0%';
+        statusText.textContent = 'Starting re-analysis...';
+        messagesDiv.innerHTML = '';
+        reanalyzeBtn.disabled = true;
+        
+        let successCount = 0;
+        let errorCount = 0;
+        let completed = 0;
+        const total = articleIds.length;
+        
+        // Process articles sequentially
+        async function processNext(index) {
+            if (index >= articleIds.length) {
+                // All done
+                progressBar.style.width = '100%';
+                statusText.textContent = 'Re-analysis complete!';
+                reanalyzeBtn.disabled = false;
+                
+                // Show summary
+                if (successCount > 0) {
+                    showMessage(`✅ Successfully re-analyzed ${successCount} article${successCount !== 1 ? 's' : ''}`, 'success');
+                }
+                if (errorCount > 0) {
+                    showMessage(`❌ Failed to re-analyze ${errorCount} article${errorCount !== 1 ? 's' : ''}`, 'error');
+                }
+                
+                // Reload page after a short delay to show updated data
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+                return;
+            }
+            
+            const articleId = articleIds[index];
+            statusText.textContent = `Re-analyzing article ${index + 1}/${total}...`;
+            
+            try {
+                const response = await fetch('/v2/research/reanalyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        article_id: articleId,
+                        model_name: modelName
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                    console.error(`Failed to re-analyze article ${articleId}:`, data.error);
+                }
+            } catch (error) {
+                errorCount++;
+                console.error(`Error re-analyzing article ${articleId}:`, error);
+            }
+            
+            completed++;
+            const progress = (completed / total) * 100;
+            progressBar.style.width = `${progress}%`;
+            
+            // Process next article
+            await processNext(index + 1);
+        }
+        
+        // Start processing
+        processNext(0);
+    }
+
+    function showMessage(message, type) {
+        const messagesDiv = document.getElementById('reanalyze-messages');
+        const messageEl = document.createElement('div');
+        messageEl.className = `p-3 rounded-lg mb-2 ${
+            type === 'success' ? 'bg-green-100 text-green-800 border border-green-400' :
+            type === 'error' ? 'bg-red-100 text-red-800 border border-red-400' :
+            'bg-yellow-100 text-yellow-800 border border-yellow-400'
+        }`;
+        messageEl.textContent = message;
+        messagesDiv.appendChild(messageEl);
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            messageEl.remove();
+        }, 5000);
     }
 </script>
 {% endblock %}

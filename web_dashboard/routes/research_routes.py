@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, request, g
+from flask import Blueprint, render_template, request, g, jsonify
 import logging
 from datetime import datetime, timedelta, date, timezone
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import sys
 from pathlib import Path
 
@@ -12,7 +12,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from auth import require_auth
 from research_repository import ResearchRepository
 from user_preferences import get_user_preference
-from flask_auth_utils import get_user_email_flask
+from flask_auth_utils import get_user_email_flask, get_auth_token, get_user_id_flask
 from flask_cache_utils import cache_resource, cache_data
 # Note: get_navigation_context imported inside function to avoid circular import
 
@@ -210,3 +210,240 @@ def research_dashboard():
             user_theme=user_theme,
             **nav_context
         ), 500
+
+
+def reanalyze_article_flask(article_id: str, model_name: str) -> tuple[bool, str]:
+    """Re-analyze an article with a specified AI model (Flask version).
+    
+    Args:
+        article_id: UUID of the article to re-analyze
+        model_name: Name of the Ollama model to use
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    try:
+        from ollama_client import get_ollama_client, check_ollama_health
+        from research_utils import validate_ticker_format, normalize_ticker
+        from scheduler.jobs import calculate_relevance_score
+        from supabase_client import SupabaseClient
+        
+        # Check repository is available
+        repo = get_research_repository()
+        if repo is None:
+            return False, "Research repository is not available"
+        
+        # Check Ollama availability
+        if not check_ollama_health():
+            return False, "Ollama is not available. Please check the connection."
+        
+        # Get article from repository
+        # Query handles both old (ticker) and new (tickers) schema
+        query = """
+            SELECT id, title, content, 
+                   COALESCE(tickers, ARRAY[ticker]) as tickers, 
+                   sector
+            FROM research_articles
+            WHERE id = %s
+        """
+        articles = repo.client.execute_query(query, (article_id,))
+        
+        if not articles:
+            return False, "Article not found"
+        
+        article = articles[0]
+        # Normalize ticker data (handle both array and single value)
+        if 'tickers' in article and article['tickers'] is not None:
+            if not isinstance(article['tickers'], list):
+                article['tickers'] = [article['tickers']] if article['tickers'] else []
+        else:
+            article['tickers'] = []
+        
+        content = article.get('content', '')
+        
+        if not content:
+            return False, "Article has no content to analyze"
+        
+        # Initialize Ollama client
+        ollama_client = get_ollama_client()
+        if not ollama_client:
+            return False, "Failed to initialize Ollama client"
+        
+        # Generate summary with specified model
+        summary_data = ollama_client.generate_summary(content, model=model_name)
+        
+        if not summary_data:
+            return False, "Failed to generate summary"
+        
+        # Extract summary text
+        extracted_tickers = []
+        extracted_sector = None
+        if isinstance(summary_data, str):
+            summary = summary_data
+        elif isinstance(summary_data, dict):
+            summary = summary_data.get("summary", "")
+            tickers = summary_data.get("tickers", [])
+            sectors = summary_data.get("sectors", [])
+            
+            # Extract all validated tickers
+            extracted_tickers = []
+            if tickers:
+                for ticker in tickers:
+                    # Validate format only (trust AI inference for company name -> ticker conversion)
+                    if not validate_ticker_format(ticker):
+                        logger.warning(f"Rejected invalid ticker format: {ticker} - skipping")
+                        continue
+                    normalized = normalize_ticker(ticker)
+                    if normalized:
+                        extracted_tickers.append(normalized)
+            
+            extracted_sector = sectors[0] if sectors else None
+        else:
+            return False, "Invalid summary data format"
+        
+        if not summary:
+            return False, "Generated summary is empty"
+        
+        # Get owned tickers for relevance scoring
+        owned_tickers = []
+        try:
+            # Try to get user token for Supabase client
+            user_token = get_auth_token()
+            user_id = get_user_id_flask()
+            
+            # Use service role for admin users, user token for regular users
+            # For simplicity, try user token first, fallback to service role
+            client = None
+            if user_token:
+                try:
+                    client = SupabaseClient(user_token=user_token)
+                except Exception:
+                    pass
+            
+            # Fallback to service role if user token failed
+            if not client:
+                client = SupabaseClient(use_service_role=True)
+            
+            if client:
+                # Get production funds directly from Supabase (matching pattern from scheduler/jobs.py)
+                funds_result = client.supabase.table("funds")\
+                    .select("name")\
+                    .eq("is_production", True)\
+                    .execute()
+                
+                if funds_result.data:
+                    prod_funds = [f['name'] for f in funds_result.data]
+                    positions_result = client.supabase.table("latest_positions")\
+                        .select("ticker")\
+                        .in_("fund", prod_funds)\
+                        .execute()
+                    if positions_result.data:
+                        owned_tickers = [pos['ticker'] for pos in positions_result.data if pos.get('ticker')]
+        except Exception as e:
+            logger.warning(f"Could not fetch owned tickers for relevance scoring: {e}")
+        
+        # Calculate relevance_score based on what was extracted
+        calculated_relevance = calculate_relevance_score(extracted_tickers, extracted_sector, owned_tickers=owned_tickers)
+        
+        # Generate embedding
+        embedding = ollama_client.generate_embedding(content[:6000])
+        if not embedding:
+            logger.warning(f"Failed to generate embedding for article {article_id}, continuing without embedding")
+            embedding = None
+        
+        # Update article in database (including Chain of Thought fields)
+        success = repo.update_article_analysis(
+            article_id=article_id,
+            summary=summary,
+            tickers=extracted_tickers if extracted_tickers else None,
+            sector=extracted_sector,
+            embedding=embedding,
+            relevance_score=calculated_relevance,
+            claims=summary_data.get("claims") if isinstance(summary_data, dict) else None,
+            fact_check=summary_data.get("fact_check") if isinstance(summary_data, dict) else None,
+            conclusion=summary_data.get("conclusion") if isinstance(summary_data, dict) else None,
+            sentiment=summary_data.get("sentiment") if isinstance(summary_data, dict) else None,
+            sentiment_score=summary_data.get("sentiment_score") if isinstance(summary_data, dict) else None
+        )
+        
+        if success:
+            return True, f"Article re-analyzed successfully with {model_name}"
+        else:
+            return False, "Failed to update article in database"
+            
+    except Exception as e:
+        logger.error(f"Error re-analyzing article {article_id}: {e}", exc_info=True)
+        return False, f"Error: {str(e)}"
+
+
+@research_bp.route('/research/models', methods=['GET'])
+@require_auth
+def get_available_models():
+    """Get list of available Ollama models for re-analysis"""
+    try:
+        from ollama_client import get_ollama_client, check_ollama_health, list_available_models
+        
+        if not check_ollama_health():
+            return jsonify({
+                "success": False,
+                "error": "Ollama is not available",
+                "models": []
+            }), 503
+        
+        models = list_available_models(include_hidden=False)
+        
+        # Get default model
+        from settings import get_summarizing_model
+        default_model = get_summarizing_model()
+        
+        return jsonify({
+            "success": True,
+            "models": models,
+            "default_model": default_model
+        })
+    except Exception as e:
+        logger.error(f"Error fetching available models: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "models": []
+        }), 500
+
+
+@research_bp.route('/research/reanalyze', methods=['POST'])
+@require_auth
+def reanalyze_article_endpoint():
+    """Re-analyze an article with a specified AI model"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No JSON data provided"}), 400
+        
+        article_id = data.get('article_id')
+        model_name = data.get('model_name')
+        
+        if not article_id:
+            return jsonify({"success": False, "error": "article_id is required"}), 400
+        
+        if not model_name:
+            return jsonify({"success": False, "error": "model_name is required"}), 400
+        
+        success, message = reanalyze_article_flask(article_id, model_name)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": message
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": message
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in reanalyze endpoint: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

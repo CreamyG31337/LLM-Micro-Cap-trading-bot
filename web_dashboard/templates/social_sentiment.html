@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Social Sentiment - Portfolio Dashboard{% endblock %}
+{% block page_title %}💬 Social Sentiment{% endblock %}
+{% block page_subtitle %}Monitor crowd sentiment for watched tickers on social media platforms{% endblock %}
+
+{% block extra_head %}
+<!-- AgGrid Community Edition -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+    <div class="flex">
+        <div class="flex-shrink-0">
+            <i class="fas fa-exclamation-triangle text-red-400"></i>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800">{{ error }}</h3>
+            <div class="mt-2 text-sm text-red-700">
+                <p>{{ error_message }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- Description -->
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+    <p class="text-sm text-blue-800">
+        <strong>Monitor Social Sentiment</strong> by tracking crowd sentiment for watched tickers on StockTwits and Reddit. 
+        Get alerts for extreme sentiment (EUPHORIC/FEARFUL) and view AI-powered analysis of social media discussions.
+    </p>
+    <p class="text-xs text-blue-600 mt-2">
+        <em>Data is collected every 60 minutes by the automated scheduler.</em>
+    </p>
+</div>
+
+<!-- Refresh Button -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-lg font-semibold">Data Refresh</h2>
+            <p class="text-sm text-gray-600">Last updated: <span id="last-updated">{{ newest_timestamp|default('Loading...') }}</span></p>
+        </div>
+        <button type="button" onclick="refreshData()" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">
+            <i class="fas fa-sync-alt mr-2"></i>Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Watchlist Section -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📋 Watchlist</h2>
+    <p class="text-sm text-gray-600 mb-4">Dynamic watchlist combining tickers from trade log, congress trades (30 days), research articles (30 days), extreme sentiment alerts (24h), and bullish sentiment alerts (24h)</p>
+    
+    <div id="watchlist-loading" class="text-center py-8">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-2 text-sm text-gray-600">Loading watchlist...</p>
+    </div>
+    
+    <div id="watchlist-content" class="hidden">
+        <!-- Summary Metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="watchlist-total">0</div>
+                <div class="text-sm text-gray-600">Total Tickers</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="watchlist-tier-a">0</div>
+                <div class="text-sm text-gray-600">Priority A</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="watchlist-tier-b">0</div>
+                <div class="text-sm text-gray-600">Priority B</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="watchlist-tier-c">0</div>
+                <div class="text-sm text-gray-600">Priority C</div>
+            </div>
+        </div>
+        
+        <!-- Watchlist Table -->
+        <div id="watchlist-grid" class="ag-theme-alpine" style="height: 400px; width: 100%;"></div>
+    </div>
+    
+    <div id="watchlist-empty" class="hidden">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-sm text-blue-800">📭 No tickers found in watchlist. Tickers are dynamically populated from trade log, congress trades (last 30 days), research articles (last 30 days), extreme sentiment alerts (last 24 hours), and bullish sentiment alerts (last 24 hours).</p>
+        </div>
+    </div>
+</div>
+
+<div class="border-t border-gray-200 my-6"></div>
+
+<!-- Alerts Section -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">🚨 Extreme Sentiment Alerts</h2>
+    
+    <div id="alerts-loading" class="text-center py-8">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-2 text-sm text-gray-600">Loading alerts...</p>
+    </div>
+    
+    <div id="alerts-content" class="hidden">
+        <div id="alerts-list"></div>
+    </div>
+    
+    <div id="alerts-empty" class="hidden">
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <p class="text-sm text-green-800">✅ No extreme sentiment alerts in the last 24 hours</p>
+        </div>
+    </div>
+</div>
+
+<div class="border-t border-gray-200 my-6"></div>
+
+<!-- AI Analysis Section -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">🤖 AI Sentiment Analysis</h2>
+    
+    <div id="ai-loading" class="text-center py-8">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-2 text-sm text-gray-600">Loading AI analyses...</p>
+    </div>
+    
+    <div id="ai-content" class="hidden">
+        <!-- Summary Metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="ai-total">0</div>
+                <div class="text-sm text-gray-600">AI Analyses</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="ai-avg-confidence">0%</div>
+                <div class="text-sm text-gray-600">Avg Confidence</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="ai-euphoric">0</div>
+                <div class="text-sm text-gray-600">Euphoric</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-2xl font-bold text-gray-900" id="ai-fearful">0</div>
+                <div class="text-sm text-gray-600">Fearful</div>
+            </div>
+        </div>
+        
+        <!-- AI Analyses List -->
+        <div id="ai-analyses-list"></div>
+    </div>
+    
+    <div id="ai-empty" class="hidden">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-sm text-blue-800">🤖 No AI analyses available yet. AI analysis will be performed on sentiment sessions as data is collected.</p>
+        </div>
+    </div>
+</div>
+
+<div class="border-t border-gray-200 my-6"></div>
+
+<!-- Latest Sentiment Table Section -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📊 Latest Sentiment by Ticker</h2>
+    
+    <div class="mb-4">
+        <label class="flex items-center">
+            <input type="checkbox" id="show-only-watchlist" class="mr-2" checked>
+            <span class="text-sm text-gray-700">Show only watchlist tickers</span>
+        </label>
+    </div>
+    
+    <div id="sentiment-loading" class="text-center py-8">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-2 text-sm text-gray-600">Loading sentiment data...</p>
+    </div>
+    
+    <div id="sentiment-content" class="hidden">
+        <div id="sentiment-grid" class="ag-theme-alpine" style="height: 600px; width: 100%;"></div>
+    </div>
+    
+    <div id="sentiment-empty" class="hidden">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p class="text-sm text-blue-800">📭 No social sentiment data available yet. Data is collected every 60 minutes (1 hour) by the automated scheduler.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Statistics -->
+<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
+    <h2 class="text-xl font-bold mb-4">📈 Summary Statistics</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900" id="stats-unique-tickers">0</div>
+            <div class="text-sm text-gray-600">Unique Tickers</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900" id="stats-total-metrics">0</div>
+            <div class="text-sm text-gray-600">Total Metrics</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900" id="stats-euphoric">0</div>
+            <div class="text-sm text-gray-600">Euphoric</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900" id="stats-fearful">0</div>
+            <div class="text-sm text-gray-600">Fearful</div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/assets/js/social_sentiment.js"></script>
+<script>
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        const refreshKey = {{ refresh_key|default(0) }};
+        initializeSocialSentimentPage(refreshKey);
+        
+        // Handle watchlist filter checkbox
+        const watchlistFilter = document.getElementById('show-only-watchlist');
+        if (watchlistFilter) {
+            watchlistFilter.addEventListener('change', function() {
+                loadSentimentData(refreshKey, this.checked);
+            });
+        }
+    });
+    
+    function refreshData() {
+        const currentUrl = new URL(window.location.href);
+        const currentRefreshKey = parseInt(currentUrl.searchParams.get('refresh_key') || '0');
+        currentUrl.searchParams.set('refresh_key', (currentRefreshKey + 1).toString());
+        window.location.href = currentUrl.toString();
+    }
+</script>
+{% endblock %}

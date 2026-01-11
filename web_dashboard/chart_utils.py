@@ -30,6 +30,106 @@ BENCHMARK_CONFIG = {
 }
 
 
+# Theme-aware chart helpers
+# NOTE: Currently only create_ticker_price_chart() has full theme support.
+# Other chart functions (create_portfolio_value_chart, create_pnl_chart, etc.)
+# still use hardcoded 'plotly_white' template. To add theme support to other charts,
+# add a 'theme' parameter and use get_chart_theme_config() and apply_theme_to_layout().
+def get_chart_theme_config(theme: Optional[str] = 'system') -> Dict[str, any]:
+    """
+    Get theme configuration for Plotly charts.
+    
+    This is the main helper function for making charts theme-aware. Use it to get
+    all theme-related colors and settings, then apply them to your chart.
+    
+    Args:
+        theme: User theme preference ('dark', 'light', or 'system')
+              - 'dark': Use dark mode
+              - 'light': Use light mode  
+              - 'system': Default to light mode (server-side can't detect OS preference)
+              - None or empty string: Defaults to 'system'
+        
+    Returns:
+        Dictionary with theme configuration:
+        - is_dark: bool - Whether dark mode should be used
+        - template: str - Plotly template name ('plotly_dark' or 'plotly_white')
+        - weekend_shading_color: str - RGBA color for weekend shading
+        - baseline_line_color: str - Color for baseline reference lines
+        - legend_bg_color: str - RGBA color for legend background
+        
+    Example - Basic usage:
+        from user_preferences import get_user_theme
+        
+        theme = get_user_theme() or 'system'
+        config = get_chart_theme_config(theme)
+        
+        fig = go.Figure()
+        # ... add traces ...
+        fig.update_layout(
+            template=config['template'],
+            legend=dict(bgcolor=config['legend_bg_color'])
+        )
+        return fig
+        
+    Example - With weekend shading:
+        config = get_chart_theme_config(theme)
+        _add_weekend_shading(fig, start_date, end_date, 
+                            weekend_color=config['weekend_shading_color'])
+        
+    Example - With baseline line:
+        config = get_chart_theme_config(theme)
+        fig.add_hline(y=100, line_color=config['baseline_line_color'])
+    """
+    # Ensure theme is never None or empty
+    if not theme or theme.strip() == '':
+        theme = 'system'
+    
+    is_dark = theme == 'dark'
+    
+    return {
+        'is_dark': is_dark,
+        'template': 'plotly_dark' if is_dark else 'plotly_white',
+        'weekend_shading_color': "rgba(200, 200, 200, 0.15)" if is_dark else "rgba(128, 128, 128, 0.1)",
+        'baseline_line_color': "rgba(200, 200, 200, 0.7)" if is_dark else "gray",
+        'legend_bg_color': "rgba(31, 41, 55, 0.8)" if is_dark else "rgba(255, 255, 255, 0.8)"
+    }
+
+
+def apply_theme_to_layout(fig: go.Figure, theme: str = 'system', 
+                          legend_bg_color: Optional[str] = None) -> go.Figure:
+    """
+    Apply theme-aware styling to a Plotly figure's layout.
+    
+    This is a convenience function that updates the template and legend background
+    based on the theme. Use this after creating your chart but before returning it.
+    
+    Args:
+        fig: Plotly figure to update
+        theme: User theme preference ('dark', 'light', or 'system')
+        legend_bg_color: Optional custom legend background color (overrides theme default)
+        
+    Returns:
+        Updated figure (modifies in place, but returns for chaining)
+        
+    Example:
+        fig = go.Figure()
+        # ... add traces ...
+        fig = apply_theme_to_layout(fig, theme='dark')
+        return fig
+    """
+    config = get_chart_theme_config(theme)
+    
+    # Update template
+    fig.update_layout(template=config['template'])
+    
+    # Update legend background if legend exists
+    if fig.layout.legend:
+        legend_bg = legend_bg_color or config['legend_bg_color']
+        fig.update_layout(legend=dict(bgcolor=legend_bg))
+    
+    return fig
+
+
 def _adjust_to_market_close(df: pd.DataFrame, date_column: str = 'date') -> pd.DataFrame:
     """Adjust datetime values to market close time (13:00 PST) for proper alignment.
     
@@ -87,12 +187,24 @@ def _filter_trading_days(df: pd.DataFrame, date_column: str = 'date') -> pd.Data
     return df[trading_days_mask]
 
 
-def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime) -> None:
+def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetime, 
+                        is_dark: bool = False, weekend_color: Optional[str] = None) -> None:
     """Add light gray shading for weekends (Saturday 00:00 to Monday 00:00).
     
     This matches the console app's approach for consistent weekend visualization.
     Shades the entire weekend period when markets are closed.
+    
+    Args:
+        fig: Plotly figure to add shading to
+        start_date: Start date for shading
+        end_date: End date for shading
+        is_dark: If True, use darker shading color for dark mode (deprecated, use weekend_color)
+        weekend_color: Optional custom weekend shading color (overrides is_dark)
     """
+    # Theme-aware weekend shading color
+    if weekend_color is None:
+        weekend_color = "rgba(200, 200, 200, 0.15)" if is_dark else "rgba(128, 128, 128, 0.1)"
+    
     # Normalize to date-only (midnight) to avoid time component misalignment
     start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
     end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
@@ -114,7 +226,7 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
         fig.add_vrect(
             x0=saturday_midnight,
             x1=monday_midnight,
-            fillcolor="rgba(128, 128, 128, 0.1)",
+            fillcolor=weekend_color,
             layer="below",
             line_width=0,
         )
@@ -132,7 +244,7 @@ def _add_weekend_shading(fig: go.Figure, start_date: datetime, end_date: datetim
             fig.add_vrect(
                 x0=saturday_midnight,
                 x1=monday_midnight,
-                fillcolor="rgba(128, 128, 128, 0.1)",
+                fillcolor=weekend_color,
                 layer="below",
                 line_width=0,
             )
@@ -964,7 +1076,8 @@ def create_ticker_price_chart(
     ticker_symbol: str,
     show_benchmarks: Optional[List[str]] = None,
     show_weekend_shading: bool = True,
-    use_solid_lines: bool = False
+    use_solid_lines: bool = False,
+    theme: str = 'system'
 ) -> go.Figure:
     """Create a price history chart for an individual ticker with benchmark comparisons.
     
@@ -974,6 +1087,8 @@ def create_ticker_price_chart(
         show_benchmarks: List of benchmark keys to display (e.g., ['sp500', 'qqq'])
         show_weekend_shading: If True, adds gray shading for weekends
         use_solid_lines: If True, uses solid lines for benchmarks instead of dashed
+        theme: User theme preference ('dark', 'light', or 'system'). Defaults to 'system'.
+              Use 'dark' for dark mode, 'light' for light mode, or 'system' to default to light.
         
     Returns:
         Plotly Figure object
@@ -1082,15 +1197,20 @@ def create_ticker_price_chart(
         benchmark_total_time = time.time() - benchmark_start
         logger.info(f"⏱️ create_ticker_price_chart - All benchmarks: {benchmark_total_time:.2f}s")
     
-    # Add weekend shading
-    if show_weekend_shading and len(df) > 1:
-        _add_weekend_shading(fig, df['date'].min(), df['date'].max())
+    # Get theme configuration (ensure theme is never None)
+    theme = theme or 'system'
+    theme_config = get_chart_theme_config(theme)
     
-    # Add baseline reference line
+    # Add weekend shading with theme-aware colors
+    if show_weekend_shading and len(df) > 1:
+        _add_weekend_shading(fig, df['date'].min(), df['date'].max(), 
+                            weekend_color=theme_config['weekend_shading_color'])
+    
+    # Add baseline reference line with theme-aware color
     fig.add_hline(
         y=100,
         line_dash="dash",
-        line_color="gray",
+        line_color=theme_config['baseline_line_color'],
         opacity=0.5,
         annotation_text="Baseline (0%)",
         annotation_position="right"
@@ -1104,14 +1224,14 @@ def create_ticker_price_chart(
         xaxis_title="Date",
         yaxis_title="Performance Index (Baseline 100)",
         hovermode='x unified',
-        template='plotly_white',
+        template=theme_config['template'],
         height=500,
         legend=dict(
             yanchor="top",
             y=0.99,
             xanchor="left",
             x=0.01,
-            bgcolor="rgba(255, 255, 255, 0.8)"
+            bgcolor=theme_config['legend_bg_color']
         )
     )
     

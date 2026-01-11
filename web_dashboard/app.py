@@ -2172,6 +2172,7 @@ def api_ticker_price_history():
 def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, auth_token: Optional[str]):
     """Get ticker chart with caching (300s TTL)"""
     from supabase_client import SupabaseClient
+    from user_preferences import get_user_theme
     
     if user_is_admin:
         supabase_client = SupabaseClient(use_service_role=True)
@@ -2187,6 +2188,9 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
     if price_df.empty:
         raise ValueError("No price data available")
     
+    # Get user theme preference
+    theme = get_user_theme() or 'system'
+    
     from chart_utils import create_ticker_price_chart
     all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
     fig = create_ticker_price_chart(
@@ -2194,7 +2198,8 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
         ticker,
         show_benchmarks=all_benchmarks,
         show_weekend_shading=True,
-        use_solid_lines=use_solid
+        use_solid_lines=use_solid,
+        theme=theme
     )
     
     # Return as JSON string for caching

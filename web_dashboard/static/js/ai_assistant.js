@@ -20,6 +20,7 @@ class AIAssistant {
         this.contextString = null;  // The actual context text to send to LLM
         this.contextReady = false;  // True when context is loaded and ready
         this.contextLoading = false; // True while loading (prevent duplicate requests)
+        this.isSending = false; // True while a message is being sent (prevent duplicate sends)
     }
 
     init() {
@@ -174,12 +175,6 @@ class AIAssistant {
             if (prompt) this.sendMessage(prompt);
         });
 
-        // Debug Preview Context - now in main chat area
-        const refreshContextBtn = document.getElementById('refresh-context-btn');
-        if (refreshContextBtn) {
-            refreshContextBtn.addEventListener('click', () => this.refreshContextPreview());
-        }
-
         // Auto-reload context when toggles change
         ['toggle-thesis', 'toggle-trades', 'toggle-price-volume', 'toggle-fundamentals'].forEach(id => {
             document.getElementById(id)?.addEventListener('change', () => this.loadContext());
@@ -200,7 +195,6 @@ class AIAssistant {
 
         const contentArea = document.getElementById('context-preview-content');
         const charBadge = document.getElementById('context-char-badge');
-        const btn = document.getElementById('refresh-context-btn');
 
         // Mark as loading
         this.contextLoading = true;
@@ -215,10 +209,6 @@ class AIAssistant {
         }
 
         try {
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '⏳ Loading...';
-            }
             if (contentArea) contentArea.textContent = 'Loading context...';
 
             // Gather current toggles
@@ -275,10 +265,6 @@ class AIAssistant {
             if (charBadge) charBadge.textContent = '(error)';
         } finally {
             this.contextLoading = false;
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '🔄 Refresh';
-            }
         }
     }
 
@@ -429,6 +415,15 @@ class AIAssistant {
     async sendMessage(userQuery = null) {
         const query = userQuery || document.getElementById('chat-input').value.trim();
         if (!query) return;
+
+        // Check if already sending a message
+        if (this.isSending) {
+            this.showError('Please wait for the current message to finish before sending another.');
+            return;
+        }
+
+        // Mark as sending
+        this.isSending = true;
 
         // Disable send button and input during sending
         const sendBtn = document.getElementById('send-btn');
@@ -589,11 +584,16 @@ class AIAssistant {
                     this.updateMessage(loadingId, 'assistant', data.response);
                     this.conversationHistory.push({ role: 'assistant', content: data.response });
                 }
+                // Re-enable send button and input
+                this.isSending = false;
+                document.getElementById('send-btn').disabled = false;
+                document.getElementById('chat-input').disabled = false;
             })
             .catch(err => {
                 console.error('Chat error:', err);
                 this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
                 // Re-enable send button and input
+                this.isSending = false;
                 document.getElementById('send-btn').disabled = false;
                 document.getElementById('chat-input').disabled = false;
             });
@@ -628,6 +628,10 @@ class AIAssistant {
                                 this.updateMessage(loadingId, 'assistant', fullResponse);
                                 this.conversationHistory.push({ role: 'assistant', content: fullResponse });
                                 this.updateRetryButton();
+                                // Re-enable send button and input
+                                this.isSending = false;
+                                document.getElementById('send-btn').disabled = false;
+                                document.getElementById('chat-input').disabled = false;
                                 return;
                             }
 
@@ -645,6 +649,7 @@ class AIAssistant {
                                             this.conversationHistory.push({ role: 'assistant', content: fullResponse });
                                             this.updateRetryButton();
                                             // Re-enable send button and input
+                                            this.isSending = false;
                                             document.getElementById('send-btn').disabled = false;
                                             document.getElementById('chat-input').disabled = false;
                                             return;
@@ -657,6 +662,7 @@ class AIAssistant {
                                             this.updateMessage(loadingId, 'assistant', `❌ Error: ${data.error}`);
                                             this.updateRetryButton();
                                             // Re-enable send button and input
+                                            this.isSending = false;
                                             document.getElementById('send-btn').disabled = false;
                                             document.getElementById('chat-input').disabled = false;
                                             return;
@@ -672,6 +678,7 @@ class AIAssistant {
                             this.updateMessage(loadingId, 'assistant', `❌ Error: ${err.message}`);
                             this.updateRetryButton();
                             // Re-enable send button and input
+                            this.isSending = false;
                             document.getElementById('send-btn').disabled = false;
                             document.getElementById('chat-input').disabled = false;
                         });
@@ -690,6 +697,7 @@ class AIAssistant {
                             this.updateRetryButton();
                         }
                         // Re-enable send button and input
+                        this.isSending = false;
                         document.getElementById('send-btn').disabled = false;
                         document.getElementById('chat-input').disabled = false;
                     });
@@ -699,6 +707,7 @@ class AIAssistant {
                 console.error('Chat error:', err);
                 this.updateMessage(loadingId, 'assistant', `Error: ${err.message}`);
                 // Re-enable send button and input
+                this.isSending = false;
                 document.getElementById('send-btn').disabled = false;
                 document.getElementById('chat-input').disabled = false;
             });

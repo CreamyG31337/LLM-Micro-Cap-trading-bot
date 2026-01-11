@@ -204,6 +204,9 @@
                     if (!data.success) {
                         throw new Error(data.error || 'Failed to update');
                     }
+                    
+                    // Reload page to update navigation menu immediately
+                    window.location.reload();
                 } catch (error) {
                     console.error('Error updating v2_enabled:', error);
                     toggleElement.checked = !enabled; // Revert

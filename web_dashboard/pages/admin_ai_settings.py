@@ -111,9 +111,9 @@ else:
                         ollama_client = get_ollama_client()
                         if ollama_client:
                             try:
-                                models = ollama_client.list_models()
+                                models = ollama_client.list_available_models()
                                 if models:
-                                    st.info(f"📦 Available models: {', '.join([m.get('name', 'unknown') for m in models])}")
+                                    st.info(f"📦 Available models: {', '.join(models)}")
                                 else:
                                     st.warning("⚠️ No models found in Ollama")
                             except Exception as e:

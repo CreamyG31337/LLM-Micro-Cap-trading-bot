@@ -324,7 +324,7 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                     st.sidebar.markdown(f'''
                         <a href="{jobs_url}" target="_self" class="v2-nav-link">
                             <span class="v2-nav-icon">🔨</span>
-                            <span class="v2-nav-label">Jobs</span>
+                            <span class="v2-nav-label">Jobs Scheduler</span>
                         </a>
                     ''', unsafe_allow_html=True)
                 else:

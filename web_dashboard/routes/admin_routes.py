@@ -25,6 +25,25 @@ from flask_cache_utils import cache_data
 import time
 from datetime import datetime
 import json
+from datetime import datetime, timedelta
+# Scheduler imports
+try:
+    from scheduler import (
+        get_scheduler, 
+        get_all_jobs_status, 
+        run_job_now, 
+        pause_job, 
+        resume_job,
+        start_scheduler,
+        is_scheduler_running
+    )
+    from scheduler.jobs import AVAILABLE_JOBS
+except ImportError:
+    # Handle case where scheduler module is not available
+    AVAILABLE_JOBS = {}
+    def get_all_jobs_status(): return []
+    def is_scheduler_running(): return False
+
 
 logger = logging.getLogger(__name__)
 
@@ -651,10 +670,113 @@ def api_system_status():
         logger.error(f"Error getting system status: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-@admin_bp.route('/api/admin/system/logs/application')
+@admin_bp.route('/v2/logs')
+@require_admin
+def logs_page():
+    """Admin logs viewer page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='admin_logs')
+        
+        return render_template('logs.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering logs page: {e}", exc_info=True)
+        return f"Error loading logs page: {str(e)}", 500
+
+@admin_bp.route('/api/logs/application')
 @require_admin
 def api_logs_application():
     """Get application logs"""
+    try:
+        level = request.args.get('level', 'INFO + ERROR')
+        limit = int(request.args.get('limit', 100))
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        
+        # Handle "INFO + ERROR" logic
+        if level == "INFO + ERROR":
+            level_filter = ["INFO", "ERROR"]
+        elif level == "All":
+            level_filter = None
+        else:
+            level_filter = level
+            
+        exclude_heartbeat = request.args.get('exclude_heartbeat', 'true').lower() == 'true'
+        exclude_modules = ['scheduler.scheduler_core.heartbeat'] if exclude_heartbeat else None
+        
+        all_logs = _get_cached_application_logs(level_filter, search, exclude_modules)
+        
+        # Pagination
+        total = len(all_logs)
+        start = (page - 1) * limit
+        end = start + limit
+        logs = all_logs[start:end]
+        
+        return jsonify({
+            'logs': logs,
+            'total': total,
+            'page': page,
+            'pages': (total + limit - 1) // limit if total > 0 else 1
+        })
+    except Exception as e:
+        logger.error(f"Error fetching logs: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/logs/ollama')
+@require_admin
+def api_logs_ollama():
+    """Get Ollama logs"""
+    try:
+        limit = int(request.args.get('limit', 100))
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        
+        all_lines = _get_cached_ollama_log_lines()
+        
+        # Filter by search if provided
+        if search:
+            search_lower = search.lower()
+            all_lines = [line for line in all_lines if search_lower in line.lower()]
+        
+        # Pagination
+        total = len(all_lines)
+        start = (page - 1) * limit
+        end = start + limit
+        lines = all_lines[start:end]
+        
+        # Format logs (Ollama logs may not have structured format)
+        logs = []
+        for line in lines:
+            logs.append({
+                'timestamp': '',  # Ollama logs may not have timestamps
+                'level': 'INFO',
+                'module': 'ollama',
+                'message': line
+            })
+        
+        return jsonify({
+            'logs': logs,
+            'total': total,
+            'page': page,
+            'pages': (total + limit - 1) // limit if total > 0 else 1
+        })
+    except Exception as e:
+        logger.error(f"Error fetching Ollama logs: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/system/logs/application')
+@require_admin
+def api_admin_logs_application():
+    """Get application logs (admin endpoint)"""
     try:
         level = request.args.get('level', 'INFO + ERROR')
         limit = int(request.args.get('limit', 100))
@@ -793,3 +915,184 @@ def api_read_log_file():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ==========================================
+# Scheduler Routes
+# ==========================================
+
+@admin_bp.route('/v2/admin/scheduler')
+@require_admin
+def scheduler_page():
+    """Scheduler/Jobs Management Page"""
+    try:
+        from flask_auth_utils import get_user_email_flask
+        from user_preferences import get_user_theme
+        
+        user_email = get_user_email_flask()
+        user_theme = get_user_theme() or 'system'
+        
+        # Get navigation context
+        nav_context = get_navigation_context(current_page='admin_scheduler')
+        
+        return render_template('jobs.html', 
+                             user_email=user_email,
+                             user_theme=user_theme,
+                             **nav_context)
+    except Exception as e:
+        logger.error(f"Error rendering scheduler page: {e}", exc_info=True)
+        user_theme = 'system'
+        nav_context = get_navigation_context(current_page='admin_scheduler')
+        return render_template('jobs.html', 
+                             user_email='Admin',
+                             user_theme=user_theme,
+                             **nav_context)
+
+@admin_bp.route('/api/admin/scheduler/status')
+@require_admin
+def api_scheduler_status():
+    """Get global scheduler status"""
+    try:
+        running = is_scheduler_running()
+        return jsonify({
+            "success": True, 
+            "running": running,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/start', methods=['POST'])
+@require_admin
+def api_scheduler_start():
+    """Start the scheduler"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot control scheduler"}), 403
+            
+        if is_scheduler_running():
+            return jsonify({"success": True, "message": "Scheduler is already running"})
+            
+        success = start_scheduler()
+        if success:
+            return jsonify({"success": True, "message": "Scheduler started successfully"})
+        else:
+            return jsonify({"error": "Failed to start scheduler"}), 500
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/jobs')
+@require_admin
+def api_scheduler_jobs_list():
+    """Get all jobs status"""
+    try:
+        jobs = get_all_jobs_status()
+        
+        # Serialize datetime objects
+        for job in jobs:
+            for key, value in job.items():
+                if isinstance(value, datetime):
+                    job[key] = value.isoformat()
+            
+            # Helper for logs
+            if 'recent_logs' in job:
+                for log in job['recent_logs']:
+                    if isinstance(log.get('timestamp'), datetime):
+                        log['timestamp'] = log['timestamp'].isoformat()
+        
+        return jsonify({"jobs": jobs})
+    except Exception as e:
+        logger.error(f"Error getting jobs list: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/jobs/<job_id>/params')
+@require_admin
+def api_job_params(job_id):
+    """Get parameters for a specific job"""
+    try:
+        # Find job definition
+        # Try exact match first
+        job_def = AVAILABLE_JOBS.get(job_id)
+        
+        # If not found, try to match base ID (remove suffixes like _close, _open from actual ID)
+        if not job_def:
+            base_id = job_id
+            for suffix in ['_close', '_open', '_premarket', '_midmorning', '_powerhour', '_postmarket', '_refresh', '_populate', '_collect', '_scan', '_fetch', '_cleanup', '_scrape']:
+                if job_id.endswith(suffix):
+                    base_id = job_id[:-len(suffix)]
+                    break
+            job_def = AVAILABLE_JOBS.get(base_id)
+        
+        if not job_def:
+            return jsonify({"params": {}})
+            
+        params = job_def.get('parameters', {})
+        return jsonify({"params": params})
+    except Exception as e:
+        logger.error(f"Error getting job params: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/jobs/<job_id>/run', methods=['POST'])
+@require_admin
+def api_run_job(job_id):
+    """Run a job manually"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot run jobs"}), 403
+            
+        params = request.get_json() or {}
+        
+        # Convert date strings to date objects if needed
+        from datetime import date
+        processed_params = {}
+        for k, v in params.items():
+            if k.endswith('_date') and isinstance(v, str):
+                try:
+                    processed_params[k] = datetime.fromisoformat(v).date()
+                except ValueError:
+                    processed_params[k] = v
+            else:
+                processed_params[k] = v
+                
+        success = run_job_now(job_id, **processed_params)
+        
+        if success:
+            return jsonify({"success": True, "message": "Job started successfully"})
+        else:
+            return jsonify({"error": "Failed to start job (check logs)"}), 500
+    except Exception as e:
+        logger.error(f"Error running job: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/jobs/<job_id>/pause', methods=['POST'])
+@require_admin
+def api_pause_job(job_id):
+    """Pause a job"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify jobs"}), 403
+            
+        pause_job(job_id)
+        return jsonify({"success": True, "message": "Job paused"})
+    except Exception as e:
+        logger.error(f"Error pausing job: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@admin_bp.route('/api/admin/scheduler/jobs/<job_id>/resume', methods=['POST'])
+@require_admin
+def api_resume_job(job_id):
+    """Resume a job"""
+    try:
+        from flask_auth_utils import can_modify_data_flask
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot modify jobs"}), 403
+            
+        resume_job(job_id)
+        return jsonify({"success": True, "message": "Job resumed"})
+    except Exception as e:
+        logger.error(f"Error resuming job: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

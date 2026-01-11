@@ -1,112 +1,96 @@
 {% extends "base.html" %}
 
-{% block title %}Admin: Jobs - Portfolio Dashboard{% endblock %}
-
-{% block page_title %}🔨 Jobs{% endblock %}
-{% block page_subtitle %}Manage background scheduled jobs{% endblock %}
-
-{% block extra_head %}
-<style>
-    .job-card {
-        transition: transform 0.2s ease-in-out;
-    }
-    .job-card:hover {
-        transform: translateY(-2px);
-    }
-    .status-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 0.375rem;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
-    .status-running {
-        background-color: #3b82f6;
-        color: white;
-    }
-    .status-failed {
-        background-color: #ef4444;
-        color: white;
-    }
-    .status-paused {
-        background-color: #6b7280;
-        color: white;
-    }
-    .status-idle {
-        background-color: #10b981;
-        color: white;
-    }
-    .log-entry {
-        font-family: 'Courier New', monospace;
-        font-size: 0.875rem;
-        padding: 0.5rem;
-        border-bottom: 1px solid var(--border-color);
-    }
-    .log-entry:last-child {
-        border-bottom: none;
-    }
-    .parameter-form {
-        background-color: var(--code-bg, #f9fafb);
-        border: 1px solid var(--code-border, #e5e7eb);
-        border-radius: 0.5rem;
-        padding: 1rem;
-    }
-</style>
-{% endblock %}
+{% block title %}Jobs - Admin Dashboard{% endblock %}
 
 {% block content %}
-<!-- Scheduler Status -->
-<div id="scheduler-status-container" class="bg-white rounded-lg shadow-lg p-6 mb-6">
-    <div id="scheduler-error" class="hidden bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-        <div class="flex items-center justify-between">
-            <div>
-                <h3 class="text-lg font-semibold text-red-800">❌ Scheduler is not running</h3>
-                <p class="text-sm text-red-600 mt-1">The scheduler may have crashed. Check the logs for errors.</p>
+<div class="px-4 py-6">
+    <!-- Header -->
+    <div class="mb-6 flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span class="text-3xl">🔨</span> Jobs Scheduler
+            </h1>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage background tasks and scheduled jobs</p>
+        </div>
+
+        <!-- Global Status Card -->
+        <div class="flex items-center gap-4">
+            <div id="scheduler-status-card"
+                class="bg-white dark:bg-gray-800 rounded-lg shadow px-4 py-2 border border-gray-200 dark:border-gray-700 flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400"></div>
+                    <span id="status-text" class="font-medium text-gray-700 dark:text-gray-200">Checking...</span>
+                </div>
+                <button id="start-scheduler-btn"
+                    class="hidden px-3 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 focus:ring-2 focus:ring-green-300">
+                    🚀 Start Scheduler
+                </button>
             </div>
-            <button id="start-scheduler-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
-                🚀 Start Scheduler
+
+            <button onclick="refreshJobs()"
+                class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
             </button>
         </div>
     </div>
-    <div id="scheduler-running" class="hidden">
-        <div class="flex items-center justify-between">
-            <div>
-                <h3 class="text-lg font-semibold text-green-800">✅ Scheduler is running</h3>
-                <p class="text-sm text-gray-600 mt-1" id="scheduler-info">Loading scheduler status...</p>
-            </div>
-            <button id="refresh-status-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200">
-                <i class="fas fa-sync-alt mr-2"></i>Refresh Status
-            </button>
+
+    <!-- Jobs Grid -->
+    <div id="jobs-container" class="grid grid-cols-1 gap-6">
+        <!-- Loading Skeleton -->
+        <div class="animate-pulse space-y-4">
+            <div class="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+            <div class="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+            <div class="h-32 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
         </div>
     </div>
 </div>
 
-<!-- Jobs List -->
-<div id="jobs-container" class="space-y-4">
-    <div id="loading" class="text-center py-8 text-gray-500">
-        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-        <p>Loading jobs...</p>
-    </div>
-    <div id="jobs-list" class="hidden"></div>
-    <div id="no-jobs" class="hidden bg-white rounded-lg shadow-lg p-6 text-center text-gray-500">
-        <i class="fas fa-inbox text-4xl mb-4"></i>
-        <p>No scheduled jobs configured.</p>
-    </div>
-    <div id="error-message" class="hidden bg-red-50 border border-red-200 rounded-lg p-4">
-        <i class="fas fa-exclamation-circle text-red-500 mr-2"></i>
-        <span id="error-text" class="text-red-700"></span>
+<!-- Run Job Modal -->
+<div id="run-job-modal" tabindex="-1" aria-hidden="true"
+    class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full bg-gray-900 bg-opacity-50">
+    <div class="relative p-4 w-full max-w-md max-h-full">
+        <!-- Modal content -->
+        <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
+            <!-- Modal header -->
+            <div class="flex items-center justify-between p-4 md:p-5 border-b rounded-t dark:border-gray-600">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    Run Job: <span id="modal-job-name"></span>
+                </h3>
+                <button type="button"
+                    class="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center dark:hover:bg-gray-600 dark:hover:text-white"
+                    data-modal-hide="run-job-modal">
+                    <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none"
+                        viewBox="0 0 14 14">
+                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6" />
+                    </svg>
+                    <span class="sr-only">Close modal</span>
+                </button>
+            </div>
+            <!-- Modal body -->
+            <div class="p-4 md:p-5">
+                <form id="run-job-form" class="space-y-4">
+                    <div id="job-params-container">
+                        <!-- Dynamic params will be injected here -->
+                        <div class="flex justify-center py-4">
+                            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                        </div>
+                    </div>
+                    <button type="submit"
+                        class="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">
+                        ▶️ Run Now
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- Auto-refresh toggle -->
-<div class="mt-6 flex items-center justify-center">
-    <label class="inline-flex items-center cursor-pointer">
-        <input type="checkbox" id="auto-refresh" class="form-checkbox h-5 w-5 text-blue-600" checked>
-        <span class="ml-2 text-sm text-gray-700">Auto-refresh every 5s</span>
-    </label>
-</div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script type="module" src="/assets/js/jobs.js"></script>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/jobs.js') }}"></script>
 {% endblock %}

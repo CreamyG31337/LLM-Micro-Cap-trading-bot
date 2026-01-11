@@ -24,7 +24,8 @@ MIGRATED_PAGES = {
     'etf_holdings': '/v2/etf_holdings',  # ETF Holdings Watchtower
     'social_sentiment': '/v2/social_sentiment',  # Social Sentiment page
     'admin_funds': '/v2/admin/funds',
-    'admin_system': '/v2/admin/system',  # Fund Management page
+    'admin_system': '/v2/admin/system',
+    'admin_scheduler': '/v2/admin/scheduler',  # Fund Management page
 }
 
 

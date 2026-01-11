@@ -6,7 +6,7 @@ Shared navigation configuration for both Streamlit and Flask.
 # MIGRATED_PAGES dictionary maps Streamlit page keys to Flask URLs.
 # Pages that have been migrated to Flask should be added here.
 MIGRATED_PAGES = {
-    'dashboard': '/dashboard',
+    'dashboard': '/v2/dashboard',
     'settings': '/v2/settings',  # Routed to Flask via Caddy /v2/* handler
     'research': '/v2/research',
     'social_sentiment': '/v2/social_sentiment',

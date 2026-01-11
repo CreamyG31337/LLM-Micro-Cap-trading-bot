@@ -14,6 +14,7 @@ import json
 import time
 import os
 import logging
+from user_preferences import get_user_preference
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1308,6 +1309,17 @@ def main():
             logout_user()
             st.rerun()
     
+    # Check V2 Preference and Redirect
+    try:
+        from user_preferences import get_user_preference
+        v2_enabled = get_user_preference('v2_enabled', default=False)
+        if v2_enabled:
+             st.info("Redirecting to New Dashboard (V2)...")
+             st.markdown('<meta http-equiv="refresh" content="0;url=/v2/dashboard">', unsafe_allow_html=True)
+             st.stop()
+    except Exception as e:
+        _logger.warning(f"V2 redirect check failed: {e}")
+
     # Sidebar - Navigation and Filters
     from navigation import render_navigation
     render_navigation(show_ai_assistant=True, show_settings=True)

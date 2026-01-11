@@ -618,8 +618,11 @@ except Exception as e:
 # Root route - redirect to dashboard
 @app.route('/')
 def index():
-    """Redirect root to dashboard"""
-    return redirect(url_for('dashboard.dashboard_page'))
+    """Redirect based on V2 preference"""
+    v2_enabled = get_user_preference('v2_enabled', default=False)
+    if v2_enabled:
+        return redirect(url_for('dashboard.dashboard_page'))
+    return redirect('/') # Redirect to Caddy root (Streamlit)
 
 @app.route('/auth')
 def auth_page():

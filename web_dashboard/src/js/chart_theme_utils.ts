@@ -2,17 +2,48 @@
  * Chart Theme Utilities for Plotly
  * Handles theme-specific chart styling and dynamic relayout
  */
+
+import { Theme, EffectiveTheme } from './types';
+import { ThemeManager } from './theme';
+
+interface PlotlyLayout {
+    paper_bgcolor: string;
+    plot_bgcolor: string;
+    font: { color: string };
+    xaxis: {
+        gridcolor: string;
+        zerolinecolor: string;
+    };
+    yaxis: {
+        gridcolor: string;
+        zerolinecolor: string;
+    };
+}
+
+interface ThemeConfig {
+    paper_bgcolor: string;
+    plot_bgcolor: string;
+    font: { color: string };
+    gridcolor: string;
+    zerolinecolor: string;
+}
+
+interface PlotlyElement extends HTMLElement {
+    _fullLayout?: unknown;
+}
+
 /**
  * Get Plotly layout configuration for a given theme
  * @param themeName - Theme name ('system', 'light', 'dark', 'midnight-tokyo', 'abyss')
  * @returns Plotly layout object with theme-specific styles
  */
-function getPlotlyLayout(themeName) {
+function getPlotlyLayout(themeName: Theme): PlotlyLayout {
     // Resolve 'system' to actual theme
-    let effectiveTheme = themeName === 'system'
+    let effectiveTheme: EffectiveTheme = themeName === 'system'
         ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
         : themeName;
-    const themeConfigs = {
+
+    const themeConfigs: Record<EffectiveTheme, ThemeConfig> = {
         light: {
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
@@ -42,7 +73,9 @@ function getPlotlyLayout(themeName) {
             zerolinecolor: '#1a2b42'
         }
     };
+
     const config = themeConfigs[effectiveTheme] || themeConfigs.light;
+
     return {
         paper_bgcolor: config.paper_bgcolor,
         plot_bgcolor: config.plot_bgcolor,
@@ -57,75 +90,79 @@ function getPlotlyLayout(themeName) {
         }
     };
 }
+
 /**
  * Apply theme to an existing Plotly chart
  * @param chartElement - Chart DOM element or ID
  * @param themeName - Theme to apply
  */
-function applyThemeToChart(chartElement, themeName) {
+function applyThemeToChart(chartElement: HTMLElement | string, themeName: Theme): void {
     // Get the element
-    const element = typeof chartElement === 'string'
-        ? document.getElementById(chartElement)
-        : chartElement;
+    const element: PlotlyElement | null = typeof chartElement === 'string'
+        ? (document.getElementById(chartElement) as PlotlyElement | null)
+        : (chartElement as PlotlyElement);
+
     if (!element) {
         console.warn('Chart element not found:', chartElement);
         return;
     }
+
     // Check if it's a Plotly chart
     if (!element._fullLayout) {
         console.warn('Element is not a Plotly chart:', element);
         return;
     }
+
     try {
         const layout = getPlotlyLayout(themeName);
         // Plotly is loaded globally, so we need to access it via window
-        window.Plotly.relayout(element, layout);
-    }
-    catch (error) {
+        (window as any).Plotly.relayout(element, layout);
+    } catch (error) {
         console.error('Error applying theme to chart:', error);
     }
 }
+
 /**
  * Apply theme to all Plotly charts on the page
  * @param themeName - Theme to apply
  */
-function applyThemeToAllCharts(themeName) {
+function applyThemeToAllCharts(themeName: Theme): void {
     // Find all Plotly charts
-    const charts = document.querySelectorAll('.js-plotly-plot');
+    const charts = document.querySelectorAll<PlotlyElement>('.js-plotly-plot');
+
     charts.forEach(chart => {
         applyThemeToChart(chart, themeName);
     });
 }
+
 /**
  * Initialize chart theme synchronization
  * Automatically updates charts when theme changes
  */
-function initChartThemeSync() {
-    const themeManager = window.themeManager;
+function initChartThemeSync(): void {
+    const themeManager = (window as Window & { themeManager?: ThemeManager }).themeManager;
     if (themeManager) {
-        themeManager.addListener((theme) => {
+        themeManager.addListener((theme: Theme) => {
             applyThemeToAllCharts(theme);
         });
-    }
-    else {
+    } else {
         console.warn('ThemeManager not found. Chart theme synchronization disabled.');
     }
 }
+
 // Auto-initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initChartThemeSync);
-}
-else {
+} else {
     initChartThemeSync();
 }
+
 // Export functions for use in other modules
 if (typeof window !== 'undefined') {
-    window.chartThemeUtils = {
+    (window as any).chartThemeUtils = {
         getPlotlyLayout,
         applyThemeToChart,
         applyThemeToAllCharts,
         initChartThemeSync
     };
 }
-export {};
-//# sourceMappingURL=chart_theme_utils.js.map

@@ -40,8 +40,8 @@ COPY web_dashboard/src ./src
 
 # Build TypeScript (outputs to static/js/)
 RUN npm run build && \
-    ls -lh static/js/settings.js || \
-    (echo "ERROR: TypeScript build failed - output file not found" && exit 1)
+    ls -lh static/js/settings.js static/js/theme.js static/js/chart_theme_utils.js || \
+    (echo "ERROR: TypeScript build failed - output files not found" && exit 1)
 
 # Stage 2: Python app
 FROM python:3.11-slim
@@ -84,12 +84,16 @@ COPY --from=frontend-builder /app/web_dashboard/static/css/tailwind.css ./web_da
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
 # Copy compiled TypeScript JavaScript files from builder stage
-# Only copy the TypeScript-compiled files (settings.js - source map is optional for production)
+# Copy all TypeScript-compiled files (settings.js, theme.js, chart_theme_utils.js)
 # Other JS files (ai_assistant.js, etc.) are already copied via COPY . /app above
 RUN mkdir -p web_dashboard/static/js
 COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js ./web_dashboard/static/js/settings.js
+COPY --from=frontend-builder /app/web_dashboard/static/js/theme.js ./web_dashboard/static/js/theme.js
+COPY --from=frontend-builder /app/web_dashboard/static/js/chart_theme_utils.js ./web_dashboard/static/js/chart_theme_utils.js
 # Note: Source maps are generated but not copied to reduce image size (optional for production)
 RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: TypeScript compiled settings.js not found" && exit 1)
+RUN test -f web_dashboard/static/js/theme.js || (echo "ERROR: TypeScript compiled theme.js not found" && exit 1)
+RUN test -f web_dashboard/static/js/chart_theme_utils.js || (echo "ERROR: TypeScript compiled chart_theme_utils.js not found" && exit 1)
 
 # Expose Flask port
 EXPOSE 5001

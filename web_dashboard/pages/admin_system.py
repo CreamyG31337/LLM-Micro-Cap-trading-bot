@@ -166,7 +166,15 @@ with tab_logs:
                 )
             
             with col5:
-                search_text = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed")
+                # Initialize search in session state to prevent delta errors
+                if 'system_log_search_text' not in st.session_state:
+                    st.session_state.system_log_search_text = ""
+                
+                search_input = st.text_input("🔍 Search", placeholder="Filter by text...", label_visibility="collapsed", key="system_log_search_input", value=st.session_state.system_log_search_text)
+                
+                # Update session state only when input actually changes
+                if search_input != st.session_state.system_log_search_text:
+                    st.session_state.system_log_search_text = search_input
             
             with col6:
                 exclude_heartbeat = st.checkbox(
@@ -187,6 +195,9 @@ with tab_logs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to clear logs: {e}")
+            
+            # Use session state value for search
+            search_text = st.session_state.system_log_search_text
             
             # Initialize pagination state
             if 'log_page' not in st.session_state:

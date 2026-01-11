@@ -180,8 +180,41 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 # Fallback if shared_navigation not available
                 st.sidebar.page_link("pages/research.py", label="Research Repository", icon="📚")
             
-            st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
-            st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="💼")
+            # Social Sentiment - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('social_sentiment'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    social_sentiment_url = get_page_url('social_sentiment')
+                    st.sidebar.markdown(f'''
+                        <a href="{social_sentiment_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">💬</span>
+                            <span class="v2-nav-label">Social Sentiment</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/social_sentiment.py", label="Social Sentiment", icon="💬")
+            
+            # ETF Holdings - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('etf_holdings'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    etf_url = get_page_url('etf_holdings')
+                    st.sidebar.markdown(f'''
+                        <a href="{etf_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">💼</span>
+                            <span class="v2-nav-label">ETF Holdings</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="💼")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/etf_holdings.py", label="ETF Holdings", icon="💼")
     except Exception:
         pass  # Silently fail if Postgres not available
     

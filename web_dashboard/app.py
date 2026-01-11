@@ -228,15 +228,8 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                 show = False
             
             # Check service availability for specific pages
-            if link['page'] == 'social_sentiment' or link['page'] == 'etf_holdings':
-                # These require Postgres
-                try:
-                    from postgres_client import PostgresClient
-                    client = PostgresClient()
-                    if not client.test_connection():
-                        show = False
-                except Exception:
-                    show = False
+            # Note: We show the links even if services are unavailable - let the pages handle errors
+            # This provides better UX as users can see what's available and get helpful error messages
 
             
             # AI Assistant - always show (let the page handle Ollama unavailability)

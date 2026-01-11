@@ -3334,10 +3334,11 @@ def format_date_congress(d) -> str:
 def congress_trades_page():
     """Congress Trades page (Flask v2)"""
     try:
-        from flask_auth_utils import get_user_email_flask, is_admin_flask, get_auth_token
+        from flask_auth_utils import get_user_email_flask, get_auth_token
         from flask_data_utils import get_supabase_client_flask
         from user_preferences import get_user_theme
         from cache_version import get_cache_version
+        from auth import is_admin
         
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
@@ -3346,7 +3347,7 @@ def congress_trades_page():
         refresh_key = int(request.args.get('refresh_key', 0))
         
         # Get Supabase client
-        if is_admin_flask():
+        if is_admin():
             from supabase_client import SupabaseClient
             supabase_client = SupabaseClient(use_service_role=True)
         else:
@@ -3565,14 +3566,15 @@ def congress_trades_page():
 def api_congress_trades_data():
     """API endpoint for congress trades data (JSON)"""
     try:
-        from flask_auth_utils import is_admin_flask, get_auth_token
+        from flask_auth_utils import get_auth_token
         from flask_data_utils import get_supabase_client_flask
         from cache_version import get_cache_version
+        from auth import is_admin
         
         refresh_key = int(request.args.get('refresh_key', 0))
         
         # Get Supabase client
-        if is_admin_flask():
+        if is_admin():
             from supabase_client import SupabaseClient
             supabase_client = SupabaseClient(use_service_role=True)
         else:

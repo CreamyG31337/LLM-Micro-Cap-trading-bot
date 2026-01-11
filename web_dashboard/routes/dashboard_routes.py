@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import json
 
 from flask_auth_utils import get_user_email_flask
-from user_preferences import get_user_theme, get_user_display_currency, get_user_selected_fund
+from user_preferences import get_user_theme, get_user_currency, get_user_selected_fund
 from app import get_navigation_context
 from streamlit_utils import (
     get_current_positions,
@@ -50,7 +50,7 @@ def dashboard_page():
 def get_dashboard_summary():
     """Get top-level dashboard metrics"""
     fund = request.args.get('fund')
-    display_currency = get_user_display_currency() or 'CAD'
+    display_currency = get_user_currency() or 'CAD'
     
     start_time = time.time()
     
@@ -143,7 +143,7 @@ def get_performance_chart():
     """
     fund = request.args.get('fund')
     time_range = request.args.get('range', 'ALL') # '1M', '3M', '6M', '1Y', 'ALL'
-    display_currency = get_user_display_currency() or 'CAD'
+    display_currency = get_user_currency() or 'CAD'
     
     try:
         days_map = {
@@ -211,7 +211,7 @@ def get_allocation_charts():
         500: Server error during data fetch
     """
     fund = request.args.get('fund')
-    display_currency = get_user_display_currency() or 'CAD'
+    display_currency = get_user_currency() or 'CAD'
     
     try:
         positions_df = get_current_positions(fund)
@@ -271,7 +271,7 @@ def get_allocation_charts():
 def get_holdings_data():
     """Get content for holdings table"""
     fund = request.args.get('fund')
-    display_currency = get_user_display_currency() or 'CAD'
+    display_currency = get_user_currency() or 'CAD'
     
     try:
         positions_df = get_current_positions(fund)
@@ -344,7 +344,7 @@ def get_recent_activity():
     """Get recent transactions"""
     fund = request.args.get('fund')
     limit = int(request.args.get('limit', 10))
-    display_currency = get_user_display_currency() or 'CAD'
+    display_currency = get_user_currency() or 'CAD'
     
     try:
         trades_df = get_trade_log(limit=limit, fund=fund)

@@ -20,8 +20,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 from auth import require_admin
 from supabase_client import SupabaseClient
 from flask_cache_utils import cache_data
-from app import get_navigation_context, get_supabase_client
-from flask_cache_utils import cache_data
 import time
 from datetime import datetime
 import json
@@ -82,7 +80,7 @@ def calculate_fifo_pnl(fund: str, ticker: str, sell_shares: float, sell_price: f
     try:
         from collections import deque
         from decimal import Decimal
-        from supabase_client import get_supabase_client
+        from app import get_supabase_client
         
         # Fetch existing trades - try to get action column if available
         client = get_supabase_client()

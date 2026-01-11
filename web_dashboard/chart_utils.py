@@ -84,15 +84,58 @@ def get_chart_theme_config(theme: Optional[str] = 'system') -> Dict[str, any]:
     if not theme or theme.strip() == '':
         theme = 'system'
     
-    is_dark = theme == 'dark'
-    
-    return {
-        'is_dark': is_dark,
-        'template': 'plotly_dark' if is_dark else 'plotly_white',
-        'weekend_shading_color': "rgba(50, 50, 50, 0.3)" if is_dark else "rgba(128, 128, 128, 0.1)",
-        'baseline_line_color': "rgba(200, 200, 200, 0.7)" if is_dark else "gray",
-        'legend_bg_color': "rgba(31, 41, 55, 0.8)" if is_dark else "rgba(255, 255, 255, 0.8)"
+    # Theme color definitions
+    theme_configs = {
+        'light': {
+            'is_dark': False,
+            'template': 'plotly_white',
+            'paper_bgcolor': 'white',
+            'plot_bgcolor': 'white',
+            'font_color': 'rgb(31, 41, 55)',
+            'grid_color': 'rgb(229, 231, 235)',
+            'weekend_shading_color': 'rgba(128, 128, 128, 0.1)',
+            'baseline_line_color': 'gray',
+            'legend_bg_color': 'rgba(255, 255, 255, 0.8)'
+        },
+        'dark': {
+            'is_dark': True,
+            'template': 'plotly_dark',
+            'paper_bgcolor': 'rgb(31, 41, 55)',
+            'plot_bgcolor': 'rgb(31, 41, 55)',
+            'font_color': 'rgb(209, 213, 219)',
+            'grid_color': 'rgb(55, 65, 81)',
+            'weekend_shading_color': 'rgba(50, 50, 50, 0.3)',
+            'baseline_line_color': 'rgba(200, 200, 200, 0.7)',
+            'legend_bg_color': 'rgba(31, 41, 55, 0.8)'
+        },
+        'midnight-tokyo': {
+            'is_dark': True,
+            'template': 'plotly_dark',
+            'paper_bgcolor': '#24283b',
+            'plot_bgcolor': '#24283b',
+            'font_color': '#c0caf5',
+            'grid_color': '#3b4261',
+            'weekend_shading_color': 'rgba(125, 207, 255, 0.08)',
+            'baseline_line_color': '#7dcfff',
+            'legend_bg_color': 'rgba(36, 40, 59, 0.9)'
+        },
+        'abyss': {
+            'is_dark': True,
+            'template': 'plotly_dark',
+            'paper_bgcolor': '#0f1c2e',
+            'plot_bgcolor': '#0f1c2e',
+            'font_color': '#a9b1d6',
+            'grid_color': '#1a2b42',
+            'weekend_shading_color': 'rgba(65, 166, 181, 0.08)',
+            'baseline_line_color': '#41a6b5',
+            'legend_bg_color': 'rgba(15, 28, 46, 0.9)'
+        }
     }
+    
+    # Default to 'light' if theme not found
+    config = theme_configs.get(theme, theme_configs['light'])
+    
+    return config
 
 
 def apply_theme_to_layout(fig: go.Figure, theme: str = 'system', 

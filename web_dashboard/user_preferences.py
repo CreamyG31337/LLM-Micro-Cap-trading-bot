@@ -769,7 +769,9 @@ def set_user_ai_model(model: str) -> bool:
 THEME_OPTIONS = {
     'system': 'System Default',
     'dark': 'Dark Mode',
-    'light': 'Light Mode'
+    'light': 'Light Mode',
+    'midnight-tokyo': 'Midnight Tokyo',
+    'abyss': 'Abyss'
 }
 
 

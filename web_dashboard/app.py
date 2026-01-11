@@ -2215,11 +2215,11 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
     chart_data = json.loads(chart_json_str)
     
     # Determine theme to use
-    if not theme or theme not in ['dark', 'light']:
+    if not theme or theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:
         try:
             from user_preferences import get_user_theme
             user_theme = get_user_theme() or 'system'
-            theme = user_theme if user_theme in ['dark', 'light'] else 'light'
+            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
         except Exception as e:
             logger.warning(f"Error getting user theme, defaulting to 'light': {e}")
             theme = 'light'
@@ -2227,7 +2227,6 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
     # Apply theme to the chart data
     from chart_utils import get_chart_theme_config
     theme_config = get_chart_theme_config(theme)
-    is_dark = theme == 'dark'
     
     # Update layout for theme
     if 'layout' in chart_data:
@@ -2235,22 +2234,17 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
         chart_data['layout']['template'] = theme_config['template']
         
         # Explicitly set background colors (these override any embedded template colors)
-        if is_dark:
-            chart_data['layout']['paper_bgcolor'] = 'rgb(31, 41, 55)'  # Dark background (gray-800) matches card
-            chart_data['layout']['plot_bgcolor'] = 'rgb(31, 41, 55)'   # Dark plot area (gray-800)
-            chart_data['layout']['font'] = {'color': 'rgb(209, 213, 219)'}  # Light text (gray-300)
-            
-            # Update grid colors for both axes if they exist
-            if 'xaxis' in chart_data['layout']:
-                chart_data['layout']['xaxis']['gridcolor'] = 'rgb(55, 65, 81)' # gray-700
-                chart_data['layout']['xaxis']['zerolinecolor'] = 'rgb(55, 65, 81)'
-            if 'yaxis' in chart_data['layout']:
-                chart_data['layout']['yaxis']['gridcolor'] = 'rgb(55, 65, 81)' # gray-700
-                chart_data['layout']['yaxis']['zerolinecolor'] = 'rgb(55, 65, 81)'
-        else:
-            chart_data['layout']['paper_bgcolor'] = 'white'
-            chart_data['layout']['plot_bgcolor'] = 'white'
-            chart_data['layout']['font'] = {'color': 'rgb(31, 41, 55)'}  # Dark text
+        chart_data['layout']['paper_bgcolor'] = theme_config['paper_bgcolor']
+        chart_data['layout']['plot_bgcolor'] = theme_config['plot_bgcolor']
+        chart_data['layout']['font'] = {'color': theme_config['font_color']}
+        
+        # Update grid colors for both axes if they exist
+        if 'xaxis' in chart_data['layout']:
+            chart_data['layout']['xaxis']['gridcolor'] = theme_config['grid_color']
+            chart_data['layout']['xaxis']['zerolinecolor'] = theme_config['grid_color']
+        if 'yaxis' in chart_data['layout']:
+            chart_data['layout']['yaxis']['gridcolor'] = theme_config['grid_color']
+            chart_data['layout']['yaxis']['zerolinecolor'] = theme_config['grid_color']
         
         # Update legend background if it exists
         if 'legend' in chart_data['layout']:

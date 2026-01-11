@@ -4,15 +4,15 @@
 # Optimized for fast builds with layer caching
 # Multi-stage build: Build Tailwind CSS first, then Python app
 
-# Stage 1: Build Tailwind CSS
-FROM node:20-alpine AS tailwind-builder
+# Stage 1: Build Tailwind CSS and TypeScript
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
 # Copy package files for dependency installation (better layer caching)
 COPY package.json ./
 COPY tailwind.config.js ./
 
-# Install npm dependencies (cached layer - only rebuilds if package.json changes)
+# Install npm dependencies for Tailwind (cached layer - only rebuilds if package.json changes)
 RUN npm install
 
 # Copy Tailwind input CSS and source files needed for content scanning
@@ -26,6 +26,22 @@ RUN mkdir -p web_dashboard/static/css && \
     npm run build:css && \
     ls -lh web_dashboard/static/css/tailwind.css || \
     (echo "ERROR: Tailwind CSS build failed - output file not found" && exit 1)
+
+# Build TypeScript: Copy TypeScript config and package.json
+COPY web_dashboard/package.json ./web_dashboard/package.json
+COPY web_dashboard/tsconfig.json ./web_dashboard/tsconfig.json
+
+# Install TypeScript dependencies
+WORKDIR /app/web_dashboard
+RUN npm install
+
+# Copy TypeScript source files
+COPY web_dashboard/src ./src
+
+# Build TypeScript (outputs to static/js/)
+RUN npm run build && \
+    ls -lh static/js/settings.js || \
+    (echo "ERROR: TypeScript build failed - output file not found" && exit 1)
 
 # Stage 2: Python app
 FROM python:3.11-slim
@@ -64,8 +80,16 @@ COPY . /app
 # Copy built Tailwind CSS from builder stage
 # Ensure directory exists first, then copy the built CSS file
 RUN mkdir -p web_dashboard/static/css
-COPY --from=tailwind-builder /app/web_dashboard/static/css/tailwind.css ./web_dashboard/static/css/tailwind.css
+COPY --from=frontend-builder /app/web_dashboard/static/css/tailwind.css ./web_dashboard/static/css/tailwind.css
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
+
+# Copy compiled TypeScript JavaScript files from builder stage
+# Only copy the TypeScript-compiled files (settings.js and its source map)
+# Other JS files (ai_assistant.js, etc.) are already copied via COPY . /app above
+RUN mkdir -p web_dashboard/static/js
+COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js ./web_dashboard/static/js/settings.js
+COPY --from=frontend-builder /app/web_dashboard/static/js/settings.js.map ./web_dashboard/static/js/settings.js.map 2>/dev/null || true
+RUN test -f web_dashboard/static/js/settings.js || (echo "ERROR: TypeScript compiled settings.js not found" && exit 1)
 
 # Expose Flask port
 EXPOSE 5001

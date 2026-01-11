@@ -54,6 +54,7 @@
     --log-error: #ef4444;
 }
 
+
 /* Dark Mode Variables */
 [data-theme="dark"] {
     --bg-primary: #1f2937;
@@ -79,6 +80,59 @@
     --log-warning: #fbbf24;
     --log-error: #f87171;
 }
+
+/* Midnight Tokyo Theme - Cyberpunk/Neon */
+[data-theme="midnight-tokyo"] {
+    --bg-primary: #24283b;
+    --bg-secondary: #1a1b26;
+    --bg-tertiary: #3b4261;
+    --text-primary: #c0caf5;
+    --text-secondary: #a9b1d6;
+    --text-tertiary: #565f89;
+    --border-color: #3b4261;
+    --border-hover: #545c7e;
+    --gradient-from: #7dcfff;
+    --gradient-to: #bb9af7;
+
+    /* Component colors */
+    --log-line-hover: #3b4261;
+    --code-bg: #24283b;
+    --code-border: #3b4261;
+
+    /* Log level colors */
+    --log-debug: #565f89;
+    --log-perf: #bb9af7;
+    --log-info: #7dcfff;
+    --log-warning: #e0af68;
+    --log-error: #f7768e;
+}
+
+/* Abyss Theme - Deep Ocean/Void */
+[data-theme="abyss"] {
+    --bg-primary: #0f1c2e;
+    --bg-secondary: #050505;
+    --bg-tertiary: #1a2b42;
+    --text-primary: #a9b1d6;
+    --text-secondary: #7a8ba4;
+    --text-tertiary: #4a5568;
+    --border-color: #1a2b42;
+    --border-hover: #2d3f5a;
+    --gradient-from: #41a6b5;
+    --gradient-to: #2d7a8a;
+
+    /* Component colors */
+    --log-line-hover: #1a2b42;
+    --code-bg: #0f1c2e;
+    --code-border: #1a2b42;
+
+    /* Log level colors */
+    --log-debug: #4a5568;
+    --log-perf: #7986cb;
+    --log-info: #41a6b5;
+    --log-warning: #ffb74d;
+    --log-error: #e57373;
+}
+
 
 /* System Theme - Use browser/OS preference */
 /* Light mode when OS prefers light */

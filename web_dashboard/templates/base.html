@@ -27,23 +27,29 @@
         /* Sync color-scheme with data-theme for consistency with Streamlit */
             {
             % if user_theme=='dark' %
-        }
 
-        :root {
-            color-scheme: dark;
-        }
+            /* Sync color-scheme with data-theme for consistency */
+                {
+                % if user_theme in ['dark',
+                'midnight-tokyo',
+                'abyss'] %
+            }
 
-            {
-            % elif user_theme=='light' %
-        }
+            :root {
+                color-scheme: dark;
+            }
 
-        :root {
-            color-scheme: light;
-        }
+                {
+                % elif user_theme=='light' %
+            }
 
-            {
-            % endif %
-        }
+            :root {
+                color-scheme: light;
+            }
+
+                {
+                % endif %
+            }
     </style>
 
     <!-- Theme Management Scripts -->

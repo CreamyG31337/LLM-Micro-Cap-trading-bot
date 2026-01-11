@@ -58,6 +58,14 @@ class ThemeManager {
         // Update data-theme attribute on the HTML element
         document.documentElement.setAttribute('data-theme', theme);
 
+        // Toggle 'dark' class for Tailwind dark mode support
+        const darkThemes = ['dark', 'midnight-tokyo', 'abyss'];
+        if (darkThemes.includes(theme) || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+
         if (persist) {
             // Save to localStorage
             localStorage.setItem('theme', theme);

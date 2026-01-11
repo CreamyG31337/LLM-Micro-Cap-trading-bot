@@ -397,11 +397,21 @@ function renderResearchArticles(articles) {
         const publishedAt = formatDate(article.published_at);
         const sentiment = article.sentiment || 'N/A';
         
+        const summaryId = `summary-${article.id || Math.random().toString(36).substr(2, 9)}`;
+        const isLongSummary = summary.length > 500;
+        const shortSummary = isLongSummary ? summary.substring(0, 500) + '...' : summary;
+        
         articleDiv.innerHTML = `
             <details class="cursor-pointer">
-                <summary class="font-semibold text-blue-600 hover:text-blue-800">${title.substring(0, 80)}${title.length > 80 ? '...' : ''}</summary>
+                <summary class="font-semibold text-blue-600 hover:text-blue-800">${title}</summary>
                 <div class="mt-2 pl-4">
-                    <p class="text-gray-700 mb-2">${summary.substring(0, 500)}${summary.length > 500 ? '...' : ''}</p>
+                    <div id="${summaryId}-short" class="text-gray-700 mb-2">${shortSummary}</div>
+                    ${isLongSummary ? `
+                        <div id="${summaryId}-full" class="hidden text-gray-700 mb-2 whitespace-pre-wrap">${summary}</div>
+                        <button onclick="toggleSummary('${summaryId}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium mb-2">
+                            <span id="${summaryId}-toggle">Show Full Summary</span>
+                        </button>
+                    ` : ''}
                     <div class="flex justify-between items-center text-sm text-gray-500">
                         <div>
                             <span>Source: ${source}</span>
@@ -556,6 +566,26 @@ function showError(message) {
 
 function hideError() {
     document.getElementById('error-message').classList.add('section-hidden');
+}
+
+function toggleSummary(summaryId) {
+    const shortDiv = document.getElementById(`${summaryId}-short`);
+    const fullDiv = document.getElementById(`${summaryId}-full`);
+    const toggleBtn = document.getElementById(`${summaryId}-toggle`);
+    
+    if (shortDiv && fullDiv && toggleBtn) {
+        if (fullDiv.classList.contains('hidden')) {
+            // Show full summary
+            shortDiv.classList.add('hidden');
+            fullDiv.classList.remove('hidden');
+            toggleBtn.textContent = 'Show Less';
+        } else {
+            // Show short summary
+            shortDiv.classList.remove('hidden');
+            fullDiv.classList.add('hidden');
+            toggleBtn.textContent = 'Show Full Summary';
+        }
+    }
 }
 
 function showPlaceholder() {

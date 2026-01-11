@@ -2236,9 +2236,17 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
         
         # Explicitly set background colors (these override any embedded template colors)
         if is_dark:
-            chart_data['layout']['paper_bgcolor'] = 'rgb(17, 24, 39)'  # Dark background
-            chart_data['layout']['plot_bgcolor'] = 'rgb(17, 24, 39)'   # Dark plot area
-            chart_data['layout']['font'] = {'color': 'rgb(229, 231, 235)'}  # Light text
+            chart_data['layout']['paper_bgcolor'] = 'rgb(31, 41, 55)'  # Dark background (gray-800) matches card
+            chart_data['layout']['plot_bgcolor'] = 'rgb(31, 41, 55)'   # Dark plot area (gray-800)
+            chart_data['layout']['font'] = {'color': 'rgb(209, 213, 219)'}  # Light text (gray-300)
+            
+            # Update grid colors for both axes if they exist
+            if 'xaxis' in chart_data['layout']:
+                chart_data['layout']['xaxis']['gridcolor'] = 'rgb(55, 65, 81)' # gray-700
+                chart_data['layout']['xaxis']['zerolinecolor'] = 'rgb(55, 65, 81)'
+            if 'yaxis' in chart_data['layout']:
+                chart_data['layout']['yaxis']['gridcolor'] = 'rgb(55, 65, 81)' # gray-700
+                chart_data['layout']['yaxis']['zerolinecolor'] = 'rgb(55, 65, 81)'
         else:
             chart_data['layout']['paper_bgcolor'] = 'white'
             chart_data['layout']['plot_bgcolor'] = 'white'

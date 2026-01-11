@@ -188,6 +188,7 @@
                         <li>
                             <a href="{{ url_for('admin.scheduler_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_scheduler' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">🔨</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">Jobs Scheduler</span>
                                 {% if scheduler_status == 'running' %}
                                 <span
@@ -199,48 +200,54 @@
                             </a>
                         </li>
                         <li>
+                            <a href="{{ url_for('admin.users_page') }}"
+                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_users' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">👥</span>
+                                <span class="flex-1 ms-3 whitespace-nowrap">User Management</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ url_for('fund_routes.admin_funds_page') }}"
+                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_funds' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">🏦</span>
+                                <span class="flex-1 ms-3 whitespace-nowrap">Fund Management</span>
+                            </a>
+                        </li>
+                        <li>
                             <a href="{{ url_for('admin.trade_entry_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_trade_entry' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">📈</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">Trade Entry</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.contributions_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_contributions' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">💰</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">Contributions</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="{{ url_for('fund_routes.admin_funds_page') }}"
-                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_funds' %}bg-gray-100 dark:bg-gray-700{% endif %}">
-                                <span class="flex-1 ms-3 whitespace-nowrap">Fund Management</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.ai_settings_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_ai_settings' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">🤖</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">AI Settings</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.system_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_system' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">🖥️</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">System Monitor</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.logs_page') }}"
                                 class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_logs' %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <span class="mr-3 text-lg">📜</span>
                                 <span class="flex-1 ms-3 whitespace-nowrap">Logs</span>
                             </a>
                         </li>
-                        <li>
-                            <a href="{{ url_for('admin.users_page') }}"
-                                class="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group pl-11 {% if current_page == 'admin_users' %}bg-gray-100 dark:bg-gray-700{% endif %}">
-                                <span class="flex-1 ms-3 whitespace-nowrap">User Management</span>
-                            </a>
-                        </li>
-
                     </ul>
                 </div>
                 {% endif %}

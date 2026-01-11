@@ -213,6 +213,8 @@ def get_holdings_changes(
         curr_df = curr_df.rename(columns={'shares_held': 'current_shares'})
         
         # User overlap
+        max_date_res = db_client.supabase.table("portfolio_positions").select("date").order("date", desc=True).limit(1).execute()
+        if max_date_res.data:
             max_date = max_date_res.data[0]['date']
             user_pos_query = db_client.supabase.table("portfolio_positions").select("ticker, quantity, fund").eq("date", max_date).gt("quantity", 0)
             

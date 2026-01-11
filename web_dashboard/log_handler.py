@@ -216,6 +216,8 @@ def setup_logging(level=logging.INFO):
         'research_report_service',
         'ai_service_client',
         'archive_service',
+        'web_dashboard.routes.etf_routes',
+        'scheduler.jobs_etf_watchtower',
     ]
     
     # Attach handler to each app module logger

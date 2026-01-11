@@ -204,7 +204,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="/assets/js/etf_holdings.js"></script>
+<script type="module" src="/assets/js/etf_holdings.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const holdingsData = {{ holdings_data | tojson

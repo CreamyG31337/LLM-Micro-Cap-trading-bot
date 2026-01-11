@@ -33,7 +33,7 @@ interface JobsStatusResponse {
     error?: string;
 }
 
-interface ApiResponse {
+interface JobsApiResponse {
     success?: boolean;
     error?: string;
     message?: string;
@@ -402,7 +402,7 @@ async function handleJobAction(e: Event): Promise<void> {
             body: JSON.stringify({ job_id: jobId } as JobActionRequest)
         });
 
-        const data: ApiResponse = await response.json();
+        const data: JobsApiResponse = await response.json();
 
         if (!response.ok) {
             throw new Error(data.error || 'Action failed');
@@ -424,7 +424,7 @@ async function handleJobAction(e: Event): Promise<void> {
 async function startScheduler(): Promise<void> {
     try {
         const response = await fetch('/api/jobs/start-scheduler', { method: 'POST' });
-        const data: ApiResponse = await response.json();
+        const data: JobsApiResponse = await response.json();
         if (!response.ok) {
             throw new Error(data.error || 'Failed to start scheduler');
         }
@@ -436,21 +436,14 @@ async function startScheduler(): Promise<void> {
 }
 
 // Global functions for inline onclick handlers
-declare global {
-    interface Window {
-        toggleParams: (id: string) => void;
-        runJobWithParams: (id: string, actualJobId: string) => Promise<void>;
-    }
-}
-
-window.toggleParams = function (id: string): void {
+export function toggleParams(id: string): void {
     const el = document.getElementById(`params-${id}`);
     if (el) {
         el.classList.toggle('hidden');
     }
-};
+}
 
-window.runJobWithParams = async function (id: string, actualJobId: string): Promise<void> {
+export async function runJobWithParams(id: string, actualJobId: string): Promise<void> {
     const container = document.getElementById(`params-${id}`);
     if (!container) {
         return;
@@ -474,7 +467,7 @@ window.runJobWithParams = async function (id: string, actualJobId: string): Prom
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_id: actualJobId, parameters: params } as JobActionRequest)
         });
-        const data: ApiResponse = await response.json();
+        const data: JobsApiResponse = await response.json();
         if (!response.ok) {
             throw new Error(data.error || 'Failed to run job');
         }
@@ -487,4 +480,16 @@ window.runJobWithParams = async function (id: string, actualJobId: string): Prom
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         showError(errorMessage);
     }
-};
+}
+
+// Make functions available globally for inline onclick handlers
+declare global {
+    interface Window {
+        toggleParams: typeof toggleParams;
+        runJobWithParams: typeof runJobWithParams;
+    }
+}
+
+// Assign to window for inline handlers
+window.toggleParams = toggleParams;
+window.runJobWithParams = runJobWithParams;

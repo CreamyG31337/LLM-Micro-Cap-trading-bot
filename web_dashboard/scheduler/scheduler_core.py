@@ -1437,17 +1437,17 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
                 if isinstance(cron_config, dict):
                     hour = cron_config.get('hour', '*')
                     minute = cron_config.get('minute', 0)
-                    timezone = cron_config.get('timezone', '')
+                    tz_str = cron_config.get('timezone', '')
                 else:
                     # It's a CronTrigger object - use attribute access
                     hour = getattr(cron_config, 'hour', '*')
                     minute = getattr(cron_config, 'minute', 0)
-                    timezone = getattr(cron_config, 'timezone', '')
+                    tz_str = getattr(cron_config, 'timezone', '')
                 
                 if isinstance(hour, int) and isinstance(minute, int):
                     trigger_desc = f"At {hour:02d}:{minute:02d}"
-                    if timezone:
-                        trigger_desc += f" ({timezone})"
+                    if tz_str:
+                        trigger_desc += f" ({tz_str})"
                 else:
                     trigger_desc = "Cron schedule"
                 logger.debug(f"[Scheduler Core] Job {job_id}: Extracted cron trigger -> {trigger_desc}")

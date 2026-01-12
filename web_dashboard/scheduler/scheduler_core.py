@@ -1416,11 +1416,12 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         logger.debug("No jobs from scheduler, falling back to AVAILABLE_JOBS for job definitions")
         # Create dummy job objects for the UI
         class DummyJob:
-            def __init__(self, id, name, trigger):
+            def __init__(self, id, name, trigger, has_schedule=True):
                 self.id = id
                 self.name = name
                 self.trigger = trigger
                 self.next_run_time = None  # Can't know next run across processes with MemoryJobStore
+                self.has_schedule = has_schedule  # Track if job has a schedule (not manual-only)
         
         jobs = []
         for job_id, config in AVAILABLE_JOBS.items():
@@ -1431,9 +1432,18 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
             if 'cron_triggers' in config and config['cron_triggers']:
                 # Has cron schedule
                 cron_config = config['cron_triggers'][0]
-                hour = cron_config.get('hour', '*')
-                minute = cron_config.get('minute', 0)
-                timezone = cron_config.get('timezone', '')
+                
+                # Handle both dict and CronTrigger object
+                if isinstance(cron_config, dict):
+                    hour = cron_config.get('hour', '*')
+                    minute = cron_config.get('minute', 0)
+                    timezone = cron_config.get('timezone', '')
+                else:
+                    # It's a CronTrigger object - use attribute access
+                    hour = getattr(cron_config, 'hour', '*')
+                    minute = getattr(cron_config, 'minute', 0)
+                    timezone = getattr(cron_config, 'timezone', '')
+                
                 if isinstance(hour, int) and isinstance(minute, int):
                     trigger_desc = f"At {hour:02d}:{minute:02d}"
                     if timezone:
@@ -1456,10 +1466,17 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
             else:
                 logger.debug(f"[Scheduler Core] Job {job_id}: No trigger found in config, using Manual. Config keys: {list(config.keys())}")
             
+            # Determine if job has a schedule (not manual-only)
+            has_schedule = bool(
+                ('cron_triggers' in config and config['cron_triggers']) or
+                config.get('default_interval_minutes', 0) > 0
+            )
+            
             jobs.append(DummyJob(
                 id=job_id,
                 name=config.get('name', job_id),
-                trigger=trigger_desc
+                trigger=trigger_desc,
+                has_schedule=has_schedule
             ))
         
         logger.info(f"Created {len(jobs)} dummy jobs from AVAILABLE_JOBS for UI display")
@@ -1483,17 +1500,34 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     
     # Initialize result structure
     job_statuses = {}
+    scheduler_stopped = (scheduler is None or (hasattr(scheduler, 'running') and not scheduler.running))
+    
     for job in jobs:
+        # For DummyJob objects (scheduler stopped), check if job has a schedule
+        # If it has a schedule but scheduler is stopped, show schedule info instead of "Not scheduled"
+        has_schedule = getattr(job, 'has_schedule', False) if hasattr(job, 'has_schedule') else (job.next_run_time is not None)
+        
+        # If scheduler is stopped but job has a schedule, don't mark as paused
+        # The job isn't paused - the scheduler just isn't running
+        if scheduler_stopped:
+            # When scheduler is stopped, jobs aren't "paused" - scheduler just isn't running
+            is_paused = False
+        else:
+            # When scheduler is running, check if job is actually paused
+            is_paused = job.next_run_time is None
+        
         job_statuses[job.id] = {
             'id': job.id,
             'name': job.name or job.id,
             'next_run': job.next_run_time,
-            'is_paused': job.next_run_time is None,
+            'is_paused': is_paused,
             'trigger': _format_trigger_readable(job.trigger),
             'is_running': False,
             'running_since': None,
             'last_error': None,
-            'recent_logs': []
+            'recent_logs': [],
+            'scheduler_stopped': scheduler_stopped,  # Flag to help frontend show appropriate message
+            'has_schedule': has_schedule  # Flag to show if job has a schedule
         }
     
     # Batch query 1: Get all running jobs

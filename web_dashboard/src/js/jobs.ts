@@ -23,6 +23,8 @@ interface Job {
     trigger?: string;
     status?: 'running' | 'error' | 'idle' | 'paused';
     parameters?: Record<string, string>;
+    scheduler_stopped?: boolean;
+    has_schedule?: boolean;
     recent_logs?: JobLogEntry[];
     is_running?: boolean;
     is_paused?: boolean;
@@ -322,7 +324,16 @@ function renderJobs(jobsData: Job[]): void {
 
 function createJobCard(job: Job): string {
     const statusClass = getStatusClass(job);
-    const nextRun = job.next_run ? new Date(job.next_run).toLocaleString() : 'Not scheduled';
+    // Show schedule info if scheduler is stopped and job has a schedule, otherwise show next_run or "Not scheduled"
+    let nextRun: string;
+    if (job.next_run) {
+        nextRun = new Date(job.next_run).toLocaleString();
+    } else if (job.scheduler_stopped && job.has_schedule && job.trigger && job.trigger !== 'Manual') {
+        // Scheduler is stopped but job has a schedule - show the schedule instead of "Not scheduled"
+        nextRun = `Scheduled: ${job.trigger}`;
+    } else {
+        nextRun = 'Not scheduled';
+    }
 
     // Recent logs HTML
     let logsHtml = '';

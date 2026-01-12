@@ -1015,6 +1015,9 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
             display_currency = 'CAD'
     
     # Fetch exchange rates if we have currency column
+    import logging
+    logger = logging.getLogger(__name__)
+    
     rate_map = {}
     if 'currency' in positions_df.columns:
         try:
@@ -1033,8 +1036,6 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
             else:
                 logger.warning(f"[Sector Chart] No valid currencies found in positions_df, skipping currency conversion")
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"[Sector Chart] Could not fetch exchange rates for sector allocation: {e}", exc_info=True)
     
     def get_rate(curr):

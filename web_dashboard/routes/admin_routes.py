@@ -1078,21 +1078,28 @@ def api_read_log_file():
 def scheduler_page():
     """Scheduler/Jobs Management Page"""
     try:
+        logger.info("[Scheduler Page] Rendering scheduler page")
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme
         from app import get_navigation_context
         from scheduler.scheduler_core import is_scheduler_running
         
         user_email = get_user_email_flask()
+        logger.debug(f"[Scheduler Page] User email: {user_email}")
         user_theme = get_user_theme() or 'system'
         
         # Get navigation context
+        logger.debug("[Scheduler Page] Getting navigation context...")
         nav_context = get_navigation_context(current_page='admin_scheduler')
+        logger.debug(f"[Scheduler Page] Navigation context keys: {list(nav_context.keys())}")
         
         # Get scheduler status for menu badge
+        logger.debug("[Scheduler Page] Checking scheduler status...")
         scheduler_running = is_scheduler_running()
         scheduler_status = 'running' if scheduler_running else 'stopped'
+        logger.info(f"[Scheduler Page] Scheduler status: {scheduler_status}")
         
+        logger.info("[Scheduler Page] Rendering template...")
         return render_template('jobs.html', 
                              user_email=user_email,
                              user_theme=user_theme,
@@ -1124,17 +1131,47 @@ def scheduler_page():
 @admin_bp.route('/api/admin/scheduler/status')
 @require_admin
 def api_scheduler_status():
-    """Get global scheduler status"""
+    """Get global scheduler status and jobs list"""
     try:
+        logger.info("[Scheduler API] /api/admin/scheduler/status called")
+        start_time = time.time()
+        
         running = is_scheduler_running()
+        logger.debug(f"[Scheduler API] Scheduler running: {running}")
+        
+        # Get jobs list (even if scheduler is stopped, we want to show available jobs)
+        try:
+            jobs = get_all_jobs_status()
+            logger.debug(f"[Scheduler API] Retrieved {len(jobs)} jobs")
+        except Exception as jobs_error:
+            logger.warning(f"[Scheduler API] Error getting jobs list: {jobs_error}", exc_info=True)
+            jobs = []
+        
+        # Serialize datetime objects
+        for job in jobs:
+            for key, value in job.items():
+                if isinstance(value, datetime):
+                    job[key] = value.isoformat()
+            
+            # Helper for logs
+            if 'recent_logs' in job:
+                for log in job['recent_logs']:
+                    if isinstance(log.get('timestamp'), datetime):
+                        log['timestamp'] = log['timestamp'].isoformat()
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[Scheduler API] Status response prepared - running={running}, jobs={len(jobs)}, time={processing_time:.3f}s")
+        
         return jsonify({
             "success": True, 
-            "running": running,
+            "scheduler_running": running,
+            "running": running,  # Keep for backward compatibility
+            "jobs": jobs,
             "timestamp": datetime.now().isoformat()
         })
     except Exception as e:
-        logger.error(f"Error getting scheduler status: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"[Scheduler API] Error getting scheduler status: {e}", exc_info=True)
+        return jsonify({"error": str(e), "scheduler_running": False, "jobs": []}), 500
 
 @admin_bp.route('/api/admin/scheduler/start', methods=['POST'])
 @require_admin

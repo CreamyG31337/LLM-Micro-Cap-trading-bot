@@ -217,8 +217,17 @@ async function fetchStatus(): Promise<void> {
             jobs_count: data.jobs ? data.jobs.length : 0,
             has_error: !!data.error,
             error: data.error,
-            duration: `${duration.toFixed(2)}ms`
+            duration: `${duration.toFixed(2)}ms`,
+            raw_data_keys: Object.keys(data),
+            jobs_sample: data.jobs && data.jobs.length > 0 ? data.jobs[0] : null
         });
+        
+        // Log full response for debugging (truncated)
+        if (data.jobs && data.jobs.length > 0) {
+            console.log('[Jobs] First job sample:', JSON.stringify(data.jobs[0], null, 2));
+        } else {
+            console.warn('[Jobs] No jobs in response. Full response:', JSON.stringify(data, null, 2).substring(0, 1000));
+        }
 
         updateStatusUI(data.scheduler_running);
         renderJobs(data.jobs);

@@ -245,14 +245,26 @@ function initGrid(): void {
 
     // agGrid is loaded from CDN and available globally
     if (typeof (window as any).agGrid !== 'undefined') {
-        // Use new Grid() constructor like congress_trades.ts does
-        const gridInstance = new (window as any).agGrid.Grid(gridEl, gridOptions);
-        // Grid constructor returns instance with .api property
-        state.gridApi = gridInstance.api;
-        console.log('[Dashboard] AG Grid initialized', {
-            has_api: !!state.gridApi,
-            has_setRowData: typeof state.gridApi?.setRowData === 'function'
-        });
+        // AG Grid v31+ recommends createGrid() which returns the API directly
+        // Fallback to new Grid() for older versions
+        if (typeof (window as any).agGrid.createGrid === 'function') {
+            // createGrid returns the grid API directly
+            state.gridApi = (window as any).agGrid.createGrid(gridEl, gridOptions);
+            console.log('[Dashboard] AG Grid initialized with createGrid()', {
+                has_api: !!state.gridApi,
+                has_setRowData: typeof state.gridApi?.setRowData === 'function'
+            });
+        } else if ((window as any).agGrid.Grid) {
+            // Fallback to deprecated new Grid() constructor
+            const gridInstance = new (window as any).agGrid.Grid(gridEl, gridOptions);
+            state.gridApi = gridInstance.api;
+            console.log('[Dashboard] AG Grid initialized with new Grid()', {
+                has_api: !!state.gridApi,
+                has_setRowData: typeof state.gridApi?.setRowData === 'function'
+            });
+        } else {
+            console.error('[Dashboard] AG Grid API not found');
+        }
     } else {
         console.error('[Dashboard] AG Grid not loaded');
     }

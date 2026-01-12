@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 fund_bp = Blueprint('fund_routes', __name__)
 
-@fund_bp.route('/admin/funds')
+@fund_bp.route('/v2/admin/funds')
 @require_admin
 def admin_funds_page():
     """Render the fund management page"""

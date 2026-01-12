@@ -1130,10 +1130,18 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     
     # Aggregate by sector
     sector_df = pd.DataFrame(sector_data)
+    
+    # Log before aggregation to see raw data
+    logger.info(f"[Sector Chart] Total positions processed: {len(sector_df)}")
+    logger.info(f"[Sector Chart] Sample sector_data (first 5): {sector_data[:5]}")
+    logger.info(f"[Sector Chart] Market value sum before aggregation: {sector_df['market_value'].sum()}")
+    logger.info(f"[Sector Chart] Market value stats: min={sector_df['market_value'].min()}, max={sector_df['market_value'].max()}, mean={sector_df['market_value'].mean()}")
+    
     sector_totals = sector_df.groupby('sector')['market_value'].sum().reset_index()
     sector_totals = sector_totals.sort_values('market_value', ascending=False)
     
-    logger.debug(f"[Sector Chart] Aggregated {len(sector_totals)} sectors: {sector_totals.to_dict('records')}")
+    logger.info(f"[Sector Chart] Aggregated {len(sector_totals)} sectors: {sector_totals.to_dict('records')}")
+    logger.info(f"[Sector Chart] Total market value after aggregation: {sector_totals['market_value'].sum()}")
     
     # Color palette for sectors
     sector_colors = {
@@ -1156,9 +1164,19 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     
     fig = go.Figure()
     
+    # Convert to lists and ensure numeric types
+    labels_list = sector_totals['sector'].tolist()
+    values_list = sector_totals['market_value'].tolist()
+    
+    # Log the actual values being passed to Plotly
+    logger.info(f"[Sector Chart] Plotly input - labels: {labels_list}")
+    logger.info(f"[Sector Chart] Plotly input - values: {values_list}")
+    logger.info(f"[Sector Chart] Values type: {type(values_list[0]) if values_list else 'empty'}")
+    logger.info(f"[Sector Chart] Values sum: {sum(values_list)}")
+    
     fig.add_trace(go.Pie(
-        labels=sector_totals['sector'],
-        values=sector_totals['market_value'],
+        labels=labels_list,
+        values=values_list,
         marker=dict(colors=colors),
         textinfo='label+percent',
         hovertemplate='<b>%{label}</b><br>Value: $%{value:,.2f}<br>%{percent}<extra></extra>'

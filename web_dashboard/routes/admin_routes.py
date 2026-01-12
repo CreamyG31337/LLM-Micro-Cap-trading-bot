@@ -1186,39 +1186,49 @@ def api_scheduler_status():
         logger.debug(f"[Scheduler API] Scheduler running: {running}")
         
         # Get jobs list (even if scheduler is stopped, we want to show available jobs)
+        jobs = []
         try:
+            logger.info(f"[Scheduler API] Calling get_all_jobs_status()...")
             jobs = get_all_jobs_status()
-            logger.debug(f"[Scheduler API] Retrieved {len(jobs)} jobs from get_all_jobs_status()")
-            if not jobs:
-                # If no jobs returned, get_all_jobs_status should have fallen back to AVAILABLE_JOBS
-                # But if it didn't, try directly here as a safety net
-                logger.warning(f"[Scheduler API] No jobs returned from get_all_jobs_status(), trying AVAILABLE_JOBS directly...")
-                try:
-                    from scheduler.jobs import AVAILABLE_JOBS
-                    logger.info(f"[Scheduler API] AVAILABLE_JOBS has {len(AVAILABLE_JOBS)} job definitions")
-                    if AVAILABLE_JOBS:
-                        # Create minimal job status from AVAILABLE_JOBS
-                        jobs = []
-                        for job_id, config in AVAILABLE_JOBS.items():
-                            jobs.append({
-                                'id': job_id,
-                                'name': config.get('name', job_id),
-                                'next_run': None,
-                                'is_paused': True,
-                                'trigger': 'Manual',
-                                'is_running': False,
-                                'running_since': None,
-                                'last_error': None,
-                                'recent_logs': []
-                            })
-                        logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS fallback")
-                    else:
-                        logger.warning("[Scheduler API] AVAILABLE_JOBS is empty!")
-                except Exception as avail_error:
-                    logger.error(f"[Scheduler API] Error accessing AVAILABLE_JOBS: {avail_error}", exc_info=True)
+            logger.info(f"[Scheduler API] get_all_jobs_status() returned {len(jobs)} jobs")
+            if jobs:
+                logger.info(f"[Scheduler API] Job IDs returned: {[j.get('id', 'NO_ID') for j in jobs[:5]]}")
         except Exception as jobs_error:
-            logger.error(f"[Scheduler API] Error getting jobs list: {jobs_error}", exc_info=True)
+            logger.error(f"[Scheduler API] Exception calling get_all_jobs_status(): {jobs_error}", exc_info=True)
             jobs = []
+        
+        # If no jobs returned, fall back to AVAILABLE_JOBS
+        if not jobs:
+            logger.warning(f"[Scheduler API] No jobs returned (scheduler stopped or empty). Falling back to AVAILABLE_JOBS...")
+            try:
+                logger.info(f"[Scheduler API] Importing AVAILABLE_JOBS...")
+                from scheduler.jobs import AVAILABLE_JOBS
+                logger.info(f"[Scheduler API] AVAILABLE_JOBS imported successfully, has {len(AVAILABLE_JOBS)} job definitions")
+                logger.info(f"[Scheduler API] AVAILABLE_JOBS keys: {list(AVAILABLE_JOBS.keys())[:10]}")
+                
+                if AVAILABLE_JOBS:
+                    # Create minimal job status from AVAILABLE_JOBS
+                    jobs = []
+                    for job_id, config in AVAILABLE_JOBS.items():
+                        jobs.append({
+                            'id': job_id,
+                            'name': config.get('name', job_id),
+                            'next_run': None,
+                            'is_paused': True,
+                            'trigger': 'Manual',
+                            'is_running': False,
+                            'running_since': None,
+                            'last_error': None,
+                            'recent_logs': []
+                        })
+                    logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS fallback")
+                    logger.info(f"[Scheduler API] Fallback job IDs: {[j.get('id') for j in jobs[:5]]}")
+                else:
+                    logger.error("[Scheduler API] AVAILABLE_JOBS is empty! This is a critical error.")
+            except ImportError as import_error:
+                logger.error(f"[Scheduler API] Failed to import AVAILABLE_JOBS: {import_error}", exc_info=True)
+            except Exception as avail_error:
+                logger.error(f"[Scheduler API] Error accessing AVAILABLE_JOBS: {avail_error}", exc_info=True)
         
         # Serialize datetime objects
         for job in jobs:

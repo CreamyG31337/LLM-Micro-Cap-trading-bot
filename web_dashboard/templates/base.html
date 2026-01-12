@@ -165,8 +165,10 @@
                     <div class="px-2">
                         <select id="global-fund-select"
                             class="w-full p-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            {% if allow_all_funds is not defined or allow_all_funds %}
                             <option value="all" {% if not selected_fund or selected_fund=='all' %}selected{% endif %}>
                                 All Funds</option>
+                            {% endif %}
                             {% if available_funds %}
                             {% for fund in available_funds %}
                             <option value="{{ fund }}" {% if fund==selected_fund %}selected{% endif %}>{{ fund }}

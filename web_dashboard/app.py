@@ -333,11 +333,28 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
         except Exception:
             pass
             
+        # Determine if "All Funds" is allowed for this page
+        # Restrict on pages where aggregate view doesn't make sense or isn't supported
+        restricted_all_funds_pages = ['ai_assistant', 'ticker_details']
+        allow_all_funds = True
+        
+        if current_page in restricted_all_funds_pages:
+            allow_all_funds = False
+            
+            # If "All Funds" is selected but not allowed, default to first available fund
+            # This ensures the selector shows a valid option for the context
+            if not selected_fund or str(selected_fund).lower() == 'all':
+                if available_funds:
+                    selected_fund = available_funds[0]
+                else:
+                    selected_fund = ""
+            
         return {
             'navigation_links': nav_links,
             'is_admin': is_admin_value,
             'available_funds': available_funds,
-            'selected_fund': selected_fund
+            'selected_fund': selected_fund,
+            'allow_all_funds': allow_all_funds
         }
     except Exception as e:
         logger.warning(f"Error building navigation context: {e}")

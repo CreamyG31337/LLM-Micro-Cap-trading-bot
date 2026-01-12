@@ -123,6 +123,46 @@ python dev_run.py --data-dir "trading_data/funds/TEST"
 - Use descriptive test names
 - Mock external dependencies
 
+### TypeScript Frontend Development
+
+**CRITICAL**: All JavaScript files in `web_dashboard/static/js/` are **auto-generated** from TypeScript source files.
+
+#### ⚠️ IMPORTANT: Edit TypeScript, Not JavaScript
+
+- **✅ DO**: Edit files in `web_dashboard/src/js/*.ts` (TypeScript source)
+- **❌ DON'T**: Edit files in `web_dashboard/static/js/*.js` (compiled output - will be overwritten)
+- **Build Process**: `npm run build:ts` compiles TypeScript → JavaScript
+- **Served At**: `/assets/js/*.js` (via Flask's static file handler)
+
+#### TypeScript Build Commands
+
+```bash
+# Compile TypeScript to JavaScript
+npm run build:ts
+
+# Build both CSS and TypeScript
+npm run build
+
+# Watch mode (if needed)
+npm run watch:css
+```
+
+#### File Structure
+
+```
+web_dashboard/
+├── src/js/          ← EDIT THESE (TypeScript source files)
+│   ├── dashboard.ts
+│   ├── jobs.ts
+│   └── ...
+└── static/js/       ← AUTO-GENERATED (Don't edit! Compiled from src/js/)
+    ├── dashboard.js
+    ├── jobs.js
+    └── ...
+```
+
+**See `web_dashboard/src/js/README.md` for detailed TypeScript development guidelines.**
+
 ### Test-Driven Development (TDD) and Test Selection
 
 **CRITICAL**: Always run the appropriate test suite based on what code you're modifying.

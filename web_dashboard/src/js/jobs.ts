@@ -1,7 +1,15 @@
 /**
  * Jobs Scheduler Dashboard
  * Handles status updates, job list rendering, and job actions
+ * 
+ * ⚠️ IMPORTANT: This is a TypeScript SOURCE file.
+ * - Edit this file: web_dashboard/src/js/jobs.ts
+ * - Compiled output: web_dashboard/static/js/jobs.js (auto-generated)
+ * - DO NOT edit the compiled .js file - it will be overwritten on build
+ * - Run `npm run build:ts` to compile changes
  */
+
+console.log('[Jobs] jobs.ts file loaded and executing...');
 
 // Export empty object to make this a module
 export {};
@@ -86,41 +94,59 @@ const elements: JobsDOMElements = {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', (): void => {
+    console.log('[Jobs] DOMContentLoaded event fired, initializing jobs page...');
+    
+    // Initialize DOM elements
+    initializeDOMElements();
+    
     fetchStatus();
     startAutoRefresh();
 
     // Event Listeners
     if (elements.startBtn) {
         elements.startBtn.addEventListener('click', startScheduler);
+        console.log('[Jobs] Start scheduler button listener attached');
     }
     if (elements.refreshBtn) {
         elements.refreshBtn.addEventListener('click', fetchStatus);
+        console.log('[Jobs] Refresh button listener attached');
     }
     if (elements.autoRefreshCheckbox) {
         elements.autoRefreshCheckbox.addEventListener('change', (e: Event): void => {
             const target = e.target as HTMLInputElement;
             autoRefresh = target.checked;
+            console.log('[Jobs] Auto-refresh toggled:', autoRefresh);
             if (autoRefresh) {
                 startAutoRefresh();
             } else {
                 stopAutoRefresh();
             }
         });
+        console.log('[Jobs] Auto-refresh checkbox listener attached');
+    }
+    
+    // Expose refreshJobs globally for onclick handlers
+    if (typeof window !== 'undefined') {
+        (window as any).refreshJobs = fetchStatus;
+        console.log('[Jobs] refreshJobs function exposed globally for onclick handlers');
     }
 });
 
 function startAutoRefresh(): void {
+    console.log('[Jobs] Starting auto-refresh (5 second interval)');
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
     refreshInterval = setInterval(() => {
         if (autoRefresh) {
+            console.log('[Jobs] Auto-refresh triggered');
             fetchStatus();
         }
     }, 5000);
 }
 
 function stopAutoRefresh(): void {
+    console.log('[Jobs] Stopping auto-refresh');
     if (refreshInterval) {
         clearInterval(refreshInterval);
         refreshInterval = null;
@@ -129,23 +155,64 @@ function stopAutoRefresh(): void {
 
 // Fetch Status
 async function fetchStatus(): Promise<void> {
+    const startTime = performance.now();
+    console.log('[Jobs] fetchStatus() called, fetching scheduler status...');
+    
     try {
-        const response = await fetch('/api/jobs/status');
+        const url = '/api/jobs/status';
+        console.log('[Jobs] Making API request to:', url);
+        
+        const response = await fetch(url, { credentials: 'include' });
+        const duration = performance.now() - startTime;
+        
+        console.log('[Jobs] API response received:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+            duration: `${duration.toFixed(2)}ms`,
+            url: url
+        });
+        
         if (!response.ok) {
-            throw new Error('Failed to fetch status');
+            const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            console.error('[Jobs] API error response:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorData: errorData,
+                url: url,
+                duration: `${duration.toFixed(2)}ms`
+            });
+            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
         }
+        
         const data: JobsStatusResponse = await response.json();
+        console.log('[Jobs] Status data received:', {
+            scheduler_running: data.scheduler_running,
+            jobs_count: data.jobs ? data.jobs.length : 0,
+            has_error: !!data.error,
+            error: data.error,
+            duration: `${duration.toFixed(2)}ms`
+        });
 
         updateStatusUI(data.scheduler_running);
         renderJobs(data.jobs);
+        
+        console.log('[Jobs] fetchStatus() completed successfully');
     } catch (error) {
-        console.error('Error fetching status:', error);
+        const duration = performance.now() - startTime;
+        console.error('[Jobs] Error fetching status:', {
+            error: error,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            duration: `${duration.toFixed(2)}ms`
+        });
         showJobsError('Failed to fetch scheduler status');
     }
 }
 
 // Update Status UI
 function updateStatusUI(running: boolean): void {
+    console.log('[Jobs] updateStatusUI called:', { running, isSchedulerRunning });
     isSchedulerRunning = running;
     if (running) {
         if (elements.errorContainer) {
@@ -157,6 +224,7 @@ function updateStatusUI(running: boolean): void {
         if (elements.infoText) {
             elements.infoText.textContent = `Running normally • Last updated: ${new Date().toLocaleTimeString()}`;
         }
+        console.log('[Jobs] Status UI updated: scheduler is running');
     } else {
         if (elements.runningContainer) {
             elements.runningContainer.classList.add('hidden');
@@ -164,17 +232,22 @@ function updateStatusUI(running: boolean): void {
         if (elements.errorContainer) {
             elements.errorContainer.classList.remove('hidden');
         }
+        console.log('[Jobs] Status UI updated: scheduler is stopped');
     }
 }
 
 // Render Jobs
 function renderJobs(jobsData: Job[]): void {
+    console.log('[Jobs] renderJobs called:', { jobs_count: jobsData ? jobsData.length : 0 });
     jobs = jobsData || [];
+    
     if (elements.jobsLoading) {
         elements.jobsLoading.classList.add('hidden');
+        console.log('[Jobs] Hidden loading indicator');
     }
 
     if (jobs.length === 0) {
+        console.log('[Jobs] No jobs to render');
         if (elements.jobsList) {
             elements.jobsList.classList.add('hidden');
         }
@@ -189,11 +262,15 @@ function renderJobs(jobsData: Job[]): void {
     }
     if (elements.jobsList) {
         elements.jobsList.classList.remove('hidden');
-        elements.jobsList.innerHTML = jobs.map(job => createJobCard(job)).join('');
+        const jobCards = jobs.map(job => createJobCard(job));
+        elements.jobsList.innerHTML = jobCards.join('');
+        console.log('[Jobs] Rendered', jobs.length, 'job cards');
     }
 
     // Attach event listeners to new buttons
-    document.querySelectorAll('.job-action-btn').forEach(btn => {
+    const actionButtons = document.querySelectorAll('.job-action-btn');
+    console.log('[Jobs] Attaching event listeners to', actionButtons.length, 'action buttons');
+    actionButtons.forEach(btn => {
         btn.addEventListener('click', handleJobAction);
     });
 }
@@ -486,8 +563,10 @@ async function runJobWithParams(id: string, actualJobId: string): Promise<void> 
 }
 
 // Make functions available globally for inline onclick handlers
-// Assign to window for inline handlers
+// Assign to window for inline handlers - must be done immediately, not in DOMContentLoaded
 if (typeof window !== 'undefined') {
+    (window as any).refreshJobs = fetchStatus;
     (window as any).toggleParams = toggleParams;
     (window as any).runJobWithParams = runJobWithParams;
+    console.log('[Jobs] Global functions exposed: refreshJobs, toggleParams, runJobWithParams');
 }

@@ -1,0 +1,13 @@
+# This directory contains compiled JavaScript files
+# 
+# ⚠️ DO NOT EDIT FILES IN THIS DIRECTORY
+# 
+# All JavaScript files here are auto-generated from TypeScript source files in:
+#   web_dashboard/src/js/*.ts
+# 
+# To make changes:
+# 1. Edit the TypeScript source file in src/js/
+# 2. Run: npm run build:ts
+# 3. The compiled .js file will be regenerated here
+# 
+# These files are gitignored (see .gitignore) and will be rebuilt during Docker builds.

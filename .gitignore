@@ -319,5 +319,9 @@ Research/**/*.pdf
 node_modules/
 package-lock.json
 web_dashboard/static/css/tailwind.css
+
+# Compiled TypeScript output (auto-generated from src/js/*.ts)
+# ⚠️ DO NOT EDIT: These files are compiled from TypeScript source in src/js/
+# Edit TypeScript files in src/js/ and run: npm run build:ts
 web_dashboard/static/js/*.js
 web_dashboard/static/js/*.js.map

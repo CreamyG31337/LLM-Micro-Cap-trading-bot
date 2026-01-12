@@ -6,7 +6,8 @@
     "build:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --minify",
     "watch:css": "tailwindcss -i web_dashboard/static/css/input.css -o web_dashboard/static/css/tailwind.css --watch",
     "build:ts": "tsc -p web_dashboard/tsconfig.json --pretty --listFiles --diagnostics",
-    "build": "npm run build:css && npm run build:ts"
+    "build": "npm run build:css && npm run build:ts",
+    "_comment": "⚠️ IMPORTANT: Edit TypeScript files in web_dashboard/src/js/, not compiled JS in web_dashboard/static/js/"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.1",

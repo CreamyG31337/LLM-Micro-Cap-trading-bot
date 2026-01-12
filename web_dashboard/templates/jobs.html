@@ -27,7 +27,7 @@
                 </button>
             </div>
 
-            <button onclick="refreshJobs()"
+            <button id="refresh-jobs-btn"
                 class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -52,4 +52,25 @@
 
 {% block extra_scripts %}
 <script type="module" src="/assets/js/jobs.js"></script>
+<script>
+    // Verify global functions are available after module loads
+    window.addEventListener('load', () => {
+        console.log('[Jobs Template] Page loaded, checking global functions...');
+        if (typeof window.refreshJobs === 'function') {
+            console.log('[Jobs Template] ✓ refreshJobs function is available');
+        } else {
+            console.error('[Jobs Template] ✗ refreshJobs function NOT available');
+        }
+        if (typeof window.toggleParams === 'function') {
+            console.log('[Jobs Template] ✓ toggleParams function is available');
+        } else {
+            console.error('[Jobs Template] ✗ toggleParams function NOT available');
+        }
+        if (typeof window.runJobWithParams === 'function') {
+            console.log('[Jobs Template] ✓ runJobWithParams function is available');
+        } else {
+            console.error('[Jobs Template] ✗ runJobWithParams function NOT available');
+        }
+    });
+</script>
 {% endblock %}

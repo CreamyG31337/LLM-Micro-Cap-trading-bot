@@ -251,9 +251,19 @@ function initGrid(): void {
 
     const agGrid = (window as any).agGrid;
     
+    // Debug: Log what's available in agGrid
+    console.log('[Dashboard] AG Grid object check:', {
+        agGrid_available: !!agGrid,
+        agGrid_type: typeof agGrid,
+        has_createGrid: typeof agGrid.createGrid === 'function',
+        has_Grid: typeof agGrid.Grid !== 'undefined',
+        agGrid_keys: agGrid ? Object.keys(agGrid).slice(0, 20) : []
+    });
+    
     // AG Grid v31+ recommends createGrid() which returns the API directly
     // Check for createGrid first (v31+)
     if (typeof agGrid.createGrid === 'function') {
+        console.log('[Dashboard] createGrid() is available, attempting to use it...');
         try {
             const gridApi = agGrid.createGrid(gridEl, gridOptions);
             if (gridApi && typeof gridApi.setRowData === 'function') {
@@ -278,6 +288,7 @@ function initGrid(): void {
     
     // Fallback to deprecated new Grid() constructor (v30 and earlier)
     if (agGrid.Grid) {
+        console.log('[Dashboard] createGrid() not available or failed, falling back to new Grid()...');
         try {
             const gridInstance = new agGrid.Grid(gridEl, gridOptions);
             // In v30, the API is on gridInstance.api

@@ -76,21 +76,47 @@ let jobs: Job[] = [];
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 let autoRefresh = true;
 
-// DOM Elements
+// DOM Elements - Note: These may be null if called before DOM is ready
 const elements: JobsDOMElements = {
-    statusContainer: document.getElementById('scheduler-status-container'),
-    errorContainer: document.getElementById('scheduler-error'),
-    runningContainer: document.getElementById('scheduler-running'),
-    infoText: document.getElementById('scheduler-info'),
-    startBtn: document.getElementById('start-scheduler-btn'),
-    refreshBtn: document.getElementById('refresh-status-btn'),
-    jobsList: document.getElementById('jobs-list'),
-    jobsLoading: document.getElementById('loading'),
-    noJobs: document.getElementById('no-jobs'),
-    errorMsg: document.getElementById('error-message'),
-    errorText: document.getElementById('error-text'),
-    autoRefreshCheckbox: document.getElementById('auto-refresh') as HTMLInputElement | null
+    statusContainer: null, // Will be set in DOMContentLoaded
+    errorContainer: null,
+    runningContainer: null,
+    infoText: null,
+    startBtn: null,
+    refreshBtn: null,
+    jobsList: null,
+    jobsLoading: null,
+    noJobs: null,
+    errorMsg: null,
+    errorText: null,
+    autoRefreshCheckbox: null
 };
+
+// Initialize DOM elements when DOM is ready
+function initializeDOMElements(): void {
+    elements.statusContainer = document.getElementById('scheduler-status-container');
+    elements.errorContainer = document.getElementById('scheduler-error');
+    elements.runningContainer = document.getElementById('scheduler-running');
+    elements.infoText = document.getElementById('scheduler-info');
+    elements.startBtn = document.getElementById('start-scheduler-btn');
+    elements.refreshBtn = document.getElementById('refresh-status-btn');
+    elements.jobsList = document.getElementById('jobs-list');
+    elements.jobsLoading = document.getElementById('loading');
+    elements.noJobs = document.getElementById('no-jobs');
+    elements.errorMsg = document.getElementById('error-message');
+    elements.errorText = document.getElementById('error-text');
+    elements.autoRefreshCheckbox = document.getElementById('auto-refresh') as HTMLInputElement | null;
+    
+    console.log('[Jobs] DOM elements initialized:', {
+        statusContainer: !!elements.statusContainer,
+        errorContainer: !!elements.errorContainer,
+        runningContainer: !!elements.runningContainer,
+        startBtn: !!elements.startBtn,
+        refreshBtn: !!elements.refreshBtn,
+        jobsList: !!elements.jobsList,
+        autoRefreshCheckbox: !!elements.autoRefreshCheckbox
+    });
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', (): void => {

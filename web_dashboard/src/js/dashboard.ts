@@ -11,6 +11,50 @@
  * See web_dashboard/src/js/README.md for development guidelines.
  */
 
+// Global type declarations
+declare global {
+    interface Window {
+        INITIAL_FUND?: string;
+        agGrid?: any;
+        marked?: {
+            parse: (text: string) => string;
+        };
+    }
+    
+    // ApexCharts is loaded from CDN
+    const ApexCharts: {
+        new (element: HTMLElement, options: ApexChartsOptions): ApexChartsInstance;
+    };
+    
+    interface ApexChartsOptions {
+        series?: any[];
+        chart?: {
+            type?: string;
+            height?: number;
+            toolbar?: { show?: boolean };
+            zoom?: { enabled?: boolean };
+        };
+        colors?: string[];
+        stroke?: { curve?: string; width?: number };
+        xaxis?: { type?: string };
+        yaxis?: {
+            labels?: {
+                formatter?: (val: number) => string;
+            };
+        };
+        tooltip?: {
+            x?: { format?: string };
+            y?: { formatter?: (val: number) => string };
+        };
+        labels?: string[];
+    }
+    
+    interface ApexChartsInstance {
+        render(): void;
+        destroy(): void;
+    }
+}
+
 console.log('[Dashboard] dashboard.ts file loaded and executing...');
 
 // Type definitions
@@ -81,9 +125,9 @@ interface Fund {
 
 // Global state
 const state = {
-    currentFund: typeof INITIAL_FUND !== 'undefined' && INITIAL_FUND ? INITIAL_FUND : '',
+    currentFund: typeof window !== 'undefined' && window.INITIAL_FUND ? window.INITIAL_FUND : '',
     timeRange: 'ALL' as '1M' | '3M' | '6M' | '1Y' | 'ALL',
-    charts: {} as Record<string, ApexCharts>,
+    charts: {} as Record<string, ApexChartsInstance>,
     gridApi: null as any // AG Grid API
 };
 
@@ -674,7 +718,9 @@ function updateChangeMetric(valId: string, pctId: string, change: number, pct: n
             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'}`;
 
-        valEl.className = `text-2xl font-bold ${change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`;
+        if (valEl) {
+            valEl.className = `text-2xl font-bold ${change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`;
+        }
     }
 }
 
@@ -694,7 +740,7 @@ function renderPerformanceChart(data: PerformanceChartData): void {
         return;
     }
 
-    const options: ApexCharts.ApexOptions = {
+    const options: ApexChartsOptions = {
         series: data.series,
         chart: {
             type: 'line',
@@ -739,7 +785,7 @@ function renderSectorChart(data: AllocationChartData): void {
         return;
     }
 
-    const options: ApexCharts.ApexOptions = {
+    const options: ApexChartsOptions = {
         series: data.sector.map(s => s.value),
         chart: {
             type: 'pie',

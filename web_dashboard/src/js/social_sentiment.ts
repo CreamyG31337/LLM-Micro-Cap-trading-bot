@@ -307,8 +307,7 @@ function initializeSentimentGrid(data: SentimentRow[]): void {
             headerName: 'AI Status',
             width: 120,
             sortable: true,
-            filter: true,
-            hide: true
+            filter: true
         },
         {
             field: '🤖 AI Sentiment',
@@ -316,16 +315,14 @@ function initializeSentimentGrid(data: SentimentRow[]): void {
             width: 120,
             sortable: true,
             filter: true,
-            cellRenderer: SentimentCellRenderer,
-            hide: true
+            cellRenderer: SentimentCellRenderer
         },
         {
             field: '🤖 AI Confidence',
             headerName: 'AI Confidence',
             width: 120,
             sortable: true,
-            filter: true,
-            hide: true
+            filter: true
         },
         {
             field: '💬 Stocktwits Sentiment',

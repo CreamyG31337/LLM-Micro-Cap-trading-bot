@@ -579,6 +579,7 @@ def api_latest_sentiment():
             return jsonify({'success': False, 'error': 'Postgres client unavailable'}), 500
         
         latest_sentiment = get_cached_latest_sentiment(postgres_client, refresh_key, cache_version)
+        ai_analyses = get_cached_ai_analyses(postgres_client, refresh_key)
         
         # Get watchlist for filtering
         watchlist_tickers = []
@@ -727,6 +728,17 @@ def api_latest_sentiment():
                 row['👽 Reddit Score'] = 'N/A'
             
             row['Last Updated'] = format_datetime(latest_timestamp)
+            
+            # Add AI analysis indicators
+            ai_analysis = next((a for a in ai_analyses if a.get('ticker') == ticker), None)
+            if ai_analysis:
+                row['🤖 AI Status'] = '✅ Analyzed'
+                row['🤖 AI Sentiment'] = ai_analysis.get('sentiment_label', 'N/A')
+                row['🤖 AI Confidence'] = f"{ai_analysis.get('confidence_score', 0):.1%}"
+            else:
+                row['🤖 AI Status'] = '⏳ Pending'
+                row['🤖 AI Sentiment'] = 'N/A'
+                row['🤖 AI Confidence'] = 'N/A'
             
             df_data.append(row)
         

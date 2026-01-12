@@ -173,7 +173,10 @@ def get_performance_chart():
     Error Responses:
         500: Server error during data fetch
     """
-    fund = request.args.get('fund')
+    fund = request.args.get('fund') or None
+    # Convert empty string to None
+    if fund == '':
+        fund = None
     time_range = request.args.get('range', 'ALL') # '1M', '3M', '6M', '1Y', 'ALL'
     display_currency = get_user_currency() or 'CAD'
     
@@ -181,6 +184,14 @@ def get_performance_chart():
     start_time = time.time()
     
     try:
+        # If no fund selected, return empty data (can't calculate performance without a fund)
+        if not fund:
+            logger.warning(f"[Dashboard API] No fund specified for performance chart - returning empty data")
+            return jsonify({
+                "series": [{"name": "Portfolio Value", "data": []}],
+                "color": "#10B981"
+            })
+        
         days_map = {
             '1M': 30,
             '3M': 90,
@@ -189,14 +200,17 @@ def get_performance_chart():
             'ALL': None
         }
         days = days_map.get(time_range)
-        logger.debug(f"[Dashboard API] Calculating portfolio value over time - days={days}")
+        logger.debug(f"[Dashboard API] Calculating portfolio value over time - days={days}, fund={fund}")
         
         df = calculate_portfolio_value_over_time(fund, days=days, display_currency=display_currency)
         logger.debug(f"[Dashboard API] Portfolio value data fetched: {len(df)} rows")
         
         if df.empty:
             logger.warning(f"[Dashboard API] No portfolio value data found for fund={fund}, range={time_range}")
-            return jsonify({"data": []})
+            return jsonify({
+                "series": [{"name": "Portfolio Value", "data": []}],
+                "color": "#10B981"
+            })
             
         # Format for ApexCharts: [[timestamp_ms, value], ...]
         # df should have 'date' and 'total_value' (or similar)
@@ -212,8 +226,9 @@ def get_performance_chart():
             else:
                 # Already timezone-aware
                 ts = int(date_val.timestamp() * 1000)
-            val = row['total_value']
-            data.append([ts, val])
+            # calculate_portfolio_value_over_time returns 'value' column (from daily_totals aggregation)
+            val = row.get('value', 0)
+            data.append([ts, float(val)])
             
         # Determine color based on trend (green if last > first)
         color = "#10B981" # Green

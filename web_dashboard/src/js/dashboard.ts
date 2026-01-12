@@ -243,8 +243,15 @@ function initGrid(): void {
         animateRows: true
     };
 
-    state.gridApi = (window as any).agGrid.createGrid(gridEl, gridOptions);
-    console.log('[Dashboard] AG Grid initialized');
+    // agGrid is loaded from CDN and available globally
+    if (typeof (window as any).agGrid !== 'undefined') {
+        const gridInstance = (window as any).agGrid.createGrid(gridEl, gridOptions);
+        // createGrid returns the grid instance, which has an 'api' property
+        state.gridApi = gridInstance.api || gridInstance;
+        console.log('[Dashboard] AG Grid initialized');
+    } else {
+        console.error('[Dashboard] AG Grid not loaded');
+    }
 }
 
 async function refreshDashboard(): Promise<void> {
@@ -430,12 +437,15 @@ async function fetchPerformanceChart(): Promise<void> {
         
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
             console.error('[Dashboard] Performance chart API error:', {
                 status: response.status,
-                errorData: errorData,
+                statusText: response.statusText,
+                error: errorMsg,
+                errorData: JSON.stringify(errorData),
                 url: url
             });
-            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(errorMsg);
         }
         
         const data: PerformanceChartData = await response.json();
@@ -449,15 +459,18 @@ async function fetchPerformanceChart(): Promise<void> {
 
     } catch (error) {
         const duration = performance.now() - startTime;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
         console.error('[Dashboard] Error fetching performance chart:', {
-            error: error,
-            message: error instanceof Error ? error.message : String(error),
+            error: errorMsg,
+            stack: errorStack,
             url: url,
-            duration: `${duration.toFixed(2)}ms`
+            duration: `${duration.toFixed(2)}ms`,
+            errorObject: JSON.stringify(error, Object.getOwnPropertyNames(error))
         });
         const chartEl = document.getElementById('performance-chart');
         if (chartEl) {
-            chartEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error loading chart: ${error instanceof Error ? error.message : 'Unknown error'}</p></div>`;
+            chartEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error loading chart: ${errorMsg}</p></div>`;
         }
     }
 }
@@ -530,12 +543,15 @@ async function fetchHoldings(): Promise<void> {
         
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
             console.error('[Dashboard] Holdings API error:', {
                 status: response.status,
-                errorData: errorData,
+                statusText: response.statusText,
+                error: errorMsg,
+                errorData: JSON.stringify(errorData),
                 url: url
             });
-            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(errorMsg);
         }
         
         const data: HoldingsData = await response.json();
@@ -546,23 +562,32 @@ async function fetchHoldings(): Promise<void> {
         });
 
         if (state.gridApi) {
-            state.gridApi.setRowData(data.data || []);
-            console.log('[Dashboard] Holdings grid updated with', rowCount, 'rows');
+            // AG Grid API has setRowData method
+            if (typeof state.gridApi.setRowData === 'function') {
+                state.gridApi.setRowData(data.data || []);
+                console.log('[Dashboard] Holdings grid updated with', rowCount, 'rows');
+            } else {
+                // If setRowData doesn't exist, try updating via gridOptions
+                console.warn('[Dashboard] Grid API setRowData not available, grid may need reinitialization');
+            }
         } else {
             console.warn('[Dashboard] Grid API not initialized, cannot update holdings');
         }
 
     } catch (error) {
         const duration = performance.now() - startTime;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
         console.error('[Dashboard] Error fetching holdings:', {
-            error: error,
-            message: error instanceof Error ? error.message : String(error),
+            error: errorMsg,
+            stack: errorStack,
             url: url,
-            duration: `${duration.toFixed(2)}ms`
+            duration: `${duration.toFixed(2)}ms`,
+            errorObject: JSON.stringify(error, Object.getOwnPropertyNames(error))
         });
         const gridEl = document.getElementById('holdings-grid');
         if (gridEl) {
-            gridEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error loading holdings: ${error instanceof Error ? error.message : 'Unknown error'}</p></div>`;
+            gridEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error loading holdings: ${errorMsg}</p></div>`;
         }
     }
 }

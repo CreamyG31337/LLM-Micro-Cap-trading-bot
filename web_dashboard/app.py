@@ -325,10 +325,19 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
             except Exception:
                 pass
         
+        # Get currently selected fund
+        selected_fund = None
+        try:
+            from user_preferences import get_user_selected_fund
+            selected_fund = get_user_selected_fund()
+        except Exception:
+            pass
+            
         return {
             'navigation_links': nav_links,
             'is_admin': is_admin_value,
-            'available_funds': available_funds
+            'available_funds': available_funds,
+            'selected_fund': selected_fund
         }
     except Exception as e:
         logger.warning(f"Error building navigation context: {e}")

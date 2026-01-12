@@ -12,7 +12,7 @@
  */
 
 // Make this a module
-export {};
+export { };
 
 // Global types are declared in globals.d.ts
 
@@ -95,7 +95,7 @@ const state = {
 // Initialize
 document.addEventListener('DOMContentLoaded', (): void => {
     console.log('[Dashboard] DOMContentLoaded event fired, initializing dashboard...');
-    
+
     // Init components
     initTimeDisplay();
     initFundSelector();
@@ -119,78 +119,43 @@ function initTimeDisplay(): void {
 }
 
 async function initFundSelector(): Promise<void> {
-    const selector = document.getElementById('dashboard-fund-select') as HTMLSelectElement | null;
-    console.log('[Dashboard] Initializing fund selector...');
-    
+    const selector = document.getElementById('global-fund-select') as HTMLSelectElement | null;
+    console.log('[Dashboard] Initializing navigation fund selector...', {
+        found: !!selector,
+        current_state_fund: state.currentFund
+    });
+
     if (!selector) {
-        console.error('[Dashboard] Fund selector element not found!');
-            return;
-        }
-    
-    try {
-        const response = await fetch('/api/funds', { credentials: 'include' });
-        console.log('[Dashboard] Funds API response:', {
-            status: response.status,
-            ok: response.ok
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data: Fund[] | { funds: Fund[] } = await response.json();
-        console.log('[Dashboard] Funds data received:', {
-            fund_count: Array.isArray(data) ? data.length : (data.funds ? data.funds.length : 0),
-            funds: Array.isArray(data) ? data.map(f => f.name) : (data.funds || []).map((f: Fund) => f.name)
-        });
-        
-        // Clear except "All" (or keep All if desired)
-        selector.innerHTML = '';
-
-        // Keep "All Funds" option if it was default
-        const allOpt = document.createElement('option');
-        allOpt.value = ''; // Empty string = None for backend
-        allOpt.textContent = 'All Funds';
-        selector.appendChild(allOpt);
-
-        // Handle both array and object response formats
-        const funds = Array.isArray(data) ? data : (data.funds || []);
-        funds.forEach(fund => {
-            const opt = document.createElement('option');
-            opt.value = fund.name;
-            opt.textContent = fund.name;
-            selector.appendChild(opt);
-        });
-
-        // Set initial selected
-        if (state.currentFund && state.currentFund !== 'All') {
-            selector.value = state.currentFund;
-        } else {
-            selector.value = '';
-        }
-
-        // Listen for changes
-        selector.addEventListener('change', (e: Event): void => {
-            const target = e.target as HTMLSelectElement;
-            state.currentFund = target.value;
-            console.log('[Dashboard] Fund changed to:', state.currentFund);
-            refreshDashboard();
-        });
-
-    } catch (error) {
-        console.error('[Dashboard] Error loading funds:', {
-            error: error,
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined
-        });
+        console.warn('[Dashboard] Global fund selector not found in sidebar!');
+        return;
     }
+
+    // Set initial state from selector if not already set
+    if (!state.currentFund) {
+        state.currentFund = selector.value;
+        console.log('[Dashboard] Initial state set from selector value:', state.currentFund);
+    } else {
+        // Sync selector with state (e.g. if set from INITIAL_FUND)
+        if (selector.value !== state.currentFund) {
+            console.log('[Dashboard] Syncing selector value to state:', state.currentFund);
+            selector.value = state.currentFund;
+        }
+    }
+
+    // Listen for changes
+    selector.addEventListener('change', (e: Event): void => {
+        const target = e.target as HTMLSelectElement;
+        state.currentFund = target.value;
+        console.log('[Dashboard] Global fund changed to:', state.currentFund);
+        refreshDashboard();
+    });
 }
 
 function initTimeRangeControls(): void {
     document.querySelectorAll('.range-btn').forEach(btn => {
         btn.addEventListener('click', (e: Event): void => {
             const target = e.target as HTMLElement;
-            
+
             // Update UI
             document.querySelectorAll('.range-btn').forEach(b => {
                 b.classList.remove('active', 'ring-2', 'ring-blue-700', 'text-blue-700', 'z-10');
@@ -250,7 +215,7 @@ function initGrid(): void {
     }
 
     const agGrid = (window as any).agGrid;
-    
+
     // Debug: Log what's available in agGrid
     console.log('[Dashboard] AG Grid object check:', {
         agGrid_available: !!agGrid,
@@ -259,7 +224,7 @@ function initGrid(): void {
         has_Grid: typeof agGrid.Grid !== 'undefined',
         agGrid_keys: agGrid ? Object.keys(agGrid).slice(0, 20) : []
     });
-    
+
     // AG Grid v31+ recommends createGrid() which returns the API directly
     // Check for createGrid first (v31+)
     if (typeof agGrid.createGrid === 'function') {
@@ -285,7 +250,7 @@ function initGrid(): void {
             console.error('[Dashboard] Error creating grid with createGrid():', createError);
         }
     }
-    
+
     // Fallback to deprecated new Grid() constructor (v30 and earlier)
     // This is the pattern used in congress_trades.ts which works
     if (agGrid.Grid) {
@@ -298,7 +263,7 @@ function initGrid(): void {
                 api_type: typeof gridInstance.api,
                 api_keys: gridInstance.api ? Object.keys(gridInstance.api).slice(0, 10) : []
             });
-            
+
             // In v30, the API is on gridInstance.api
             // In v31, createGrid returns the API directly
             if (gridInstance && gridInstance.api) {
@@ -345,7 +310,7 @@ async function refreshDashboard(): Promise<void> {
         timeRange: state.timeRange,
         timestamp: new Date().toISOString()
     });
-    
+
     // Hide any previous errors
     const errorContainer = document.getElementById('dashboard-error-container');
     if (errorContainer) {
@@ -387,11 +352,11 @@ async function refreshDashboard(): Promise<void> {
 function showDashboardError(error: unknown): void {
     const errorContainer = document.getElementById('dashboard-error-container');
     const errorMessage = document.getElementById('dashboard-error-message');
-    
+
     if (errorContainer && errorMessage) {
         const errorText = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error && error.stack ? `<pre class="mt-2 text-xs overflow-auto">${error.stack}</pre>` : '';
-        
+
         errorMessage.innerHTML = `<p>${errorText}</p>${errorStack}`;
         errorContainer.classList.remove('hidden');
     }
@@ -402,13 +367,13 @@ function showDashboardError(error: unknown): void {
 async function fetchSummary(): Promise<void> {
     const url = `/api/dashboard/summary?fund=${encodeURIComponent(state.currentFund)}`;
     const startTime = performance.now();
-    
+
     console.log('[Dashboard] Fetching summary...', { url, fund: state.currentFund });
-    
+
     try {
         const response = await fetch(url, { credentials: 'include' });
         const duration = performance.now() - startTime;
-        
+
         console.log('[Dashboard] Summary response received', {
             status: response.status,
             statusText: response.statusText,
@@ -416,7 +381,7 @@ async function fetchSummary(): Promise<void> {
             duration: `${duration.toFixed(2)}ms`,
             url: url
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
             console.error('[Dashboard] Summary API error:', {
@@ -426,7 +391,7 @@ async function fetchSummary(): Promise<void> {
             });
             throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const data: DashboardSummary = await response.json();
         console.log('[Dashboard] Summary data received', {
             total_value: data.total_value,
@@ -468,7 +433,7 @@ async function fetchSummary(): Promise<void> {
                     contentEl.textContent = data.thesis.overview || '';
                 }
             }
-            } else {
+        } else {
             if (thesisContainer) {
                 thesisContainer.classList.add('hidden');
             }
@@ -485,19 +450,19 @@ async function fetchSummary(): Promise<void> {
             duration: `${duration.toFixed(2)}ms`,
             timestamp: new Date().toISOString()
         });
-        
+
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         // Show error in metrics
         const totalValueEl = document.getElementById('metric-total-value');
         const dayChangeEl = document.getElementById('metric-day-change');
         const totalPnlEl = document.getElementById('metric-total-pnl');
         const cashEl = document.getElementById('metric-cash');
-        
+
         if (totalValueEl) totalValueEl.textContent = 'Error';
         if (dayChangeEl) dayChangeEl.textContent = 'Error';
         if (totalPnlEl) totalPnlEl.textContent = 'Error';
         if (cashEl) cashEl.textContent = 'Error';
-        
+
         // Show error in UI
         showDashboardError(new Error(`Failed to load summary: ${errorMsg}`));
         throw error; // Re-throw so refreshDashboard can catch it
@@ -507,19 +472,19 @@ async function fetchSummary(): Promise<void> {
 async function fetchPerformanceChart(): Promise<void> {
     const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}`;
     const startTime = performance.now();
-    
+
     console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange });
-    
+
     try {
         const response = await fetch(url, { credentials: 'include' });
         const duration = performance.now() - startTime;
-        
+
         console.log('[Dashboard] Performance chart response received', {
             status: response.status,
             ok: response.ok,
             duration: `${duration.toFixed(2)}ms`
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
             const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
@@ -532,7 +497,7 @@ async function fetchPerformanceChart(): Promise<void> {
             });
             throw new Error(errorMsg);
         }
-        
+
         const data: PerformanceChartData = await response.json();
         console.log('[Dashboard] Performance chart data received', {
             series_count: data.series ? data.series.length : 0,
@@ -563,19 +528,19 @@ async function fetchPerformanceChart(): Promise<void> {
 async function fetchSectorChart(): Promise<void> {
     const url = `/api/dashboard/charts/allocation?fund=${encodeURIComponent(state.currentFund)}`;
     const startTime = performance.now();
-    
+
     console.log('[Dashboard] Fetching sector chart...', { url, fund: state.currentFund });
-    
+
     try {
         const response = await fetch(url, { credentials: 'include' });
         const duration = performance.now() - startTime;
-        
+
         console.log('[Dashboard] Sector chart response received', {
             status: response.status,
             ok: response.ok,
             duration: `${duration.toFixed(2)}ms`
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
             console.error('[Dashboard] Sector chart API error:', {
@@ -585,7 +550,7 @@ async function fetchSectorChart(): Promise<void> {
             });
             throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const data: AllocationChartData = await response.json();
         console.log('[Dashboard] Sector chart data received', {
             has_sector: !!data.sector,
@@ -613,19 +578,19 @@ async function fetchSectorChart(): Promise<void> {
 async function fetchHoldings(): Promise<void> {
     const url = `/api/dashboard/holdings?fund=${encodeURIComponent(state.currentFund)}`;
     const startTime = performance.now();
-    
+
     console.log('[Dashboard] Fetching holdings...', { url, fund: state.currentFund });
-    
+
     try {
         const response = await fetch(url, { credentials: 'include' });
         const duration = performance.now() - startTime;
-        
+
         console.log('[Dashboard] Holdings response received', {
             status: response.status,
             ok: response.ok,
             duration: `${duration.toFixed(2)}ms`
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
             const errorMsg = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
@@ -638,7 +603,7 @@ async function fetchHoldings(): Promise<void> {
             });
             throw new Error(errorMsg);
         }
-        
+
         const data: HoldingsData = await response.json();
         const rowCount = data.data ? data.data.length : 0;
         console.log('[Dashboard] Holdings data received', {
@@ -689,19 +654,19 @@ async function fetchHoldings(): Promise<void> {
 async function fetchActivity(): Promise<void> {
     const url = `/api/dashboard/activity?fund=${encodeURIComponent(state.currentFund)}&limit=10`;
     const startTime = performance.now();
-    
+
     console.log('[Dashboard] Fetching activity...', { url, fund: state.currentFund });
-    
+
     try {
         const response = await fetch(url, { credentials: 'include' });
         const duration = performance.now() - startTime;
-        
+
         console.log('[Dashboard] Activity response received', {
             status: response.status,
             ok: response.ok,
             duration: `${duration.toFixed(2)}ms`
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
             console.error('[Dashboard] Activity API error:', {
@@ -711,7 +676,7 @@ async function fetchActivity(): Promise<void> {
             });
             throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const data: ActivityData = await response.json();
         const activityCount = data.data ? data.data.length : 0;
         console.log('[Dashboard] Activity data received', {

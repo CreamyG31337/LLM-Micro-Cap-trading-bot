@@ -15,15 +15,6 @@
 
         <!-- Controls -->
         <div class="flex gap-4 items-center">
-            <!-- Fund Selector -->
-            <div class="w-64">
-                <select id="dashboard-fund-select"
-                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white">
-                    <option value="All">All Funds</option>
-                    <!-- JS populated -->
-                </select>
-            </div>
-
             <!-- Time Range -->
             <div class="inline-flex rounded-md shadow-sm" role="group">
                 <button type="button" data-range="1M"
@@ -43,7 +34,8 @@
     </div>
 
     <!-- Error Display (Hidden by default) -->
-    <div id="dashboard-error-container" class="hidden mb-6 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800">
+    <div id="dashboard-error-container"
+        class="hidden mb-6 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800">
         <div class="flex items-start">
             <div class="flex-shrink-0">
                 <i class="fas fa-exclamation-triangle text-red-400 text-xl"></i>
@@ -57,7 +49,7 @@
                     Try Again
                 </button>
             </div>
-            <button onclick="document.getElementById('dashboard-error-container').classList.add('hidden')" 
+            <button onclick="document.getElementById('dashboard-error-container').classList.add('hidden')"
                 class="ml-auto text-red-400 hover:text-red-600">
                 <i class="fas fa-times"></i>
             </button>

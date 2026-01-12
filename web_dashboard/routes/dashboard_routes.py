@@ -184,13 +184,11 @@ def get_performance_chart():
     start_time = time.time()
     
     try:
-        # If no fund selected, return empty data (can't calculate performance without a fund)
-        if not fund:
-            logger.warning(f"[Dashboard API] No fund specified for performance chart - returning empty data")
-            return jsonify({
-                "series": [{"name": "Portfolio Value", "data": []}],
-                "color": "#10B981"
-            })
+        # Translate 'All' or empty to None for the backend
+        if not fund or fund.lower() == 'all':
+            fund = None
+            
+        from streamlit_utils import calculate_portfolio_value_over_time
         
         days_map = {
             '1M': 30,

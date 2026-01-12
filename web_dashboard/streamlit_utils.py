@@ -899,9 +899,12 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
     from decimal import Decimal
     from datetime import datetime, timedelta, timezone
     
-    # Fund is required - fail fast if not provided
-    if not fund:
-        raise ValueError("Fund name is required - cannot load all funds' data")
+    # Fund is optional - if not provided or 'all', load aggregate data
+    if not fund or (isinstance(fund, str) and fund.lower() == 'all'):
+        logger.info("📊 calculate_portfolio_value_over_time - Calculating for ALL funds")
+        fund = None
+    else:
+        logger.info(f"📊 calculate_portfolio_value_over_time - Calculating for fund: {fund}")
     
     import logging
     logger = logging.getLogger(__name__)

@@ -55,33 +55,10 @@ RUN echo "=== TypeScript Compilation Starting ===" && \
     (echo "ERROR: TypeScript build failed - output files not found" && exit 1)
 
 # Stage 2: Python app
-FROM python:3.11-slim
+# Use shared base image with common Python dependencies
+FROM trading-dashboard-base:latest
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies and uv (faster Python package installer)
-# Combined into single layer for better caching
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && test -f /root/.local/bin/uv || (echo "uv installation failed" && exit 1) \
-    && rm -rf /var/lib/apt/lists/*
-
-# Add uv to PATH
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Copy requirements FIRST (for better layer caching - this layer only rebuilds if requirements change)
-COPY web_dashboard/requirements.txt ./requirements.txt
-
-# Install Python dependencies with uv (cached layer - only rebuilds if requirements.txt changes)
-# Use BuildKit cache mount to persist uv cache between builds
-RUN --mount=type=cache,target=/root/.cache/uv \
-    /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
-
-# Set environment variables before copying code (for better caching)
-ENV PYTHONPATH=/app:/app/web_dashboard
+# Set Flask-specific environment variable
 ENV FLASK_PORT=5001
 
 # Copy entire project (needed for imports)

@@ -40,28 +40,8 @@ RUN mkdir -p web_dashboard/static/css web_dashboard/static/js && \
     (echo "ERROR: Tailwind CSS build failed - output file not found" && exit 1)
 
 # Stage 2: Python app
-FROM python:3.11-slim
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies and uv (faster Python package installer)
-# Note: uv install script installs to ~/.local/bin/uv
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && test -f /root/.local/bin/uv || (echo "uv installation failed" && exit 1) \
-    && rm -rf /var/lib/apt/lists/*
-
-# Add uv to PATH
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Copy requirements and install Python dependencies with uv (faster than pip)
-# Use BuildKit cache mount to persist uv cache between builds
-COPY web_dashboard/requirements.txt ./requirements.txt
-RUN --mount=type=cache,target=/root/.cache/uv \
-    /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
+# Use shared base image with common Python dependencies
+FROM trading-dashboard-base:latest
 
 # Copy entire project (cleaner than selective copying)
 COPY . /app
@@ -73,10 +53,7 @@ COPY --from=tailwind-builder /app/web_dashboard/static/css/tailwind.css ./web_da
 COPY --from=tailwind-builder /app/web_dashboard/static/js ./web_dashboard/static/js
 RUN test -f web_dashboard/static/css/tailwind.css || (echo "ERROR: Tailwind CSS file not found after copy from builder stage" && exit 1)
 
-# Set PYTHONPATH to include project root FIRST, then web_dashboard
-# IMPORTANT: Order matters! /app must come before /app/web_dashboard 
-# to prevent web_dashboard/utils/ from shadowing root utils/ directory
-ENV PYTHONPATH=/app:/app/web_dashboard
+# PYTHONPATH is already set in base image
 
 # Expose Streamlit port
 EXPOSE 8501

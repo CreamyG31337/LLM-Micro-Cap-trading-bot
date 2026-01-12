@@ -80,6 +80,18 @@ steps:
       - mkdir -p /home/lance/trading-dashboard-logs /shared/cookies /deploy_target/frontend
       - chmod 777 /home/lance/trading-dashboard-logs /shared/cookies
       
+      # Build shared base image first (required by Streamlit and Flask images)
+      # Using BuildKit for better caching
+      - |
+        export DOCKER_BUILDKIT=1
+        export COMPOSE_DOCKER_CLI_BUILD=1
+        echo "Building shared base image with common Python dependencies..."
+        docker build --progress=plain -f web_dashboard/Dockerfile.base -t trading-dashboard-base:latest . || {
+          echo "❌ ERROR: Base image build failed"
+          exit 1
+        }
+        echo "✅ Base image built successfully"
+      
       # Build all Docker images in parallel for faster deployment
       # Note: Tailwind CSS is now built inside Dockerfiles using multi-stage builds
       # This leverages Docker layer caching and eliminates the need to install Node.js in CI

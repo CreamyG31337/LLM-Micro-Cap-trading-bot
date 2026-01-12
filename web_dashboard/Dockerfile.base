@@ -1,0 +1,29 @@
+# Shared Base Image for Trading Dashboard
+# Contains common Python dependencies used by both Streamlit and Flask containers
+# This reduces build time by sharing cached layers between images
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies and uv (faster Python package installer)
+# Combined into single layer for better caching
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && test -f /root/.local/bin/uv || (echo "uv installation failed" && exit 1) \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add uv to PATH
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copy requirements and install Python dependencies with uv
+# Use BuildKit cache mount to persist uv cache between builds
+COPY web_dashboard/requirements.txt ./requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
+
+# Set PYTHONPATH (used by both containers)
+ENV PYTHONPATH=/app:/app/web_dashboard

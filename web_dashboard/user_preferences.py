@@ -507,12 +507,17 @@ def set_user_preference(key: str, value: Any) -> bool:
             cache[f"_pref_error_{key}"] = error_details
             return False
         
-        # Update session cache strategy: INVALIDATE instead of WRITE-THROUGH
-        # This is more robust as it forces a fresh DB read on next access,
-        # preventing stale cache state if the session cookie update fails.
+        # Update session cache strategy: WRITE-THROUGH
+        # This ensures that even if the session cookie update has issues,
+        # the current request context sees the new value immediately.
         cache = _get_cache()
         cache_key = f"_pref_{key}"
-        if cache_key in cache:
+        
+        # Don't cache v2_enabled to ensure fresh reads
+        if key != 'v2_enabled':
+            cache[cache_key] = value
+        elif cache_key in cache:
+            # For v2_enabled, just remove from cache
             del cache[cache_key]
         
         logger.info(f"Successfully set preference '{key}' = {value}")

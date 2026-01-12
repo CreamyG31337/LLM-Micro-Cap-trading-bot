@@ -265,6 +265,8 @@ document.addEventListener('DOMContentLoaded', function (): void {
                     if (data.success) {
                         showSuccess('theme-success');
                         selectElement.dataset.original = theme;
+                        // Update localStorage so theme.ts reads correct value on reload
+                        localStorage.setItem('theme', theme);
                         // Theme changes usually require a reload to apply globally
                         setTimeout(() => window.location.reload(), 500);
                     } else {

@@ -981,8 +981,14 @@ def create_currency_exposure_chart(positions_df: pd.DataFrame, fund_name: Option
     return fig
 
 
-def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None) -> go.Figure:
-    """Create a pie chart showing sector allocation of portfolio holdings"""
+def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Optional[str] = None, display_currency: Optional[str] = None) -> go.Figure:
+    """Create a pie chart showing sector allocation of portfolio holdings
+    
+    Args:
+        positions_df: DataFrame with columns: ticker, market_value, currency, sector (optional)
+        fund_name: Optional fund name for title
+        display_currency: Currency to convert all values to (e.g., 'CAD', 'USD')
+    """
     if positions_df.empty or 'ticker' not in positions_df.columns or 'market_value' not in positions_df.columns:
         fig = go.Figure()
         fig.add_annotation(
@@ -992,21 +998,64 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
         )
         return fig
     
+    # Get display currency if not provided
+    if display_currency is None:
+        try:
+            from streamlit_utils import get_user_display_currency
+            display_currency = get_user_display_currency()
+        except ImportError:
+            display_currency = 'CAD'
+    
+    # Fetch exchange rates if we have currency column
+    rate_map = {}
+    if 'currency' in positions_df.columns:
+        try:
+            from streamlit_utils import fetch_latest_rates_bulk
+            all_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
+            rate_map = fetch_latest_rates_bulk(list(all_currencies), display_currency)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Could not fetch exchange rates for sector allocation: {e}")
+    
+    def get_rate(curr):
+        if not curr or pd.isna(curr):
+            return 1.0
+        return rate_map.get(str(curr).upper(), 1.0)
+    
     # Use sector data from database if available, otherwise fetch from yfinance
+    # Check for both flat 'sector' column and nested 'securities' dict
     has_sector_column = 'sector' in positions_df.columns
+    has_securities_column = 'securities' in positions_df.columns
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"[Sector Chart] has_sector_column={has_sector_column}, has_securities_column={has_securities_column}")
     
     sector_data = []
     for idx, row in positions_df.iterrows():
         ticker = row['ticker']
-        market_value = row['market_value']
+        market_value = float(row['market_value'] or 0)
+        
+        # Convert market_value to display currency
+        if 'currency' in row and rate_map:
+            currency = row.get('currency', 'CAD')
+            rate = get_rate(currency)
+            market_value = market_value * rate
         
         # First, try to use sector from database (faster and more reliable)
+        # Handle nested securities dict (from Supabase join)
         sector = None
-        if has_sector_column:
+        if has_securities_column and isinstance(row.get('securities'), dict):
+            sector = row['securities'].get('sector')
+            logger.debug(f"[Sector Chart] {ticker}: sector from nested securities={sector}")
+        elif has_sector_column:
             sector = row.get('sector')
-            # Check if sector is valid (not None, not empty string, not NaN)
-            if pd.isna(sector) or sector == '' or sector is None:
-                sector = None
+            logger.debug(f"[Sector Chart] {ticker}: sector from flat column={sector}")
+        
+        # Check if sector is valid (not None, not empty string, not NaN)
+        if pd.isna(sector) or sector == '' or sector is None:
+            sector = None
         
         # If sector not in database or is null, try fetching from yfinance
         if not sector:
@@ -1042,6 +1091,8 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     sector_df = pd.DataFrame(sector_data)
     sector_totals = sector_df.groupby('sector')['market_value'].sum().reset_index()
     sector_totals = sector_totals.sort_values('market_value', ascending=False)
+    
+    logger.debug(f"[Sector Chart] Aggregated {len(sector_totals)} sectors: {sector_totals.to_dict('records')}")
     
     # Color palette for sectors
     sector_colors = {

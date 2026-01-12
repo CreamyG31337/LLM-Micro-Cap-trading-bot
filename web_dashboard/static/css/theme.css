@@ -130,30 +130,30 @@
 
 /* Abyss Theme - Deep Ocean/Void */
 [data-theme="abyss"] {
-    --bg-primary: #0f1c2e;
-    --bg-secondary: #050505;
-    --bg-tertiary: #1a2b42;
-    --text-primary: #a9b1d6;
-    --text-secondary: #7a8ba4;
+    --bg-primary: #112240;
+    --bg-secondary: #0a192f;
+    --bg-tertiary: #233554;
+    --text-primary: #ccd6f6;
+    --text-secondary: #8892b0;
     --text-tertiary: #4a5568;
-    --border-color: #1a2b42;
-    --border-hover: #2d3f5a;
-    --gradient-from: #41a6b5;
-    --gradient-to: #2d7a8a;
+    --border-color: #233554;
+    --border-hover: #304169;
+    --gradient-from: #64ffda;
+    --gradient-to: #41a6b5;
 
     /* Component colors */
-    --log-line-hover: #1a2b42;
-    --code-bg: #0f1c2e;
-    --code-border: #1a2b42;
+    --log-line-hover: #112240;
+    --code-bg: #0a192f;
+    --code-border: #233554;
 
     /* Accent Colors - Teal/Cyan */
-    --color-accent: #41a6b5;
-    --color-accent-hover: #2d7a8a;
+    --color-accent: #64ffda;
+    --color-accent-hover: #41a6b5;
 
     /* Log level colors */
-    --log-debug: #4a5568;
+    --log-debug: #8892b0;
     --log-perf: #7986cb;
-    --log-info: #41a6b5;
+    --log-info: #64ffda;
     --log-warning: #ffb74d;
     --log-error: #e57373;
 }

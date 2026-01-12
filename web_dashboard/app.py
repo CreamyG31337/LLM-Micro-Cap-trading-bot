@@ -2148,11 +2148,14 @@ def ticker_details_page():
 def _get_all_tickers_cached():
     """Get all unique tickers with caching (60s TTL)"""
     try:
+        logger.info("Starting _get_all_tickers_cached")
         from ticker_utils import get_all_unique_tickers
         tickers = get_all_unique_tickers()
+        count = len(tickers) if tickers else 0
+        logger.info(f"_get_all_tickers_cached retrieved {count} tickers")
         return sorted(tickers) if tickers else []
     except Exception as e:
-        logger.error(f"Error fetching ticker list: {e}")
+        logger.error(f"Error fetching ticker list in _get_all_tickers_cached: {e}", exc_info=True)
         return []
 
 @app.route('/api/v2/ticker/list')

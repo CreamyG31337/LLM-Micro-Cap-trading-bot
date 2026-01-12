@@ -465,9 +465,11 @@ function getStatusBorderColor(job: Job): string {
 }
 
 function getScheduleText(trigger: string): string {
-    if (!trigger) {
+    if (!trigger || trigger === 'unknown') {
         return 'Manual';
     }
+    // Backend now formats triggers as readable strings, so just return as-is
+    // Keep old format handling for backward compatibility
     return trigger.replace('cron[', '').replace(']', '').replace('interval[', 'Every ');
 }
 

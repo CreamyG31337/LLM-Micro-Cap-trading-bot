@@ -1211,6 +1211,174 @@ def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def _format_trigger_readable(trigger: Any) -> str:
+    """Format an APScheduler trigger object into a readable string.
+    
+    Args:
+        trigger: APScheduler trigger object (IntervalTrigger, CronTrigger, etc.)
+    
+    Returns:
+        Human-readable schedule description
+    """
+    if trigger is None:
+        return 'Manual'
+    
+    # Handle string triggers (from DummyJob)
+    if isinstance(trigger, str):
+        if trigger == 'unknown':
+            return 'Unknown'
+        return trigger
+    
+    # Get the class name to determine trigger type
+    trigger_type = type(trigger).__name__
+    
+    if trigger_type == 'IntervalTrigger':
+        # Format interval triggers
+        interval = trigger.interval
+        if isinstance(interval, timedelta):
+            total_seconds = int(interval.total_seconds())
+            if total_seconds < 60:
+                return f'Every {total_seconds} second{"s" if total_seconds != 1 else ""}'
+            elif total_seconds < 3600:
+                minutes = total_seconds // 60
+                return f'Every {minutes} minute{"s" if minutes != 1 else ""}'
+            elif total_seconds < 86400:
+                hours = total_seconds // 3600
+                return f'Every {hours} hour{"s" if hours != 1 else ""}'
+            else:
+                days = total_seconds // 86400
+                return f'Every {days} day{"s" if days != 1 else ""}'
+        else:
+            return f'Interval: {interval}'
+    
+    elif trigger_type == 'CronTrigger':
+        # Format cron triggers
+        parts = []
+        
+        # Handle time
+        hour_str = None
+        minute_str = None
+        
+        if trigger.hour is not None:
+            hour = trigger.hour
+            if isinstance(hour, int):
+                hour_str = f"{hour:02d}"
+            elif isinstance(hour, str):
+                # Handle ranges like '9-15', '*/6', etc.
+                if '-' in hour:
+                    hour_str = f"{hour} (range)"
+                elif hour.startswith('*/'):
+                    interval = hour[2:]
+                    hour_str = f"Every {interval} hours"
+                else:
+                    hour_str = str(hour)
+            else:
+                hour_str = str(hour)
+        
+        if trigger.minute is not None:
+            minute = trigger.minute
+            if isinstance(minute, int):
+                minute_str = f"{minute:02d}"
+            elif isinstance(minute, str):
+                # Handle lists like '0,15,30,45' or ranges
+                if ',' in minute:
+                    minute_str = f"at {minute.replace(',', ', ')}"
+                elif '-' in minute:
+                    minute_str = f"{minute} (range)"
+                elif minute.startswith('*/'):
+                    interval = minute[2:]
+                    minute_str = f"Every {interval} minutes"
+                else:
+                    minute_str = str(minute)
+            else:
+                minute_str = str(minute)
+        
+        # Combine hour and minute
+        if hour_str and minute_str:
+            if isinstance(trigger.hour, int) and isinstance(trigger.minute, int):
+                time_str = f"{hour_str}:{minute_str}"
+                if trigger.timezone:
+                    parts.append(f"At {time_str} ({trigger.timezone})")
+                else:
+                    parts.append(f"At {time_str}")
+            else:
+                # Complex time expression
+                time_desc = f"Hour {hour_str}, Minute {minute_str}"
+                if trigger.timezone:
+                    time_desc += f" ({trigger.timezone})"
+                parts.append(time_desc)
+        elif hour_str:
+            parts.append(f"Hour {hour_str}")
+        elif minute_str:
+            parts.append(f"Minute {minute_str}")
+        
+        # Handle day of week
+        if trigger.day_of_week is not None:
+            days = trigger.day_of_week
+            if isinstance(days, (list, tuple)):
+                day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                day_str = ', '.join([day_names[d] if isinstance(d, int) and 0 <= d < 7 else str(d) for d in days])
+                parts.append(f"on {day_str}")
+            elif isinstance(days, str):
+                # Handle string like 'mon-fri'
+                if '-' in days:
+                    parts.append(f"on {days}")
+                else:
+                    parts.append(f"on {days}")
+            elif isinstance(days, int):
+                day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                if 0 <= days < 7:
+                    parts.append(f"on {day_names[days]}")
+                else:
+                    parts.append(f"on day {days}")
+            else:
+                parts.append(f"on {days}")
+        
+        if trigger.day is not None:
+            parts.append(f"Day {trigger.day}")
+        
+        if trigger.month is not None:
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            if isinstance(trigger.month, int) and 1 <= trigger.month <= 12:
+                parts.append(f"in {month_names[trigger.month - 1]}")
+            else:
+                parts.append(f"in {trigger.month}")
+        
+        if parts:
+            return ' '.join(parts)
+        else:
+            # Fallback: try to get readable representation from trigger
+            try:
+                # APScheduler CronTrigger has a __str__ that might be useful
+                trigger_repr = str(trigger)
+                # Clean up common patterns
+                if 'CronTrigger' in trigger_repr:
+                    # Extract the cron expression part
+                    if '(' in trigger_repr and ')' in trigger_repr:
+                        expr = trigger_repr[trigger_repr.find('(')+1:trigger_repr.rfind(')')]
+                        return f"Cron: {expr}"
+                return trigger_repr
+            except:
+                return "Cron schedule"
+    
+    elif trigger_type == 'DateTrigger':
+        run_date = getattr(trigger, 'run_date', None)
+        if run_date:
+            return f"Once at {run_date}"
+        return "One-time"
+    
+    # Fallback: convert to string and try to clean it up
+    trigger_str = str(trigger)
+    # Try to extract useful info from string representation
+    if 'interval' in trigger_str.lower():
+        return trigger_str
+    elif 'cron' in trigger_str.lower():
+        return trigger_str
+    else:
+        return trigger_str
+
+
 def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     """Get status of all scheduled jobs using batched database queries for performance.
     
@@ -1249,10 +1417,36 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         
         jobs = []
         for job_id, config in AVAILABLE_JOBS.items():
+            # Try to infer trigger from config
+            trigger_desc = 'Manual'
+            if 'cron_triggers' in config and config['cron_triggers']:
+                # Has cron schedule
+                cron_config = config['cron_triggers'][0]
+                hour = cron_config.get('hour', '*')
+                minute = cron_config.get('minute', 0)
+                timezone = cron_config.get('timezone', '')
+                if isinstance(hour, int) and isinstance(minute, int):
+                    trigger_desc = f"At {hour:02d}:{minute:02d}"
+                    if timezone:
+                        trigger_desc += f" ({timezone})"
+                else:
+                    trigger_desc = "Cron schedule"
+            elif config.get('default_interval_minutes', 0) > 0:
+                # Has interval schedule
+                interval_mins = config['default_interval_minutes']
+                if interval_mins < 60:
+                    trigger_desc = f"Every {interval_mins} minute{'s' if interval_mins != 1 else ''}"
+                elif interval_mins < 1440:
+                    hours = interval_mins // 60
+                    trigger_desc = f"Every {hours} hour{'s' if hours != 1 else ''}"
+                else:
+                    days = interval_mins // 1440
+                    trigger_desc = f"Every {days} day{'s' if days != 1 else ''}"
+            
             jobs.append(DummyJob(
                 id=job_id,
                 name=config.get('name', job_id),
-                trigger=config.get('trigger', 'unknown')
+                trigger=trigger_desc
             ))
 
     if not jobs:
@@ -1279,7 +1473,7 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
             'name': job.name or job.id,
             'next_run': job.next_run_time,
             'is_paused': job.next_run_time is None,
-            'trigger': str(job.trigger),
+            'trigger': _format_trigger_readable(job.trigger),
             'is_running': False,
             'running_since': None,
             'last_error': None,

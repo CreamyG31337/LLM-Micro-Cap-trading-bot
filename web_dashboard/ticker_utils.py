@@ -40,10 +40,10 @@ def get_all_unique_tickers(supabase_client=None, postgres_client=None) -> List[s
     Returns:
         List of unique ticker symbols sorted alphabetically.
     """
+    logger.info(f"get_all_unique_tickers called - Explicit clients: SB={bool(supabase_client)}, PG={bool(postgres_client)}")
     tickers: set[str] = set()
 
     # Use provided clients or try to get from current_app context
-    # This avoids creating new connections if they exist
     sb_client = supabase_client
     pg_client = postgres_client
     
@@ -51,22 +51,24 @@ def get_all_unique_tickers(supabase_client=None, postgres_client=None) -> List[s
     try:
         if not sb_client and current_app:
             # Try to get from app extension or attribute
-            # Note: This depends on how clients are stored in your app
             pass 
             
-        # Fallback to creating new clients if needed (but try to avoid)
-        # For now, we'll assume the caller passes them or we create temporary ones
+        # Fallback to creating new clients if needed
         if not sb_client:
             try:
+                logger.info("Attempting to create implicit SupabaseClient (service_role=True)")
                 sb_client = SupabaseClient(use_service_role=True)
+                logger.info("Implicit SupabaseClient created successfully")
             except Exception as e:
-                logger.warning(f"Failed to init SupabaseClient: {e}")
+                logger.warning(f"Failed to init SupabaseClient: {e}", exc_info=True)
 
         if not pg_client:
             try:
+                logger.info("Attempting to create implicit PostgresClient")
                 pg_client = PostgresClient()
+                logger.info("Implicit PostgresClient created successfully")
             except Exception as e:
-                logger.warning(f"Failed to init PostgresClient: {e}")
+                logger.warning(f"Failed to init PostgresClient: {e}", exc_info=True)
                 
     except RuntimeError:
         # standard fallback if outside request context
@@ -76,54 +78,97 @@ def get_all_unique_tickers(supabase_client=None, postgres_client=None) -> List[s
     if sb_client:
         try:
             # From securities table
+            logger.debug("Fetching tickers from Supabase: securities")
             securities = sb_client.supabase.table('securities').select('ticker').execute()
+            assert hasattr(securities, 'data'), "Securities response missing 'data' attribute"
+            
             if securities.data:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in securities.data if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from securities. Total: {len(tickers)}")
+            else:
+                logger.debug("No data found in securities table")
 
             # From portfolio_positions
+            logger.debug("Fetching tickers from Supabase: portfolio_positions")
             positions = sb_client.supabase.table('portfolio_positions').select('ticker').execute()
+            assert hasattr(positions, 'data'), "Positions response missing 'data' attribute"
+            
             if positions.data:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in positions.data if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from portfolio_positions. Total: {len(tickers)}")
 
             # From trade_log
+            logger.debug("Fetching tickers from Supabase: trade_log")
             trades = sb_client.supabase.table('trade_log').select('ticker').execute()
+            assert hasattr(trades, 'data'), "Trade log response missing 'data' attribute"
+            
             if trades.data:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in trades.data if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from trade_log. Total: {len(tickers)}")
 
             # From watched_tickers (active only)
+            logger.debug("Fetching tickers from Supabase: watched_tickers")
             watched = sb_client.supabase.table('watched_tickers').select('ticker').eq('is_active', True).execute()
+            assert hasattr(watched, 'data'), "Watched tickers response missing 'data' attribute"
+            
             if watched.data:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in watched.data if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from watched_tickers. Total: {len(tickers)}")
 
             # From congress_trades
+            logger.debug("Fetching tickers from Supabase: congress_trades")
             congress = sb_client.supabase.table('congress_trades').select('ticker').execute()
+            assert hasattr(congress, 'data'), "Congress trades response missing 'data' attribute"
+            
             if congress.data:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in congress.data if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from congress_trades. Total: {len(tickers)}")
 
+        except AssertionError as ae:
+            logger.error(f"Assertion failed in Supabase fetch: {ae}")
         except Exception as e:
-            logger.error(f"Error fetching tickers from Supabase: {e}")
+            logger.error(f"Error fetching tickers from Supabase: {e}", exc_info=True)
+    else:
+        logger.warning("Skipping Supabase fetch - sb_client is None")
 
     # 2. Fetch from PostgreSQL (Research DB)
     if pg_client:
         try:
             # From research_articles (unnest array)
+            logger.debug("Fetching tickers from Postgres: research_articles")
             articles = pg_client.execute_query("""
                 SELECT DISTINCT UNNEST(tickers) as ticker
                 FROM research_articles
                 WHERE tickers IS NOT NULL
             """)
             if articles:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in articles if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from research_articles. Total: {len(tickers)}")
+            else:
+                logger.debug("No tickers found in research_articles")
 
             # From social_metrics
+            logger.debug("Fetching tickers from Postgres: social_metrics")
             social = pg_client.execute_query("SELECT DISTINCT ticker FROM social_metrics")
             if social:
+                count_before = len(tickers)
                 tickers.update(row['ticker'].upper() for row in social if row.get('ticker'))
+                logger.debug(f"Added {len(tickers) - count_before} tickers from social_metrics. Total: {len(tickers)}")
+            else:
+                logger.debug("No tickers found in social_metrics")
 
         except Exception as e:
-            logger.error(f"Error fetching tickers from PostgreSQL: {e}")
+            logger.error(f"Error fetching tickers from PostgreSQL: {e}", exc_info=True)
+    else:
+        logger.warning("Skipping Postgres fetch - pg_client is None")
 
-    # Return sorted list
+    logger.info(f"get_all_unique_tickers finished. Returning {len(tickers)} unique tickers.")
     return sorted(tickers)
 
 

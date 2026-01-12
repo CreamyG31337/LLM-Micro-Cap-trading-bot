@@ -39,7 +39,7 @@ function showSuccess(elementId: string): void {
  * @param elementId - The ID of the element to show
  * @param errorMessage - Optional error message to display
  */
-function showError(elementId: string, errorMessage?: string): void {
+function showSettingsError(elementId: string, errorMessage?: string): void {
     const element = document.getElementById(elementId);
     if (element) {
         // Update error message if provided
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', function (): void {
                         console.error('Timezone save failed:', errorMsg);
                         selectElement.value = originalValue; // Revert
                         updateTimezonePreview();
-                        showError('timezone-error', errorMsg);
+                        showSettingsError('timezone-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', function (): void {
                     console.error('Error saving timezone:', error);
                     selectElement.value = originalValue; // Revert
                     updateTimezonePreview();
-                    showError('timezone-error', errorMsg);
+                    showSettingsError('timezone-error', errorMsg);
                 });
         });
     }
@@ -216,14 +216,14 @@ document.addEventListener('DOMContentLoaded', function (): void {
                         const errorMsg = data.error || 'Failed to save currency. Please try again.';
                         console.error('Currency save failed:', errorMsg);
                         selectElement.value = originalValue; // Revert
-                        showError('currency-error', errorMsg);
+                        showSettingsError('currency-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
                     const errorMsg = error.message || 'Error saving currency. Please try again.';
                     console.error('Error saving currency:', error);
                     selectElement.value = originalValue; // Revert
-                    showError('currency-error', errorMsg);
+                    showSettingsError('currency-error', errorMsg);
                 });
         });
     }
@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded', function (): void {
                         document.documentElement.setAttribute('data-theme', originalValue);
                         selectElement.value = originalValue;
                         updateThemePreview();
-                        showError('theme-error', errorMsg);
+                        showSettingsError('theme-error', errorMsg);
                     }
                 })
                 .catch((error: Error) => {
@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function (): void {
                     document.documentElement.setAttribute('data-theme', originalValue);
                     selectElement.value = originalValue;
                     updateThemePreview();
-                    showError('theme-error', errorMsg);
+                    showSettingsError('theme-error', errorMsg);
                 });
         });
     }

@@ -3,6 +3,9 @@
  * Handles status updates, job list rendering, and job actions
  */
 
+// Export empty object to make this a module
+export {};
+
 // Type definitions
 interface Job {
     id: string;
@@ -12,14 +15,14 @@ interface Job {
     trigger?: string;
     status?: 'running' | 'error' | 'idle' | 'paused';
     parameters?: Record<string, string>;
-    recent_logs?: LogEntry[];
+    recent_logs?: JobLogEntry[];
     is_running?: boolean;
     is_paused?: boolean;
     last_error?: string;
     running_since?: string;
 }
 
-interface LogEntry {
+interface JobLogEntry {
     timestamp: string;
     level?: string;
     message: string;
@@ -44,7 +47,7 @@ interface JobActionRequest {
     parameters?: Record<string, any>;
 }
 
-interface DOMElements {
+interface JobsDOMElements {
     statusContainer: HTMLElement | null;
     errorContainer: HTMLElement | null;
     runningContainer: HTMLElement | null;
@@ -66,7 +69,7 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null;
 let autoRefresh = true;
 
 // DOM Elements
-const elements: DOMElements = {
+const elements: JobsDOMElements = {
     statusContainer: document.getElementById('scheduler-status-container'),
     errorContainer: document.getElementById('scheduler-error'),
     runningContainer: document.getElementById('scheduler-running'),
@@ -137,7 +140,7 @@ async function fetchStatus(): Promise<void> {
         renderJobs(data.jobs);
     } catch (error) {
         console.error('Error fetching status:', error);
-        showError('Failed to fetch scheduler status');
+        showJobsError('Failed to fetch scheduler status');
     }
 }
 
@@ -212,7 +215,7 @@ function createJobCard(job: Job): string {
                         <div class="log-entry ${getLogClass(log.level || '')}">
                             <span class="text-gray-400">[${new Date(log.timestamp).toLocaleTimeString()}]</span>
                             <span class="${getLogLevelColor(log.level || '')} font-bold">${log.level || 'INFO'}</span>: 
-                            ${escapeHtml(log.message)}
+                            ${escapeHtmlForJobs(log.message)}
                         </div>
                     `).join('')}
                 </div>
@@ -360,13 +363,13 @@ function getLogLevelColor(level: string): string {
     return 'text-blue-600';
 }
 
-function escapeHtml(text: string): string {
+function escapeHtmlForJobs(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-function showError(msg: string): void {
+function showJobsError(msg: string): void {
     if (elements.errorMsg) {
         elements.errorMsg.classList.remove('hidden');
     }
@@ -414,7 +417,7 @@ async function handleJobAction(e: Event): Promise<void> {
     } catch (error) {
         console.error('Job action error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        showError(errorMessage);
+        showJobsError(errorMessage);
     } finally {
         btn.innerHTML = originalIcon;
         btn.removeAttribute('disabled');
@@ -431,7 +434,7 @@ async function startScheduler(): Promise<void> {
         fetchStatus();
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        showError(errorMessage);
+        showJobsError(errorMessage);
     }
 }
 
@@ -478,18 +481,13 @@ async function runJobWithParams(id: string, actualJobId: string): Promise<void> 
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        showError(errorMessage);
+        showJobsError(errorMessage);
     }
 }
 
 // Make functions available globally for inline onclick handlers
-declare global {
-    interface Window {
-        toggleParams: typeof toggleParams;
-        runJobWithParams: typeof runJobWithParams;
-    }
-}
-
 // Assign to window for inline handlers
-window.toggleParams = toggleParams;
-window.runJobWithParams = runJobWithParams;
+if (typeof window !== 'undefined') {
+    (window as any).toggleParams = toggleParams;
+    (window as any).runJobWithParams = runJobWithParams;
+}

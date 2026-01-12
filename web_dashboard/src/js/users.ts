@@ -71,7 +71,7 @@ interface ContributorSelectData {
     email: string;
 }
 
-interface DOMElements {
+interface UsersDOMElements {
     // Tabs
     tabUsers: HTMLElement | null;
     tabAccess: HTMLElement | null;
@@ -133,7 +133,7 @@ let canModify = true; // Will be updated from API
 let currentUserEmail = '';
 
 // DOM Elements
-const elements: DOMElements = {
+const elements: UsersDOMElements = {
     // Tabs
     tabUsers: document.getElementById('tab-users'),
     tabAccess: document.getElementById('tab-access'),
@@ -476,17 +476,17 @@ function createUserCard(user: User): string {
             <div class="flex items-start justify-between">
                 <div class="flex-1">
                     <div class="flex items-center space-x-3 mb-2">
-                        <h3 class="text-lg font-semibold text-gray-900">${escapeHtml(fullName)}</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">${escapeHtmlForUsers(fullName)}</h3>
                         <span class="role-badge ${isAdmin ? 'role-admin' : 'role-user'}">
                             ${isAdmin ? '🔑 Admin' : '👤 User'}
                         </span>
                     </div>
-                    <p class="text-sm text-gray-600 mb-2">${escapeHtml(email)}</p>
-                    <p class="text-sm text-gray-500">📊 ${escapeHtml(fundsStr)}</p>
+                    <p class="text-sm text-gray-600 mb-2">${escapeHtmlForUsers(email)}</p>
+                    <p class="text-sm text-gray-500">📊 ${escapeHtmlForUsers(fundsStr)}</p>
                 </div>
                 <div class="action-popover">
                     <button class="user-action-btn bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-md text-sm" 
-                            data-email="${escapeHtml(email)}" data-role="${role}" data-is-self="${isSelf}">
+                            data-email="${escapeHtmlForUsers(email)}" data-role="${role}" data-is-self="${isSelf}">
                         <i class="fas fa-cog mr-1"></i>Actions
                     </button>
                 </div>
@@ -536,7 +536,7 @@ async function showActionMenu(email: string, role: string, isSelf: boolean): Pro
         menu.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
         menu.innerHTML = `
             <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                <h3 class="text-lg font-semibold mb-4">Actions for ${escapeHtml(email)}</h3>
+                <h3 class="text-lg font-semibold mb-4">Actions for ${escapeHtmlForUsers(email)}</h3>
                 <div class="space-y-2">
                     ${role !== 'admin' 
                         ? `<button class="action-menu-btn w-full text-left px-4 py-2 hover:bg-gray-100 rounded" data-action="grant-admin">Grant Admin</button>`
@@ -745,7 +745,7 @@ function updateContributorSelect(): void {
         const email = c.email || '';
         const display = email ? `${name} (${email}) [Contributor]` : `${name} (no email) [Contributor]`;
         const data: ContributorSelectData = { type: 'contributor', id: c.id, name, email };
-        options.push(`<option value="${escapeHtml(JSON.stringify(data))}">${escapeHtml(display)}</option>`);
+        options.push(`<option value="${escapeHtmlForUsers(JSON.stringify(data))}">${escapeHtmlForUsers(display)}</option>`);
     });
     
     // Add registered users
@@ -754,7 +754,7 @@ function updateContributorSelect(): void {
         const email = u.email || '';
         const display = name && email ? `${name} (${email}) [Registered User]` : `${email} [Registered User]`;
         const data: ContributorSelectData = { type: 'user', id: u.user_id, name, email };
-        options.push(`<option value="${escapeHtml(JSON.stringify(data))}">${escapeHtml(display)}</option>`);
+        options.push(`<option value="${escapeHtmlForUsers(JSON.stringify(data))}">${escapeHtmlForUsers(display)}</option>`);
     });
     
     elements.contributorSelect.innerHTML = options.join('');
@@ -850,14 +850,14 @@ function renderUnregisteredContributors(): void {
         return `
             <div class="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
                 <div class="flex-1">
-                    <h4 class="font-semibold">${escapeHtml(contrib.contributor)}</h4>
-                    <p class="text-sm text-gray-600">${escapeHtml(email)}</p>
-                    <p class="text-xs text-gray-500 mt-1">Funds: ${escapeHtml(fundsStr)} | Contribution: ${contribution}</p>
+                    <h4 class="font-semibold">${escapeHtmlForUsers(contrib.contributor)}</h4>
+                    <p class="text-sm text-gray-600">${escapeHtmlForUsers(email)}</p>
+                    <p class="text-xs text-gray-500 mt-1">Funds: ${escapeHtmlForUsers(fundsStr)} | Contribution: ${contribution}</p>
                 </div>
                 <div>
                     ${hasEmail 
                         ? `<button class="send-invite-btn bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm" 
-                                 data-email="${escapeHtml(contrib.email || '')}">
+                                 data-email="${escapeHtmlForUsers(contrib.email || '')}">
                             <i class="fas fa-envelope mr-1"></i>Send Invite
                           </button>`
                         : `<span class="text-yellow-600 text-sm">⚠️ Add email to invite</span>`}
@@ -887,7 +887,7 @@ function updateContributorSelects(): void {
         const name = c.name || '';
         const email = c.email || 'No email';
         const display = `${name} (${email})`;
-        options.push(`<option value="${escapeHtml(email)}">${escapeHtml(display)}</option>`);
+        options.push(`<option value="${escapeHtmlForUsers(email)}">${escapeHtmlForUsers(display)}</option>`);
     });
     
     const html = options.join('');
@@ -906,7 +906,7 @@ function updateUserSelects(): void {
     users.forEach(u => {
         const email = u.email || '';
         if (email) {
-            options.push(`<option value="${escapeHtml(email)}">${escapeHtml(email)}</option>`);
+            options.push(`<option value="${escapeHtmlForUsers(email)}">${escapeHtmlForUsers(email)}</option>`);
         }
     });
     
@@ -976,14 +976,14 @@ function renderAccessTable(): void {
     
     const rows = accessRecords.map(access => `
         <tr>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHtml(access.contributor)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(access.contributor_email)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHtml(access.user_email)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(access.user_name || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHtmlForUsers(access.contributor)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtmlForUsers(access.contributor_email)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${escapeHtmlForUsers(access.user_email)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtmlForUsers(access.user_name || '')}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm">
-                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">${escapeHtml(access.access_level)}</span>
+                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">${escapeHtmlForUsers(access.access_level)}</span>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(access.granted || '')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtmlForUsers(access.granted || '')}</td>
         </tr>
     `).join('');
     
@@ -1043,7 +1043,7 @@ async function handleRevokeAccess(): Promise<void> {
 }
 
 // Helper Functions
-function escapeHtml(text: string): string {
+function escapeHtmlForUsers(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;

@@ -28,8 +28,9 @@ class ThemeManager {
      * Initialize the theme manager
      */
     init(): void {
-        // Apply the saved theme on page load
-        this.applyTheme(this.currentTheme);
+        // Apply the saved theme on page load - do NOT sync to backend (persist=false)
+        // This prevents overwriting server preference with default 'system' if localStorage is empty
+        this.applyTheme(this.currentTheme, false);
 
         // Listen for theme changes from other tabs/windows
         window.addEventListener('storage', (e: StorageEvent) => {
@@ -45,7 +46,16 @@ class ThemeManager {
      * @returns The saved theme or 'system' as default
      */
     loadTheme(): Theme {
-        return (localStorage.getItem('theme') as Theme) || 'system';
+        // Check localStorage first
+        const stored = localStorage.getItem('theme') as Theme;
+        if (stored) return stored;
+
+        // Fallback to server-provided theme (data-theme attribute)
+        // This ensures we respect the backend's stored preference even if localStorage is empty
+        const serverTheme = document.documentElement.getAttribute('data-theme') as Theme;
+        if (serverTheme) return serverTheme;
+
+        return 'system';
     }
 
     /**
@@ -74,9 +84,9 @@ class ThemeManager {
 
         // Toggle 'dark' class for Tailwind dark mode support
         const darkThemes: Theme[] = ['dark', 'midnight-tokyo', 'abyss'];
-        const isDark = darkThemes.includes(theme) || 
-                      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        
+        const isDark = darkThemes.includes(theme) ||
+            (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
         if (isDark) {
             document.documentElement.classList.add('dark');
         } else {

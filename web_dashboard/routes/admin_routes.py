@@ -1188,10 +1188,11 @@ def api_scheduler_status():
         # Get jobs list (even if scheduler is stopped, we want to show available jobs)
         try:
             jobs = get_all_jobs_status()
-            logger.debug(f"[Scheduler API] Retrieved {len(jobs)} jobs")
-            if not jobs and not running:
-                # If scheduler is stopped and no jobs, try to get jobs from AVAILABLE_JOBS directly
-                logger.warning(f"[Scheduler API] No jobs returned, scheduler stopped. Checking AVAILABLE_JOBS...")
+            logger.debug(f"[Scheduler API] Retrieved {len(jobs)} jobs from get_all_jobs_status()")
+            if not jobs:
+                # If no jobs returned, get_all_jobs_status should have fallen back to AVAILABLE_JOBS
+                # But if it didn't, try directly here as a safety net
+                logger.warning(f"[Scheduler API] No jobs returned from get_all_jobs_status(), trying AVAILABLE_JOBS directly...")
                 try:
                     from scheduler.jobs import AVAILABLE_JOBS
                     logger.info(f"[Scheduler API] AVAILABLE_JOBS has {len(AVAILABLE_JOBS)} job definitions")
@@ -1210,7 +1211,9 @@ def api_scheduler_status():
                                 'last_error': None,
                                 'recent_logs': []
                             })
-                        logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS")
+                        logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS fallback")
+                    else:
+                        logger.warning("[Scheduler API] AVAILABLE_JOBS is empty!")
                 except Exception as avail_error:
                     logger.error(f"[Scheduler API] Error accessing AVAILABLE_JOBS: {avail_error}", exc_info=True)
         except Exception as jobs_error:

@@ -1455,8 +1455,11 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
                 name=config.get('name', job_id),
                 trigger=trigger_desc
             ))
+        
+        logger.info(f"Created {len(jobs)} dummy jobs from AVAILABLE_JOBS for UI display")
 
     if not jobs:
+        logger.warning("No jobs available from scheduler or AVAILABLE_JOBS")
         return []
     
     # Map all job IDs to job names

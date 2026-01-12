@@ -464,6 +464,17 @@ def create_portfolio_value_chart(
     df = portfolio_df.sort_values('date').copy()
     df['date'] = pd.to_datetime(df['date'])
     
+    # For normalized view, ensure all days before first investment show at 100
+    # Days with cost_basis = 0 should have performance_index = 100 (baseline)
+    if show_normalized and 'performance_index' in df.columns and 'cost_basis' in df.columns:
+        # Find first investment day
+        first_investment = df[df['cost_basis'] > 0]
+        if not first_investment.empty:
+            first_investment_date = first_investment['date'].min()
+            # Ensure all days before first investment have performance_index = 100
+            pre_investment_mask = df['date'] < first_investment_date
+            df.loc[pre_investment_mask, 'performance_index'] = 100.0
+    
     # Create the chart
     fig = go.Figure()
     
@@ -517,7 +528,32 @@ def create_portfolio_value_chart(
         logger = logging.getLogger(__name__)
         benchmark_start = time.time()
         
-        start_date = df['date'].min()
+        # CRITICAL: Use the first day where portfolio actually has investment for benchmark baseline
+        # This ensures benchmarks normalize to the same baseline date as the portfolio
+        # The portfolio's first investment day is where performance_index = 100 (baseline)
+        # Benchmarks must use this same date for fair comparison
+        
+        # Find the first investment day (where cost_basis > 0)
+        # This is the date where portfolio baseline = 100
+        if 'cost_basis' in df.columns:
+            first_investment = df[df['cost_basis'] > 0]
+            if not first_investment.empty:
+                # Use first investment day as baseline date for benchmarks
+                baseline_date = first_investment['date'].min()
+                logger.debug(f"Using first investment day {baseline_date.date()} as benchmark baseline")
+            else:
+                # Fallback: no investment data, use first date
+                baseline_date = df['date'].min()
+                logger.warning("No investment data found, using min date as baseline")
+        else:
+            # If cost_basis not available, try to infer from performance_index
+            # First day where performance_index = 100 should be the baseline
+            # But this is less reliable - cost_basis is the source of truth
+            baseline_date = df['date'].min()
+            logger.warning("cost_basis column not available, using min date as baseline")
+        
+        # Use baseline_date for benchmark normalization, but fetch data from portfolio date range
+        start_date = df['date'].min()  # Fetch benchmark data from portfolio start
         end_date = df['date'].max()
         
         # Both portfolio and benchmark data use noon (12:00) timestamps for consistency
@@ -532,7 +568,10 @@ def create_portfolio_value_chart(
             
             bench_t0 = time.time()
             config = BENCHMARK_CONFIG[bench_key]
-            bench_data = _fetch_benchmark_data(config['ticker'], start_date, end_date)
+            # CRITICAL: Use baseline_date (first investment day) for benchmark normalization
+            # This ensures benchmark normalizes to 100 on the same day as portfolio baseline
+            # _fetch_benchmark_data uses start_date to find baseline_close for normalization
+            bench_data = _fetch_benchmark_data(config['ticker'], baseline_date, end_date)
             bench_fetch_time = time.time() - bench_t0
             logger.info(f"⏱️ create_portfolio_value_chart - Fetch benchmark {bench_key}: {bench_fetch_time:.2f}s")
             

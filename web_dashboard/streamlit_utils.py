@@ -1186,10 +1186,14 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
         first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
         if not first_day_with_investment.empty:
             first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
-            # Adjust all performance so first day starts at 0%
-            daily_totals['performance_pct'] = daily_totals['performance_pct'] - first_day_performance
+            # Adjust performance ONLY for days with investment (cost_basis > 0)
+            # Days with cost_basis = 0 should remain at 0% (will become 100 in index)
+            mask = daily_totals['cost_basis'] > 0
+            daily_totals.loc[mask, 'performance_pct'] = daily_totals.loc[mask, 'performance_pct'] - first_day_performance
         
         # Create Performance Index (baseline 100 + performance %)
+        # Days with cost_basis = 0 will have performance_pct = 0, so index = 100
+        # Days with investment will have adjusted performance_pct, so first day = 0%, index = 100
         daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
         
         

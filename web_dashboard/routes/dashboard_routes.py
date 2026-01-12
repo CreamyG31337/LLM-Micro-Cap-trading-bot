@@ -230,8 +230,6 @@ def get_performance_chart():
         all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
         
         # Create Plotly chart using shared function (same as Streamlit)
-        # Note: Streamlit doesn't apply theme - it uses default plotly_white template
-        # We match Streamlit exactly by not applying theme here
         fig = create_portfolio_value_chart(
             df,
             fund_name=fund,
@@ -242,12 +240,56 @@ def get_performance_chart():
             display_currency=display_currency
         )
         
-        processing_time = time.time() - start_time
-        logger.info(f"[Dashboard API] Performance chart created - {len(df)} data points, use_solid={use_solid}, processing_time={processing_time:.3f}s")
+        # Apply theme to chart (similar to ticker chart)
+        client_theme = request.args.get('theme', '').strip().lower()
+        if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:
+            # Get user theme preference from backend
+            user_theme = get_user_theme() or 'system'
+            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
+        else:
+            theme = client_theme
         
-        # Return Plotly JSON
+        # Apply theme to chart data (convert to dict, apply theme, return as JSON)
+        from chart_utils import get_chart_theme_config
+        chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        theme_config = get_chart_theme_config(theme)
+        
+        # Update layout for theme
+        if 'layout' in chart_data:
+            chart_data['layout']['template'] = theme_config['template']
+            chart_data['layout']['paper_bgcolor'] = theme_config['paper_bgcolor']
+            chart_data['layout']['plot_bgcolor'] = theme_config['plot_bgcolor']
+            chart_data['layout']['font'] = {'color': theme_config['font_color']}
+            
+            # Update grid colors for both axes if they exist
+            if 'xaxis' in chart_data['layout']:
+                chart_data['layout']['xaxis']['gridcolor'] = theme_config['grid_color']
+                chart_data['layout']['xaxis']['zerolinecolor'] = theme_config['grid_color']
+            if 'yaxis' in chart_data['layout']:
+                chart_data['layout']['yaxis']['gridcolor'] = theme_config['grid_color']
+                chart_data['layout']['yaxis']['zerolinecolor'] = theme_config['grid_color']
+            
+            # Update legend background if it exists
+            if 'legend' in chart_data['layout']:
+                chart_data['layout']['legend']['bgcolor'] = theme_config['legend_bg_color']
+            
+            # Update shapes (baseline line and weekend shading)
+            if 'shapes' in chart_data['layout']:
+                for shape in chart_data['layout']['shapes']:
+                    if shape.get('type') == 'line' and shape.get('y0') == shape.get('y1'):
+                        # This is the baseline hline
+                        if 'line' in shape:
+                            shape['line']['color'] = theme_config['baseline_line_color']
+                    elif shape.get('type') == 'rect' and 'fillcolor' in shape:
+                        # This is weekend shading
+                        shape['fillcolor'] = theme_config['weekend_shading_color']
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Performance chart created - {len(df)} data points, use_solid={use_solid}, theme={theme}, processing_time={processing_time:.3f}s")
+        
+        # Return Plotly JSON with theme applied
         return Response(
-            json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            json.dumps(chart_data),
             mimetype='application/json'
         )
         
@@ -310,19 +352,42 @@ def get_allocation_charts():
             )
         
         # Create Plotly pie chart using shared function (same as Streamlit)
-        # Note: Streamlit doesn't apply theme - it uses default plotly_white template
-        # We match Streamlit exactly by not applying theme here
         fig = create_sector_allocation_chart(positions_df, fund_name=fund)
         
         # Update height to match container
         fig.update_layout(height=320)
         
-        processing_time = time.time() - start_time
-        logger.info(f"[Dashboard API] Sector allocation chart created - processing_time={processing_time:.3f}s")
+        # Apply theme to chart (similar to ticker chart)
+        if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:
+            # Get user theme preference from backend
+            from user_preferences import get_user_theme
+            user_theme = get_user_theme() or 'system'
+            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
+        else:
+            theme = client_theme
         
-        # Return Plotly JSON
+        # Apply theme to chart data (convert to dict, apply theme, return as JSON)
+        from chart_utils import get_chart_theme_config
+        chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        theme_config = get_chart_theme_config(theme)
+        
+        # Update layout for theme
+        if 'layout' in chart_data:
+            chart_data['layout']['template'] = theme_config['template']
+            chart_data['layout']['paper_bgcolor'] = theme_config['paper_bgcolor']
+            chart_data['layout']['plot_bgcolor'] = theme_config['plot_bgcolor']
+            chart_data['layout']['font'] = {'color': theme_config['font_color']}
+            
+            # Update legend background if it exists
+            if 'legend' in chart_data['layout']:
+                chart_data['layout']['legend']['bgcolor'] = theme_config['legend_bg_color']
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Sector allocation chart created - theme={theme}, processing_time={processing_time:.3f}s")
+        
+        # Return Plotly JSON with theme applied
         return Response(
-            json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            json.dumps(chart_data),
             mimetype='application/json'
         )
         

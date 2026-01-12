@@ -84,6 +84,22 @@ const state = {
     gridApi: null as any // AG Grid API
 };
 
+// Initialize theme sync for charts
+function initThemeSync(): void {
+    // Import chart theme utilities
+    const themeManager = (window as Window & { themeManager?: { addListener: (callback: (theme: string) => void) => void } }).themeManager;
+    if (themeManager) {
+        themeManager.addListener((theme: string) => {
+            console.log('[Dashboard] Theme changed, refreshing charts...', { theme });
+            // Re-fetch charts with new theme
+            fetchPerformanceChart().catch(err => console.error('[Dashboard] Error refreshing performance chart on theme change:', err));
+            fetchSectorChart().catch(err => console.error('[Dashboard] Error refreshing sector chart on theme change:', err));
+        });
+    } else {
+        console.warn('[Dashboard] ThemeManager not found. Chart theme synchronization disabled.');
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', (): void => {
     console.log('[Dashboard] DOMContentLoaded event fired, initializing dashboard...');
@@ -94,6 +110,7 @@ document.addEventListener('DOMContentLoaded', (): void => {
     initTimeRangeControls();
     initSolidLinesCheckbox();
     initGrid(); // Initialize empty grid
+    initThemeSync(); // Initialize theme synchronization
 
     // Fetch Data
     refreshDashboard();
@@ -482,8 +499,27 @@ async function fetchSummary(): Promise<void> {
 }
 
 async function fetchPerformanceChart(): Promise<void> {
+    // Detect actual theme from page (same as sector chart)
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let theme: string = 'light'; // default
+
+    if (dataTheme === 'dark' || dataTheme === 'light' || dataTheme === 'midnight-tokyo' || dataTheme === 'abyss') {
+        theme = dataTheme;
+    } else if (dataTheme === 'system') {
+        // For 'system', check if page is actually in dark mode via CSS
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        // Check for dark mode background colors
+        const isDark = bodyBg && (
+            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+        );
+        theme = isDark ? 'dark' : 'light';
+    }
+
     // Match Streamlit: use_solid_lines parameter from checkbox
-    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}&use_solid=${state.useSolidLines}`;
+    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}&use_solid=${state.useSolidLines}&theme=${encodeURIComponent(theme)}`;
     const startTime = performance.now();
 
     console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange, use_solid: state.useSolidLines });
@@ -544,10 +580,8 @@ async function fetchSectorChart(): Promise<void> {
     const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
     let theme: string = 'light'; // default
 
-    if (dataTheme === 'dark') {
-        theme = 'dark';
-    } else if (dataTheme === 'light') {
-        theme = 'light';
+    if (dataTheme === 'dark' || dataTheme === 'light' || dataTheme === 'midnight-tokyo' || dataTheme === 'abyss') {
+        theme = dataTheme;
     } else if (dataTheme === 'system') {
         // For 'system', check if page is actually in dark mode via CSS
         const bodyBg = window.getComputedStyle(document.body).backgroundColor;
@@ -827,14 +861,12 @@ function renderPerformanceChart(data: PerformanceChartData): void {
         return;
     }
 
-    // Update layout height to match container
-    const layout = { ...data.layout };
-    layout.height = 320; // Match previous ApexCharts height
-    layout.autosize = true;
-
+    // Match Streamlit exactly: use_container_width=True means use full width and keep original height
+    // Streamlit doesn't modify the layout at all - it just passes the figure through
+    // Use the layout directly without any modifications
     try {
-        Plotly.newPlot('performance-chart', data.data, layout, { 
-            responsive: true,
+        Plotly.newPlot('performance-chart', data.data, data.layout, { 
+            responsive: true,  // Equivalent to use_container_width=True in Streamlit
             displayModeBar: true,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d']
         });

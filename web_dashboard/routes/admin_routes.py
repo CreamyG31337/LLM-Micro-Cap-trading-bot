@@ -1189,8 +1189,32 @@ def api_scheduler_status():
         try:
             jobs = get_all_jobs_status()
             logger.debug(f"[Scheduler API] Retrieved {len(jobs)} jobs")
+            if not jobs and not running:
+                # If scheduler is stopped and no jobs, try to get jobs from AVAILABLE_JOBS directly
+                logger.warning(f"[Scheduler API] No jobs returned, scheduler stopped. Checking AVAILABLE_JOBS...")
+                try:
+                    from scheduler.jobs import AVAILABLE_JOBS
+                    logger.info(f"[Scheduler API] AVAILABLE_JOBS has {len(AVAILABLE_JOBS)} job definitions")
+                    if AVAILABLE_JOBS:
+                        # Create minimal job status from AVAILABLE_JOBS
+                        jobs = []
+                        for job_id, config in AVAILABLE_JOBS.items():
+                            jobs.append({
+                                'id': job_id,
+                                'name': config.get('name', job_id),
+                                'next_run': None,
+                                'is_paused': True,
+                                'trigger': 'Manual',
+                                'is_running': False,
+                                'running_since': None,
+                                'last_error': None,
+                                'recent_logs': []
+                            })
+                        logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS")
+                except Exception as avail_error:
+                    logger.error(f"[Scheduler API] Error accessing AVAILABLE_JOBS: {avail_error}", exc_info=True)
         except Exception as jobs_error:
-            logger.warning(f"[Scheduler API] Error getting jobs list: {jobs_error}", exc_info=True)
+            logger.error(f"[Scheduler API] Error getting jobs list: {jobs_error}", exc_info=True)
             jobs = []
         
         # Serialize datetime objects

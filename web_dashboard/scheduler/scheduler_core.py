@@ -1398,6 +1398,9 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     # This prevents "Duplicate scheduler created" logs from UI workers
     scheduler = get_scheduler(create=False)
     
+    # Import AVAILABLE_JOBS for fallback
+    from scheduler.jobs import AVAILABLE_JOBS
+    
     if scheduler:
         # If we have a live scheduler (main process), use it
         jobs = scheduler.get_jobs()
@@ -1405,8 +1408,12 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         # If no local scheduler (worker process), we can't get current next_run times
         # from MemoryJobStore. But we can still show job existence from AVAILABLE_JOBS
         # and execution history from DB.
-        from scheduler.jobs import AVAILABLE_JOBS
-        
+        jobs = []
+    
+    # If scheduler exists but has no jobs (e.g., scheduler stopped or not initialized),
+    # fall back to AVAILABLE_JOBS to show available job definitions
+    if not jobs:
+        logger.debug("No jobs from scheduler, falling back to AVAILABLE_JOBS for job definitions")
         # Create dummy job objects for the UI
         class DummyJob:
             def __init__(self, id, name, trigger):

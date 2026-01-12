@@ -36,11 +36,8 @@ interface DashboardSummary {
 }
 
 interface PerformanceChartData {
-    series: Array<{
-        name: string;
-        data: Array<[number, number]>; // [timestamp_ms, value]
-    }>;
-    color: string;
+    data: any[]; // Plotly trace data
+    layout: any; // Plotly layout
 }
 
 interface AllocationChartData {
@@ -88,7 +85,7 @@ interface Fund {
 const state = {
     currentFund: typeof window !== 'undefined' && window.INITIAL_FUND ? window.INITIAL_FUND : '',
     timeRange: 'ALL' as '1M' | '3M' | '6M' | '1Y' | 'ALL',
-    charts: {} as Record<string, ApexChartsInstance>,
+    charts: {} as Record<string, ApexChartsInstance>, // Sector chart still uses ApexCharts
     gridApi: null as any // AG Grid API
 };
 
@@ -470,10 +467,31 @@ async function fetchSummary(): Promise<void> {
 }
 
 async function fetchPerformanceChart(): Promise<void> {
-    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}`;
+    // Detect actual theme from page (same as ticker_details.ts)
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let theme: string = 'light'; // default
+
+    if (dataTheme === 'dark') {
+        theme = 'dark';
+    } else if (dataTheme === 'light') {
+        theme = 'light';
+    } else if (dataTheme === 'system') {
+        // For 'system', check if page is actually in dark mode via CSS
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        // Check for dark mode background colors
+        const isDark = bodyBg && (
+            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+        );
+        theme = isDark ? 'dark' : 'light';
+    }
+
+    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}&theme=${encodeURIComponent(theme)}`;
     const startTime = performance.now();
 
-    console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange });
+    console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange, theme });
 
     try {
         const response = await fetch(url, { credentials: 'include' });
@@ -500,9 +518,9 @@ async function fetchPerformanceChart(): Promise<void> {
 
         const data: PerformanceChartData = await response.json();
         console.log('[Dashboard] Performance chart data received', {
-            series_count: data.series ? data.series.length : 0,
-            data_points: data.series && data.series[0] ? data.series[0].data.length : 0,
-            color: data.color
+            has_data: !!data.data,
+            has_layout: !!data.layout,
+            trace_count: data.data ? data.data.length : 0
         });
 
         renderPerformanceChart(data);
@@ -770,48 +788,45 @@ function updateChangeMetric(valId: string, pctId: string, change: number, pct: n
 }
 
 function renderPerformanceChart(data: PerformanceChartData): void {
-    if (state.charts.performance) {
-        state.charts.performance.destroy();
-    }
-
+    // Clear any existing chart
     const chartEl = document.getElementById('performance-chart');
     if (!chartEl) {
         console.warn('[Dashboard] Performance chart element not found');
         return;
     }
 
-    if (!data.series || !data.series[0] || !data.series[0].data || data.series[0].data.length === 0) {
+    // Clear previous content
+    chartEl.innerHTML = '';
+
+    if (!data || !data.data || !data.layout) {
         chartEl.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No performance data available</p></div>';
         return;
     }
 
-    const options: ApexChartsOptions = {
-        series: data.series,
-        chart: {
-            type: 'line',
-            height: 320,
-            toolbar: { show: false },
-            zoom: { enabled: true }
-        },
-        colors: [data.color || '#10B981'],
-        stroke: { curve: 'smooth', width: 2 },
-        xaxis: {
-            type: 'datetime'
-        },
-        yaxis: {
-            labels: {
-                formatter: (val: number) => formatMoney(val, 'USD')
-            }
-        },
-        tooltip: {
-            x: { format: 'MMM dd, yyyy' },
-            y: { formatter: (val: number) => formatMoney(val, 'USD') }
-        }
-    };
+    // Render with Plotly (same as ticker_details.ts)
+    const Plotly = (window as any).Plotly;
+    if (!Plotly) {
+        console.error('[Dashboard] Plotly not loaded');
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error: Plotly library not loaded</p></div>';
+        return;
+    }
 
-    state.charts.performance = new ApexCharts(chartEl, options);
-    state.charts.performance.render();
-    console.log('[Dashboard] Performance chart rendered');
+    // Update layout height to match container
+    const layout = { ...data.layout };
+    layout.height = 320; // Match previous ApexCharts height
+    layout.autosize = true;
+
+    try {
+        Plotly.newPlot('performance-chart', data.data, layout, { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+        });
+        console.log('[Dashboard] Performance chart rendered with Plotly');
+    } catch (error) {
+        console.error('[Dashboard] Error rendering Plotly chart:', error);
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error rendering chart</p></div>';
+    }
 }
 
 function renderSectorChart(data: AllocationChartData): void {

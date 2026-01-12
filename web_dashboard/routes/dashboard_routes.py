@@ -1,5 +1,5 @@
 
-from flask import Blueprint, jsonify, request, render_template, redirect, url_for
+from flask import Blueprint, jsonify, request, render_template, redirect, url_for, Response
 import logging
 import time
 import pandas as pd
@@ -159,29 +159,35 @@ def get_dashboard_summary():
 
 @dashboard_bp.route('/api/dashboard/charts/performance', methods=['GET'])
 def get_performance_chart():
-    """Get portfolio value history for chart.
+    """Get portfolio performance chart as Plotly JSON.
     
     GET /api/dashboard/charts/performance
     
     Query Parameters:
         fund (str): Fund name (optional)
         range (str): Time range - '1M', '3M', '6M', '1Y', or 'ALL' (default: 'ALL')
+        use_solid (str): 'true' to use solid lines for benchmarks (default: 'false')
+        theme (str): Chart theme - 'dark', 'light', 'midnight-tokyo', 'abyss' (optional)
         
     Returns:
-        JSON response with:
-            - series (list): Array of series objects for ApexCharts:
-                - name (str): Series name
-                - data (list): Array of [timestamp_ms, value] pairs
-            - color (str): Hex color code based on trend (green if positive, red if negative)
+        JSON response with Plotly chart data:
+            - data: Array of trace objects
+            - layout: Layout configuration
             
     Error Responses:
         500: Server error during data fetch
     """
+    import plotly.utils
+    from chart_utils import create_portfolio_value_chart
+    from user_preferences import get_user_theme
+    
     fund = request.args.get('fund') or None
     # Convert empty string to None
     if fund == '':
         fund = None
     time_range = request.args.get('range', 'ALL') # '1M', '3M', '6M', '1Y', 'ALL'
+    use_solid = request.args.get('use_solid', 'false').lower() == 'true'
+    client_theme = request.args.get('theme', '').strip().lower()
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/charts/performance called - fund={fund}, range={time_range}, currency={display_currency}")
@@ -209,41 +215,78 @@ def get_performance_chart():
         
         if df.empty:
             logger.warning(f"[Dashboard API] No portfolio value data found for fund={fund}, range={time_range}")
-            return jsonify({
-                "series": [{"name": "Portfolio Value", "data": []}],
-                "color": "#10B981"
-            })
-            
-        # Format for ApexCharts: [[timestamp_ms, value], ...]
-        # df should have 'date' and 'total_value' (or similar)
-        # Check actual columns from calculate_portfolio_value_over_time
-        # It typically returns: date, total_value, cash, invested
+            # Return empty Plotly chart
+            import plotly.graph_objs as go
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return Response(
+                json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                mimetype='application/json'
+            )
         
-        data = []
-        for _, row in df.iterrows():
-            date_val = row['date']
-            if date_val.tzinfo is None:
-                # Naive datetime - assume UTC
-                ts = int(date_val.replace(tzinfo=timezone.utc).timestamp() * 1000)
-            else:
-                # Already timezone-aware
-                ts = int(date_val.timestamp() * 1000)
-            # calculate_portfolio_value_over_time returns 'value' column (from daily_totals aggregation)
-            val = row.get('value', 0)
-            data.append([ts, float(val)])
-            
-        # Determine color based on trend (green if last > first)
-        color = "#10B981" # Green
-        if len(data) >= 2 and data[-1][1] < data[0][1]:
-            color = "#EF4444" # Red
-            
+        # Determine theme to use
+        theme = client_theme if client_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else None
+        if not theme:
+            user_theme = get_user_theme() or 'system'
+            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
+        
+        # All benchmarks are now passed to the chart (S&P 500 visible, others in legend)
+        all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
+        
+        # Create Plotly chart using shared function (same as Streamlit)
+        fig = create_portfolio_value_chart(
+            df,
+            fund_name=fund,
+            show_normalized=True,  # Show percentage change from baseline
+            show_benchmarks=all_benchmarks,  # All benchmarks (S&P 500 visible, others in legend)
+            show_weekend_shading=True,
+            use_solid_lines=use_solid,
+            display_currency=display_currency
+        )
+        
+        # Apply theme to the chart
+        from chart_utils import get_chart_theme_config
+        theme_config = get_chart_theme_config(theme)
+        
+        # Update layout for theme
+        fig.update_layout(
+            template=theme_config['template'],
+            paper_bgcolor=theme_config['paper_bgcolor'],
+            plot_bgcolor=theme_config['plot_bgcolor'],
+            font={'color': theme_config['font_color']}
+        )
+        
+        # Update grid colors
+        fig.update_xaxes(gridcolor=theme_config['grid_color'], zerolinecolor=theme_config['grid_color'])
+        fig.update_yaxes(gridcolor=theme_config['grid_color'], zerolinecolor=theme_config['grid_color'])
+        
+        # Update legend background
+        if fig.layout.legend:
+            fig.update_layout(legend=dict(bgcolor=theme_config['legend_bg_color']))
+        
+        # Update weekend shading and baseline line colors
+        if fig.layout.shapes:
+            for shape in fig.layout.shapes:
+                if shape.type == 'line' and hasattr(shape, 'y0') and shape.y0 == shape.y1:
+                    # Baseline hline
+                    if hasattr(shape, 'line'):
+                        shape.line.color = theme_config['baseline_line_color']
+                elif shape.type == 'rect' and hasattr(shape, 'fillcolor'):
+                    # Weekend shading
+                    shape.fillcolor = theme_config['weekend_shading_color']
+        
         processing_time = time.time() - start_time
-        logger.info(f"[Dashboard API] Performance chart data prepared - {len(data)} data points, color={color}, processing_time={processing_time:.3f}s")
+        logger.info(f"[Dashboard API] Performance chart created - {len(df)} data points, theme={theme}, processing_time={processing_time:.3f}s")
         
-        return jsonify({
-            "series": [{"name": "Portfolio Value", "data": data}],
-            "color": color
-        })
+        # Return Plotly JSON
+        return Response(
+            json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            mimetype='application/json'
+        )
         
     except Exception as e:
         processing_time = time.time() - start_time

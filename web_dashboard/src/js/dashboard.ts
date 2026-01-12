@@ -208,6 +208,45 @@ function initSolidLinesCheckbox(): void {
 }
 
 // Update AG Grid theme class based on current theme
+// Ticker cell renderer - makes ticker clickable
+interface AgGridCellRendererParams {
+    value: string | null;
+    data?: any;
+}
+
+interface AgGridCellRenderer {
+    init(params: AgGridCellRendererParams): void;
+    getGui(): HTMLElement;
+}
+
+class TickerCellRenderer implements AgGridCellRenderer {
+    private eGui!: HTMLElement;
+
+    init(params: AgGridCellRendererParams): void {
+        this.eGui = document.createElement('span');
+        if (params.value && params.value !== 'N/A') {
+            this.eGui.innerText = params.value;
+            this.eGui.style.color = '#1f77b4';
+            this.eGui.style.fontWeight = 'bold';
+            this.eGui.style.textDecoration = 'underline';
+            this.eGui.style.cursor = 'pointer';
+            this.eGui.addEventListener('click', function (e: Event) {
+                e.stopPropagation();
+                const ticker = params.value;
+                if (ticker && ticker !== 'N/A') {
+                    window.location.href = `/v2/ticker?ticker=${encodeURIComponent(ticker)}`;
+                }
+            });
+        } else {
+            this.eGui.innerText = params.value || 'N/A';
+        }
+    }
+
+    getGui(): HTMLElement {
+        return this.eGui;
+    }
+}
+
 function updateGridTheme(): void {
     const gridEl = document.getElementById('holdings-grid');
     if (!gridEl) {
@@ -255,7 +294,7 @@ function initGrid(): void {
     updateGridTheme();
 
     const columnDefs = [
-        { field: 'ticker', headerName: 'Ticker', width: 100, pinned: 'left' },
+        { field: 'ticker', headerName: 'Ticker', width: 100, pinned: 'left', cellRenderer: TickerCellRenderer },
         { field: 'name', headerName: 'Company', width: 200 },
         { field: 'sector', headerName: 'Sector', width: 150 },
         { field: 'quantity', headerName: 'Shares', width: 100, type: 'numericColumn' },

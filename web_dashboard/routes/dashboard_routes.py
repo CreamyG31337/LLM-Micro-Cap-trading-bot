@@ -179,7 +179,6 @@ def get_performance_chart():
     """
     import plotly.utils
     from chart_utils import create_portfolio_value_chart
-    from user_preferences import get_user_theme
     
     fund = request.args.get('fund') or None
     # Convert empty string to None
@@ -187,7 +186,6 @@ def get_performance_chart():
         fund = None
     time_range = request.args.get('range', 'ALL') # '1M', '3M', '6M', '1Y', 'ALL'
     use_solid = request.args.get('use_solid', 'false').lower() == 'true'
-    client_theme = request.args.get('theme', '').strip().lower()
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/charts/performance called - fund={fund}, range={time_range}, currency={display_currency}")
@@ -228,16 +226,12 @@ def get_performance_chart():
                 mimetype='application/json'
             )
         
-        # Determine theme to use
-        theme = client_theme if client_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else None
-        if not theme:
-            user_theme = get_user_theme() or 'system'
-            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
-        
         # All benchmarks are now passed to the chart (S&P 500 visible, others in legend)
         all_benchmarks = ['sp500', 'qqq', 'russell2000', 'vti']
         
         # Create Plotly chart using shared function (same as Streamlit)
+        # Note: Streamlit doesn't apply theme - it uses default plotly_white template
+        # We match Streamlit exactly by not applying theme here
         fig = create_portfolio_value_chart(
             df,
             fund_name=fund,
@@ -248,39 +242,8 @@ def get_performance_chart():
             display_currency=display_currency
         )
         
-        # Apply theme to the chart
-        from chart_utils import get_chart_theme_config
-        theme_config = get_chart_theme_config(theme)
-        
-        # Update layout for theme
-        fig.update_layout(
-            template=theme_config['template'],
-            paper_bgcolor=theme_config['paper_bgcolor'],
-            plot_bgcolor=theme_config['plot_bgcolor'],
-            font={'color': theme_config['font_color']}
-        )
-        
-        # Update grid colors
-        fig.update_xaxes(gridcolor=theme_config['grid_color'], zerolinecolor=theme_config['grid_color'])
-        fig.update_yaxes(gridcolor=theme_config['grid_color'], zerolinecolor=theme_config['grid_color'])
-        
-        # Update legend background
-        if fig.layout.legend:
-            fig.update_layout(legend=dict(bgcolor=theme_config['legend_bg_color']))
-        
-        # Update weekend shading and baseline line colors
-        if fig.layout.shapes:
-            for shape in fig.layout.shapes:
-                if shape.type == 'line' and hasattr(shape, 'y0') and shape.y0 == shape.y1:
-                    # Baseline hline
-                    if hasattr(shape, 'line'):
-                        shape.line.color = theme_config['baseline_line_color']
-                elif shape.type == 'rect' and hasattr(shape, 'fillcolor'):
-                    # Weekend shading
-                    shape.fillcolor = theme_config['weekend_shading_color']
-        
         processing_time = time.time() - start_time
-        logger.info(f"[Dashboard API] Performance chart created - {len(df)} data points, theme={theme}, processing_time={processing_time:.3f}s")
+        logger.info(f"[Dashboard API] Performance chart created - {len(df)} data points, use_solid={use_solid}, processing_time={processing_time:.3f}s")
         
         # Return Plotly JSON
         return Response(
@@ -295,28 +258,32 @@ def get_performance_chart():
 
 @dashboard_bp.route('/api/dashboard/charts/allocation', methods=['GET'])
 def get_allocation_charts():
-    """Get allocation data (Sector, Asset Class, etc.).
+    """Get allocation chart as Plotly JSON (Sector pie chart).
     
     GET /api/dashboard/charts/allocation
     
     Query Parameters:
         fund (str): Fund name (optional)
+        theme (str): Chart theme - 'dark', 'light', 'midnight-tokyo', 'abyss' (optional)
         
     Returns:
-        JSON response with:
-            - sector (list): Array of sector allocation objects:
-                - label (str): Sector name
-                - value (float): Allocation value in display currency
-            - asset_class (list): Array of asset class allocation objects (if implemented)
+        JSON response with Plotly chart data:
+            - data: Array of trace objects (pie chart)
+            - layout: Layout configuration
             
     Error Responses:
         500: Server error during data fetch
     """
+    import plotly.utils
+    from chart_utils import create_sector_allocation_chart
+    from user_preferences import get_user_theme
+    
     fund = request.args.get('fund')
     # Convert 'all' or empty string to None for aggregate view
     if not fund or fund.lower() == 'all':
         fund = None
-        
+    
+    client_theme = request.args.get('theme', '').strip().lower()
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/charts/allocation called - fund={fund}, currency={display_currency}")
@@ -329,54 +296,35 @@ def get_allocation_charts():
         
         if positions_df.empty:
             logger.warning(f"[Dashboard API] No positions found for allocation chart - fund={fund}")
-            return jsonify({"sector": [], "asset_class": []})
-            
-        # Need to convert values to display currency for accurate pie chart
-        # Using simplified approach (assuming pre-calculated or bulk rate fetch)
-        # Ideally pass display_currency to get_current_positions if it supported it, but it handles logic differently.
-        # We'll do a quick conversion here similar to summary
+            # Return empty Plotly chart
+            import plotly.graph_objs as go
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return Response(
+                json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                mimetype='application/json'
+            )
         
-        all_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
-        rate_map = fetch_latest_rates_bulk(all_currencies, display_currency)
-        def get_rate(curr): return rate_map.get(str(curr).upper(), 1.0)
+        # Create Plotly pie chart using shared function (same as Streamlit)
+        # Note: Streamlit doesn't apply theme - it uses default plotly_white template
+        # We match Streamlit exactly by not applying theme here
+        fig = create_sector_allocation_chart(positions_df, fund_name=fund)
         
-        rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate)
-        positions_df['display_value'] = positions_df['market_value'].fillna(0) * rates
+        # Update height to match container
+        fig.update_layout(height=320)
         
-        # Sector Allocation
-        # Use 'sector' column from securities join
-        # Note: get_current_positions joins securities, but col names might be nested or flattened?
-        # Looking at streamlit_utils.py: "securities(company_name, sector, industry...)"
-        # PostgRest/Supabase usually returns nested dict unless flattened.
-        # But `pd.json_normalize` might be needed if it's not handled.
-        # Let's check `get_current_positions` implementation... it returns `pd.DataFrame(all_rows)`.
-        # If headers are securities.sector it might be flattened or strict json.
-        # Usually Supabase Python client returns nested dicts: row['securities']['sector'].
-        
-        # Let's normalize safely
-        if 'securities' in positions_df.columns:
-            # It's a column of dicts
-            sec_df = pd.json_normalize(positions_df['securities'])
-            positions_df['sector'] = sec_df['sector']
-            # positions_df['industry'] = sec_df['industry']
-        
-        # Group by Sector
-        sector_grp = positions_df.groupby('sector')['display_value'].sum().sort_values(ascending=False)
-        total_val = sector_grp.sum()
-        
-        sector_data = []
-        for sector, val in sector_grp.items():
-            if not sector: sector = "Unknown"
-            pct = (val / total_val) * 100
-            if pct < 1: continue # Group small into other? Or just send all
-            sector_data.append({"label": sector, "value": val})
-            
         processing_time = time.time() - start_time
-        logger.info(f"[Dashboard API] Allocation chart data prepared - {len(sector_data)} sectors, processing_time={processing_time:.3f}s")
+        logger.info(f"[Dashboard API] Sector allocation chart created - processing_time={processing_time:.3f}s")
         
-        return jsonify({
-            "sector": sector_data
-        })
+        # Return Plotly JSON
+        return Response(
+            json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            mimetype='application/json'
+        )
         
     except Exception as e:
         processing_time = time.time() - start_time

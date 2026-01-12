@@ -22,38 +22,7 @@ declare global {
         // This avoids conflicts since different files use different AgGrid type definitions
     }
     
-    // ApexCharts is loaded from CDN
-    const ApexCharts: {
-        new (element: HTMLElement, options: ApexChartsOptions): ApexChartsInstance;
-    };
-    
-    interface ApexChartsOptions {
-        series?: any[];
-        chart?: {
-            type?: string;
-            height?: number;
-            toolbar?: { show?: boolean };
-            zoom?: { enabled?: boolean };
-        };
-        colors?: string[];
-        stroke?: { curve?: string; width?: number };
-        xaxis?: { type?: string };
-        yaxis?: {
-            labels?: {
-                formatter?: (val: number) => string;
-            };
-        };
-        tooltip?: {
-            x?: { format?: string };
-            y?: { formatter?: (val: number) => string };
-        };
-        labels?: string[];
-    }
-    
-    interface ApexChartsInstance {
-        render(): void;
-        destroy(): void;
-    }
+    // ApexCharts removed - all charts now use Plotly
 }
 
 // Export empty object to make this a module (required for declare global)

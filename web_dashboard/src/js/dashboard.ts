@@ -41,14 +41,8 @@ interface PerformanceChartData {
 }
 
 interface AllocationChartData {
-    sector?: Array<{
-        label: string;
-        value: number;
-    }>;
-    asset_class?: Array<{
-        label: string;
-        value: number;
-    }>;
+    data: any[]; // Plotly trace data
+    layout: any; // Plotly layout
 }
 
 interface HoldingsData {
@@ -85,7 +79,8 @@ interface Fund {
 const state = {
     currentFund: typeof window !== 'undefined' && window.INITIAL_FUND ? window.INITIAL_FUND : '',
     timeRange: 'ALL' as '1M' | '3M' | '6M' | '1Y' | 'ALL',
-    charts: {} as Record<string, ApexChartsInstance>, // Sector chart still uses ApexCharts
+    useSolidLines: false, // Solid lines checkbox state
+    charts: {} as Record<string, any>, // Charts now use Plotly (no longer ApexCharts)
     gridApi: null as any // AG Grid API
 };
 
@@ -97,6 +92,7 @@ document.addEventListener('DOMContentLoaded', (): void => {
     initTimeDisplay();
     initFundSelector();
     initTimeRangeControls();
+    initSolidLinesCheckbox();
     initGrid(); // Initialize empty grid
 
     // Fetch Data
@@ -170,6 +166,25 @@ function initTimeRangeControls(): void {
                 fetchPerformanceChart();
             }
         });
+    });
+}
+
+function initSolidLinesCheckbox(): void {
+    const checkbox = document.getElementById('use-solid-lines') as HTMLInputElement | null;
+    if (!checkbox) {
+        console.warn('[Dashboard] Solid lines checkbox not found');
+        return;
+    }
+
+    // Set initial state
+    checkbox.checked = state.useSolidLines;
+
+    // Listen for changes
+    checkbox.addEventListener('change', (): void => {
+        state.useSolidLines = checkbox.checked;
+        console.log('[Dashboard] Solid lines changed to:', state.useSolidLines);
+        // Refresh performance chart only
+        fetchPerformanceChart();
     });
 }
 
@@ -467,31 +482,11 @@ async function fetchSummary(): Promise<void> {
 }
 
 async function fetchPerformanceChart(): Promise<void> {
-    // Detect actual theme from page (same as ticker_details.ts)
-    const htmlElement = document.documentElement;
-    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
-    let theme: string = 'light'; // default
-
-    if (dataTheme === 'dark') {
-        theme = 'dark';
-    } else if (dataTheme === 'light') {
-        theme = 'light';
-    } else if (dataTheme === 'system') {
-        // For 'system', check if page is actually in dark mode via CSS
-        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
-        // Check for dark mode background colors
-        const isDark = bodyBg && (
-            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
-            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
-            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
-        );
-        theme = isDark ? 'dark' : 'light';
-    }
-
-    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}&theme=${encodeURIComponent(theme)}`;
+    // Match Streamlit: use_solid_lines parameter from checkbox
+    const url = `/api/dashboard/charts/performance?fund=${encodeURIComponent(state.currentFund)}&range=${state.timeRange}&use_solid=${state.useSolidLines}`;
     const startTime = performance.now();
 
-    console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange, theme });
+    console.log('[Dashboard] Fetching performance chart...', { url, fund: state.currentFund, range: state.timeRange, use_solid: state.useSolidLines });
 
     try {
         const response = await fetch(url, { credentials: 'include' });
@@ -544,10 +539,31 @@ async function fetchPerformanceChart(): Promise<void> {
 }
 
 async function fetchSectorChart(): Promise<void> {
-    const url = `/api/dashboard/charts/allocation?fund=${encodeURIComponent(state.currentFund)}`;
+    // Detect actual theme from page (same as performance chart)
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let theme: string = 'light'; // default
+
+    if (dataTheme === 'dark') {
+        theme = 'dark';
+    } else if (dataTheme === 'light') {
+        theme = 'light';
+    } else if (dataTheme === 'system') {
+        // For 'system', check if page is actually in dark mode via CSS
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        // Check for dark mode background colors
+        const isDark = bodyBg && (
+            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+        );
+        theme = isDark ? 'dark' : 'light';
+    }
+
+    const url = `/api/dashboard/charts/allocation?fund=${encodeURIComponent(state.currentFund)}&theme=${encodeURIComponent(theme)}`;
     const startTime = performance.now();
 
-    console.log('[Dashboard] Fetching sector chart...', { url, fund: state.currentFund });
+    console.log('[Dashboard] Fetching sector chart...', { url, fund: state.currentFund, theme });
 
     try {
         const response = await fetch(url, { credentials: 'include' });
@@ -571,9 +587,9 @@ async function fetchSectorChart(): Promise<void> {
 
         const data: AllocationChartData = await response.json();
         console.log('[Dashboard] Sector chart data received', {
-            has_sector: !!data.sector,
-            has_asset_class: !!data.asset_class,
-            sector_count: data.sector ? data.sector.length : 0
+            has_data: !!data.data,
+            has_layout: !!data.layout,
+            trace_count: data.data ? data.data.length : 0
         });
 
         renderSectorChart(data);
@@ -830,36 +846,45 @@ function renderPerformanceChart(data: PerformanceChartData): void {
 }
 
 function renderSectorChart(data: AllocationChartData): void {
-    if (state.charts.sector) {
-        state.charts.sector.destroy();
-    }
-
+    // Clear any existing chart
     const chartEl = document.getElementById('sector-chart');
     if (!chartEl) {
         console.warn('[Dashboard] Sector chart element not found');
         return;
     }
 
-    if (!data.sector || data.sector.length === 0) {
+    // Clear previous content
+    chartEl.innerHTML = '';
+
+    if (!data || !data.data || !data.layout) {
         chartEl.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No sector data available</p></div>';
         return;
     }
 
-    const options: ApexChartsOptions = {
-        series: data.sector.map(s => s.value),
-        chart: {
-            type: 'pie',
-            height: 320
-        },
-        labels: data.sector.map(s => s.label),
-        tooltip: {
-            y: { formatter: (val: number) => formatMoney(val, 'USD') }
-        }
-    };
+    // Render with Plotly (same as performance chart)
+    const Plotly = (window as any).Plotly;
+    if (!Plotly) {
+        console.error('[Dashboard] Plotly not loaded');
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error: Plotly library not loaded</p></div>';
+        return;
+    }
 
-    state.charts.sector = new ApexCharts(chartEl, options);
-    state.charts.sector.render();
-    console.log('[Dashboard] Sector chart rendered');
+    // Update layout height to match container
+    const layout = { ...data.layout };
+    layout.height = 320; // Match container height
+    layout.autosize = true;
+
+    try {
+        Plotly.newPlot('sector-chart', data.data, layout, { 
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+        });
+        console.log('[Dashboard] Sector chart rendered with Plotly');
+    } catch (error) {
+        console.error('[Dashboard] Error rendering Plotly sector chart:', error);
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error rendering chart</p></div>';
+    }
 }
 
 // Expose refreshDashboard globally for template onclick handlers

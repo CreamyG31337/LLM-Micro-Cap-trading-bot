@@ -18,9 +18,8 @@ declare global {
         marked?: {
             parse: (text: string) => string;
         };
-        // agGrid is declared in files that use it (congress_trades.ts, etc.)
-        // We don't declare it here to avoid conflicts with different type definitions
-        agGrid?: any; // Use 'any' here as a fallback, specific files can override with proper types
+        // agGrid is NOT declared here - each file that uses it declares its own type
+        // This avoids conflicts since different files use different AgGrid type definitions
     }
     
     // ApexCharts is loaded from CDN

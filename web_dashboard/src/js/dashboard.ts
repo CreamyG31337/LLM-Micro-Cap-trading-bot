@@ -244,51 +244,67 @@ function initGrid(): void {
     };
 
     // agGrid is loaded from CDN and available globally
-    if (typeof (window as any).agGrid !== 'undefined') {
-        // AG Grid v31+ recommends createGrid() which returns the API directly
-        // Fallback to new Grid() for older versions
-        if (typeof (window as any).agGrid.createGrid === 'function') {
-            // createGrid returns the grid API directly
-            try {
-                state.gridApi = (window as any).agGrid.createGrid(gridEl, gridOptions);
+    if (typeof (window as any).agGrid === 'undefined') {
+        console.error('[Dashboard] AG Grid not loaded');
+        return;
+    }
+
+    const agGrid = (window as any).agGrid;
+    
+    // AG Grid v31+ recommends createGrid() which returns the API directly
+    // Check for createGrid first (v31+)
+    if (typeof agGrid.createGrid === 'function') {
+        try {
+            const gridApi = agGrid.createGrid(gridEl, gridOptions);
+            if (gridApi && typeof gridApi.setRowData === 'function') {
+                state.gridApi = gridApi;
                 console.log('[Dashboard] AG Grid initialized with createGrid()', {
                     has_api: !!state.gridApi,
-                    has_setRowData: typeof state.gridApi?.setRowData === 'function',
+                    has_setRowData: typeof state.gridApi.setRowData === 'function',
                     gridApi_type: typeof state.gridApi,
                     gridApi_keys: state.gridApi ? Object.keys(state.gridApi).slice(0, 10) : []
                 });
-            } catch (createError) {
-                console.error('[Dashboard] Error creating grid with createGrid():', createError);
-                // Fallback to new Grid()
-                if ((window as any).agGrid.Grid) {
-                    const gridInstance = new (window as any).agGrid.Grid(gridEl, gridOptions);
-                    state.gridApi = gridInstance.api;
-                    console.log('[Dashboard] AG Grid initialized with new Grid() (fallback)', {
-                        has_api: !!state.gridApi,
-                        has_setRowData: typeof state.gridApi?.setRowData === 'function'
-                    });
-                }
-            }
-        } else if ((window as any).agGrid.Grid) {
-            // Fallback to deprecated new Grid() constructor
-            try {
-                const gridInstance = new (window as any).agGrid.Grid(gridEl, gridOptions);
-                state.gridApi = gridInstance.api;
-                console.log('[Dashboard] AG Grid initialized with new Grid()', {
-                    has_api: !!state.gridApi,
-                    has_setRowData: typeof state.gridApi?.setRowData === 'function'
+                return; // Success, exit early
+            } else {
+                console.error('[Dashboard] createGrid() returned invalid API:', {
+                    gridApi,
+                    has_setRowData: gridApi && typeof gridApi.setRowData === 'function'
                 });
-            } catch (gridError) {
-                console.error('[Dashboard] Error creating grid with new Grid():', gridError);
             }
-        } else {
-            console.error('[Dashboard] AG Grid API not found', {
-                agGrid_available: typeof (window as any).agGrid !== 'undefined',
-                agGrid_keys: (window as any).agGrid ? Object.keys((window as any).agGrid) : []
-            });
+        } catch (createError) {
+            console.error('[Dashboard] Error creating grid with createGrid():', createError);
+        }
+    }
+    
+    // Fallback to deprecated new Grid() constructor (v30 and earlier)
+    if (agGrid.Grid) {
+        try {
+            const gridInstance = new agGrid.Grid(gridEl, gridOptions);
+            // In v30, the API is on gridInstance.api
+            // In v31, createGrid returns the API directly
+            if (gridInstance && gridInstance.api) {
+                state.gridApi = gridInstance.api;
+                console.log('[Dashboard] AG Grid initialized with new Grid() (deprecated)', {
+                    has_api: !!state.gridApi,
+                    has_setRowData: typeof state.gridApi.setRowData === 'function',
+                    warning: 'Using deprecated new Grid() - consider upgrading to createGrid()'
+                });
+            } else {
+                console.error('[Dashboard] Grid instance created but API not available:', {
+                    gridInstance,
+                    has_api: gridInstance && !!gridInstance.api
+                });
+            }
+        } catch (gridError) {
+            console.error('[Dashboard] Error creating grid with new Grid():', gridError);
         }
     } else {
-        console.error('[Dashboard] AG Grid not loaded');
+        console.error('[Dashboard] AG Grid API not found', {
+            agGrid_available: typeof agGrid !== 'undefined',
+            agGrid_keys: agGrid ? Object.keys(agGrid) : [],
+            has_createGrid: typeof agGrid.createGrid === 'function',
+            has_Grid: typeof agGrid.Grid !== 'undefined'
+        });
     }
 }
 
@@ -599,17 +615,26 @@ async function fetchHoldings(): Promise<void> {
             has_grid_api: !!state.gridApi
         });
 
-        if (state.gridApi) {
-            // AG Grid API has setRowData method
-            if (typeof state.gridApi.setRowData === 'function') {
-                state.gridApi.setRowData(data.data || []);
-                console.log('[Dashboard] Holdings grid updated with', rowCount, 'rows');
-            } else {
-                // If setRowData doesn't exist, try updating via gridOptions
-                console.warn('[Dashboard] Grid API setRowData not available, grid may need reinitialization');
-            }
+        if (state.gridApi && typeof state.gridApi.setRowData === 'function') {
+            state.gridApi.setRowData(data.data || []);
+            console.log('[Dashboard] Holdings grid updated with', rowCount, 'rows');
         } else {
-            console.warn('[Dashboard] Grid API not initialized, cannot update holdings');
+            console.error('[Dashboard] Grid API not available for updating holdings', {
+                has_gridApi: !!state.gridApi,
+                gridApi_type: typeof state.gridApi,
+                has_setRowData: state.gridApi && typeof state.gridApi.setRowData === 'function',
+                gridApi_keys: state.gridApi ? Object.keys(state.gridApi).slice(0, 10) : []
+            });
+            // Try to reinitialize the grid
+            console.log('[Dashboard] Attempting to reinitialize grid...');
+            initGrid();
+            // Try again after a short delay
+            setTimeout(() => {
+                if (state.gridApi && typeof state.gridApi.setRowData === 'function') {
+                    state.gridApi.setRowData(data.data || []);
+                    console.log('[Dashboard] Holdings grid updated after reinitialization');
+                }
+            }, 100);
         }
 
     } catch (error) {

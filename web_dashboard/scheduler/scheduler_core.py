@@ -1426,6 +1426,8 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         for job_id, config in AVAILABLE_JOBS.items():
             # Try to infer trigger from config
             trigger_desc = 'Manual'
+            
+            # Check for cron triggers first
             if 'cron_triggers' in config and config['cron_triggers']:
                 # Has cron schedule
                 cron_config = config['cron_triggers'][0]
@@ -1438,6 +1440,7 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
                         trigger_desc += f" ({timezone})"
                 else:
                     trigger_desc = "Cron schedule"
+                logger.debug(f"[Scheduler Core] Job {job_id}: Extracted cron trigger -> {trigger_desc}")
             elif config.get('default_interval_minutes', 0) > 0:
                 # Has interval schedule
                 interval_mins = config['default_interval_minutes']
@@ -1449,6 +1452,9 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
                 else:
                     days = interval_mins // 1440
                     trigger_desc = f"Every {days} day{'s' if days != 1 else ''}"
+                logger.debug(f"[Scheduler Core] Job {job_id}: Extracted interval trigger -> {trigger_desc}")
+            else:
+                logger.debug(f"[Scheduler Core] Job {job_id}: No trigger found in config, using Manual. Config keys: {list(config.keys())}")
             
             jobs.append(DummyJob(
                 id=job_id,

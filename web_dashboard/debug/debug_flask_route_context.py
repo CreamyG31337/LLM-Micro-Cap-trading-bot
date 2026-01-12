@@ -30,9 +30,9 @@ try:
     from streamlit_utils import calculate_portfolio_value_over_time
     from user_preferences import get_user_currency
     from flask_auth_utils import get_user_email_flask
-    print("✅ Successfully imported modules")
+    print("[OK] Successfully imported modules")
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"[ERROR] Import error: {e}")
     sys.exit(1)
 
 print()
@@ -59,14 +59,14 @@ try:
     )
     
     if df_no_context.empty:
-        print("❌ Empty DataFrame")
+        print("[ERROR] Empty DataFrame")
     else:
-        print(f"✅ Got {len(df_no_context)} rows")
+        print(f"[OK] Got {len(df_no_context)} rows")
         if 'performance_index' in df_no_context.columns:
             print(f"   First 20 performance_index: {df_no_context['performance_index'].head(20).tolist()}")
             print(f"   Min: {df_no_context['performance_index'].min():.2f}, Max: {df_no_context['performance_index'].max():.2f}")
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"[ERROR] Error: {e}")
     import traceback
     traceback.print_exc()
 
@@ -81,7 +81,7 @@ print()
 try:
     with app.test_request_context('/api/dashboard/charts/performance?fund=Project%20Chimera'):
         # This simulates the Flask route's context
-        print("✅ Flask request context created")
+        print("[OK] Flask request context created")
         
         # Try to get user email (might fail without cookies, that's OK)
         try:
@@ -98,9 +98,9 @@ try:
         )
         
         if df_with_context.empty:
-            print("❌ Empty DataFrame")
+            print("[ERROR] Empty DataFrame")
         else:
-            print(f"✅ Got {len(df_with_context)} rows")
+            print(f"[OK] Got {len(df_with_context)} rows")
             if 'performance_index' in df_with_context.columns:
                 print(f"   First 20 performance_index: {df_with_context['performance_index'].head(20).tolist()}")
                 print(f"   Min: {df_with_context['performance_index'].min():.2f}, Max: {df_with_context['performance_index'].max():.2f}")
@@ -115,12 +115,12 @@ try:
                         diff = (df_no_context['performance_index'] - df_with_context['performance_index']).abs().max()
                         print(f"   Max difference: {diff:.2f}")
                         if diff > 0.01:
-                            print("   ⚠️  WARNING: Results differ between contexts!")
+                            print("   [WARNING] Results differ between contexts!")
                     else:
-                        print(f"   ⚠️  WARNING: Different row counts ({len(df_no_context)} vs {len(df_with_context)})")
+                        print(f"   [WARNING] Different row counts ({len(df_no_context)} vs {len(df_with_context)})")
                         
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"[ERROR] Error: {e}")
     import traceback
     traceback.print_exc()
 
@@ -153,12 +153,12 @@ try:
         print(f"   Second call first 10: {df2['performance_index'].head(10).tolist()}")
         
         if (df1['performance_index'] == df2['performance_index']).all():
-            print("   ✅ Results identical (cache working)")
+            print("   [OK] Results identical (cache working)")
         else:
-            print("   ⚠️  Results differ (cache issue?)")
+            print("   [WARNING] Results differ (cache issue?)")
             
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"[ERROR] Error: {e}")
     import traceback
     traceback.print_exc()
 

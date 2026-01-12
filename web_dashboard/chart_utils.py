@@ -511,6 +511,13 @@ def create_portfolio_value_chart(
         label_suffix = ""
     
     # Add portfolio trace
+    # DEBUG: Log what we're about to plot
+    import logging
+    logger = logging.getLogger(__name__)
+    if y_col == 'performance_index' and len(df) > 0:
+        first_10_y = df[y_col].head(10).tolist()
+        logger.info(f"[DEBUG] create_portfolio_value_chart - Plotting {y_col}, first 10 values: {first_10_y}, df shape: {df.shape}, columns: {list(df.columns)}")
+    
     fig.add_trace(go.Scatter(
         x=df['date'],
         y=df[y_col],

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Simplified debug script - just test the Flask route's actual behavior.
-
-This simulates what the Flask route does when calling the API.
+Test the Flask calculate_portfolio_value_over_time_flask function directly
+to see what it returns.
 """
 
 import sys
@@ -16,51 +15,42 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 print("=" * 80)
-print("Simple Portfolio Performance Debug")
+print("Testing Flask calculate_portfolio_value_over_time_flask Function")
 print("=" * 80)
 print()
 
-# Import after path setup
 try:
-    from streamlit_utils import calculate_portfolio_value_over_time, get_user_display_currency
+    from flask_data_utils import calculate_portfolio_value_over_time_flask
     from supabase_client import SupabaseClient
     print("[OK] Successfully imported modules")
 except ImportError as e:
     print(f"[ERROR] Import error: {e}")
     sys.exit(1)
 
-# Patch get_supabase_client to use service role for debugging
-def patch_supabase_client():
-    """Patch streamlit_utils to use service role client for debugging"""
-    import streamlit_utils
-    original_get_client = streamlit_utils.get_supabase_client
-    
-    def get_supabase_client_service_role(*args, **kwargs):
-        """Use service role to bypass RLS for debugging"""
-        return SupabaseClient(use_service_role=True)
-    
-    streamlit_utils.get_supabase_client = get_supabase_client_service_role
-    return original_get_client
+# Patch get_supabase_client_flask to use service role
+import flask_data_utils
+original_get_client = flask_data_utils.get_supabase_client_flask
 
-print()
+def get_supabase_client_flask_service_role():
+    """Use service role to bypass RLS for debugging"""
+    return SupabaseClient(use_service_role=True)
 
-# Patch to use service role for debugging
-original_get_client = patch_supabase_client()
-print("[INFO] Patched get_supabase_client to use service role (bypasses RLS)")
+flask_data_utils.get_supabase_client_flask = get_supabase_client_flask_service_role
+print("[INFO] Patched get_supabase_client_flask to use service role\n")
 
-# Test with same parameters as Flask route
-test_fund = "Project Chimera"  # Change as needed
-display_currency = get_user_display_currency() or 'CAD'
+# Test parameters
+test_fund = "Project Chimera"
+display_currency = 'CAD'
 
 print(f"Fund: {test_fund}")
 print(f"Display Currency: {display_currency}")
 print()
 
 try:
-    print("Calling calculate_portfolio_value_over_time...")
-    df = calculate_portfolio_value_over_time(
+    print("Calling calculate_portfolio_value_over_time_flask...")
+    df = calculate_portfolio_value_over_time_flask(
         fund=test_fund,
-        days=None,  # ALL
+        days=None,
         display_currency=display_currency
     )
     
@@ -74,28 +64,30 @@ try:
         print(df.head(30).to_string())
         
         if 'performance_index' in df.columns:
-            print(f"\n[INFO] Performance Index:")
-            print(f"   First 20: {df['performance_index'].head(20).tolist()}")
-            print(f"   Last 20: {df['performance_index'].tail(20).tolist()}")
+            print(f"\n[INFO] Performance Index Analysis:")
+            print(f"   First 30 values: {df['performance_index'].head(30).tolist()}")
+            print(f"   Last 10 values: {df['performance_index'].tail(10).tolist()}")
             print(f"   Min: {df['performance_index'].min():.2f}")
             print(f"   Max: {df['performance_index'].max():.2f}")
             print(f"   Mean: {df['performance_index'].mean():.2f}")
             
-            # Check for the pattern
-            first_20 = df['performance_index'].head(20).tolist()
-            is_pattern = all(abs(first_20[i] - i) < 2.0 for i in range(min(20, len(first_20))))
+            # Check for the 0,1,2,3... pattern
+            first_30 = df['performance_index'].head(30).tolist()
+            is_pattern = all(abs(first_30[i] - i) < 2.0 for i in range(min(30, len(first_30))))
             if is_pattern:
                 print("\n   [WARNING] Detected 0,1,2,3... pattern!")
+            else:
+                print("\n   [OK] No 0,1,2,3... pattern detected")
         
         if 'performance_pct' in df.columns:
-            print(f"\n[INFO] Performance %:")
-            print(f"   First 20: {df['performance_pct'].head(20).tolist()}")
+            print(f"\n[INFO] Performance % Analysis:")
+            print(f"   First 30 values: {df['performance_pct'].head(30).tolist()}")
             print(f"   Min: {df['performance_pct'].min():.2f}")
             print(f"   Max: {df['performance_pct'].max():.2f}")
         
         if 'cost_basis' in df.columns:
-            print(f"\n[INFO] Cost Basis:")
-            print(f"   First 20: {df['cost_basis'].head(20).tolist()}")
+            print(f"\n[INFO] Cost Basis Analysis:")
+            print(f"   First 30 values: {df['cost_basis'].head(30).tolist()}")
             first_investment_idx = (df['cost_basis'] > 0).idxmax() if (df['cost_basis'] > 0).any() else None
             if first_investment_idx is not None:
                 print(f"   First investment at row {first_investment_idx}: {df.loc[first_investment_idx, 'date']}")
@@ -103,8 +95,8 @@ try:
                 print(f"   First investment performance_pct: {df.loc[first_investment_idx, 'performance_pct']}")
                 print(f"   First investment performance_index: {df.loc[first_investment_idx, 'performance_index']}")
         
-        # Save to CSV for inspection
-        output_file = "debug_portfolio_performance_output.csv"
+        # Save to CSV
+        output_file = "debug_flask_function_output.csv"
         df.to_csv(output_file, index=False)
         print(f"\n[SAVED] Full output saved to: {output_file}")
         
@@ -114,8 +106,7 @@ except Exception as e:
     traceback.print_exc()
 finally:
     # Restore original function
-    import streamlit_utils
-    streamlit_utils.get_supabase_client = original_get_client
+    flask_data_utils.get_supabase_client_flask = original_get_client
 
 print("\n" + "="*80)
 print("Done")

@@ -69,6 +69,14 @@ python debug/debug_flask_route_context.py
 
 **Note**: Edit the `test_fund` variable in each script to test with your specific fund name.
 
+#### `debug_performance_chart.py`
+Comprehensive test that compares Streamlit vs Flask functions and tests the Flask API endpoint:
+```bash
+cd web_dashboard
+.\venv\Scripts\activate  # Windows
+python debug/debug_performance_chart.py
+```
+
 ## Usage
 
 All scripts must be run from the server command line with proper authentication to the server itself. They are not accessible via web browser or HTTP requests.

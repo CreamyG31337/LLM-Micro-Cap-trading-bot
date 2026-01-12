@@ -211,6 +211,16 @@ def get_performance_chart():
         df = calculate_portfolio_value_over_time(fund, days=days, display_currency=display_currency)
         logger.debug(f"[Dashboard API] Portfolio value data fetched: {len(df)} rows")
         
+        # DEBUG: Log performance_index values to diagnose the 0,1,2,3... issue
+        if not df.empty and 'performance_index' in df.columns:
+            first_10_idx = df['performance_index'].head(10).tolist()
+            last_10_idx = df['performance_index'].tail(10).tolist()
+            logger.info(f"[DEBUG] Performance Index BEFORE chart creation - First 10: {first_10_idx}, Last 10: {last_10_idx}, Min: {df['performance_index'].min():.2f}, Max: {df['performance_index'].max():.2f}")
+            if 'cost_basis' in df.columns:
+                first_investment = df[df['cost_basis'] > 0]
+                if not first_investment.empty:
+                    logger.info(f"[DEBUG] First investment day: {first_investment.iloc[0]['date']}, cost_basis: {first_investment.iloc[0]['cost_basis']}, performance_index: {first_investment.iloc[0]['performance_index']}")
+        
         if df.empty:
             logger.warning(f"[Dashboard API] No portfolio value data found for fund={fund}, range={time_range}")
             # Return empty Plotly chart
@@ -240,6 +250,13 @@ def get_performance_chart():
             display_currency=display_currency
         )
         
+        # DEBUG: Log the actual y-values being sent to the chart
+        if fig.data and len(fig.data) > 0:
+            portfolio_trace = fig.data[0]  # First trace is usually the portfolio
+            if hasattr(portfolio_trace, 'y') and portfolio_trace.y is not None:
+                y_values = list(portfolio_trace.y)[:20] if len(portfolio_trace.y) > 20 else list(portfolio_trace.y)
+                logger.info(f"[DEBUG] Chart y-values (first 20): {y_values}, Total points: {len(portfolio_trace.y)}")
+        
         # Apply theme to chart (similar to ticker chart)
         client_theme = request.args.get('theme', '').strip().lower()
         if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:
@@ -252,6 +269,14 @@ def get_performance_chart():
         # Apply theme to chart data (convert to dict, apply theme, return as JSON)
         from chart_utils import get_chart_theme_config
         chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        
+        # DEBUG: Log the y-values in the JSON being sent to frontend
+        if 'data' in chart_data and len(chart_data['data']) > 0:
+            portfolio_data = chart_data['data'][0]
+            if 'y' in portfolio_data:
+                y_values_json = portfolio_data['y'][:20] if len(portfolio_data['y']) > 20 else portfolio_data['y']
+                logger.info(f"[DEBUG] JSON y-values being sent to frontend (first 20): {y_values_json}")
+        
         theme_config = get_chart_theme_config(theme)
         
         # Update layout for theme

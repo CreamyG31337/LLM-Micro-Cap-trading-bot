@@ -45,6 +45,19 @@ except ImportError as e:
     print(f"[ERROR] Import error: {e}")
     sys.exit(1)
 
+# Patch get_supabase_client to use service role for debugging
+def patch_supabase_client():
+    """Patch streamlit_utils to use service role client for debugging"""
+    import streamlit_utils
+    original_get_client = streamlit_utils.get_supabase_client
+    
+    def get_supabase_client_service_role(*args, **kwargs):
+        """Use service role to bypass RLS for debugging"""
+        return SupabaseClient(use_service_role=True)
+    
+    streamlit_utils.get_supabase_client = get_supabase_client_service_role
+    return original_get_client
+
 print()
 
 
@@ -55,14 +68,19 @@ def test_data_query(fund: Optional[str] = None, use_flask_client: bool = False):
     print(f"{'='*80}\n")
     
     if use_flask_client:
-        client = get_supabase_client_flask()
-        print("Using Flask client (get_supabase_client_flask)")
+        # For Flask client, use service role directly since we're outside request context
+        try:
+            client = SupabaseClient(use_service_role=True)
+            print("Using Flask client (service role - bypasses RLS)")
+        except Exception as e:
+            print(f"[ERROR] Failed to create Flask client: {e}")
+            return None
     else:
         client = get_supabase_client()
         print("Using Streamlit client (get_supabase_client)")
     
     if not client:
-        print("❌ Failed to get Supabase client")
+        print("[ERROR] Failed to get Supabase client")
         return None
     
     try:
@@ -191,7 +209,7 @@ def test_step_by_step_calculation(fund: Optional[str] = None):
     
     client = get_supabase_client()
     if not client:
-        print("❌ Failed to get Supabase client")
+        print("[ERROR] Failed to get Supabase client")
         return None
     
     try:
@@ -277,7 +295,7 @@ def test_step_by_step_calculation(fund: Optional[str] = None):
             daily_totals.loc[mask, 'performance_pct'] = daily_totals.loc[mask, 'performance_pct'] - first_day_performance
             print(f"   After normalization, first 10 performance_pct values: {daily_totals['performance_pct'].head(10).tolist()}")
         else:
-            print("   ⚠️  No days with investment found!")
+            print("   [WARNING] No days with investment found!")
         
         # Step 8: Calculate performance_index
         print("\nStep 8: Calculating performance_index...")
@@ -296,7 +314,7 @@ def test_step_by_step_calculation(fund: Optional[str] = None):
         return daily_totals
         
     except Exception as e:
-        print(f"❌ Error in step-by-step calculation: {e}")
+        print(f"[ERROR] Error in step-by-step calculation: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -307,6 +325,10 @@ def main():
     print("\n" + "="*80)
     print("Starting Portfolio Performance Debug Tests")
     print("="*80 + "\n")
+    
+    # Patch to use service role for debugging
+    original_get_client = patch_supabase_client()
+    print("[INFO] Patched get_supabase_client to use service role (bypasses RLS)\n")
     
     # Test with a specific fund (change as needed)
     test_fund = "Project Chimera"  # Change this to your test fund
@@ -344,6 +366,10 @@ def main():
     
     # Test 3: Step-by-step calculation
     result_step_by_step = test_step_by_step_calculation(test_fund)
+    
+    # Restore original function
+    import streamlit_utils
+    streamlit_utils.get_supabase_client = original_get_client
     
     print("\n" + "="*80)
     print("Debug Tests Complete")

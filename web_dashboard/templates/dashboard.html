@@ -128,8 +128,8 @@
         <div
             class="xl:col-span-1 p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
             <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Sector Allocation</h3>
-            <div class="h-80 w-full flex items-center justify-center" id="sector-chart">
-                <!-- ApexChart -->
+            <div class="h-80 w-full" id="sector-chart">
+                <!-- Plotly Chart -->
             </div>
         </div>
     </div>
@@ -162,6 +162,13 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_head %}
+<!-- AgGrid Community Edition - Base styles and themes -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine-dark.css">
 {% endblock %}
 
 {% block extra_scripts %}

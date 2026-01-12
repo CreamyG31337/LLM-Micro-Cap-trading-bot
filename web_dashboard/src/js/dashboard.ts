@@ -91,6 +91,8 @@ function initThemeSync(): void {
     if (themeManager) {
         themeManager.addListener((theme: string) => {
             console.log('[Dashboard] Theme changed, refreshing charts...', { theme });
+            // Update AG Grid theme
+            updateGridTheme();
             // Re-fetch charts with new theme
             fetchPerformanceChart().catch(err => console.error('[Dashboard] Error refreshing performance chart on theme change:', err));
             fetchSectorChart().catch(err => console.error('[Dashboard] Error refreshing sector chart on theme change:', err));
@@ -205,6 +207,42 @@ function initSolidLinesCheckbox(): void {
     });
 }
 
+// Update AG Grid theme class based on current theme
+function updateGridTheme(): void {
+    const gridEl = document.getElementById('holdings-grid');
+    if (!gridEl) {
+        return;
+    }
+
+    // Detect current theme
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let effectiveTheme: string = 'light';
+
+    if (dataTheme === 'dark' || dataTheme === 'midnight-tokyo' || dataTheme === 'abyss') {
+        effectiveTheme = 'dark';
+    } else if (dataTheme === 'light') {
+        effectiveTheme = 'light';
+    } else if (dataTheme === 'system') {
+        // For 'system', check if page is actually in dark mode via CSS
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        const isDark = bodyBg && (
+            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+        );
+        effectiveTheme = isDark ? 'dark' : 'light';
+    }
+
+    // Update AG Grid theme class
+    gridEl.classList.remove('ag-theme-alpine', 'ag-theme-alpine-dark');
+    if (effectiveTheme === 'dark') {
+        gridEl.classList.add('ag-theme-alpine-dark');
+    } else {
+        gridEl.classList.add('ag-theme-alpine');
+    }
+}
+
 function initGrid(): void {
     console.log('[Dashboard] Initializing AG Grid...');
     const gridEl = document.getElementById('holdings-grid');
@@ -212,6 +250,9 @@ function initGrid(): void {
         console.warn('[Dashboard] Holdings grid element not found');
         return;
     }
+
+    // Apply theme before initializing
+    updateGridTheme();
 
     const columnDefs = [
         { field: 'ticker', headerName: 'Ticker', width: 100, pinned: 'left' },
@@ -901,10 +942,18 @@ function renderSectorChart(data: AllocationChartData): void {
         return;
     }
 
-    // Update layout height to match container
+    // Update layout height to match container and ensure centered margins
     const layout = { ...data.layout };
     layout.height = 320; // Match container height
     layout.autosize = true;
+    // Ensure equal margins for centering (override any backend margins if needed)
+    if (!layout.margin) {
+        layout.margin = { l: 20, r: 20, t: 50, b: 20 };
+    } else {
+        // Ensure left and right margins are equal for centering
+        layout.margin.l = Math.max(20, layout.margin.l || 20);
+        layout.margin.r = Math.max(20, layout.margin.r || 20);
+    }
 
     try {
         Plotly.newPlot('sector-chart', data.data, layout, { 

@@ -1073,7 +1073,9 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
         title=title,
         template='plotly_white',
         height=500,
-        showlegend=True
+        showlegend=True,
+        margin=dict(l=20, r=20, t=50, b=20),  # Center the pie chart with equal left/right margins
+        autosize=True
     )
     
     return fig

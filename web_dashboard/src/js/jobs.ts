@@ -100,9 +100,9 @@ function initializeDOMElements(): void {
     elements.infoText = document.getElementById('scheduler-info');
     elements.startBtn = document.getElementById('start-scheduler-btn');
     elements.refreshBtn = document.getElementById('refresh-status-btn');
-    elements.jobsList = document.getElementById('jobs-list');
-    elements.jobsLoading = document.getElementById('loading');
-    elements.noJobs = document.getElementById('no-jobs');
+    elements.jobsList = document.getElementById('jobs-container'); // Template uses 'jobs-container'
+    elements.jobsLoading = document.getElementById('jobs-loading'); // Will add this to template
+    elements.noJobs = document.getElementById('jobs-empty'); // Will add this to template
     elements.errorMsg = document.getElementById('error-message');
     elements.errorText = document.getElementById('error-text');
     elements.autoRefreshCheckbox = document.getElementById('auto-refresh') as HTMLInputElement | null;
@@ -273,7 +273,12 @@ function updateStatusUI(running: boolean): void {
 
 // Render Jobs
 function renderJobs(jobsData: Job[]): void {
-    console.log('[Jobs] renderJobs called:', { jobs_count: jobsData ? jobsData.length : 0 });
+    console.log('[Jobs] renderJobs called:', { 
+        jobs_count: jobsData ? jobsData.length : 0,
+        has_jobsList: !!elements.jobsList,
+        jobsList_id: elements.jobsList?.id,
+        jobsList_element: elements.jobsList
+    });
     jobs = jobsData || [];
     
     if (elements.jobsLoading) {
@@ -284,7 +289,7 @@ function renderJobs(jobsData: Job[]): void {
     if (jobs.length === 0) {
         console.log('[Jobs] No jobs to render');
         if (elements.jobsList) {
-            elements.jobsList.classList.add('hidden');
+            elements.jobsList.innerHTML = '<div class="text-center py-8 text-gray-500 dark:text-gray-400">No jobs available</div>';
         }
         if (elements.noJobs) {
             elements.noJobs.classList.remove('hidden');
@@ -296,10 +301,15 @@ function renderJobs(jobsData: Job[]): void {
         elements.noJobs.classList.add('hidden');
     }
     if (elements.jobsList) {
-        elements.jobsList.classList.remove('hidden');
         const jobCards = jobs.map(job => createJobCard(job));
         elements.jobsList.innerHTML = jobCards.join('');
-        console.log('[Jobs] Rendered', jobs.length, 'job cards');
+        console.log('[Jobs] Rendered', jobs.length, 'job cards to element:', elements.jobsList.id);
+    } else {
+        console.error('[Jobs] jobsList element not found! Cannot render jobs.', {
+            available_ids: Array.from(document.querySelectorAll('[id*="job"]')).map(el => el.id),
+            jobs_container: document.getElementById('jobs-container'),
+            all_elements: Object.keys(elements).map(key => ({ key, found: !!elements[key as keyof JobsDOMElements] }))
+        });
     }
 
     // Attach event listeners to new buttons

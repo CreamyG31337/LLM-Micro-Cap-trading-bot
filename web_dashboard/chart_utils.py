@@ -922,7 +922,17 @@ def create_currency_exposure_chart(positions_df: pd.DataFrame, fund_name: Option
     df = positions_df.copy()
     
     # Convert currency column to string and clean invalid values
-    df['currency'] = df['currency'].fillna('USD')  # Replace NaN/None with USD
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Check for missing currencies
+    missing_currency_mask = df['currency'].isna()
+    if missing_currency_mask.any():
+        invalid_count = missing_currency_mask.sum()
+        invalid_tickers = df.loc[missing_currency_mask, 'ticker'].tolist() if 'ticker' in df.columns else ['unknown']
+        logger.warning(f"[Currency Chart] Found {invalid_count} positions with missing currency (tickers: {invalid_tickers[:10]}...). Defaulting to USD.")
+        df.loc[missing_currency_mask, 'currency'] = 'USD'
+    
     df['currency'] = df['currency'].astype(str).str.strip().str.upper()
     
     # Replace empty strings and 'NAN' with USD (default)
@@ -931,11 +941,9 @@ def create_currency_exposure_chart(positions_df: pd.DataFrame, fund_name: Option
     
     # Log warning if invalid currencies were found
     if invalid_mask.any():
-        import logging
-        logger = logging.getLogger(__name__)
         invalid_count = invalid_mask.sum()
         invalid_tickers = df.loc[invalid_mask, 'ticker'].tolist() if 'ticker' in df.columns else ['unknown']
-        logger.warning(f"⚠️ Found {invalid_count} positions with invalid/NaN currency (tickers: {invalid_tickers[:5]}...). Defaulting to USD.")
+        logger.warning(f"[Currency Chart] Found {invalid_count} positions with invalid currency values (tickers: {invalid_tickers[:10]}...). Defaulting to USD.")
     
     df.loc[invalid_mask, 'currency'] = 'USD'
     
@@ -1011,17 +1019,32 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     if 'currency' in positions_df.columns:
         try:
             from streamlit_utils import fetch_latest_rates_bulk
-            all_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
-            rate_map = fetch_latest_rates_bulk(list(all_currencies), display_currency)
+            # Check for missing currencies and log them
+            missing_currency_mask = positions_df['currency'].isna()
+            if missing_currency_mask.any():
+                missing_tickers = positions_df.loc[missing_currency_mask, 'ticker'].tolist()
+                logger.warning(f"[Sector Chart] Found {missing_currency_mask.sum()} positions with missing currency (tickers: {missing_tickers[:10]}...). These will use 1.0 conversion rate.")
+            
+            # Get unique currencies, excluding NaN
+            all_currencies = positions_df['currency'].dropna().astype(str).str.upper().unique().tolist()
+            if all_currencies:
+                rate_map = fetch_latest_rates_bulk(all_currencies, display_currency)
+                logger.info(f"[Sector Chart] Fetched exchange rates for {len(rate_map)} currencies")
+            else:
+                logger.warning(f"[Sector Chart] No valid currencies found in positions_df, skipping currency conversion")
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"Could not fetch exchange rates for sector allocation: {e}")
+            logger.error(f"[Sector Chart] Could not fetch exchange rates for sector allocation: {e}", exc_info=True)
     
     def get_rate(curr):
         if not curr or pd.isna(curr):
+            logger.warning(f"[Sector Chart] Missing currency value, using 1.0 (no conversion)")
             return 1.0
-        return rate_map.get(str(curr).upper(), 1.0)
+        rate = rate_map.get(str(curr).upper(), 1.0)
+        if rate == 1.0 and str(curr).upper() != display_currency.upper():
+            logger.warning(f"[Sector Chart] Exchange rate not found for {curr}->{display_currency}, using 1.0 (no conversion)")
+        return rate
     
     # Use sector data from database if available, otherwise fetch from yfinance
     # Check for both flat 'sector' column and nested 'securities' dict
@@ -1031,6 +1054,9 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     import logging
     logger = logging.getLogger(__name__)
     logger.debug(f"[Sector Chart] has_sector_column={has_sector_column}, has_securities_column={has_securities_column}")
+    logger.debug(f"[Sector Chart] DataFrame columns: {list(positions_df.columns)}")
+    if not positions_df.empty:
+        logger.debug(f"[Sector Chart] Sample row: {positions_df.iloc[0].to_dict()}")
     
     sector_data = []
     for idx, row in positions_df.iterrows():
@@ -1039,9 +1065,14 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
         
         # Convert market_value to display currency
         if 'currency' in row and rate_map:
-            currency = row.get('currency', 'CAD')
-            rate = get_rate(currency)
-            market_value = market_value * rate
+            currency = row.get('currency')
+            if not currency or pd.isna(currency):
+                logger.warning(f"[Sector Chart] Missing currency for {ticker}, skipping currency conversion")
+            else:
+                rate = get_rate(currency)
+                market_value = market_value * rate
+        
+        logger.debug(f"[Sector Chart] {ticker}: market_value={market_value}, currency={row.get('currency', 'N/A')}")
         
         # First, try to use sector from database (faster and more reliable)
         # Handle nested securities dict (from Supabase join)
@@ -1059,6 +1090,7 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
         
         # If sector not in database or is null, try fetching from yfinance
         if not sector:
+            logger.info(f"[Sector Chart] Sector not found in database for {ticker}, fetching from yfinance")
             try:
                 import yfinance as yf
                 stock = yf.Ticker(ticker)
@@ -1067,9 +1099,13 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
                 # Get sector (will be None for ETFs or if data unavailable)
                 sector = info.get('sector', 'Unknown')
                 if not sector or sector == '':
+                    logger.info(f"[Sector Chart] yfinance returned empty sector for {ticker}, categorizing as Other/ETF")
                     sector = 'Other/ETF'
+                else:
+                    logger.info(f"[Sector Chart] Retrieved sector '{sector}' from yfinance for {ticker}")
             except Exception as e:
                 # If we can't fetch data, categorize as Unknown
+                logger.warning(f"[Sector Chart] Failed to fetch sector from yfinance for {ticker}: {e}, categorizing as Unknown")
                 sector = 'Unknown'
         
         sector_data.append({

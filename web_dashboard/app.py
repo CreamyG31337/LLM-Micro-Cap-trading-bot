@@ -210,26 +210,35 @@ def inject_build_timestamp():
     """Make BUILD_TIMESTAMP available to all templates"""
     build_timestamp = os.getenv("BUILD_TIMESTAMP")
     if build_timestamp:
-        # Convert UTC timestamp to user's preferred timezone
+        # Convert UTC timestamp to user's preferred timezone with 12-hour format
         try:
             from user_preferences import format_timestamp_in_user_timezone
-            build_timestamp = format_timestamp_in_user_timezone(build_timestamp)
+            build_timestamp = format_timestamp_in_user_timezone(build_timestamp, format="%Y-%m-%d %I:%M %p %Z")
         except ImportError:
-            # Fallback if user_preferences not available
-            if "UTC" in build_timestamp:
-                build_timestamp = build_timestamp.replace(" UTC", " PST")
+            # Fallback if user_preferences not available - parse and convert manually
+            try:
+                from zoneinfo import ZoneInfo
+                timestamp_clean = build_timestamp.replace(" UTC", "").strip()
+                dt_utc = datetime.strptime(timestamp_clean, "%Y-%m-%d %H:%M")
+                dt_utc = dt_utc.replace(tzinfo=ZoneInfo("UTC"))
+                dt_pst = dt_utc.astimezone(ZoneInfo("America/Vancouver"))
+                build_timestamp = dt_pst.strftime("%Y-%m-%d %I:%M %p %Z")
+            except Exception:
+                # Final fallback - just replace UTC with PST
+                if "UTC" in build_timestamp:
+                    build_timestamp = build_timestamp.replace(" UTC", " PST")
     if not build_timestamp:
-        # Fallback: generate timestamp in user's timezone (or PST)
+        # Fallback: generate timestamp in user's timezone (or PST) with 12-hour format
         try:
-            from user_preferences import get_user_timezone, format_timestamp_in_user_timezone
+            from user_preferences import get_user_timezone
             from zoneinfo import ZoneInfo
             user_tz_str = get_user_timezone() or "America/Vancouver"
             user_tz = ZoneInfo(user_tz_str)
             now = datetime.now(user_tz)
-            build_timestamp = now.strftime("%Y-%m-%d %H:%M %Z")
+            build_timestamp = now.strftime("%Y-%m-%d %I:%M %p %Z")
         except (ImportError, Exception):
             # If zoneinfo not available (Python < 3.9) or other error, use simple format
-            build_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            build_timestamp = datetime.now().strftime("%Y-%m-%d %I:%M %p")
     
     return {'build_timestamp': build_timestamp}
 

@@ -270,9 +270,25 @@ def get_performance_chart():
         from chart_utils import get_chart_theme_config
         import numpy as np
         
-        # CRITICAL FIX: Convert numpy arrays to Python lists BEFORE JSON serialization
+        # CRITICAL FIX: Convert numpy arrays and datetime objects to Python native types BEFORE JSON serialization
         # PlotlyJSONEncoder serializes numpy arrays as binary format which frontend can't parse correctly
         # Convert numpy arrays in figure traces to lists before serialization
+        import pandas as pd
+        from datetime import datetime as dt
+        
+        def convert_datetime_to_str(value):
+            """Convert various datetime types to ISO format string"""
+            if pd.isna(value):
+                return None
+            if isinstance(value, pd.Timestamp):
+                return value.isoformat()
+            if isinstance(value, np.datetime64):
+                # Convert numpy datetime64 to pandas Timestamp then to ISO string
+                return pd.Timestamp(value).isoformat()
+            if isinstance(value, dt):
+                return value.isoformat()
+            return value
+        
         for trace in fig.data:
             if hasattr(trace, 'y') and trace.y is not None:
                 if isinstance(trace.y, np.ndarray):
@@ -281,23 +297,34 @@ def get_performance_chart():
                     # Handle numpy array-like objects
                     trace.y = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in trace.y]
             if hasattr(trace, 'x') and trace.x is not None:
+                # Convert x-axis (dates) to strings
                 if isinstance(trace.x, np.ndarray):
-                    trace.x = trace.x.tolist()
+                    # Check if it's datetime64 array
+                    if np.issubdtype(trace.x.dtype, np.datetime64):
+                        trace.x = [convert_datetime_to_str(x) for x in trace.x]
+                    else:
+                        trace.x = trace.x.tolist()
                 elif hasattr(trace.x, '__iter__') and not isinstance(trace.x, (list, str)):
-                    trace.x = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in trace.x]
+                    # Convert datetime objects to ISO strings
+                    trace.x = [convert_datetime_to_str(x) if isinstance(x, (pd.Timestamp, np.datetime64, dt)) else x for x in trace.x]
         
         chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
         
-        # Additional safety: Convert any remaining numpy types in the dict
+        # Additional safety: Convert any remaining numpy types and datetime objects in the dict
         def convert_numpy_to_list(obj):
-            """Recursively convert numpy arrays and numpy scalars to Python native types"""
+            """Recursively convert numpy arrays, numpy scalars, and datetime objects to Python native types"""
             if isinstance(obj, dict):
                 # Check for numpy array binary format from PlotlyJSONEncoder (fallback)
                 if 'dtype' in obj and 'bdata' in obj:
                     try:
                         import base64
-                        dtype_map = {'f8': 'd', 'i8': 'q', 'f4': 'f', 'i4': 'i'}
+                        dtype_map = {'f8': 'd', 'i8': 'q', 'f4': 'f', 'i4': 'i', 'M8': 'M'}  # M8 is datetime64
                         dtype_char = dtype_map.get(obj['dtype'], 'd')
+                        if dtype_char == 'M':
+                            # Handle datetime64 arrays
+                            decoded = base64.b64decode(obj['bdata'])
+                            arr = np.frombuffer(decoded, dtype='datetime64[ns]')
+                            return [convert_datetime_to_str(x) for x in arr]
                         decoded = base64.b64decode(obj['bdata'])
                         arr = np.frombuffer(decoded, dtype=dtype_char)
                         return arr.tolist()
@@ -307,7 +334,14 @@ def get_performance_chart():
                 return {k: convert_numpy_to_list(v) for k, v in obj.items()}
             elif isinstance(obj, list):
                 return [convert_numpy_to_list(item) for item in obj]
-            elif isinstance(obj, (np.ndarray, np.generic)):
+            elif isinstance(obj, (pd.Timestamp, np.datetime64, dt)):
+                return convert_datetime_to_str(obj)
+            elif isinstance(obj, np.ndarray):
+                # Check if it's a datetime64 array
+                if np.issubdtype(obj.dtype, np.datetime64):
+                    return [convert_datetime_to_str(x) for x in obj]
+                return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
+            elif isinstance(obj, np.generic):
                 return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
             elif isinstance(obj, np.floating):
                 return float(obj)

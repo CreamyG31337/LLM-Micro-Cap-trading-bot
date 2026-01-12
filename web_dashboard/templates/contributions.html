@@ -205,6 +205,6 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/contributions.js') }}"></script>
+{% block extra_scripts %}
+<script type="module" src="/assets/js/contributions.js"></script>
 {% endblock %}

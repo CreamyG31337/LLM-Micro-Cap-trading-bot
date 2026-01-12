@@ -436,14 +436,14 @@ async function startScheduler(): Promise<void> {
 }
 
 // Global functions for inline onclick handlers
-export function toggleParams(id: string): void {
+function toggleParams(id: string): void {
     const el = document.getElementById(`params-${id}`);
     if (el) {
         el.classList.toggle('hidden');
     }
 }
 
-export async function runJobWithParams(id: string, actualJobId: string): Promise<void> {
+async function runJobWithParams(id: string, actualJobId: string): Promise<void> {
     const container = document.getElementById(`params-${id}`);
     if (!container) {
         return;

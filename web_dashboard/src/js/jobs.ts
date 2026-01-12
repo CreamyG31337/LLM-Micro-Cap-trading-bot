@@ -523,10 +523,9 @@ async function handleJobAction(e: Event): Promise<void> {
     btn.setAttribute('disabled', 'true');
 
     try {
-        const response = await fetch(`/api/jobs/${action}`, {
+        const response = await fetch(`/api/admin/scheduler/jobs/${jobId}/${action}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job_id: jobId } as JobActionRequest)
+            headers: { 'Content-Type': 'application/json' }
         });
 
         const data: JobsApiResponse = await response.json();
@@ -550,7 +549,7 @@ async function handleJobAction(e: Event): Promise<void> {
 
 async function startScheduler(): Promise<void> {
     try {
-        const response = await fetch('/api/jobs/start-scheduler', { method: 'POST' });
+        const response = await fetch('/api/admin/scheduler/start', { method: 'POST' });
         const data: JobsApiResponse = await response.json();
         if (!response.ok) {
             throw new Error(data.error || 'Failed to start scheduler');
@@ -589,10 +588,10 @@ async function runJobWithParams(id: string, actualJobId: string): Promise<void> 
     });
 
     try {
-        const response = await fetch('/api/jobs/run', {
+        const response = await fetch(`/api/admin/scheduler/jobs/${actualJobId}/run`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job_id: actualJobId, parameters: params } as JobActionRequest)
+            body: JSON.stringify(params)
         });
         const data: JobsApiResponse = await response.json();
         if (!response.ok) {

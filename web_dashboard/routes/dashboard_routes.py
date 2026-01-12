@@ -461,8 +461,8 @@ def get_allocation_charts():
         # Create Plotly pie chart using shared function (same as Streamlit)
         fig = create_sector_allocation_chart(positions_df, fund_name=fund)
         
-        # Update height to match container
-        fig.update_layout(height=320)
+        # Update height to match container (same as performance chart)
+        fig.update_layout(height=500)
         
         # Apply theme to chart (similar to ticker chart)
         if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:

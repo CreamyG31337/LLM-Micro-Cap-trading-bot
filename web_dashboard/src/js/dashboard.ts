@@ -993,7 +993,7 @@ function renderSectorChart(data: AllocationChartData): void {
 
     // Update layout height to match container and ensure centered margins
     const layout = { ...data.layout };
-    layout.height = 320; // Match container height
+    layout.height = 500; // Match container height (same as performance chart)
     layout.autosize = true;
     // Ensure equal margins for centering (override any backend margins if needed)
     if (!layout.margin) {

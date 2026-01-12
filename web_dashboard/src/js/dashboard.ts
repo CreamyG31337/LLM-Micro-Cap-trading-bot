@@ -432,6 +432,37 @@ function showDashboardError(error: unknown): void {
     }
 }
 
+// --- Spinner Helpers ---
+
+function showSpinner(spinnerId: string): void {
+    let spinner = document.getElementById(spinnerId);
+    if (!spinner) {
+        // Spinner doesn't exist (might have been removed by Plotly), create it
+        const chartEl = document.getElementById(spinnerId.replace('-spinner', ''));
+        if (chartEl) {
+            spinner = document.createElement('div');
+            spinner.id = spinnerId;
+            if (spinnerId === 'sector-chart-spinner') {
+                spinner.className = 'flex items-center justify-center h-full';
+            } else {
+                spinner.className = 'absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10';
+            }
+            spinner.innerHTML = '<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>';
+            chartEl.appendChild(spinner);
+        } else {
+            return; // Can't create spinner without parent element
+        }
+    }
+    spinner.classList.remove('hidden');
+}
+
+function hideSpinner(spinnerId: string): void {
+    const spinner = document.getElementById(spinnerId);
+    if (spinner) {
+        spinner.classList.add('hidden');
+    }
+}
+
 // --- Data Fetching ---
 
 async function fetchSummary(): Promise<void> {
@@ -540,6 +571,9 @@ async function fetchSummary(): Promise<void> {
 }
 
 async function fetchPerformanceChart(): Promise<void> {
+    // Show spinner
+    showSpinner('performance-chart-spinner');
+    
     // Detect actual theme from page (same as sector chart)
     const htmlElement = document.documentElement;
     const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
@@ -596,8 +630,10 @@ async function fetchPerformanceChart(): Promise<void> {
         });
 
         renderPerformanceChart(data);
+        hideSpinner('performance-chart-spinner');
 
     } catch (error) {
+        hideSpinner('performance-chart-spinner');
         const duration = performance.now() - startTime;
         const errorMsg = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
@@ -616,6 +652,9 @@ async function fetchPerformanceChart(): Promise<void> {
 }
 
 async function fetchSectorChart(): Promise<void> {
+    // Show spinner
+    showSpinner('sector-chart-spinner');
+    
     // Detect actual theme from page (same as performance chart)
     const htmlElement = document.documentElement;
     const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
@@ -685,6 +724,9 @@ async function fetchSectorChart(): Promise<void> {
 }
 
 async function fetchHoldings(): Promise<void> {
+    // Show spinner
+    showSpinner('holdings-grid-spinner');
+    
     const url = `/api/dashboard/holdings?fund=${encodeURIComponent(state.currentFund)}`;
     const startTime = performance.now();
 
@@ -741,8 +783,10 @@ async function fetchHoldings(): Promise<void> {
                 }
             }, 100);
         }
+        hideSpinner('holdings-grid-spinner');
 
     } catch (error) {
+        hideSpinner('holdings-grid-spinner');
         const duration = performance.now() - startTime;
         const errorMsg = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
@@ -761,6 +805,9 @@ async function fetchHoldings(): Promise<void> {
 }
 
 async function fetchActivity(): Promise<void> {
+    // Show spinner
+    showSpinner('activity-table-spinner');
+    
     const url = `/api/dashboard/activity?fund=${encodeURIComponent(state.currentFund)}&limit=10`;
     const startTime = performance.now();
 
@@ -825,8 +872,10 @@ async function fetchActivity(): Promise<void> {
                 tbody.appendChild(tr);
             });
         }
+        hideSpinner('activity-table-spinner');
 
     } catch (error) {
+        hideSpinner('activity-table-spinner');
         const duration = performance.now() - startTime;
         console.error('[Dashboard] Error fetching activity:', {
             error: error,
@@ -926,8 +975,8 @@ function renderSectorChart(data: AllocationChartData): void {
         return;
     }
 
-    // Clear previous content
-    chartEl.innerHTML = '';
+    // Hide spinner before rendering (Plotly will replace content)
+    hideSpinner('sector-chart-spinner');
 
     if (!data || !data.data || !data.layout) {
         chartEl.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No sector data available</p></div>';

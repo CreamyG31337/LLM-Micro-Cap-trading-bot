@@ -1186,7 +1186,7 @@ def api_scheduler_status():
         logger.debug(f"[Scheduler API] Scheduler running: {running}")
         
         # Get jobs list (even if scheduler is stopped, we want to show available jobs)
-        # get_all_jobs_status() already handles fallback to AVAILABLE_JOBS with proper trigger extraction
+        jobs = []
         try:
             logger.info(f"[Scheduler API] Calling get_all_jobs_status()...")
             jobs = get_all_jobs_status()
@@ -1196,11 +1196,62 @@ def api_scheduler_status():
                 # Log trigger info for first few jobs to verify extraction
                 for job in jobs[:3]:
                     logger.info(f"[Scheduler API] Job {job.get('id')}: trigger={job.get('trigger')}, name={job.get('name')}")
-            else:
-                logger.warning(f"[Scheduler API] get_all_jobs_status() returned empty list. This should not happen - it should fall back to AVAILABLE_JOBS.")
         except Exception as jobs_error:
             logger.error(f"[Scheduler API] Exception calling get_all_jobs_status(): {jobs_error}", exc_info=True)
             jobs = []
+        
+        # Safety fallback: If get_all_jobs_status() returns empty, fall back to AVAILABLE_JOBS
+        # This should rarely be needed since get_all_jobs_status_batched() handles it, but keep as safety net
+        if not jobs:
+            logger.warning(f"[Scheduler API] No jobs returned from get_all_jobs_status(). Using safety fallback to AVAILABLE_JOBS...")
+            try:
+                from scheduler.jobs import AVAILABLE_JOBS
+                logger.info(f"[Scheduler API] AVAILABLE_JOBS has {len(AVAILABLE_JOBS)} job definitions")
+                
+                if AVAILABLE_JOBS:
+                    # Extract trigger info properly (same logic as scheduler_core.py)
+                    jobs = []
+                    for job_id, config in AVAILABLE_JOBS.items():
+                        # Extract trigger from config
+                        trigger_desc = 'Manual'
+                        if 'cron_triggers' in config and config['cron_triggers']:
+                            cron_config = config['cron_triggers'][0]
+                            hour = cron_config.get('hour', '*')
+                            minute = cron_config.get('minute', 0)
+                            timezone = cron_config.get('timezone', '')
+                            if isinstance(hour, int) and isinstance(minute, int):
+                                trigger_desc = f"At {hour:02d}:{minute:02d}"
+                                if timezone:
+                                    trigger_desc += f" ({timezone})"
+                            else:
+                                trigger_desc = "Cron schedule"
+                        elif config.get('default_interval_minutes', 0) > 0:
+                            interval_mins = config['default_interval_minutes']
+                            if interval_mins < 60:
+                                trigger_desc = f"Every {interval_mins} minute{'s' if interval_mins != 1 else ''}"
+                            elif interval_mins < 1440:
+                                hours = interval_mins // 60
+                                trigger_desc = f"Every {hours} hour{'s' if hours != 1 else ''}"
+                            else:
+                                days = interval_mins // 1440
+                                trigger_desc = f"Every {days} day{'s' if days != 1 else ''}"
+                        
+                        jobs.append({
+                            'id': job_id,
+                            'name': config.get('name', job_id),
+                            'next_run': None,
+                            'is_paused': True,
+                            'trigger': trigger_desc,
+                            'is_running': False,
+                            'running_since': None,
+                            'last_error': None,
+                            'recent_logs': []
+                        })
+                    logger.info(f"[Scheduler API] Created {len(jobs)} job statuses from AVAILABLE_JOBS safety fallback")
+                else:
+                    logger.error("[Scheduler API] AVAILABLE_JOBS is empty! This is a critical error.")
+            except Exception as avail_error:
+                logger.error(f"[Scheduler API] Error in safety fallback: {avail_error}", exc_info=True)
         
         # Serialize datetime objects
         for job in jobs:

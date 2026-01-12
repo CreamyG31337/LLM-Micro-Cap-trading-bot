@@ -779,10 +779,18 @@ def get_user_theme() -> str:
     """Get user's preferred theme.
     
     Returns:
-        Theme preference: 'system', 'dark', or 'light'
+        Theme preference: 'system', 'dark', 'light', 'midnight-tokyo', or 'abyss'
     """
     # Try direct preference lookup first
     theme = get_user_preference('theme', default=None)
+    
+    # Normalize theme value if it exists (handle both direct and fallback paths)
+    if theme is not None:
+        if isinstance(theme, str):
+            theme = theme.strip().lower()
+        else:
+            theme = str(theme).strip().lower()
+        logger.debug(f"[PREF] Retrieved theme from get_user_preference(): {theme}")
     
     # Fallback: if direct lookup returns None, try getting all preferences
     if theme is None:
@@ -790,7 +798,7 @@ def get_user_theme() -> str:
             all_prefs = get_all_user_preferences()
             if isinstance(all_prefs, dict) and 'theme' in all_prefs:
                 theme = all_prefs['theme']
-                # Ensure it's a string
+                # Ensure it's a string and normalize
                 if isinstance(theme, str):
                     theme = theme.strip().lower()
                 elif theme is not None:
@@ -804,8 +812,12 @@ def get_user_theme() -> str:
         except Exception as e:
             logger.warning(f"Error getting theme from all preferences: {e}")
     
+    # Validate theme is in allowed options
     if theme and theme in THEME_OPTIONS:
+        logger.debug(f"[PREF] Returning validated theme: {theme}")
         return theme
+    
+    logger.debug(f"[PREF] Theme '{theme}' not in THEME_OPTIONS, defaulting to 'system'")
     return 'system'  # Default to system
 
 
@@ -813,15 +825,28 @@ def set_user_theme(theme: str) -> bool:
     """Set user's preferred theme.
     
     Args:
-        theme: Theme preference ('system', 'dark', 'light')
+        theme: Theme preference ('system', 'dark', 'light', 'midnight-tokyo', 'abyss')
         
     Returns:
         True if successful, False otherwise
     """
+    # Normalize theme value before validation
+    if isinstance(theme, str):
+        theme = theme.strip().lower()
+    else:
+        theme = str(theme).strip().lower()
+    
     if theme not in THEME_OPTIONS:
-        logger.warning(f"Invalid theme: {theme}")
+        logger.warning(f"Invalid theme: {theme} (not in {list(THEME_OPTIONS.keys())})")
         return False
-    return set_user_preference('theme', theme)
+    
+    logger.debug(f"[PREF] Setting theme to: {theme}")
+    result = set_user_preference('theme', theme)
+    if result:
+        logger.info(f"[PREF] Successfully saved theme: {theme}")
+    else:
+        logger.error(f"[PREF] Failed to save theme: {theme}")
+    return result
 
 
 def get_user_selected_fund() -> Optional[str]:

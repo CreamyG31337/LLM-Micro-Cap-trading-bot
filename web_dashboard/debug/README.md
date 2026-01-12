@@ -39,7 +39,38 @@ Comprehensive production verification:
 python web_dashboard/debug/verify_postgres_production.py
 ```
 
+### Portfolio Performance Debug Scripts
+
+Debug scripts to investigate Portfolio Performance graph issues:
+
+#### `debug_portfolio_performance_simple.py`
+Simplified test - just calls the calculation function and shows results:
+```bash
+cd web_dashboard
+.\venv\Scripts\activate  # Windows
+python debug/debug_portfolio_performance_simple.py
+```
+
+#### `debug_portfolio_performance.py`
+Comprehensive debug - tests data queries, calculations, and step-by-step analysis:
+```bash
+cd web_dashboard
+.\venv\Scripts\activate  # Windows
+python debug/debug_portfolio_performance.py
+```
+
+#### `debug_flask_route_context.py`
+Tests Flask route context and caching behavior:
+```bash
+cd web_dashboard
+.\venv\Scripts\activate  # Windows
+python debug/debug_flask_route_context.py
+```
+
+**Note**: Edit the `test_fund` variable in each script to test with your specific fund name.
+
 ## Usage
 
 All scripts must be run from the server command line with proper authentication to the server itself. They are not accessible via web browser or HTTP requests.
 
+**For Portfolio Performance Debug Scripts**: Activate the web_dashboard venv first, then run from the web_dashboard directory.

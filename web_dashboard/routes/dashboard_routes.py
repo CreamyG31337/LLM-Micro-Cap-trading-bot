@@ -196,7 +196,7 @@ def get_performance_chart():
         if not fund or fund.lower() == 'all':
             fund = None
             
-        from streamlit_utils import calculate_portfolio_value_over_time
+        from flask_data_utils import calculate_portfolio_value_over_time_flask as calculate_portfolio_value_over_time
         
         days_map = {
             '1M': 30,

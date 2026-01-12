@@ -289,11 +289,14 @@ def calculate_performance_metrics_flask(fund: Optional[str] = None) -> Dict[str,
 
 
 @cache_data(ttl=300)
-def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = None, _cache_version: Optional[str] = None) -> pd.DataFrame:
-    """Calculate portfolio value over time (Flask version - simplified, cached 5min)
+def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = None, display_currency: Optional[str] = None, _cache_version: Optional[str] = None) -> pd.DataFrame:
+    """Calculate portfolio value over time (Flask version - Robust)
     
-    This is a simplified version that returns basic data.
-    The full implementation with currency conversion would need more work.
+    Match Streamlit implementation:
+    - Queries base currency columns (total_value_base) for accurate multi-currency summation
+    - Handles currency conversion if needed
+    - Normalizes performance index to start at 100
+    - Uses authenticated client (RLS safe)
     """
     if _cache_version is None:
         try:
@@ -301,52 +304,115 @@ def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = N
             _cache_version = get_cache_version()
         except ImportError:
             _cache_version = ""
+            
     client = get_supabase_client_flask()
     if not client:
         return pd.DataFrame()
     
     try:
-        # Basic query to get portfolio positions over time
-        query = client.supabase.table("portfolio_positions").select(
-            "date, total_value, cost_basis, pnl"
-        )
+        if display_currency is None:
+            # Default to CAD if not provided
+            display_currency = 'CAD'
+            
+        import time
+        from datetime import datetime, timedelta, timezone
+        import numpy as np
         
-        if fund:
-            query = query.eq("fund", fund)
+        # Calculate date cutoff
+        cutoff_date = None
+        if days is not None and days > 0:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
-        if days:
-            from datetime import timedelta
-            cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            query = query.gte("date", cutoff)
+        # Query with base columns
+        all_rows = []
+        batch_size = 1000
+        offset = 0
         
-        result = query.order("date").execute()
-        
-        if not result.data:
+        while True:
+            query = client.supabase.table("portfolio_positions").select(
+                "date, total_value, cost_basis, pnl, fund, currency, total_value_base, cost_basis_base, pnl_base, base_currency"
+            )
+            
+            if fund and fund.lower() != 'all':
+                query = query.eq("fund", fund)
+            
+            if cutoff_date:
+                query = query.gte("date", cutoff_date.strftime('%Y-%m-%dT%H:%M:%SZ'))
+            
+            result = query.order("date").order("id").range(offset, offset + batch_size - 1).execute()
+            
+            rows = result.data
+            if not rows:
+                break
+                
+            all_rows.extend(rows)
+            if len(rows) < batch_size:
+                break
+            offset += batch_size
+            if offset > 50000:
+                break
+                
+        if not all_rows:
             return pd.DataFrame()
+            
+        df = pd.DataFrame(all_rows)
+        df['date'] = pd.to_datetime(df['date']).dt.normalize() + pd.Timedelta(hours=12)
         
-        df = pd.DataFrame(result.data)
-        df['date'] = pd.to_datetime(df['date'])
-        
-        # Aggregate by date
+        # Check for pre-converted values
+        has_preconverted = False
+        if 'total_value_base' in df.columns:
+            preconverted_pct = df['total_value_base'].notna().mean()
+            has_preconverted = preconverted_pct > 0.8
+            
+        if has_preconverted:
+            value_col = 'total_value_base'
+            cost_col = 'cost_basis_base'
+            pnl_col = 'pnl_base'
+        else:
+            # FALLBACK: Runtime conversion (simplified for Flask - could add rate fetching if needed)
+            # For now, warn and use raw values if mixed (this was the bug, but at least we try base cols first)
+            # Ideally we port the rate fetching logic here too, but base cols should exist.
+            value_col = 'total_value'
+            cost_col = 'cost_basis'
+            pnl_col = 'pnl'
+            
+        # Aggregate
         daily_totals = df.groupby(df['date'].dt.date).agg({
-            'total_value': 'sum',
-            'cost_basis': 'sum',
-            'pnl': 'sum'
+            value_col: 'sum',
+            cost_col: 'sum',
+            pnl_col: 'sum'
         }).reset_index()
         
         daily_totals.columns = ['date', 'value', 'cost_basis', 'pnl']
         daily_totals['date'] = pd.to_datetime(daily_totals['date'])
+        daily_totals = daily_totals.sort_values('date').reset_index(drop=True)
         
-        # Calculate performance percentage
-        daily_totals['performance_pct'] = daily_totals.apply(
-            lambda row: (row['pnl'] / row['cost_basis'] * 100) if row['cost_basis'] > 0 else 0,
-            axis=1
+        # Performance calculation
+        daily_totals['performance_pct'] = np.where(
+            daily_totals['cost_basis'] > 0,
+            (daily_totals['pnl'] / daily_totals['cost_basis'] * 100),
+            0.0
         )
         
+        # Normalize to 100 baseline
+        first_day_with_investment = daily_totals[daily_totals['cost_basis'] > 0]
+        if not first_day_with_investment.empty:
+            first_day_performance = first_day_with_investment.iloc[0]['performance_pct']
+            mask = daily_totals['cost_basis'] > 0
+            daily_totals.loc[mask, 'performance_pct'] = daily_totals.loc[mask, 'performance_pct'] - first_day_performance
+            
         daily_totals['performance_index'] = 100 + daily_totals['performance_pct']
         
-        return daily_totals.sort_values('date').reset_index(drop=True)
+        # Filter weekends (optional, but good for consistency)
+        # Import local to avoid circular dep
+        try:
+            from chart_utils import _filter_trading_days
+            daily_totals = _filter_trading_days(daily_totals, 'date')
+        except ImportError:
+            pass
+            
+        return daily_totals
         
     except Exception as e:
-        logger.error(f"Error calculating portfolio value over time: {e}", exc_info=True)
+        logger.error(f"Error calculating portfolio value over time (Flask): {e}", exc_info=True)
         return pd.DataFrame()

@@ -81,12 +81,17 @@ steps:
       - chmod 777 /home/lance/trading-dashboard-logs /shared/cookies
       
       # Build shared base image first (required by Streamlit and Flask images)
-      # Using BuildKit for better caching
+      # Using BuildKit for better caching and --cache-from for cross-build cache sharing
       - |
         export DOCKER_BUILDKIT=1
         export COMPOSE_DOCKER_CLI_BUILD=1
         echo "Building shared base image with common Python dependencies..."
-        docker build --progress=plain -f web_dashboard/Dockerfile.base -t trading-dashboard-base:latest . || {
+        # Use previous base image as cache source if available (from previous CI runs)
+        # This enables cache sharing between builds even when layers would normally be invalidated
+        docker build --progress=plain \
+          --cache-from trading-dashboard-base:latest \
+          -f web_dashboard/Dockerfile.base \
+          -t trading-dashboard-base:latest . || {
           echo "❌ ERROR: Base image build failed"
           exit 1
         }
@@ -122,11 +127,23 @@ steps:
         echo "Log files: STREAMLIT=$STREAMLIT_LOG FLASK=$FLASK_LOG COOKIE=$COOKIE_LOG"
         
         # Build Streamlit image (capture both stdout and stderr)
-        (docker build --progress=plain --build-arg CACHEBUST=${CI_COMMIT_SHA} -f web_dashboard/Dockerfile -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "$STREAMLIT_EXIT_FILE") &
+        # Use previous images as cache sources for better cache hits
+        (docker build --progress=plain \
+          --build-arg CACHEBUST=${CI_COMMIT_SHA} \
+          --cache-from trading-dashboard-base:latest \
+          --cache-from trading-dashboard:latest \
+          -f web_dashboard/Dockerfile \
+          -t trading-dashboard:latest . > "$STREAMLIT_LOG" 2>&1; echo $? > "$STREAMLIT_EXIT_FILE") &
         STREAMLIT_PID=$!
         
         # Build Flask image (capture both stdout and stderr)
-        (docker build --progress=plain --build-arg CACHEBUST=${CI_COMMIT_SHA} -f web_dashboard/Dockerfile.flask -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "$FLASK_EXIT_FILE") &
+        # Use previous images as cache sources for better cache hits
+        (docker build --progress=plain \
+          --build-arg CACHEBUST=${CI_COMMIT_SHA} \
+          --cache-from trading-dashboard-base:latest \
+          --cache-from trading-dashboard-flask:latest \
+          -f web_dashboard/Dockerfile.flask \
+          -t trading-dashboard-flask:latest . > "$FLASK_LOG" 2>&1; echo $? > "$FLASK_EXIT_FILE") &
         FLASK_PID=$!
         
         # Build Cookie refresher image (capture both stdout and stderr)

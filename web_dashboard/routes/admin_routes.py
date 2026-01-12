@@ -1081,6 +1081,7 @@ def scheduler_page():
         from flask_auth_utils import get_user_email_flask
         from user_preferences import get_user_theme
         from app import get_navigation_context
+        from scheduler.scheduler_core import is_scheduler_running
         
         user_email = get_user_email_flask()
         user_theme = get_user_theme() or 'system'
@@ -1088,9 +1089,14 @@ def scheduler_page():
         # Get navigation context
         nav_context = get_navigation_context(current_page='admin_scheduler')
         
+        # Get scheduler status for menu badge
+        scheduler_running = is_scheduler_running()
+        scheduler_status = 'running' if scheduler_running else 'stopped'
+        
         return render_template('jobs.html', 
                              user_email=user_email,
                              user_theme=user_theme,
+                             scheduler_status=scheduler_status,
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering scheduler page: {e}", exc_info=True)
@@ -1101,9 +1107,18 @@ def scheduler_page():
         except Exception:
             # If navigation context also fails, use minimal fallback
             nav_context = {}
+        # Get scheduler status for menu badge (fallback)
+        try:
+            from scheduler.scheduler_core import is_scheduler_running
+            scheduler_running = is_scheduler_running()
+            scheduler_status = 'running' if scheduler_running else 'stopped'
+        except Exception:
+            scheduler_status = 'stopped'
+        
         return render_template('jobs.html', 
                              user_email='Admin',
                              user_theme='system',
+                             scheduler_status=scheduler_status,
                              **nav_context)
 
 @admin_bp.route('/api/admin/scheduler/status')

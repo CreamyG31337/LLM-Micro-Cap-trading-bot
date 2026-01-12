@@ -185,7 +185,7 @@ async function fetchStatus(): Promise<void> {
     console.log('[Jobs] fetchStatus() called, fetching scheduler status...');
     
     try {
-        const url = '/api/jobs/status';
+        const url = '/api/admin/scheduler/status';
         console.log('[Jobs] Making API request to:', url);
         
         const response = await fetch(url, { credentials: 'include' });

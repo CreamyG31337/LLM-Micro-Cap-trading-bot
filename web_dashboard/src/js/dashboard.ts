@@ -5,11 +5,14 @@ import {
     ContributorsResponse,
 } from './types.js';
 
+console.log('[Dashboard] dashboard.ts file loaded and executing...');
+
 // Global state
 let portfolioData: PortfolioResponse | null = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Dashboard] DOMContentLoaded event fired, initializing dashboard...');
     setupFundSelection();
     initDashboard();
 
@@ -403,4 +406,12 @@ async function initDashboard(): Promise<void> {
 
     // Then load everything else in parallel
     await reloadDashboardData();
+}
+
+// Alias for template compatibility
+const refreshDashboard = initDashboard;
+
+// Make it globally available
+if (typeof window !== 'undefined') {
+    (window as any).refreshDashboard = refreshDashboard;
 }

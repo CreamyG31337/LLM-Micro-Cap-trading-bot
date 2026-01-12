@@ -71,12 +71,18 @@ def get_dashboard_summary():
     fund = request.args.get('fund')
     display_currency = get_user_currency() or 'CAD'
     
+    logger.info(f"[Dashboard API] /api/dashboard/summary called - fund={fund}, currency={display_currency}")
     start_time = time.time()
     
     try:
         # Fetch Data
+        logger.debug(f"[Dashboard API] Fetching positions for fund={fund}")
         positions_df = get_current_positions(fund)
+        logger.debug(f"[Dashboard API] Positions fetched: {len(positions_df)} rows")
+        
+        logger.debug(f"[Dashboard API] Fetching cash balances for fund={fund}")
         cash_balances = get_cash_balances(fund)
+        logger.debug(f"[Dashboard API] Cash balances: {cash_balances}")
         
         # Calculate Rates
         all_currencies = set()
@@ -84,7 +90,9 @@ def get_dashboard_summary():
             all_currencies.update(positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist())
         all_currencies.update([str(c).upper() for c in cash_balances.keys()])
         
+        logger.debug(f"[Dashboard API] Currencies found: {all_currencies}")
         rate_map = fetch_latest_rates_bulk(list(all_currencies), display_currency)
+        logger.debug(f"[Dashboard API] Exchange rates fetched: {len(rate_map)} rates")
         def get_rate(curr): return rate_map.get(str(curr).upper(), 1.0)
         
         # Metrics Calculation
@@ -119,8 +127,11 @@ def get_dashboard_summary():
             unrealized_pnl_pct = (total_pnl / cost_basis) * 100
             
         # Thesis Data
+        logger.debug(f"[Dashboard API] Fetching thesis data for fund={fund}")
         thesis = get_fund_thesis_data(fund) if fund else None
+        logger.debug(f"[Dashboard API] Thesis data: {'found' if thesis else 'not found'}")
         
+        processing_time = time.time() - start_time
         response = {
             "total_value": total_value,
             "cash_balance": total_cash,
@@ -131,14 +142,16 @@ def get_dashboard_summary():
             "display_currency": display_currency,
             "thesis": thesis,
             "from_cache": False,
-            "processing_time": time.time() - start_time
+            "processing_time": processing_time
         }
         
+        logger.info(f"[Dashboard API] Summary calculated successfully - total_value={total_value:.2f} {display_currency}, processing_time={processing_time:.3f}s")
         return jsonify(response)
         
     except Exception as e:
-        logger.error(f"Error calculating dashboard summary: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error calculating dashboard summary (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
 
 @dashboard_bp.route('/api/dashboard/charts/performance', methods=['GET'])
 def get_performance_chart():
@@ -164,6 +177,9 @@ def get_performance_chart():
     time_range = request.args.get('range', 'ALL') # '1M', '3M', '6M', '1Y', 'ALL'
     display_currency = get_user_currency() or 'CAD'
     
+    logger.info(f"[Dashboard API] /api/dashboard/charts/performance called - fund={fund}, range={time_range}, currency={display_currency}")
+    start_time = time.time()
+    
     try:
         days_map = {
             '1M': 30,
@@ -173,10 +189,13 @@ def get_performance_chart():
             'ALL': None
         }
         days = days_map.get(time_range)
+        logger.debug(f"[Dashboard API] Calculating portfolio value over time - days={days}")
         
         df = calculate_portfolio_value_over_time(fund, days=days, display_currency=display_currency)
+        logger.debug(f"[Dashboard API] Portfolio value data fetched: {len(df)} rows")
         
         if df.empty:
+            logger.warning(f"[Dashboard API] No portfolio value data found for fund={fund}, range={time_range}")
             return jsonify({"data": []})
             
         # Format for ApexCharts: [[timestamp_ms, value], ...]
@@ -201,14 +220,18 @@ def get_performance_chart():
         if len(data) >= 2 and data[-1][1] < data[0][1]:
             color = "#EF4444" # Red
             
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Performance chart data prepared - {len(data)} data points, color={color}, processing_time={processing_time:.3f}s")
+        
         return jsonify({
             "series": [{"name": "Portfolio Value", "data": data}],
             "color": color
         })
         
     except Exception as e:
-        logger.error(f"Error fetching performance chart: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching performance chart (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
 
 @dashboard_bp.route('/api/dashboard/charts/allocation', methods=['GET'])
 def get_allocation_charts():
@@ -232,10 +255,16 @@ def get_allocation_charts():
     fund = request.args.get('fund')
     display_currency = get_user_currency() or 'CAD'
     
+    logger.info(f"[Dashboard API] /api/dashboard/charts/allocation called - fund={fund}, currency={display_currency}")
+    start_time = time.time()
+    
     try:
+        logger.debug(f"[Dashboard API] Fetching positions for allocation chart")
         positions_df = get_current_positions(fund)
+        logger.debug(f"[Dashboard API] Positions fetched: {len(positions_df)} rows")
         
         if positions_df.empty:
+            logger.warning(f"[Dashboard API] No positions found for allocation chart - fund={fund}")
             return jsonify({"sector": [], "asset_class": []})
             
         # Need to convert values to display currency for accurate pie chart
@@ -278,13 +307,17 @@ def get_allocation_charts():
             if pct < 1: continue # Group small into other? Or just send all
             sector_data.append({"label": sector, "value": val})
             
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Allocation chart data prepared - {len(sector_data)} sectors, processing_time={processing_time:.3f}s")
+        
         return jsonify({
             "sector": sector_data
         })
         
     except Exception as e:
-        logger.error(f"Error fetching allocation charts: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching allocation charts (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
 
 @dashboard_bp.route('/api/dashboard/holdings', methods=['GET'])
 def get_holdings_data():
@@ -292,9 +325,16 @@ def get_holdings_data():
     fund = request.args.get('fund')
     display_currency = get_user_currency() or 'CAD'
     
+    logger.info(f"[Dashboard API] /api/dashboard/holdings called - fund={fund}, currency={display_currency}")
+    start_time = time.time()
+    
     try:
+        logger.debug(f"[Dashboard API] Fetching positions for holdings table")
         positions_df = get_current_positions(fund)
+        logger.debug(f"[Dashboard API] Positions fetched: {len(positions_df)} rows")
+        
         if positions_df.empty:
+            logger.warning(f"[Dashboard API] No positions found for holdings - fund={fund}")
             return jsonify({"data": []})
             
         # Get rates
@@ -352,11 +392,15 @@ def get_holdings_data():
         # Sort by value desc
         data.sort(key=lambda x: x['value'], reverse=True)
         
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Holdings data prepared - {len(data)} holdings, processing_time={processing_time:.3f}s")
+        
         return jsonify({"data": data})
         
     except Exception as e:
-        logger.error(f"Error fetching holdings: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching holdings (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
 
 @dashboard_bp.route('/api/dashboard/activity', methods=['GET'])
 def get_recent_activity():
@@ -365,9 +409,16 @@ def get_recent_activity():
     limit = int(request.args.get('limit', 10))
     display_currency = get_user_currency() or 'CAD'
     
+    logger.info(f"[Dashboard API] /api/dashboard/activity called - fund={fund}, limit={limit}, currency={display_currency}")
+    start_time = time.time()
+    
     try:
+        logger.debug(f"[Dashboard API] Fetching trade log for activity")
         trades_df = get_trade_log(limit=limit, fund=fund)
+        logger.debug(f"[Dashboard API] Trade log fetched: {len(trades_df)} rows")
+        
         if trades_df.empty:
+            logger.warning(f"[Dashboard API] No trades found for activity - fund={fund}")
             return jsonify({"data": []})
         
         data = []
@@ -386,8 +437,12 @@ def get_recent_activity():
                 "amount": abs(row.get('amount', 0)) # Assuming amount col exists, else calculate
             })
             
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Activity data prepared - {len(data)} activities, processing_time={processing_time:.3f}s")
+        
         return jsonify({"data": data})
         
     except Exception as e:
-        logger.error(f"Error fetching activity: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching activity (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500

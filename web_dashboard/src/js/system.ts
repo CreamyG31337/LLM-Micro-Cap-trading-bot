@@ -3,6 +3,8 @@
  * Handles system status, logs viewing (app, docker, files)
  */
 
+import { clearCache, bumpCacheVersion } from './system_cache_functions';
+
 // Type definitions
 interface SystemStatus {
     supabase_connected: boolean;

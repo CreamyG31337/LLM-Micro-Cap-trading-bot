@@ -120,19 +120,9 @@ def get_current_positions_flask(fund: Optional[str] = None, _cache_version: Opti
         if all_rows:
             df = pd.DataFrame(all_rows)
             
-            # Flatten nested securities data (same as streamlit_utils.py)
-            if 'securities' in df.columns:
-                securities_df = pd.json_normalize(df['securities'])
-                if not securities_df.empty:
-                    # Merge sector and industry from securities, prefer securities currency if available
-                    for col in ['sector', 'industry', 'market_cap', 'country', 'company_name']:
-                        if col in securities_df.columns:
-                            df[col] = securities_df[col]
-                    
-                    if 'currency' in securities_df.columns:
-                        # Use securities currency if available, otherwise use position currency
-                        df['currency'] = securities_df['currency'].fillna(df.get('currency', 'USD'))
-                df = df.drop(columns=['securities'], errors='ignore')
+            # Flattening removed to match streamlit_utils.py and preserve 'securities' object
+            # for ai_context_builder.py which handles both list and dict formats robustly.
+            # checks like row.get('securities') in format_fundamentals_table rely on this column.
             
             return df
         return pd.DataFrame()

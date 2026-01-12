@@ -808,7 +808,7 @@ async function fetchActivity(): Promise<void> {
     // Show spinner
     showSpinner('activity-table-spinner');
     
-    const url = `/api/dashboard/activity?fund=${encodeURIComponent(state.currentFund)}&limit=10`;
+    const url = `/api/dashboard/activity?fund=${encodeURIComponent(state.currentFund)}&limit=100`;
     const startTime = performance.now();
 
     console.log('[Dashboard] Fetching activity...', { url, fund: state.currentFund });

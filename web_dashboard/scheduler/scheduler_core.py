@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime, timezone, date, timedelta
 from typing import Dict, List, Optional, Any
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 # Add project root to path for utils imports
@@ -134,8 +134,13 @@ def get_scheduler(create=True) -> Optional[BackgroundScheduler]:
         with _scheduler_lock:
             # Check again after acquiring lock (another thread may have created it)
             if _scheduler is None:
+                # Use SQLAlchemyJobStore with Supabase PostgreSQL for persistent job storage
+                database_url = os.getenv("SUPABASE_DATABASE_URL")
+                if not database_url:
+                    raise ValueError("SUPABASE_DATABASE_URL must be set in environment for SQLAlchemyJobStore")
+                
                 jobstores = {
-                    'default': MemoryJobStore()
+                    'default': SQLAlchemyJobStore(url=database_url, tablename='apscheduler_jobs')
                 }
                 executors = {
                     'default': ThreadPoolExecutor(max_workers=7)
@@ -702,17 +707,8 @@ def start_scheduler() -> bool:
     except Exception as e:
         logger.warning(f"  ⚠️ Failed to schedule backfill check: {e}")
     
-    try:
-        scheduler.add_job(
-            check_overdue_jobs,
-            trigger='date',
-            id='startup_check_overdue',
-            name='Startup Overdue Job Check',
-            replace_existing=True
-        )
-        logger.debug("  📋 Scheduled startup overdue job check")
-    except Exception as e:
-        logger.warning(f"  ⚠️ Failed to schedule overdue check: {e}")
+    # Note: check_overdue_jobs() removed - no longer needed with SQLAlchemyJobStore
+    # APScheduler handles misfires automatically via misfire_grace_time
     
     try:
         from apscheduler.triggers.interval import IntervalTrigger
@@ -755,105 +751,8 @@ def start_scheduler() -> bool:
 
 
 
-def check_overdue_jobs() -> None:
-    """
-    Smart Startup: Checks if any jobs are overdue based on DB history.
-    
-    Since the scheduler uses MemoryJobStore, restart/redeploy resets all timers.
-    This function checks the actual 'job_executions' table to see if a job 
-    should have run while we were down/restarting.
-    
-    If overdue, it triggers ONE immediate run.
-    """
-    logger.debug("🔍 Checking for overdue jobs (Smart Startup)...")
-    
-    try:
-        # Defensive import
-        try:
-            from scheduler.jobs import AVAILABLE_JOBS
-        except ModuleNotFoundError:
-            # Path issue - retry with explicit path setup
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-            from scheduler.jobs import AVAILABLE_JOBS
-        
-        from supabase_client import SupabaseClient
-        
-        client = SupabaseClient(use_service_role=True)
-        
-        # Get all registered jobs
-        scheduler = get_scheduler()
-        scheduled_jobs = {job.id: job for job in scheduler.get_jobs()}
-        
-        for job_id, job_config in AVAILABLE_JOBS.items():
-            # Skip if job is not scheduled/enabled
-            # Note: scheduler job ID usually matches key in AVAILABLE_JOBS
-            # but sometimes has suffixes. We check the base ID.
-            # Simple check: if this ID (or one starting with it) isn't in scheduled_jobs, skip
-            is_scheduled = False
-            for s_id in scheduled_jobs:
-                if s_id == job_id or s_id.startswith(f"{job_id}_"):
-                    is_scheduled = True
-                    break
-            
-            if not is_scheduled:
-                continue
-                
-            # Skip jobs without a defined interval (e.g. cron only or manual)
-            interval_mins = job_config.get('default_interval_minutes', 0)
-            if interval_mins <= 0:
-                continue
-                
-            job_name = job_config.get('name')
-            
-            # Check last successful run in DB
-            result = client.supabase.table("job_executions")\
-                .select("completed_at")\
-                .eq("job_name", job_name)\
-                .eq("status", "success")\
-                .order("completed_at", desc=True)\
-                .limit(1)\
-                .execute()
-                
-            # If never run, let the normal scheduler handle the first run
-            # (unless we want to force run on fresh install, but that might be aggressive)
-            if not result.data:
-                continue
-                
-            last_run_str = result.data[0]['completed_at']
-            if not last_run_str:
-                continue
-                
-            last_run = datetime.fromisoformat(last_run_str.replace('Z', '+00:00'))
-            now = datetime.now(timezone.utc)
-            
-            # Calculate time since last run
-            minutes_since = (now - last_run).total_seconds() / 60
-            
-            # If time since last run > interval + 5 min buffer, it's overdue
-            # Example: Interval 15m. Last run 20m ago. Overdue!
-            # Example: Interval 60m. Last run 30m ago. Not overdue.
-            if minutes_since > (interval_mins + 5):
-                logger.warning(f"⚠️  Job '{job_id}' is overdue! Last run: {minutes_since:.1f}m ago (Interval: {interval_mins}m). Triggering catch-up.")
-                
-                # Trigger immediate run
-                # We simply call the existing run_job_now which handles async scheduling
-                # Note: We need to find the correct scheduler job ID
-                target_sched_job_id = None
-                for s_id in scheduled_jobs:
-                    if s_id == job_id or s_id.startswith(f"{job_id}_"):
-                        target_sched_job_id = s_id
-                        break
-                
-                if target_sched_job_id:
-                    run_job_now(target_sched_job_id)
-                else:
-                    logger.warning(f"   Could not find scheduler ID for overdue job {job_id}")
-            else:
-                logger.debug(f"   Job '{job_id}' is OK. Last run: {minutes_since:.1f}m ago.")
-                
-    except Exception as e:
-        logger.error(f"❌ Smart Startup check failed: {e}", exc_info=True)
+# check_overdue_jobs() function removed - no longer needed with SQLAlchemyJobStore
+# APScheduler automatically handles misfires via misfire_grace_time when jobs are loaded from persistent storage
 
 
 def is_scheduler_running() -> bool:
@@ -1398,91 +1297,18 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     # This prevents "Duplicate scheduler created" logs from UI workers
     scheduler = get_scheduler(create=False)
     
-    # Import AVAILABLE_JOBS for fallback
-    from scheduler.jobs import AVAILABLE_JOBS
-    
     if scheduler:
-        # If we have a live scheduler (main process), use it
+        # With SQLAlchemyJobStore, jobs are always available from the database,
+        # even if the scheduler is stopped
         jobs = scheduler.get_jobs()
     else:
-        # If no local scheduler (worker process), we can't get current next_run times
-        # from MemoryJobStore. But we can still show job existence from AVAILABLE_JOBS
-        # and execution history from DB.
-        jobs = []
+        # If scheduler doesn't exist, we can't get jobs
+        # This only happens in worker processes that haven't initialized the scheduler
+        logger.debug("Scheduler not initialized, no jobs available")
+        return []
     
-    # If scheduler exists but has no jobs (e.g., scheduler stopped or not initialized),
-    # fall back to AVAILABLE_JOBS to show available job definitions
     if not jobs:
-        logger.debug("No jobs from scheduler, falling back to AVAILABLE_JOBS for job definitions")
-        # Create dummy job objects for the UI
-        class DummyJob:
-            def __init__(self, id, name, trigger, has_schedule=True):
-                self.id = id
-                self.name = name
-                self.trigger = trigger
-                self.next_run_time = None  # Can't know next run across processes with MemoryJobStore
-                self.has_schedule = has_schedule  # Track if job has a schedule (not manual-only)
-        
-        jobs = []
-        for job_id, config in AVAILABLE_JOBS.items():
-            # Try to infer trigger from config
-            trigger_desc = 'Manual'
-            
-            # Check for cron triggers first
-            if 'cron_triggers' in config and config['cron_triggers']:
-                # Has cron schedule
-                cron_config = config['cron_triggers'][0]
-                
-                # Handle both dict and CronTrigger object
-                if isinstance(cron_config, dict):
-                    hour = cron_config.get('hour', '*')
-                    minute = cron_config.get('minute', 0)
-                    tz_str = cron_config.get('timezone', '')
-                else:
-                    # It's a CronTrigger object - use attribute access
-                    hour = getattr(cron_config, 'hour', '*')
-                    minute = getattr(cron_config, 'minute', 0)
-                    tz_str = getattr(cron_config, 'timezone', '')
-                
-                if isinstance(hour, int) and isinstance(minute, int):
-                    trigger_desc = f"At {hour:02d}:{minute:02d}"
-                    if tz_str:
-                        trigger_desc += f" ({tz_str})"
-                else:
-                    trigger_desc = "Cron schedule"
-                logger.debug(f"[Scheduler Core] Job {job_id}: Extracted cron trigger -> {trigger_desc}")
-            elif config.get('default_interval_minutes', 0) > 0:
-                # Has interval schedule
-                interval_mins = config['default_interval_minutes']
-                if interval_mins < 60:
-                    trigger_desc = f"Every {interval_mins} minute{'s' if interval_mins != 1 else ''}"
-                elif interval_mins < 1440:
-                    hours = interval_mins // 60
-                    trigger_desc = f"Every {hours} hour{'s' if hours != 1 else ''}"
-                else:
-                    days = interval_mins // 1440
-                    trigger_desc = f"Every {days} day{'s' if days != 1 else ''}"
-                logger.debug(f"[Scheduler Core] Job {job_id}: Extracted interval trigger -> {trigger_desc}")
-            else:
-                logger.debug(f"[Scheduler Core] Job {job_id}: No trigger found in config, using Manual. Config keys: {list(config.keys())}")
-            
-            # Determine if job has a schedule (not manual-only)
-            has_schedule = bool(
-                ('cron_triggers' in config and config['cron_triggers']) or
-                config.get('default_interval_minutes', 0) > 0
-            )
-            
-            jobs.append(DummyJob(
-                id=job_id,
-                name=config.get('name', job_id),
-                trigger=trigger_desc,
-                has_schedule=has_schedule
-            ))
-        
-        logger.info(f"Created {len(jobs)} dummy jobs from AVAILABLE_JOBS for UI display")
-
-    if not jobs:
-        logger.warning("No jobs available from scheduler or AVAILABLE_JOBS")
+        logger.debug("No jobs found in jobstore (scheduler may not have been started yet)")
         return []
     
     # Map all job IDs to job names
@@ -1503,18 +1329,18 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     scheduler_stopped = (scheduler is None or (hasattr(scheduler, 'running') and not scheduler.running))
     
     for job in jobs:
-        # For DummyJob objects (scheduler stopped), check if job has a schedule
-        # If it has a schedule but scheduler is stopped, show schedule info instead of "Not scheduled"
-        has_schedule = getattr(job, 'has_schedule', False) if hasattr(job, 'has_schedule') else (job.next_run_time is not None)
-        
-        # If scheduler is stopped but job has a schedule, don't mark as paused
-        # The job isn't paused - the scheduler just isn't running
+        # With SQLAlchemyJobStore, jobs always have proper trigger objects
+        # Check if job is paused (next_run_time is None when paused)
         if scheduler_stopped:
             # When scheduler is stopped, jobs aren't "paused" - scheduler just isn't running
             is_paused = False
         else:
             # When scheduler is running, check if job is actually paused
             is_paused = job.next_run_time is None
+        
+        # Determine if job has a schedule (not manual-only)
+        # A job has a schedule if it has a trigger that's not None
+        has_schedule = job.trigger is not None
         
         job_statuses[job.id] = {
             'id': job.id,

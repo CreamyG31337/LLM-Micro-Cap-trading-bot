@@ -294,14 +294,8 @@ def redirect_to_login(return_to: Optional[str] = None):
     if return_to:
         st.session_state.return_to = return_to
     
-    # DEBUG: Show why we are redirecting
-    cookies = st.context.cookies
-    st.error(f"DEBUG: Auth Check Failed. Would redirect to login. Return to: {return_to}")
-    st.info(f"Cookies visible to Streamlit: {cookies}")
+    st.switch_page("streamlit_app.py")
     st.stop()
-    
-    # st.switch_page("streamlit_app.py")
-    # st.stop()
 
 
 def set_user_session(access_token: str, user: Optional[Dict] = None, skip_cookie_redirect: bool = False, 

@@ -9,6 +9,7 @@ from flask_auth_utils import get_user_email_flask
 from user_preferences import get_user_timezone
 from streamlit_utils import get_supabase_client
 from flask_data_utils import get_available_funds_flask
+from auth import require_auth
 # Better to use the one from app context or creating a fresh one
 from supabase_client import SupabaseClient
 
@@ -248,6 +249,7 @@ def get_holdings_changes(
 # --- Route ---
 
 @etf_bp.route('/etf_holdings', methods=['GET'])
+@require_auth
 def etf_holdings():
     from app import get_navigation_context, get_supabase_client
     

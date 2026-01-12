@@ -1,9 +1,40 @@
 # Agent Guidelines for LLM Micro-Cap Trading Bot
 
+## ⚠️ CRITICAL: Windows/PowerShell Environment
+
+**THIS IS A WINDOWS ENVIRONMENT RUNNING POWERSHELL - NOT LINUX/BASH**
+
+### Common Mistakes to Avoid:
+- ❌ **DON'T use**: `ls`, `cat`, `grep`, `sed`, `awk`, `&&`, `||`, `$VAR`, `$(command)`
+- ✅ **DO use**: `Get-ChildItem` or `dir`, `Get-Content` or `type`, `Select-String`, `-and`/`-or`, `$env:VAR`, `$(command)`
+- ❌ **DON'T use**: `/path/to/file`, `~/.config`, `chmod +x`, `#!/bin/bash`
+- ✅ **DO use**: `C:\path\to\file` or relative paths, `$env:USERPROFILE`, PowerShell syntax
+- ❌ **DON'T use**: `cd dir1 && cd dir2` (bash chaining)
+- ✅ **DO use**: `cd dir1; cd dir2` or separate commands (PowerShell uses `;` not `&&`)
+
+### Path Separators:
+- Use backslashes `\` or forward slashes `/` (PowerShell accepts both, but backslashes are Windows-native)
+- Virtual environment: `.\venv\Scripts\activate` (NOT `source venv/bin/activate`)
+
+### Command Examples:
+```powershell
+# ✅ CORRECT - PowerShell
+.\venv\Scripts\activate
+python script.py
+Get-ChildItem *.py
+$env:VAR = "value"
+
+# ❌ WRONG - Linux/Bash
+source venv/bin/activate
+python script.py
+ls *.py
+export VAR="value"
+```
+
 ## Environment Setup
 - **This is a Windows environment** - use Windows-specific commands and paths
 - **Always activate virtual environment** before running any commands:
-  ```bash
+  ```powershell
   .\venv\Scripts\activate
   ```
 - **Use trading_data/funds/TEST directory** for development (not "trading_data/funds/Project Chimera" which is production)

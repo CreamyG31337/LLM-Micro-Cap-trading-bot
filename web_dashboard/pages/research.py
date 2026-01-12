@@ -30,7 +30,7 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from auth_utils import is_authenticated, get_user_email, is_admin, get_user_token
+from auth_utils import is_authenticated, get_user_email, is_admin, get_user_token, redirect_to_login
 from navigation import render_navigation
 from research_repository import ResearchRepository
 from postgres_client import PostgresClient
@@ -51,10 +51,9 @@ st.set_page_config(
 )
 
 # Check authentication
+# Check authentication
 if not is_authenticated():
-    st.session_state.return_to = "pages/research.py"
-    st.switch_page("streamlit_app.py")
-    st.stop()
+    redirect_to_login("pages/research.py")
 
 # Refresh token if needed (auto-refresh before expiry)
 from auth_utils import refresh_token_if_needed

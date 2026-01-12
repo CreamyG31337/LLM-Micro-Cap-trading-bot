@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime, timezone
 import json
 
+from auth import require_auth
 from flask_auth_utils import get_user_email_flask
 from user_preferences import get_user_theme, get_user_currency, get_user_selected_fund, get_user_preference
 from streamlit_utils import (
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/v2/dashboard')
+@require_auth
 def dashboard_page():
     """Render the main dashboard page"""
     try:
@@ -66,6 +68,7 @@ def dashboard_page():
                              **nav_context)
 
 @dashboard_bp.route('/api/dashboard/latest-timestamp', methods=['GET'])
+@require_auth
 def get_latest_timestamp():
     """Get the latest timestamp from portfolio_positions (same as Streamlit)"""
     fund = request.args.get('fund')
@@ -114,6 +117,7 @@ def get_latest_timestamp():
         return jsonify({"error": str(e)}), 500
 
 @dashboard_bp.route('/api/dashboard/summary', methods=['GET'])
+@require_auth
 def get_dashboard_summary():
     """Get top-level dashboard metrics"""
     fund = request.args.get('fund')

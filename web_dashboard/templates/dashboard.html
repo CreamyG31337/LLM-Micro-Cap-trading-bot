@@ -166,13 +166,23 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 <!-- Load AgGrid from CDN as typical for this project (or local if available) -->
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
 <script>
     // Pass initial data from backend if needed, or just let JS fetch it
     const INITIAL_FUND = "{{ initial_fund }}";
+    console.log('[Dashboard] Script block loaded, INITIAL_FUND:', INITIAL_FUND);
 </script>
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="/assets/js/dashboard.js"></script>
+<script>
+    // Immediate test to verify script loaded
+    console.log('[Dashboard] All scripts loaded, checking if dashboard.js executed...');
+    if (typeof refreshDashboard === 'undefined') {
+        console.error('[Dashboard] ERROR: refreshDashboard function not found! Script may not have loaded.');
+    } else {
+        console.log('[Dashboard] refreshDashboard function found, script loaded successfully');
+    }
+</script>
 {% endblock %}

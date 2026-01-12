@@ -894,6 +894,9 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
     - performance_pct: P&L as percentage of cost basis
     - performance_index: Normalized to start at 100 (for charting)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if display_currency is None:
         display_currency = get_user_display_currency()
     from decimal import Decimal
@@ -906,8 +909,6 @@ def calculate_portfolio_value_over_time(fund: str, days: Optional[int] = None, d
     else:
         logger.info(f"📊 calculate_portfolio_value_over_time - Calculating for fund: {fund}")
     
-    import logging
-    logger = logging.getLogger(__name__)
     logger.info(f"Loading portfolio value over time for fund: {fund}")
     
     client = get_supabase_client()

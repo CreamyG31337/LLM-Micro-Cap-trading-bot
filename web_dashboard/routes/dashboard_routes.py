@@ -69,6 +69,10 @@ def dashboard_page():
 def get_dashboard_summary():
     """Get top-level dashboard metrics"""
     fund = request.args.get('fund')
+    # Convert 'all' or empty string to None for aggregate view
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/summary called - fund={fund}, currency={display_currency}")
@@ -266,6 +270,10 @@ def get_allocation_charts():
         500: Server error during data fetch
     """
     fund = request.args.get('fund')
+    # Convert 'all' or empty string to None for aggregate view
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/charts/allocation called - fund={fund}, currency={display_currency}")
@@ -336,6 +344,10 @@ def get_allocation_charts():
 def get_holdings_data():
     """Get content for holdings table"""
     fund = request.args.get('fund')
+    # Convert 'all' or empty string to None for aggregate view
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
     display_currency = get_user_currency() or 'CAD'
     
     logger.info(f"[Dashboard API] /api/dashboard/holdings called - fund={fund}, currency={display_currency}")
@@ -419,6 +431,10 @@ def get_holdings_data():
 def get_recent_activity():
     """Get recent transactions"""
     fund = request.args.get('fund')
+    # Convert 'all' or empty string to None for aggregate view
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
     limit = int(request.args.get('limit', 10))
     display_currency = get_user_currency() or 'CAD'
     

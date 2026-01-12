@@ -268,7 +268,55 @@ def get_performance_chart():
         
         # Apply theme to chart data (convert to dict, apply theme, return as JSON)
         from chart_utils import get_chart_theme_config
+        import numpy as np
+        
+        # CRITICAL FIX: Convert numpy arrays to Python lists BEFORE JSON serialization
+        # PlotlyJSONEncoder serializes numpy arrays as binary format which frontend can't parse correctly
+        # Convert numpy arrays in figure traces to lists before serialization
+        for trace in fig.data:
+            if hasattr(trace, 'y') and trace.y is not None:
+                if isinstance(trace.y, np.ndarray):
+                    trace.y = trace.y.tolist()
+                elif hasattr(trace.y, '__iter__') and not isinstance(trace.y, (list, str)):
+                    # Handle numpy array-like objects
+                    trace.y = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in trace.y]
+            if hasattr(trace, 'x') and trace.x is not None:
+                if isinstance(trace.x, np.ndarray):
+                    trace.x = trace.x.tolist()
+                elif hasattr(trace.x, '__iter__') and not isinstance(trace.x, (list, str)):
+                    trace.x = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in trace.x]
+        
         chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        
+        # Additional safety: Convert any remaining numpy types in the dict
+        def convert_numpy_to_list(obj):
+            """Recursively convert numpy arrays and numpy scalars to Python native types"""
+            if isinstance(obj, dict):
+                # Check for numpy array binary format from PlotlyJSONEncoder (fallback)
+                if 'dtype' in obj and 'bdata' in obj:
+                    try:
+                        import base64
+                        dtype_map = {'f8': 'd', 'i8': 'q', 'f4': 'f', 'i4': 'i'}
+                        dtype_char = dtype_map.get(obj['dtype'], 'd')
+                        decoded = base64.b64decode(obj['bdata'])
+                        arr = np.frombuffer(decoded, dtype=dtype_char)
+                        return arr.tolist()
+                    except Exception as e:
+                        logger.warning(f"Failed to decode numpy array: {e}")
+                        return []
+                return {k: convert_numpy_to_list(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_to_list(item) for item in obj]
+            elif isinstance(obj, (np.ndarray, np.generic)):
+                return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            else:
+                return obj
+        
+        chart_data = convert_numpy_to_list(chart_data)
         
         # DEBUG: Log the y-values in the JSON being sent to frontend
         if 'data' in chart_data and len(chart_data['data']) > 0:

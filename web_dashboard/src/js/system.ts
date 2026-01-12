@@ -68,6 +68,12 @@ interface FileContentResponse {
 
 type LogMode = 'app' | 'docker' | 'files';
 
+interface CacheResponse {
+    success: boolean;
+    message: string;
+    cache_version?: string;
+}
+
 let currentLogMode: LogMode = 'app';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -338,3 +344,5 @@ async function loadSourceLogs(): Promise<void> {
 (window as any).switchLogMode = switchLogMode;
 (window as any).refreshLogs = refreshLogs;
 (window as any).loadSourceLogs = loadSourceLogs;
+(window as any).clearCache = clearCache;
+(window as any).bumpCacheVersion = bumpCacheVersion;

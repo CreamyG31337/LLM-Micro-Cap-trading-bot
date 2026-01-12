@@ -305,7 +305,7 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
                 if request:
                     from flask_auth_utils import get_auth_token, get_refresh_token
                     user_token = get_auth_token()
-                    refresh_token = get_refresh_token()
+                    # refresh_token = get_refresh_token() # DISABLED to prevent auto-refresh loops in Flask
                     if user_token:
                         logger.debug(f"[AUTH] Found token in Flask context (length: {len(user_token)})")
             except (ImportError, RuntimeError):

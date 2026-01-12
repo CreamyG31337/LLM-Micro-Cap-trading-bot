@@ -266,7 +266,7 @@ def require_admin(f):
                     from flask_auth_utils import get_refresh_token
                     # Create Supabase client with user token (handles auth header properly)
                     refresh_token = get_refresh_token()
-                    client = SupabaseClient(user_token=token, refresh_token=refresh_token)
+                    client = SupabaseClient(user_token=token)
                     # Call RPC function (same way Streamlit does it)
                     result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                     
@@ -351,7 +351,7 @@ def is_admin():
                 from supabase_client import SupabaseClient
                 from flask_auth_utils import get_refresh_token
                 refresh_token = get_refresh_token()
-                client = SupabaseClient(user_token=token, refresh_token=refresh_token)
+                client = SupabaseClient(user_token=token)
                 result = client.supabase.rpc('is_admin', {'user_uuid': request.user_id}).execute()
                 
                 if result.data is not None:

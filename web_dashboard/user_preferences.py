@@ -140,8 +140,8 @@ def get_user_preference(key: str, default: Any = None) -> Any:
                     from flask_auth_utils import get_auth_token, get_refresh_token
                     
                     user_token = get_auth_token()
-                    refresh_token = get_refresh_token()
-                    client = SupabaseClient(user_token=user_token, refresh_token=refresh_token) if user_token else SupabaseClient()
+                    # refresh_token = get_refresh_token()
+                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
                 except ImportError as e:
                     logger.warning(f"Cannot get preference in Flask context: {e}")
                     return default
@@ -362,10 +362,10 @@ def set_user_preference(key: str, value: Any) -> bool:
                     from flask_auth_utils import get_auth_token, get_refresh_token
                     
                     user_token = get_auth_token()
-                    refresh_token = get_refresh_token()
+                    # refresh_token = get_refresh_token()
                     if user_token:
-                        logger.debug(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}, refresh: {len(refresh_token) if refresh_token else 0}) for preference '{key}'")
-                        client = SupabaseClient(user_token=user_token, refresh_token=refresh_token)
+                        logger.debug(f"[PREF] Creating SupabaseClient with tokens (access: {len(user_token)}) for preference '{key}'")
+                        client = SupabaseClient(user_token=user_token)
                     else:
                         logger.warning(f"[PREF] No token available for preference '{key}' - creating client without token")
                         client = SupabaseClient()
@@ -613,8 +613,8 @@ def get_all_user_preferences() -> Dict[str, Any]:
                 if has_request_context():
                     # Get both tokens from Flask cookies
                     user_token = get_auth_token()
-                    refresh_token = get_refresh_token()
-                    client = SupabaseClient(user_token=user_token, refresh_token=refresh_token) if user_token else SupabaseClient()
+                    # refresh_token = get_refresh_token()
+                    client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
                 else:
                     client = SupabaseClient()
             except ImportError:

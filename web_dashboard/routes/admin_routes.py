@@ -1040,6 +1040,52 @@ def api_list_log_files():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@admin_bp.route('/api/admin/system/cache/clear', methods=['POST'])
+@require_admin
+def api_clear_cache():
+    """Clear all Flask caches"""
+    try:
+        from flask_cache_utils import clear_all_caches
+        
+        clear_all_caches()
+        logger.info("[System API] All caches cleared by admin")
+        
+        return jsonify({
+            "success": True,
+            "message": "All caches cleared successfully"
+        })
+    except Exception as e:
+        logger.error(f"[System API] Error clearing cache: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+@admin_bp.route('/api/admin/system/cache/bump-version', methods=['POST'])
+@require_admin
+def api_bump_cache_version():
+    """Bump cache version to invalidate all cached functions"""
+    try:
+        from cache_version import bump_cache_version, get_cache_version
+        
+        old_version = get_cache_version()
+        bump_cache_version()
+        new_version = get_cache_version()
+        
+        logger.info(f"[System API] Cache version bumped by admin: {old_version} -> {new_version}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Cache version bumped successfully",
+            "cache_version": new_version
+        })
+    except Exception as e:
+        logger.error(f"[System API] Error bumping cache version: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
 @admin_bp.route('/api/admin/system/files/content')
 @require_admin
 def api_read_log_file():

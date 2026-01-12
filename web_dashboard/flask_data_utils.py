@@ -29,7 +29,7 @@ def get_supabase_client_flask() -> Optional[SupabaseClient]:
         
         # Get the user's JWT token from cookies
         user_token = get_auth_token()
-        refresh_token = get_refresh_token()
+        # refresh_token = get_refresh_token()
         
         if not user_token:
             logger.warning("[get_supabase_client_flask] No auth_token cookie found - RLS queries will fail!")
@@ -37,7 +37,7 @@ def get_supabase_client_flask() -> Optional[SupabaseClient]:
             return SupabaseClient()
         
         logger.debug(f"[get_supabase_client_flask] Creating client with user token (length: {len(user_token)})")
-        return SupabaseClient(user_token=user_token, refresh_token=refresh_token)
+        return SupabaseClient(user_token=user_token)
         
     except Exception as e:
         logger.error(f"Error initializing Supabase client: {e}", exc_info=True)

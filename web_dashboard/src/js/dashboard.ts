@@ -245,10 +245,14 @@ function initGrid(): void {
 
     // agGrid is loaded from CDN and available globally
     if (typeof (window as any).agGrid !== 'undefined') {
-        const gridInstance = (window as any).agGrid.createGrid(gridEl, gridOptions);
-        // createGrid returns the grid instance, which has an 'api' property
-        state.gridApi = gridInstance.api || gridInstance;
-        console.log('[Dashboard] AG Grid initialized');
+        // Use new Grid() constructor like congress_trades.ts does
+        const gridInstance = new (window as any).agGrid.Grid(gridEl, gridOptions);
+        // Grid constructor returns instance with .api property
+        state.gridApi = gridInstance.api;
+        console.log('[Dashboard] AG Grid initialized', {
+            has_api: !!state.gridApi,
+            has_setRowData: typeof state.gridApi?.setRowData === 'function'
+        });
     } else {
         console.error('[Dashboard] AG Grid not loaded');
     }

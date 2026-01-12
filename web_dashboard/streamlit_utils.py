@@ -296,12 +296,30 @@ def get_supabase_client(user_token: Optional[str] = None) -> Optional[SupabaseCl
         return None
     
     try:
-        # Get user token from session if not provided
-        if user_token is None and get_user_token:
-            user_token = get_user_token()
+        # 1. Try to get user token if not provided
+        refresh_token = None
+        if user_token is None:
+            # A. Try Flask context (cookies)
+            try:
+                from flask import request
+                if request:
+                    from flask_auth_utils import get_auth_token, get_refresh_token
+                    user_token = get_auth_token()
+                    refresh_token = get_refresh_token()
+                    if user_token:
+                        logger.debug(f"[AUTH] Found token in Flask context (length: {len(user_token)})")
+            except (ImportError, RuntimeError):
+                # RuntimeError occurs if we're not in a Flask context (no request)
+                pass
+            
+            # B. Try Streamlit context (via get_user_token)
+            if not user_token and get_user_token:
+                user_token = get_user_token()
+                if user_token:
+                    logger.debug(f"[AUTH] Found token in Streamlit context (length: {len(user_token)})")
         
-        # Use user token if available (respects RLS)
-        client = SupabaseClient(user_token=user_token)
+        # Use tokens if available (respects RLS)
+        client = SupabaseClient(user_token=user_token, refresh_token=refresh_token)
         
         # Validate client was created successfully
         if client is None:

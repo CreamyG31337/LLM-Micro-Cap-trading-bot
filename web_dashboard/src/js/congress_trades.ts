@@ -101,9 +101,11 @@ interface CongressTrade {
 }
 
 // Global AgGrid reference
+// Note: agGrid is also declared in globals.d.ts as optional 'any'
+// This declaration makes it required and properly typed for this file
 declare global {
     interface Window {
-        agGrid: AgGridGlobal;
+        agGrid: AgGridGlobal; // Override the optional 'any' from globals.d.ts with proper type
     }
 }
 

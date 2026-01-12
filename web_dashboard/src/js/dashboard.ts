@@ -11,49 +11,10 @@
  * See web_dashboard/src/js/README.md for development guidelines.
  */
 
-// Global type declarations
-declare global {
-    interface Window {
-        INITIAL_FUND?: string;
-        agGrid?: any;
-        marked?: {
-            parse: (text: string) => string;
-        };
-    }
-    
-    // ApexCharts is loaded from CDN
-    const ApexCharts: {
-        new (element: HTMLElement, options: ApexChartsOptions): ApexChartsInstance;
-    };
-    
-    interface ApexChartsOptions {
-        series?: any[];
-        chart?: {
-            type?: string;
-            height?: number;
-            toolbar?: { show?: boolean };
-            zoom?: { enabled?: boolean };
-        };
-        colors?: string[];
-        stroke?: { curve?: string; width?: number };
-        xaxis?: { type?: string };
-        yaxis?: {
-            labels?: {
-                formatter?: (val: number) => string;
-            };
-        };
-        tooltip?: {
-            x?: { format?: string };
-            y?: { formatter?: (val: number) => string };
-        };
-        labels?: string[];
-    }
-    
-    interface ApexChartsInstance {
-        render(): void;
-        destroy(): void;
-    }
-}
+// Make this a module
+export {};
+
+// Global types are declared in globals.d.ts
 
 console.log('[Dashboard] dashboard.ts file loaded and executing...');
 
@@ -163,8 +124,8 @@ async function initFundSelector(): Promise<void> {
     
     if (!selector) {
         console.error('[Dashboard] Fund selector element not found!');
-        return;
-    }
+            return;
+        }
     
     try {
         const response = await fetch('/api/funds', { credentials: 'include' });
@@ -172,11 +133,11 @@ async function initFundSelector(): Promise<void> {
             status: response.status,
             ok: response.ok
         });
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const data: Fund[] | { funds: Fund[] } = await response.json();
         console.log('[Dashboard] Funds data received:', {
             fund_count: Array.isArray(data) ? data.length : (data.funds ? data.funds.length : 0),
@@ -415,7 +376,7 @@ async function fetchSummary(): Promise<void> {
                     contentEl.textContent = data.thesis.overview || '';
                 }
             }
-        } else {
+            } else {
             if (thesisContainer) {
                 thesisContainer.classList.add('hidden');
             }
@@ -643,7 +604,7 @@ async function fetchActivity(): Promise<void> {
             console.warn('[Dashboard] Activity table body not found');
             return;
         }
-        
+
         tbody.innerHTML = '';
 
         if (!data.data || data.data.length === 0) {

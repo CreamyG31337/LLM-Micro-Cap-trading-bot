@@ -12,7 +12,9 @@ COPY package.json ./
 COPY tailwind.config.js ./
 
 # Install npm dependencies (cached layer - only rebuilds if package.json changes)
-RUN npm install
+# Use BuildKit cache mount to persist npm cache between builds
+RUN --mount=type=cache,target=/root/.npm \
+    npm install
 
 # Copy Tailwind input CSS and source files needed for content scanning
 # Copy in order: config, input CSS, then templates (for better caching)
@@ -56,8 +58,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/root/.local/bin:${PATH}"
 
 # Copy requirements and install Python dependencies with uv (faster than pip)
+# Use BuildKit cache mount to persist uv cache between builds
 COPY web_dashboard/requirements.txt ./requirements.txt
-RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 
 # Copy entire project (cleaner than selective copying)
 COPY . /app

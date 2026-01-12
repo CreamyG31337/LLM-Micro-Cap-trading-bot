@@ -13,7 +13,9 @@ COPY package.json ./
 COPY tailwind.config.js ./
 
 # Install npm dependencies for Tailwind (cached layer - only rebuilds if package.json changes)
-RUN npm install
+# Use BuildKit cache mount to persist npm cache between builds
+RUN --mount=type=cache,target=/root/.npm \
+    npm install
 
 # Copy Tailwind input CSS and source files needed for content scanning
 # Copy in order: config, input CSS, then templates (for better caching)
@@ -32,8 +34,10 @@ COPY web_dashboard/package.json ./web_dashboard/package.json
 COPY web_dashboard/tsconfig.json ./web_dashboard/tsconfig.json
 
 # Install TypeScript dependencies
+# Use BuildKit cache mount to persist npm cache between builds
 WORKDIR /app/web_dashboard
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm install
 
 # Copy TypeScript source files
 COPY web_dashboard/src ./src
@@ -72,7 +76,9 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY web_dashboard/requirements.txt ./requirements.txt
 
 # Install Python dependencies with uv (cached layer - only rebuilds if requirements.txt changes)
-RUN /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
+# Use BuildKit cache mount to persist uv cache between builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    /root/.local/bin/uv pip install --system --no-cache -r requirements.txt
 
 # Set environment variables before copying code (for better caching)
 ENV PYTHONPATH=/app:/app/web_dashboard

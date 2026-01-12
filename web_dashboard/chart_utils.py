@@ -1061,7 +1061,12 @@ def create_sector_allocation_chart(positions_df: pd.DataFrame, fund_name: Option
     sector_data = []
     for idx, row in positions_df.iterrows():
         ticker = row['ticker']
-        market_value = float(row['market_value'] or 0)
+        raw_market_value = row['market_value']
+        market_value = float(raw_market_value or 0)
+        
+        # Log first few rows to debug
+        if idx < 5:
+            logger.info(f"[Sector Chart] Row {idx}: ticker={ticker}, raw_market_value={raw_market_value} (type={type(raw_market_value)}), market_value={market_value}")
         
         # Convert market_value to display currency
         if 'currency' in row and rate_map:

@@ -123,11 +123,39 @@ document.addEventListener('DOMContentLoaded', (): void => {
 
 // --- Initialization Functions ---
 
-function initTimeDisplay(): void {
+async function initTimeDisplay(): Promise<void> {
     const el = document.getElementById('last-updated-text');
-    if (el) {
-        el.textContent = 'Last updated: ' + new Date().toLocaleString();
+    if (!el) return;
+    
+    try {
+        // Fetch latest timestamp from API (same as Streamlit)
+        const fund = state.currentFund || '';
+        const response = await fetch(`/api/dashboard/latest-timestamp?fund=${encodeURIComponent(fund)}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.timestamp) {
+                // Parse ISO timestamp and format in local timezone (same as Streamlit)
+                const timestamp = new Date(data.timestamp);
+                const formatted = timestamp.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+                el.textContent = `Last updated: ${formatted}`;
+                return;
+            }
+        }
+    } catch (error) {
+        console.warn('[Dashboard] Failed to fetch latest timestamp:', error);
     }
+    
+    // Fallback to current time if API fails
+    el.textContent = 'Last updated: ' + new Date().toLocaleString();
 }
 
 async function initFundSelector(): Promise<void> {
@@ -444,7 +472,7 @@ async function refreshDashboard(): Promise<void> {
         });
 
         // Update Time
-        initTimeDisplay();
+        await initTimeDisplay();
     } catch (error) {
         const duration = performance.now() - startTime;
         console.error('[Dashboard] Error refreshing dashboard:', {

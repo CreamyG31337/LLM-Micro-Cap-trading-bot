@@ -65,6 +65,54 @@ def dashboard_page():
                              initial_fund=None,
                              **nav_context)
 
+@dashboard_bp.route('/api/dashboard/latest-timestamp', methods=['GET'])
+def get_latest_timestamp():
+    """Get the latest timestamp from portfolio_positions (same as Streamlit)"""
+    fund = request.args.get('fund')
+    if not fund or fund.lower() == 'all':
+        fund = None
+    
+    try:
+        from streamlit_utils import get_supabase_client
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Database client unavailable"}), 500
+        
+        # Query latest date from portfolio_positions (same as Streamlit)
+        query = client.supabase.table("portfolio_positions").select("date")
+        if fund:
+            query = query.eq("fund", fund)
+        
+        result = query.order("date", desc=True).limit(1).execute()
+        
+        if result.data and result.data[0].get('date'):
+            from dateutil import parser
+            max_date = result.data[0]['date']
+            
+            # Parse and convert to datetime (same logic as Streamlit)
+            if isinstance(max_date, str):
+                latest_timestamp = parser.parse(max_date)
+            elif hasattr(max_date, 'to_pydatetime'):
+                latest_timestamp = max_date.to_pydatetime()
+            elif isinstance(max_date, pd.Timestamp):
+                latest_timestamp = max_date.to_pydatetime()
+            else:
+                latest_timestamp = max_date
+            
+            # Ensure timezone-aware (UTC)
+            if latest_timestamp.tzinfo is None:
+                latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+            
+            return jsonify({
+                "timestamp": latest_timestamp.isoformat(),
+                "formatted": latest_timestamp.strftime("%Y-%m-%d %I:%M:%S %p")
+            })
+        else:
+            return jsonify({"error": "No data found"}), 404
+    except Exception as e:
+        logger.error(f"Error fetching latest timestamp: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 @dashboard_bp.route('/api/dashboard/summary', methods=['GET'])
 def get_dashboard_summary():
     """Get top-level dashboard metrics"""
@@ -442,6 +490,15 @@ def get_allocation_charts():
         logger.debug(f"[Dashboard API] Fetching positions for allocation chart")
         positions_df = get_current_positions(fund)
         logger.debug(f"[Dashboard API] Positions fetched: {len(positions_df)} rows")
+        
+        # Debug: Log sample of market_value data
+        if not positions_df.empty and 'market_value' in positions_df.columns:
+            sample_values = positions_df['market_value'].head(10).tolist()
+            total_market_value = positions_df['market_value'].sum()
+            logger.info(f"[Dashboard API] Sample market_value values: {sample_values}")
+            logger.info(f"[Dashboard API] Total market_value: {total_market_value}")
+            logger.info(f"[Dashboard API] Market_value column type: {positions_df['market_value'].dtype}")
+            logger.info(f"[Dashboard API] Market_value null count: {positions_df['market_value'].isna().sum()}")
         
         if positions_df.empty:
             logger.warning(f"[Dashboard API] No positions found for allocation chart - fund={fund}")

@@ -19,11 +19,13 @@
 #                          Format: postgresql://user:password@host:port/database
 #                          For Docker container connecting to host Postgres: use host.docker.internal
 #                          Example: postgresql://postgres:password@host.docker.internal:5432/trading_db
-# - supabase_database_url: (required) Direct PostgreSQL connection string for Supabase database
+# - supabase_database_url: (required) PostgreSQL connection string for Supabase database
 #                          Used by APScheduler's SQLAlchemyJobStore for persistent job storage
-#                          Format: postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
-#                          Get from: Supabase Dashboard -> Settings -> Database -> Connection string (Direct connection)
-#                          Example: postgresql://postgres.abc123:YOUR-PASSWORD@db.abc123.supabase.co:5432/postgres
+#                          IMPORTANT: Use Connection Pooler (Supavisor) for IPv4 support
+#                          Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+#                          Get from: Supabase Dashboard -> Settings -> Database -> Connection Pooling -> Transaction Mode
+#                          Example: postgresql://postgres.abc123:YOUR-PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+#                          Note: Port 6543 (pooler) instead of 5432 (direct connection)
 # - fmp_api_key: (optional) Financial Modeling Prep API key for congress trading module
 #                Get from: https://site.financialmodelingprep.com/developer/docs/
 #                Required for congress_trades scheduled job
@@ -281,12 +283,13 @@ steps:
       # Deploy new container (single line to avoid parsing issues)
       # Added --add-host to allow connecting to Ollama on the host machine via host.docker.internal (Linux support)
       # NOTE: On Windows/Mac, host.docker.internal works natively. On Linux, you MUST add "--add-host=host.docker.internal:host-gateway"
+      # IPv6 support: Containers will use IPv6 if Docker daemon has IPv6 enabled (see DOCKER_IPV6_SETUP.md)
       # Ollama settings can be overridden via Woodpecker secrets or environment variables
       # RESEARCH_DATABASE_URL is optional - only set if research articles storage is needed
       # FMP_API_KEY is optional - only set if congress trading module is needed
       - |
         # Build base docker run command
-        DOCKER_CMD="docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --add-host=host.docker.internal:host-gateway"
+        DOCKER_CMD="docker run -d --name trading-dashboard --restart unless-stopped -p 8501:8501 --network bridge-ipv6 --add-host=host.docker.internal:host-gateway"
         # Mount application logs directory (host logs -> container logs)
         DOCKER_CMD="$DOCKER_CMD -v /home/lance/trading-dashboard-logs:/app/web_dashboard/logs"
         # Mount Ollama logs directory (host logs -> container logs/server)
@@ -339,7 +342,7 @@ steps:
       - |
         echo "Deploying Trading Dashboard Flask container in parallel..."
         # Build base docker run command for Flask
-        FLASK_CMD="docker run -d --name trading-dashboard-flask --restart unless-stopped -p 5001:5001 --add-host=host.docker.internal:host-gateway"
+        FLASK_CMD="docker run -d --name trading-dashboard-flask --restart unless-stopped -p 5001:5001 --network bridge-ipv6 --add-host=host.docker.internal:host-gateway"
         # Mount application logs directory (shared with Streamlit container)
         FLASK_CMD="$FLASK_CMD -v /home/lance/trading-dashboard-logs:/app/web_dashboard/logs"
         # Mount shared cookies directory
@@ -419,6 +422,7 @@ steps:
           docker run -d \
             --name cookie-refresher \
             --restart unless-stopped \
+            --network bridge-ipv6 \
             -v /shared/cookies:/shared/cookies \
             -e COOKIE_REFRESH_INTERVAL=1800 \
             -e COOKIE_OUTPUT_FILE=/shared/cookies/webai_cookies.json \

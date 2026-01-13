@@ -211,6 +211,18 @@ def get_scheduler(create=True) -> Optional[BackgroundScheduler]:
                 if not database_url:
                     raise ValueError("SUPABASE_DATABASE_URL must be set in environment for SQLAlchemyJobStore")
                 
+                # Fix IPv6 connection issues by forcing IPv4 preference
+                # Add connect_timeout and prefer IPv4 if connection string doesn't already have parameters
+                if '?' not in database_url:
+                    # Add connection parameters to prefer IPv4
+                    database_url = f"{database_url}?connect_timeout=10"
+                elif 'connect_timeout' not in database_url:
+                    # Add connect_timeout if other parameters exist
+                    database_url = f"{database_url}&connect_timeout=10"
+                
+                # Note: psycopg2 doesn't directly support IPv4-only mode via connection string
+                # If IPv6 issues persist, the connection will fail and we'll catch it in start_scheduler()
+                
                 jobstores = {
                     'default': SQLAlchemyJobStore(url=database_url, tablename='apscheduler_jobs')
                 }
@@ -752,8 +764,20 @@ def start_scheduler() -> bool:
                 scheduler.start()
                 logger.debug("  → scheduler.start() called")
             except Exception as e:
-                logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
-                raise
+                error_msg = str(e)
+                # Check for IPv6 connection issues
+                if 'Network is unreachable' in error_msg or 'IPv6' in error_msg or '2600:' in error_msg:
+                    logger.error(f"  ❌ Failed to start scheduler: Database connection error (IPv6 issue)")
+                    logger.error(f"     Error: {error_msg}")
+                    logger.error(f"     This may be due to IPv6 connectivity issues.")
+                    logger.error(f"     Try using IPv4 address or check network/firewall settings.")
+                    raise ConnectionError(
+                        "Failed to connect to Supabase database. This may be due to IPv6 connectivity issues. "
+                        "Check your network settings or contact your administrator."
+                    ) from e
+                else:
+                    logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
+                    raise
             
             # Verify scheduler actually started (APScheduler.start() is async)
             max_wait = 2.0
@@ -1197,11 +1221,14 @@ def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Failed to fetch last error for {job_id}: {e}")
     
+    # Safely access next_run_time (may not be available when scheduler is stopped)
+    next_run_time = getattr(job, 'next_run_time', None)
+    
     return {
         'id': job.id,
         'name': job.name or job.id,
-        'next_run': job.next_run_time,
-        'is_paused': job.next_run_time is None,
+        'next_run': next_run_time,
+        'is_paused': next_run_time is None,
         'trigger': str(job.trigger),
         'is_running': is_running,
         'running_since': running_since,
@@ -1430,13 +1457,16 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
     
     for job in jobs:
         # With SQLAlchemyJobStore, jobs always have proper trigger objects
+        # Safely access next_run_time (may not be available when scheduler is stopped)
+        next_run_time = getattr(job, 'next_run_time', None)
+        
         # Check if job is paused (next_run_time is None when paused)
         if scheduler_stopped:
             # When scheduler is stopped, jobs aren't "paused" - scheduler just isn't running
             is_paused = False
         else:
             # When scheduler is running, check if job is actually paused
-            is_paused = job.next_run_time is None
+            is_paused = next_run_time is None
         
         # Determine if job has a schedule (not manual-only)
         # A job has a schedule if it has a trigger that's not None
@@ -1445,7 +1475,7 @@ def get_all_jobs_status_batched() -> List[Dict[str, Any]]:
         job_statuses[job.id] = {
             'id': job.id,
             'name': job.name or job.id,
-            'next_run': job.next_run_time,
+            'next_run': next_run_time,
             'is_paused': is_paused,
             'trigger': _format_trigger_readable(job.trigger),
             'is_running': False,

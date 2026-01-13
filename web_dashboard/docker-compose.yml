@@ -37,6 +37,10 @@ services:
 networks:
   trading-network:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 2001:db8:1::/64
 
 volumes:
   ollama-data:

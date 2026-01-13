@@ -108,17 +108,17 @@
     --text-tertiary: #565f89;
     --border-color: #3b4261;
     --border-hover: #545c7e;
-    --gradient-from: #7dcfff;
-    --gradient-to: #bb9af7;
+    --gradient-from: #800555;
+    --gradient-to: #004e7b;
 
     /* Component colors */
-    --log-line-hover: #3b4261;
+    --log-line-hover: #24283b;
     --code-bg: #24283b;
     --code-border: #3b4261;
 
     /* Accent Colors - Neon Pink/Purple to match theme */
-    --color-accent: #bb9af7;
-    --color-accent-hover: #9d7cd8;
+    --color-accent: #f000d0;
+    --color-accent-hover: #bd00b6;
 
     /* Log level colors */
     --log-debug: #565f89;
@@ -130,25 +130,25 @@
 
 /* Abyss Theme - Deep Ocean/Void */
 [data-theme="abyss"] {
-    --bg-primary: #112240;
-    --bg-secondary: #0a192f;
-    --bg-tertiary: #233554;
+    --bg-primary: #000c18;
+    --bg-secondary: #060621;
+    --bg-tertiary: #071931;
     --text-primary: #ccd6f6;
     --text-secondary: #8892b0;
     --text-tertiary: #4a5568;
     --border-color: #233554;
-    --border-hover: #304169;
-    --gradient-from: #64ffda;
-    --gradient-to: #41a6b5;
+    --border-hover: #2a3f5f;
+    --gradient-from: #052248;
+    --gradient-to: #070632;
 
     /* Component colors */
-    --log-line-hover: #112240;
-    --code-bg: #0a192f;
+    --log-line-hover: #000c18;
+    --code-bg: #060621;
     --code-border: #233554;
 
-    /* Accent Colors - Teal/Cyan */
-    --color-accent: #64ffda;
-    --color-accent-hover: #41a6b5;
+    /* Accent Colors */
+    --color-accent: #021024;
+    --color-accent-hover: #061940;
 
     /* Log level colors */
     --log-debug: #8892b0;

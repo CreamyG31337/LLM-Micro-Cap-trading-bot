@@ -16,8 +16,9 @@
 
 {% block content %}
 <div class="px-4 py-6">
-    <!-- Instructions -->
-    <div class="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+    <div class="max-w-3xl mx-auto">
+        <!-- Instructions -->
+        <div class="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
         <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">How to Use</h3>
         <ul class="list-disc list-inside text-sm text-gray-700 dark:text-gray-300 space-y-1">
             <li>Select a theme to load its colors</li>
@@ -45,9 +46,6 @@
                             <option value="system">System (OS Preference)</option>
                         </select>
                     </label>
-                    <button id="apply-theme-btn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-                        Apply Theme
-                    </button>
                 </div>
             </div>
 
@@ -73,9 +71,6 @@
                             </div>
                         </label>
                     </div>
-                    <button id="apply-gradient-btn" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm">
-                        Apply to Header
-                    </button>
                 </div>
             </div>
 
@@ -307,6 +302,7 @@
             </div>
         </div>
     </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -341,8 +337,8 @@
             '--color-accent-hover': '#6d28d9'
         },
         'midnight-tokyo': {
-            '--gradient-from': '#7dcfff',
-            '--gradient-to': '#bb9af7',
+            '--gradient-from': '#800555',
+            '--gradient-to': '#004e7b',
             '--bg-primary': '#24283b',
             '--bg-secondary': '#1a1b26',
             '--bg-tertiary': '#3b4261',
@@ -350,21 +346,21 @@
             '--text-secondary': '#a9b1d6',
             '--text-tertiary': '#565f89',
             '--border-color': '#3b4261',
-            '--color-accent': '#bb9af7',
-            '--color-accent-hover': '#9d7cd8'
+            '--color-accent': '#f000d0',
+            '--color-accent-hover': '#bd00b6'
         },
         abyss: {
-            '--gradient-from': '#64ffda',
-            '--gradient-to': '#41a6b5',
-            '--bg-primary': '#112240',
-            '--bg-secondary': '#0a192f',
-            '--bg-tertiary': '#233554',
+            '--gradient-from': '#052248',
+            '--gradient-to': '#070632',
+            '--bg-primary': '#000c18',
+            '--bg-secondary': '#060621',
+            '--bg-tertiary': '#071931',
             '--text-primary': '#ccd6f6',
             '--text-secondary': '#8892b0',
             '--text-tertiary': '#4a5568',
             '--border-color': '#233554',
-            '--color-accent': '#64ffda',
-            '--color-accent-hover': '#41a6b5'
+            '--color-accent': '#021024',
+            '--color-accent-hover': '#061940'
         }
     };
 
@@ -625,11 +621,10 @@
             updatePreviews();
         }, 100);
         
-        document.getElementById('apply-theme-btn').addEventListener('click', applyTheme);
         document.getElementById('reset-all-btn').addEventListener('click', resetToTheme);
         document.getElementById('copy-css-btn').addEventListener('click', copyCSS);
         document.getElementById('theme-selector').addEventListener('change', () => {
-            loadThemeColors(document.getElementById('theme-selector').value);
+            applyTheme();
         });
         
         setupColorInputs();

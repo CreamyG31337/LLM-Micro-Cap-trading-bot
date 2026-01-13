@@ -631,26 +631,51 @@ def get_all_user_preferences() -> Dict[str, Any]:
             logger.warning("[PREF] No Supabase client available")
             return {}
         
-        # Ensure Authorization header is set right before RPC call
-        # Call postgrest.auth() to ensure the header is set correctly
-        if hasattr(client, 'supabase') and hasattr(client.supabase, 'postgrest') and user_token:
-            postgrest = client.supabase.postgrest
-            try:
-                # Call auth() method to set the header (this is what makes auth.uid() work)
-                postgrest.auth(user_token)
-                logger.debug(f"[PREF] Called postgrest.auth() before get_user_preferences RPC call")
-            except Exception as auth_error:
-                logger.warning(f"[PREF] postgrest.auth() failed: {auth_error}, trying direct header setting")
-                # Fallback: set header directly on session
-                if hasattr(postgrest, 'session'):
-                    if not hasattr(postgrest.session, 'headers'):
-                        postgrest.session.headers = {}
-                    postgrest.session.headers['Authorization'] = f'Bearer {user_token}'
-        
         # Call the RPC function to get all preferences
         # Use client.rpc() method which ensures Authorization header is set
+        # The client was created with user_token, so it should be stored in self._user_token
         logger.debug(f"[PREF] Calling get_user_preferences RPC for user_id={user_id}")
-        result = client.rpc('get_user_preferences')
+        try:
+            result = client.rpc('get_user_preferences')
+        except Exception as rpc_error:
+            logger.error(f"[PREF] RPC call failed: {rpc_error}", exc_info=True)
+            # Try fallback: direct HTTP call with explicit Authorization header
+            try:
+                import requests
+                import os
+                supabase_url = os.getenv("SUPABASE_URL")
+                supabase_anon_key = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+                
+                if supabase_url and supabase_anon_key and user_token:
+                    logger.debug(f"[PREF] Trying HTTP fallback for get_user_preferences")
+                    headers = {
+                        "apikey": supabase_anon_key,
+                        "Authorization": f"Bearer {user_token}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    response = requests.post(
+                        f"{supabase_url}/rest/v1/rpc/get_user_preferences",
+                        headers=headers,
+                        json={}
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        logger.debug(f"[PREF] HTTP fallback RPC result: {data}")
+                        class MockResult:
+                            def __init__(self, data):
+                                self.data = data
+                        result = MockResult(data)
+                    else:
+                        logger.error(f"[PREF] HTTP fallback failed: {response.status_code} {response.text}")
+                        return {}
+                else:
+                    logger.warning("[PREF] Cannot use HTTP fallback: missing URL, key, or token")
+                    return {}
+            except Exception as http_error:
+                logger.error(f"[PREF] HTTP fallback exception: {http_error}", exc_info=True)
+                return {}
         
         logger.debug(f"[PREF] get_user_preferences RPC result: data={result.data}, type={type(result.data)}")
         

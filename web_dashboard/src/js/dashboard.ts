@@ -155,11 +155,12 @@ async function initTimeDisplay(): Promise<void> {
         if (response.ok) {
             const data = await response.json();
             if (data.timestamp) {
-                // Parse ISO timestamp and format in local timezone (same as Streamlit)
+                // Parse ISO timestamp and format in local timezone with long format
                 const timestamp = new Date(data.timestamp);
                 const formatted = timestamp.toLocaleString('en-US', {
+                    weekday: 'long',
                     year: 'numeric',
-                    month: 'numeric',
+                    month: 'long',
                     day: 'numeric',
                     hour: 'numeric',
                     minute: '2-digit',
@@ -175,7 +176,18 @@ async function initTimeDisplay(): Promise<void> {
     }
 
     // Fallback to current time if API fails
-    el.textContent = 'Last updated: ' + new Date().toLocaleString();
+    const now = new Date();
+    const formatted = now.toLocaleString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+    el.textContent = 'Last updated: ' + formatted;
 }
 
 async function initFundSelector(): Promise<void> {
@@ -1198,7 +1210,11 @@ function updateMetric(id: string, value: number, currency: string, isCurrency: b
     const el = document.getElementById(id);
     if (el) {
         if (isCurrency) {
-            el.textContent = formatMoney(value, currency).replace(currency || 'USD', '').trim().replace('$', '');
+            // Format number with commas and 2 decimal places, without currency symbol
+            el.textContent = new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value);
         } else {
             el.textContent = String(value);
         }
@@ -1209,7 +1225,16 @@ function updateChangeMetric(valId: string, pctId: string, change: number, pct: n
     const valEl = document.getElementById(valId);
     const pctEl = document.getElementById(pctId);
 
-    if (valEl) valEl.textContent = (change >= 0 ? '+' : '') + formatMoney(change, currency);
+    if (valEl) {
+        // Format number with $ sign, without currency code prefix
+        const formatted = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD', // Use USD to get $ sign, then we'll replace if needed
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(change);
+        valEl.textContent = (change >= 0 ? '+' : '') + formatted;
+    }
     if (pctEl) {
         pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
 

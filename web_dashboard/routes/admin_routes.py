@@ -1139,17 +1139,10 @@ def scheduler_page():
         nav_context = get_navigation_context(current_page='admin_scheduler')
         logger.debug(f"[Scheduler Page] Navigation context keys: {list(nav_context.keys())}")
         
-        # Get scheduler status for menu badge
-        logger.debug("[Scheduler Page] Checking scheduler status...")
-        scheduler_running = is_scheduler_running()
-        scheduler_status = 'running' if scheduler_running else 'stopped'
-        logger.info(f"[Scheduler Page] Scheduler status: {scheduler_status}")
-        
         logger.info("[Scheduler Page] Rendering template...")
         return render_template('jobs.html', 
                              user_email=user_email,
                              user_theme=user_theme,
-                             scheduler_status=scheduler_status,
                              **nav_context)
     except Exception as e:
         logger.error(f"Error rendering scheduler page: {e}", exc_info=True)
@@ -1168,10 +1161,11 @@ def scheduler_page():
         except Exception:
             scheduler_status = 'stopped'
         
+        # Ensure scheduler_status is in nav_context for fallback
+        nav_context['scheduler_status'] = scheduler_status
         return render_template('jobs.html', 
                              user_email='Admin',
                              user_theme='system',
-                             scheduler_status=scheduler_status,
                              **nav_context)
 
 @admin_bp.route('/api/admin/scheduler/status')

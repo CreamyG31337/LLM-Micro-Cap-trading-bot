@@ -342,18 +342,20 @@ function initGrid(): void {
     updateGridTheme();
 
     const columnDefs = [
-        { field: 'ticker', headerName: 'Ticker', width: 100, pinned: 'left', cellRenderer: TickerCellRenderer },
-        { field: 'name', headerName: 'Company', width: 200 },
-        { field: 'sector', headerName: 'Sector', width: 150 },
-        { field: 'opened', headerName: 'Opened', width: 100 },
-        { field: 'shares', headerName: 'Shares', width: 100, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(2) },
-        { field: 'avg_price', headerName: 'Avg Price', width: 100, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
-        { field: 'price', headerName: 'Current', width: 100, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
-        { field: 'value', headerName: 'Value', width: 120, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
+        { field: 'ticker', headerName: 'Ticker', width: 100, minWidth: 80, maxWidth: 120, pinned: 'left', cellRenderer: TickerCellRenderer },
+        { field: 'name', headerName: 'Company', flex: 1.5, minWidth: 150, maxWidth: 300 },
+        { field: 'sector', headerName: 'Sector', flex: 1, minWidth: 100, maxWidth: 200 },
+        { field: 'opened', headerName: 'Opened', width: 100, minWidth: 80, maxWidth: 120 },
+        { field: 'shares', headerName: 'Shares', flex: 0.8, minWidth: 90, maxWidth: 130, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(2) },
+        { field: 'avg_price', headerName: 'Avg Price', flex: 0.9, minWidth: 90, maxWidth: 140, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
+        { field: 'price', headerName: 'Current', flex: 0.9, minWidth: 90, maxWidth: 140, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
+        { field: 'value', headerName: 'Value', flex: 1, minWidth: 100, maxWidth: 160, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
         { 
             field: 'total_return', 
             headerName: 'Total P&L', 
-            width: 150, 
+            flex: 1.2, 
+            minWidth: 130, 
+            maxWidth: 180, 
             type: 'numericColumn', 
             valueFormatter: (params: any) => {
                 const val = params.value || 0;
@@ -371,7 +373,9 @@ function initGrid(): void {
         { 
             field: 'day_change', 
             headerName: '1-Day P&L', 
-            width: 150, 
+            flex: 1.2, 
+            minWidth: 130, 
+            maxWidth: 180, 
             type: 'numericColumn', 
             valueFormatter: (params: any) => {
                 const val = params.value || 0;
@@ -389,7 +393,9 @@ function initGrid(): void {
         { 
             field: 'five_day_pnl', 
             headerName: '5-Day P&L', 
-            width: 150, 
+            flex: 1.2, 
+            minWidth: 130, 
+            maxWidth: 180, 
             type: 'numericColumn', 
             valueFormatter: (params: any) => {
                 const val = params.value || 0;
@@ -404,7 +410,7 @@ function initGrid(): void {
                 return { textAlign: 'right' };
             }
         },
-        { field: 'weight', headerName: 'Weight', width: 80, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(1) + '%' }
+        { field: 'weight', headerName: 'Weight', flex: 0.6, minWidth: 70, maxWidth: 100, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(1) + '%' }
     ];
 
     const gridOptions = {
@@ -910,6 +916,22 @@ async function fetchHoldings(): Promise<void> {
         if (state.gridApi && typeof state.gridApi.setRowData === 'function') {
             state.gridApi.setRowData(data.data || []);
             console.log('[Dashboard] Holdings grid updated with', rowCount, 'rows');
+            // Auto-size columns to fit content better
+            if (typeof state.gridApi.autoSizeColumns === 'function') {
+                // Auto-size all columns except pinned ticker
+                const allColumns = state.gridApi.getColumns();
+                if (allColumns && allColumns.length > 0) {
+                    const columnsToAutoSize = allColumns.filter((col: any) => col.getColId() !== 'ticker');
+                    if (columnsToAutoSize.length > 0) {
+                        state.gridApi.autoSizeColumns(columnsToAutoSize, false);
+                    }
+                }
+            } else if (typeof state.gridApi.sizeColumnsToFit === 'function') {
+                // Fallback to sizeColumnsToFit if autoSizeColumns is not available
+                setTimeout(() => {
+                    state.gridApi.sizeColumnsToFit();
+                }, 100);
+            }
         } else {
             console.error('[Dashboard] Grid API not available for updating holdings', {
                 has_gridApi: !!state.gridApi,
@@ -925,6 +947,18 @@ async function fetchHoldings(): Promise<void> {
                 if (state.gridApi && typeof state.gridApi.setRowData === 'function') {
                     state.gridApi.setRowData(data.data || []);
                     console.log('[Dashboard] Holdings grid updated after reinitialization');
+                    // Auto-size columns after reinitialization
+                    if (typeof state.gridApi.autoSizeColumns === 'function') {
+                        const allColumns = state.gridApi.getColumns();
+                        if (allColumns && allColumns.length > 0) {
+                            const columnsToAutoSize = allColumns.filter((col: any) => col.getColId() !== 'ticker');
+                            if (columnsToAutoSize.length > 0) {
+                                state.gridApi.autoSizeColumns(columnsToAutoSize, false);
+                            }
+                        }
+                    } else if (typeof state.gridApi.sizeColumnsToFit === 'function') {
+                        state.gridApi.sizeColumnsToFit();
+                    }
                 }
             }, 100);
         }

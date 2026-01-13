@@ -597,7 +597,7 @@ def register_default_jobs(scheduler) -> None:
             max_instances=1,
             coalesce=True
         )
-        )
+
         logger.info("Registered job: performance_metrics_populate (daily at 5 PM EST)")
 
     # Scheduler Heartbeat - Updates file timestamp every 20s to detect crashes

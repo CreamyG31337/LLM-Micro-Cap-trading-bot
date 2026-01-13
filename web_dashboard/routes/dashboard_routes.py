@@ -18,7 +18,8 @@ from streamlit_utils import (
     get_fund_thesis_data,
     fetch_latest_rates_bulk,
     get_investor_count,
-    get_biggest_movers
+    get_biggest_movers,
+    get_first_trade_dates
 )
 
 logger = logging.getLogger(__name__)
@@ -518,12 +519,25 @@ def get_holdings_data():
         if positions_df.empty:
             logger.warning(f"[Dashboard API] No positions found for holdings - fund={fund}")
             return jsonify({"data": []})
+        
+        # Get first trade dates for "Opened" column
+        first_trade_dates = get_first_trade_dates(fund)
             
         # Get rates
         all_currencies = positions_df['currency'].fillna('CAD').astype(str).str.upper().unique().tolist()
         rate_map = fetch_latest_rates_bulk(all_currencies, display_currency)
         def get_rate(curr): return rate_map.get(str(curr).upper(), 1.0)
         rates = positions_df['currency'].fillna('CAD').astype(str).str.upper().map(get_rate)
+        
+        # Process data and calculate converted values first
+        converted_data = []
+        for idx, row in positions_df.iterrows():
+            rate = get_rate(row.get('currency', 'CAD'))
+            market_val = (row.get('market_value', 0) or 0) * rate
+            converted_data.append(market_val)
+        
+        # Calculate total portfolio value in display currency for weight calculation
+        total_portfolio_value = sum(converted_data) if converted_data else 0
         
         # Process data
         data = []
@@ -536,43 +550,63 @@ def get_holdings_data():
             if isinstance(row.get('securities'), dict):
                 company_name = row['securities'].get('company_name') or ticker
                 sector = row['securities'].get('sector') or ""
-                
-            qty = row.get('quantity', 0)
-            price = row.get('average_buy_price', 0)
-            current_price = row.get('current_price', 0)
+            
+            # Use 'shares' from latest_positions view (not 'quantity')
+            shares = row.get('shares', 0) or 0
+            cost_basis = row.get('cost_basis', 0) or 0
+            current_price = row.get('current_price', 0) or 0
+            
+            # Calculate average price from cost_basis / shares
+            avg_price = (cost_basis / shares) if shares > 0 else 0
             
             # Values in Display Currency
             rate = get_rate(row.get('currency', 'CAD'))
             market_val = (row.get('market_value', 0) or 0) * rate
             pnl = (row.get('unrealized_pnl', 0) or 0) * rate
             day_pnl = (row.get('daily_pnl', 0) or 0) * rate
+            five_day_pnl = (row.get('five_day_pnl', 0) or 0) * rate
             
-            day_pnl_pct = 0.0
-            prev_val = market_val - day_pnl
-            if prev_val > 0:
-                day_pnl_pct = (day_pnl / prev_val) * 100
+            # Use P&L percentages from view (already calculated correctly)
+            pnl_pct = row.get('return_pct', 0) or 0
+            day_pnl_pct = row.get('daily_pnl_pct', 0) or 0
+            five_day_pnl_pct = row.get('five_day_pnl_pct', 0) or 0
             
-            pnl_pct = 0.0
-            cost = market_val - pnl
-            if cost > 0:
-                pnl_pct = (pnl / cost) * 100
+            # Calculate weight as percentage of total portfolio (in display currency)
+            weight = (market_val / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+            
+            # Get opened date
+            opened_date = None
+            if ticker in first_trade_dates:
+                try:
+                    opened_date = first_trade_dates[ticker].strftime('%m-%d-%y')
+                except:
+                    opened_date = None
+            
+            # Get stop loss if available (might not be in view)
+            stop_loss = row.get('stop_loss', None)
                 
             data.append({
                 "ticker": ticker,
                 "name": company_name,
                 "sector": sector,
-                "quantity": qty,
-                "price": current_price * rate, # Price in display curr
+                "shares": shares,
+                "opened": opened_date,
+                "avg_price": avg_price * rate,  # Avg price in display currency
+                "price": current_price * rate,  # Current price in display currency
                 "value": market_val,
                 "day_change": day_pnl,
                 "day_change_pct": day_pnl_pct,
                 "total_return": pnl,
                 "total_return_pct": pnl_pct,
+                "five_day_pnl": five_day_pnl,
+                "five_day_pnl_pct": five_day_pnl_pct,
+                "weight": weight,
+                "stop_loss": stop_loss,
                 "currency": row.get('currency', 'CAD') # Original currency
             })
             
-        # Sort by value desc
-        data.sort(key=lambda x: x['value'], reverse=True)
+        # Sort by weight desc (matching console app default)
+        data.sort(key=lambda x: x.get('weight', 0), reverse=True)
         
         processing_time = time.time() - start_time
         logger.info(f"[Dashboard API] Holdings data prepared - {len(data)} holdings, processing_time={processing_time:.3f}s")

@@ -345,13 +345,76 @@ function initGrid(): void {
         { field: 'ticker', headerName: 'Ticker', width: 100, pinned: 'left', cellRenderer: TickerCellRenderer },
         { field: 'name', headerName: 'Company', width: 200 },
         { field: 'sector', headerName: 'Sector', width: 150 },
-        { field: 'quantity', headerName: 'Shares', width: 100, type: 'numericColumn' },
-        { field: 'price', headerName: 'Price', width: 100, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
+        { field: 'opened', headerName: 'Opened', width: 100 },
+        { field: 'shares', headerName: 'Shares', width: 100, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(2) },
+        { field: 'avg_price', headerName: 'Avg Price', width: 100, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
+        { field: 'price', headerName: 'Current', width: 100, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
         { field: 'value', headerName: 'Value', width: 120, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
-        { field: 'day_change', headerName: 'Day Change', width: 120, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
-        { field: 'day_change_pct', headerName: 'Day %', width: 100, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(2) + '%' },
-        { field: 'total_return', headerName: 'Total Return', width: 120, type: 'numericColumn', valueFormatter: (params: any) => formatMoney(params.value) },
-        { field: 'total_return_pct', headerName: 'Total %', width: 100, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(2) + '%' }
+        { 
+            field: 'total_return', 
+            headerName: 'Total P&L', 
+            width: 150, 
+            type: 'numericColumn', 
+            valueFormatter: (params: any) => {
+                const val = params.value || 0;
+                const pct = params.data?.total_return_pct || 0;
+                const sign = val >= 0 ? '+' : '';
+                return `${formatMoney(val)} ${sign}${pct.toFixed(1)}%`;
+            },
+            cellStyle: (params: any) => {
+                const val = params.value || 0;
+                if (val > 0) return { color: '#10b981', fontWeight: 'bold', textAlign: 'right' };
+                if (val < 0) return { color: '#ef4444', fontWeight: 'bold', textAlign: 'right' };
+                return { textAlign: 'right' };
+            }
+        },
+        { 
+            field: 'day_change', 
+            headerName: '1-Day P&L', 
+            width: 150, 
+            type: 'numericColumn', 
+            valueFormatter: (params: any) => {
+                const val = params.value || 0;
+                const pct = params.data?.day_change_pct || 0;
+                const sign = val >= 0 ? '+' : '';
+                return `${formatMoney(val)} ${sign}${pct.toFixed(1)}%`;
+            },
+            cellStyle: (params: any) => {
+                const val = params.value || 0;
+                if (val > 0) return { color: '#10b981', fontWeight: 'bold', textAlign: 'right' };
+                if (val < 0) return { color: '#ef4444', fontWeight: 'bold', textAlign: 'right' };
+                return { textAlign: 'right' };
+            }
+        },
+        { 
+            field: 'five_day_pnl', 
+            headerName: '5-Day P&L', 
+            width: 150, 
+            type: 'numericColumn', 
+            valueFormatter: (params: any) => {
+                const val = params.value || 0;
+                const pct = params.data?.five_day_pnl_pct || 0;
+                const sign = val >= 0 ? '+' : '';
+                return `${formatMoney(val)} ${sign}${pct.toFixed(1)}%`;
+            },
+            cellStyle: (params: any) => {
+                const val = params.value || 0;
+                if (val > 0) return { color: '#10b981', fontWeight: 'bold', textAlign: 'right' };
+                if (val < 0) return { color: '#ef4444', fontWeight: 'bold', textAlign: 'right' };
+                return { textAlign: 'right' };
+            }
+        },
+        { field: 'weight', headerName: 'Weight', width: 80, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(1) + '%' },
+        { 
+            field: 'stop_loss', 
+            headerName: 'Stop Loss', 
+            width: 100, 
+            type: 'numericColumn', 
+            valueFormatter: (params: any) => {
+                if (!params.value || params.value === 0) return 'None';
+                return formatMoney(params.value);
+            }
+        }
     ];
 
     const gridOptions = {
@@ -362,7 +425,11 @@ function initGrid(): void {
             resizable: true
         },
         rowData: [],
-        animateRows: true
+        animateRows: true,
+        // Default sort by weight descending (matching console app)
+        sortModel: [
+            { field: 'weight', sort: 'desc' }
+        ]
     };
 
     // agGrid is loaded from CDN and available globally

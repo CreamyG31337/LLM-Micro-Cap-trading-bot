@@ -2,6 +2,15 @@
 
 {% block title %}Color Theme Tester{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* Toggle switch styling - use CSS variable for accent color */
+    #example-toggle:checked ~ #toggle-switch {
+        background-color: var(--color-accent) !important;
+    }
+</style>
+{% endblock %}
+
 {% block page_title %}🎨 Color Theme Tester{% endblock %}
 {% block page_subtitle %}Test and preview theme colors{% endblock %}
 
@@ -251,12 +260,37 @@
                 </div>
 
                 <!-- Border Examples -->
-                <div>
+                <div class="mb-6">
                     <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Border Examples</p>
                     <div class="grid grid-cols-3 gap-3">
                         <div class="p-3 rounded border border-2 text-center text-sm">Thick Border</div>
                         <div class="p-3 rounded border text-center text-sm">Normal Border</div>
                         <div class="p-3 rounded border border-dashed text-center text-sm">Dashed Border</div>
+                    </div>
+                </div>
+
+                <!-- Highlighted Card Example (like Beta Features) -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Highlighted Card (with left border accent)</p>
+                    <div id="highlighted-card" class="rounded-lg shadow-lg p-6 border-l-4" style="transition: transform 0.2s ease-in-out;">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl font-bold flex items-center" id="highlighted-card-title">
+                                    <i class="fas fa-star mr-2"></i>Featured Section
+                                </h2>
+                                <p class="text-sm mt-1" id="highlighted-card-text">This card has a highlighted left border and hover effect, similar to the Beta Features card.</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex items-center justify-between border-t pt-4" style="border-color: var(--border-color);">
+                            <div>
+                                <h3 class="font-medium" id="highlighted-card-subtitle">Enable Feature</h3>
+                                <p class="text-sm" id="highlighted-card-description">Toggle this feature on or off to test the switch.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="example-toggle" class="sr-only peer" checked>
+                                <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-opacity-50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all" id="toggle-switch" style="--accent-color: var(--color-accent);"></div>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -472,6 +506,30 @@
                 el.style.borderColor = borderColor;
             }
         });
+        
+        // Highlighted card
+        const highlightedCard = document.getElementById('highlighted-card');
+        const highlightedCardTitle = document.getElementById('highlighted-card-title');
+        const highlightedCardText = document.getElementById('highlighted-card-text');
+        const highlightedCardSubtitle = document.getElementById('highlighted-card-subtitle');
+        const highlightedCardDescription = document.getElementById('highlighted-card-description');
+        const toggleSwitch = document.getElementById('toggle-switch');
+        
+        if (highlightedCard) {
+            highlightedCard.style.backgroundColor = bgPrimary;
+            highlightedCard.style.borderLeftColor = accent;
+            highlightedCard.onmouseenter = () => highlightedCard.style.transform = 'translateY(-2px)';
+            highlightedCard.onmouseleave = () => highlightedCard.style.transform = 'translateY(0)';
+        }
+        if (highlightedCardTitle) highlightedCardTitle.style.color = textPrimary;
+        if (highlightedCardText) highlightedCardText.style.color = textSecondary;
+        if (highlightedCardSubtitle) highlightedCardSubtitle.style.color = textPrimary;
+        if (highlightedCardDescription) highlightedCardDescription.style.color = textSecondary;
+        
+        // Toggle switch - update CSS variable for accent color
+        if (toggleSwitch) {
+            toggleSwitch.style.setProperty('--color-accent', accent);
+        }
     }
 
     // Update CSS output

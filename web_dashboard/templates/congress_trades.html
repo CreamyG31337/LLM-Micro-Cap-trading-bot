@@ -8,6 +8,7 @@
 <!-- AgGrid Community Edition -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-grid.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/styles/ag-theme-alpine-dark.css">
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.0.0/dist/ag-grid-community.min.js"></script>
 {% endblock %}
 
@@ -29,26 +30,26 @@
 {% else %}
 
 <!-- Description -->
-<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-    <p class="text-sm text-blue-800">
+<div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
+    <p class="text-sm text-gray-700 dark:text-gray-300">
         <strong>Track the 'Smart Money'</strong> by monitoring stock disclosures from US Congress members. Our
         proprietary <strong>Conflict Score</strong> highlights suspicious trades where politicians buy stocks regulated
         by their own committees—often a leading indicator for upcoming government contracts or legislation.
     </p>
-    <p class="text-xs text-blue-600 mt-2">
+    <p class="text-xs text-gray-600 dark:text-gray-400 mt-2">
         <em>Note: Data is based on public disclosures which may be delayed by up to 45 days.</em>
     </p>
 </div>
 
 <!-- Filters Sidebar (Desktop) and Top Bar (Mobile) -->
-<div class="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
     <form id="filters-form" action="/v2/congress_trades" method="GET" class="space-y-4">
         <input type="hidden" name="refresh_key" value="{{ refresh_key }}">
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Chamber Filter -->
             <div>
-                <label class="block mb-2 text-sm font-medium text-gray-900">🏛️ Chamber</label>
+                <label class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">🏛️ Chamber</label>
                 <div class="flex space-x-4">
                     <label class="flex items-center">
                         <input type="radio" name="chamber" value="All" {% if current_chamber=='All' %}checked{% endif %}
@@ -70,7 +71,7 @@
 
             <!-- Transaction Type Filter -->
             <div>
-                <label class="block mb-2 text-sm font-medium text-gray-900">📊 Transaction Type</label>
+                <label class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">📊 Transaction Type</label>
                 <div class="flex space-x-4">
                     <label class="flex items-center">
                         <input type="radio" name="type" value="All" {% if current_type=='All' %}checked{% endif %}
@@ -92,7 +93,7 @@
 
             <!-- AI Analysis Filters -->
             <div>
-                <label class="block mb-2 text-sm font-medium text-gray-900">🤖 AI Analysis</label>
+                <label class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">🤖 AI Analysis</label>
                 <div class="space-y-2">
                     <label class="flex items-center">
                         <input type="checkbox" name="analyzed_only" value="true" {% if current_analyzed_only %}checked{%
@@ -114,7 +115,7 @@
 
             <!-- Advanced Filters -->
             <div>
-                <label class="block mb-2 text-sm font-medium text-gray-900">🔍 Advanced</label>
+                <label class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">🔍 Advanced</label>
                 <select name="ticker" class="w-full text-sm border border-gray-300 rounded-lg p-2 mb-2">
                     <option value="All" {% if current_ticker=='All' %}selected{% endif %}>All Tickers</option>
                     {% for ticker in unique_tickers %}
@@ -137,7 +138,7 @@
             <label class="flex items-center mb-2">
                 <input type="checkbox" name="use_date_filter" value="true" {% if current_use_date_filter %}checked{%
                     endif %} class="mr-2" id="use-date-filter">
-                <span class="text-sm font-medium text-gray-900">📅 Filter by transaction date</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-white">📅 Filter by transaction date</span>
             </label>
             <div id="date-range-inputs"
                 class="grid grid-cols-1 md:grid-cols-2 gap-4 {% if not current_use_date_filter %}hidden{% endif %}">
@@ -168,52 +169,52 @@
 </div>
 
 <!-- Summary Statistics -->
-<div class="bg-white rounded-lg shadow-sm p-6 mb-6 border border-gray-200">
-    <h2 class="text-xl font-bold mb-4">📊 Summary Statistics</h2>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6 border border-gray-200 dark:border-gray-700">
+    <h2 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">📊 Summary Statistics</h2>
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ total_trades }}</div>
-            <div class="text-sm text-gray-600">Total Trades</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ total_trades }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">Total Trades</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ analyzed_count }}/{{ total_trades }}</div>
-            <div class="text-sm text-gray-600">Analyzed</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ analyzed_count }}/{{ total_trades }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">Analyzed</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ house_count }}</div>
-            <div class="text-sm text-gray-600">House</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ house_count }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">House</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ senate_count }}</div>
-            <div class="text-sm text-gray-600">Senate</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ senate_count }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">Senate</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ purchase_count }}/{{ sale_count }}</div>
-            <div class="text-sm text-gray-600">Buy/Sell</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ purchase_count }}/{{ sale_count }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">Buy/Sell</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ unique_tickers_count }}</div>
-            <div class="text-sm text-gray-600">Unique Tickers</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ unique_tickers_count }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">Unique Tickers</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-2xl font-bold text-gray-900">{{ high_risk_count }}</div>
-            <div class="text-sm text-gray-600">High Risk</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ high_risk_count }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-300">High Risk</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-4">
-            <div class="text-lg font-bold text-gray-900">{{ most_active_display }}</div>
-            <div class="text-xs text-gray-600">Most Active (31d)</div>
+        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="text-lg font-bold text-gray-900 dark:text-white">{{ most_active_display }}</div>
+            <div class="text-xs text-gray-600 dark:text-gray-300">Most Active (31d)</div>
         </div>
     </div>
 </div>
 
 <!-- Data Table -->
-<div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-    <h2 class="text-xl font-bold mb-4">📋 Congress Trades</h2>
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <h2 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">📋 Congress Trades</h2>
     <div id="congress-trades-grid" class="ag-theme-alpine" style="height: 600px; width: 100%;"></div>
 </div>
 
 <!-- AI Reasoning Display (hidden by default) -->
-<div id="ai-reasoning-section" class="bg-white rounded-lg shadow-sm p-6 mt-6 border border-gray-200 hidden">
+<div id="ai-reasoning-section" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mt-6 border border-gray-200 dark:border-gray-700 hidden">
     <h2 class="text-xl font-bold mb-4">📋 Full AI Reasoning (Click to Copy)</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div>

@@ -230,6 +230,29 @@ export function initializeCongressTradesGrid(tradesData: CongressTrade[]): void 
         return;
     }
 
+    // Detect theme and apply appropriate AgGrid theme
+    const htmlElement = document.documentElement;
+    const theme = htmlElement.getAttribute('data-theme') || 'system';
+    let isDark = false;
+    
+    if (theme === 'dark' || theme === 'midnight-tokyo' || theme === 'abyss') {
+        isDark = true;
+    } else if (theme === 'system') {
+        // Check system preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            isDark = true;
+        }
+    }
+    
+    // Update grid container class based on theme
+    if (isDark) {
+        gridDiv.classList.remove('ag-theme-alpine');
+        gridDiv.classList.add('ag-theme-alpine-dark');
+    } else {
+        gridDiv.classList.remove('ag-theme-alpine-dark');
+        gridDiv.classList.add('ag-theme-alpine');
+    }
+
     // Column definitions
     const columnDefs: AgGridColumnDef[] = [
         {

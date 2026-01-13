@@ -147,12 +147,34 @@ def render_timezone_settings():
     except ValueError:
         current_index = 0
 
-    # Timezone selector
+    # Auto-save function - defined before use
+    def _save_timezone_on_change():
+        if "timezone_selectbox" in st.session_state:
+            selected_label = st.session_state.timezone_selectbox
+            selected_tz = tz_options[tz_labels.index(selected_label)]
+            try:
+                cache = st.session_state
+                if "_pref_error_timezone" in cache:
+                    del cache["_pref_error_timezone"]
+                
+                result = set_user_timezone(selected_tz)
+                if result:
+                    st.success(f"✅ Timezone saved as {selected_tz}")
+                    # No rerun needed - fragment will update automatically
+                else:
+                    error_msg = cache.get("_pref_error_timezone", "Unknown error - RPC call returned False")
+                    st.error(f"❌ Failed to save timezone: {error_msg}")
+            except Exception as e:
+                st.error(f"❌ Exception saving timezone: {type(e).__name__}: {str(e)}")
+
+    # Timezone selector - auto-saves on change
     selected_tz_label = st.selectbox(
         "Select your timezone:",
         options=tz_labels,
         index=current_index,
-        help="This timezone will be used to display all times in the dashboard."
+        help="This timezone will be used to display all times in the dashboard. Changes are saved automatically.",
+        key="timezone_selectbox",
+        on_change=_save_timezone_on_change
     )
 
     selected_tz = tz_options[tz_labels.index(selected_tz_label)]
@@ -166,28 +188,6 @@ def render_timezone_settings():
             st.caption(f"Current time in {selected_tz}: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         except Exception as e:
             st.caption(f"Could not display time: {e}")
-
-    # Save button
-    if st.button("💾 Save Timezone", type="primary"):
-        try:
-            # Access cache through streamlit session state
-            cache = st.session_state
-            # Clear any previous error
-            if "_pref_error_timezone" in cache:
-                del cache["_pref_error_timezone"]
-            
-            result = set_user_timezone(selected_tz)
-            if result:
-                st.success(f"✅ Timezone saved as {selected_tz}")
-                st.rerun()  # Refresh to show updated value
-            else:
-                # Get error details if available
-                error_msg = cache.get("_pref_error_timezone", "Unknown error - RPC call returned False")
-                st.error(f"❌ Failed to save timezone: {error_msg}")
-                st.caption("Check the application console/logs for more details.")
-        except Exception as e:
-            st.error(f"❌ Exception saving timezone: {type(e).__name__}: {str(e)}")
-            st.exception(e)
 
 render_timezone_settings()
 
@@ -237,37 +237,37 @@ def render_currency_settings():
     except ValueError:
         current_index = 0
 
-    # Currency selector (same pattern as timezone)
+    # Auto-save function - defined before use
+    def _save_currency_on_change():
+        if "currency_selectbox" in st.session_state:
+            selected_label = st.session_state.currency_selectbox
+            selected_currency = currency_options[currency_labels.index(selected_label)]
+            try:
+                cache = st.session_state
+                if "_pref_error_currency" in cache:
+                    del cache["_pref_error_currency"]
+                
+                result = set_user_currency(selected_currency)
+                if result:
+                    st.success(f"✅ Currency saved as {selected_currency}")
+                    # No rerun needed - fragment will update automatically
+                else:
+                    error_msg = cache.get("_pref_error_currency", "Unknown error - RPC call returned False")
+                    st.error(f"❌ Failed to save currency: {error_msg}")
+            except Exception as e:
+                st.error(f"❌ Exception saving currency: {type(e).__name__}: {str(e)}")
+
+    # Currency selector - auto-saves on change
     selected_currency_label = st.selectbox(
         "Select your display currency:",
         options=currency_labels,
         index=current_index,
-        help="All values will be converted and displayed in this currency."
+        help="All values will be converted and displayed in this currency. Changes are saved automatically.",
+        key="currency_selectbox",
+        on_change=_save_currency_on_change
     )
 
     selected_currency = currency_options[currency_labels.index(selected_currency_label)]
-
-    # Save button (same pattern as timezone)
-    if st.button("💾 Save Currency", type="primary", key="save_currency"):
-        try:
-            # Access cache through streamlit session state
-            cache = st.session_state
-            # Clear any previous error
-            if "_pref_error_currency" in cache:
-                del cache["_pref_error_currency"]
-            
-            result = set_user_currency(selected_currency)
-            if result:
-                st.success(f"✅ Currency saved as {selected_currency}")
-                st.rerun()  # Refresh to show updated value
-            else:
-                # Get error details if available
-                error_msg = cache.get("_pref_error_currency", "Unknown error - RPC call returned False")
-                st.error(f"❌ Failed to save currency: {error_msg}")
-                st.caption("Check the application console/logs for more details.")
-        except Exception as e:
-            st.error(f"❌ Exception saving currency: {type(e).__name__}: {str(e)}")
-            st.exception(e)
 
 render_currency_settings()
 
@@ -311,7 +311,10 @@ def render_theme_settings():
             try:
                 result = set_user_theme(selected)
                 if result:
-                    st.rerun()
+                    st.success(f"✅ Theme saved as {THEME_OPTIONS[selected]}")
+                    # No rerun needed - fragment will update automatically
+                    # Note: Theme change may require page refresh to fully apply
+                    st.info("🔄 You may need to refresh the page to see theme changes")
             except Exception as e:
                 st.error(f"Failed to save theme: {e}")
     
@@ -320,7 +323,7 @@ def render_theme_settings():
         "Select your theme:",
         options=theme_labels,
         index=current_index,
-        help="Override your browser/system theme preference. 'System Default' follows your OS setting.",
+        help="Override your browser/system theme preference. 'System Default' follows your OS setting. Changes are saved automatically.",
         key="theme_selectbox",
         on_change=_save_theme_on_change
     )
@@ -353,35 +356,34 @@ def render_v2_settings():
     st.markdown("**Use Cloud Pages (Flask)**")
     st.caption("Enable new, faster page implementations for Settings, Logs, and Ticker Details.")
     
-    # V2 toggle
+    # Auto-save function - defined before use
+    def _save_v2_on_change():
+        if "v2_toggle" in st.session_state:
+            v2_enabled = st.session_state.v2_toggle
+            try:
+                cache = st.session_state
+                if "_pref_error_v2_enabled" in cache:
+                    del cache["_pref_error_v2_enabled"]
+                
+                result = set_user_preference('v2_enabled', v2_enabled)
+                if result:
+                    st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
+                    st.info("🔄 Refresh the page or navigate to see the changes take effect")
+                    # No rerun needed - fragment will update automatically
+                else:
+                    error_msg = cache.get("_pref_error_v2_enabled", "Unknown error - RPC call returned False")
+                    st.error(f"❌ Failed to save preference: {error_msg}")
+            except Exception as e:
+                st.error(f"❌ Exception saving preference: {type(e).__name__}: {str(e)}")
+
+    # V2 toggle - auto-saves on change
     v2_enabled = st.toggle(
         "Enable v2 Beta Pages",
         value=current_v2_enabled,
-        help="When enabled, migrated pages (Settings, Logs, Ticker Details) will use the new Flask-based implementation with better performance."
+        help="When enabled, migrated pages (Settings, Logs, Ticker Details) will use the new Flask-based implementation with better performance. Changes are saved automatically.",
+        key="v2_toggle",
+        on_change=_save_v2_on_change
     )
-    
-    # Save button
-    if st.button("💾 Save Beta Settings", type="primary", key="save_v2"):
-        try:
-            # Access cache through streamlit session state
-            cache = st.session_state
-            # Clear any previous error
-            if "_pref_error_v2_enabled" in cache:
-                del cache["_pref_error_v2_enabled"]
-            
-            result = set_user_preference('v2_enabled', v2_enabled)
-            if result:
-                st.success(f"✅ Beta features {'enabled' if v2_enabled else 'disabled'}")
-                st.info("🔄 Refresh the page or navigate to see the changes take effect")
-                st.rerun()  # Refresh to show updated value
-            else:
-                # Get error details if available
-                error_msg = cache.get("_pref_error_v2_enabled", "Unknown error - RPC call returned False")
-                st.error(f"❌ Failed to save preference: {error_msg}")
-                st.caption("Check the application console/logs for more details.")
-        except Exception as e:
-            st.error(f"❌ Exception saving preference: {type(e).__name__}: {str(e)}")
-            st.exception(e)  # Shows full stack trace
 
 render_v2_settings()
 

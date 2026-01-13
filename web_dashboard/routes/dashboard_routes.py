@@ -284,8 +284,9 @@ def get_performance_chart():
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
+            from plotly_utils import serialize_plotly_figure
             return Response(
-                json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                serialize_plotly_figure(fig),
                 mimetype='application/json'
             )
         
@@ -321,89 +322,11 @@ def get_performance_chart():
         
         # Apply theme to chart data (convert to dict, apply theme, return as JSON)
         from chart_utils import get_chart_theme_config
-        import numpy as np
+        from plotly_utils import serialize_plotly_figure
         
-        # CRITICAL FIX: Convert numpy arrays and datetime objects to Python native types BEFORE JSON serialization
-        # PlotlyJSONEncoder serializes numpy arrays as binary format which frontend can't parse correctly
-        # Convert numpy arrays in figure traces to lists before serialization
-        import pandas as pd
-        from datetime import datetime as dt
-        
-        def convert_datetime_to_str(value):
-            """Convert various datetime types to ISO format string"""
-            if pd.isna(value):
-                return None
-            if isinstance(value, pd.Timestamp):
-                return value.isoformat()
-            if isinstance(value, np.datetime64):
-                # Convert numpy datetime64 to pandas Timestamp then to ISO string
-                return pd.Timestamp(value).isoformat()
-            if isinstance(value, dt):
-                return value.isoformat()
-            return value
-        
-        for trace in fig.data:
-            if hasattr(trace, 'y') and trace.y is not None:
-                if isinstance(trace.y, np.ndarray):
-                    trace.y = trace.y.tolist()
-                elif hasattr(trace.y, '__iter__') and not isinstance(trace.y, (list, str)):
-                    # Handle numpy array-like objects
-                    trace.y = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in trace.y]
-            if hasattr(trace, 'x') and trace.x is not None:
-                # Convert x-axis (dates) to strings
-                if isinstance(trace.x, np.ndarray):
-                    # Check if it's datetime64 array
-                    if np.issubdtype(trace.x.dtype, np.datetime64):
-                        trace.x = [convert_datetime_to_str(x) for x in trace.x]
-                    else:
-                        trace.x = trace.x.tolist()
-                elif hasattr(trace.x, '__iter__') and not isinstance(trace.x, (list, str)):
-                    # Convert datetime objects to ISO strings
-                    trace.x = [convert_datetime_to_str(x) if isinstance(x, (pd.Timestamp, np.datetime64, dt)) else x for x in trace.x]
-        
-        chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
-        
-        # Additional safety: Convert any remaining numpy types and datetime objects in the dict
-        def convert_numpy_to_list(obj):
-            """Recursively convert numpy arrays, numpy scalars, and datetime objects to Python native types"""
-            if isinstance(obj, dict):
-                # Check for numpy array binary format from PlotlyJSONEncoder (fallback)
-                if 'dtype' in obj and 'bdata' in obj:
-                    try:
-                        import base64
-                        dtype_map = {'f8': 'd', 'i8': 'q', 'f4': 'f', 'i4': 'i', 'M8': 'M'}  # M8 is datetime64
-                        dtype_char = dtype_map.get(obj['dtype'], 'd')
-                        if dtype_char == 'M':
-                            # Handle datetime64 arrays
-                            decoded = base64.b64decode(obj['bdata'])
-                            arr = np.frombuffer(decoded, dtype='datetime64[ns]')
-                            return [convert_datetime_to_str(x) for x in arr]
-                        decoded = base64.b64decode(obj['bdata'])
-                        arr = np.frombuffer(decoded, dtype=dtype_char)
-                        return arr.tolist()
-                    except Exception as e:
-                        logger.warning(f"Failed to decode numpy array: {e}")
-                        return []
-                return {k: convert_numpy_to_list(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy_to_list(item) for item in obj]
-            elif isinstance(obj, (pd.Timestamp, np.datetime64, dt)):
-                return convert_datetime_to_str(obj)
-            elif isinstance(obj, np.ndarray):
-                # Check if it's a datetime64 array
-                if np.issubdtype(obj.dtype, np.datetime64):
-                    return [convert_datetime_to_str(x) for x in obj]
-                return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
-            elif isinstance(obj, np.generic):
-                return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
-            elif isinstance(obj, np.floating):
-                return float(obj)
-            elif isinstance(obj, np.integer):
-                return int(obj)
-            else:
-                return obj
-        
-        chart_data = convert_numpy_to_list(chart_data)
+        # Serialize figure with numpy array conversion
+        chart_json = serialize_plotly_figure(fig)
+        chart_data = json.loads(chart_json)
         
         # DEBUG: Log the y-values in the JSON being sent to frontend
         if 'data' in chart_data and len(chart_data['data']) > 0:
@@ -515,8 +438,9 @@ def get_allocation_charts():
                 xref="paper", yref="paper",
                 x=0.5, y=0.5, showarrow=False
             )
+            from plotly_utils import serialize_plotly_figure
             return Response(
-                json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                serialize_plotly_figure(fig),
                 mimetype='application/json'
             )
         
@@ -541,7 +465,11 @@ def get_allocation_charts():
         
         # Apply theme to chart data (convert to dict, apply theme, return as JSON)
         from chart_utils import get_chart_theme_config
-        chart_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        from plotly_utils import serialize_plotly_figure
+        
+        # Serialize figure with numpy array conversion
+        chart_json = serialize_plotly_figure(fig)
+        chart_data = json.loads(chart_json)
         theme_config = get_chart_theme_config(theme)
         
         # Update layout for theme

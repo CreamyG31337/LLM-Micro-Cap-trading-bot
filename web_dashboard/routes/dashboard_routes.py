@@ -498,6 +498,135 @@ def get_allocation_charts():
         logger.error(f"[Dashboard API] Error fetching allocation charts (took {processing_time:.3f}s): {e}", exc_info=True)
         return jsonify({"error": str(e), "processing_time": processing_time}), 500
 
+@dashboard_bp.route('/api/dashboard/charts/pnl', methods=['GET'])
+@require_auth
+def get_pnl_chart():
+    """Get P&L by Position chart as Plotly JSON.
+    
+    GET /api/dashboard/charts/pnl
+    
+    Query Parameters:
+        fund (str): Fund name (optional)
+        theme (str): Chart theme - 'dark', 'light', 'midnight-tokyo', 'abyss' (optional)
+        
+    Returns:
+        JSON response with Plotly chart data:
+            - data: Array of trace objects (bar chart)
+            - layout: Layout configuration
+            
+    Error Responses:
+        500: Server error during data fetch
+    """
+    from chart_utils import create_pnl_chart, get_chart_theme_config
+    from plotly_utils import serialize_plotly_figure
+    from flask_data_utils import fetch_dividend_log_flask
+    
+    fund = request.args.get('fund')
+    # Convert 'all' or empty string to None for aggregate view
+    if not fund or fund.lower() == 'all':
+        fund = None
+    
+    client_theme = request.args.get('theme', '').strip().lower()
+    display_currency = get_user_currency() or 'CAD'
+    
+    logger.info(f"[Dashboard API] /api/dashboard/charts/pnl called - fund={fund}, currency={display_currency}")
+    start_time = time.time()
+    
+    try:
+        logger.debug(f"[Dashboard API] Fetching positions for P&L chart")
+        positions_df = get_current_positions(fund)
+        logger.debug(f"[Dashboard API] Positions fetched: {len(positions_df)} rows")
+        
+        if positions_df.empty:
+            logger.warning(f"[Dashboard API] No positions found for P&L chart - fund={fund}")
+            # Return empty Plotly chart
+            import plotly.graph_objs as go
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No P&L data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return Response(
+                serialize_plotly_figure(fig),
+                mimetype='application/json'
+            )
+        
+        # Check for P&L columns
+        if 'pnl' not in positions_df.columns and 'unrealized_pnl' not in positions_df.columns:
+            logger.warning(f"[Dashboard API] No P&L columns found in positions data")
+            import plotly.graph_objs as go
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No P&L data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+            return Response(
+                serialize_plotly_figure(fig),
+                mimetype='application/json'
+            )
+        
+        # Fetch dividend data
+        dividend_data = []
+        try:
+            dividend_data = fetch_dividend_log_flask(days_lookback=365, fund=fund)
+            logger.debug(f"[Dashboard API] Dividend data fetched: {len(dividend_data)} records")
+        except Exception as e:
+            logger.warning(f"[Dashboard API] Could not fetch dividend data: {e}")
+        
+        # Create P&L chart using shared function (same as Streamlit)
+        fig = create_pnl_chart(
+            positions_df,
+            fund_name=fund,
+            display_currency=display_currency,
+            dividend_data=dividend_data
+        )
+        
+        # Update height to match container (500px)
+        fig.update_layout(
+            height=500,
+            margin=dict(l=20, r=20, t=50, b=100)
+        )
+        
+        # Apply theme to chart
+        if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:
+            # Get user theme preference from backend
+            user_theme = get_user_theme() or 'system'
+            theme = user_theme if user_theme in ['dark', 'light', 'midnight-tokyo', 'abyss'] else 'light'
+        else:
+            theme = client_theme
+        
+        # Serialize figure with numpy array conversion
+        chart_json = serialize_plotly_figure(fig)
+        chart_data = json.loads(chart_json)
+        theme_config = get_chart_theme_config(theme)
+        
+        # Update layout for theme
+        if 'layout' in chart_data:
+            chart_data['layout']['template'] = theme_config['template']
+            chart_data['layout']['paper_bgcolor'] = theme_config['paper_bgcolor']
+            chart_data['layout']['plot_bgcolor'] = theme_config['plot_bgcolor']
+            chart_data['layout']['font'] = {'color': theme_config['font_color']}
+            
+            # Update legend background if it exists
+            if 'legend' in chart_data['layout']:
+                chart_data['layout']['legend']['bgcolor'] = theme_config['legend_bg_color']
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] P&L chart created - theme={theme}, processing_time={processing_time:.3f}s")
+        
+        # Return Plotly JSON with theme applied
+        return Response(
+            json.dumps(chart_data),
+            mimetype='application/json'
+        )
+        
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching P&L chart (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
+
 @dashboard_bp.route('/api/dashboard/holdings', methods=['GET'])
 def get_holdings_data():
     """Get content for holdings table"""

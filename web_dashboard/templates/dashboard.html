@@ -205,7 +205,20 @@
         </div>
     </div>
 
-
+    <!-- P&L by Position Chart -->
+    <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700 mb-6">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">P&L by Position</h3>
+        <div class="mb-2 text-sm text-gray-500 dark:text-gray-400">
+            💡 <strong>Winning positions with gains</strong> show overlay bars (green unrealized + gold dividends). 
+            <strong>Winning positions with losses offset by dividends</strong> show red bar below axis (loss) + gold bar above axis (dividends) at the same position. 
+            <strong>Losing positions</strong> show single red bars below axis.
+        </div>
+        <div class="w-full relative" id="pnl-chart" style="min-height: 500px;">
+            <div id="pnl-chart-spinner" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
+            </div>
+        </div>
+    </div>
 
     <!-- Holdings Table -->
     <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700 mb-6">

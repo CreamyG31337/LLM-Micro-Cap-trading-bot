@@ -45,6 +45,11 @@ interface AllocationChartData {
     layout: any; // Plotly layout
 }
 
+interface PnlChartData {
+    data: any[]; // Plotly trace data
+    layout: any; // Plotly layout
+}
+
 interface HoldingsData {
     data: Array<{
         ticker: string;
@@ -556,6 +561,7 @@ async function refreshDashboard(): Promise<void> {
             fetchSummary(),
             fetchPerformanceChart(),
             fetchSectorChart(),
+            loadPnlChart(state.currentFund),
             fetchMovers(),
             fetchHoldings(),
             fetchActivity()
@@ -1355,6 +1361,149 @@ function renderSectorChart(data: AllocationChartData): void {
     } catch (error) {
         console.error('[Dashboard] Error rendering Plotly sector chart:', error);
         chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error rendering chart</p></div>';
+    }
+}
+
+function renderPnlChart(data: PnlChartData): void {
+    // Clear any existing chart
+    const chartEl = document.getElementById('pnl-chart');
+    if (!chartEl) {
+        console.warn('[Dashboard] P&L chart element not found');
+        return;
+    }
+
+    // Hide spinner before rendering (Plotly will replace content)
+    hideSpinner('pnl-chart-spinner');
+
+    if (!data || !data.data || !data.layout) {
+        chartEl.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No P&L data available</p></div>';
+        return;
+    }
+
+    // Render with Plotly (same as sector chart)
+    const Plotly = (window as any).Plotly;
+    if (!Plotly) {
+        console.error('[Dashboard] Plotly not loaded');
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error: Plotly library not loaded</p></div>';
+        return;
+    }
+
+    // Update layout height to match container
+    const layout = { ...data.layout };
+    
+    // Get actual container height or use default
+    const containerHeight = chartEl.offsetHeight || 500;
+    layout.height = containerHeight;
+    layout.autosize = true;
+    
+    // Ensure proper margins
+    if (!layout.margin) {
+        layout.margin = { l: 20, r: 20, t: 50, b: 100 };
+    } else {
+        // Ensure left and right margins are equal for centering
+        layout.margin.l = Math.max(20, layout.margin.l || 20);
+        layout.margin.r = Math.max(20, layout.margin.r || 20);
+        // Increase bottom margin to prevent legend cutoff
+        layout.margin.b = Math.max(100, layout.margin.b || 100);
+    }
+
+    try {
+        Plotly.newPlot('pnl-chart', data.data, layout, {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+        });
+        console.log('[Dashboard] P&L chart rendered with Plotly');
+        
+        // Add resize handler to redraw chart when window resizes (only once)
+        if (!(window as any).__pnlChartResizeHandler) {
+            const resizeHandler = () => {
+                const Plotly = (window as any).Plotly;
+                if (Plotly && document.getElementById('pnl-chart')) {
+                    Plotly.Plots.resize('pnl-chart');
+                }
+            };
+            (window as any).__pnlChartResizeHandler = resizeHandler;
+            window.addEventListener('resize', resizeHandler);
+        }
+        
+    } catch (error) {
+        console.error('[Dashboard] Error rendering Plotly P&L chart:', error);
+        chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error rendering chart</p></div>';
+    }
+}
+
+async function loadPnlChart(fund: string): Promise<void> {
+    // Detect actual theme from page (same as other charts)
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let theme: string = 'light'; // default
+
+    if (dataTheme === 'dark' || dataTheme === 'light' || dataTheme === 'midnight-tokyo' || dataTheme === 'abyss') {
+        theme = dataTheme;
+    } else if (dataTheme === 'system') {
+        // For 'system', check if page is actually in dark mode via CSS
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        // Check for dark mode background colors
+        const isDark = bodyBg && (
+            bodyBg.includes('rgb(31, 41, 55)') ||  // --bg-primary dark
+            bodyBg.includes('rgb(17, 24, 39)') ||  // --bg-secondary dark  
+            bodyBg.includes('rgb(55, 65, 81)')     // --bg-tertiary dark
+        );
+        theme = isDark ? 'dark' : 'light';
+    }
+
+    const startTime = performance.now();
+    const url = `/api/dashboard/charts/pnl?fund=${encodeURIComponent(fund || '')}&theme=${encodeURIComponent(theme)}`;
+    
+    console.log('[Dashboard] Loading P&L chart:', { fund, theme, url });
+    
+    try {
+        showSpinner('pnl-chart-spinner');
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        const duration = performance.now() - startTime;
+        console.log('[Dashboard] P&L chart API response', {
+            status: response.status,
+            duration: `${duration.toFixed(2)}ms`
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            console.error('[Dashboard] P&L chart API error:', {
+                status: response.status,
+                errorData: errorData,
+                url: url
+            });
+            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data: PnlChartData = await response.json();
+        console.log('[Dashboard] P&L chart data received');
+
+        renderPnlChart(data);
+
+    } catch (error) {
+        hideSpinner('pnl-chart-spinner');
+        const duration = performance.now() - startTime;
+        console.error('[Dashboard] Error fetching P&L chart:', {
+            error: error,
+            message: error instanceof Error ? error.message : String(error),
+            url: url,
+            duration: `${duration.toFixed(2)}ms`
+        });
+        const chartEl = document.getElementById('pnl-chart');
+        if (chartEl) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            chartEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error: ${errorMsg}</p></div>`;
+        }
     }
 }
 

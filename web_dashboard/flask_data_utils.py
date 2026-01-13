@@ -406,3 +406,40 @@ def calculate_portfolio_value_over_time_flask(fund: str, days: Optional[int] = N
     except Exception as e:
         logger.error(f"Error calculating portfolio value over time (Flask): {e}", exc_info=True)
         return pd.DataFrame()
+
+
+@cache_data(ttl=300)
+def fetch_dividend_log_flask(days_lookback: int = 365, fund: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Fetch dividend log from Supabase (Flask version).
+    
+    Args:
+        days_lookback: Number of days of history to fetch (default 365)
+        fund: Optional fund name to filter by
+        
+    Returns:
+        List of dicts containing dividend records
+    """
+    client = get_supabase_client_flask()
+    if not client:
+        return []
+        
+    try:
+        # Calculate start date
+        from datetime import datetime, timedelta
+        start_date = (datetime.now() - timedelta(days=days_lookback)).date().isoformat()
+        
+        query = client.supabase.table('dividend_log')\
+            .select('*')\
+            .gte('pay_date', start_date)
+        
+        # Apply fund filter if provided
+        if fund:
+            query = query.eq('fund', fund)
+            
+        response = query.order('pay_date', desc=True).execute()
+            
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching dividend log (Flask): {e}", exc_info=True)
+        return []

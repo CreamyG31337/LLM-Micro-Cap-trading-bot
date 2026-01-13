@@ -142,6 +142,57 @@
         </div>
     </div>
 
+    <!-- Biggest Daily Movers -->
+    <div id="movers-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Top Gainers -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <span class="text-green-500">🟢</span> Top Gainers
+            </h3>
+            <div class="relative overflow-x-auto max-h-[400px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                <div id="gainers-spinner" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 dark:border-green-400"></div>
+                </div>
+                <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400 sticky top-0 z-10">
+                        <tr>
+                            <th scope="col" class="px-4 py-3">Ticker</th>
+                            <th scope="col" class="px-4 py-3 text-right">1-Day %</th>
+                            <th scope="col" class="px-4 py-3 text-right">1-Day P&L</th>
+                            <th scope="col" class="px-4 py-3 text-right">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gainers-table-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Top Losers -->
+        <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <span class="text-red-500">🔴</span> Top Losers
+            </h3>
+            <div class="relative overflow-x-auto max-h-[400px] overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                <div id="losers-spinner" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 z-10">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 dark:border-red-400"></div>
+                </div>
+                <table class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400 sticky top-0 z-10">
+                        <tr>
+                            <th scope="col" class="px-4 py-3">Ticker</th>
+                            <th scope="col" class="px-4 py-3 text-right">1-Day %</th>
+                            <th scope="col" class="px-4 py-3 text-right">1-Day P&L</th>
+                            <th scope="col" class="px-4 py-3 text-right">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody id="losers-table-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Holdings Table -->
     <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm dark:bg-gray-800 dark:border-gray-700 mb-6">
         <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Current Holdings</h3>

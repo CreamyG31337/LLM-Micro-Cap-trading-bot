@@ -17,7 +17,8 @@ from streamlit_utils import (
     get_user_investment_metrics,
     get_fund_thesis_data,
     fetch_latest_rates_bulk,
-    get_investor_count
+    get_investor_count,
+    get_biggest_movers
 )
 
 logger = logging.getLogger(__name__)
@@ -699,4 +700,85 @@ def get_recent_activity():
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"[Dashboard API] Error fetching activity (took {processing_time:.3f}s): {e}", exc_info=True)
+        return jsonify({"error": str(e), "processing_time": processing_time}), 500
+
+@dashboard_bp.route('/api/dashboard/movers', methods=['GET'])
+@require_auth
+def get_movers_data():
+    """Get top gainers and losers for the day.
+    
+    GET /api/dashboard/movers
+    
+    Query Parameters:
+        fund (str): Fund name (optional)
+        limit (int): Number of movers to return per category (default: 10)
+        
+    Returns:
+        JSON response with gainers and losers arrays
+    """
+    fund = request.args.get('fund')
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
+    limit = int(request.args.get('limit', 10))
+    display_currency = get_user_currency() or 'CAD'
+    
+    logger.info(f"[Dashboard API] /api/dashboard/movers called - fund={fund}, limit={limit}, currency={display_currency}")
+    start_time = time.time()
+    
+    try:
+        positions_df = get_current_positions(fund)
+        
+        if positions_df.empty:
+            logger.warning(f"[Dashboard API] No positions found for movers - fund={fund}")
+            return jsonify({"gainers": [], "losers": []})
+        
+        movers = get_biggest_movers(positions_df, display_currency, limit=limit)
+        
+        def df_to_list(df):
+            if df.empty:
+                return []
+            result = []
+            for _, row in df.iterrows():
+                item = {
+                    "ticker": row.get('ticker', ''),
+                    "company_name": row.get('company_name', row.get('ticker', '')),
+                }
+                if 'daily_pnl_pct' in row:
+                    item["daily_pnl_pct"] = float(row['daily_pnl_pct']) if pd.notna(row['daily_pnl_pct']) else None
+                elif 'return_pct' in row:
+                    item["daily_pnl_pct"] = float(row['return_pct']) if pd.notna(row['return_pct']) else None
+                if 'pnl_display' in row:
+                    item["daily_pnl"] = float(row['pnl_display']) if pd.notna(row['pnl_display']) else None
+                if 'five_day_pnl_pct' in row:
+                    item["five_day_pnl_pct"] = float(row['five_day_pnl_pct']) if pd.notna(row['five_day_pnl_pct']) else None
+                if 'five_day_pnl_display' in row:
+                    item["five_day_pnl"] = float(row['five_day_pnl_display']) if pd.notna(row['five_day_pnl_display']) else None
+                if 'return_pct' in row and 'daily_pnl_pct' in df.columns:
+                    item["total_return_pct"] = float(row['return_pct']) if pd.notna(row['return_pct']) else None
+                if 'total_pnl_display' in row:
+                    item["total_pnl"] = float(row['total_pnl_display']) if pd.notna(row['total_pnl_display']) else None
+                if 'current_price' in row:
+                    item["current_price"] = float(row['current_price']) if pd.notna(row['current_price']) else None
+                if 'market_value' in row:
+                    item["market_value"] = float(row['market_value']) if pd.notna(row['market_value']) else None
+                result.append(item)
+            return result
+        
+        gainers = df_to_list(movers['gainers'])
+        losers = df_to_list(movers['losers'])
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[Dashboard API] Movers data prepared - {len(gainers)} gainers, {len(losers)} losers, processing_time={processing_time:.3f}s")
+        
+        return jsonify({
+            "gainers": gainers,
+            "losers": losers,
+            "display_currency": display_currency,
+            "processing_time": processing_time
+        })
+        
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[Dashboard API] Error fetching movers (took {processing_time:.3f}s): {e}", exc_info=True)
         return jsonify({"error": str(e), "processing_time": processing_time}), 500

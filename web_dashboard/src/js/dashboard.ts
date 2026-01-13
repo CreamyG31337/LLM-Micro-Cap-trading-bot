@@ -71,6 +71,26 @@ interface ActivityData {
     }>;
 }
 
+interface MoverItem {
+    ticker: string;
+    company_name?: string;
+    daily_pnl_pct?: number;
+    daily_pnl?: number;
+    five_day_pnl_pct?: number;
+    five_day_pnl?: number;
+    total_return_pct?: number;
+    total_pnl?: number;
+    current_price?: number;
+    market_value?: number;
+}
+
+interface MoversData {
+    gainers: MoverItem[];
+    losers: MoverItem[];
+    display_currency: string;
+    processing_time: number;
+}
+
 interface Fund {
     name: string;
 }
@@ -461,6 +481,7 @@ async function refreshDashboard(): Promise<void> {
             fetchSummary(),
             fetchPerformanceChart(),
             fetchSectorChart(),
+            fetchMovers(),
             fetchHoldings(),
             fetchActivity()
         ]);
@@ -953,6 +974,124 @@ async function fetchActivity(): Promise<void> {
         const tableBody = document.getElementById('activity-table-body');
         if (tableBody) {
             tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-4">Error loading activity: ${error instanceof Error ? error.message : 'Unknown error'}</td></tr>`;
+        }
+    }
+}
+
+async function fetchMovers(): Promise<void> {
+    showSpinner('gainers-spinner');
+    showSpinner('losers-spinner');
+    
+    const url = `/api/dashboard/movers?fund=${encodeURIComponent(state.currentFund)}&limit=10`;
+    const startTime = performance.now();
+
+    console.log('[Dashboard] Fetching movers...', { url, fund: state.currentFund });
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        const duration = performance.now() - startTime;
+
+        console.log('[Dashboard] Movers response received', {
+            status: response.status,
+            ok: response.ok,
+            duration: `${duration.toFixed(2)}ms`
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            console.error('[Dashboard] Movers API error:', {
+                status: response.status,
+                errorData: errorData,
+                url: url
+            });
+            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data: MoversData = await response.json();
+        console.log('[Dashboard] Movers data received', {
+            gainers_count: data.gainers ? data.gainers.length : 0,
+            losers_count: data.losers ? data.losers.length : 0
+        });
+
+        renderMovers(data);
+        hideSpinner('gainers-spinner');
+        hideSpinner('losers-spinner');
+
+    } catch (error) {
+        hideSpinner('gainers-spinner');
+        hideSpinner('losers-spinner');
+        const duration = performance.now() - startTime;
+        console.error('[Dashboard] Error fetching movers:', {
+            error: error,
+            message: error instanceof Error ? error.message : String(error),
+            url: url,
+            duration: `${duration.toFixed(2)}ms`
+        });
+        const gainersBody = document.getElementById('gainers-table-body');
+        const losersBody = document.getElementById('losers-table-body');
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        if (gainersBody) {
+            gainersBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">Error: ${errorMsg}</td></tr>`;
+        }
+        if (losersBody) {
+            losersBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">Error: ${errorMsg}</td></tr>`;
+        }
+    }
+}
+
+function renderMovers(data: MoversData): void {
+    const gainersBody = document.getElementById('gainers-table-body');
+    const losersBody = document.getElementById('losers-table-body');
+
+    if (gainersBody) {
+        gainersBody.innerHTML = '';
+        if (!data.gainers || data.gainers.length === 0) {
+            gainersBody.innerHTML = '<tr class="bg-white dark:bg-gray-800"><td colspan="4" class="px-4 py-4 text-center text-gray-500">No gainers to display</td></tr>';
+        } else {
+            data.gainers.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600';
+                
+                const pctDisplay = item.daily_pnl_pct != null ? `+${item.daily_pnl_pct.toFixed(2)}%` : '--';
+                const pnlDisplay = item.daily_pnl != null ? `+${formatMoney(item.daily_pnl, data.display_currency)}` : '--';
+                const priceDisplay = item.current_price != null ? formatMoney(item.current_price, data.display_currency) : '--';
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">
+                        <a href="/v2/ticker?ticker=${item.ticker}" class="hover:underline">${item.ticker}</a>
+                    </td>
+                    <td class="px-4 py-3 text-right text-green-600 dark:text-green-400 font-medium">${pctDisplay}</td>
+                    <td class="px-4 py-3 text-right text-green-600 dark:text-green-400">${pnlDisplay}</td>
+                    <td class="px-4 py-3 text-right">${priceDisplay}</td>
+                `;
+                gainersBody.appendChild(tr);
+            });
+        }
+    }
+
+    if (losersBody) {
+        losersBody.innerHTML = '';
+        if (!data.losers || data.losers.length === 0) {
+            losersBody.innerHTML = '<tr class="bg-white dark:bg-gray-800"><td colspan="4" class="px-4 py-4 text-center text-gray-500">No losers to display</td></tr>';
+        } else {
+            data.losers.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600';
+                
+                const pctDisplay = item.daily_pnl_pct != null ? `${item.daily_pnl_pct.toFixed(2)}%` : '--';
+                const pnlDisplay = item.daily_pnl != null ? formatMoney(item.daily_pnl, data.display_currency) : '--';
+                const priceDisplay = item.current_price != null ? formatMoney(item.current_price, data.display_currency) : '--';
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">
+                        <a href="/v2/ticker?ticker=${item.ticker}" class="hover:underline">${item.ticker}</a>
+                    </td>
+                    <td class="px-4 py-3 text-right text-red-600 dark:text-red-400 font-medium">${pctDisplay}</td>
+                    <td class="px-4 py-3 text-right text-red-600 dark:text-red-400">${pnlDisplay}</td>
+                    <td class="px-4 py-3 text-right">${priceDisplay}</td>
+                `;
+                losersBody.appendChild(tr);
+            });
         }
     }
 }

@@ -1281,12 +1281,12 @@ def _format_trigger_readable(trigger: Any) -> str:
         # Format cron triggers
         parts = []
         
-        # Handle time
+        # Handle time - use getattr() safely as CronTrigger may not have these attributes directly
         hour_str = None
         minute_str = None
         
-        if trigger.hour is not None:
-            hour = trigger.hour
+        hour = getattr(trigger, 'hour', None)
+        if hour is not None:
             if isinstance(hour, int):
                 hour_str = f"{hour:02d}"
             elif isinstance(hour, str):
@@ -1301,8 +1301,8 @@ def _format_trigger_readable(trigger: Any) -> str:
             else:
                 hour_str = str(hour)
         
-        if trigger.minute is not None:
-            minute = trigger.minute
+        minute = getattr(trigger, 'minute', None)
+        if minute is not None:
             if isinstance(minute, int):
                 minute_str = f"{minute:02d}"
             elif isinstance(minute, str):
@@ -1321,17 +1321,19 @@ def _format_trigger_readable(trigger: Any) -> str:
         
         # Combine hour and minute
         if hour_str and minute_str:
-            if isinstance(trigger.hour, int) and isinstance(trigger.minute, int):
+            if isinstance(hour, int) and isinstance(minute, int):
                 time_str = f"{hour_str}:{minute_str}"
-                if trigger.timezone:
-                    parts.append(f"At {time_str} ({trigger.timezone})")
+                tz = getattr(trigger, 'timezone', None)
+                if tz:
+                    parts.append(f"At {time_str} ({tz})")
                 else:
                     parts.append(f"At {time_str}")
             else:
                 # Complex time expression
                 time_desc = f"Hour {hour_str}, Minute {minute_str}"
-                if trigger.timezone:
-                    time_desc += f" ({trigger.timezone})"
+                tz = getattr(trigger, 'timezone', None)
+                if tz:
+                    time_desc += f" ({tz})"
                 parts.append(time_desc)
         elif hour_str:
             parts.append(f"Hour {hour_str}")
@@ -1339,8 +1341,9 @@ def _format_trigger_readable(trigger: Any) -> str:
             parts.append(f"Minute {minute_str}")
         
         # Handle day of week
-        if trigger.day_of_week is not None:
-            days = trigger.day_of_week
+        day_of_week = getattr(trigger, 'day_of_week', None)
+        if day_of_week is not None:
+            days = day_of_week
             if isinstance(days, (list, tuple)):
                 day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
                 day_str = ', '.join([day_names[d] if isinstance(d, int) and 0 <= d < 7 else str(d) for d in days])
@@ -1360,16 +1363,18 @@ def _format_trigger_readable(trigger: Any) -> str:
             else:
                 parts.append(f"on {days}")
         
-        if trigger.day is not None:
-            parts.append(f"Day {trigger.day}")
+        day = getattr(trigger, 'day', None)
+        if day is not None:
+            parts.append(f"Day {day}")
         
-        if trigger.month is not None:
+        month = getattr(trigger, 'month', None)
+        if month is not None:
             month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-            if isinstance(trigger.month, int) and 1 <= trigger.month <= 12:
-                parts.append(f"in {month_names[trigger.month - 1]}")
+            if isinstance(month, int) and 1 <= month <= 12:
+                parts.append(f"in {month_names[month - 1]}")
             else:
-                parts.append(f"in {trigger.month}")
+                parts.append(f"in {month}")
         
         if parts:
             return ' '.join(parts)

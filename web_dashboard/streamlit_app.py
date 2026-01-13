@@ -117,6 +117,15 @@ def _init_scheduler():
         return False
 
 
+# Auto-start scheduler on module load (not waiting for page render)
+# This ensures scheduled jobs run even if no one visits the Streamlit app
+try:
+    _logger.info("Initializing scheduler on Streamlit module load...")
+    _init_scheduler()
+except Exception as e:
+    _logger.error(f"Failed to initialize scheduler on module load: {e}", exc_info=True)
+    # Continue - scheduler can be started manually via UI
+
 
 def _check_postgres_connection():
     """Check Postgres connection on startup and log status."""
@@ -1284,12 +1293,15 @@ def main():
         show_login_page()
         return
     
-    # Initialize scheduler only after authentication (lazy initialization)
-    # This prevents blocking the login page
-    scheduler_result = _init_scheduler()
-    if not scheduler_result:
-        import logging
-        logging.getLogger(__name__).warning("Scheduler not running - some features may be unavailable")
+    # Scheduler is now initialized at module level (not lazy)
+    # Check scheduler status for UI display
+    try:
+        from scheduler.scheduler_core import is_scheduler_running
+        if not is_scheduler_running():
+            import logging
+            logging.getLogger(__name__).warning("Scheduler not running - some features may be unavailable")
+    except Exception:
+        pass  # Scheduler check failed, continue anyway
     
     # Check Postgres connection (non-blocking, logs status)
     try:

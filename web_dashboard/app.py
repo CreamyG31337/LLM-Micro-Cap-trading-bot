@@ -415,37 +415,43 @@ try:
 except Exception as e:
     logger.error(f"Failed to register Admin Blueprint: {e}", exc_info=True)
 
-# Auto-start scheduler on Flask startup
-# Use a flag to ensure it only runs once (Flask 2.2+ compatible)
-_scheduler_startup_done = False
-
-@app.before_request
-def start_scheduler_on_startup():
-    """Start the scheduler when Flask app starts (first request only)."""
-    global _scheduler_startup_done
+# Auto-start scheduler on module load (not waiting for first request)
+def _start_scheduler_background():
+    """Start scheduler in background thread on Flask app initialization."""
+    import threading
+    from scheduler.scheduler_core import start_scheduler, is_scheduler_running
     
-    if _scheduler_startup_done:
-        return
-    
-    _scheduler_startup_done = True
-    
-    try:
-        from scheduler.scheduler_core import start_scheduler, is_scheduler_running
-        
-        # Only start if not already running (check heartbeat to avoid duplicate starts)
-        if not is_scheduler_running():
-            logger.info("🚀 Auto-starting scheduler on Flask startup...")
-            result = start_scheduler()
-            if result:
-                logger.info("✅ Scheduler started successfully on Flask startup")
+    def _scheduler_init_thread():
+        try:
+            # Small delay to ensure Flask app is fully initialized
+            import time
+            time.sleep(0.5)
+            
+            if not is_scheduler_running():
+                logger.info("🚀 Auto-starting scheduler on Flask initialization...")
+                result = start_scheduler()
+                if result:
+                    logger.info("✅ Scheduler started successfully on Flask initialization")
+                else:
+                    logger.info("ℹ️ Scheduler was already running or failed to start")
             else:
-                logger.info("ℹ️ Scheduler was already running or failed to start")
-        else:
-            logger.debug("ℹ️ Scheduler already running, skipping auto-start")
-    except Exception as e:
-        # Don't crash Flask if scheduler fails to start
-        logger.error(f"❌ Failed to auto-start scheduler: {e}", exc_info=True)
-        logger.warning("⚠️ Flask will continue without scheduler - start manually via jobs page")
+                logger.debug("ℹ️ Scheduler already running, skipping auto-start")
+        except Exception as e:
+            # Don't crash Flask if scheduler fails to start
+            logger.error(f"❌ Failed to auto-start scheduler: {e}", exc_info=True)
+            logger.warning("⚠️ Flask will continue without scheduler - start manually via jobs page")
+    
+    # Start scheduler in daemon thread (won't block Flask startup)
+    init_thread = threading.Thread(
+        target=_scheduler_init_thread,
+        name="SchedulerInitThread",
+        daemon=True
+    )
+    init_thread.start()
+    logger.debug("Started scheduler initialization thread")
+
+# Start scheduler immediately when module loads
+_start_scheduler_background()
 
 def load_portfolio_data(fund_name=None) -> Dict:
     """Load and process portfolio data from Supabase (web app only - no CSV fallback)"""

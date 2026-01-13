@@ -146,12 +146,12 @@ document.addEventListener('DOMContentLoaded', (): void => {
 async function initTimeDisplay(): Promise<void> {
     const el = document.getElementById('last-updated-text');
     if (!el) return;
-    
+
     try {
         // Fetch latest timestamp from API (same as Streamlit)
         const fund = state.currentFund || '';
         const response = await fetch(`/api/dashboard/latest-timestamp?fund=${encodeURIComponent(fund)}`);
-        
+
         if (response.ok) {
             const data = await response.json();
             if (data.timestamp) {
@@ -173,7 +173,7 @@ async function initTimeDisplay(): Promise<void> {
     } catch (error) {
         console.warn('[Dashboard] Failed to fetch latest timestamp:', error);
     }
-    
+
     // Fallback to current time if API fails
     el.textContent = 'Last updated: ' + new Date().toLocaleString();
 }
@@ -661,7 +661,7 @@ async function fetchSummary(): Promise<void> {
 async function fetchPerformanceChart(): Promise<void> {
     // Show spinner
     showSpinner('performance-chart-spinner');
-    
+
     // Detect actual theme from page (same as sector chart)
     const htmlElement = document.documentElement;
     const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
@@ -742,7 +742,7 @@ async function fetchPerformanceChart(): Promise<void> {
 async function fetchSectorChart(): Promise<void> {
     // Show spinner
     showSpinner('sector-chart-spinner');
-    
+
     // Detect actual theme from page (same as performance chart)
     const htmlElement = document.documentElement;
     const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
@@ -814,7 +814,7 @@ async function fetchSectorChart(): Promise<void> {
 async function fetchHoldings(): Promise<void> {
     // Show spinner
     showSpinner('holdings-grid-spinner');
-    
+
     const url = `/api/dashboard/holdings?fund=${encodeURIComponent(state.currentFund)}`;
     const startTime = performance.now();
 
@@ -895,7 +895,7 @@ async function fetchHoldings(): Promise<void> {
 async function fetchActivity(): Promise<void> {
     // Show spinner
     showSpinner('activity-table-spinner');
-    
+
     const url = `/api/dashboard/activity?fund=${encodeURIComponent(state.currentFund)}&limit=100`;
     const startTime = performance.now();
 
@@ -981,7 +981,7 @@ async function fetchActivity(): Promise<void> {
 async function fetchMovers(): Promise<void> {
     showSpinner('gainers-spinner');
     showSpinner('losers-spinner');
-    
+
     const url = `/api/dashboard/movers?fund=${encodeURIComponent(state.currentFund)}&limit=10`;
     const startTime = performance.now();
 
@@ -1051,7 +1051,7 @@ function renderMovers(data: MoversData): void {
             data.gainers.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.className = 'bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600';
-                
+
                 const pctDisplay = item.daily_pnl_pct != null ? `+${item.daily_pnl_pct.toFixed(2)}%` : '--';
                 const pnlDisplay = item.daily_pnl != null ? `+${formatMoney(item.daily_pnl, data.display_currency)}` : '--';
                 const priceDisplay = item.current_price != null ? formatMoney(item.current_price, data.display_currency) : '--';
@@ -1077,7 +1077,7 @@ function renderMovers(data: MoversData): void {
             data.losers.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.className = 'bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600';
-                
+
                 const pctDisplay = item.daily_pnl_pct != null ? `${item.daily_pnl_pct.toFixed(2)}%` : '--';
                 const pnlDisplay = item.daily_pnl != null ? formatMoney(item.daily_pnl, data.display_currency) : '--';
                 const priceDisplay = item.current_price != null ? formatMoney(item.current_price, data.display_currency) : '--';
@@ -1161,7 +1161,7 @@ function renderPerformanceChart(data: PerformanceChartData): void {
     // Streamlit doesn't modify the layout at all - it just passes the figure through
     // Use the layout directly without any modifications
     try {
-        Plotly.newPlot('performance-chart', data.data, data.layout, { 
+        Plotly.newPlot('performance-chart', data.data, data.layout, {
             responsive: true,  // Equivalent to use_container_width=True in Streamlit
             displayModeBar: true,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d']
@@ -1199,7 +1199,7 @@ function renderSectorChart(data: AllocationChartData): void {
 
     // Update layout height to match container and ensure centered margins
     const layout = { ...data.layout };
-    layout.height = 500; // Match container height (same as performance chart)
+    layout.height = 700; // Match container height (same as performance chart)
     layout.autosize = true;
     // Ensure equal margins for centering (override any backend margins if needed)
     if (!layout.margin) {
@@ -1211,7 +1211,7 @@ function renderSectorChart(data: AllocationChartData): void {
     }
 
     try {
-        Plotly.newPlot('sector-chart', data.data, layout, { 
+        Plotly.newPlot('sector-chart', data.data, layout, {
             responsive: true,
             displayModeBar: true,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d']

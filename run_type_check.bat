@@ -1,6 +1,6 @@
 @echo off
 echo Running Type Checks...
-.\venv\Scripts\python -m mypy web_dashboard/streamlit_utils.py
+.\venv\Scripts\mypy web_dashboard/streamlit_utils.py --explicit-package-bases
 echo.
 echo Check complete.
 pause

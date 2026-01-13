@@ -415,6 +415,13 @@ try:
 except Exception as e:
     logger.error(f"Failed to register Admin Blueprint: {e}", exc_info=True)
 
+try:
+    from routes.color_test_routes import color_test_bp
+    app.register_blueprint(color_test_bp)
+    logger.debug("Registered Color Test Blueprint")
+except Exception as e:
+    logger.error(f"Failed to register Color Test Blueprint: {e}", exc_info=True)
+
 # Auto-start scheduler on module load (not waiting for first request)
 def _start_scheduler_background():
     """Start scheduler in background thread on Flask app initialization."""
@@ -729,6 +736,7 @@ except Exception as e:
 @app.route('/')
 def index():
     """Redirect based on V2 preference"""
+    from user_preferences import get_user_preference
     v2_enabled = get_user_preference('v2_enabled', default=False)
     if v2_enabled:
         return redirect(url_for('dashboard.dashboard_page'))

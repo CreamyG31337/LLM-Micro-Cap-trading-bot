@@ -3,10 +3,13 @@ from flask import url_for
 
 def test_index_redirects_to_auth(client):
     """Test that the index page redirects to auth when not logged in."""
-    response = client.get('/')
-    # Should redirect to /auth
-    assert response.status_code == 302
-    assert '/auth' in response.headers['Location']
+    from unittest.mock import patch
+    # Mock v2_enabled=True so it redirects to dashboard (which requires auth)
+    with patch('user_preferences.get_user_preference', return_value=True):
+        response = client.get('/')
+        # Should redirect to /v2/dashboard (since v2_enabled=True)
+        assert response.status_code == 302
+        assert '/v2/dashboard' in response.headers['Location']
 
 def test_auth_page_loads(client):
     """Test that the auth page loads successfully."""

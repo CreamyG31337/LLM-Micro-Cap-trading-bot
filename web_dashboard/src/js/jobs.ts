@@ -62,6 +62,8 @@ interface JobsDOMElements {
     errorContainer: HTMLElement | null;
     runningContainer: HTMLElement | null;
     infoText: HTMLElement | null;
+    statusText: HTMLElement | null;
+    statusIndicator: HTMLElement | null;
     startBtn: HTMLElement | null;
     refreshBtn: HTMLElement | null;
     jobsList: HTMLElement | null;
@@ -84,6 +86,8 @@ const elements: JobsDOMElements = {
     errorContainer: null,
     runningContainer: null,
     infoText: null,
+    statusText: null,
+    statusIndicator: null,
     startBtn: null,
     refreshBtn: null,
     jobsList: null,
@@ -100,6 +104,8 @@ function initializeDOMElements(): void {
     elements.errorContainer = document.getElementById('scheduler-error');
     elements.runningContainer = document.getElementById('scheduler-running');
     elements.infoText = document.getElementById('scheduler-info');
+    elements.statusText = document.getElementById('status-text');
+    elements.statusIndicator = document.getElementById('status-indicator');
     elements.startBtn = document.getElementById('start-scheduler-btn');
     elements.refreshBtn = document.getElementById('refresh-status-btn');
     elements.jobsList = document.getElementById('jobs-container'); // Template uses 'jobs-container'
@@ -252,6 +258,14 @@ function updateStatusUI(running: boolean): void {
     console.log('[Jobs] updateStatusUI called:', { running, isSchedulerRunning });
     isSchedulerRunning = running;
     if (running) {
+        // Update status text and indicator
+        if (elements.statusText) {
+            elements.statusText.textContent = 'Running';
+        }
+        if (elements.statusIndicator) {
+            elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500';
+        }
+        // Hide/show containers
         if (elements.errorContainer) {
             elements.errorContainer.classList.add('hidden');
         }
@@ -261,13 +275,29 @@ function updateStatusUI(running: boolean): void {
         if (elements.infoText) {
             elements.infoText.textContent = `Running normally • Last updated: ${new Date().toLocaleTimeString()}`;
         }
+        // Hide start button when running
+        if (elements.startBtn) {
+            elements.startBtn.classList.add('hidden');
+        }
         console.log('[Jobs] Status UI updated: scheduler is running');
     } else {
+        // Update status text and indicator
+        if (elements.statusText) {
+            elements.statusText.textContent = 'Stopped';
+        }
+        if (elements.statusIndicator) {
+            elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500';
+        }
+        // Hide/show containers
         if (elements.runningContainer) {
             elements.runningContainer.classList.add('hidden');
         }
         if (elements.errorContainer) {
             elements.errorContainer.classList.remove('hidden');
+        }
+        // Show start button when stopped
+        if (elements.startBtn) {
+            elements.startBtn.classList.remove('hidden');
         }
         console.log('[Jobs] Status UI updated: scheduler is stopped');
     }

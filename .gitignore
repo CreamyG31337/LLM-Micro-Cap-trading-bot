@@ -266,6 +266,8 @@ import_data/
 .script_hash
 .vscode/settings.json
 *.exe
+# Scheduler lock file (runtime cross-process coordination)
+web_dashboard/logs/.scheduler_lock
 # Supabase credentials (keep secure)
 supabase_credentials.txt
 

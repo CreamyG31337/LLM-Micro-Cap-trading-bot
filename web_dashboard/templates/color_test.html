@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+
+{% block title %}Color Theme Tester{% endblock %}
+
+{% block page_title %}🎨 Color Theme Tester{% endblock %}
+{% block page_subtitle %}Test and preview theme colors{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6">
+    <!-- Instructions -->
+    <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <h3 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">How to Use</h3>
+        <ul class="list-disc list-inside text-sm text-blue-800 dark:text-blue-200 space-y-1">
+            <li>Select a theme to load its colors</li>
+            <li>Adjust any color using the color pickers and text inputs</li>
+            <li>See live previews in the example elements below</li>
+            <li>Copy the CSS code to apply changes to <code>theme.css</code></li>
+            <li><strong>Note:</strong> Changes are temporary - modify <code>theme.css</code> to make them permanent</li>
+        </ul>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <!-- Left Column: Theme & Gradient Controls -->
+        <div class="xl:col-span-1 space-y-6">
+            <!-- Theme Selector -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Theme Selection</h3>
+                <div class="space-y-3">
+                    <label class="block">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Select Theme</span>
+                        <select id="theme-selector" class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                            <option value="midnight-tokyo">Midnight Tokyo</option>
+                            <option value="abyss">Abyss</option>
+                            <option value="system">System (OS Preference)</option>
+                        </select>
+                    </label>
+                    <button id="apply-theme-btn" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+                        Apply Theme
+                    </button>
+                </div>
+            </div>
+
+            <!-- Header Gradient Colors -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Header Gradient</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Gradient From</span>
+                            <div class="flex items-center gap-2 mt-2">
+                                <input type="color" id="gradient-from" value="#667eea" class="w-16 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="gradient-from-text" value="#667eea" class="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block mb-2">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Gradient To</span>
+                            <div class="flex items-center gap-2 mt-2">
+                                <input type="color" id="gradient-to" value="#764ba2" class="w-16 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="gradient-to-text" value="#764ba2" class="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <button id="apply-gradient-btn" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm">
+                        Apply to Header
+                    </button>
+                </div>
+            </div>
+
+            <!-- Background Colors -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Background Colors</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Primary</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="bg-primary" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="bg-primary-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Secondary</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="bg-secondary" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="bg-secondary-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Tertiary</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="bg-tertiary" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="bg-tertiary-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Text Colors -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Text Colors</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Primary</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="text-primary" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="text-primary-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Secondary</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="text-secondary" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="text-secondary-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accent Colors -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Accent Colors</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Accent</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="color-accent" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="color-accent-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Accent Hover</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="color-accent-hover" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="color-accent-hover-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Border Colors -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Border Colors</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block mb-1">
+                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Border</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="color" id="border-color" class="w-12 h-8 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                                <input type="text" id="border-color-text" class="flex-1 p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs">
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reset Button -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <button id="reset-all-btn" class="w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium">
+                    Reset to Theme Default
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Column: Preview & Code -->
+        <div class="xl:col-span-2 space-y-6">
+            <!-- Live Preview Section -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Live Preview</h3>
+                
+                <!-- Header Preview -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Header Bar</p>
+                    <div id="header-preview" class="gradient-bg text-white shadow-lg rounded-lg p-4">
+                        <div class="flex items-center justify-between">
+                            <h2 class="text-xl font-bold">Dashboard</h2>
+                            <div class="text-sm text-blue-100">user@example.com</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Example Cards -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Card Examples</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div id="card-primary" class="p-4 rounded-lg border shadow-sm">
+                            <h4 class="font-bold mb-2">Primary Card</h4>
+                            <p class="text-sm">This card uses primary background and text colors.</p>
+                        </div>
+                        <div id="card-secondary" class="p-4 rounded-lg border shadow-sm">
+                            <h4 class="font-bold mb-2">Secondary Card</h4>
+                            <p class="text-sm">This card uses secondary background colors.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Button Examples</p>
+                    <div class="flex flex-wrap gap-3">
+                        <button id="btn-accent" class="px-4 py-2 rounded-lg text-white font-medium">
+                            Accent Button
+                        </button>
+                        <button id="btn-secondary" class="px-4 py-2 rounded-lg border font-medium">
+                            Secondary Button
+                        </button>
+                        <button id="btn-outline" class="px-4 py-2 rounded-lg border-2 font-medium">
+                            Outline Button
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Form Elements -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Form Elements</p>
+                    <div class="space-y-3">
+                        <input type="text" id="input-example" placeholder="Text input example" class="w-full p-2 rounded-lg border">
+                        <select id="select-example" class="w-full p-2 rounded-lg border">
+                            <option>Select option example</option>
+                            <option>Option 1</option>
+                            <option>Option 2</option>
+                        </select>
+                        <textarea id="textarea-example" placeholder="Textarea example" class="w-full p-2 rounded-lg border" rows="3"></textarea>
+                    </div>
+                </div>
+
+                <!-- Text Examples -->
+                <div class="mb-6">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Text Examples</p>
+                    <div class="space-y-2">
+                        <h1 id="text-primary-example" class="text-2xl font-bold">Primary Text (Heading)</h1>
+                        <p id="text-secondary-example" class="text-base">Secondary text for body content and descriptions.</p>
+                        <p id="text-tertiary-example" class="text-sm">Tertiary text for captions and metadata.</p>
+                    </div>
+                </div>
+
+                <!-- Border Examples -->
+                <div>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Border Examples</p>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="p-3 rounded border border-2 text-center text-sm">Thick Border</div>
+                        <div class="p-3 rounded border text-center text-sm">Normal Border</div>
+                        <div class="p-3 rounded border border-dashed text-center text-sm">Dashed Border</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CSS Code Output -->
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">CSS Code</h3>
+                    <button id="copy-css-btn" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded">
+                        Copy CSS
+                    </button>
+                </div>
+                <pre id="css-output" class="p-4 bg-gray-900 text-green-400 rounded-lg text-xs overflow-x-auto font-mono max-h-96 overflow-y-auto"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Theme color definitions (fallback)
+    const themeColors = {
+        light: {
+            '--gradient-from': '#667eea',
+            '--gradient-to': '#764ba2',
+            '--bg-primary': '#ffffff',
+            '--bg-secondary': '#f9fafb',
+            '--bg-tertiary': '#f3f4f6',
+            '--text-primary': '#111827',
+            '--text-secondary': '#6b7280',
+            '--text-tertiary': '#9ca3af',
+            '--border-color': '#e5e7eb',
+            '--color-accent': '#7c3aed',
+            '--color-accent-hover': '#6d28d9'
+        },
+        dark: {
+            '--gradient-from': '#4f46e5',
+            '--gradient-to': '#7c3aed',
+            '--bg-primary': '#1f2937',
+            '--bg-secondary': '#111827',
+            '--bg-tertiary': '#374151',
+            '--text-primary': '#f9fafb',
+            '--text-secondary': '#d1d5db',
+            '--text-tertiary': '#9ca3af',
+            '--border-color': '#374151',
+            '--color-accent': '#7c3aed',
+            '--color-accent-hover': '#6d28d9'
+        },
+        'midnight-tokyo': {
+            '--gradient-from': '#7dcfff',
+            '--gradient-to': '#bb9af7',
+            '--bg-primary': '#24283b',
+            '--bg-secondary': '#1a1b26',
+            '--bg-tertiary': '#3b4261',
+            '--text-primary': '#c0caf5',
+            '--text-secondary': '#a9b1d6',
+            '--text-tertiary': '#565f89',
+            '--border-color': '#3b4261',
+            '--color-accent': '#bb9af7',
+            '--color-accent-hover': '#9d7cd8'
+        },
+        abyss: {
+            '--gradient-from': '#64ffda',
+            '--gradient-to': '#41a6b5',
+            '--bg-primary': '#112240',
+            '--bg-secondary': '#0a192f',
+            '--bg-tertiary': '#233554',
+            '--text-primary': '#ccd6f6',
+            '--text-secondary': '#8892b0',
+            '--text-tertiary': '#4a5568',
+            '--border-color': '#233554',
+            '--color-accent': '#64ffda',
+            '--color-accent-hover': '#41a6b5'
+        }
+    };
+
+    // Get CSS variable value from computed styles
+    function getCSSVariable(varName) {
+        const root = document.documentElement;
+        return getComputedStyle(root).getPropertyValue(varName).trim();
+    }
+
+    // Set CSS variable value
+    function setCSSVariable(varName, value) {
+        document.documentElement.style.setProperty(varName, value);
+    }
+
+    // Color input pairs (id of color picker, id of text input, CSS variable name)
+    const colorInputs = [
+        ['gradient-from', 'gradient-from-text', '--gradient-from'],
+        ['gradient-to', 'gradient-to-text', '--gradient-to'],
+        ['bg-primary', 'bg-primary-text', '--bg-primary'],
+        ['bg-secondary', 'bg-secondary-text', '--bg-secondary'],
+        ['bg-tertiary', 'bg-tertiary-text', '--bg-tertiary'],
+        ['text-primary', 'text-primary-text', '--text-primary'],
+        ['text-secondary', 'text-secondary-text', '--text-secondary'],
+        ['color-accent', 'color-accent-text', '--color-accent'],
+        ['color-accent-hover', 'color-accent-hover-text', '--color-accent-hover'],
+        ['border-color', 'border-color-text', '--border-color']
+    ];
+
+    // Load theme colors into controls
+    function loadThemeColors(theme) {
+        let actualTheme = theme;
+        if (theme === 'system') {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                actualTheme = 'dark';
+            } else {
+                actualTheme = 'light';
+            }
+        }
+        
+        // Get colors from CSS variables or fallback
+        const colors = {};
+        for (const [, , varName] of colorInputs) {
+            try {
+                const value = getCSSVariable(varName);
+                colors[varName] = value || themeColors[actualTheme]?.[varName] || '#000000';
+            } catch (e) {
+                colors[varName] = themeColors[actualTheme]?.[varName] || '#000000';
+            }
+        }
+        
+        // Update all color inputs
+        for (const [pickerId, textId, varName] of colorInputs) {
+            const color = colors[varName];
+            const picker = document.getElementById(pickerId);
+            const text = document.getElementById(textId);
+            if (picker) picker.value = color;
+            if (text) text.value = color;
+        }
+        
+        // Update previews
+        updatePreviews();
+        updateCSSOutput(actualTheme);
+    }
+
+    // Update all preview elements
+    function updatePreviews() {
+        // Header gradient
+        const fromColor = document.getElementById('gradient-from').value;
+        const toColor = document.getElementById('gradient-to').value;
+        const header = document.querySelector('header.gradient-bg');
+        const headerPreview = document.getElementById('header-preview');
+        const gradient = `linear-gradient(135deg, ${fromColor} 0%, ${toColor} 100%)`;
+        if (header) header.style.background = gradient;
+        if (headerPreview) headerPreview.style.background = gradient;
+        
+        // Cards
+        const bgPrimary = getCSSVariable('--bg-primary');
+        const bgSecondary = getCSSVariable('--bg-secondary');
+        const textPrimary = getCSSVariable('--text-primary');
+        const textSecondary = getCSSVariable('--text-secondary');
+        const borderColor = getCSSVariable('--border-color');
+        
+        const cardPrimary = document.getElementById('card-primary');
+        const cardSecondary = document.getElementById('card-secondary');
+        if (cardPrimary) {
+            cardPrimary.style.backgroundColor = bgPrimary;
+            cardPrimary.style.color = textPrimary;
+            cardPrimary.style.borderColor = borderColor;
+        }
+        if (cardSecondary) {
+            cardSecondary.style.backgroundColor = bgSecondary;
+            cardSecondary.style.color = textPrimary;
+            cardSecondary.style.borderColor = borderColor;
+        }
+        
+        // Buttons
+        const accent = getCSSVariable('--color-accent');
+        const accentHover = getCSSVariable('--color-accent-hover');
+        const btnAccent = document.getElementById('btn-accent');
+        const btnSecondary = document.getElementById('btn-secondary');
+        const btnOutline = document.getElementById('btn-outline');
+        if (btnAccent) {
+            btnAccent.style.backgroundColor = accent;
+            btnAccent.onmouseenter = () => btnAccent.style.backgroundColor = accentHover;
+            btnAccent.onmouseleave = () => btnAccent.style.backgroundColor = accent;
+        }
+        if (btnSecondary) {
+            btnSecondary.style.borderColor = borderColor;
+            btnSecondary.style.color = textPrimary;
+        }
+        if (btnOutline) {
+            btnOutline.style.borderColor = borderColor;
+            btnOutline.style.color = textPrimary;
+        }
+        
+        // Form elements
+        const input = document.getElementById('input-example');
+        const select = document.getElementById('select-example');
+        const textarea = document.getElementById('textarea-example');
+        [input, select, textarea].forEach(el => {
+            if (el) {
+                el.style.backgroundColor = bgPrimary;
+                el.style.color = textPrimary;
+                el.style.borderColor = borderColor;
+            }
+        });
+        
+        // Text examples
+        const textPrimaryEl = document.getElementById('text-primary-example');
+        const textSecondaryEl = document.getElementById('text-secondary-example');
+        const textTertiaryEl = document.getElementById('text-tertiary-example');
+        if (textPrimaryEl) textPrimaryEl.style.color = textPrimary;
+        if (textSecondaryEl) textSecondaryEl.style.color = textSecondary;
+        if (textTertiaryEl) textTertiaryEl.style.color = getCSSVariable('--text-tertiary');
+        
+        // Border examples
+        document.querySelectorAll('.border').forEach(el => {
+            if (el.id !== 'header-preview' && !el.closest('#header-preview')) {
+                el.style.borderColor = borderColor;
+            }
+        });
+    }
+
+    // Update CSS output
+    function updateCSSOutput(theme) {
+        const themeName = theme.charAt(0).toUpperCase() + theme.slice(1).replace(/-/g, ' ');
+        const css = `/* ${themeName} Theme */
+[data-theme="${theme}"] {
+    --gradient-from: ${document.getElementById('gradient-from').value};
+    --gradient-to: ${document.getElementById('gradient-to').value};
+    --bg-primary: ${document.getElementById('bg-primary').value};
+    --bg-secondary: ${document.getElementById('bg-secondary').value};
+    --bg-tertiary: ${document.getElementById('bg-tertiary').value};
+    --text-primary: ${document.getElementById('text-primary').value};
+    --text-secondary: ${document.getElementById('text-secondary').value};
+    --text-tertiary: ${getCSSVariable('--text-tertiary') || '#9ca3af'};
+    --border-color: ${document.getElementById('border-color').value};
+    --color-accent: ${document.getElementById('color-accent').value};
+    --color-accent-hover: ${document.getElementById('color-accent-hover').value};
+}`;
+        document.getElementById('css-output').textContent = css;
+    }
+
+    // Apply theme
+    function applyTheme() {
+        const theme = document.getElementById('theme-selector').value;
+        document.documentElement.setAttribute('data-theme', theme);
+        setTimeout(() => {
+            loadThemeColors(theme);
+            updatePreviews();
+        }, 100);
+    }
+
+    // Reset to theme default
+    function resetToTheme() {
+        const theme = document.getElementById('theme-selector').value;
+        applyTheme();
+    }
+
+    // Sync color inputs
+    function setupColorInputs() {
+        for (const [pickerId, textId, varName] of colorInputs) {
+            const picker = document.getElementById(pickerId);
+            const text = document.getElementById(textId);
+            
+            if (picker && text) {
+                picker.addEventListener('input', (e) => {
+                    const color = e.target.value;
+                    text.value = color;
+                    setCSSVariable(varName, color);
+                    updatePreviews();
+                    const currentTheme = document.getElementById('theme-selector').value;
+                    updateCSSOutput(currentTheme === 'system' ? 'light' : currentTheme);
+                });
+                
+                text.addEventListener('input', (e) => {
+                    const color = e.target.value;
+                    if (/^#[0-9A-F]{6}$/i.test(color)) {
+                        picker.value = color;
+                        setCSSVariable(varName, color);
+                        updatePreviews();
+                        const currentTheme = document.getElementById('theme-selector').value;
+                        updateCSSOutput(currentTheme === 'system' ? 'light' : currentTheme);
+                    }
+                });
+            }
+        }
+    }
+
+    // Copy CSS to clipboard
+    function copyCSS() {
+        const css = document.getElementById('css-output').textContent;
+        navigator.clipboard.writeText(css).then(() => {
+            const btn = document.getElementById('copy-css-btn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.classList.remove('bg-gray-600');
+            btn.classList.add('bg-green-600');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                btn.classList.add('bg-gray-600');
+            }, 2000);
+        });
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'system';
+        document.getElementById('theme-selector').value = currentTheme;
+        
+        setTimeout(() => {
+            loadThemeColors(currentTheme);
+            updatePreviews();
+        }, 100);
+        
+        document.getElementById('apply-theme-btn').addEventListener('click', applyTheme);
+        document.getElementById('reset-all-btn').addEventListener('click', resetToTheme);
+        document.getElementById('copy-css-btn').addEventListener('click', copyCSS);
+        document.getElementById('theme-selector').addEventListener('change', () => {
+            loadThemeColors(document.getElementById('theme-selector').value);
+        });
+        
+        setupColorInputs();
+    });
+</script>
+{% endblock %}

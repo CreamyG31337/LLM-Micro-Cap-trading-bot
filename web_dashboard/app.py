@@ -2237,6 +2237,41 @@ def _get_ticker_chart_cached(ticker: str, use_solid: bool, user_is_admin: bool, 
                     # This is weekend shading
                     shape['fillcolor'] = theme_config['weekend_shading_color']
     
+    # CRITICAL FIX: Convert numpy arrays to Python lists (same as dashboard routes)
+    # PlotlyJSONEncoder serializes numpy arrays in binary format which can cause issues
+    import numpy as np
+    import pandas as pd
+    from datetime import datetime as dt
+    
+    def convert_numpy_to_list(obj):
+        """Recursively convert numpy arrays and numpy scalars to Python native types"""
+        if isinstance(obj, dict):
+            # Check for numpy array binary format from PlotlyJSONEncoder (fallback)
+            if 'dtype' in obj and 'bdata' in obj:
+                try:
+                    import base64
+                    dtype_map = {'f8': 'd', 'i8': 'q', 'f4': 'f', 'i4': 'i'}
+                    dtype_char = dtype_map.get(obj['dtype'], 'd')
+                    decoded = base64.b64decode(obj['bdata'])
+                    arr = np.frombuffer(decoded, dtype=dtype_char)
+                    return arr.tolist()
+                except Exception as e:
+                    logger.warning(f"Failed to decode numpy array: {e}")
+                    return []
+            return {k: convert_numpy_to_list(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_numpy_to_list(item) for item in obj]
+        elif isinstance(obj, (np.ndarray, np.generic)):
+            return obj.tolist() if hasattr(obj, 'tolist') else float(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        else:
+            return obj
+    
+    chart_data = convert_numpy_to_list(chart_data)
+    
     # Return as JSON string
     return json.dumps(chart_data)
 

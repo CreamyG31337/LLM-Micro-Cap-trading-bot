@@ -594,53 +594,90 @@ def get_all_user_preferences() -> Dict[str, Any]:
         
         # Get Supabase client (works in both contexts)
         client = None
+        user_token = None
         try:
-            from streamlit_utils import get_supabase_client
-            # Try to get token from Streamlit context
-            try:
-                from auth_utils import get_user_token
-                user_token = get_user_token()
-                client = get_supabase_client(user_token=user_token)
-            except ImportError:
-                client = get_supabase_client()
-        except ImportError:
-            # Flask context - need to get token from Flask request
-            try:
-                from supabase_client import SupabaseClient
-                from flask_auth_utils import get_auth_token, get_refresh_token
-                from flask import has_request_context
-                
-                if has_request_context():
-                    # Get both tokens from Flask cookies
+            # IMPORTANT: Check Flask context FIRST, before Streamlit
+            # When Flask threads call this (e.g., from Flask API endpoints), they don't have st.session_state,
+            # so we need to get tokens from Flask cookies instead
+            from flask import has_request_context
+            
+            if has_request_context():
+                # We're in a Flask request - get tokens from cookies
+                try:
+                    from supabase_client import SupabaseClient
+                    from flask_auth_utils import get_auth_token
                     user_token = get_auth_token()
-                    # refresh_token = get_refresh_token()
+                    logger.debug(f"[PREF] Flask context: user_token present={bool(user_token)}")
                     client = SupabaseClient(user_token=user_token) if user_token else SupabaseClient()
-                else:
-                    client = SupabaseClient()
-            except ImportError:
-                return {}
+                except ImportError as e:
+                    logger.warning(f"Cannot get preferences in Flask context: {e}")
+                    return {}
+            else:
+                # Not in Flask request context, try Streamlit
+                try:
+                    from streamlit_utils import get_supabase_client
+                    from auth_utils import get_user_token
+                    user_token = get_user_token()
+                    logger.debug(f"[PREF] Streamlit context: user_token present={bool(user_token)}")
+                    client = get_supabase_client(user_token=user_token)
+                except ImportError:
+                    logger.warning("Cannot get preferences: neither Flask nor Streamlit context available")
+                    return {}
+        except ImportError as e:
+            logger.warning(f"Cannot get preferences: import error: {e}")
+            return {}
         
         if not client:
+            logger.warning("[PREF] No Supabase client available")
             return {}
+        
+        # Ensure Authorization header is set right before RPC call
+        # Call postgrest.auth() to ensure the header is set correctly
+        if hasattr(client, 'supabase') and hasattr(client.supabase, 'postgrest') and user_token:
+            postgrest = client.supabase.postgrest
+            try:
+                # Call auth() method to set the header (this is what makes auth.uid() work)
+                postgrest.auth(user_token)
+                logger.debug(f"[PREF] Called postgrest.auth() before get_user_preferences RPC call")
+            except Exception as auth_error:
+                logger.warning(f"[PREF] postgrest.auth() failed: {auth_error}, trying direct header setting")
+                # Fallback: set header directly on session
+                if hasattr(postgrest, 'session'):
+                    if not hasattr(postgrest.session, 'headers'):
+                        postgrest.session.headers = {}
+                    postgrest.session.headers['Authorization'] = f'Bearer {user_token}'
         
         # Call the RPC function to get all preferences
         # Use client.rpc() method which ensures Authorization header is set
+        logger.debug(f"[PREF] Calling get_user_preferences RPC for user_id={user_id}")
         result = client.rpc('get_user_preferences')
+        
+        logger.debug(f"[PREF] get_user_preferences RPC result: data={result.data}, type={type(result.data)}")
         
         if result.data is not None:
             # Handle both scalar and list responses
-            if isinstance(result.data, list) and len(result.data) > 0:
-                prefs = result.data[0]
+            if isinstance(result.data, list):
+                if len(result.data) > 0:
+                    prefs = result.data[0]
+                    logger.debug(f"[PREF] Extracted from list: {prefs}")
+                else:
+                    logger.debug("[PREF] Empty list returned from RPC")
+                    return {}
             else:
                 prefs = result.data
+                logger.debug(f"[PREF] Using direct result: {prefs}")
             
             if isinstance(prefs, dict):
+                logger.debug(f"[PREF] Returning preferences dict with {len(prefs)} keys: {list(prefs.keys())}")
                 return prefs
+            else:
+                logger.warning(f"[PREF] RPC returned non-dict: {type(prefs).__name__} = {prefs}")
         
+        logger.warning("[PREF] get_user_preferences returned None or empty")
         return {}
         
     except Exception as e:
-        logger.warning(f"Error getting all user preferences: {e}")
+        logger.error(f"Error getting all user preferences: {e}", exc_info=True)
         return {}
 
 

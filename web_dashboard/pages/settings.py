@@ -157,15 +157,23 @@ def render_timezone_settings():
                 if "_pref_error_timezone" in cache:
                     del cache["_pref_error_timezone"]
                 
+                # Clear cache to force fresh read
+                from user_preferences import clear_preference_cache
+                clear_preference_cache()
+                
                 result = set_user_timezone(selected_tz)
                 if result:
                     st.success(f"✅ Timezone saved as {selected_tz}")
-                    # No rerun needed - fragment will update automatically
+                    # Clear cache again after save to ensure fresh read
+                    clear_preference_cache()
                 else:
                     error_msg = cache.get("_pref_error_timezone", "Unknown error - RPC call returned False")
                     st.error(f"❌ Failed to save timezone: {error_msg}")
+                    st.caption("Check the application console/logs for more details.")
             except Exception as e:
                 st.error(f"❌ Exception saving timezone: {type(e).__name__}: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 
     # Timezone selector - auto-saves on change
     selected_tz_label = st.selectbox(
@@ -247,15 +255,23 @@ def render_currency_settings():
                 if "_pref_error_currency" in cache:
                     del cache["_pref_error_currency"]
                 
+                # Clear cache to force fresh read
+                from user_preferences import clear_preference_cache
+                clear_preference_cache()
+                
                 result = set_user_currency(selected_currency)
                 if result:
                     st.success(f"✅ Currency saved as {selected_currency}")
-                    # No rerun needed - fragment will update automatically
+                    # Clear cache again after save to ensure fresh read
+                    clear_preference_cache()
                 else:
                     error_msg = cache.get("_pref_error_currency", "Unknown error - RPC call returned False")
                     st.error(f"❌ Failed to save currency: {error_msg}")
+                    st.caption("Check the application console/logs for more details.")
             except Exception as e:
                 st.error(f"❌ Exception saving currency: {type(e).__name__}: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 
     # Currency selector - auto-saves on change
     selected_currency_label = st.selectbox(
@@ -391,6 +407,36 @@ st.divider()
 
 # Show all preferences (for debugging)
 if st.checkbox("Show all preferences (debug)"):
-    prefs = get_all_user_preferences()
-    st.json(prefs)
+    try:
+        from user_preferences import _get_user_id, _is_authenticated
+        from auth_utils import get_user_id, is_authenticated
+        
+        st.write("**Debug Info:**")
+        st.write(f"- Authenticated (user_preferences): {_is_authenticated()}")
+        st.write(f"- Authenticated (auth_utils): {is_authenticated()}")
+        st.write(f"- User ID (user_preferences): {_get_user_id()}")
+        st.write(f"- User ID (auth_utils): {get_user_id() if is_authenticated() else 'N/A'}")
+        
+        prefs = get_all_user_preferences()
+        st.write("**All Preferences:**")
+        if prefs:
+            st.json(prefs)
+        else:
+            st.warning("⚠️ No preferences found (empty dict returned)")
+            st.caption("This could mean:")
+            st.caption("1. User is not authenticated properly")
+            st.caption("2. RPC function is failing")
+            st.caption("3. User has no preferences saved yet")
+            
+            # Try to get individual preferences
+            st.write("**Individual Preference Tests:**")
+            from user_preferences import get_user_preference
+            st.write(f"- timezone: {get_user_preference('timezone', 'NOT FOUND')}")
+            st.write(f"- currency: {get_user_preference('currency', 'NOT FOUND')}")
+            st.write(f"- theme: {get_user_preference('theme', 'NOT FOUND')}")
+            st.write(f"- v2_enabled: {get_user_preference('v2_enabled', 'NOT FOUND')}")
+    except Exception as e:
+        st.error(f"Error in debug section: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 

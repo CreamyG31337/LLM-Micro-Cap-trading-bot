@@ -81,7 +81,7 @@ interface PortfolioIntelligenceResponse {
     }>;
 }
 
-export { }; // Ensure file is treated as a module
+
 
 interface AIAssistantPortfolioResponse {
     positions?: Array<{ ticker?: string }>;

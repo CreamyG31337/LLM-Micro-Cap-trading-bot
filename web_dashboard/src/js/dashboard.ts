@@ -404,17 +404,7 @@ function initGrid(): void {
                 return { textAlign: 'right' };
             }
         },
-        { field: 'weight', headerName: 'Weight', width: 80, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(1) + '%' },
-        { 
-            field: 'stop_loss', 
-            headerName: 'Stop Loss', 
-            width: 100, 
-            type: 'numericColumn', 
-            valueFormatter: (params: any) => {
-                if (!params.value || params.value === 0) return 'None';
-                return formatMoney(params.value);
-            }
-        }
+        { field: 'weight', headerName: 'Weight', width: 80, type: 'numericColumn', valueFormatter: (params: any) => (params.value || 0).toFixed(1) + '%' }
     ];
 
     const gridOptions = {

@@ -416,11 +416,19 @@ except Exception as e:
     logger.error(f"Failed to register Admin Blueprint: {e}", exc_info=True)
 
 # Auto-start scheduler on Flask startup
-# NOTE: @app.before_first_request is deprecated in Flask 2.2+ but still works
-# For production with gunicorn, consider using a startup script instead
-@app.before_first_request
+# Use a flag to ensure it only runs once (Flask 2.2+ compatible)
+_scheduler_startup_done = False
+
+@app.before_request
 def start_scheduler_on_startup():
-    """Start the scheduler when Flask app starts (first request)."""
+    """Start the scheduler when Flask app starts (first request only)."""
+    global _scheduler_startup_done
+    
+    if _scheduler_startup_done:
+        return
+    
+    _scheduler_startup_done = True
+    
     try:
         from scheduler.scheduler_core import start_scheduler, is_scheduler_running
         
